@@ -32,6 +32,26 @@ Machine-specific and “how we run this repo” facts. Safe to commit; **no secr
 - **`wrangler.jsonc`** — Worker `main` is **`src/index.ts`** (React stays on **`main.tsx`**).
 - **D1** — database **`waymark-db`**; binding name **`DB`** in config so Worker code uses **`env.DB`** (matches the setup guide). `database_id` lives in **`wrangler.jsonc`** (not a secret like an API key).
 
+## API + database (setup guide §13–§15)
+
+- **Hono** app: [`src/server/app.ts`](src/server/app.ts) — routes **`/api/health`**, **`/api/sessions`** (reads from D1 via Drizzle).
+- **Drizzle schema:** [`src/db/schema.ts`](src/db/schema.ts); **client:** [`src/db/client.ts`](src/db/client.ts). Config: [`drizzle.config.ts`](drizzle.config.ts).
+- **Migrations** live in **`drizzle/`** (SQL + `meta/`). Initial file: **`drizzle/0000_init_sessions.sql`**.
+- **npm scripts:** `npm run db:generate` (after schema changes), `npm run db:migrate:local` / `db:migrate:remote` (point at the latest `drizzle/0000_*.sql` — if you add a new migration, update **`package.json`** scripts or pass `--file` manually).
+- **Local dev:** run **`npx wrangler dev`** (Worker + local D1, default **http://localhost:8787**). Vite (**`npm run dev`**) does **not** proxy to the Worker unless you add that later — the guide’s “open 5173/api/…” note assumes a combined dev setup; here the API is on **8787** until you wire a proxy.
+- **Apply migration to remote D1** (only when you intend to change cloud data):
+
+```bash
+npx wrangler d1 execute waymark-db --remote --file=./drizzle/0000_init_sessions.sql
+```
+
+- **Verify tables (local):** `npx wrangler d1 execute waymark-db --local --command "SELECT name FROM sqlite_master WHERE type='table';"`
+
+## Environment placeholders (§17)
+
+- **[`.env.example`](.env.example)** — safe to commit; copy to **`.env`** for real values. **`.env`** is gitignored.
+- **Wrangler secrets** (production): set in the Cloudflare dashboard or `npx wrangler secret put <NAME>` — never commit secret values.
+
 ## Docs and brand (step 7)
 
 - **`docs/master/MASTER_BUILD_DOCUMENT.md`** — product + phases  
