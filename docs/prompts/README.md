@@ -4,7 +4,7 @@ Use this folder for **saved Plan Mode prompts** and **small task prompts** you r
 
 Suggested files (create as you go):
 
-- `PLAN_FIRST_SLICE.md` — one big planning prompt before a new phase  
+- **`PLAN_FIRST_SLICE.md`** — first **Plan Mode** prompt (§18-style); start here before a new phase.  
 - `IMPLEMENT_TODAY_SCREEN.md` — example small-scope implementation prompt  
 
 **Rule:** One planning prompt → many small implementation prompts. Do not ask for the entire app in one message.
