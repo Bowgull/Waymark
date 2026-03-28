@@ -7,6 +7,12 @@ Machine-specific and “how we run this repo” facts. Safe to commit; **no secr
 - **Remote:** `https://github.com/Bowgull/Waymark.git`  
 - **Branch:** `main`
 
+## Roadmap and ops docs
+
+- **[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)** — living stack + deploy + §19 phase list  
+- **[`TESTING.md`](TESTING.md)** — where to verify changes (browser, Worker, iOS)  
+- **[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)** — common failures and fixes  
+
 ## Frontend
 
 - **Package name:** `waymark-c3` (npm)  

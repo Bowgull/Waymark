@@ -9,8 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "db:generate": "drizzle-kit generate",
-    "db:migrate:local": "wrangler d1 execute waymark-db --local --file=./drizzle/0000_init_sessions.sql",
-    "db:migrate:remote": "wrangler d1 execute waymark-db --remote --file=./drizzle/0000_init_sessions.sql"
+    "db:migrate:local": "npx wrangler d1 execute waymark-db --local --file=./drizzle/0000_init_sessions.sql",
+    "db:migrate:remote": "npx wrangler d1 execute waymark-db --remote --file=./drizzle/0000_init_sessions.sql"
   },
   "dependencies": {
     "@capacitor/cli": "^8.2.0",
@@ -21,6 +21,7 @@
     "hono": "^4.12.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-router-dom": "^7.13.2",
     "tailwindcss": "^4.2.1"
   },
   "devDependencies": {
