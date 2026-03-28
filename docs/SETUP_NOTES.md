@@ -41,7 +41,12 @@ Machine-specific and “how we run this repo” facts. Safe to commit; **no secr
 
 ## Stack versions
 
-See **`package.json`** for exact versions (React, Vite, Capacitor, Tailwind).
+See **`package.json`** for exact versions (React, Vite, Capacitor, Tailwind, **drizzle-orm**, **drizzle-kit**).
+
+## Drizzle + `npm audit` (don’t loop)
+
+- **`drizzle-kit`** may still report **moderate** advisories (transitive **esbuild**). That’s a **dev-tooling** finding, not your production Worker.
+- **Do not run `npm audit fix --force`** to chase it — npm can **ping-pong `drizzle-kit` versions** (e.g. 0.18 ↔ 0.31) and never clear the warning. If versions drift, set **`drizzle-kit`** explicitly in **`package.json`** and run **`npm install`** (no `--force`).
 
 ## Not used in this project
 
