@@ -1,0 +1,4324 @@
+﻿-  
+WAYMARK
+Full Stack Setup + Cursor AI Build Guide
+Boomer-proof • ELI5 • Copy/paste-safe terminal commands • Built for your actual stack
+Recommended path in this guide: Node + npm first. Bun is discussed, but not the default.
+What this is: The complete handbook for setting up the Waymark stack and using Cursor to build it in safe phases. Every terminal command is shown clearly. Explanations are written in plain English.
+What this is not: This is not a magic one-click setup. It is a deliberate course. Do one checkpoint at a time and do not skip ahead.
+________________
+
+
+Quick Map
+* 1. What you’re building (ELI5)
+* 2. The exact stack and why each piece exists
+* 3. Install checklist
+* 4. Node vs Bun — what I recommend and why
+* 5. Create the React + Vite + Cloudflare project
+* 6. Git + GitHub setup
+* 7. Add docs and brand assets so Cursor has context
+* 8. Tailwind setup
+* 9. Capacitor + iPhone shell setup
+* 10. Xcode signing + run on your iPhone
+* 11. Wrangler login + Cloudflare Worker basics
+* 12. Create D1 and wire the binding
+* 13. Install Drizzle and generate first migration
+* 14. Install Hono and create the API
+* 15. Connect Hono + Drizzle + D1
+* 16. Folder architecture that matches Waymark
+* 17. Environment variables, placeholders, and secrets
+* 18. Cursor Plan Mode + master prompts
+* 19. Safe feature build order for Waymark
+* 20. Testing, debugging, and common mistakes
+* 21. Deploying and keeping the app alive
+* 22. Troubleshooting and glossary
+________________
+
+
+1) What you’re building (ELI5)
+Waymark is a dark, mobile-first training system for one athlete. It is not a generic fitness app and it is not a spreadsheet clone. You are building an iPhone app that lets you see your AM / PM plan, start sessions, use timers, log training, review history, and later connect running data.
+Think of Waymark as a machine with layers:
+iPhone app shell (Capacitor)
+↓
+Web app screens (React + Vite + Tailwind)
+↓
+API routes (Hono)
+↓
+Cloudflare Worker runtime
+↓
+Database access (Drizzle)
+↓
+Cloudflare D1 database
+
+
+ELI5: The phone app is what you touch. The Worker is the brain in the cloud. The database is the memory. Cursor is your coding assistant, but only if you feed it good docs and good prompts.
+Official docs used in this guide
+• Cloudflare React + Vite guide
+• Cloudflare Vite plugin
+• Wrangler commands
+• D1 best practices for local development
+• D1 Wrangler commands
+• Hono on Cloudflare Workers
+• Drizzle + Cloudflare D1
+• Drizzle Kit generate
+• Tailwind with Vite
+• Capacitor workflow
+• Capacitor iOS
+• Cursor Plan Mode
+2) The exact stack — and why each piece exists
+Layer
+	Tool
+	Why you need it
+	Frontend UI
+	React + Vite
+	React builds the screens; Vite gives you a fast development server and build system.
+	Styling
+	Tailwind CSS
+	Tailwind is the cleanest way to build your dark UI quickly and consistently.
+	Backend API
+	Hono
+	Hono gives you simple API routes built for Workers.
+	Server runtime
+	Cloudflare Workers
+	This runs your backend without managing a traditional server.
+	Database
+	Cloudflare D1
+	D1 stores your workouts, sessions, notes, and history.
+	ORM
+	Drizzle
+	Drizzle lets you talk to D1 using TypeScript instead of writing everything in raw SQL.
+	Native shell
+	Capacitor
+	Capacitor turns your web app into an iPhone app shell.
+	iPhone build tool
+	Xcode
+	Xcode signs, builds, and installs the iPhone app.
+	AI assistant
+	Cursor
+	Cursor reads your repo and helps plan / write code.
+	
+
+Critical path: Build and verify the stack in this order: Node/Git/Cursor/Xcode → project scaffold → Tailwind → Capacitor + iPhone shell → Wrangler login → D1 → Drizzle → Hono → DB query → docs + prompts → Cursor plan → small feature slices.
+3) Install checklist
+Do these before you touch code:
+* Create a Cloudflare account
+* Create a GitHub account
+* Install Node.js LTS
+* Install Git
+* Install Cursor
+* Install Xcode and open it once
+Cloudflare
+Create an account at https://dash.cloudflare.com
+GitHub
+Create an account at https://github.com
+Node.js
+Install Node LTS from https://nodejs.org
+TERMINAL
+node -v
+npm -v
+
+
+ELI5: If both commands print version numbers, Node and npm are installed correctly.
+Git
+Install from https://git-scm.com/downloads
+TERMINAL
+git --version
+
+
+Cursor
+Install from https://cursor.com
+Xcode
+Install Xcode from the Mac App Store. Open it once. Accept the license. Let it install any extra components. Then close it.
+4) Node vs Bun — what I recommend and why
+Recommendation: For your first full setup, use Node + npm. It is the safest, most documented path for Cloudflare Workers + Vite + Wrangler + Capacitor.
+* Cloudflare’s official React + Vite docs and most examples are written around Node/npm.
+* Wrangler workflows are documented and tested most consistently in the Node ecosystem.
+* Bun can be fast, but you do not need more speed right now — you need fewer surprises.
+If you want to read about Bun later: Bun + Vite guide
+Bottom line: start stable, not clever.
+________________
+
+
+5) Create the project the safe way
+Cloudflare’s official React + Vite guide uses the create-cloudflare CLI (often called C3) to scaffold the app.
+First, make a projects folder so you can find your work later.
+TERMINAL
+mkdir -p ~/projects
+cd ~/projects
+
+
+ELI5: This makes a folder called projects in your home folder, then moves you into it.
+Now scaffold the app:
+TERMINAL
+npm create cloudflare@latest waymark -- --framework=react
+
+
+Then move into the project and install dependencies:
+TERMINAL
+cd waymark
+npm install
+
+
+Start the development server:
+TERMINAL
+npm run dev
+
+
+Open the Local URL that appears in Terminal. If the starter app loads in your browser, the base project works.
+What you just proved: React works, Vite works, the Cloudflare scaffold works, and your machine can run the project.
+6) Git + GitHub setup
+Now give yourself a safety net.
+TERMINAL
+git init
+git add .
+git commit -m "Initial Waymark scaffold"
+
+
+Create a private repo on GitHub called waymark, then connect it:
+TERMINAL
+git branch -M main
+git remote add origin <PASTE_YOUR_GITHUB_REPO_URL_HERE>
+git push -u origin main
+
+
+ELI5: Git is your time machine. GitHub is your backup locker on the internet.
+7) Add docs + brand assets so Cursor has context
+Cursor is much better when it can read your project docs and see your brand assets. Without those files, it will guess.
+TERMINAL
+mkdir -p docs/master docs/style-guide docs/prompts
+mkdir -p assets/brand
+
+
+Add these files:
+* docs/master/MASTER_BUILD_DOCUMENT.md
+* docs/style-guide/WAYMARK_STYLE_GUIDE.md
+* docs/SETUP_NOTES.md
+Put your logo and symbol files in assets/brand/. Good file names are:
+* Logo.png
+* Strength.png
+* MuayThai.png
+* Running.png
+* Bagwork.png
+* Mobility.png
+* Wellness.png
+Commit these docs and assets:
+TERMINAL
+git add .
+git commit -m "Add Waymark docs and brand assets"
+git push
+
+
+8) Install Tailwind and verify styling works
+Tailwind’s current recommended Vite setup uses the @tailwindcss/vite plugin.
+TERMINAL
+npm install tailwindcss @tailwindcss/vite
+
+
+Open vite.config.ts and make sure it contains the Tailwind plugin.
+vite.config.ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+})
+
+
+Open your main CSS file (usually src/index.css) and add:
+src/index.css
+@import "tailwindcss";
+
+
+Restart the dev server and test with a simple screen:
+src/App.tsx
+export default function App() {
+  return (
+    <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <h1 className="text-4xl font-bold">Waymark setup is working</h1>
+    </div>
+  )
+}
+
+
+TERMINAL
+npm run dev
+
+
+ELI5: If you see a black full-screen page with big white text, Tailwind is wired up correctly.
+________________
+
+
+9) Add Capacitor and create the iPhone shell
+Capacitor wraps your web app so it can run as an iPhone app.
+TERMINAL
+npm install @capacitor/core @capacitor/cli
+npx cap init
+
+
+When asked, use:
+* App name: Waymark
+* App ID: com.yourname.waymark
+Capacitor’s docs also allow passing these directly in the command; if you want the one-line version:
+TERMINAL
+npx cap init Waymark com.yourname.waymark --web-dir=dist
+
+
+Now install iOS support and add the platform:
+TERMINAL
+npm install @capacitor/ios
+npx cap add ios
+
+
+Build the web app and sync it into the native project:
+TERMINAL
+npm run build
+npx cap sync
+
+
+ELI5: npm run build makes the final web files. npx cap sync copies those files into the iPhone app project.
+Open the iOS project in Xcode:
+TERMINAL
+npx cap open ios
+
+
+10) Xcode signing + run on your iPhone
+Inside Xcode:
+* Click the Waymark project in the left sidebar.
+* Select the app target.
+* Open Signing & Capabilities.
+* Choose your Apple Team.
+* Plug your iPhone into your Mac.
+* Select your iPhone as the run target.
+* Press the Run button (▶).
+ELI5: Signing means Apple needs to know you are allowed to install the app on your own phone.
+First-time trust step on your iPhone if needed:
+* Settings
+* General
+* VPN & Device Management
+* Tap your developer certificate
+* Trust it
+Every time you change the app later, the usual refresh loop is:
+TERMINAL
+npm run build
+npx cap sync
+npx cap open ios
+
+
+Then press Run again in Xcode.
+11) Wrangler login + Cloudflare Worker basics
+Wrangler is Cloudflare’s command-line tool. It creates databases, deploys Workers, and manages parts of your backend.
+TERMINAL
+npm install -g wrangler
+wrangler --version
+wrangler login
+
+
+When wrangler login opens your browser, approve access.
+Open the file wrangler.jsonc. It is the config file for your Worker.
+wrangler.jsonc (starter shape)
+{
+  "name": "waymark",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01"
+}
+
+
+ELI5: This file tells Cloudflare what your backend is called, where it starts, and what runtime compatibility date to use.
+12) Create D1 and wire the binding
+Now create the database.
+TERMINAL
+wrangler d1 create waymark-db
+
+
+Wrangler will print a database_id. Copy it.
+Add the D1 binding to wrangler.jsonc:
+wrangler.jsonc
+{
+  "name": "waymark",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "waymark-db",
+      "database_id": "<PASTE_DATABASE_ID_HERE>"
+    }
+  ]
+}
+
+
+Check that the database exists:
+TERMINAL
+wrangler d1 list
+
+
+ELI5: The binding name DB means your backend code can access the database as env.DB.
+13) Install Drizzle and generate your first migration
+Drizzle helps you manage your database schema in TypeScript.
+TERMINAL
+npm install drizzle-orm
+npm install -D drizzle-kit
+
+
+Create src/db/schema.ts:
+src/db/schema.ts
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(),
+  type: text("type"),
+  createdAt: integer("created_at"),
+});
+
+
+Create drizzle.config.ts:
+drizzle.config.ts
+import { defineConfig } from "drizzle-kit";
+
+
+export default defineConfig({
+  schema: "./src/db/schema.ts",
+  out: "./drizzle",
+  dialect: "sqlite",
+});
+
+
+Generate the migration:
+TERMINAL
+npx drizzle-kit generate
+
+
+Apply the generated SQL to your local D1 database:
+TERMINAL
+wrangler d1 execute waymark-db --local --file=./drizzle/0000_*.sql
+
+
+Then apply it to the remote database when you are ready:
+TERMINAL
+wrangler d1 execute waymark-db --remote --file=./drizzle/0000_*.sql
+
+
+Important: Use --local for local development. Use --remote only when you really want to change the cloud database.
+Verify the table exists:
+TERMINAL
+wrangler d1 execute waymark-db --local --command "SELECT name FROM sqlite_master WHERE type='table';"
+
+
+________________
+
+
+14) Install Hono and create the API
+Hono gives you simple backend routes built for Workers.
+TERMINAL
+npm install hono
+
+
+Create src/server/app.ts:
+src/server/app.ts
+import { Hono } from "hono";
+
+
+const app = new Hono();
+
+
+app.get("/api/health", (c) => {
+  return c.json({ status: "Waymark API running" });
+});
+
+
+export default app;
+
+
+Connect the Worker entry file to Hono:
+src/index.ts
+import app from "./server/app";
+
+
+export default app;
+
+
+Run the dev server:
+TERMINAL
+npm run dev
+
+
+Test the API in your browser:
+BROWSER
+http://localhost:5173/api/health
+
+
+You should see JSON: {"status":"Waymark API running"}
+15) Connect Hono + Drizzle + D1
+Now wire the backend to the database.
+Create src/db/client.ts:
+src/db/client.ts
+import { drizzle } from "drizzle-orm/d1";
+
+
+export function createDB(env: { DB: D1Database }) {
+  return drizzle(env.DB);
+}
+
+
+Update the server file:
+src/server/app.ts
+import { Hono } from "hono";
+import { createDB } from "../db/client";
+import { sessions } from "../db/schema";
+
+
+type Bindings = {
+  DB: D1Database;
+};
+
+
+const app = new Hono<{ Bindings: Bindings }>();
+
+
+app.get("/api/health", (c) => {
+  return c.json({ status: "Waymark API running" });
+});
+
+
+app.get("/api/sessions", async (c) => {
+  const db = createDB(c.env);
+  const rows = await db.select().from(sessions);
+  return c.json(rows);
+});
+
+
+export default app;
+
+
+Insert one test row into the local database:
+TERMINAL
+wrangler d1 execute waymark-db --local --command "INSERT INTO sessions (id, type, created_at) VALUES ('test-session', 'strength', 1700000000);"
+
+
+Test the read route:
+BROWSER
+http://localhost:5173/api/sessions
+
+
+You should see your test row returned as JSON.
+ELI5: At this point the stack is real: browser → API → Worker → database.
+16) Folder architecture that matches Waymark
+Now create a clear structure so Cursor does not turn the repo into spaghetti.
+TERMINAL
+mkdir -p src/app
+mkdir -p src/components/buttons src/components/cards src/components/layout src/components/navigation src/components/timers
+mkdir -p src/features/today src/features/wellness src/features/session src/features/timer src/features/bag-work src/features/running src/features/history src/features/library
+mkdir -p src/lib/timers src/lib/date src/lib/formatting src/lib/validators
+mkdir -p src/types
+
+
+Recommended project shape:
+src
+├── app
+├── components
+│   ├── buttons
+│   ├── cards
+│   ├── layout
+│   ├── navigation
+│   └── timers
+├── features
+│   ├── today
+│   ├── wellness
+│   ├── session
+│   ├── timer
+│   ├── bag-work
+│   ├── running
+│   ├── history
+│   └── library
+├── db
+├── server
+├── lib
+└── types
+
+
+* Today is separate from Wellness.
+* Timer logic is separate from Session logic.
+* Running and Bag Work can grow without cluttering everything else.
+* Cursor can target one feature at a time.
+17) Environment variables, placeholders, and secrets
+You asked for placeholders because you will clearly need real IDs, URLs, secrets, and API keys later. Yes — you absolutely need them.
+TERMINAL
+touch .env.example
+
+
+.env.example
+APP_NAME=Waymark
+APP_BUNDLE_ID=com.yourname.waymark
+
+
+GITHUB_REPO_URL=
+GITHUB_DEFAULT_BRANCH=main
+
+
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_WORKER_NAME=waymark
+CLOUDFLARE_D1_BINDING=DB
+CLOUDFLARE_D1_DATABASE_NAME=waymark-db
+CLOUDFLARE_D1_DATABASE_ID=
+
+
+LOCAL_DEV_URL=http://localhost:5173
+PRODUCTION_API_URL=
+STAGING_API_URL=
+
+
+SENTRY_DSN=
+
+
+STRAVA_CLIENT_ID=
+STRAVA_CLIENT_SECRET=
+STRAVA_REDIRECT_URI=
+
+
+ONEPACE_URL=https://onepace.net
+
+
+APPLE_TEAM_ID=
+APPLE_BUNDLE_ID=
+
+
+Also create a real local env file later if you need Vite variables:
+.env
+VITE_API_URL=http://localhost:5173
+
+
+Rule: Never commit real secrets. Commit .env.example. Keep real private values in local env files and secure dashboards.
+________________
+
+
+18) Cursor Plan Mode + master prompts
+This section is part of the plan. You asked for a section specifically for Cursor prompts. Here it is.
+First, save a master plan prompt in docs/prompts/MASTER_PLAN_PROMPT.md:
+Read these files first and treat them as the source of truth:
+
+
+- docs/master/MASTER_BUILD_DOCUMENT.md
+- docs/style-guide/WAYMARK_STYLE_GUIDE.md
+- docs/SETUP_NOTES.md
+
+
+Also inspect the full repository structure before making recommendations or writing code.
+
+
+Project name:
+Waymark
+
+
+Required stack:
+- React + Vite
+- Tailwind CSS
+- Hono API
+- Cloudflare Workers
+- Cloudflare D1
+- Drizzle ORM
+- Capacitor iOS shell
+- Xcode
+- GitHub
+
+
+Critical implementation requirements:
+- dark-mode-first
+- mobile-first
+- iPhone-first
+- timer-heavy UI
+- offline-aware behavior
+- active session recovery
+- no hardcoded secrets
+- no invented external config values
+
+
+I want you to create a complete bootstrap and implementation plan for the repository.
+
+
+Your plan must include:
+1. Recommended project structure
+2. Routing structure
+3. React component structure
+4. Tailwind organization strategy
+5. Hono API structure
+6. D1 + Drizzle setup structure
+7. Environment/config file strategy
+8. Capacitor integration structure
+9. Placeholder handling for secrets and future integrations
+10. Local development workflow
+11. Build and sync workflow for iOS
+12. MVP implementation phases aligned to the master build document
+13. Key risks or failure points to avoid
+14. What should be scaffolded now vs what should remain placeholder-only
+
+
+Do not write code yet.
+
+
+Output:
+- a phased implementation roadmap
+- recommended file/folder architecture
+- setup checkpoints
+- a list of placeholders/config values that must exist
+- clear notes where human input will be required later
+
+
+How to use it:
+* Open Cursor.
+* Switch to Plan Mode.
+* Paste the prompt.
+* Let Cursor read your repo.
+* Save the result as docs/IMPLEMENTATION_PLAN.md.
+Then use smaller prompts — one feature slice at a time. Example next-step prompt for the app shell:
+Implement only Phase 1:
+- app shell
+- routing skeleton
+- Today screen placeholder
+- shared layout structure
+- symbol-aware card components
+- no fake data beyond minimal hardcoded examples
+
+
+Requirements:
+- Tailwind only
+- reusable React components
+- no over-ornamentation
+- dark-mode-first
+- keep Hono route structure intact
+- do not touch database schema unless necessary
+
+
+Prompt for placeholders and config:
+Create a clean placeholder/config setup for all environment variables, bindings, IDs, URLs, and secrets needed by the project.
+
+
+Rules:
+- do not invent real secrets
+- use clear placeholder text
+- create .env.example
+- add comments explaining what each value is for
+- keep the app bootable where possible even if some integrations are still placeholders
+
+
+Golden rule: One big plan prompt first. Small implementation prompts after. Never ask Cursor to build the whole app in one shot.
+19) Safe feature build order for Waymark
+Build the app in this order:
+* Phase 1 — App shell and routing
+* Phase 2 — Today screen
+* Phase 3 — Wellness flow
+* Phase 4 — Workout session engine
+* Phase 5 — Timer engine
+* Phase 6 — Bag work / combo engine
+* Phase 7 — Running system
+* Phase 8 — History and review
+* Phase 9 — Offline handling
+* Phase 10 — Active session recovery
+ELI5: If you try to build everything at once, Cursor will make a mess. If you build in slices, you can test and fix each piece safely.
+20) Testing, debugging, and common mistakes
+Every feature should be tested in three places:
+* Local browser (npm run dev)
+* Local iPhone build (npm run build → npx cap sync → Xcode Run)
+* Production backend when relevant (wrangler deploy → test API URL)
+Most common mistakes:
+* Forgetting to rebuild and sync before testing on phone.
+* Forgetting to apply database migrations locally.
+* Letting Cursor edit multiple systems at once.
+* Using real secrets in committed files.
+* Testing only in the browser and never on device.
+Basic recovery commands:
+TERMINAL
+git status
+git add .
+git commit -m "Checkpoint"
+git push
+
+
+If Cursor breaks the project and you have not committed the broken work:
+TERMINAL
+git reset --hard HEAD
+
+
+Warning: git reset --hard HEAD deletes uncommitted changes. Only use it if you understand that.
+Useful sanity tests:
+TERMINAL
+npm run dev
+npm run build
+wrangler d1 list
+wrangler d1 execute waymark-db --local --command "SELECT name FROM sqlite_master WHERE type='table';"
+
+
+21) Deploying and keeping the app alive
+Deploy the backend Worker:
+TERMINAL
+wrangler deploy
+
+
+After deploy, Cloudflare will print a workers.dev URL. Test:
+BROWSER
+https://<YOUR_WORKER_SUBDOMAIN>.workers.dev/api/health
+
+
+For the iPhone app, your normal update loop is:
+TERMINAL
+npm run build
+npx cap sync
+npx cap open ios
+
+
+Then press Run in Xcode.
+If you are using the free Apple developer setup, app installs typically expire every 7 days. Rebuild and run again when needed.
+Why your data survives: Your workout data lives in D1, not inside the app install. Reinstalling the app does not wipe the cloud database.
+22) Troubleshooting and glossary
+Quick troubleshooting
+`npm run dev` fails — Read the exact error. Often it is a missing package or a syntax error in a file you just edited.
+Phone app did not update — Run npm run build, then npx cap sync, then Run again in Xcode.
+D1 query fails — Check wrangler.jsonc binding, confirm database exists with wrangler d1 list, and verify you applied migrations.
+API route returns 404 — Check the route path in Hono and the browser URL exactly.
+Cursor keeps freelancing — Use smaller prompts and explicitly say do not modify unrelated files.
+Glossary (ELI5)
+Node.js: The engine that runs your JavaScript development tools.
+npm: The package manager that installs libraries and tools.
+Vite: The fast dev server and build tool for your frontend.
+React: The library used to build your app screens.
+Tailwind CSS: A utility-first styling system for building the UI.
+Worker: Your backend code running on Cloudflare.
+Wrangler: The CLI tool used to manage Workers and D1.
+D1: Cloudflare’s SQLite database product.
+Drizzle: The ORM that helps your code talk to D1 safely.
+Migration: A script that changes your database structure.
+Hono: A small API framework built for Workers.
+Capacitor: The tool that wraps your web app into an iPhone app shell.
+Xcode: Apple’s tool for building and installing the iPhone app.
+Plan Mode: Cursor’s planning mode that creates a roadmap before writing code.
+Final checklists
+✅ Checkpoint
+☐ React + Vite app runs locally
+☐ Tailwind styles work
+☐ Capacitor iPhone shell launches on device
+☐ Wrangler login completed
+☐ D1 database exists and is bound in wrangler.jsonc
+☐ Drizzle migration generated and applied locally
+☐ Hono API returns /api/health
+☐ Hono + Drizzle returns /api/sessions
+☐ Docs + assets are in the repo
+☐ Cursor Plan Mode prompt saved
+If every box above is true, you have a working beginner-safe Waymark full stack setup.
+23) Waymark Database Architecture
+The database is the long‑term memory of Waymark. It stores workouts, sessions, wellness logs,
+running history, and notes so the app remembers your training over time.
+
+
+ELI5:
+The UI is what you see.
+The Worker is the brain.
+The database is the memory.
+
+
+Recommended core tables:
+workout_templates
+workout_blocks
+sessions
+session_results
+wellness_logs
+bag_combos
+combo_rounds
+runs
+training_notes
+weekly_history
+
+
+Every schema change should be created with Drizzle migrations.
+Never edit the database manually in production.
+24) Timer Engine Architecture
+Timers are a critical system in Waymark because training sessions depend on them.
+
+
+Supported timer types:
+Rest timer – strength sets
+Round timer – bag work
+Interval timer – sprints
+Countdown timer – mobility
+Stopwatch – open sessions
+
+
+Timers must continue functioning when the phone locks.
+Capacitor local notifications should be used to trigger completion alerts.
+25) Workout and Session Engine
+The session engine controls how workouts are executed.
+
+
+A workout contains blocks.
+A block contains exercises or rounds.
+A session records the actual results.
+
+
+Example flow:
+
+
+Today Screen → Start Session → Execute Exercises → Log Results → Save Session
+
+
+Sessions should record:
+planned sets
+planned reps
+actual sets
+actual reps
+actual weight
+notes
+timestamp
+26) Offline Mode Strategy
+Waymark must remain usable without network access.
+
+
+Offline capabilities:
+start sessions
+run timers
+log sets
+record wellness
+write notes
+
+
+Data should be cached locally and synced when connectivity returns.
+27) Active Session Recovery
+If the app crashes or is closed mid‑workout, Waymark should restore the session state.
+
+
+Persist the following:
+active workout
+exercise index
+round number
+timer context
+timer start time
+
+
+When reopening the app, display:
+
+
+Resume Session
+28) Strava Integration
+Outdoor runs should optionally connect to Strava.
+
+
+Integration flow:
+User connects account via OAuth.
+User completes run in Strava.
+Waymark fetches the latest activity.
+Activity is stored in the runs table.
+
+
+Minimum stored fields:
+distance
+time
+pace
+elevation
+start time
+29) Indoor Run Integration
+Indoor runs can launch entertainment such as One Pace.
+
+
+Store:
+series name
+arc name
+progress note
+last used date
+
+
+Purpose: make treadmill cardio easier to maintain.
+30) Observability and Error Monitoring
+Use Sentry for error tracking.
+
+
+Install Sentry in both frontend and backend.
+
+
+Capture:
+API errors
+client exceptions
+performance traces
+
+
+This allows you to diagnose issues in production.
+31) Production Environment Configuration
+Production environments require environment variables.
+
+
+Never commit secrets.
+
+
+Use:
+.env.example for template values.
+Cloudflare dashboard for real values.
+32) Cloudflare Worker Routing
+All API routes should live under /api.
+
+
+Examples:
+
+
+/api/health
+/api/sessions
+/api/wellness
+/api/runs
+
+
+Hono should handle routing logic.
+33) iOS Background Timer Behavior
+Timers must not break when the app is backgrounded.
+
+
+Strategy:
+
+
+schedule local notification
+store timer start timestamp
+recalculate remaining time when app resumes
+34) Database Migration Strategy
+Every schema change should use Drizzle migrations.
+
+
+Steps:
+
+
+generate migration
+review SQL
+apply locally
+apply remotely
+
+
+Never alter tables directly in production.
+35) Cursor Prompt Library
+Cursor should always be used with focused prompts.
+
+
+Example prompts:
+
+
+Create routing skeleton.
+Implement Today screen layout.
+Implement wellness logging.
+
+
+Avoid asking Cursor to build the entire app at once.
+36) Testing Strategy
+Test every feature in three places:
+
+
+local browser
+local iPhone build
+production backend
+37) UI Component Architecture
+Reusable UI components keep the project maintainable.
+
+
+Examples:
+
+
+Card
+TimerDisplay
+WorkoutList
+SessionSummary
+
+
+Components should live in src/components.
+38) Performance Optimization
+Avoid unnecessary re‑renders in React.
+
+
+Use:
+
+
+memo
+useCallback
+useMemo
+39) Security and Secret Management
+Never store secrets in the repo.
+
+
+Use:
+
+
+Cloudflare environment variables
+.local environment files
+40) Long Term Maintenance Rules
+Always commit before major changes.
+
+
+Use Git checkpoints.
+Keep schema migrations organized.
+Document new features in docs/.
+41) Full Database Schema Example
+Below is a more complete schema example for Waymark. This demonstrates how sessions,
+wellness logs, and runs could be structured.
+
+
+src/db/schema.ts
+
+
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(),
+  type: text("type"),
+  createdAt: integer("created_at"),
+  notes: text("notes")
+});
+
+
+export const runs = sqliteTable("runs", {
+  id: text("id").primaryKey(),
+  distance: integer("distance"),
+  duration: integer("duration"),
+  createdAt: integer("created_at")
+});
+
+
+ELI5:
+A schema is the blueprint of your database tables.
+It tells the database what columns exist and what type of data goes in them.
+42) Timer System Implementation Notes
+The timer system should store timestamps instead of relying only on countdown logic.
+
+
+Example logic:
+
+
+start_time = Date.now()
+remaining = duration - (Date.now() - start_time)
+
+
+ELI5:
+If the phone locks, the timer still works because we calculate the time difference
+instead of counting down continuously.
+43) Example Today Screen Component
+Example minimal React screen for the Today page.
+
+
+src/features/today/TodayScreen.tsx
+
+
+export default function TodayScreen() {
+  return (
+    <div className="p-4 text-white">
+      <h1 className="text-3xl font-bold">Today</h1>
+      <p>AM – Strength</p>
+      <p>PM – Muay Thai</p>
+    </div>
+  );
+}
+
+
+This screen will later connect to real workout data.
+44) Recommended Git Workflow
+Use Git checkpoints frequently.
+
+
+Typical workflow:
+
+
+git add .
+git commit -m "Checkpoint"
+git push
+
+
+ELI5:
+If something breaks later, you can return to a working state.
+45) Production Deployment Checklist
+Before deploying your app publicly verify:
+
+
+React build works
+Worker deploys successfully
+Database migrations applied
+API routes return JSON
+iPhone app installs correctly
+46) Performance Monitoring
+Use Sentry or similar tools to monitor errors.
+
+
+Install example:
+
+
+npm install @sentry/react
+47) Security Best Practices
+Never store secrets directly in code.
+
+
+Use:
+
+
+Cloudflare dashboard environment variables
+local .env files
+48) Long Term Project Organization
+As the project grows keep documentation updated.
+
+
+Recommended documentation folders:
+
+
+docs/architecture
+docs/prompts
+docs/setup
+docs/api
+49) Backup Strategy
+Keep backups of your database and repository.
+
+
+Use GitHub for code backups.
+Use Cloudflare exports for database backups.
+50) Final Waymark Engineering Checklist
+Before serious development begins confirm:
+
+
+React dev server runs
+Tailwind styling works
+Capacitor iPhone shell runs
+Cloudflare Worker deploys
+D1 database connected
+Drizzle migrations working
+Hono API returning JSON
+Cursor plan prompt created
+
+
+If all these are true the Waymark engineering environment is ready.
+76) Cursor Prompt Pack (Core)
+Below are safe prompts to use with Cursor.
+
+
+Example prompt:
+
+
+Implement the Today screen using React and Tailwind.
+
+
+Requirements:
+- mobile first
+- dark UI
+- reusable card components
+- no external icon libraries
+77) Cursor Prompt – Timer Engine
+Prompt example:
+
+
+Implement a reusable timer engine supporting:
+
+
+rest timers
+round timers
+interval timers
+countdown timers
+stopwatch
+
+
+Timers must support pause, resume, and recovery after app backgrounding.
+78) Cursor Prompt – Session Engine
+Prompt example:
+
+
+Implement the workout session engine.
+
+
+Requirements:
+
+
+exercise list
+set logging
+weight tracking
+round tracking
+session summary
+79) UI Screen Architecture
+Core screens for Waymark:
+
+
+Today
+Wellness
+Workout Session
+Timer Overlay
+Bag Combo Session
+History
+Library
+Settings
+
+
+All screens should remain mobile‑first.
+80) Symbol System Implementation
+Waymark uses a custom icon set.
+
+
+Icons include:
+
+
+Strength
+MuayThai
+Running
+Bagwork
+Mobility
+Wellness
+
+
+Icons should be stored inside:
+
+
+assets/brand/icons
+81) Offline Sync Engine
+Offline data queue design:
+
+
+store session locally
+mark as pending
+sync when connection returns
+82) Data Validation
+Use Zod for request validation.
+
+
+Example:
+
+
+import { z } from "zod"
+83) Production Environment Setup
+Production environment variables should be stored inside Cloudflare Workers.
+
+
+Example:
+
+
+CLOUDFLARE_ACCOUNT_ID
+DATABASE_ID
+SENTRY_DSN
+84) Security Checklist
+Security rules:
+
+
+never commit secrets
+validate inputs
+sanitize outputs
+85) Long Term Maintenance
+Keep documentation updated.
+
+
+Update docs whenever:
+
+
+database schema changes
+new features added
+API routes modified
+86) Performance Monitoring
+Track performance metrics:
+
+
+API latency
+timer accuracy
+session logging speed
+87) Testing Checklist
+Test:
+
+
+timers
+session logging
+offline mode
+database writes
+88) Worker Deployment Flow
+Deployment steps:
+
+
+wrangler deploy
+
+
+Verify API endpoints afterwards.
+89) iOS Build Refresh Loop
+Standard rebuild loop:
+
+
+npm run build
+npx cap sync
+open Xcode
+press Run
+90) Complete Engineering Checklist
+Before full development begins confirm:
+
+
+React dev server works
+Tailwind styling works
+Capacitor iOS shell launches
+Cloudflare Worker deploys
+D1 database connected
+Drizzle migrations working
+Hono API responding
+Cursor plan prompt created
+
+
+If all pass the Waymark engineering environment is ready.
+  
+
+WAYMARK
+Full Stack Setup + Cursor AI Build Guide
+Boomer-proof • ELI5 • Copy/paste-safe terminal commands • Built for your actual stack
+Recommended path in this guide: Node + npm first. Bun is discussed, but not the default.
+What this is: The complete handbook for setting up the Waymark stack and using Cursor to build it in safe phases. Every terminal command is shown clearly. Explanations are written in plain English.
+What this is not: This is not a magic one-click setup. It is a deliberate course. Do one checkpoint at a time and do not skip ahead.
+________________
+
+
+Quick Map
+* 1. What you’re building (ELI5)
+* 2. The exact stack and why each piece exists
+* 3. Install checklist
+* 4. Node vs Bun — what I recommend and why
+* 5. Create the React + Vite + Cloudflare project
+* 6. Git + GitHub setup
+* 7. Add docs and brand assets so Cursor has context
+* 8. Tailwind setup
+* 9. Capacitor + iPhone shell setup
+* 10. Xcode signing + run on your iPhone
+* 11. Wrangler login + Cloudflare Worker basics
+* 12. Create D1 and wire the binding
+* 13. Install Drizzle and generate first migration
+* 14. Install Hono and create the API
+* 15. Connect Hono + Drizzle + D1
+* 16. Folder architecture that matches Waymark
+* 17. Environment variables, placeholders, and secrets
+* 18. Cursor Plan Mode + master prompts
+* 19. Safe feature build order for Waymark
+* 20. Testing, debugging, and common mistakes
+* 21. Deploying and keeping the app alive
+* 22. Troubleshooting and glossary
+________________
+
+
+1) What you’re building (ELI5)
+Waymark is a dark, mobile-first training system for one athlete. It is not a generic fitness app and it is not a spreadsheet clone. You are building an iPhone app that lets you see your AM / PM plan, start sessions, use timers, log training, review history, and later connect running data.
+Think of Waymark as a machine with layers:
+iPhone app shell (Capacitor)
+↓
+Web app screens (React + Vite + Tailwind)
+↓
+API routes (Hono)
+↓
+Cloudflare Worker runtime
+↓
+Database access (Drizzle)
+↓
+Cloudflare D1 database
+
+
+ELI5: The phone app is what you touch. The Worker is the brain in the cloud. The database is the memory. Cursor is your coding assistant, but only if you feed it good docs and good prompts.
+Official docs used in this guide
+• Cloudflare React + Vite guide
+• Cloudflare Vite plugin
+• Wrangler commands
+• D1 best practices for local development
+• D1 Wrangler commands
+• Hono on Cloudflare Workers
+• Drizzle + Cloudflare D1
+• Drizzle Kit generate
+• Tailwind with Vite
+• Capacitor workflow
+• Capacitor iOS
+• Cursor Plan Mode
+2) The exact stack — and why each piece exists
+Layer
+	Tool
+	Why you need it
+	Frontend UI
+	React + Vite
+	React builds the screens; Vite gives you a fast development server and build system.
+	Styling
+	Tailwind CSS
+	Tailwind is the cleanest way to build your dark UI quickly and consistently.
+	Backend API
+	Hono
+	Hono gives you simple API routes built for Workers.
+	Server runtime
+	Cloudflare Workers
+	This runs your backend without managing a traditional server.
+	Database
+	Cloudflare D1
+	D1 stores your workouts, sessions, notes, and history.
+	ORM
+	Drizzle
+	Drizzle lets you talk to D1 using TypeScript instead of writing everything in raw SQL.
+	Native shell
+	Capacitor
+	Capacitor turns your web app into an iPhone app shell.
+	iPhone build tool
+	Xcode
+	Xcode signs, builds, and installs the iPhone app.
+	AI assistant
+	Cursor
+	Cursor reads your repo and helps plan / write code.
+	
+
+Critical path: Build and verify the stack in this order: Node/Git/Cursor/Xcode → project scaffold → Tailwind → Capacitor + iPhone shell → Wrangler login → D1 → Drizzle → Hono → DB query → docs + prompts → Cursor plan → small feature slices.
+3) Install checklist
+Do these before you touch code:
+* Create a Cloudflare account
+* Create a GitHub account
+* Install Node.js LTS
+* Install Git
+* Install Cursor
+* Install Xcode and open it once
+Cloudflare
+Create an account at https://dash.cloudflare.com
+GitHub
+Create an account at https://github.com
+Node.js
+Install Node LTS from https://nodejs.org
+TERMINAL
+node -v
+npm -v
+
+
+ELI5: If both commands print version numbers, Node and npm are installed correctly.
+Git
+Install from https://git-scm.com/downloads
+TERMINAL
+git --version
+
+
+Cursor
+Install from https://cursor.com
+Xcode
+Install Xcode from the Mac App Store. Open it once. Accept the license. Let it install any extra components. Then close it.
+4) Node vs Bun — what I recommend and why
+Recommendation: For your first full setup, use Node + npm. It is the safest, most documented path for Cloudflare Workers + Vite + Wrangler + Capacitor.
+* Cloudflare’s official React + Vite docs and most examples are written around Node/npm.
+* Wrangler workflows are documented and tested most consistently in the Node ecosystem.
+* Bun can be fast, but you do not need more speed right now — you need fewer surprises.
+If you want to read about Bun later: Bun + Vite guide
+Bottom line: start stable, not clever.
+________________
+
+
+5) Create the project the safe way
+Cloudflare’s official React + Vite guide uses the create-cloudflare CLI (often called C3) to scaffold the app.
+First, make a projects folder so you can find your work later.
+TERMINAL
+mkdir -p ~/projects
+cd ~/projects
+
+
+ELI5: This makes a folder called projects in your home folder, then moves you into it.
+Now scaffold the app:
+TERMINAL
+npm create cloudflare@latest waymark -- --framework=react
+
+
+Then move into the project and install dependencies:
+TERMINAL
+cd waymark
+npm install
+
+
+Start the development server:
+TERMINAL
+npm run dev
+
+
+Open the Local URL that appears in Terminal. If the starter app loads in your browser, the base project works.
+What you just proved: React works, Vite works, the Cloudflare scaffold works, and your machine can run the project.
+6) Git + GitHub setup
+Now give yourself a safety net.
+TERMINAL
+git init
+git add .
+git commit -m "Initial Waymark scaffold"
+
+
+Create a private repo on GitHub called waymark, then connect it:
+TERMINAL
+git branch -M main
+git remote add origin <PASTE_YOUR_GITHUB_REPO_URL_HERE>
+git push -u origin main
+
+
+ELI5: Git is your time machine. GitHub is your backup locker on the internet.
+7) Add docs + brand assets so Cursor has context
+Cursor is much better when it can read your project docs and see your brand assets. Without those files, it will guess.
+TERMINAL
+mkdir -p docs/master docs/style-guide docs/prompts
+mkdir -p assets/brand
+
+
+Add these files:
+* docs/master/MASTER_BUILD_DOCUMENT.md
+* docs/style-guide/WAYMARK_STYLE_GUIDE.md
+* docs/SETUP_NOTES.md
+Put your logo and symbol files in assets/brand/. Good file names are:
+* Logo.png
+* Strength.png
+* MuayThai.png
+* Running.png
+* Bagwork.png
+* Mobility.png
+* Wellness.png
+Commit these docs and assets:
+TERMINAL
+git add .
+git commit -m "Add Waymark docs and brand assets"
+git push
+
+
+8) Install Tailwind and verify styling works
+Tailwind’s current recommended Vite setup uses the @tailwindcss/vite plugin.
+TERMINAL
+npm install tailwindcss @tailwindcss/vite
+
+
+Open vite.config.ts and make sure it contains the Tailwind plugin.
+vite.config.ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+})
+
+
+Open your main CSS file (usually src/index.css) and add:
+src/index.css
+@import "tailwindcss";
+
+
+Restart the dev server and test with a simple screen:
+src/App.tsx
+export default function App() {
+  return (
+    <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <h1 className="text-4xl font-bold">Waymark setup is working</h1>
+    </div>
+  )
+}
+
+
+TERMINAL
+npm run dev
+
+
+ELI5: If you see a black full-screen page with big white text, Tailwind is wired up correctly.
+________________
+
+
+9) Add Capacitor and create the iPhone shell
+Capacitor wraps your web app so it can run as an iPhone app.
+TERMINAL
+npm install @capacitor/core @capacitor/cli
+npx cap init
+
+
+When asked, use:
+* App name: Waymark
+* App ID: com.yourname.waymark
+Capacitor’s docs also allow passing these directly in the command; if you want the one-line version:
+TERMINAL
+npx cap init Waymark com.yourname.waymark --web-dir=dist
+
+
+Now install iOS support and add the platform:
+TERMINAL
+npm install @capacitor/ios
+npx cap add ios
+
+
+Build the web app and sync it into the native project:
+TERMINAL
+npm run build
+npx cap sync
+
+
+ELI5: npm run build makes the final web files. npx cap sync copies those files into the iPhone app project.
+Open the iOS project in Xcode:
+TERMINAL
+npx cap open ios
+
+
+10) Xcode signing + run on your iPhone
+Inside Xcode:
+* Click the Waymark project in the left sidebar.
+* Select the app target.
+* Open Signing & Capabilities.
+* Choose your Apple Team.
+* Plug your iPhone into your Mac.
+* Select your iPhone as the run target.
+* Press the Run button (▶).
+ELI5: Signing means Apple needs to know you are allowed to install the app on your own phone.
+First-time trust step on your iPhone if needed:
+* Settings
+* General
+* VPN & Device Management
+* Tap your developer certificate
+* Trust it
+Every time you change the app later, the usual refresh loop is:
+TERMINAL
+npm run build
+npx cap sync
+npx cap open ios
+
+
+Then press Run again in Xcode.
+11) Wrangler login + Cloudflare Worker basics
+Wrangler is Cloudflare’s command-line tool. It creates databases, deploys Workers, and manages parts of your backend.
+TERMINAL
+npm install -g wrangler
+wrangler --version
+wrangler login
+
+
+When wrangler login opens your browser, approve access.
+Open the file wrangler.jsonc. It is the config file for your Worker.
+wrangler.jsonc (starter shape)
+{
+  "name": "waymark",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01"
+}
+
+
+ELI5: This file tells Cloudflare what your backend is called, where it starts, and what runtime compatibility date to use.
+12) Create D1 and wire the binding
+Now create the database.
+TERMINAL
+wrangler d1 create waymark-db
+
+
+Wrangler will print a database_id. Copy it.
+Add the D1 binding to wrangler.jsonc:
+wrangler.jsonc
+{
+  "name": "waymark",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "waymark-db",
+      "database_id": "<PASTE_DATABASE_ID_HERE>"
+    }
+  ]
+}
+
+
+Check that the database exists:
+TERMINAL
+wrangler d1 list
+
+
+ELI5: The binding name DB means your backend code can access the database as env.DB.
+13) Install Drizzle and generate your first migration
+Drizzle helps you manage your database schema in TypeScript.
+TERMINAL
+npm install drizzle-orm
+npm install -D drizzle-kit
+
+
+Create src/db/schema.ts:
+src/db/schema.ts
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(),
+  type: text("type"),
+  createdAt: integer("created_at"),
+});
+
+
+Create drizzle.config.ts:
+drizzle.config.ts
+import { defineConfig } from "drizzle-kit";
+
+
+export default defineConfig({
+  schema: "./src/db/schema.ts",
+  out: "./drizzle",
+  dialect: "sqlite",
+});
+
+
+Generate the migration:
+TERMINAL
+npx drizzle-kit generate
+
+
+Apply the generated SQL to your local D1 database:
+TERMINAL
+wrangler d1 execute waymark-db --local --file=./drizzle/0000_*.sql
+
+
+Then apply it to the remote database when you are ready:
+TERMINAL
+wrangler d1 execute waymark-db --remote --file=./drizzle/0000_*.sql
+
+
+Important: Use --local for local development. Use --remote only when you really want to change the cloud database.
+Verify the table exists:
+TERMINAL
+wrangler d1 execute waymark-db --local --command "SELECT name FROM sqlite_master WHERE type='table';"
+
+
+________________
+
+
+14) Install Hono and create the API
+Hono gives you simple backend routes built for Workers.
+TERMINAL
+npm install hono
+
+
+Create src/server/app.ts:
+src/server/app.ts
+import { Hono } from "hono";
+
+
+const app = new Hono();
+
+
+app.get("/api/health", (c) => {
+  return c.json({ status: "Waymark API running" });
+});
+
+
+export default app;
+
+
+Connect the Worker entry file to Hono:
+src/index.ts
+import app from "./server/app";
+
+
+export default app;
+
+
+Run the dev server:
+TERMINAL
+npm run dev
+
+
+Test the API in your browser:
+BROWSER
+http://localhost:5173/api/health
+
+
+You should see JSON: {"status":"Waymark API running"}
+15) Connect Hono + Drizzle + D1
+Now wire the backend to the database.
+Create src/db/client.ts:
+src/db/client.ts
+import { drizzle } from "drizzle-orm/d1";
+
+
+export function createDB(env: { DB: D1Database }) {
+  return drizzle(env.DB);
+}
+
+
+Update the server file:
+src/server/app.ts
+import { Hono } from "hono";
+import { createDB } from "../db/client";
+import { sessions } from "../db/schema";
+
+
+type Bindings = {
+  DB: D1Database;
+};
+
+
+const app = new Hono<{ Bindings: Bindings }>();
+
+
+app.get("/api/health", (c) => {
+  return c.json({ status: "Waymark API running" });
+});
+
+
+app.get("/api/sessions", async (c) => {
+  const db = createDB(c.env);
+  const rows = await db.select().from(sessions);
+  return c.json(rows);
+});
+
+
+export default app;
+
+
+Insert one test row into the local database:
+TERMINAL
+wrangler d1 execute waymark-db --local --command "INSERT INTO sessions (id, type, created_at) VALUES ('test-session', 'strength', 1700000000);"
+
+
+Test the read route:
+BROWSER
+http://localhost:5173/api/sessions
+
+
+You should see your test row returned as JSON.
+ELI5: At this point the stack is real: browser → API → Worker → database.
+16) Folder architecture that matches Waymark
+Now create a clear structure so Cursor does not turn the repo into spaghetti.
+TERMINAL
+mkdir -p src/app
+mkdir -p src/components/buttons src/components/cards src/components/layout src/components/navigation src/components/timers
+mkdir -p src/features/today src/features/wellness src/features/session src/features/timer src/features/bag-work src/features/running src/features/history src/features/library
+mkdir -p src/lib/timers src/lib/date src/lib/formatting src/lib/validators
+mkdir -p src/types
+
+
+Recommended project shape:
+src
+├── app
+├── components
+│   ├── buttons
+│   ├── cards
+│   ├── layout
+│   ├── navigation
+│   └── timers
+├── features
+│   ├── today
+│   ├── wellness
+│   ├── session
+│   ├── timer
+│   ├── bag-work
+│   ├── running
+│   ├── history
+│   └── library
+├── db
+├── server
+├── lib
+└── types
+
+
+* Today is separate from Wellness.
+* Timer logic is separate from Session logic.
+* Running and Bag Work can grow without cluttering everything else.
+* Cursor can target one feature at a time.
+17) Environment variables, placeholders, and secrets
+You asked for placeholders because you will clearly need real IDs, URLs, secrets, and API keys later. Yes — you absolutely need them.
+TERMINAL
+touch .env.example
+
+
+.env.example
+APP_NAME=Waymark
+APP_BUNDLE_ID=com.yourname.waymark
+
+
+GITHUB_REPO_URL=
+GITHUB_DEFAULT_BRANCH=main
+
+
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_WORKER_NAME=waymark
+CLOUDFLARE_D1_BINDING=DB
+CLOUDFLARE_D1_DATABASE_NAME=waymark-db
+CLOUDFLARE_D1_DATABASE_ID=
+
+
+LOCAL_DEV_URL=http://localhost:5173
+PRODUCTION_API_URL=
+STAGING_API_URL=
+
+
+SENTRY_DSN=
+
+
+STRAVA_CLIENT_ID=
+STRAVA_CLIENT_SECRET=
+STRAVA_REDIRECT_URI=
+
+
+ONEPACE_URL=https://onepace.net
+
+
+APPLE_TEAM_ID=
+APPLE_BUNDLE_ID=
+
+
+Also create a real local env file later if you need Vite variables:
+.env
+VITE_API_URL=http://localhost:5173
+
+
+Rule: Never commit real secrets. Commit .env.example. Keep real private values in local env files and secure dashboards.
+________________
+
+
+18) Cursor Plan Mode + master prompts
+This section is part of the plan. You asked for a section specifically for Cursor prompts. Here it is.
+First, save a master plan prompt in docs/prompts/MASTER_PLAN_PROMPT.md:
+Read these files first and treat them as the source of truth:
+
+
+- docs/master/MASTER_BUILD_DOCUMENT.md
+- docs/style-guide/WAYMARK_STYLE_GUIDE.md
+- docs/SETUP_NOTES.md
+
+
+Also inspect the full repository structure before making recommendations or writing code.
+
+
+Project name:
+Waymark
+
+
+Required stack:
+- React + Vite
+- Tailwind CSS
+- Hono API
+- Cloudflare Workers
+- Cloudflare D1
+- Drizzle ORM
+- Capacitor iOS shell
+- Xcode
+- GitHub
+
+
+Critical implementation requirements:
+- dark-mode-first
+- mobile-first
+- iPhone-first
+- timer-heavy UI
+- offline-aware behavior
+- active session recovery
+- no hardcoded secrets
+- no invented external config values
+
+
+I want you to create a complete bootstrap and implementation plan for the repository.
+
+
+Your plan must include:
+1. Recommended project structure
+2. Routing structure
+3. React component structure
+4. Tailwind organization strategy
+5. Hono API structure
+6. D1 + Drizzle setup structure
+7. Environment/config file strategy
+8. Capacitor integration structure
+9. Placeholder handling for secrets and future integrations
+10. Local development workflow
+11. Build and sync workflow for iOS
+12. MVP implementation phases aligned to the master build document
+13. Key risks or failure points to avoid
+14. What should be scaffolded now vs what should remain placeholder-only
+
+
+Do not write code yet.
+
+
+Output:
+- a phased implementation roadmap
+- recommended file/folder architecture
+- setup checkpoints
+- a list of placeholders/config values that must exist
+- clear notes where human input will be required later
+
+
+How to use it:
+* Open Cursor.
+* Switch to Plan Mode.
+* Paste the prompt.
+* Let Cursor read your repo.
+* Save the result as docs/IMPLEMENTATION_PLAN.md.
+Then use smaller prompts — one feature slice at a time. Example next-step prompt for the app shell:
+Implement only Phase 1:
+- app shell
+- routing skeleton
+- Today screen placeholder
+- shared layout structure
+- symbol-aware card components
+- no fake data beyond minimal hardcoded examples
+
+
+Requirements:
+- Tailwind only
+- reusable React components
+- no over-ornamentation
+- dark-mode-first
+- keep Hono route structure intact
+- do not touch database schema unless necessary
+
+
+Prompt for placeholders and config:
+Create a clean placeholder/config setup for all environment variables, bindings, IDs, URLs, and secrets needed by the project.
+
+
+Rules:
+- do not invent real secrets
+- use clear placeholder text
+- create .env.example
+- add comments explaining what each value is for
+- keep the app bootable where possible even if some integrations are still placeholders
+
+
+Golden rule: One big plan prompt first. Small implementation prompts after. Never ask Cursor to build the whole app in one shot.
+19) Safe feature build order for Waymark
+Build the app in this order:
+* Phase 1 — App shell and routing
+* Phase 2 — Today screen
+* Phase 3 — Wellness flow
+* Phase 4 — Workout session engine
+* Phase 5 — Timer engine
+* Phase 6 — Bag work / combo engine
+* Phase 7 — Running system
+* Phase 8 — History and review
+* Phase 9 — Offline handling
+* Phase 10 — Active session recovery
+ELI5: If you try to build everything at once, Cursor will make a mess. If you build in slices, you can test and fix each piece safely.
+20) Testing, debugging, and common mistakes
+Every feature should be tested in three places:
+* Local browser (npm run dev)
+* Local iPhone build (npm run build → npx cap sync → Xcode Run)
+* Production backend when relevant (wrangler deploy → test API URL)
+Most common mistakes:
+* Forgetting to rebuild and sync before testing on phone.
+* Forgetting to apply database migrations locally.
+* Letting Cursor edit multiple systems at once.
+* Using real secrets in committed files.
+* Testing only in the browser and never on device.
+Basic recovery commands:
+TERMINAL
+git status
+git add .
+git commit -m "Checkpoint"
+git push
+
+
+If Cursor breaks the project and you have not committed the broken work:
+TERMINAL
+git reset --hard HEAD
+
+
+Warning: git reset --hard HEAD deletes uncommitted changes. Only use it if you understand that.
+Useful sanity tests:
+TERMINAL
+npm run dev
+npm run build
+wrangler d1 list
+wrangler d1 execute waymark-db --local --command "SELECT name FROM sqlite_master WHERE type='table';"
+
+
+21) Deploying and keeping the app alive
+Deploy the backend Worker:
+TERMINAL
+wrangler deploy
+
+
+After deploy, Cloudflare will print a workers.dev URL. Test:
+BROWSER
+https://<YOUR_WORKER_SUBDOMAIN>.workers.dev/api/health
+
+
+For the iPhone app, your normal update loop is:
+TERMINAL
+npm run build
+npx cap sync
+npx cap open ios
+
+
+Then press Run in Xcode.
+If you are using the free Apple developer setup, app installs typically expire every 7 days. Rebuild and run again when needed.
+Why your data survives: Your workout data lives in D1, not inside the app install. Reinstalling the app does not wipe the cloud database.
+22) Troubleshooting and glossary
+Quick troubleshooting
+`npm run dev` fails — Read the exact error. Often it is a missing package or a syntax error in a file you just edited.
+Phone app did not update — Run npm run build, then npx cap sync, then Run again in Xcode.
+D1 query fails — Check wrangler.jsonc binding, confirm database exists with wrangler d1 list, and verify you applied migrations.
+API route returns 404 — Check the route path in Hono and the browser URL exactly.
+Cursor keeps freelancing — Use smaller prompts and explicitly say do not modify unrelated files.
+Glossary (ELI5)
+Node.js: The engine that runs your JavaScript development tools.
+npm: The package manager that installs libraries and tools.
+Vite: The fast dev server and build tool for your frontend.
+React: The library used to build your app screens.
+Tailwind CSS: A utility-first styling system for building the UI.
+Worker: Your backend code running on Cloudflare.
+Wrangler: The CLI tool used to manage Workers and D1.
+D1: Cloudflare’s SQLite database product.
+Drizzle: The ORM that helps your code talk to D1 safely.
+Migration: A script that changes your database structure.
+Hono: A small API framework built for Workers.
+Capacitor: The tool that wraps your web app into an iPhone app shell.
+Xcode: Apple’s tool for building and installing the iPhone app.
+Plan Mode: Cursor’s planning mode that creates a roadmap before writing code.
+Final checklists
+✅ Checkpoint
+☐ React + Vite app runs locally
+☐ Tailwind styles work
+☐ Capacitor iPhone shell launches on device
+☐ Wrangler login completed
+☐ D1 database exists and is bound in wrangler.jsonc
+☐ Drizzle migration generated and applied locally
+☐ Hono API returns /api/health
+☐ Hono + Drizzle returns /api/sessions
+☐ Docs + assets are in the repo
+☐ Cursor Plan Mode prompt saved
+If every box above is true, you have a working beginner-safe Waymark full stack setup.
+23) Waymark Database Architecture
+The database is the long‑term memory of Waymark. It stores workouts, sessions, wellness logs,
+running history, and notes so the app remembers your training over time.
+
+
+ELI5:
+The UI is what you see.
+The Worker is the brain.
+The database is the memory.
+
+
+Recommended core tables:
+workout_templates
+workout_blocks
+sessions
+session_results
+wellness_logs
+bag_combos
+combo_rounds
+runs
+training_notes
+weekly_history
+
+
+Every schema change should be created with Drizzle migrations.
+Never edit the database manually in production.
+24) Timer Engine Architecture
+Timers are a critical system in Waymark because training sessions depend on them.
+
+
+Supported timer types:
+Rest timer – strength sets
+Round timer – bag work
+Interval timer – sprints
+Countdown timer – mobility
+Stopwatch – open sessions
+
+
+Timers must continue functioning when the phone locks.
+Capacitor local notifications should be used to trigger completion alerts.
+25) Workout and Session Engine
+The session engine controls how workouts are executed.
+
+
+A workout contains blocks.
+A block contains exercises or rounds.
+A session records the actual results.
+
+
+Example flow:
+
+
+Today Screen → Start Session → Execute Exercises → Log Results → Save Session
+
+
+Sessions should record:
+planned sets
+planned reps
+actual sets
+actual reps
+actual weight
+notes
+timestamp
+26) Offline Mode Strategy
+Waymark must remain usable without network access.
+
+
+Offline capabilities:
+start sessions
+run timers
+log sets
+record wellness
+write notes
+
+
+Data should be cached locally and synced when connectivity returns.
+27) Active Session Recovery
+If the app crashes or is closed mid‑workout, Waymark should restore the session state.
+
+
+Persist the following:
+active workout
+exercise index
+round number
+timer context
+timer start time
+
+
+When reopening the app, display:
+
+
+Resume Session
+28) Strava Integration
+Outdoor runs should optionally connect to Strava.
+
+
+Integration flow:
+User connects account via OAuth.
+User completes run in Strava.
+Waymark fetches the latest activity.
+Activity is stored in the runs table.
+
+
+Minimum stored fields:
+distance
+time
+pace
+elevation
+start time
+29) Indoor Run Integration
+Indoor runs can launch entertainment such as One Pace.
+
+
+Store:
+series name
+arc name
+progress note
+last used date
+
+
+Purpose: make treadmill cardio easier to maintain.
+30) Observability and Error Monitoring
+Use Sentry for error tracking.
+
+
+Install Sentry in both frontend and backend.
+
+
+Capture:
+API errors
+client exceptions
+performance traces
+
+
+This allows you to diagnose issues in production.
+31) Production Environment Configuration
+Production environments require environment variables.
+
+
+Never commit secrets.
+
+
+Use:
+.env.example for template values.
+Cloudflare dashboard for real values.
+32) Cloudflare Worker Routing
+All API routes should live under /api.
+
+
+Examples:
+
+
+/api/health
+/api/sessions
+/api/wellness
+/api/runs
+
+
+Hono should handle routing logic.
+33) iOS Background Timer Behavior
+Timers must not break when the app is backgrounded.
+
+
+Strategy:
+
+
+schedule local notification
+store timer start timestamp
+recalculate remaining time when app resumes
+34) Database Migration Strategy
+Every schema change should use Drizzle migrations.
+
+
+Steps:
+
+
+generate migration
+review SQL
+apply locally
+apply remotely
+
+
+Never alter tables directly in production.
+35) Cursor Prompt Library
+Cursor should always be used with focused prompts.
+
+
+Example prompts:
+
+
+Create routing skeleton.
+Implement Today screen layout.
+Implement wellness logging.
+
+
+Avoid asking Cursor to build the entire app at once.
+36) Testing Strategy
+Test every feature in three places:
+
+
+local browser
+local iPhone build
+production backend
+37) UI Component Architecture
+Reusable UI components keep the project maintainable.
+
+
+Examples:
+
+
+Card
+TimerDisplay
+WorkoutList
+SessionSummary
+
+
+Components should live in src/components.
+38) Performance Optimization
+Avoid unnecessary re‑renders in React.
+
+
+Use:
+
+
+memo
+useCallback
+useMemo
+39) Security and Secret Management
+Never store secrets in the repo.
+
+
+Use:
+
+
+Cloudflare environment variables
+.local environment files
+40) Long Term Maintenance Rules
+Always commit before major changes.
+
+
+Use Git checkpoints.
+Keep schema migrations organized.
+Document new features in docs/.
+41) Full Database Schema Example
+Below is a more complete schema example for Waymark. This demonstrates how sessions,
+wellness logs, and runs could be structured.
+
+
+src/db/schema.ts
+
+
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(),
+  type: text("type"),
+  createdAt: integer("created_at"),
+  notes: text("notes")
+});
+
+
+export const runs = sqliteTable("runs", {
+  id: text("id").primaryKey(),
+  distance: integer("distance"),
+  duration: integer("duration"),
+  createdAt: integer("created_at")
+});
+
+
+ELI5:
+A schema is the blueprint of your database tables.
+It tells the database what columns exist and what type of data goes in them.
+42) Timer System Implementation Notes
+The timer system should store timestamps instead of relying only on countdown logic.
+
+
+Example logic:
+
+
+start_time = Date.now()
+remaining = duration - (Date.now() - start_time)
+
+
+ELI5:
+If the phone locks, the timer still works because we calculate the time difference
+instead of counting down continuously.
+43) Example Today Screen Component
+Example minimal React screen for the Today page.
+
+
+src/features/today/TodayScreen.tsx
+
+
+export default function TodayScreen() {
+  return (
+    <div className="p-4 text-white">
+      <h1 className="text-3xl font-bold">Today</h1>
+      <p>AM – Strength</p>
+      <p>PM – Muay Thai</p>
+    </div>
+  );
+}
+
+
+This screen will later connect to real workout data.
+44) Recommended Git Workflow
+Use Git checkpoints frequently.
+
+
+Typical workflow:
+
+
+git add .
+git commit -m "Checkpoint"
+git push
+
+
+ELI5:
+If something breaks later, you can return to a working state.
+45) Production Deployment Checklist
+Before deploying your app publicly verify:
+
+
+React build works
+Worker deploys successfully
+Database migrations applied
+API routes return JSON
+iPhone app installs correctly
+46) Performance Monitoring
+Use Sentry or similar tools to monitor errors.
+
+
+Install example:
+
+
+npm install @sentry/react
+47) Security Best Practices
+Never store secrets directly in code.
+
+
+Use:
+
+
+Cloudflare dashboard environment variables
+local .env files
+48) Long Term Project Organization
+As the project grows keep documentation updated.
+
+
+Recommended documentation folders:
+
+
+docs/architecture
+docs/prompts
+docs/setup
+docs/api
+49) Backup Strategy
+Keep backups of your database and repository.
+
+
+Use GitHub for code backups.
+Use Cloudflare exports for database backups.
+50) Final Waymark Engineering Checklist
+Before serious development begins confirm:
+
+
+React dev server runs
+Tailwind styling works
+Capacitor iPhone shell runs
+Cloudflare Worker deploys
+D1 database connected
+Drizzle migrations working
+Hono API returning JSON
+Cursor plan prompt created
+
+
+If all these are true the Waymark engineering environment is ready.
+51) Complete Waymark Database Schema (Recommended)
+The database schema below reflects a more complete data model for Waymark.
+
+
+Core tables:
+
+
+workout_templates
+workout_days
+workout_blocks
+exercises
+exercise_notes
+bag_combos
+combo_rounds
+sessions
+session_results
+wellness_logs
+runs
+training_notes
+weekly_history
+active_session_state
+
+
+ELI5:
+Tables are like spreadsheets.
+Each table stores one type of information.
+Rows are entries.
+Columns describe the data.
+52) Timer Engine System Design
+Waymark uses a unified timer engine.
+
+
+Timer types:
+rest_timer
+round_timer
+interval_timer
+countdown_timer
+stopwatch
+
+
+Timer state model:
+
+
+idle
+running
+paused
+completed
+
+
+Timers should store timestamps instead of relying on browser countdown loops.
+53) Session Engine Architecture
+Sessions represent actual training execution.
+
+
+Session lifecycle:
+
+
+planned workout
+start session
+execute exercises
+record results
+session review
+save history
+
+
+A session should store:
+
+
+exercise
+sets
+reps
+weight
+rounds
+notes
+timestamp
+54) Offline Mode and Sync Strategy
+Waymark should support offline usage.
+
+
+Local storage should temporarily store:
+
+
+sessions
+wellness logs
+notes
+
+
+When connectivity returns the system syncs data to D1.
+
+
+Conflict resolution rule:
+latest timestamp wins.
+55) Active Session Recovery
+If the app closes during training the session must recover.
+
+
+Persist:
+
+
+current exercise
+set index
+round index
+timer state
+timer start time
+
+
+When the app opens display:
+
+
+Resume Session
+56) Strava OAuth Integration Flow
+Outdoor runs integrate with Strava.
+
+
+Flow:
+
+
+user connects account
+OAuth redirect
+store access token
+fetch activities
+store run data
+
+
+Minimum stored fields:
+
+
+distance
+moving time
+elapsed time
+elevation
+start date
+57) Indoor Run Media Tracking
+Indoor runs may use One Pace.
+
+
+Store:
+
+
+series name
+arc name
+progress note
+last watched timestamp
+58) Alarm and Notification System
+Waymark includes a wake notification system.
+
+
+The alarm should:
+
+
+trigger at configured time
+show the day's training plan
+open the Today screen when tapped
+59) UI Component System
+Core reusable UI components:
+
+
+Card
+TimerDisplay
+WorkoutList
+RoundTracker
+SessionSummary
+CoachNotesPanel
+
+
+All components should live inside:
+
+
+src/components
+60) Complete Cursor Prompt Library
+Cursor should use targeted prompts.
+
+
+Examples:
+
+
+Implement Today screen layout.
+Implement wellness logging system.
+Implement timer engine.
+Implement bag combo rotation system.
+
+
+Rule:
+
+
+Never ask Cursor to build the entire application in a single prompt.
+  
+
+WAYMARK
+Full Stack Setup + Cursor AI Build Guide
+Boomer-proof • ELI5 • Copy/paste-safe terminal commands • Built for your actual stack
+Recommended path in this guide: Node + npm first. Bun is discussed, but not the default.
+What this is: The complete handbook for setting up the Waymark stack and using Cursor to build it in safe phases. Every terminal command is shown clearly. Explanations are written in plain English.
+What this is not: This is not a magic one-click setup. It is a deliberate course. Do one checkpoint at a time and do not skip ahead.
+________________
+
+
+Quick Map
+* 1. What you’re building (ELI5)
+* 2. The exact stack and why each piece exists
+* 3. Install checklist
+* 4. Node vs Bun — what I recommend and why
+* 5. Create the React + Vite + Cloudflare project
+* 6. Git + GitHub setup
+* 7. Add docs and brand assets so Cursor has context
+* 8. Tailwind setup
+* 9. Capacitor + iPhone shell setup
+* 10. Xcode signing + run on your iPhone
+* 11. Wrangler login + Cloudflare Worker basics
+* 12. Create D1 and wire the binding
+* 13. Install Drizzle and generate first migration
+* 14. Install Hono and create the API
+* 15. Connect Hono + Drizzle + D1
+* 16. Folder architecture that matches Waymark
+* 17. Environment variables, placeholders, and secrets
+* 18. Cursor Plan Mode + master prompts
+* 19. Safe feature build order for Waymark
+* 20. Testing, debugging, and common mistakes
+* 21. Deploying and keeping the app alive
+* 22. Troubleshooting and glossary
+________________
+
+
+1) What you’re building (ELI5)
+Waymark is a dark, mobile-first training system for one athlete. It is not a generic fitness app and it is not a spreadsheet clone. You are building an iPhone app that lets you see your AM / PM plan, start sessions, use timers, log training, review history, and later connect running data.
+Think of Waymark as a machine with layers:
+iPhone app shell (Capacitor)
+↓
+Web app screens (React + Vite + Tailwind)
+↓
+API routes (Hono)
+↓
+Cloudflare Worker runtime
+↓
+Database access (Drizzle)
+↓
+Cloudflare D1 database
+
+
+ELI5: The phone app is what you touch. The Worker is the brain in the cloud. The database is the memory. Cursor is your coding assistant, but only if you feed it good docs and good prompts.
+Official docs used in this guide
+• Cloudflare React + Vite guide
+• Cloudflare Vite plugin
+• Wrangler commands
+• D1 best practices for local development
+• D1 Wrangler commands
+• Hono on Cloudflare Workers
+• Drizzle + Cloudflare D1
+• Drizzle Kit generate
+• Tailwind with Vite
+• Capacitor workflow
+• Capacitor iOS
+• Cursor Plan Mode
+2) The exact stack — and why each piece exists
+Layer
+	Tool
+	Why you need it
+	Frontend UI
+	React + Vite
+	React builds the screens; Vite gives you a fast development server and build system.
+	Styling
+	Tailwind CSS
+	Tailwind is the cleanest way to build your dark UI quickly and consistently.
+	Backend API
+	Hono
+	Hono gives you simple API routes built for Workers.
+	Server runtime
+	Cloudflare Workers
+	This runs your backend without managing a traditional server.
+	Database
+	Cloudflare D1
+	D1 stores your workouts, sessions, notes, and history.
+	ORM
+	Drizzle
+	Drizzle lets you talk to D1 using TypeScript instead of writing everything in raw SQL.
+	Native shell
+	Capacitor
+	Capacitor turns your web app into an iPhone app shell.
+	iPhone build tool
+	Xcode
+	Xcode signs, builds, and installs the iPhone app.
+	AI assistant
+	Cursor
+	Cursor reads your repo and helps plan / write code.
+	
+
+Critical path: Build and verify the stack in this order: Node/Git/Cursor/Xcode → project scaffold → Tailwind → Capacitor + iPhone shell → Wrangler login → D1 → Drizzle → Hono → DB query → docs + prompts → Cursor plan → small feature slices.
+3) Install checklist
+Do these before you touch code:
+* Create a Cloudflare account
+* Create a GitHub account
+* Install Node.js LTS
+* Install Git
+* Install Cursor
+* Install Xcode and open it once
+Cloudflare
+Create an account at https://dash.cloudflare.com
+GitHub
+Create an account at https://github.com
+Node.js
+Install Node LTS from https://nodejs.org
+TERMINAL
+node -v
+npm -v
+
+
+ELI5: If both commands print version numbers, Node and npm are installed correctly.
+Git
+Install from https://git-scm.com/downloads
+TERMINAL
+git --version
+
+
+Cursor
+Install from https://cursor.com
+Xcode
+Install Xcode from the Mac App Store. Open it once. Accept the license. Let it install any extra components. Then close it.
+4) Node vs Bun — what I recommend and why
+Recommendation: For your first full setup, use Node + npm. It is the safest, most documented path for Cloudflare Workers + Vite + Wrangler + Capacitor.
+* Cloudflare’s official React + Vite docs and most examples are written around Node/npm.
+* Wrangler workflows are documented and tested most consistently in the Node ecosystem.
+* Bun can be fast, but you do not need more speed right now — you need fewer surprises.
+If you want to read about Bun later: Bun + Vite guide
+Bottom line: start stable, not clever.
+________________
+
+
+5) Create the project the safe way
+Cloudflare’s official React + Vite guide uses the create-cloudflare CLI (often called C3) to scaffold the app.
+First, make a projects folder so you can find your work later.
+TERMINAL
+mkdir -p ~/projects
+cd ~/projects
+
+
+ELI5: This makes a folder called projects in your home folder, then moves you into it.
+Now scaffold the app:
+TERMINAL
+npm create cloudflare@latest waymark -- --framework=react
+
+
+Then move into the project and install dependencies:
+TERMINAL
+cd waymark
+npm install
+
+
+Start the development server:
+TERMINAL
+npm run dev
+
+
+Open the Local URL that appears in Terminal. If the starter app loads in your browser, the base project works.
+What you just proved: React works, Vite works, the Cloudflare scaffold works, and your machine can run the project.
+6) Git + GitHub setup
+Now give yourself a safety net.
+TERMINAL
+git init
+git add .
+git commit -m "Initial Waymark scaffold"
+
+
+Create a private repo on GitHub called waymark, then connect it:
+TERMINAL
+git branch -M main
+git remote add origin <PASTE_YOUR_GITHUB_REPO_URL_HERE>
+git push -u origin main
+
+
+ELI5: Git is your time machine. GitHub is your backup locker on the internet.
+7) Add docs + brand assets so Cursor has context
+Cursor is much better when it can read your project docs and see your brand assets. Without those files, it will guess.
+TERMINAL
+mkdir -p docs/master docs/style-guide docs/prompts
+mkdir -p assets/brand
+
+
+Add these files:
+* docs/master/MASTER_BUILD_DOCUMENT.md
+* docs/style-guide/WAYMARK_STYLE_GUIDE.md
+* docs/SETUP_NOTES.md
+Put your logo and symbol files in assets/brand/. Good file names are:
+* Logo.png
+* Strength.png
+* MuayThai.png
+* Running.png
+* Bagwork.png
+* Mobility.png
+* Wellness.png
+Commit these docs and assets:
+TERMINAL
+git add .
+git commit -m "Add Waymark docs and brand assets"
+git push
+
+
+8) Install Tailwind and verify styling works
+Tailwind’s current recommended Vite setup uses the @tailwindcss/vite plugin.
+TERMINAL
+npm install tailwindcss @tailwindcss/vite
+
+
+Open vite.config.ts and make sure it contains the Tailwind plugin.
+vite.config.ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+})
+
+
+Open your main CSS file (usually src/index.css) and add:
+src/index.css
+@import "tailwindcss";
+
+
+Restart the dev server and test with a simple screen:
+src/App.tsx
+export default function App() {
+  return (
+    <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <h1 className="text-4xl font-bold">Waymark setup is working</h1>
+    </div>
+  )
+}
+
+
+TERMINAL
+npm run dev
+
+
+ELI5: If you see a black full-screen page with big white text, Tailwind is wired up correctly.
+________________
+
+
+9) Add Capacitor and create the iPhone shell
+Capacitor wraps your web app so it can run as an iPhone app.
+TERMINAL
+npm install @capacitor/core @capacitor/cli
+npx cap init
+
+
+When asked, use:
+* App name: Waymark
+* App ID: com.yourname.waymark
+Capacitor’s docs also allow passing these directly in the command; if you want the one-line version:
+TERMINAL
+npx cap init Waymark com.yourname.waymark --web-dir=dist
+
+
+Now install iOS support and add the platform:
+TERMINAL
+npm install @capacitor/ios
+npx cap add ios
+
+
+Build the web app and sync it into the native project:
+TERMINAL
+npm run build
+npx cap sync
+
+
+ELI5: npm run build makes the final web files. npx cap sync copies those files into the iPhone app project.
+Open the iOS project in Xcode:
+TERMINAL
+npx cap open ios
+
+
+10) Xcode signing + run on your iPhone
+Inside Xcode:
+* Click the Waymark project in the left sidebar.
+* Select the app target.
+* Open Signing & Capabilities.
+* Choose your Apple Team.
+* Plug your iPhone into your Mac.
+* Select your iPhone as the run target.
+* Press the Run button (▶).
+ELI5: Signing means Apple needs to know you are allowed to install the app on your own phone.
+First-time trust step on your iPhone if needed:
+* Settings
+* General
+* VPN & Device Management
+* Tap your developer certificate
+* Trust it
+Every time you change the app later, the usual refresh loop is:
+TERMINAL
+npm run build
+npx cap sync
+npx cap open ios
+
+
+Then press Run again in Xcode.
+11) Wrangler login + Cloudflare Worker basics
+Wrangler is Cloudflare’s command-line tool. It creates databases, deploys Workers, and manages parts of your backend.
+TERMINAL
+npm install -g wrangler
+wrangler --version
+wrangler login
+
+
+When wrangler login opens your browser, approve access.
+Open the file wrangler.jsonc. It is the config file for your Worker.
+wrangler.jsonc (starter shape)
+{
+  "name": "waymark",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01"
+}
+
+
+ELI5: This file tells Cloudflare what your backend is called, where it starts, and what runtime compatibility date to use.
+12) Create D1 and wire the binding
+Now create the database.
+TERMINAL
+wrangler d1 create waymark-db
+
+
+Wrangler will print a database_id. Copy it.
+Add the D1 binding to wrangler.jsonc:
+wrangler.jsonc
+{
+  "name": "waymark",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "waymark-db",
+      "database_id": "<PASTE_DATABASE_ID_HERE>"
+    }
+  ]
+}
+
+
+Check that the database exists:
+TERMINAL
+wrangler d1 list
+
+
+ELI5: The binding name DB means your backend code can access the database as env.DB.
+13) Install Drizzle and generate your first migration
+Drizzle helps you manage your database schema in TypeScript.
+TERMINAL
+npm install drizzle-orm
+npm install -D drizzle-kit
+
+
+Create src/db/schema.ts:
+src/db/schema.ts
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(),
+  type: text("type"),
+  createdAt: integer("created_at"),
+});
+
+
+Create drizzle.config.ts:
+drizzle.config.ts
+import { defineConfig } from "drizzle-kit";
+
+
+export default defineConfig({
+  schema: "./src/db/schema.ts",
+  out: "./drizzle",
+  dialect: "sqlite",
+});
+
+
+Generate the migration:
+TERMINAL
+npx drizzle-kit generate
+
+
+Apply the generated SQL to your local D1 database:
+TERMINAL
+wrangler d1 execute waymark-db --local --file=./drizzle/0000_*.sql
+
+
+Then apply it to the remote database when you are ready:
+TERMINAL
+wrangler d1 execute waymark-db --remote --file=./drizzle/0000_*.sql
+
+
+Important: Use --local for local development. Use --remote only when you really want to change the cloud database.
+Verify the table exists:
+TERMINAL
+wrangler d1 execute waymark-db --local --command "SELECT name FROM sqlite_master WHERE type='table';"
+
+
+________________
+
+
+14) Install Hono and create the API
+Hono gives you simple backend routes built for Workers.
+TERMINAL
+npm install hono
+
+
+Create src/server/app.ts:
+src/server/app.ts
+import { Hono } from "hono";
+
+
+const app = new Hono();
+
+
+app.get("/api/health", (c) => {
+  return c.json({ status: "Waymark API running" });
+});
+
+
+export default app;
+
+
+Connect the Worker entry file to Hono:
+src/index.ts
+import app from "./server/app";
+
+
+export default app;
+
+
+Run the dev server:
+TERMINAL
+npm run dev
+
+
+Test the API in your browser:
+BROWSER
+http://localhost:5173/api/health
+
+
+You should see JSON: {"status":"Waymark API running"}
+15) Connect Hono + Drizzle + D1
+Now wire the backend to the database.
+Create src/db/client.ts:
+src/db/client.ts
+import { drizzle } from "drizzle-orm/d1";
+
+
+export function createDB(env: { DB: D1Database }) {
+  return drizzle(env.DB);
+}
+
+
+Update the server file:
+src/server/app.ts
+import { Hono } from "hono";
+import { createDB } from "../db/client";
+import { sessions } from "../db/schema";
+
+
+type Bindings = {
+  DB: D1Database;
+};
+
+
+const app = new Hono<{ Bindings: Bindings }>();
+
+
+app.get("/api/health", (c) => {
+  return c.json({ status: "Waymark API running" });
+});
+
+
+app.get("/api/sessions", async (c) => {
+  const db = createDB(c.env);
+  const rows = await db.select().from(sessions);
+  return c.json(rows);
+});
+
+
+export default app;
+
+
+Insert one test row into the local database:
+TERMINAL
+wrangler d1 execute waymark-db --local --command "INSERT INTO sessions (id, type, created_at) VALUES ('test-session', 'strength', 1700000000);"
+
+
+Test the read route:
+BROWSER
+http://localhost:5173/api/sessions
+
+
+You should see your test row returned as JSON.
+ELI5: At this point the stack is real: browser → API → Worker → database.
+16) Folder architecture that matches Waymark
+Now create a clear structure so Cursor does not turn the repo into spaghetti.
+TERMINAL
+mkdir -p src/app
+mkdir -p src/components/buttons src/components/cards src/components/layout src/components/navigation src/components/timers
+mkdir -p src/features/today src/features/wellness src/features/session src/features/timer src/features/bag-work src/features/running src/features/history src/features/library
+mkdir -p src/lib/timers src/lib/date src/lib/formatting src/lib/validators
+mkdir -p src/types
+
+
+Recommended project shape:
+src
+├── app
+├── components
+│   ├── buttons
+│   ├── cards
+│   ├── layout
+│   ├── navigation
+│   └── timers
+├── features
+│   ├── today
+│   ├── wellness
+│   ├── session
+│   ├── timer
+│   ├── bag-work
+│   ├── running
+│   ├── history
+│   └── library
+├── db
+├── server
+├── lib
+└── types
+
+
+* Today is separate from Wellness.
+* Timer logic is separate from Session logic.
+* Running and Bag Work can grow without cluttering everything else.
+* Cursor can target one feature at a time.
+17) Environment variables, placeholders, and secrets
+You asked for placeholders because you will clearly need real IDs, URLs, secrets, and API keys later. Yes — you absolutely need them.
+TERMINAL
+touch .env.example
+
+
+.env.example
+APP_NAME=Waymark
+APP_BUNDLE_ID=com.yourname.waymark
+
+
+GITHUB_REPO_URL=
+GITHUB_DEFAULT_BRANCH=main
+
+
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_WORKER_NAME=waymark
+CLOUDFLARE_D1_BINDING=DB
+CLOUDFLARE_D1_DATABASE_NAME=waymark-db
+CLOUDFLARE_D1_DATABASE_ID=
+
+
+LOCAL_DEV_URL=http://localhost:5173
+PRODUCTION_API_URL=
+STAGING_API_URL=
+
+
+SENTRY_DSN=
+
+
+STRAVA_CLIENT_ID=
+STRAVA_CLIENT_SECRET=
+STRAVA_REDIRECT_URI=
+
+
+ONEPACE_URL=https://onepace.net
+
+
+APPLE_TEAM_ID=
+APPLE_BUNDLE_ID=
+
+
+Also create a real local env file later if you need Vite variables:
+.env
+VITE_API_URL=http://localhost:5173
+
+
+Rule: Never commit real secrets. Commit .env.example. Keep real private values in local env files and secure dashboards.
+________________
+
+
+18) Cursor Plan Mode + master prompts
+This section is part of the plan. You asked for a section specifically for Cursor prompts. Here it is.
+First, save a master plan prompt in docs/prompts/MASTER_PLAN_PROMPT.md:
+Read these files first and treat them as the source of truth:
+
+
+- docs/master/MASTER_BUILD_DOCUMENT.md
+- docs/style-guide/WAYMARK_STYLE_GUIDE.md
+- docs/SETUP_NOTES.md
+
+
+Also inspect the full repository structure before making recommendations or writing code.
+
+
+Project name:
+Waymark
+
+
+Required stack:
+- React + Vite
+- Tailwind CSS
+- Hono API
+- Cloudflare Workers
+- Cloudflare D1
+- Drizzle ORM
+- Capacitor iOS shell
+- Xcode
+- GitHub
+
+
+Critical implementation requirements:
+- dark-mode-first
+- mobile-first
+- iPhone-first
+- timer-heavy UI
+- offline-aware behavior
+- active session recovery
+- no hardcoded secrets
+- no invented external config values
+
+
+I want you to create a complete bootstrap and implementation plan for the repository.
+
+
+Your plan must include:
+1. Recommended project structure
+2. Routing structure
+3. React component structure
+4. Tailwind organization strategy
+5. Hono API structure
+6. D1 + Drizzle setup structure
+7. Environment/config file strategy
+8. Capacitor integration structure
+9. Placeholder handling for secrets and future integrations
+10. Local development workflow
+11. Build and sync workflow for iOS
+12. MVP implementation phases aligned to the master build document
+13. Key risks or failure points to avoid
+14. What should be scaffolded now vs what should remain placeholder-only
+
+
+Do not write code yet.
+
+
+Output:
+- a phased implementation roadmap
+- recommended file/folder architecture
+- setup checkpoints
+- a list of placeholders/config values that must exist
+- clear notes where human input will be required later
+
+
+How to use it:
+* Open Cursor.
+* Switch to Plan Mode.
+* Paste the prompt.
+* Let Cursor read your repo.
+* Save the result as docs/IMPLEMENTATION_PLAN.md.
+Then use smaller prompts — one feature slice at a time. Example next-step prompt for the app shell:
+Implement only Phase 1:
+- app shell
+- routing skeleton
+- Today screen placeholder
+- shared layout structure
+- symbol-aware card components
+- no fake data beyond minimal hardcoded examples
+
+
+Requirements:
+- Tailwind only
+- reusable React components
+- no over-ornamentation
+- dark-mode-first
+- keep Hono route structure intact
+- do not touch database schema unless necessary
+
+
+Prompt for placeholders and config:
+Create a clean placeholder/config setup for all environment variables, bindings, IDs, URLs, and secrets needed by the project.
+
+
+Rules:
+- do not invent real secrets
+- use clear placeholder text
+- create .env.example
+- add comments explaining what each value is for
+- keep the app bootable where possible even if some integrations are still placeholders
+
+
+Golden rule: One big plan prompt first. Small implementation prompts after. Never ask Cursor to build the whole app in one shot.
+19) Safe feature build order for Waymark
+Build the app in this order:
+* Phase 1 — App shell and routing
+* Phase 2 — Today screen
+* Phase 3 — Wellness flow
+* Phase 4 — Workout session engine
+* Phase 5 — Timer engine
+* Phase 6 — Bag work / combo engine
+* Phase 7 — Running system
+* Phase 8 — History and review
+* Phase 9 — Offline handling
+* Phase 10 — Active session recovery
+ELI5: If you try to build everything at once, Cursor will make a mess. If you build in slices, you can test and fix each piece safely.
+20) Testing, debugging, and common mistakes
+Every feature should be tested in three places:
+* Local browser (npm run dev)
+* Local iPhone build (npm run build → npx cap sync → Xcode Run)
+* Production backend when relevant (wrangler deploy → test API URL)
+Most common mistakes:
+* Forgetting to rebuild and sync before testing on phone.
+* Forgetting to apply database migrations locally.
+* Letting Cursor edit multiple systems at once.
+* Using real secrets in committed files.
+* Testing only in the browser and never on device.
+Basic recovery commands:
+TERMINAL
+git status
+git add .
+git commit -m "Checkpoint"
+git push
+
+
+If Cursor breaks the project and you have not committed the broken work:
+TERMINAL
+git reset --hard HEAD
+
+
+Warning: git reset --hard HEAD deletes uncommitted changes. Only use it if you understand that.
+Useful sanity tests:
+TERMINAL
+npm run dev
+npm run build
+wrangler d1 list
+wrangler d1 execute waymark-db --local --command "SELECT name FROM sqlite_master WHERE type='table';"
+
+
+21) Deploying and keeping the app alive
+Deploy the backend Worker:
+TERMINAL
+wrangler deploy
+
+
+After deploy, Cloudflare will print a workers.dev URL. Test:
+BROWSER
+https://<YOUR_WORKER_SUBDOMAIN>.workers.dev/api/health
+
+
+For the iPhone app, your normal update loop is:
+TERMINAL
+npm run build
+npx cap sync
+npx cap open ios
+
+
+Then press Run in Xcode.
+If you are using the free Apple developer setup, app installs typically expire every 7 days. Rebuild and run again when needed.
+Why your data survives: Your workout data lives in D1, not inside the app install. Reinstalling the app does not wipe the cloud database.
+22) Troubleshooting and glossary
+Quick troubleshooting
+`npm run dev` fails — Read the exact error. Often it is a missing package or a syntax error in a file you just edited.
+Phone app did not update — Run npm run build, then npx cap sync, then Run again in Xcode.
+D1 query fails — Check wrangler.jsonc binding, confirm database exists with wrangler d1 list, and verify you applied migrations.
+API route returns 404 — Check the route path in Hono and the browser URL exactly.
+Cursor keeps freelancing — Use smaller prompts and explicitly say do not modify unrelated files.
+Glossary (ELI5)
+Node.js: The engine that runs your JavaScript development tools.
+npm: The package manager that installs libraries and tools.
+Vite: The fast dev server and build tool for your frontend.
+React: The library used to build your app screens.
+Tailwind CSS: A utility-first styling system for building the UI.
+Worker: Your backend code running on Cloudflare.
+Wrangler: The CLI tool used to manage Workers and D1.
+D1: Cloudflare’s SQLite database product.
+Drizzle: The ORM that helps your code talk to D1 safely.
+Migration: A script that changes your database structure.
+Hono: A small API framework built for Workers.
+Capacitor: The tool that wraps your web app into an iPhone app shell.
+Xcode: Apple’s tool for building and installing the iPhone app.
+Plan Mode: Cursor’s planning mode that creates a roadmap before writing code.
+Final checklists
+✅ Checkpoint
+☐ React + Vite app runs locally
+☐ Tailwind styles work
+☐ Capacitor iPhone shell launches on device
+☐ Wrangler login completed
+☐ D1 database exists and is bound in wrangler.jsonc
+☐ Drizzle migration generated and applied locally
+☐ Hono API returns /api/health
+☐ Hono + Drizzle returns /api/sessions
+☐ Docs + assets are in the repo
+☐ Cursor Plan Mode prompt saved
+If every box above is true, you have a working beginner-safe Waymark full stack setup.
+23) Waymark Database Architecture
+The database is the long‑term memory of Waymark. It stores workouts, sessions, wellness logs,
+running history, and notes so the app remembers your training over time.
+
+
+ELI5:
+The UI is what you see.
+The Worker is the brain.
+The database is the memory.
+
+
+Recommended core tables:
+workout_templates
+workout_blocks
+sessions
+session_results
+wellness_logs
+bag_combos
+combo_rounds
+runs
+training_notes
+weekly_history
+
+
+Every schema change should be created with Drizzle migrations.
+Never edit the database manually in production.
+24) Timer Engine Architecture
+Timers are a critical system in Waymark because training sessions depend on them.
+
+
+Supported timer types:
+Rest timer – strength sets
+Round timer – bag work
+Interval timer – sprints
+Countdown timer – mobility
+Stopwatch – open sessions
+
+
+Timers must continue functioning when the phone locks.
+Capacitor local notifications should be used to trigger completion alerts.
+25) Workout and Session Engine
+The session engine controls how workouts are executed.
+
+
+A workout contains blocks.
+A block contains exercises or rounds.
+A session records the actual results.
+
+
+Example flow:
+
+
+Today Screen → Start Session → Execute Exercises → Log Results → Save Session
+
+
+Sessions should record:
+planned sets
+planned reps
+actual sets
+actual reps
+actual weight
+notes
+timestamp
+26) Offline Mode Strategy
+Waymark must remain usable without network access.
+
+
+Offline capabilities:
+start sessions
+run timers
+log sets
+record wellness
+write notes
+
+
+Data should be cached locally and synced when connectivity returns.
+27) Active Session Recovery
+If the app crashes or is closed mid‑workout, Waymark should restore the session state.
+
+
+Persist the following:
+active workout
+exercise index
+round number
+timer context
+timer start time
+
+
+When reopening the app, display:
+
+
+Resume Session
+28) Strava Integration
+Outdoor runs should optionally connect to Strava.
+
+
+Integration flow:
+User connects account via OAuth.
+User completes run in Strava.
+Waymark fetches the latest activity.
+Activity is stored in the runs table.
+
+
+Minimum stored fields:
+distance
+time
+pace
+elevation
+start time
+29) Indoor Run Integration
+Indoor runs can launch entertainment such as One Pace.
+
+
+Store:
+series name
+arc name
+progress note
+last used date
+
+
+Purpose: make treadmill cardio easier to maintain.
+30) Observability and Error Monitoring
+Use Sentry for error tracking.
+
+
+Install Sentry in both frontend and backend.
+
+
+Capture:
+API errors
+client exceptions
+performance traces
+
+
+This allows you to diagnose issues in production.
+31) Production Environment Configuration
+Production environments require environment variables.
+
+
+Never commit secrets.
+
+
+Use:
+.env.example for template values.
+Cloudflare dashboard for real values.
+32) Cloudflare Worker Routing
+All API routes should live under /api.
+
+
+Examples:
+
+
+/api/health
+/api/sessions
+/api/wellness
+/api/runs
+
+
+Hono should handle routing logic.
+33) iOS Background Timer Behavior
+Timers must not break when the app is backgrounded.
+
+
+Strategy:
+
+
+schedule local notification
+store timer start timestamp
+recalculate remaining time when app resumes
+34) Database Migration Strategy
+Every schema change should use Drizzle migrations.
+
+
+Steps:
+
+
+generate migration
+review SQL
+apply locally
+apply remotely
+
+
+Never alter tables directly in production.
+35) Cursor Prompt Library
+Cursor should always be used with focused prompts.
+
+
+Example prompts:
+
+
+Create routing skeleton.
+Implement Today screen layout.
+Implement wellness logging.
+
+
+Avoid asking Cursor to build the entire app at once.
+36) Testing Strategy
+Test every feature in three places:
+
+
+local browser
+local iPhone build
+production backend
+37) UI Component Architecture
+Reusable UI components keep the project maintainable.
+
+
+Examples:
+
+
+Card
+TimerDisplay
+WorkoutList
+SessionSummary
+
+
+Components should live in src/components.
+38) Performance Optimization
+Avoid unnecessary re‑renders in React.
+
+
+Use:
+
+
+memo
+useCallback
+useMemo
+39) Security and Secret Management
+Never store secrets in the repo.
+
+
+Use:
+
+
+Cloudflare environment variables
+.local environment files
+40) Long Term Maintenance Rules
+Always commit before major changes.
+
+
+Use Git checkpoints.
+Keep schema migrations organized.
+Document new features in docs/.
+41) Full Database Schema Example
+Below is a more complete schema example for Waymark. This demonstrates how sessions,
+wellness logs, and runs could be structured.
+
+
+src/db/schema.ts
+
+
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(),
+  type: text("type"),
+  createdAt: integer("created_at"),
+  notes: text("notes")
+});
+
+
+export const runs = sqliteTable("runs", {
+  id: text("id").primaryKey(),
+  distance: integer("distance"),
+  duration: integer("duration"),
+  createdAt: integer("created_at")
+});
+
+
+ELI5:
+A schema is the blueprint of your database tables.
+It tells the database what columns exist and what type of data goes in them.
+42) Timer System Implementation Notes
+The timer system should store timestamps instead of relying only on countdown logic.
+
+
+Example logic:
+
+
+start_time = Date.now()
+remaining = duration - (Date.now() - start_time)
+
+
+ELI5:
+If the phone locks, the timer still works because we calculate the time difference
+instead of counting down continuously.
+43) Example Today Screen Component
+Example minimal React screen for the Today page.
+
+
+src/features/today/TodayScreen.tsx
+
+
+export default function TodayScreen() {
+  return (
+    <div className="p-4 text-white">
+      <h1 className="text-3xl font-bold">Today</h1>
+      <p>AM – Strength</p>
+      <p>PM – Muay Thai</p>
+    </div>
+  );
+}
+
+
+This screen will later connect to real workout data.
+44) Recommended Git Workflow
+Use Git checkpoints frequently.
+
+
+Typical workflow:
+
+
+git add .
+git commit -m "Checkpoint"
+git push
+
+
+ELI5:
+If something breaks later, you can return to a working state.
+45) Production Deployment Checklist
+Before deploying your app publicly verify:
+
+
+React build works
+Worker deploys successfully
+Database migrations applied
+API routes return JSON
+iPhone app installs correctly
+46) Performance Monitoring
+Use Sentry or similar tools to monitor errors.
+
+
+Install example:
+
+
+npm install @sentry/react
+47) Security Best Practices
+Never store secrets directly in code.
+
+
+Use:
+
+
+Cloudflare dashboard environment variables
+local .env files
+48) Long Term Project Organization
+As the project grows keep documentation updated.
+
+
+Recommended documentation folders:
+
+
+docs/architecture
+docs/prompts
+docs/setup
+docs/api
+49) Backup Strategy
+Keep backups of your database and repository.
+
+
+Use GitHub for code backups.
+Use Cloudflare exports for database backups.
+50) Final Waymark Engineering Checklist
+Before serious development begins confirm:
+
+
+React dev server runs
+Tailwind styling works
+Capacitor iPhone shell runs
+Cloudflare Worker deploys
+D1 database connected
+Drizzle migrations working
+Hono API returning JSON
+Cursor plan prompt created
+
+
+If all these are true the Waymark engineering environment is ready.
+51) Complete Waymark Database Schema (Recommended)
+The database schema below reflects a more complete data model for Waymark.
+
+
+Core tables:
+
+
+workout_templates
+workout_days
+workout_blocks
+exercises
+exercise_notes
+bag_combos
+combo_rounds
+sessions
+session_results
+wellness_logs
+runs
+training_notes
+weekly_history
+active_session_state
+
+
+ELI5:
+Tables are like spreadsheets.
+Each table stores one type of information.
+Rows are entries.
+Columns describe the data.
+52) Timer Engine System Design
+Waymark uses a unified timer engine.
+
+
+Timer types:
+rest_timer
+round_timer
+interval_timer
+countdown_timer
+stopwatch
+
+
+Timer state model:
+
+
+idle
+running
+paused
+completed
+
+
+Timers should store timestamps instead of relying on browser countdown loops.
+53) Session Engine Architecture
+Sessions represent actual training execution.
+
+
+Session lifecycle:
+
+
+planned workout
+start session
+execute exercises
+record results
+session review
+save history
+
+
+A session should store:
+
+
+exercise
+sets
+reps
+weight
+rounds
+notes
+timestamp
+54) Offline Mode and Sync Strategy
+Waymark should support offline usage.
+
+
+Local storage should temporarily store:
+
+
+sessions
+wellness logs
+notes
+
+
+When connectivity returns the system syncs data to D1.
+
+
+Conflict resolution rule:
+latest timestamp wins.
+55) Active Session Recovery
+If the app closes during training the session must recover.
+
+
+Persist:
+
+
+current exercise
+set index
+round index
+timer state
+timer start time
+
+
+When the app opens display:
+
+
+Resume Session
+56) Strava OAuth Integration Flow
+Outdoor runs integrate with Strava.
+
+
+Flow:
+
+
+user connects account
+OAuth redirect
+store access token
+fetch activities
+store run data
+
+
+Minimum stored fields:
+
+
+distance
+moving time
+elapsed time
+elevation
+start date
+57) Indoor Run Media Tracking
+Indoor runs may use One Pace.
+
+
+Store:
+
+
+series name
+arc name
+progress note
+last watched timestamp
+58) Alarm and Notification System
+Waymark includes a wake notification system.
+
+
+The alarm should:
+
+
+trigger at configured time
+show the day's training plan
+open the Today screen when tapped
+59) UI Component System
+Core reusable UI components:
+
+
+Card
+TimerDisplay
+WorkoutList
+RoundTracker
+SessionSummary
+CoachNotesPanel
+
+
+All components should live inside:
+
+
+src/components
+60) Complete Cursor Prompt Library
+Cursor should use targeted prompts.
+
+
+Examples:
+
+
+Implement Today screen layout.
+Implement wellness logging system.
+Implement timer engine.
+Implement bag combo rotation system.
+
+
+Rule:
+
+
+Never ask Cursor to build the entire application in a single prompt.
+61) Timer Engine Implementation (Detailed)
+The timer engine is one of the most critical systems in Waymark.
+
+
+Timer modes supported:
+rest_timer
+round_timer
+interval_timer
+countdown_timer
+stopwatch
+
+
+Implementation principle:
+
+
+Do NOT rely on JavaScript setInterval alone.
+
+
+Instead store:
+
+
+start_timestamp
+duration
+context
+
+
+Remaining time is calculated with:
+
+
+remaining = duration - (Date.now() - start_timestamp)
+
+
+ELI5:
+The timer checks the clock instead of counting seconds.
+This makes it survive screen locks and app pauses.
+62) Workout Engine Architecture
+The workout engine converts workout templates into executable sessions.
+
+
+Data flow:
+
+
+workout_template
+↓
+workout_block (AM / PM)
+↓
+exercise sequence
+↓
+session execution
+↓
+session_results
+
+
+Each exercise should include:
+
+
+exercise_name
+sets
+reps
+target_weight
+rest_time
+notes
+63) Bag Combo Engine
+Bag work sessions use a combo engine.
+
+
+Each combo includes:
+
+
+strike_1
+strike_2
+strike_3
+strike_4
+optional_notes
+
+
+Round execution example:
+
+
+Round 1 → Combo A
+Round 2 → Combo B
+Round 3 → Combo A
+Round 4 → Combo C
+
+
+ELI5:
+Think of combos like flash cards that rotate each round.
+64) Running System Design
+Running is split into two modes.
+
+
+Indoor Run
+Outdoor Run
+
+
+Indoor runs launch entertainment sources like One Pace.
+
+
+Outdoor runs import activity data from Strava.
+65) Cardio Analytics
+Waymark should calculate simple analytics:
+
+
+weekly run distance
+run frequency
+average pace
+longest run
+
+
+These values can be derived from the runs table.
+66) iOS Background Timer Handling
+Timers must behave correctly when the phone locks.
+
+
+Strategy:
+
+
+save timer start timestamp
+schedule local notification
+recalculate timer state on resume
+67) Worker API Architecture
+All backend routes should follow this structure:
+
+
+/api/health
+/api/sessions
+/api/wellness
+/api/runs
+/api/history
+
+
+Routes should live inside src/server.
+68) API Security Rules
+Never expose secrets in API responses.
+
+
+Validate inputs using Zod.
+
+
+Example rule:
+
+
+reject invalid request body
+sanitize user input
+69) Performance Optimization
+Avoid unnecessary re-renders in React.
+
+
+Use:
+
+
+React.memo
+useCallback
+useMemo
+
+
+Also avoid large state objects in global stores.
+70) Logging Strategy
+Use structured logging.
+
+
+Example:
+
+
+console.log(JSON.stringify({
+event: "session_started",
+timestamp: Date.now()
+}))
+71) Error Monitoring
+Use Sentry or a similar service.
+
+
+Track:
+
+
+frontend errors
+worker errors
+API failures
+72) Deployment Architecture
+Deployment flow:
+
+
+commit code
+push to GitHub
+build project
+deploy worker
+sync iOS build
+
+
+Worker deploy command:
+
+
+wrangler deploy
+73) Development Workflow
+Typical workflow loop:
+
+
+npm run dev
+edit code
+test UI
+npm run build
+npx cap sync
+run on device
+74) Backup Strategy
+Keep backups of both code and database.
+
+
+Code backups:
+GitHub repository
+
+
+Database backups:
+Cloudflare D1 exports
+75) Final Engineering Readiness Checklist
+Before building full features verify:
+
+
+React dev server works
+Tailwind styling works
+Capacitor iPhone shell launches
+Cloudflare Worker deploys
+D1 database accessible
+Drizzle migrations applied
+Hono API responding
+Cursor plan prompt created
+
+
+If all items pass the system is ready for full Waymark development.
