@@ -26,6 +26,12 @@ Machine-specific and “how we run this repo” facts. Safe to commit; **no secr
 - **Sync after every web build:** `npm run build && npx cap sync ios`  
 - **Open Xcode:** `npx cap open ios`
 
+## Cloudflare Worker + D1 (setup guide §11–§12)
+
+- **Wrangler** is a **devDependency** — run CLI with **`npx wrangler`** (not global `wrangler`), e.g. `npx wrangler login`, `npx wrangler dev`, `npx wrangler d1 list`.
+- **`wrangler.jsonc`** — Worker `main` is **`src/index.ts`** (React stays on **`main.tsx`**).
+- **D1** — database **`waymark-db`**; binding name **`DB`** in config so Worker code uses **`env.DB`** (matches the setup guide). `database_id` lives in **`wrangler.jsonc`** (not a secret like an API key).
+
 ## Docs and brand (step 7)
 
 - **`docs/master/MASTER_BUILD_DOCUMENT.md`** — product + phases  

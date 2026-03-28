@@ -1,0 +1,12 @@
+{
+	"name": "waymark",
+	"main": "src/index.ts",
+	"compatibility_date": "2024-12-01",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "waymark-db",
+			"database_id": "93509b7f-2a0b-420c-8e80-f2b1aebd771d"
+		}
+	]
+}
