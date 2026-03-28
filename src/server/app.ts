@@ -9,6 +9,10 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>()
 
+app.get('/', (c) => {
+  return c.text('Waymark Worker')
+})
+
 app.get('/api/health', (c) => {
   return c.json({ status: 'Waymark API running' })
 })
