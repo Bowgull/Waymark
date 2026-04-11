@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 260">
+<defs>
+  <radialGradient id="gg" cx="32%" cy="24%" r="74%">
+    <stop offset="0%"   stop-color="#EAC860"/>
+    <stop offset="38%"  stop-color="#C8A030"/>
+    <stop offset="78%"  stop-color="#7A5C18"/>
+    <stop offset="100%" stop-color="#3A2A08"/>
+  </radialGradient>
+  <radialGradient id="gt" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#5AC8AA"/>
+    <stop offset="45%"  stop-color="#2A8A6C"/>
+    <stop offset="85%"  stop-color="#0A3828"/>
+    <stop offset="100%" stop-color="#030E0A"/>
+  </radialGradient>
+  <radialGradient id="gt2" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#4ABCAA"/>
+    <stop offset="55%"  stop-color="#1A6A52"/>
+    <stop offset="100%" stop-color="#030E0A"/>
+  </radialGradient>
+  <filter id="fs">
+    <feDropShadow dx="0" dy="5" stdDeviation="10" flood-color="#000" flood-opacity="0.88"/>
+  </filter>
+  <filter id="fss">
+    <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.75"/>
+  </filter>
+</defs>
+
+<!-- ═══ OUTER DIAMOND FRAME ═══════════════════════════════════ -->
+<path fill="#010402" filter="url(#fs)"
+  d="M110,6 L200,110 L110,254 L20,110 Z"/>
+<path fill="url(#gg)"
+  d="M110,8 L198,110 L110,252 L22,110 Z"/>
+<path fill="#020806"
+  d="M110,22 L184,110 L110,236 L36,110 Z"/>
+<path fill="url(#gg)" opacity="0.45"
+  d="M110,30 L176,110 L110,226 L44,110 Z"/>
+<path fill="#010402"
+  d="M110,38 L168,110 L110,216 L52,110 Z"/>
+
+<!-- ═══ GROUND BASE — horizontal bar (the earth, the root) ═══ -->
+<path fill="#010402"
+  d="M60,186 L160,186 L158,196 L62,196 Z"/>
+<path fill="url(#gg)"
+  d="M62,187 L158,187 L156,195 L64,195 Z"/>
+<path fill="#020806"
+  d="M66,188 L154,188 L152,194 L68,194 Z"/>
+<path fill="url(#gt)" opacity="0.7"
+  d="M68,189 L152,189 L150,193 L70,193 Z"/>
+<path fill="none" stroke="#020806" stroke-width="4"
+  d="M62,187 L158,187 L156,195 L64,195 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.7"
+  d="M62,187 L158,187 L156,195 L64,195 Z"/>
+
+<!-- ═══ STEM — vertical axis rising from base ═══════════════ -->
+<path fill="#010402" d="M106,130 L114,130 L113,188 L107,188 Z"/>
+<path fill="url(#gg)"  d="M107,131 L113,131 L112,187 L108,187 Z"/>
+<path fill="#020806"   d="M108.5,132 L111.5,132 L111,186 L109,186 Z"/>
+<path fill="url(#gt)"  opacity="0.6" d="M109,133 L111,133 L110.6,185 L109.4,185 Z"/>
+
+<!-- ═══ OUTER PETALS — 5 petals fanning upward from stem ════ -->
+
+<!-- Petal left-far -->
+<path fill="#010402" filter="url(#fss)"
+  d="M110,128 C96,116 74,100 62,80 C56,68 58,58 66,58 C76,58 90,72 102,92 C108,104 110,118 110,128 Z"/>
+<path fill="url(#gg)"
+  d="M110,126 C96,114 75,98 63,78 C57,66 59,57 67,57 C77,57 91,71 103,91 C109,103 110,116 110,126 Z"/>
+<path fill="#020806"
+  d="M110,122 C97,111 78,96 67,77 C62,66 64,58 71,58 C80,58 93,71 104,90 C109,101 110,114 110,122 Z"/>
+<path fill="url(#gt)"
+  d="M110,119 C98,108 80,94 70,77 C65,67 67,59 73,59 C82,59 94,72 105,90 C109,100 110,112 110,119 Z"/>
+<path fill="none" stroke="#020806" stroke-width="4"
+  d="M110,126 C96,114 75,98 63,78 C57,66 59,57 67,57 C77,57 91,71 103,91 C109,103 110,116 110,126 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.6"
+  d="M110,126 C96,114 75,98 63,78 C57,66 59,57 67,57 C77,57 91,71 103,91 C109,103 110,116 110,126 Z"/>
+
+<!-- Petal right-far -->
+<path fill="#010402" filter="url(#fss)"
+  d="M110,128 C124,116 146,100 158,80 C164,68 162,58 154,58 C144,58 130,72 118,92 C112,104 110,118 110,128 Z"/>
+<path fill="url(#gg)"
+  d="M110,126 C124,114 145,98 157,78 C163,66 161,57 153,57 C143,57 129,71 117,91 C111,103 110,116 110,126 Z"/>
+<path fill="#020806"
+  d="M110,122 C123,111 142,96 153,77 C158,66 156,58 149,58 C140,58 127,71 116,90 C111,101 110,114 110,122 Z"/>
+<path fill="url(#gt)"
+  d="M110,119 C122,108 140,94 150,77 C155,67 153,59 147,59 C138,59 126,72 115,90 C111,100 110,112 110,119 Z"/>
+<path fill="none" stroke="#020806" stroke-width="4"
+  d="M110,126 C124,114 145,98 157,78 C163,66 161,57 153,57 C143,57 129,71 117,91 C111,103 110,116 110,126 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.6"
+  d="M110,126 C124,114 145,98 157,78 C163,66 161,57 153,57 C143,57 129,71 117,91 C111,103 110,116 110,126 Z"/>
+
+<!-- Petal left-mid -->
+<path fill="#010402" filter="url(#fss)"
+  d="M110,128 C100,114 84,96 74,76 C68,62 72,52 80,54 C90,56 102,72 108,94 C110,106 110,118 110,128 Z"/>
+<path fill="url(#gg)"
+  d="M110,126 C100,112 85,94 75,75 C69,61 73,52 81,54 C91,56 103,72 109,93 C111,105 110,117 110,126 Z"/>
+<path fill="#020806"
+  d="M110,122 C101,109 87,93 78,75 C73,63 76,54 83,56 C92,57 103,72 109,92 C111,103 110,115 110,122 Z"/>
+<path fill="url(#gt2)"
+  d="M110,119 C101,107 88,92 80,75 C75,64 78,56 85,57 C93,58 104,72 109,91 C111,102 110,113 110,119 Z"/>
+<path fill="none" stroke="#020806" stroke-width="4"
+  d="M110,126 C100,112 85,94 75,75 C69,61 73,52 81,54 C91,56 103,72 109,93 C111,105 110,117 110,126 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.6"
+  d="M110,126 C100,112 85,94 75,75 C69,61 73,52 81,54 C91,56 103,72 109,93 C111,105 110,117 110,126 Z"/>
+
+<!-- Petal right-mid -->
+<path fill="#010402" filter="url(#fss)"
+  d="M110,128 C120,114 136,96 146,76 C152,62 148,52 140,54 C130,56 118,72 112,94 C110,106 110,118 110,128 Z"/>
+<path fill="url(#gg)"
+  d="M110,126 C120,112 135,94 145,75 C151,61 147,52 139,54 C129,56 117,72 111,93 C109,105 110,117 110,126 Z"/>
+<path fill="#020806"
+  d="M110,122 C119,109 133,93 142,75 C147,63 144,54 137,56 C128,57 117,72 111,92 C109,103 110,115 110,122 Z"/>
+<path fill="url(#gt2)"
+  d="M110,119 C119,107 132,92 140,75 C145,64 142,56 135,57 C127,58 116,72 111,91 C109,102 110,113 110,119 Z"/>
+<path fill="none" stroke="#020806" stroke-width="4"
+  d="M110,126 C120,112 135,94 145,75 C151,61 147,52 139,54 C129,56 117,72 111,93 C109,105 110,117 110,126 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.6"
+  d="M110,126 C120,112 135,94 145,75 C151,61 147,52 139,54 C129,56 117,72 111,93 C109,105 110,117 110,126 Z"/>
+
+<!-- Petal center — straight up, gold, dominant -->
+<path fill="#010402" filter="url(#fss)"
+  d="M110,128 C104,112 100,90 102,68 C104,52 108,44 110,44 C112,44 116,52 118,68 C120,90 116,112 110,128 Z"/>
+<path fill="url(#gg)"
+  d="M110,126 C104,110 101,88 103,67 C105,52 108,44 110,44 C112,44 115,52 117,67 C119,88 116,110 110,126 Z"/>
+<path fill="#020806"
+  d="M110,122 C105,107 103,87 105,67 C107,54 109,47 110,47 C111,47 113,54 115,67 C117,87 115,107 110,122 Z"/>
+<path fill="url(#gt)"
+  d="M110,119 C105,105 104,86 106,67 C108,55 109,49 110,49 C111,49 112,55 114,67 C116,86 115,105 110,119 Z"/>
+<path fill="none" stroke="#020806" stroke-width="4"
+  d="M110,126 C104,110 101,88 103,67 C105,52 108,44 110,44 C112,44 115,52 117,67 C119,88 116,110 110,126 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.7"
+  d="M110,126 C104,110 101,88 103,67 C105,52 108,44 110,44 C112,44 115,52 117,67 C119,88 116,110 110,126 Z"/>
+
+<!-- ═══ CENTER SEED — layered orb at base of petals ══════════ -->
+<circle cx="110" cy="130" r="16" fill="#010402" filter="url(#fss)"/>
+<circle cx="110" cy="130" r="14" fill="url(#gg)"/>
+<circle cx="110" cy="130" r="9"  fill="#020806"/>
+<circle cx="110" cy="130" r="7"  fill="url(#gt)"/>
+<circle cx="110" cy="130" r="3"  fill="#020806"/>
+<circle cx="110" cy="130" r="1.8" fill="#EAC860"/>
+<circle cx="110" cy="130" r="14" fill="none" stroke="#020806" stroke-width="4"/>
+<circle cx="110" cy="130" r="14" fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.7"/>
+
+<!-- ═══ BASE ANCHOR ══════════════════════════════════════════ -->
+<path fill="#010402" d="M88,214 L110,228 L132,214 L126,204 L110,216 L94,204 Z"/>
+<path fill="url(#gg)"  d="M90,213 L110,226 L130,213 L124,204 L110,215 L96,204 Z"/>
+<path fill="#020806"   d="M96,210 L110,220 L124,210 L120,204 L110,213 L100,204 Z"/>
+
+<!-- ═══ APEX CHEVRON ═════════════════════════════════════════ -->
+<path fill="#010402" d="M110,6 L122,22 L116,22 L110,30 L104,22 L98,22 Z"/>
+<path fill="url(#gg)"  d="M110,8 L120,22 L114,22 L110,29 L106,22 L100,22 Z"/>
+<path fill="#020806"   d="M110,14 L115,22 L110,27 L105,22 Z"/>
+<path fill="url(#gg)"  d="M110,17 L113,21 L110,25 L107,21 Z"/>
+
+<!-- ═══ OUTER FRAME BORDER FINISH ═══════════════════════════ -->
+<path fill="none" stroke="#020806" stroke-width="7" stroke-linejoin="miter"
+  d="M110,8 L198,110 L110,252 L22,110 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="3.5" stroke-linejoin="miter" opacity="0.8"
+  d="M110,8 L198,110 L110,252 L22,110 Z"/>
+
+</svg>

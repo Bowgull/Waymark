@@ -1,4 +1,59 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(0.08 0.005 250);
+  --foreground: oklch(0.93 0.01 80);
+  --card: oklch(0.14 0.005 250);
+  --card-foreground: oklch(0.93 0.01 80);
+  --primary: oklch(0.82 0.12 80);
+  --primary-foreground: oklch(0.15 0.02 80);
+  --secondary: oklch(0.2 0.005 250);
+  --secondary-foreground: oklch(0.93 0.01 80);
+  --muted: oklch(0.2 0.005 250);
+  --muted-foreground: oklch(0.55 0.01 250);
+  --accent: oklch(0.72 0.14 170);
+  --accent-foreground: oklch(0.15 0.02 170);
+  --destructive: oklch(0.55 0.15 25);
+  --border: oklch(0.22 0.005 250);
+  --input: oklch(0.22 0.005 250);
+  --ring: oklch(0.82 0.12 80);
+  --radius: 0.75rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Waymark brand colors */
+  --color-gold: #E8C860;
+  --color-gold-dark: #C8A030;
+  --color-teal: #4ACAAA;
+  --color-teal-dark: #1E8A68;
+  --color-clay: #C45A3C;
+  --color-forest: #2D6B4F;
+  --color-forest-light: #4ABA8A;
+}
 
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }
@@ -6,9 +61,71 @@
     height: 100%;
     margin: 0;
     padding: 0;
-    background-color: #0a0a0a;
-    color: #f5f0e8;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: 'Geist Variable', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  html {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+}
+
+/* ─── Animations ─────────────────────────────────────────── */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes celebration {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@layer utilities {
+  .animate-fade-in-up {
+    animation: fade-in-up 0.4s ease-out both;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out both;
+  }
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  .animate-slide-in-right {
+    animation: slide-in-right 0.35s ease-out both;
+  }
+  .animate-scale-in {
+    animation: scale-in 0.3s ease-out both;
+  }
+  .animate-celebration {
+    animation: celebration 0.5s ease-in-out;
+  }
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-300 { animation-delay: 300ms; }
+  .animation-delay-400 { animation-delay: 400ms; }
 }

@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+<defs>
+  <radialGradient id="gg" cx="32%" cy="24%" r="74%">
+    <stop offset="0%" stop-color="#EAC860"/>
+    <stop offset="38%" stop-color="#C8A030"/>
+    <stop offset="78%" stop-color="#7A5C18"/>
+    <stop offset="100%" stop-color="#3A2A08"/>
+  </radialGradient>
+  <radialGradient id="gt" cx="36%" cy="28%" r="68%">
+    <stop offset="0%" stop-color="#4ACAAA"/>
+    <stop offset="50%" stop-color="#1E8A68"/>
+    <stop offset="100%" stop-color="#082E20"/>
+  </radialGradient>
+  <radialGradient id="bg" cx="40%" cy="35%" r="65%">
+    <stop offset="0%" stop-color="#1A3028"/>
+    <stop offset="60%" stop-color="#0A1810"/>
+    <stop offset="100%" stop-color="#040C08"/>
+  </radialGradient>
+  <clipPath id="cc">
+    <circle cx="100" cy="100" r="96"/>
+  </clipPath>
+</defs>
+
+<g clip-path="url(#cc)">
+  <!-- Background -->
+  <circle cx="100" cy="100" r="96" fill="url(#bg)"/>
+
+  <!-- Outer gold ring -->
+  <circle cx="100" cy="100" r="91" fill="none" stroke="#0A1208" stroke-width="9"/>
+  <circle cx="100" cy="100" r="91" fill="none" stroke="url(#gg)" stroke-width="6"/>
+  <circle cx="100" cy="100" r="91" fill="none" stroke="#060C08" stroke-width="2"/>
+  <circle cx="100" cy="100" r="91" fill="none" stroke="url(#gt)" stroke-width="1.5" opacity="0.3"/>
+
+  <!--
+    SHAPE 1: top chevron flowing into CW arc top→right
+    Arc centerline r=52, center 100,100
+    Outer tube r=60: start 100,40 top, end 160,100 right
+    Inner tube r=44: start 100,56 top, end 144,100 right
+    Chevron tip: 100,32
+    Chevron outer wings land at outer arc start: 100,40 splits left/right as tube opening
+    Wings flare out to: left=78,46  right=122,46
+    Path: tip → right-outer-wing → outer-arc-CW → round-cap-right → inner-arc-CCW → left-outer-wing → close
+    Round cap at right end: semicircle from 160,100 to 144,100
+  -->
+
+  <!-- SHAPE 1 SHADOW -->
+  <path fill="#0A1208" d="
+    M100,32
+    L122,46
+    A60,60 0 0,1 160,100
+    A8,8 0 0,1 144,100
+    A44,44 0 0,0 78,46
+    Z
+  "/>
+
+  <!-- SHAPE 1 GOLD -->
+  <path fill="url(#gg)" d="
+    M100,34
+    L119,47
+    A56,56 0 0,1 156,100
+    A6,6 0 0,1 144,100
+    A48,48 0 0,0 81,47
+    Z
+  "/>
+
+  <!-- SHAPE 1 DARK CHANNEL -->
+  <path fill="#060C08" d="
+    M100,40
+    L109,48
+    A53.5,53.5 0 0,1 153.5,100
+    A2.5,2.5 0 0,1 148.5,100
+    A50.5,50.5 0 0,0 91,48
+    Z
+  "/>
+
+  <!-- SHAPE 1 TEAL -->
+  <path fill="url(#gt)" opacity="0.8" d="
+    M100,41
+    L107,48.5
+    A52.75,52.75 0 0,1 152.75,100
+    A1.25,1.25 0 0,1 150.25,100
+    A50.25,50.25 0 0,0 93,48.5
+    Z
+  "/>
+
+  <!--
+    SHAPE 2: bottom chevron flowing into CW arc bottom→left
+    Arc centerline r=52, center 100,100
+    Outer tube r=60: start 100,160 bottom, end 40,100 left
+    Inner tube r=44: start 100,144 bottom, end 56,100 left
+    Chevron tip: 100,168
+    Wings: left=78,154  right=122,154
+    Round cap at left end: semicircle from 40,100 to 56,100
+  -->
+
+  <!-- SHAPE 2 SHADOW -->
+  <path fill="#0A1208" d="
+    M100,168
+    L78,154
+    A60,60 0 0,1 40,100
+    A8,8 0 0,1 56,100
+    A44,44 0 0,0 122,154
+    Z
+  "/>
+
+  <!-- SHAPE 2 GOLD -->
+  <path fill="url(#gg)" d="
+    M100,166
+    L81,153
+    A56,56 0 0,1 44,100
+    A6,6 0 0,1 56,100
+    A48,48 0 0,0 119,153
+    Z
+  "/>
+
+  <!-- SHAPE 2 DARK CHANNEL -->
+  <path fill="#060C08" d="
+    M100,160
+    L91,152
+    A53.5,53.5 0 0,1 46.5,100
+    A2.5,2.5 0 0,1 51.5,100
+    A50.5,50.5 0 0,0 109,152
+    Z
+  "/>
+
+  <!-- SHAPE 2 TEAL -->
+  <path fill="url(#gt)" opacity="0.8" d="
+    M100,159
+    L93,151.5
+    A52.75,52.75 0 0,1 47.25,100
+    A1.25,1.25 0 0,1 49.75,100
+    A50.25,50.25 0 0,0 107,151.5
+    Z
+  "/>
+
+  <!-- CENTER PIP -->
+  <circle cx="100" cy="100" r="18" fill="#0A1208"/>
+  <circle cx="100" cy="100" r="15" fill="url(#gg)"/>
+  <circle cx="100" cy="100" r="10" fill="#060C08"/>
+  <circle cx="100" cy="100" r="8"  fill="url(#gt)"/>
+  <circle cx="100" cy="100" r="3.5" fill="#060C08"/>
+  <circle cx="100" cy="100" r="2"   fill="#EAC860"/>
+</g>
+</svg>

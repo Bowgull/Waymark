@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 260">
+<defs>
+  <radialGradient id="gg" cx="32%" cy="24%" r="74%">
+    <stop offset="0%"   stop-color="#EAC860"/>
+    <stop offset="38%"  stop-color="#C8A030"/>
+    <stop offset="78%"  stop-color="#7A5C18"/>
+    <stop offset="100%" stop-color="#3A2A08"/>
+  </radialGradient>
+  <radialGradient id="gr" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#CC5838"/>
+    <stop offset="50%"  stop-color="#8C2E18"/>
+    <stop offset="100%" stop-color="#3A1008"/>
+  </radialGradient>
+  <radialGradient id="gt" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#4ABCAA"/>
+    <stop offset="50%"  stop-color="#1E7A6C"/>
+    <stop offset="100%" stop-color="#062E28"/>
+  </radialGradient>
+  <filter id="fs">
+    <feDropShadow dx="0" dy="5" stdDeviation="10" flood-color="#000" flood-opacity="0.85"/>
+  </filter>
+  <filter id="fss">
+    <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000" flood-opacity="0.7"/>
+  </filter>
+</defs>
+
+<!-- ═══ OUTER GOLD KITE FRAME ═══════════════════════════════
+     Top point, wide shoulders at mid-height, bottom tip
+     Matches the overall kite/diamond silhouette of the PNG
+═══════════════════════════════════════════════════════════ -->
+<path fill="#020806" filter="url(#fs)"
+  d="M110,6 L198,86 L198,152 L110,250 L22,152 L22,86 Z"/>
+<path fill="url(#gg)"
+  d="M110,8 L196,87 L196,151 L110,248 L24,151 L24,87 Z"/>
+<!-- Inner dark channel — creates gold ring effect -->
+<path fill="#020806"
+  d="M110,20 L184,90 L184,148 L110,234 L36,148 L36,90 Z"/>
+<!-- Second gold inlay ring -->
+<path fill="url(#gg)" opacity="0.55"
+  d="M110,26 L178,92 L178,145 L110,226 L42,145 L42,92 Z"/>
+<!-- Dark interior body -->
+<path fill="#020806"
+  d="M110,36 L170,95 L170,142 L110,214 L50,142 L50,95 Z"/>
+
+<!-- ═══ LARGE UPWARD TRIANGLE (guard raised) ═════════════════
+     Dominant shape — gold hollow triangle pointing up
+     Occupies upper 2/3 of interior
+═══════════════════════════════════════════════════════════ -->
+<!-- Shadow -->
+<path fill="#020806"
+  d="M110,44 L168,148 L52,148 Z"/>
+<!-- Gold face -->
+<path fill="url(#gg)"
+  d="M110,46 L165,146 L55,146 Z"/>
+<!-- Hollow inner cut -->
+<path fill="#020806"
+  d="M110,68 L148,142 L72,142 Z"/>
+<!-- Interior warm glow (clay/red) -->
+<path fill="url(#gr)" opacity="0.6"
+  d="M110,74 L143,140 L77,140 Z"/>
+
+<!-- ═══ DOWNWARD TRIANGLE (stance/base) ══════════════════════
+     Inverted gold triangle — the Muay Thai low stance
+     Overlaps slightly with upward to form the star/Star of David geometry
+═══════════════════════════════════════════════════════════ -->
+<!-- Shadow -->
+<path fill="#020806"
+  d="M110,154 L52,102 L168,102 Z"/>
+<!-- Gold face -->
+<path fill="url(#gg)"
+  d="M110,152 L55,104 L165,104 Z"/>
+<!-- Hollow inner -->
+<path fill="#020806"
+  d="M110,136 L74,108 L146,108 Z"/>
+<!-- Interior clay -->
+<path fill="url(#gr)" opacity="0.5"
+  d="M110,132 L78,110 L142,110 Z"/>
+
+<!-- ═══ CENTER DIAMOND (the heart/solar plexus) ══════════════
+     Small gold diamond at the center intersection point
+     Where both triangles meet — the power center
+═══════════════════════════════════════════════════════════ -->
+<path fill="#020806"
+  d="M110,108 L124,122 L110,136 L96,122 Z"/>
+<path fill="url(#gg)"
+  d="M110,110 L122,122 L110,134 L98,122 Z"/>
+<path fill="#020806"
+  d="M110,115 L117,122 L110,129 L103,122 Z"/>
+<path fill="url(#gr)"
+  d="M110,116 L116,122 L110,128 L104,122 Z"/>
+<circle cx="110" cy="122" r="2" fill="url(#gg)"/>
+
+<!-- ═══ LEFT TEAL WING GUARD ═══════════════════════════════
+     The curved arm/shin guard bracket — left side
+     Matches the teal bracket shapes flanking the center in PNG
+═══════════════════════════════════════════════════════════ -->
+<!-- Outer dark housing -->
+<path fill="#020806" filter="url(#fss)"
+  d="M44,96 L58,88 L64,96 L64,150 L58,156 L44,148 Z"/>
+<!-- Teal stone fill -->
+<path fill="url(#gt)"
+  d="M46,97 L57,90 L62,97 L62,149 L57,154 L46,147 Z"/>
+<!-- Inner shadow depth -->
+<path fill="#020806" opacity="0.38"
+  d="M48,100 L56,93 L60,100 L60,146 L56,151 L48,144 Z"/>
+<!-- Gold edge channels -->
+<path fill="none" stroke="url(#gg)" stroke-width="2.5"
+  d="M46,97 L57,90 L62,97 L62,149 L57,154 L46,147 Z"/>
+<path fill="none" stroke="#020806" stroke-width="5"
+  d="M46,97 L57,90 L62,97 L62,149 L57,154 L46,147 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2.5"
+  d="M46,97 L57,90 L62,97 L62,149 L57,154 L46,147 Z"/>
+
+<!-- ═══ RIGHT TEAL WING GUARD (mirror) ════════════════════════ -->
+<path fill="#020806" filter="url(#fss)"
+  d="M176,96 L162,88 L156,96 L156,150 L162,156 L176,148 Z"/>
+<path fill="url(#gt)"
+  d="M174,97 L163,90 L158,97 L158,149 L163,154 L174,147 Z"/>
+<path fill="#020806" opacity="0.38"
+  d="M172,100 L164,93 L160,100 L160,146 L164,151 L172,144 Z"/>
+<path fill="none" stroke="#020806" stroke-width="5"
+  d="M174,97 L163,90 L158,97 L158,149 L163,154 L174,147 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2.5"
+  d="M174,97 L163,90 L158,97 L158,149 L163,154 L174,147 Z"/>
+
+<!-- ═══ UPPER SHOULDER MARKS ═══════════════════════════════
+     The diagonal gold marks at the upper shoulders of the frame
+     Reads as outstretched guard
+═══════════════════════════════════════════════════════════ -->
+<!-- Left shoulder diagonal -->
+<path fill="#020806"
+  d="M24,90 L62,110 L58,118 L20,98 Z"/>
+<path fill="url(#gg)"
+  d="M26,91 L61,111 L57,117 L22,97 Z"/>
+<!-- Right shoulder diagonal -->
+<path fill="#020806"
+  d="M196,90 L158,110 L162,118 L200,98 Z"/>
+<path fill="url(#gg)"
+  d="M194,91 L159,111 L163,117 L198,97 Z"/>
+
+<!-- ═══ LOWER CONNECTOR (V below center going to bottom tip) ═
+     Gold V-notch below the lower triangle
+═══════════════════════════════════════════════════════════ -->
+<path fill="#020806"
+  d="M86,162 L110,178 L134,162 L130,158 L110,174 L90,158 Z"/>
+<path fill="url(#gg)"
+  d="M88,162 L110,176 L132,162 L128,159 L110,174 L92,159 Z"/>
+
+<!-- ═══ BOTTOM STEM DIAMOND ═══════════════════════════════
+     Small accent diamond above the bottom tip
+═══════════════════════════════════════════════════════════ -->
+<path fill="#020806"
+  d="M110,188 L118,198 L110,208 L102,198 Z"/>
+<path fill="url(#gg)"
+  d="M110,190 L116,198 L110,206 L104,198 Z"/>
+<path fill="#020806"
+  d="M110,194 L113,198 L110,202 L107,198 Z"/>
+
+<!-- ═══ OUTER FRAME BORDER FINISH ══════════════════════════ -->
+<path fill="none" stroke="#020806" stroke-width="7" stroke-linejoin="miter"
+  d="M110,8 L196,87 L196,151 L110,248 L24,151 L24,87 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="3.5" stroke-linejoin="miter"
+  d="M110,8 L196,87 L196,151 L110,248 L24,151 L24,87 Z"/>
+
+</svg>

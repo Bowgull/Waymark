@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+<defs>
+  <radialGradient id="tri" cx="40%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#E8C860"/>
+    <stop offset="45%"  stop-color="#C8A030"/>
+    <stop offset="85%"  stop-color="#7A5C18"/>
+    <stop offset="100%" stop-color="#3A2A08"/>
+  </radialGradient>
+  <radialGradient id="chev" cx="38%" cy="30%" r="65%">
+    <stop offset="0%"   stop-color="#4ACAAA"/>
+    <stop offset="50%"  stop-color="#1E8A68"/>
+    <stop offset="100%" stop-color="#082E20"/>
+  </radialGradient>
+  <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%"   stop-color="#3A2A08"/>
+    <stop offset="20%"  stop-color="#C8A030"/>
+    <stop offset="50%"  stop-color="#E8C860"/>
+    <stop offset="80%"  stop-color="#C8A030"/>
+    <stop offset="100%" stop-color="#3A2A08"/>
+  </linearGradient>
+</defs>
+
+<!-- Outer triangle shadow -->
+<path fill="#0A1208" d="M100,18 L172,138 L28,138 Z"/>
+
+<!-- Gold triangle body -->
+<path fill="url(#tri)" d="M100,22 L168,136 L32,136 Z"/>
+
+<!-- Inner cut — hollow form -->
+<path fill="#060A08" d="M100,48 L152,128 L48,128 Z"/>
+
+<!-- Barbell — left weight plate -->
+<rect x="8"   y="88" width="14" height="38" rx="3" fill="#0A1208"/>
+<rect x="10"  y="90" width="10" height="34" rx="2" fill="url(#tri)"/>
+<!-- Left collar -->
+<rect x="22"  y="93" width="10" height="28" rx="2" fill="#0A1208"/>
+<rect x="24"  y="95" width="6"  height="24" rx="1" fill="url(#tri)" opacity="0.7"/>
+<!-- Bar -->
+<rect x="32"  y="100" width="136" height="14" rx="3" fill="#0A1208"/>
+<rect x="34"  y="102" width="132" height="10" rx="2" fill="url(#bar)"/>
+<!-- Right collar -->
+<rect x="168" y="93" width="10" height="28" rx="2" fill="#0A1208"/>
+<rect x="170" y="95" width="6"  height="24" rx="1" fill="url(#tri)" opacity="0.7"/>
+<!-- Right weight plate -->
+<rect x="178" y="88" width="14" height="38" rx="3" fill="#0A1208"/>
+<rect x="180" y="90" width="10" height="34" rx="2" fill="url(#tri)"/>
+
+<!-- Downward chevron — the weight pressing down -->
+<path fill="#030806" d="M56,130 L100,172 L144,130 L132,130 L100,158 L68,130 Z"/>
+<path fill="url(#chev)" d="M58,130 L100,168 L142,130 L130,130 L100,156 L70,130 Z"/>
+<!-- Chevron inner line -->
+<path fill="none" stroke="#060A08" stroke-width="3" d="M68,130 L100,156 L132,130"/>
+<path fill="none" stroke="#4ACAAA" stroke-width="1.5" opacity="0.3" d="M70,130 L100,154 L130,130"/>
+
+<!-- Triangle outer edge lines -->
+<path fill="none" stroke="#060A08" stroke-width="5" stroke-linejoin="miter" d="M100,22 L168,136 L32,136 Z"/>
+<path fill="none" stroke="url(#tri)" stroke-width="2.5" stroke-linejoin="miter" opacity="0.6" d="M100,22 L168,136 L32,136 Z"/>
+
+</svg>
