@@ -1,5 +1,8 @@
 import { useState } from 'react'
 
+import { RingTimer } from '@/components/RingTimer'
+import { Button } from '@/components/ui/button'
+
 import { RestTimer } from './RestTimer'
 import { useRestTimer } from './useRestTimer'
 
@@ -14,13 +17,6 @@ type SkipPhase = 'ready' | 'skipping' | 'rest'
 interface SkipRopeViewProps {
   skipSession: SkipSession
   onComplete: () => void
-}
-
-function formatTime(sec: number): string {
-  const abs = Math.abs(sec)
-  const m = Math.floor(abs / 60)
-  const s = abs % 60
-  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 export function SkipRopeView({ skipSession, onComplete }: SkipRopeViewProps) {
@@ -53,63 +49,61 @@ export function SkipRopeView({ skipSession, onComplete }: SkipRopeViewProps) {
     setSkipPhase('ready')
   }
 
-  // Check if round timer hit zero
   if (skipPhase === 'skipping' && roundTimer.secondsRemaining <= 0 && roundTimer.isRunning) {
     endRound()
   }
 
   if (skipPhase === 'rest') {
     return (
-      <div>
-        <p className="text-center text-sm uppercase tracking-widest text-zinc-500">
+      <div className="animate-fade-in">
+        <p className="text-label text-center text-muted-foreground">
           Round {currentRound} of {totalRounds} — Rest
         </p>
         <RestTimer
+          totalSeconds={60}
           secondsRemaining={restTimer.secondsRemaining}
           isOvertime={restTimer.isOvertime}
           onNext={nextRound}
+          accentColor="#1E8A68"
         />
       </div>
     )
   }
 
   return (
-    <div>
-      <p className="mb-1 text-xs uppercase tracking-widest text-zinc-500">
+    <div className="animate-fade-in">
+      <p className="text-label mb-1 text-muted-foreground">
         Round {currentRound} of {totalRounds}
       </p>
-      <h2 className="text-2xl font-bold text-zinc-100">Skip Rope</h2>
-      <p className="mt-2 text-sm text-zinc-400">
+      <h2 className="text-display-lg text-foreground">Skip Rope</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
         Steady rhythm. Stay light on the balls of your feet. Relax your shoulders.
       </p>
 
       {skipPhase === 'ready' ? (
         <div className="mt-8 flex flex-col items-center">
-          <p className="mb-2 text-5xl font-bold tabular-nums text-zinc-100">
-            {formatTime(skipSession.roundDurSec)}
-          </p>
-          <p className="mb-6 text-sm text-zinc-500">Round duration</p>
-          <button
-            onClick={startRound}
-            className="min-h-[48px] rounded-xl bg-[#1E8A68] px-8 py-3 text-base font-bold text-zinc-100 active:bg-[#4ACAAA]"
-          >
+          <RingTimer
+            totalSeconds={skipSession.roundDurSec}
+            secondsRemaining={skipSession.roundDurSec}
+            label="Round"
+            accentColor="#1E8A68"
+          />
+          <Button onClick={startRound} size="lg" className="mt-6" style={{ backgroundColor: '#1E8A68' }}>
             Start Round
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="mt-6 flex flex-col items-center">
-          <p className="mb-1 text-xs uppercase tracking-widest text-zinc-500">Time</p>
-          <p className={`text-8xl font-bold tabular-nums ${
-            roundTimer.secondsRemaining <= 10 ? 'text-[#C45A3C]' : 'text-zinc-100'
-          }`}>
-            {formatTime(roundTimer.secondsRemaining)}
-          </p>
-          <button
-            onClick={endRound}
-            className="mt-8 min-h-[44px] rounded-lg bg-zinc-800 px-6 py-2 text-sm font-medium text-zinc-400 active:bg-zinc-700"
-          >
+          <RingTimer
+            totalSeconds={skipSession.roundDurSec}
+            secondsRemaining={roundTimer.secondsRemaining}
+            isOvertime={roundTimer.isOvertime}
+            label={roundTimer.secondsRemaining <= 10 ? 'Finish' : 'Skip'}
+            accentColor={roundTimer.secondsRemaining <= 10 ? '#C45A3C' : '#1E8A68'}
+          />
+          <Button onClick={endRound} variant="secondary" className="mt-6">
             End Round Early
-          </button>
+          </Button>
         </div>
       )}
     </div>

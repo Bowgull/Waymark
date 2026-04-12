@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 280">
+<defs>
+  <radialGradient id="bg" cx="38%" cy="28%" r="70%">
+    <stop offset="0%"   stop-color="#5AC8AA"/>
+    <stop offset="35%"  stop-color="#2A8A6C"/>
+    <stop offset="70%"  stop-color="#0E4030"/>
+    <stop offset="100%" stop-color="#040E0A"/>
+  </radialGradient>
+  <radialGradient id="gg" cx="32%" cy="24%" r="74%">
+    <stop offset="0%"   stop-color="#EAC860"/>
+    <stop offset="42%"  stop-color="#C8A030"/>
+    <stop offset="82%"  stop-color="#7A5C18"/>
+    <stop offset="100%" stop-color="#3A2A08"/>
+  </radialGradient>
+  <radialGradient id="gc" cx="34%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#C86848"/>
+    <stop offset="52%"  stop-color="#9A3E2C"/>
+    <stop offset="100%" stop-color="#481808"/>
+  </radialGradient>
+  <radialGradient id="gt" cx="40%" cy="30%" r="65%">
+    <stop offset="0%"   stop-color="#7AE8C8"/>
+    <stop offset="45%"  stop-color="#3AAA88"/>
+    <stop offset="100%" stop-color="#0A3828"/>
+  </radialGradient>
+  <filter id="fs">
+    <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#000" flood-opacity="0.85"/>
+  </filter>
+</defs>
+
+<!-- Chain -->
+<line x1="110" y1="8" x2="110" y2="40" stroke="#040808" stroke-width="5"/>
+<line x1="110" y1="8" x2="110" y2="40" stroke="#9A7820" stroke-width="2.5" opacity="0.4"/>
+<ellipse cx="110" cy="14" rx="7" ry="4.5" fill="none" stroke="#040808" stroke-width="4.5"/>
+<ellipse cx="110" cy="14" rx="7" ry="4.5" fill="none" stroke="url(#gg)" stroke-width="2.5"/>
+<ellipse cx="110" cy="23" rx="4.5" ry="7" fill="none" stroke="#040808" stroke-width="4.5"/>
+<ellipse cx="110" cy="23" rx="4.5" ry="7" fill="none" stroke="url(#gg)" stroke-width="2.5"/>
+<ellipse cx="110" cy="32" rx="7" ry="4.5" fill="none" stroke="#040808" stroke-width="4.5"/>
+<ellipse cx="110" cy="32" rx="7" ry="4.5" fill="none" stroke="url(#gg)" stroke-width="2.5"/>
+
+<!-- Swivel -->
+<circle cx="110" cy="46" r="11" fill="#040808"/>
+<circle cx="110" cy="46" r="8"  fill="url(#gg)"/>
+<circle cx="110" cy="46" r="4"  fill="#040808"/>
+<circle cx="110" cy="46" r="2"  fill="#EAC860"/>
+
+<!-- Top left wing -->
+<path fill="#030706" d="M100,56 C86,58 62,54 34,70 C26,75 22,81 24,87 L32,89 C30,84 34,78 44,73 C68,60 88,64 100,62 Z"/>
+<path fill="url(#gg)"  d="M100,58 C86,60 64,56 36,72 C28,77 24,83 26,89 L34,91 C32,86 36,80 46,75 C70,62 88,66 100,64 Z"/>
+<path fill="#040808"   d="M100,66 C88,68 62,66 40,79 L34,91 C28,98 26,105 30,108 L37,104 C34,101 37,95 44,90 C66,77 88,74 100,74 Z"/>
+<path fill="url(#gg)" opacity="0.6" d="M100,68 C88,70 64,68 42,81 L36,93 C30,100 28,107 32,110 L39,107 C36,104 39,98 46,93 C68,80 88,76 100,76 Z"/>
+<circle cx="24" cy="97" r="11" fill="#040808"/>
+<circle cx="24" cy="97" r="8"  fill="url(#gg)"/>
+<circle cx="24" cy="97" r="4"  fill="#040808"/>
+<circle cx="24" cy="97" r="2"  fill="#EAC860"/>
+
+<!-- Top right wing -->
+<path fill="#030706" d="M120,56 C134,58 158,54 186,70 C194,75 198,81 196,87 L188,89 C190,84 186,78 176,73 C152,60 132,64 120,62 Z"/>
+<path fill="url(#gg)"  d="M120,58 C134,60 156,56 184,72 C192,77 196,83 194,89 L186,91 C188,86 184,80 174,75 C150,62 132,66 120,64 Z"/>
+<path fill="#040808"   d="M120,66 C132,68 158,66 180,79 L186,91 C192,98 194,105 190,108 L183,104 C186,101 183,95 176,90 C154,77 132,74 120,74 Z"/>
+<path fill="url(#gg)" opacity="0.6" d="M120,68 C132,70 156,68 178,81 L184,93 C190,100 192,107 188,110 L181,107 C184,104 181,98 174,93 C152,80 132,76 120,76 Z"/>
+<circle cx="196" cy="97" r="11" fill="#040808"/>
+<circle cx="196" cy="97" r="8"  fill="url(#gg)"/>
+<circle cx="196" cy="97" r="4"  fill="#040808"/>
+<circle cx="196" cy="97" r="2"  fill="#EAC860"/>
+
+<!-- Bottom left wing (exact vertical mirror of top left) -->
+<path fill="#030706" d="M100,234 C86,232 62,236 34,220 C26,215 22,209 24,203 L32,201 C30,206 34,212 44,217 C68,230 88,226 100,228 Z"/>
+<path fill="url(#gg)"  d="M100,232 C86,230 64,234 36,218 C28,213 24,207 26,201 L34,199 C32,204 36,210 46,215 C70,228 88,224 100,226 Z"/>
+<path fill="#040808"   d="M100,224 C88,222 62,224 40,211 L34,199 C28,192 26,185 30,182 L37,185 C34,188 37,194 44,199 C66,212 88,215 100,215 Z"/>
+<path fill="url(#gg)" opacity="0.6" d="M100,222 C88,220 64,222 42,209 L36,197 C30,190 28,183 32,180 L39,183 C36,186 39,192 46,197 C68,210 88,213 100,213 Z"/>
+<circle cx="24" cy="193" r="11" fill="#040808"/>
+<circle cx="24" cy="193" r="8"  fill="url(#gg)"/>
+<circle cx="24" cy="193" r="4"  fill="#040808"/>
+<circle cx="24" cy="193" r="2"  fill="#EAC860"/>
+
+<!-- Bottom right wing (exact vertical mirror of top right) -->
+<path fill="#030706" d="M120,234 C134,232 158,236 186,220 C194,215 198,209 196,203 L188,201 C190,206 186,212 176,217 C152,230 132,226 120,228 Z"/>
+<path fill="url(#gg)"  d="M120,232 C134,230 156,234 184,218 C192,213 196,207 194,201 L186,199 C188,204 184,210 174,215 C150,228 132,224 120,226 Z"/>
+<path fill="#040808"   d="M120,224 C132,222 158,224 180,211 L186,199 C192,192 194,185 190,182 L183,185 C186,188 183,194 176,199 C154,212 132,215 120,215 Z"/>
+<path fill="url(#gg)" opacity="0.6" d="M120,222 C132,220 156,222 178,209 L184,197 C190,190 192,183 188,180 L181,183 C184,186 181,192 174,197 C152,210 132,213 120,213 Z"/>
+<circle cx="196" cy="193" r="11" fill="#040808"/>
+<circle cx="196" cy="193" r="8"  fill="url(#gg)"/>
+<circle cx="196" cy="193" r="4"  fill="#040808"/>
+<circle cx="196" cy="193" r="2"  fill="#EAC860"/>
+
+<!-- Bag body (drawn after wings so it sits on top) -->
+<path filter="url(#fs)" fill="#040808"
+  d="M110,66 C97,66 83,70 73,79 C62,88 56,101 54,115 C52,128 52,139 52,152 C52,169 54,184 59,197 C65,214 77,226 94,233 C100,236 105,237 110,237 C115,237 120,236 126,233 C143,226 155,214 161,197 C166,184 168,169 168,152 C168,139 168,128 166,115 C164,101 158,88 147,79 C137,70 123,66 110,66 Z"/>
+<path fill="url(#bg)"
+  d="M110,68 C98,68 84,72 74,81 C64,90 58,102 56,116 C54,129 54,140 54,153 C54,170 56,185 61,198 C67,214 78,225 95,232 C101,235 106,236 110,236 C114,236 119,235 125,232 C142,225 153,214 159,198 C164,185 166,170 166,153 C166,140 166,129 164,116 C162,102 156,90 146,81 C136,72 122,68 110,68 Z"/>
+<path fill="none" stroke="#040808" stroke-width="10"
+  d="M110,68 C98,68 84,72 74,81 C64,90 58,102 56,116 C54,129 54,140 54,153 C54,170 56,185 61,198 C67,214 78,225 95,232 C101,235 106,236 110,236 C114,236 119,235 125,232 C142,225 153,214 159,198 C164,185 166,170 166,153 C166,140 166,129 164,116 C162,102 156,90 146,81 C136,72 122,68 110,68 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="5"
+  d="M110,68 C98,68 84,72 74,81 C64,90 58,102 56,116 C54,129 54,140 54,153 C54,170 56,185 61,198 C67,214 78,225 95,232 C101,235 106,236 110,236 C114,236 119,235 125,232 C142,225 153,214 159,198 C164,185 166,170 166,153 C166,140 166,129 164,116 C162,102 156,90 146,81 C136,72 122,68 110,68 Z"/>
+
+<!-- Top cap -->
+<ellipse cx="110" cy="78" rx="46" ry="12" fill="#040808"/>
+<ellipse cx="110" cy="77" rx="44" ry="10" fill="url(#gt)" opacity="0.8"/>
+<ellipse cx="110" cy="76" rx="28" ry="5"  fill="#5AC8AA" opacity="0.3"/>
+
+<!-- Upper seam -->
+<path fill="none" stroke="#040808" stroke-width="7"   d="M58,118 C74,112 146,112 162,118"/>
+<path fill="none" stroke="url(#gg)" stroke-width="3.5" d="M60,118 C76,112 144,112 160,118"/>
+
+<!-- Clay strike zone -->
+<path fill="#040808" d="M54,148 L166,148 L166,171 C152,176 68,176 54,171 Z"/>
+<path fill="url(#gc)"  d="M54,150 L166,150 L166,170 C152,174 68,174 54,170 Z"/>
+<path fill="none" stroke="#040808" stroke-width="4.5" d="M62,160 L158,160"/>
+<path fill="none" stroke="#EAC860" stroke-width="2" opacity="0.5" d="M66,160 L154,160"/>
+<circle cx="110" cy="160" r="9"   fill="#040808"/>
+<circle cx="110" cy="160" r="6"   fill="url(#gg)"/>
+<circle cx="110" cy="160" r="2.5" fill="#040808"/>
+<circle cx="110" cy="160" r="1.2" fill="#EAC860"/>
+
+<!-- Lower seam -->
+<path fill="none" stroke="#040808" stroke-width="7"   d="M56,192 C72,186 148,186 164,192"/>
+<path fill="none" stroke="url(#gg)" stroke-width="3.5" d="M58,192 C74,186 146,186 162,192"/>
+
+<!-- Bottom cap -->
+<ellipse cx="110" cy="236" rx="30" ry="8"  fill="#040808"/>
+<ellipse cx="110" cy="235" rx="26" ry="6"  fill="url(#gt)" opacity="0.4"/>
+<circle  cx="110" cy="236" r="7"   fill="#040808"/>
+<circle  cx="110" cy="236" r="4"   fill="url(#gg)"/>
+<circle  cx="110" cy="236" r="1.5" fill="#EAC860"/>
+
+</svg>

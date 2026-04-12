@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 
 interface WeeklyJournalCardProps {
   onSubmit: (reflection: string) => void
@@ -20,16 +21,16 @@ export function WeeklyJournalCard({ onSubmit, existingReflection }: WeeklyJourna
 
   if (saved) {
     return (
-      <div className="mb-4 rounded-xl border border-zinc-800 border-l-4 border-l-[#E8C860] bg-zinc-900 p-4">
-        <p className="text-sm text-[#E8C860]">Weekly journal saved.</p>
+      <div className="mb-4 border border-gold/10 bg-near-black/50 p-4">
+        <p className="text-sm text-gold">Weekly debrief saved.</p>
       </div>
     )
   }
 
   return (
-    <div className="mb-4 rounded-xl border border-zinc-800 border-l-4 border-l-[#E8C860] bg-zinc-900 p-4">
-      <p className="mb-1 text-sm font-medium text-zinc-300">Weekly Reflection</p>
-      <p className="mb-3 text-xs text-zinc-500">
+    <div className="mb-4 border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
+      <p className="text-display mb-1 text-gold">Weekly Debrief</p>
+      <p className="mb-3 text-xs text-muted-foreground">
         How was your week? What went well? What needs work?
       </p>
       <textarea
@@ -37,15 +38,15 @@ export function WeeklyJournalCard({ onSubmit, existingReflection }: WeeklyJourna
         onChange={(e) => setReflection(e.target.value)}
         rows={4}
         placeholder="Write your thoughts..."
-        className="mb-3 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-[#E8C860] focus:outline-none"
+        className="mb-3 w-full border border-gold/10 bg-deep-forest px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none"
       />
-      <button
+      <Button
         onClick={handleSubmit}
         disabled={submitting || !reflection.trim()}
-        className="min-h-[44px] w-full rounded-lg bg-[#E8C860] py-2 text-sm font-semibold text-zinc-950 active:bg-[#C8A030] disabled:opacity-40"
+        className="w-full"
       >
-        Save Reflection
-      </button>
+        Save Debrief
+      </Button>
     </div>
   )
 }

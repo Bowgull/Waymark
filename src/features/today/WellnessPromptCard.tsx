@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 
 export interface WellnessData {
   sleepHours?: number
@@ -38,15 +39,15 @@ export function WellnessPromptCard({ onSubmit }: WellnessPromptCardProps) {
   const hasAnyData = sleep || weed || alcohol || soreness != null
 
   return (
-    <div className="mb-4 rounded-xl border border-zinc-800 border-l-4 border-l-[#4ACAAA] bg-zinc-900 p-4">
-      <p className="mb-4 text-base font-medium text-zinc-300">
-        How are you feeling?
+    <div className="mb-4 border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
+      <p className="text-display mb-4 text-gold">
+        Morning Report
       </p>
 
       {/* Sleep + Weed + Alcohol row */}
       <div className="mb-4 flex gap-3">
         <div className="flex-1">
-          <label className="mb-1 block text-xs text-zinc-500">Sleep (hrs)</label>
+          <label className="text-label mb-1 block text-muted-foreground">Sleep (hrs)</label>
           <input
             type="number"
             inputMode="decimal"
@@ -56,11 +57,11 @@ export function WellnessPromptCard({ onSubmit }: WellnessPromptCardProps) {
             step="0.5"
             value={sleep}
             onChange={(e) => setSleep(e.target.value)}
-            className="min-h-[44px] w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-2 text-center text-sm text-zinc-100 placeholder-zinc-600 focus:border-[#4ACAAA] focus:outline-none"
+            className="min-h-[44px] w-full border border-gold/10 bg-deep-forest px-2 py-2 text-center text-sm text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none"
           />
         </div>
         <div className="flex-1">
-          <label className="mb-1 block text-xs text-zinc-500">Weed (g)</label>
+          <label className="text-label mb-1 block text-muted-foreground">Weed (g)</label>
           <input
             type="number"
             inputMode="decimal"
@@ -69,11 +70,11 @@ export function WellnessPromptCard({ onSubmit }: WellnessPromptCardProps) {
             step="0.5"
             value={weed}
             onChange={(e) => setWeed(e.target.value)}
-            className="min-h-[44px] w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-2 text-center text-sm text-zinc-100 placeholder-zinc-600 focus:border-[#4ACAAA] focus:outline-none"
+            className="min-h-[44px] w-full border border-gold/10 bg-deep-forest px-2 py-2 text-center text-sm text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none"
           />
         </div>
         <div className="flex-1">
-          <label className="mb-1 block text-xs text-zinc-500">Alcohol</label>
+          <label className="text-label mb-1 block text-muted-foreground">Alcohol</label>
           <input
             type="number"
             inputMode="numeric"
@@ -82,23 +83,23 @@ export function WellnessPromptCard({ onSubmit }: WellnessPromptCardProps) {
             max="10"
             value={alcohol}
             onChange={(e) => setAlcohol(e.target.value)}
-            className="min-h-[44px] w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-2 text-center text-sm text-zinc-100 placeholder-zinc-600 focus:border-[#4ACAAA] focus:outline-none"
+            className="min-h-[44px] w-full border border-gold/10 bg-deep-forest px-2 py-2 text-center text-sm text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none"
           />
         </div>
       </div>
 
       {/* Soreness */}
       <div className="mb-4">
-        <label className="mb-2 block text-xs text-zinc-500">Soreness</label>
+        <label className="text-label mb-2 block text-muted-foreground">Soreness</label>
         <div className="flex gap-1.5">
           {[1, 2, 3, 4, 5].map((s) => (
             <button
               key={s}
               onClick={() => setSoreness(s)}
-              className={`flex-1 rounded-lg py-2 text-xs font-medium ${
+              className={`flex-1 py-2 text-xs font-medium transition-colors ${
                 soreness === s
-                  ? 'bg-[#4ACAAA] text-zinc-950'
-                  : 'bg-zinc-800 text-zinc-400 active:bg-zinc-700'
+                  ? 'bg-teal text-near-black'
+                  : 'bg-deep-forest text-muted-foreground active:bg-secondary'
               }`}
             >
               {SORENESS_LABELS[s]}
@@ -113,16 +114,16 @@ export function WellnessPromptCard({ onSubmit }: WellnessPromptCardProps) {
         onChange={(e) => setNotes(e.target.value)}
         rows={2}
         placeholder="Notes (optional)"
-        className="mb-3 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-[#4ACAAA] focus:outline-none"
+        className="mb-3 w-full border border-gold/10 bg-deep-forest px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none"
       />
 
-      <button
+      <Button
         onClick={handleSubmit}
         disabled={submitting || !hasAnyData}
-        className="min-h-[44px] w-full rounded-lg bg-[#1E8A68] py-2 text-sm font-semibold text-zinc-100 active:bg-[#4ACAAA] disabled:opacity-40"
+        className="w-full"
       >
-        Log Wellness
-      </button>
+        Log
+      </Button>
     </div>
   )
 }

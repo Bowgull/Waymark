@@ -1052,4 +1052,209 @@ app.get('/api/settings', async (c) => {
   return c.json(rows[0] ?? null)
 })
 
+// ─── History: Weight Progression ──────────────────────────────
+
+app.get('/api/history/weight-progression', async (c) => {
+  const exerciseId = c.req.query('exerciseId')
+  const days = parseInt(c.req.query('days') ?? '90')
+  if (!exerciseId) return c.json({ error: 'exerciseId required' }, 400)
+
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const cutoff = nowSec - days * 86400
+
+  // Get all strength session exercises for this exercise
+  const sexes = await db.select().from(strengthSessionExercises)
+    .where(eq(strengthSessionExercises.exerciseId, exerciseId))
+
+  const allSessions = await db.select().from(sessions)
+  const sessionMap = new Map(allSessions.map(s => [s.id, s]))
+
+  const dataPoints: { date: string; maxWeightKg: number; totalVolume: number; sets: number }[] = []
+
+  for (const se of sexes) {
+    const session = sessionMap.get(se.sessionId)
+    if (!session || session.status !== 'completed' || session.createdAt < cutoff) continue
+
+    const sets = await db.select().from(strengthSets)
+      .where(eq(strengthSets.sessionExerciseId, se.id))
+
+    const completedSets = sets.filter(s => s.weightKg != null && s.weightKg > 0)
+    if (completedSets.length === 0) continue
+
+    const maxWeight = Math.max(...completedSets.map(s => s.weightKg!))
+    const totalVol = completedSets.reduce((sum, s) => sum + (s.weightKg ?? 0) * s.reps, 0)
+    const date = new Date((session.completedAt ?? session.createdAt) * 1000).toISOString().split('T')[0]
+
+    dataPoints.push({ date, maxWeightKg: maxWeight, totalVolume: totalVol, sets: completedSets.length })
+  }
+
+  dataPoints.sort((a, b) => a.date.localeCompare(b.date))
+
+  const exercise = await db.select().from(exercises).where(eq(exercises.id, exerciseId))
+  return c.json({ exerciseId, exerciseName: exercise[0]?.name ?? '', dataPoints })
+})
+
+// ─── History: Volume Trends ───────────────────────────────────
+
+app.get('/api/history/volume-trends', async (c) => {
+  const days = parseInt(c.req.query('days') ?? '30')
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const cutoff = nowSec - days * 86400
+
+  const allSessions = await db.select().from(sessions)
+  const completed = allSessions.filter(s => s.status === 'completed' && s.type === 'strength' && s.createdAt >= cutoff)
+
+  const dailyData = new Map<string, { totalSets: number; totalVolume: number; sessionCount: number }>()
+
+  for (const session of completed) {
+    const date = new Date((session.completedAt ?? session.createdAt) * 1000).toISOString().split('T')[0]
+    const sexes = await db.select().from(strengthSessionExercises)
+      .where(eq(strengthSessionExercises.sessionId, session.id))
+
+    let dayVolume = 0
+    let daySets = 0
+
+    for (const se of sexes) {
+      const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
+      for (const s of sets) {
+        if (s.weightKg != null && s.weightKg > 0) {
+          dayVolume += s.weightKg * s.reps
+          daySets++
+        }
+      }
+    }
+
+    const existing = dailyData.get(date) ?? { totalSets: 0, totalVolume: 0, sessionCount: 0 }
+    dailyData.set(date, {
+      totalSets: existing.totalSets + daySets,
+      totalVolume: existing.totalVolume + dayVolume,
+      sessionCount: existing.sessionCount + 1,
+    })
+  }
+
+  const dataPoints = Array.from(dailyData.entries())
+    .map(([date, data]) => ({ date, ...data }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  return c.json({ dataPoints })
+})
+
+// ─── History: Consistency ─────────────────────────────────────
+
+app.get('/api/history/consistency', async (c) => {
+  const weeks = parseInt(c.req.query('weeks') ?? '8')
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const todayEpochDay = Math.floor(nowSec / 86400)
+
+  const allSessions = await db.select().from(sessions)
+
+  // Get current day of week (0=Sun)
+  const today = new Date()
+  const dayOfWeek = today.getDay()
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  const currentMondayEpochDay = todayEpochDay + mondayOffset
+
+  const weekData: { weekStart: string; sessionsPlanned: number; sessionsCompleted: number; totalMinutes: number }[] = []
+
+  for (let w = 0; w < weeks; w++) {
+    const weekStartDay = currentMondayEpochDay - w * 7
+    const weekEndDay = weekStartDay + 7
+
+    const weekSessions = allSessions.filter(s =>
+      s.scheduledDate != null && s.scheduledDate >= weekStartDay && s.scheduledDate < weekEndDay
+    )
+
+    const planned = weekSessions.length
+    const completed = weekSessions.filter(s => s.status === 'completed').length
+    const totalMin = weekSessions
+      .filter(s => s.status === 'completed')
+      .reduce((sum, s) => sum + Math.round((s.durationSec ?? 0) / 60), 0)
+
+    const weekStartDate = new Date(weekStartDay * 86400 * 1000)
+    const weekLabel = weekStartDate.toISOString().split('T')[0]
+
+    weekData.push({ weekStart: weekLabel, sessionsPlanned: planned, sessionsCompleted: completed, totalMinutes: totalMin })
+  }
+
+  weekData.reverse()
+
+  // Streak
+  const completedDays = new Set(
+    allSessions.filter(s => s.status === 'completed').map(s => s.scheduledDate).filter(Boolean)
+  )
+  let streak = 0
+  for (let d = todayEpochDay; d >= todayEpochDay - 60; d--) {
+    if (completedDays.has(d)) streak++
+    else break
+  }
+
+  let longestStreak = 0
+  let currentRun = 0
+  const sortedDays = Array.from(completedDays).sort((a, b) => a! - b!) as number[]
+  for (let i = 0; i < sortedDays.length; i++) {
+    if (i === 0 || sortedDays[i] === sortedDays[i - 1] + 1) {
+      currentRun++
+      longestStreak = Math.max(longestStreak, currentRun)
+    } else {
+      currentRun = 1
+    }
+  }
+
+  return c.json({ weeks: weekData, currentStreak: streak, longestStreak })
+})
+
+// ─── History: Personal Records ────────────────────────────────
+
+app.get('/api/history/prs', async (c) => {
+  const db = createDB(c.env)
+
+  const allSexes = await db.select().from(strengthSessionExercises)
+  const allExercises = await db.select().from(exercises)
+  const exMap = new Map(allExercises.map(e => [e.id, e]))
+  const allSessions = await db.select().from(sessions)
+  const sessionMap = new Map(allSessions.filter(s => s.status === 'completed').map(s => [s.id, s]))
+
+  // Group by exercise
+  const exercisePRs = new Map<string, { maxWeightKg: number; date: string; allMaxes: number[] }>()
+
+  for (const se of allSexes) {
+    const session = sessionMap.get(se.sessionId)
+    if (!session) continue
+
+    const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
+    const weights = sets.filter(s => s.weightKg != null && s.weightKg > 0 && s.isWarmup === 0).map(s => s.weightKg!)
+    if (weights.length === 0) continue
+
+    const maxW = Math.max(...weights)
+    const date = new Date((session.completedAt ?? session.createdAt) * 1000).toISOString().split('T')[0]
+    const existing = exercisePRs.get(se.exerciseId)
+
+    if (!existing || maxW > existing.maxWeightKg) {
+      const allMaxes = existing ? [...existing.allMaxes, maxW] : [maxW]
+      exercisePRs.set(se.exerciseId, { maxWeightKg: maxW, date, allMaxes })
+    } else {
+      existing.allMaxes.push(maxW)
+    }
+  }
+
+  const prs = Array.from(exercisePRs.entries()).map(([exerciseId, data]) => {
+    const ex = exMap.get(exerciseId)
+    const sortedMaxes = data.allMaxes.sort((a, b) => b - a)
+    const previousMax = sortedMaxes.length > 1 ? sortedMaxes[1] : null
+    return {
+      exerciseId,
+      exerciseName: ex?.name ?? '',
+      maxWeightKg: data.maxWeightKg,
+      date: data.date,
+      previousMaxKg: previousMax,
+    }
+  })
+
+  prs.sort((a, b) => a.exerciseName.localeCompare(b.exerciseName))
+  return c.json({ prs })
+})
+
 export default app

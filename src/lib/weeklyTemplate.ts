@@ -10,31 +10,31 @@ export interface TemplateSession {
  */
 export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
   0: [ // Sunday
-    { timeSlot: 'am', type: 'posture_corrective', label: 'Posture Correctives', estimatedMin: 15 },
+    { timeSlot: 'am', type: 'posture_corrective', label: 'Foundation', estimatedMin: 15 },
     { timeSlot: 'pm', type: 'active_recovery', label: 'Active Recovery', estimatedMin: 30 },
   ],
   1: [ // Monday
-    { timeSlot: 'am', type: 'posture_corrective', label: 'Posture Correctives', estimatedMin: 15 },
+    { timeSlot: 'am', type: 'posture_corrective', label: 'Foundation', estimatedMin: 15 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 90 },
   ],
   2: [ // Tuesday
-    { timeSlot: 'am', type: 'posture_corrective', label: 'Posture Correctives', estimatedMin: 15 },
+    { timeSlot: 'am', type: 'posture_corrective', label: 'Foundation', estimatedMin: 15 },
     { timeSlot: 'pm', type: 'strength', label: 'Strength A + Core', estimatedMin: 50 },
   ],
   3: [ // Wednesday
-    { timeSlot: 'am', type: 'posture_corrective', label: 'Posture Correctives', estimatedMin: 15 },
+    { timeSlot: 'am', type: 'posture_corrective', label: 'Foundation', estimatedMin: 15 },
     { timeSlot: 'pm', type: 'running', label: 'Run', estimatedMin: 35 },
   ],
   4: [ // Thursday
-    { timeSlot: 'am', type: 'posture_corrective', label: 'Posture Correctives', estimatedMin: 15 },
+    { timeSlot: 'am', type: 'posture_corrective', label: 'Foundation', estimatedMin: 15 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 90 },
   ],
   5: [ // Friday
-    { timeSlot: 'am', type: 'posture_corrective', label: 'Posture Correctives', estimatedMin: 15 },
+    { timeSlot: 'am', type: 'posture_corrective', label: 'Foundation', estimatedMin: 15 },
     { timeSlot: 'pm', type: 'bag_work', label: 'Solo Bag Work', estimatedMin: 45 },
   ],
   6: [ // Saturday
-    { timeSlot: 'am', type: 'posture_corrective', label: 'Posture Correctives', estimatedMin: 15 },
+    { timeSlot: 'am', type: 'posture_corrective', label: 'Foundation', estimatedMin: 15 },
     { timeSlot: 'pm', type: 'running', label: 'Run + Skip Rope', estimatedMin: 50 },
   ],
 }
@@ -68,7 +68,7 @@ export function getTypeAccentColor(type: string): string {
     case 'bag_work': return 'border-l-[#C45A3C]'
     case 'running': return 'border-l-[#1E8A68]'
     case 'skip_rope': return 'border-l-[#1E8A68]'
-    case 'active_recovery': return 'border-l-zinc-600'
-    default: return 'border-l-zinc-600'
+    case 'active_recovery': return 'border-l-muted-foreground'
+    default: return 'border-l-muted-foreground'
   }
 }

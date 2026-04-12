@@ -21,31 +21,31 @@ export function ExerciseView({
 
   return (
     <div>
-      <p className="mb-1 text-xs uppercase tracking-widest text-zinc-500">
+      <p className="text-label mb-1 text-muted-foreground">
         Exercise {exerciseIndex + 1} of {totalExercises}
       </p>
-      <h2 className="text-2xl font-bold text-zinc-100">{name}</h2>
+      <h2 className="text-display-lg text-foreground">{name}</h2>
 
       {equipment && (
-        <span className="mt-2 inline-block rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs text-zinc-400">
+        <span className="mt-2 inline-block bg-surface-light px-2.5 py-0.5 text-xs text-muted-foreground">
           {equipment}
         </span>
       )}
 
       {notes && (
-        <p className="mt-2 text-sm italic text-[#E8C860]/80">{notes}</p>
+        <p className="mt-2 text-sm italic text-gold/80">{notes}</p>
       )}
 
       {formCues && (
         <div className="mt-3">
           <button
             onClick={() => setShowCues(!showCues)}
-            className="text-sm font-medium text-[#4ACAAA] active:text-[#4ACAAA]/70"
+            className="text-sm font-medium text-teal active:text-teal/70"
           >
             {showCues ? 'Hide form cues' : 'Show form cues'}
           </button>
           {showCues && (
-            <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               {formCues}
             </p>
           )}

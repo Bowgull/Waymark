@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 260">
+<defs>
+  <radialGradient id="gg" cx="32%" cy="24%" r="74%">
+    <stop offset="0%"   stop-color="#EAC860"/>
+    <stop offset="38%"  stop-color="#C8A030"/>
+    <stop offset="78%"  stop-color="#7A5C18"/>
+    <stop offset="100%" stop-color="#3A2A08"/>
+  </radialGradient>
+  <radialGradient id="gt" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#5AC8AA"/>
+    <stop offset="45%"  stop-color="#2A8A6C"/>
+    <stop offset="85%"  stop-color="#0A3828"/>
+    <stop offset="100%" stop-color="#030E0A"/>
+  </radialGradient>
+  <radialGradient id="gb" cx="38%" cy="30%" r="65%">
+    <stop offset="0%"   stop-color="#90D8F8"/>
+    <stop offset="40%"  stop-color="#3898D8"/>
+    <stop offset="80%"  stop-color="#0A4880"/>
+    <stop offset="100%" stop-color="#041830"/>
+  </radialGradient>
+  <radialGradient id="gi" cx="35%" cy="30%" r="70%">
+    <stop offset="0%"   stop-color="#0E5040"/>
+    <stop offset="55%"  stop-color="#062818"/>
+    <stop offset="100%" stop-color="#020A06"/>
+  </radialGradient>
+  <radialGradient id="gring1" cx="36%" cy="28%" r="66%">
+    <stop offset="0%"   stop-color="#3ABAA0"/>
+    <stop offset="55%"  stop-color="#196852"/>
+    <stop offset="100%" stop-color="#040E0A"/>
+  </radialGradient>
+  <radialGradient id="gring2" cx="36%" cy="28%" r="66%">
+    <stop offset="0%"   stop-color="#2AA890"/>
+    <stop offset="55%"  stop-color="#0E5038"/>
+    <stop offset="100%" stop-color="#030C08"/>
+  </radialGradient>
+  <filter id="fs">
+    <feDropShadow dx="0" dy="5" stdDeviation="10" flood-color="#000" flood-opacity="0.88"/>
+  </filter>
+  <filter id="fss">
+    <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.75"/>
+  </filter>
+</defs>
+
+<!-- APEX CHEVRON -->
+<path fill="#010402" d="M110,6 L122,22 L116,22 L110,30 L104,22 L98,22 Z"/>
+<path fill="url(#gg)" d="M110,8 L120,22 L114,22 L110,29 L106,22 L100,22 Z"/>
+<path fill="#020806" d="M110,14 L115,22 L110,27 L105,22 Z"/>
+<path fill="url(#gg)" d="M110,17 L113,21 L110,25 L107,21 Z"/>
+
+<!-- CONCENTRIC ORB -->
+<circle cx="110" cy="128" r="74" fill="#010402" filter="url(#fs)"/>
+<circle cx="110" cy="128" r="72" fill="url(#gg)"/>
+<circle cx="110" cy="128" r="66" fill="#020806"/>
+<circle cx="110" cy="128" r="64" fill="url(#gt)"/>
+<circle cx="110" cy="128" r="56" fill="#020806"/>
+<circle cx="110" cy="128" r="54" fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.55"/>
+<circle cx="110" cy="128" r="52" fill="url(#gring1)"/>
+<circle cx="110" cy="128" r="44" fill="#020806"/>
+<circle cx="110" cy="128" r="42" fill="none" stroke="url(#gg)" stroke-width="1.5" opacity="0.4"/>
+<circle cx="110" cy="128" r="40" fill="url(#gring2)"/>
+<circle cx="110" cy="128" r="32" fill="url(#gi)"/>
+<circle cx="110" cy="128" r="28" fill="none" stroke="url(#gg)" stroke-width="1.5" opacity="0.35"/>
+<circle cx="110" cy="128" r="26" fill="#020806"/>
+<circle cx="110" cy="128" r="24" fill="url(#gb)"/>
+<circle cx="110" cy="128" r="11" fill="#020806"/>
+<circle cx="110" cy="128" r="8"  fill="url(#gg)"/>
+<circle cx="110" cy="128" r="4"  fill="#020806"/>
+<circle cx="110" cy="128" r="2.5" fill="#EAC860"/>
+
+<!-- LEFT CURVED WING -->
+<path filter="url(#fss)" fill="#010402"
+  d="M36,98 C20,104 12,120 14,136 C16,152 28,164 44,168 L48,155 C36,151 28,142 26,130 C24,118 31,108 42,104 Z"/>
+<path fill="url(#gg)"
+  d="M38,100 C22,106 14,122 16,138 C18,154 30,165 46,169 L50,157 C38,153 30,143 28,131 C26,119 33,109 44,105 Z"/>
+<path fill="#020806"
+  d="M40,106 C26,112 19,126 21,140 C23,152 33,161 48,164 L50,157 C38,153 31,145 29,134 C27,124 33,114 44,110 Z"/>
+<path fill="url(#gt)"
+  d="M44,105 C34,110 27,120 26,130 L34,128 C35,121 40,113 48,109 Z"/>
+<path fill="url(#gt)"
+  d="M25,138 C25,147 30,154 38,158 L42,149 C36,146 32,141 32,134 Z"/>
+<path fill="none" stroke="#020806" stroke-width="5"
+  d="M38,100 C22,106 14,122 16,138 C18,154 30,165 46,169"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2.5"
+  d="M38,100 C22,106 14,122 16,138 C18,154 30,165 46,169"/>
+<path fill="#020806" d="M44,105 L52,110 L50,118 L42,114 Z"/>
+<path fill="url(#gg)" d="M45,107 L51,112 L49,117 L43,113 Z"/>
+<path fill="#020806" d="M46,110 L50,112 L49,115 L45,113 Z"/>
+<path fill="#020806" d="M46,158 L54,154 L56,162 L48,165 Z"/>
+<path fill="url(#gg)" d="M47,159 L53,155 L55,161 L49,163 Z"/>
+
+<!-- RIGHT CURVED WING (mirror) -->
+<path filter="url(#fss)" fill="#010402"
+  d="M184,98 C200,104 208,120 206,136 C204,152 192,164 176,168 L172,155 C184,151 192,142 194,130 C196,118 189,108 178,104 Z"/>
+<path fill="url(#gg)"
+  d="M182,100 C198,106 206,122 204,138 C202,154 190,165 174,169 L170,157 C182,153 190,143 192,131 C194,119 187,109 176,105 Z"/>
+<path fill="#020806"
+  d="M180,106 C194,112 201,126 199,140 C197,152 187,161 172,164 L170,157 C182,153 189,145 191,134 C193,124 187,114 176,110 Z"/>
+<path fill="url(#gt)"
+  d="M176,105 C186,110 193,120 194,130 L186,128 C185,121 180,113 172,109 Z"/>
+<path fill="url(#gt)"
+  d="M195,138 C195,147 190,154 182,158 L178,149 C184,146 188,141 188,134 Z"/>
+<path fill="none" stroke="#020806" stroke-width="5"
+  d="M182,100 C198,106 206,122 204,138 C202,154 190,165 174,169"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2.5"
+  d="M182,100 C198,106 206,122 204,138 C202,154 190,165 174,169"/>
+<path fill="#020806" d="M176,105 L168,110 L170,118 L178,114 Z"/>
+<path fill="url(#gg)" d="M175,107 L169,112 L171,117 L177,113 Z"/>
+<path fill="#020806" d="M174,110 L170,112 L171,115 L175,113 Z"/>
+<path fill="#020806" d="M174,158 L166,154 L164,162 L172,165 Z"/>
+<path fill="url(#gg)" d="M173,159 L167,155 L165,161 L171,163 Z"/>
+
+<!-- V-CONNECTOR -->
+<path fill="#020806"
+  d="M86,194 L110,214 L134,194 L128,190 L110,208 L92,190 Z"/>
+<path fill="url(#gg)"
+  d="M88,194 L110,212 L132,194 L126,190 L110,207 L94,190 Z"/>
+
+<!-- THREE RHOMBUSES -->
+<path fill="#020806" d="M74,224 L86,234 L74,244 L62,234 Z"/>
+<path fill="url(#gg)"  d="M74,226 L84,234 L74,242 L64,234 Z"/>
+<path fill="#020806"   d="M74,229 L79,234 L74,239 L69,234 Z"/>
+<path fill="url(#gt)"  d="M74,230 L78,234 L74,238 L70,234 Z"/>
+
+<path fill="#020806" d="M110,224 L122,234 L110,244 L98,234 Z"/>
+<path fill="url(#gg)"  d="M110,226 L120,234 L110,242 L100,234 Z"/>
+<path fill="#020806"   d="M110,229 L115,234 L110,239 L105,234 Z"/>
+<path fill="url(#gt)"  d="M110,230 L114,234 L110,238 L106,234 Z"/>
+
+<path fill="#020806" d="M146,224 L158,234 L146,244 L134,234 Z"/>
+<path fill="url(#gg)"  d="M146,226 L156,234 L146,242 L136,234 Z"/>
+<path fill="#020806"   d="M146,229 L151,234 L146,239 L141,234 Z"/>
+<path fill="url(#gt)"  d="M146,230 L150,234 L146,238 L142,234 Z"/>
+
+<!-- ORB OUTER RING FINISH -->
+<circle cx="110" cy="128" r="72" fill="none" stroke="#020806" stroke-width="6"/>
+<circle cx="110" cy="128" r="72" fill="none" stroke="url(#gg)" stroke-width="3" opacity="0.7"/>
+
+</svg>

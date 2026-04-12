@@ -4,9 +4,12 @@ import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 
+import { PageBackground } from '@/components/backgrounds/PageBackground'
+
 import { DateHeader } from './DateHeader'
+import { DaySummary } from './DaySummary'
+import { DayTimeline } from './DayTimeline'
 import { GeneratePlanButton } from './GeneratePlanButton'
-import { SessionCard } from './SessionCard'
 import { WeeklyJournalCard } from './WeeklyJournalCard'
 import { WellnessPromptCard, type WellnessData } from './WellnessPromptCard'
 
@@ -166,13 +169,16 @@ export function TodayPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <p className="text-sm text-zinc-500">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading...</p>
       </div>
     )
   }
 
+  const allDone = sessions.length > 0 && sessions.every(s => s.status === 'completed' || s.status === 'skipped')
+
   return (
-    <div className="space-y-4">
+    <div className="relative flex flex-col gap-5 pb-4">
+      <PageBackground />
       <DateHeader date={todayDate} />
 
       {dailyLog === null && (
@@ -188,18 +194,12 @@ export function TodayPage() {
 
       {sessions.length === 0 ? (
         <GeneratePlanButton onGenerate={handleGenerate} loading={generating} />
-      ) : (
-        <div className="space-y-3">
-          {sessions.map((session, i) => (
-            <SessionCard
-              key={session.id}
-              session={session}
-              onStart={handleStart}
-              onSkip={handleSkip}
-              index={i}
-            />
-          ))}
+      ) : allDone ? (
+        <div className="flex flex-1 items-center justify-center" style={{ minHeight: 'calc(100vh - 220px)' }}>
+          <DaySummary sessions={sessions} todayDate={todayDate} />
         </div>
+      ) : (
+        <DayTimeline sessions={sessions} onStart={handleStart} onSkip={handleSkip} />
       )}
     </div>
   )

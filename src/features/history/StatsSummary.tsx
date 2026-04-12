@@ -12,10 +12,10 @@ interface StatsSummaryProps {
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3">
-      <p className="text-xs text-zinc-500">{label}</p>
-      <p className="text-2xl font-bold text-zinc-100">{value}</p>
-      {sub && <p className="text-xs text-zinc-400">{sub}</p>}
+    <div className="border border-border bg-card p-3">
+      <p className="text-label text-muted-foreground">{label}</p>
+      <p className="text-stat text-foreground">{value}</p>
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </div>
   )
 }

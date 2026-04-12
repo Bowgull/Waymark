@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api'
 
 interface MtLog {
@@ -47,25 +48,24 @@ export function MtClassLogView({ mtLog, onComplete }: MtClassLogViewProps) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 animate-fade-in">
       <div>
-        <p className="mb-1 text-xs uppercase tracking-widest text-zinc-500">Post-Class</p>
-        <h2 className="text-2xl font-bold text-zinc-100">MT Class Log</h2>
-        <p className="mt-1 text-sm text-zinc-400">Record what you worked on and what to improve.</p>
+        <p className="text-label mb-1 text-muted-foreground">Post-Class</p>
+        <h2 className="text-display-lg text-foreground">MT Class Log</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Record what you worked on and what to improve.</p>
       </div>
 
-      {/* Class type */}
       <div>
-        <label className="mb-2 block text-xs text-zinc-500">Class Type</label>
+        <label className="text-label mb-2 block text-muted-foreground">Class Type</label>
         <div className="flex flex-wrap gap-2">
           {CLASS_TYPES.map((t) => (
             <button
               key={t}
               onClick={() => setClassType(t)}
-              className={`rounded-lg px-3 py-2 text-xs font-medium capitalize ${
+              className={`px-3 py-2 text-xs font-medium capitalize ${
                 classType === t
-                  ? 'bg-[#4ACAAA] text-zinc-950'
-                  : 'bg-zinc-800 text-zinc-400 active:bg-zinc-700'
+                  ? 'bg-teal text-near-black'
+                  : 'bg-surface-light text-muted-foreground active:bg-border'
               }`}
             >
               {t}
@@ -74,61 +74,37 @@ export function MtClassLogView({ mtLog, onComplete }: MtClassLogViewProps) {
         </div>
       </div>
 
-      {/* Focus / Skill */}
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">Focus / Skill</label>
-        <input
-          type="text"
-          value={focusSkill}
-          onChange={(e) => setFocusSkill(e.target.value)}
+        <label className="text-label mb-1 block text-muted-foreground">Focus / Skill</label>
+        <input type="text" value={focusSkill} onChange={(e) => setFocusSkill(e.target.value)}
           placeholder="e.g. Defense, teep timing"
-          className="min-h-[44px] w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-[#4ACAAA] focus:outline-none"
-        />
+          className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
       </div>
 
-      {/* Weakness */}
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">Weakness / Struggle</label>
-        <input
-          type="text"
-          value={weakness}
-          onChange={(e) => setWeakness(e.target.value)}
+        <label className="text-label mb-1 block text-muted-foreground">Weakness / Struggle</label>
+        <input type="text" value={weakness} onChange={(e) => setWeakness(e.target.value)}
           placeholder="e.g. Guard dropping after combos"
-          className="min-h-[44px] w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-[#4ACAAA] focus:outline-none"
-        />
+          className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
       </div>
 
-      {/* Concept to learn */}
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">Concept to Learn</label>
-        <input
-          type="text"
-          value={concept}
-          onChange={(e) => setConcept(e.target.value)}
+        <label className="text-label mb-1 block text-muted-foreground">Concept to Learn</label>
+        <input type="text" value={concept} onChange={(e) => setConcept(e.target.value)}
           placeholder="e.g. Hands up, check kicks"
-          className="min-h-[44px] w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-[#4ACAAA] focus:outline-none"
-        />
+          className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
       </div>
 
-      {/* Action items */}
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">Action Items</label>
-        <textarea
-          value={actionItems}
-          onChange={(e) => setActionItems(e.target.value)}
-          rows={2}
+        <label className="text-label mb-1 block text-muted-foreground">Action Items</label>
+        <textarea value={actionItems} onChange={(e) => setActionItems(e.target.value)} rows={2}
           placeholder="e.g. Add guard reset to bag work combos"
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-[#4ACAAA] focus:outline-none"
-        />
+          className="w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
       </div>
 
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="min-h-[48px] w-full rounded-xl bg-[#E8C860] py-3 text-base font-bold text-zinc-950 active:bg-[#C8A030] disabled:opacity-50"
-      >
+      <Button onClick={handleSave} disabled={saving} size="lg" className="w-full">
         {saving ? 'Saving...' : 'Save Class Log'}
-      </button>
+      </Button>
     </div>
   )
 }

@@ -13,15 +13,15 @@ interface BlockHeaderProps {
 export function BlockHeader({ block, currentWeek }: BlockHeaderProps) {
   return (
     <div className="mb-6">
-      <p className="text-xs uppercase tracking-widest text-zinc-500">Training Block</p>
-      <h2 className="text-2xl font-bold text-zinc-100">{block.name}</h2>
-      <p className="mt-1 text-sm text-zinc-400">
+      <p className="text-label text-muted-foreground">Training Block</p>
+      <h2 className="text-display text-foreground">{block.name}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
         Week {currentWeek} of {block.totalWeeks}
       </p>
       {/* Progress bar */}
-      <div className="mt-2 h-1.5 rounded-full bg-zinc-800">
+      <div className="mt-2 h-1.5 bg-border">
         <div
-          className="h-full rounded-full bg-[#E8C860] transition-all"
+          className="h-full bg-[#E8C860] transition-all"
           style={{ width: `${(currentWeek / block.totalWeeks) * 100}%` }}
         />
       </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api'
 
 interface RecoverySession {
@@ -29,60 +30,57 @@ export function ActiveRecoveryView({ recoverySession, onComplete }: ActiveRecove
   }
 
   return (
-    <div>
-      <p className="mb-1 text-xs uppercase tracking-widest text-zinc-500">Recovery</p>
-      <h2 className="mb-2 text-2xl font-bold text-zinc-100">Active Recovery</h2>
-      <p className="mb-6 text-sm text-zinc-400">
+    <div className="animate-fade-in">
+      <p className="text-label mb-1 text-muted-foreground">Recovery</p>
+      <h2 className="text-display-lg mb-2 text-foreground">Active Recovery</h2>
+      <p className="mb-6 text-sm text-muted-foreground">
         Take it easy. Move gently, breathe deep, let your body recover.
       </p>
 
       <div className="space-y-3">
         <button
           onClick={() => toggle('hipMobility')}
-          className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left ${
+          className={`flex w-full items-center gap-3 border p-4 text-left ${
             hipMobility
-              ? 'border-[#4ACAAA] bg-[#4ACAAA]/10'
-              : 'border-zinc-800 bg-zinc-900'
+              ? 'border-teal bg-teal/10'
+              : 'border-border bg-deep-forest'
           }`}
         >
-          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sm ${
-            hipMobility ? 'bg-[#4ACAAA] text-zinc-950' : 'bg-zinc-800 text-zinc-500'
+          <span className={`flex h-6 w-6 shrink-0 items-center justify-center text-sm ${
+            hipMobility ? 'bg-teal text-near-black' : 'bg-surface-light text-muted-foreground'
           }`}>
             {hipMobility ? '\u2713' : ''}
           </span>
           <div>
-            <p className="font-medium text-zinc-100">Hip Mobility</p>
-            <p className="text-xs text-zinc-400">Cossack squats, 90/90, pigeon, wall hip CARs</p>
+            <p className="font-medium text-foreground">Hip Mobility</p>
+            <p className="text-xs text-muted-foreground">Cossack squats, 90/90, pigeon, wall hip CARs</p>
           </div>
         </button>
 
         <button
           onClick={() => toggle('foamRolling')}
-          className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left ${
+          className={`flex w-full items-center gap-3 border p-4 text-left ${
             foamRolling
-              ? 'border-[#4ACAAA] bg-[#4ACAAA]/10'
-              : 'border-zinc-800 bg-zinc-900'
+              ? 'border-teal bg-teal/10'
+              : 'border-border bg-deep-forest'
           }`}
         >
-          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sm ${
-            foamRolling ? 'bg-[#4ACAAA] text-zinc-950' : 'bg-zinc-800 text-zinc-500'
+          <span className={`flex h-6 w-6 shrink-0 items-center justify-center text-sm ${
+            foamRolling ? 'bg-teal text-near-black' : 'bg-surface-light text-muted-foreground'
           }`}>
             {foamRolling ? '\u2713' : ''}
           </span>
           <div>
-            <p className="font-medium text-zinc-100">Foam Rolling</p>
-            <p className="text-xs text-zinc-400">Quads, IT band, glutes, thoracic spine</p>
+            <p className="font-medium text-foreground">Foam Rolling</p>
+            <p className="text-xs text-muted-foreground">Quads, IT band, glutes, thoracic spine</p>
           </div>
         </button>
       </div>
 
       <div className="mt-8 flex justify-center">
-        <button
-          onClick={onComplete}
-          className="min-h-[48px] rounded-xl bg-[#E8C860] px-8 py-3 text-base font-bold text-zinc-950 active:bg-[#C8A030]"
-        >
+        <Button onClick={onComplete} size="lg">
           Done
-        </button>
+        </Button>
       </div>
     </div>
   )

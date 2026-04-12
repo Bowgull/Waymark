@@ -25,14 +25,14 @@ function formatDuration(sec: number): string {
 }
 
 function RpeBadge({ rpe }: { rpe: number }) {
-  const color = rpe <= 3 ? 'text-[#4ABA8A]' : rpe <= 6 ? 'text-[#E8C860]' : 'text-[#C45A3C]'
+  const color = rpe <= 3 ? 'text-forest-light' : rpe <= 6 ? 'text-gold' : 'text-clay'
   return <span className={`text-xs font-medium ${color}`}>RPE {rpe}</span>
 }
 
 export function SessionList({ sessions }: SessionListProps) {
   if (sessions.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-zinc-500">
+      <p className="py-8 text-center text-sm text-muted-foreground">
         No completed sessions yet. Get after it.
       </p>
     )
@@ -40,20 +40,20 @@ export function SessionList({ sessions }: SessionListProps) {
 
   return (
     <div>
-      <p className="mb-3 text-sm font-medium text-zinc-300">Recent Sessions</p>
+      <p className="text-display-sm mb-3 text-foreground">Recent Sessions</p>
       <div className="space-y-2">
         {sessions.map((s) => (
           <div
             key={s.id}
-            className={`flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 p-3 ${
+            className={`flex items-center justify-between border border-border bg-card p-3 ${
               s.status === 'skipped' ? 'opacity-50' : ''
             }`}
           >
             <div>
-              <p className={`text-sm font-medium ${s.status === 'skipped' ? 'text-zinc-500 line-through' : 'text-zinc-100'}`}>
+              <p className={`text-sm font-medium ${s.status === 'skipped' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
                 {getSessionLabel(s.type)}
               </p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-muted-foreground">
                 {s.completedAt ? formatDate(s.completedAt) : s.scheduledDate ? formatDate(s.scheduledDate * 86400) : '—'}
                 {s.durationSec ? ` \u00B7 ${formatDuration(s.durationSec)}` : ''}
               </p>
@@ -61,7 +61,7 @@ export function SessionList({ sessions }: SessionListProps) {
             <div className="flex items-center gap-2">
               {s.rpe != null && <RpeBadge rpe={s.rpe} />}
               {s.status === 'skipped' && (
-                <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-500">Skipped</span>
+                <span className="bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">Passed</span>
               )}
             </div>
           </div>

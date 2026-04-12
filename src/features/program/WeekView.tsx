@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button'
 import { getSessionLabel } from '@/lib/weeklyTemplate'
 
 interface SessionSummary {
@@ -20,8 +21,8 @@ function getStatusColor(status: string): string {
   switch (status) {
     case 'completed': return 'bg-[#2D6B4F]/20 text-[#4ABA8A]'
     case 'in_progress': return 'bg-[#4ACAAA]/15 text-[#4ACAAA]'
-    case 'skipped': return 'bg-zinc-800 text-zinc-500'
-    default: return 'bg-zinc-800 text-zinc-400'
+    case 'skipped': return 'bg-border text-muted-foreground'
+    default: return 'bg-border text-muted-foreground'
   }
 }
 
@@ -49,15 +50,12 @@ export function WeekView({ sessions, weekStatus, onApprove }: WeekViewProps) {
   return (
     <div>
       {weekStatus === 'draft' && (
-        <div className="mb-4 rounded-xl border border-[#E8C860]/30 bg-[#E8C860]/5 p-3">
+        <div className="mb-4 border border-[#E8C860]/30 bg-[#E8C860]/5 p-3">
           <div className="flex items-center justify-between">
             <p className="text-sm text-[#E8C860]">Week plan ready for review</p>
-            <button
-              onClick={onApprove}
-              className="min-h-[36px] rounded-lg bg-[#E8C860] px-4 py-1.5 text-sm font-semibold text-zinc-950 active:bg-[#C8A030]"
-            >
+            <Button size="sm" onClick={onApprove}>
               Approve
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -69,10 +67,10 @@ export function WeekView({ sessions, weekStatus, onApprove }: WeekViewProps) {
           const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 
           return (
-            <div key={epochDay} className="rounded-xl border border-zinc-800 bg-zinc-900 p-3">
+            <div key={epochDay} className="border border-border bg-card p-3">
               <div className="mb-2 flex items-baseline justify-between">
-                <span className="text-sm font-semibold text-zinc-100">{dayName}</span>
-                <span className="text-xs text-zinc-500">{dateStr}</span>
+                <span className="text-sm font-semibold text-foreground">{dayName}</span>
+                <span className="text-xs text-muted-foreground">{dateStr}</span>
               </div>
               <div className="space-y-1.5">
                 {daySessions
@@ -85,11 +83,11 @@ export function WeekView({ sessions, weekStatus, onApprove }: WeekViewProps) {
                         }`}>
                           {s.timeSlot === 'am' ? 'AM' : 'PM'}
                         </span>
-                        <span className={`text-sm ${s.status === 'skipped' ? 'text-zinc-500 line-through' : 'text-zinc-300'}`}>
+                        <span className={`text-sm ${s.status === 'skipped' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
                           {getSessionLabel(s.type)}
                         </span>
                       </div>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getStatusColor(s.status)}`}>
+                      <span className={`px-2 py-0.5 text-[10px] font-medium ${getStatusColor(s.status)}`}>
                         {getStatusLabel(s.status)}
                       </span>
                     </div>

@@ -1,3 +1,6 @@
+import { Button } from '@/components/ui/button'
+import { logoPng } from '@/lib/markAssets'
+
 interface GeneratePlanButtonProps {
   onGenerate: () => void
   loading: boolean
@@ -5,15 +8,22 @@ interface GeneratePlanButtonProps {
 
 export function GeneratePlanButton({ onGenerate, loading }: GeneratePlanButtonProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-16">
-      <p className="mb-4 text-sm text-zinc-500">No sessions planned for today.</p>
-      <button
+    <div className="relative flex flex-col items-center justify-center py-16">
+      <img
+        src={logoPng}
+        alt=""
+        draggable={false}
+        className="absolute inset-0 m-auto h-48 w-48 object-contain opacity-[0.06] pointer-events-none"
+      />
+      <p className="relative mb-4 text-sm text-muted-foreground">No sessions planned for today.</p>
+      <Button
+        size="lg"
         onClick={onGenerate}
         disabled={loading}
-        className="min-h-[48px] rounded-xl bg-[#E8C860] px-8 py-3 text-base font-bold text-zinc-950 active:bg-[#C8A030] disabled:opacity-50"
+        className="relative"
       >
-        {loading ? 'Generating...' : "Generate Today's Plan"}
-      </button>
+        {loading ? 'Preparing...' : 'Prepare the Day'}
+      </Button>
     </div>
   )
 }

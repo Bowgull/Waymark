@@ -1,36 +1,32 @@
+import { RingTimer } from '@/components/RingTimer'
+import { Button } from '@/components/ui/button'
+
 interface RestTimerProps {
+  totalSeconds: number
   secondsRemaining: number
   isOvertime: boolean
   onNext: () => void
+  accentColor?: string
 }
 
-function formatTime(sec: number): string {
-  const abs = Math.abs(sec)
-  const m = Math.floor(abs / 60)
-  const s = abs % 60
-  return `${m}:${String(s).padStart(2, '0')}`
-}
-
-export function RestTimer({ secondsRemaining, isOvertime, onNext }: RestTimerProps) {
+export function RestTimer({ totalSeconds, secondsRemaining, isOvertime, onNext, accentColor = '#E8C860' }: RestTimerProps) {
   return (
-    <div className="flex flex-col items-center py-12">
-      <p className="mb-2 text-sm uppercase tracking-widest text-zinc-500">
-        {isOvertime ? 'Over by' : 'Rest'}
-      </p>
-      <p
-        className={`text-8xl font-bold tabular-nums ${
-          isOvertime ? 'text-[#C45A3C]' : 'text-zinc-100'
-        }`}
-      >
-        {isOvertime && '+'}
-        {formatTime(secondsRemaining)}
-      </p>
-      <button
+    <div className="flex flex-col items-center py-8">
+      <RingTimer
+        totalSeconds={totalSeconds}
+        secondsRemaining={secondsRemaining}
+        isOvertime={isOvertime}
+        label={isOvertime ? 'Over' : 'Rest'}
+        accentColor={accentColor}
+      />
+      <Button
         onClick={onNext}
-        className="mt-8 min-h-[48px] rounded-xl bg-[#E8C860] px-8 py-3 text-base font-bold text-zinc-950 active:bg-[#C8A030]"
+        size="lg"
+        className="mt-6"
+        style={{ backgroundColor: accentColor }}
       >
         Next Set
-      </button>
+      </Button>
     </div>
   )
 }

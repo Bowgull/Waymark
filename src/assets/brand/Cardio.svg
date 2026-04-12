@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 260">
+<defs>
+  <radialGradient id="gg" cx="32%" cy="24%" r="74%">
+    <stop offset="0%"   stop-color="#EAC860"/>
+    <stop offset="38%"  stop-color="#C8A030"/>
+    <stop offset="78%"  stop-color="#7A5C18"/>
+    <stop offset="100%" stop-color="#3A2A08"/>
+  </radialGradient>
+  <radialGradient id="gt" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#5AC8AA"/>
+    <stop offset="45%"  stop-color="#2A8A6C"/>
+    <stop offset="85%"  stop-color="#0A3828"/>
+    <stop offset="100%" stop-color="#030E0A"/>
+  </radialGradient>
+  <radialGradient id="gc" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#CC5838"/>
+    <stop offset="50%"  stop-color="#8C2E18"/>
+    <stop offset="100%" stop-color="#3A1008"/>
+  </radialGradient>
+  <radialGradient id="gt2" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#4ABCAA"/>
+    <stop offset="55%"  stop-color="#1A6A52"/>
+    <stop offset="100%" stop-color="#030E0A"/>
+  </radialGradient>
+  <filter id="fs">
+    <feDropShadow dx="0" dy="5" stdDeviation="10" flood-color="#000" flood-opacity="0.88"/>
+  </filter>
+  <filter id="fss">
+    <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.75"/>
+  </filter>
+</defs>
+
+<!-- BASE ANCHOR -->
+<path fill="#010402" d="M88,242 L110,256 L132,242 L126,232 L110,244 L94,232 Z"/>
+<path fill="url(#gg)" d="M90,241 L110,254 L130,241 L124,232 L110,243 L96,232 Z"/>
+<path fill="#020806" d="M96,238 L110,248 L124,238 L120,232 L110,241 L100,232 Z"/>
+
+<!-- CENTRAL SPINE -->
+<path fill="#010402" d="M106,36 L114,36 L112,236 L108,236 Z"/>
+<path fill="url(#gg)"  d="M107,37 L113,37 L111,235 L109,235 Z"/>
+<path fill="#020806"   d="M108.5,38 L111.5,38 L110.8,234 L109.2,234 Z"/>
+<path fill="url(#gt)"  opacity="0.55" d="M109,39 L111,39 L110.6,233 L109.4,233 Z"/>
+
+<!-- DIAMOND 1 — small, top, clay accent -->
+<path filter="url(#fss)" fill="#010402" d="M110,28 L126,52 L110,64 L94,52 Z"/>
+<path fill="url(#gg)"  d="M110,30 L124,52 L110,62 L96,52 Z"/>
+<path fill="#020806"   d="M110,38 L118,52 L110,58 L102,52 Z"/>
+<path fill="url(#gc)"  d="M110,40 L116,52 L110,56 L104,52 Z"/>
+<!-- pip -->
+<circle cx="110" cy="52" r="2.5" fill="#020806"/>
+<circle cx="110" cy="52" r="1.5" fill="#EAC860"/>
+<!-- border -->
+<path fill="none" stroke="#020806" stroke-width="4" stroke-linejoin="miter"
+  d="M110,30 L124,52 L110,62 L96,52 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2" stroke-linejoin="miter" opacity="0.7"
+  d="M110,30 L124,52 L110,62 L96,52 Z"/>
+
+<!-- DIAMOND 2 — medium, mid, teal -->
+<path filter="url(#fss)" fill="#010402" d="M110,86 L132,118 L110,134 L88,118 Z"/>
+<path fill="url(#gg)"  d="M110,88 L130,118 L110,132 L90,118 Z"/>
+<path fill="#020806"   d="M110,98 L120,118 L110,126 L100,118 Z"/>
+<path fill="url(#gt)"  d="M110,100 L118,118 L110,124 L102,118 Z"/>
+<!-- pip -->
+<circle cx="110" cy="118" r="3" fill="#020806"/>
+<circle cx="110" cy="118" r="1.8" fill="#EAC860"/>
+<!-- border -->
+<path fill="none" stroke="#020806" stroke-width="4.5" stroke-linejoin="miter"
+  d="M110,88 L130,118 L110,132 L90,118 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2.2" stroke-linejoin="miter" opacity="0.7"
+  d="M110,88 L130,118 L110,132 L90,118 Z"/>
+
+<!-- DIAMOND 3 — large, bottom, deep teal -->
+<path filter="url(#fss)" fill="#010402" d="M110,152 L142,194 L110,214 L78,194 Z"/>
+<path fill="url(#gg)"  d="M110,154 L140,194 L110,212 L80,194 Z"/>
+<path fill="#020806"   d="M110,166 L128,194 L110,206 L92,194 Z"/>
+<path fill="url(#gt2)" d="M110,168 L126,194 L110,204 L94,194 Z"/>
+<!-- pip -->
+<circle cx="110" cy="194" r="4" fill="#020806"/>
+<circle cx="110" cy="194" r="2.5" fill="#020806"/>
+<circle cx="110" cy="194" r="1.5" fill="#EAC860"/>
+<!-- border -->
+<path fill="none" stroke="#020806" stroke-width="5" stroke-linejoin="miter"
+  d="M110,154 L140,194 L110,212 L80,194 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2.5" stroke-linejoin="miter" opacity="0.7"
+  d="M110,154 L140,194 L110,212 L80,194 Z"/>
+
+</svg>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 
 import { BlockHeader } from './BlockHeader'
 import { WeekView } from './WeekView'
@@ -137,7 +138,7 @@ export function ProgramPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <p className="text-sm text-zinc-500">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading...</p>
       </div>
     )
   }
@@ -146,15 +147,14 @@ export function ProgramPage() {
   if (!block) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
-        <p className="mb-2 text-xl font-bold text-zinc-100">Start Your Program</p>
-        <p className="mb-6 text-sm text-zinc-400">Begin a 12-week training block.</p>
-        <button
+        <p className="mb-2 text-display-lg text-foreground">Start Your Program</p>
+        <p className="mb-6 text-sm text-muted-foreground">Begin a 12-week training block.</p>
+        <Button
           onClick={handleCreateBlock}
           disabled={creating}
-          className="min-h-[48px] rounded-xl bg-[#E8C860] px-8 py-3 text-base font-bold text-zinc-950 active:bg-[#C8A030] disabled:opacity-50"
         >
           {creating ? 'Creating...' : 'Start 12-Week Base Build'}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -167,14 +167,10 @@ export function ProgramPage() {
 
       {!weekData ? (
         <div className="flex flex-col items-center py-12">
-          <p className="mb-4 text-sm text-zinc-500">No plan for week {currentWeek} yet.</p>
-          <button
-            onClick={handleGenerateWeek}
-            disabled={generating}
-            className="min-h-[48px] rounded-xl bg-[#E8C860] px-8 py-3 text-base font-bold text-zinc-950 active:bg-[#C8A030] disabled:opacity-50"
-          >
+          <p className="mb-4 text-sm text-muted-foreground">No plan for week {currentWeek} yet.</p>
+          <Button onClick={handleGenerateWeek} disabled={generating}>
             {generating ? 'Generating...' : `Generate Week ${currentWeek}`}
-          </button>
+          </Button>
         </div>
       ) : (
         <WeekView

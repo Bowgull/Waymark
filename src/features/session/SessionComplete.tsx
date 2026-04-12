@@ -1,6 +1,11 @@
 import { useState } from 'react'
 
+import { Button } from '@/components/ui/button'
+import { getMarkAsset } from '@/lib/markAssets'
+import { completeHaptic } from '@/lib/haptics'
+
 interface SessionCompleteProps {
+  sessionType: string
   onFinish: (rpe: number, difficulty: number, notes: string) => void
   submitting: boolean
 }
@@ -15,21 +20,33 @@ const DIFFICULTY_LABELS: Record<number, string> = {
   1: 'Too Easy', 2: 'Easy', 3: 'Just Right', 4: 'Hard', 5: 'Too Hard',
 }
 
-export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) {
+export function SessionComplete({ sessionType, onFinish, submitting }: SessionCompleteProps) {
   const [rpe, setRpe] = useState(7)
   const [difficulty, setDifficulty] = useState(3)
   const [notes, setNotes] = useState('')
+  const mark = getMarkAsset(sessionType)
+
+  function handleFinish() {
+    completeHaptic()
+    onFinish(rpe, difficulty, notes)
+  }
 
   return (
-    <div className="space-y-6 py-4">
-      <div className="text-center">
-        <p className="text-3xl font-bold text-[#E8C860]">Session Complete</p>
-        <p className="mt-1 text-sm text-zinc-400">How was it?</p>
+    <div className="space-y-6 py-4 animate-fade-in-up">
+      <div className="flex flex-col items-center text-center">
+        <img
+          src={mark.png}
+          alt={mark.label}
+          className="mb-4 h-16 w-16 object-contain animate-glow-pulse"
+          draggable={false}
+        />
+        <p className="text-display-lg text-gold">Session Closed</p>
+        <p className="mt-1 text-sm text-muted-foreground">How was it?</p>
       </div>
 
       {/* RPE */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-zinc-300">
+        <label className="mb-2 block text-sm font-medium text-foreground">
           RPE: {rpe} — {RPE_LABELS[rpe]}
         </label>
         <input
@@ -38,16 +55,16 @@ export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) 
           max={10}
           value={rpe}
           onChange={(e) => setRpe(parseInt(e.target.value))}
-          className="w-full accent-[#E8C860]"
+          className="w-full accent-gold"
         />
-        <div className="mt-1 flex justify-between text-xs text-zinc-600">
+        <div className="mt-1 flex justify-between text-xs text-muted-foreground">
           <span>1</span><span>5</span><span>10</span>
         </div>
       </div>
 
       {/* Difficulty */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-zinc-300">
+        <label className="mb-2 block text-sm font-medium text-foreground">
           Difficulty
         </label>
         <div className="flex gap-2">
@@ -55,10 +72,10 @@ export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) 
             <button
               key={d}
               onClick={() => setDifficulty(d)}
-              className={`flex-1 rounded-lg py-2 text-xs font-medium transition-colors ${
+              className={`flex-1 py-2 text-xs font-medium transition-colors ${
                 difficulty === d
-                  ? 'bg-[#E8C860] text-zinc-950'
-                  : 'bg-zinc-800 text-zinc-400 active:bg-zinc-700'
+                  ? 'bg-gold text-near-black'
+                  : 'bg-surface-light text-muted-foreground active:bg-border'
               }`}
             >
               {DIFFICULTY_LABELS[d]}
@@ -69,7 +86,7 @@ export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) 
 
       {/* Notes */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-zinc-300">
+        <label className="mb-2 block text-sm font-medium text-foreground">
           Notes (optional)
         </label>
         <textarea
@@ -77,17 +94,18 @@ export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) 
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
           placeholder="How did it feel? Anything to remember?"
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-[#4ACAAA] focus:outline-none"
+          className="w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
         />
       </div>
 
-      <button
-        onClick={() => onFinish(rpe, difficulty, notes)}
+      <Button
+        onClick={handleFinish}
         disabled={submitting}
-        className="min-h-[48px] w-full rounded-xl bg-[#E8C860] py-3 text-base font-bold text-zinc-950 active:bg-[#C8A030] disabled:opacity-50"
+        size="lg"
+        className="w-full"
       >
-        {submitting ? 'Saving...' : 'Finish Workout'}
-      </button>
+        {submitting ? 'Saving...' : 'Close Session'}
+      </Button>
     </div>
   )
 }

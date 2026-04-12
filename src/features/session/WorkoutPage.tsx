@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
+import { getMarkAsset, getSessionAccent, getSessionLabel } from '@/lib/markAssets'
+import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 
 import { ActiveRecoveryView } from './ActiveRecoveryView'
 import { BagWorkRoundView } from './BagWorkRoundView'
 import { ExerciseView } from './ExerciseView'
+import { MarkEarnedOverlay } from './MarkEarnedOverlay'
 import { MtClassLogView } from './MtClassLogView'
 import { PostureExerciseView } from './PostureExerciseView'
 import { RestTimer } from './RestTimer'
+import { RitualEntrance } from './RitualEntrance'
 import { RunSessionView } from './RunSessionView'
 import { SessionComplete } from './SessionComplete'
 import { SkipRopeView } from './SkipRopeView'
@@ -148,7 +152,7 @@ interface MtClassWorkoutData {
 
 // ─── Phases ────────────────────────────────────────────────────
 
-type Phase = 'exercise' | 'rest' | 'complete'
+type Phase = 'entrance' | 'exercise' | 'rest' | 'mark-earned' | 'complete'
 type RoundPhase = 'ready' | 'fighting' | 'rest'
 
 export function WorkoutPage() {
@@ -156,6 +160,7 @@ export function WorkoutPage() {
   const navigate = useNavigate()
 
   const [sessionType, setSessionType] = useState<string | null>(null)
+  const [sessionStatus, setSessionStatus] = useState<string | null>(null)
   const [strengthData, setStrengthData] = useState<StrengthWorkoutData | null>(null)
   const [postureData, setPostureData] = useState<PostureWorkoutData | null>(null)
   const [bagData, setBagData] = useState<BagWorkoutData | null>(null)
@@ -168,7 +173,7 @@ export function WorkoutPage() {
   const [setIdx, setSetIdx] = useState(0)
   const [roundIdx, setRoundIdx] = useState(0)
   const [roundPhase, setRoundPhase] = useState<RoundPhase>('ready')
-  const [phase, setPhase] = useState<Phase>('exercise')
+  const [phase, setPhase] = useState<Phase>('entrance')
   const [submitting, setSubmitting] = useState(false)
 
   const restTimer = useRestTimer()
@@ -177,12 +182,17 @@ export function WorkoutPage() {
     if (!id) return
     async function load() {
       try {
-        // Fetch session to determine type
         const allSessions = await apiFetch<SessionData[]>('/api/sessions')
         const session = allSessions.find(s => s.id === id)
         if (!session) throw new Error('Session not found')
 
         setSessionType(session.type)
+        setSessionStatus(session.status)
+
+        // Skip entrance for in-progress sessions (returning to continue)
+        if (session.status === 'in_progress') {
+          setPhase('exercise')
+        }
 
         if (session.type === 'posture_corrective') {
           const data = await apiFetch<PostureWorkoutData>(`/api/sessions/${id}/posture-workout`)
@@ -215,6 +225,14 @@ export function WorkoutPage() {
     load()
   }, [id])
 
+  const handleEntranceComplete = useCallback(() => {
+    setPhase('exercise')
+  }, [])
+
+  const handleMarkEarnedComplete = useCallback(() => {
+    setPhase('complete')
+  }, [])
+
   async function handleFinish(rpe: number, difficulty: number, notes: string) {
     if (!id) return
     setSubmitting(true)
@@ -230,10 +248,83 @@ export function WorkoutPage() {
     }
   }
 
+  // ─── Loading ──────────────────────────────────────────────
+
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-        <p className="text-sm text-zinc-500">Loading workout...</p>
+      <div className="flex min-h-screen items-center justify-center bg-near-black">
+        <p className="text-sm text-muted-foreground">Loading workout...</p>
+      </div>
+    )
+  }
+
+  // ─── Entrance animation ───────────────────────────────────
+
+  if (phase === 'entrance' && sessionType) {
+    return (
+      <RitualEntrance
+        sessionType={sessionType}
+        onComplete={handleEntranceComplete}
+      />
+    )
+  }
+
+  // ─── Mark earned overlay ──────────────────────────────────
+
+  if (phase === 'mark-earned' && sessionType) {
+    return (
+      <MarkEarnedOverlay
+        sessionType={sessionType}
+        onComplete={handleMarkEarnedComplete}
+      />
+    )
+  }
+
+  const accent = sessionType ? getSessionAccent(sessionType) : '#E8C860'
+  const label = sessionType ? getSessionLabel(sessionType) : ''
+  const markAsset = sessionType ? getMarkAsset(sessionType) : null
+
+  // ─── Session atmosphere (shared across types) ─────────────
+
+  function SessionAtmosphere() {
+    return (
+      <>
+        <SessionBackground accentColor={accent} />
+        {markAsset && (
+          <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
+            <img src={markAsset.png} alt="" className="h-64 w-64 object-contain opacity-[0.04]" />
+          </div>
+        )}
+      </>
+    )
+  }
+
+  // ─── Session header (shared across types) ─────────────────
+
+  function SessionHeader({ counter }: { counter?: string }) {
+    return (
+      <header className="flex shrink-0 items-center justify-between px-4 py-3">
+        <button onClick={() => navigate('/today')} className="text-sm font-medium text-muted-foreground active:text-teal">
+          Back
+        </button>
+        {counter && (
+          <span className="text-label" style={{ color: accent }}>
+            {counter}
+          </span>
+        )}
+      </header>
+    )
+  }
+
+  // ─── Progress bar (shared) ────────────────────────────────
+
+  function ProgressBar({ value }: { value: number }) {
+    return (
+      <div className="h-1 bg-surface">
+        <div
+          className="h-full transition-all duration-300"
+          style={{ width: `${value}%`, backgroundColor: accent }}
+        />
       </div>
     )
   }
@@ -247,7 +338,6 @@ export function WorkoutPage() {
     const totalSets = currentExercise?.sets ?? 1
 
     function handlePostureSetDone() {
-      // Mark exercise completed via API
       if (currentExercise) {
         apiFetch(`/api/posture-exercises/${currentExercise.id}`, {
           method: 'PATCH',
@@ -259,7 +349,7 @@ export function WorkoutPage() {
       const isLastExercise = exerciseIdx >= totalExercises - 1
 
       if (isLastSet && isLastExercise) {
-        setPhase('complete')
+        setPhase('mark-earned')
       } else if (isLastSet) {
         setExerciseIdx(exerciseIdx + 1)
         setSetIdx(0)
@@ -273,17 +363,12 @@ export function WorkoutPage() {
       : 0
 
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
-          <button onClick={() => navigate('/today')} className="text-sm text-zinc-400 active:text-zinc-200">
-            Back
-          </button>
-          <span className="text-xs text-zinc-500">{exerciseIdx + 1}/{totalExercises}</span>
-        </header>
-
-        <main className="flex-1 overflow-auto px-4 py-4">
+      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+        <SessionAtmosphere />
+        <SessionHeader counter={`${exerciseIdx + 1}/${totalExercises}`} />
+        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
           {phase === 'complete' ? (
-            <SessionComplete onFinish={handleFinish} submitting={submitting} />
+            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
           ) : currentExercise ? (
             <PostureExerciseView
               key={`${exerciseIdx}-${setIdx}`}
@@ -295,10 +380,7 @@ export function WorkoutPage() {
             />
           ) : null}
         </main>
-
-        <div className="h-1 bg-zinc-800">
-          <div className="h-full bg-[#4ACAAA] transition-all duration-300" style={{ width: `${progress}%` }} />
-        </div>
+        <ProgressBar value={progress} />
       </div>
     )
   }
@@ -307,19 +389,17 @@ export function WorkoutPage() {
 
   if (sessionType === 'mt_class' && mtData?.mtLog) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
-          <button onClick={() => navigate('/today')} className="text-sm text-zinc-400 active:text-zinc-200">Back</button>
-          <span className="text-xs text-zinc-500">MT Class</span>
-        </header>
-        <main className="flex-1 overflow-auto px-4 py-4">
+      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+        <SessionAtmosphere />
+        <SessionHeader />
+        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
           {phase === 'complete' ? (
-            <SessionComplete onFinish={handleFinish} submitting={submitting} />
+            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
           ) : (
-            <MtClassLogView mtLog={mtData.mtLog} onComplete={() => setPhase('complete')} />
+            <MtClassLogView mtLog={mtData.mtLog} onComplete={() => setPhase('mark-earned')} />
           )}
         </main>
-        <div className="h-1 bg-[#4ACAAA]" />
+        <ProgressBar value={phase === 'complete' ? 100 : 50} />
       </div>
     )
   }
@@ -328,26 +408,20 @@ export function WorkoutPage() {
 
   if (sessionType === 'running' && runData?.runSession) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
-          <button onClick={() => navigate('/today')} className="text-sm text-zinc-400 active:text-zinc-200">
-            Back
-          </button>
-          <span className="text-xs text-zinc-500">Run</span>
-        </header>
-
-        <main className="flex-1 overflow-auto px-4 py-4">
+      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+        <SessionAtmosphere />
+        <SessionHeader />
+        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
           {phase === 'complete' ? (
-            <SessionComplete onFinish={handleFinish} submitting={submitting} />
+            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
           ) : (
             <RunSessionView
               runSession={runData.runSession}
-              onComplete={() => setPhase('complete')}
+              onComplete={() => setPhase('mark-earned')}
             />
           )}
         </main>
-
-        <div className="h-1 bg-[#1E8A68]" />
+        <ProgressBar value={phase === 'complete' ? 100 : 0} />
       </div>
     )
   }
@@ -356,19 +430,17 @@ export function WorkoutPage() {
 
   if (sessionType === 'skip_rope' && skipData?.skipSession) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
-          <button onClick={() => navigate('/today')} className="text-sm text-zinc-400 active:text-zinc-200">Back</button>
-          <span className="text-xs text-zinc-500">Skip Rope</span>
-        </header>
-        <main className="flex-1 overflow-auto px-4 py-4">
+      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+        <SessionAtmosphere />
+        <SessionHeader />
+        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
           {phase === 'complete' ? (
-            <SessionComplete onFinish={handleFinish} submitting={submitting} />
+            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
           ) : (
-            <SkipRopeView skipSession={skipData.skipSession} onComplete={() => setPhase('complete')} />
+            <SkipRopeView skipSession={skipData.skipSession} onComplete={() => setPhase('mark-earned')} />
           )}
         </main>
-        <div className="h-1 bg-[#1E8A68]" />
+        <ProgressBar value={phase === 'complete' ? 100 : 0} />
       </div>
     )
   }
@@ -377,19 +449,17 @@ export function WorkoutPage() {
 
   if (sessionType === 'active_recovery' && recoveryData?.recoverySession) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
-          <button onClick={() => navigate('/today')} className="text-sm text-zinc-400 active:text-zinc-200">Back</button>
-          <span className="text-xs text-zinc-500">Recovery</span>
-        </header>
-        <main className="flex-1 overflow-auto px-4 py-4">
+      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+        <SessionAtmosphere />
+        <SessionHeader />
+        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
           {phase === 'complete' ? (
-            <SessionComplete onFinish={handleFinish} submitting={submitting} />
+            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
           ) : (
-            <ActiveRecoveryView recoverySession={recoveryData.recoverySession} onComplete={() => setPhase('complete')} />
+            <ActiveRecoveryView recoverySession={recoveryData.recoverySession} onComplete={() => setPhase('mark-earned')} />
           )}
         </main>
-        <div className="h-1 bg-zinc-600" />
+        <ProgressBar value={phase === 'complete' ? 100 : 0} />
       </div>
     )
   }
@@ -403,17 +473,12 @@ export function WorkoutPage() {
     const bagProgress = totalRounds > 0 ? (roundIdx / totalRounds) * 100 : 0
 
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
-          <button onClick={() => navigate('/today')} className="text-sm text-zinc-400 active:text-zinc-200">
-            Back
-          </button>
-          <span className="text-xs text-zinc-500">Round {roundIdx + 1}/{totalRounds}</span>
-        </header>
-
-        <main className="flex-1 overflow-auto px-4 py-4">
+      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+        <SessionAtmosphere />
+        <SessionHeader counter={`Round ${roundIdx + 1}/${totalRounds}`} />
+        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
           {phase === 'complete' ? (
-            <SessionComplete onFinish={handleFinish} submitting={submitting} />
+            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
           ) : currentRound ? (
             <BagWorkRoundView
               key={roundIdx}
@@ -425,14 +490,11 @@ export function WorkoutPage() {
                 setRoundIdx(roundIdx + 1)
                 setRoundPhase('ready')
               }}
-              onComplete={() => setPhase('complete')}
+              onComplete={() => setPhase('mark-earned')}
             />
           ) : null}
         </main>
-
-        <div className="h-1 bg-zinc-800">
-          <div className="h-full bg-[#E8C860] transition-all duration-300" style={{ width: `${bagProgress}%` }} />
-        </div>
+        <ProgressBar value={bagProgress} />
       </div>
     )
   }
@@ -441,8 +503,8 @@ export function WorkoutPage() {
 
   if (!strengthData) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-        <p className="text-sm text-zinc-500">No workout data found.</p>
+      <div className="flex min-h-screen items-center justify-center bg-near-black">
+        <p className="text-sm text-muted-foreground">No workout data found.</p>
       </div>
     )
   }
@@ -476,7 +538,7 @@ export function WorkoutPage() {
     const isLastExercise = exerciseIdx >= totalExercises - 1
 
     if (isLastSet && isLastExercise) {
-      setPhase('complete')
+      setPhase('mark-earned')
     } else if (isLastSet) {
       setExerciseIdx(exerciseIdx + 1)
       setSetIdx(0)
@@ -492,19 +554,13 @@ export function WorkoutPage() {
     : 0
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
-        <button onClick={() => navigate('/today')} className="text-sm text-zinc-400 active:text-zinc-200">
-          Back
-        </button>
-        <span className="text-xs text-zinc-500">{exerciseIdx + 1}/{totalExercises}</span>
-      </header>
-
+    <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+      <SessionHeader counter={`${exerciseIdx + 1}/${totalExercises}`} />
       <main className="flex-1 overflow-auto px-4 py-4">
         {phase === 'complete' ? (
-          <SessionComplete onFinish={handleFinish} submitting={submitting} />
+          <SessionComplete sessionType={sessionType!} onFinish={handleFinish} submitting={submitting} />
         ) : phase === 'rest' ? (
-          <div>
+          <div className="animate-fade-in">
             <ExerciseView
               name={currentExercise.exercise?.name ?? ''}
               formCues={null}
@@ -514,13 +570,15 @@ export function WorkoutPage() {
               totalExercises={totalExercises}
             />
             <RestTimer
+              totalSeconds={currentSet?.restSec ?? 60}
               secondsRemaining={restTimer.secondsRemaining}
               isOvertime={restTimer.isOvertime}
               onNext={handleNextSet}
+              accentColor={accent}
             />
           </div>
         ) : (
-          <div>
+          <div className="animate-fade-in">
             <ExerciseView
               name={currentExercise.exercise?.name ?? ''}
               formCues={currentExercise.exercise?.formCues ?? null}
@@ -542,10 +600,7 @@ export function WorkoutPage() {
           </div>
         )}
       </main>
-
-      <div className="h-1 bg-zinc-800">
-        <div className="h-full bg-[#E8C860] transition-all duration-300" style={{ width: `${strengthProgress}%` }} />
-      </div>
+      <ProgressBar value={strengthProgress} />
     </div>
   )
 }
