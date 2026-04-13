@@ -12,7 +12,7 @@ interface StatsSummaryProps {
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="border border-border bg-card p-3">
+    <div className="rounded-md border border-border bg-card p-3">
       <p className="text-label text-muted-foreground">{label}</p>
       <p className="text-stat text-foreground">{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
@@ -43,7 +43,7 @@ export function StatsSummary({ stats }: StatsSummaryProps) {
       />
       <StatCard
         label="Avg RPE"
-        value={stats.avgRpe != null ? String(stats.avgRpe) : '—'}
+        value={stats.avgRpe != null ? String(stats.avgRpe) : '-'}
         sub="Effort level"
       />
       <StatCard

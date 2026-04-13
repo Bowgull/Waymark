@@ -107,7 +107,7 @@ export function DaySummary({ sessions, todayDate }: DaySummaryProps) {
       />
 
       {/* ─── Day Closed + Stats ─── */}
-      <div className="border border-border bg-surface/30 p-5">
+      <div className="rounded-md border border-border bg-surface/30 p-5">
         <h3 className="text-display-sm text-gold mb-4">Day Closed</h3>
 
         <div className="relative flex gap-6 text-center">
@@ -130,7 +130,7 @@ export function DaySummary({ sessions, todayDate }: DaySummaryProps) {
 
       {/* ─── Tomorrow ─── */}
       {tomorrowSessions.length > 0 && (
-        <div className="mt-3 border border-border bg-surface/20 p-4">
+        <div className="mt-3 rounded-md border border-border bg-surface/20 p-4">
           <p className="text-label text-muted-foreground mb-3">Tomorrow</p>
           <div className="flex flex-col gap-2">
             {tomorrowSessions.map((s, i) => {
@@ -182,7 +182,7 @@ export function DaySummary({ sessions, todayDate }: DaySummaryProps) {
 
       {/* ─── Body This Week ─── */}
       {wellness && wellness.entries > 0 && (
-        <div className="mt-3 border border-border bg-surface/20 p-4">
+        <div className="mt-3 rounded-md border border-border bg-surface/20 p-4">
           <p className="text-label text-muted-foreground mb-3">Body This Week</p>
           <div className="flex gap-6">
             {wellness.avgSleep != null && (
@@ -218,7 +218,7 @@ export function DaySummary({ sessions, todayDate }: DaySummaryProps) {
 
       {/* ─── Recent Progress ─── */}
       {prs.length > 0 && (
-        <div className="mt-3 border border-border bg-surface/20 p-4">
+        <div className="mt-3 rounded-md border border-border bg-surface/20 p-4">
           <p className="text-label text-muted-foreground mb-3">Recent Progress</p>
           <div className="flex flex-col gap-2">
             {prs.slice(0, 5).map((pr, i) => (

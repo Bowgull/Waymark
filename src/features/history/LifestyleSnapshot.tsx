@@ -21,31 +21,30 @@ function getSorenessLabel(avg: number): string {
 
 export function LifestyleSnapshot({ wellness }: LifestyleSnapshotProps) {
   return (
-    <div className="mb-6 border border-border border-l-4 border-l-teal bg-card p-4">
-      <p className="text-display-sm mb-3 text-foreground">Lifestyle This Week</p>
+    <div className="rounded-md border border-border border-l-2 border-l-gold/20 bg-card p-4">
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
         {wellness.avgSleep != null && (
           <>
-            <span className="text-muted-foreground">Avg Sleep</span>
+            <span className="text-label text-muted-foreground">Avg Sleep</span>
             <span className="text-foreground">{wellness.avgSleep} hrs</span>
           </>
         )}
         {wellness.avgSoreness != null && (
           <>
-            <span className="text-muted-foreground">Avg Soreness</span>
+            <span className="text-label text-muted-foreground">Avg Soreness</span>
             <span className="text-foreground">{getSorenessLabel(wellness.avgSoreness)}</span>
           </>
         )}
         {wellness.avgWeed != null && (
           <>
-            <span className="text-muted-foreground">Avg Weed</span>
+            <span className="text-label text-muted-foreground">Avg Weed</span>
             <span className="text-foreground">{wellness.avgWeed}g</span>
           </>
         )}
         {wellness.avgAlcohol != null && (
           <>
-            <span className="text-muted-foreground">Avg Alcohol</span>
+            <span className="text-label text-muted-foreground">Avg Alcohol</span>
             <span className="text-foreground">{wellness.avgAlcohol}/10</span>
           </>
         )}

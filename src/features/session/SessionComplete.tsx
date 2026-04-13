@@ -1,6 +1,8 @@
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { ScrollDrum } from '@/components/ui/ScrollDrum'
+import { SlidingGauge } from '@/components/ui/SlidingGauge'
 import { getMarkAsset } from '@/lib/markAssets'
 import { completeHaptic } from '@/lib/haptics'
 
@@ -16,9 +18,7 @@ const RPE_LABELS: Record<number, string> = {
   9: 'Near Max', 10: 'Max Effort',
 }
 
-const DIFFICULTY_LABELS: Record<number, string> = {
-  1: 'Too Easy', 2: 'Easy', 3: 'Just Right', 4: 'Hard', 5: 'Too Hard',
-}
+const DIFFICULTY_LABELS = ['Too Easy', 'Easy', 'Just Right', 'Hard', 'Too Hard']
 
 export function SessionComplete({ sessionType, onFinish, submitting }: SessionCompleteProps) {
   const [rpe, setRpe] = useState(7)
@@ -32,8 +32,8 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
   }
 
   return (
-    <div className="space-y-6 py-4 animate-fade-in-up">
-      <div className="flex flex-col items-center text-center">
+    <div className="space-y-6 py-4">
+      <div className="flex flex-col items-center text-center animate-fade-in-up">
         <img
           src={mark.png}
           alt={mark.label}
@@ -44,57 +44,39 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
         <p className="mt-1 text-sm text-muted-foreground">How was it?</p>
       </div>
 
-      {/* RPE */}
-      <div>
+      {/* RPE — scroll drum */}
+      <div className="animate-fade-in-up animation-delay-100">
         <label className="mb-2 block text-sm font-medium text-foreground">
-          RPE: {rpe} — {RPE_LABELS[rpe]}
+          RPE: {rpe} · {RPE_LABELS[rpe]}
         </label>
-        <input
-          type="range"
-          min={1}
-          max={10}
-          value={rpe}
-          onChange={(e) => setRpe(parseInt(e.target.value))}
-          className="w-full accent-gold"
-        />
-        <div className="mt-1 flex justify-between text-xs text-muted-foreground">
-          <span>1</span><span>5</span><span>10</span>
+        <div className="rounded-md bg-deep-forest border border-gold/10 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
+          <ScrollDrum min={1} max={10} step={1} value={rpe} onChange={setRpe} />
         </div>
       </div>
 
-      {/* Difficulty */}
-      <div>
-        <label className="mb-2 block text-sm font-medium text-foreground">
+      {/* Difficulty — sliding gauge */}
+      <div className="animate-fade-in-up animation-delay-200">
+        <label className="mb-3 block text-sm font-medium text-foreground">
           Difficulty
         </label>
-        <div className="flex gap-2">
-          {[1, 2, 3, 4, 5].map((d) => (
-            <button
-              key={d}
-              onClick={() => setDifficulty(d)}
-              className={`flex-1 py-2 text-xs font-medium transition-colors ${
-                difficulty === d
-                  ? 'bg-gold text-near-black'
-                  : 'bg-surface-light text-muted-foreground active:bg-border'
-              }`}
-            >
-              {DIFFICULTY_LABELS[d]}
-            </button>
-          ))}
-        </div>
+        <SlidingGauge
+          labels={DIFFICULTY_LABELS}
+          value={difficulty}
+          onChange={setDifficulty}
+        />
       </div>
 
       {/* Notes */}
-      <div>
+      <div className="animate-fade-in-up animation-delay-300">
         <label className="mb-2 block text-sm font-medium text-foreground">
-          Notes (optional)
+          Notes
         </label>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
           placeholder="How did it feel? Anything to remember?"
-          className="w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
+          className="w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-sm text-foreground italic placeholder-muted-foreground/50 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-teal/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(74,202,170,0.15)] focus:outline-none"
         />
       </div>
 
@@ -102,7 +84,7 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
         onClick={handleFinish}
         disabled={submitting}
         size="lg"
-        className="w-full"
+        className="w-full animate-fade-in-up animation-delay-400"
       >
         {submitting ? 'Saving...' : 'Close Session'}
       </Button>

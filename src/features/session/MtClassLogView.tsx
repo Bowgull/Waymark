@@ -78,28 +78,28 @@ export function MtClassLogView({ mtLog, onComplete }: MtClassLogViewProps) {
         <label className="text-label mb-1 block text-muted-foreground">Focus / Skill</label>
         <input type="text" value={focusSkill} onChange={(e) => setFocusSkill(e.target.value)}
           placeholder="e.g. Defense, teep timing"
-          className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+          className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
       </div>
 
       <div>
         <label className="text-label mb-1 block text-muted-foreground">Weakness / Struggle</label>
         <input type="text" value={weakness} onChange={(e) => setWeakness(e.target.value)}
           placeholder="e.g. Guard dropping after combos"
-          className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+          className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
       </div>
 
       <div>
         <label className="text-label mb-1 block text-muted-foreground">Concept to Learn</label>
         <input type="text" value={concept} onChange={(e) => setConcept(e.target.value)}
           placeholder="e.g. Hands up, check kicks"
-          className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+          className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
       </div>
 
       <div>
         <label className="text-label mb-1 block text-muted-foreground">Action Items</label>
         <textarea value={actionItems} onChange={(e) => setActionItems(e.target.value)} rows={2}
           placeholder="e.g. Add guard reset to bag work combos"
-          className="w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
       </div>
 
       <Button onClick={handleSave} disabled={saving} size="lg" className="w-full">

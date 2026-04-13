@@ -7,7 +7,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants = {
-  default: 'bg-gold text-near-black font-semibold active:scale-[0.98] active:opacity-90 shadow-[inset_0_0_0_2px_var(--color-near-black),0_0_0_1px_var(--color-gold)]',
+  default: 'text-near-black font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_1px_3px_rgba(0,0,0,0.3)] active:scale-[0.98] active:brightness-90',
   secondary: 'bg-secondary text-secondary-foreground border-l-2 border-l-gold font-semibold active:scale-[0.98] active:opacity-80',
   ghost: 'text-muted-foreground font-medium active:bg-secondary',
   destructive: 'bg-destructive text-foreground font-semibold active:scale-[0.98] active:opacity-80',
@@ -33,7 +33,7 @@ export function Button({
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center transition-all disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none',
+        'inline-flex items-center justify-center rounded-md transition-all disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none',
         isDisplay && 'uppercase tracking-wide',
         variants[variant],
         sizes[size],
@@ -41,6 +41,7 @@ export function Button({
       )}
       style={{
         fontFamily: isDisplay ? "var(--font-display)" : undefined,
+        ...(isDisplay ? { background: 'linear-gradient(180deg, #C8A030 0%, #A07820 100%)' } : undefined),
         ...style,
       }}
       disabled={disabled}

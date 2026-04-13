@@ -1,4 +1,4 @@
-import { SessionTypeIcon } from '@/components/icons/SessionIcons'
+import { getMarkAsset } from '@/lib/markAssets'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { getEstimatedMin, getSessionLabel, getTypeAccentColor } from '@/lib/weeklyTemplate'
@@ -28,7 +28,7 @@ function formatDuration(sec: number): string {
 
 export function SessionCard({ session, onStart, onSkip, index }: SessionCardProps) {
   const accent = getTypeAccentColor(session.type)
-  const label = getSessionLabel(session.type)
+  const label = getSessionLabel(session.type, new Date().getDay())
   const estMin = getEstimatedMin(session.type)
   const isCompleted = session.status === 'completed'
   const isSkipped = session.status === 'skipped'
@@ -45,7 +45,7 @@ export function SessionCard({ session, onStart, onSkip, index }: SessionCardProp
       {/* Top row */}
       <div className="mb-2 flex items-center justify-between">
         {session.timeSlot && (
-          <Badge variant={session.timeSlot === 'am' ? 'gold' : 'teal'}>
+          <Badge variant={session.timeSlot === 'am' ? 'inscription-gold' : 'inscription-teal'}>
             {session.timeSlot === 'am' ? 'AM' : 'PM'}
           </Badge>
         )}
@@ -65,9 +65,13 @@ export function SessionCard({ session, onStart, onSkip, index }: SessionCardProp
           isSkipped ? 'text-muted-foreground line-through' : 'text-foreground'
         }`}
       >
-        <span className={isSkipped ? 'text-muted-foreground' : 'text-gold'}>
-          <SessionTypeIcon type={session.type} />
-        </span>
+        <img
+          src={getMarkAsset(session.type).png}
+          alt=""
+          className={`h-7 w-7 shrink-0 object-contain ${
+            isSkipped ? 'opacity-20 saturate-0' : ''
+          }`}
+        />
         {label}
       </h3>
 

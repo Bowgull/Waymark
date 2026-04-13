@@ -30,8 +30,8 @@ export function DayTimeline({ sessions, onStart, onSkip }: DayTimelineProps) {
     if (items.length === 0) return null
     return (
       <div>
-        <p className={`text-label ${labelColor} mb-1 px-1`}>{label}</p>
-        <div className="flex flex-col gap-px">
+        <p className={`font-[Cinzel] text-[10px] font-medium tracking-[0.2em] uppercase ${labelColor} mb-1 px-1`}>{label}</p>
+        <div className="flex flex-col gap-1">
           {items.map((session, i) => (
             <div
               key={session.id}
@@ -44,7 +44,7 @@ export function DayTimeline({ sessions, onStart, onSkip }: DayTimelineProps) {
                 onSkip={onSkip}
                 expanded={expandedId === session.id}
                 onToggle={() => setExpandedId(expandedId === session.id ? null : session.id)}
-                label={getSessionLabel(session.type)}
+                label={getSessionLabel(session.type, new Date().getDay())}
               />
             </div>
           ))}

@@ -25,7 +25,7 @@ export function ApiHealthDevBadge() {
 
   return (
     <p className="mt-4 max-w-full break-all px-2 text-center text-xs text-muted-foreground">
-      <span className="font-mono">DEV</span> API {getApiBaseUrl()} — {line}
+      <span className="font-mono">DEV</span> API {getApiBaseUrl()} · {line}
     </p>
   )
 }

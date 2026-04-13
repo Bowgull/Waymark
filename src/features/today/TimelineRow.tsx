@@ -28,20 +28,20 @@ function formatDuration(sec: number): string {
   return `${min}min`
 }
 
-function statusBorderColor(status: string): string {
+function statusBg(status: string): string {
   switch (status) {
-    case 'completed': return 'border-l-gold'
-    case 'in_progress': return 'border-l-teal'
-    case 'skipped': return 'border-l-muted-foreground/30'
-    default: return 'border-l-border'
+    case 'completed': return 'bg-gold/5'
+    case 'in_progress': return 'bg-teal/5'
+    default: return 'bg-transparent'
   }
 }
 
-function statusBg(status: string): string {
+function markStyle(status: string): string {
   switch (status) {
-    case 'completed': return 'bg-surface/40'
-    case 'in_progress': return 'bg-teal/5'
-    default: return 'bg-transparent'
+    case 'completed': return 'opacity-90'
+    case 'in_progress': return 'opacity-100 drop-shadow-[0_0_4px_rgba(74,202,170,0.5)]'
+    case 'skipped': return 'opacity-30 saturate-0'
+    default: return 'opacity-50'
   }
 }
 
@@ -54,7 +54,7 @@ export function TimelineRow({ session, onStart, onSkip, expanded, onToggle, labe
 
   return (
     <div
-      className={`border-l-[3px] ${statusBorderColor(session.status)} ${statusBg(session.status)} transition-colors`}
+      className={`rounded-lg ${statusBg(session.status)} transition-colors`}
     >
       {/* Collapsed row — always visible */}
       <button
@@ -68,7 +68,7 @@ export function TimelineRow({ session, onStart, onSkip, expanded, onToggle, labe
         <img
           src={mark.png}
           alt=""
-          className={`h-4 w-4 object-contain ${isSkipped ? 'opacity-30 saturate-0' : isCompleted ? 'opacity-80' : 'opacity-60'}`}
+          className={`h-4 w-4 object-contain ${markStyle(session.status)}`}
         />
         <div className="flex-1 min-w-0">
           <span className={`text-sm font-semibold ${isSkipped ? 'text-muted-foreground/50 line-through' : isCompleted ? 'text-foreground/80' : 'text-foreground'}`}>
@@ -84,7 +84,7 @@ export function TimelineRow({ session, onStart, onSkip, expanded, onToggle, labe
           {isCompleted && session.durationSec
             ? formatDuration(session.durationSec)
             : isSkipped
-            ? 'Passed'
+            ? <svg className="h-3.5 w-3.5 text-muted-foreground/40" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 10h10" strokeLinecap="round" /></svg>
             : `~${estMin}min`}
         </span>
         <svg

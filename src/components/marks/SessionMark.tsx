@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils'
 import { getMarkAsset } from '@/lib/markAssets'
 
 type MarkState = 'ghosted' | 'active' | 'completed' | 'skipped'
-type MarkSize = 'sm' | 'md' | 'lg' | 'hero'
+type MarkSize = 'xs' | 'sm' | 'md' | 'lg' | 'hero'
 
 interface SessionMarkProps {
   sessionType: string
@@ -13,6 +13,7 @@ interface SessionMarkProps {
 }
 
 const SIZE_CLASSES: Record<MarkSize, string> = {
+  xs: 'w-5 h-5',
   sm: 'w-10 h-10',
   md: 'w-16 h-16',
   lg: 'w-24 h-24',

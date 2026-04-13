@@ -71,6 +71,38 @@ export function RecoveryIcon() {
   )
 }
 
+/** Anvil forge stamp — mastered / favourite combos. Filled + glow when mastered. */
+export function ForgeIcon({ size = 14, mastered = false }: { size?: number; mastered?: boolean }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={mastered ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={mastered ? 'drop-shadow-[0_0_4px_rgba(232,200,96,0.6)]' : ''}
+    >
+      <path d="M4 20h16M6 16h12M9 12h6l1-4H8l1 4z" />
+      <path d="M12 4v4" />
+      <path d="M10 4h4" />
+    </svg>
+  )
+}
+
+/** Padlock — locked combos */
+export function LockIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 018 0v4" />
+      <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 /** Get icon component for a session type */
 export function SessionTypeIcon({ type }: { type: string }) {
   switch (type) {
@@ -78,6 +110,7 @@ export function SessionTypeIcon({ type }: { type: string }) {
     case 'strength': return <StrengthIcon />
     case 'mt_class': return <MtClassIcon />
     case 'bag_work': return <BagWorkIcon />
+    case 'foundation_run': return <RunningIcon />
     case 'running': return <RunningIcon />
     case 'skip_rope': return <SkipRopeIcon />
     case 'active_recovery': return <RecoveryIcon />

@@ -1,5 +1,13 @@
+import { useEffect, useRef, useState } from 'react'
+import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
+import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
+import type { WeekAnalysis } from '@/lib/weekAnalysis'
 import { getSessionLabel } from '@/lib/weeklyTemplate'
+import { getMarkAsset } from '@/lib/markAssets'
+import { getStrengthTemplate, getWeekLabel, getDeadliftExerciseId } from '@/lib/strengthTemplates'
+import { getRunPlanForWeek, ZONE2_PRESCRIPTION } from '@/lib/runningPlanTemplate'
 
 interface SessionSummary {
   id: string
@@ -7,35 +15,447 @@ interface SessionSummary {
   timeSlot: string | null
   status: string
   scheduledDate: number | null
+  adjustmentId?: string | null
+  blockWeek?: number | null
+}
+
+interface WeekAdjustment {
+  id: string
+  adjustmentType: string
+  sessionType: string
+  action: string
+  reason: string
+  targetDay: number | null
+  targetTimeSlot: string | null
+  status: string
 }
 
 interface WeekViewProps {
   sessions: SessionSummary[]
   weekStatus: string
+  weekPlanId?: string
+  analysisJson?: string | null
+  weekNumber?: number
   onApprove: () => void
+  onSessionUpdate?: (id: string, status: string) => void
+  onSessionAdded?: (session: SessionSummary) => void
 }
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-function getStatusColor(status: string): string {
-  switch (status) {
-    case 'completed': return 'bg-[#2D6B4F]/20 text-[#4ABA8A]'
-    case 'in_progress': return 'bg-[#4ACAAA]/15 text-[#4ACAAA]'
-    case 'skipped': return 'bg-border text-muted-foreground'
-    default: return 'bg-border text-muted-foreground'
+// ─── Routine Overview ──────────────────────────────────────────
+
+interface RoutineOverview {
+  headline: string
+  detail?: string
+  intensityBadge?: string
+  progressIcon?: 'up' | 'new-variant'
+}
+
+function getRoutineOverview(type: string, dayOfWeek: number, blockWeek: number, weekNumber: number): RoutineOverview | null {
+  switch (type) {
+    case 'strength': {
+      const template = getStrengthTemplate(dayOfWeek, blockWeek)
+      const mainLifts = template.exercises
+        .filter(e => e.section === 'main')
+        .map(e => e.label.replace(' Press', '').replace(' Progression', ''))
+      const coreLabel = template.id === 'strength_a' ? 'Core A' : 'Core B'
+      const intensity = getWeekLabel(blockWeek)
+
+      // Check if intensity increased from previous week
+      const prevBlockWeek = blockWeek > 1 ? blockWeek - 1 : 6
+      const prevPct = Math.round(((prevBlockWeek <= 2 ? 0.75 : prevBlockWeek <= 4 ? 0.80 : 0.90)) * 100)
+      const currPct = parseInt(intensity)
+      const isUp = currPct > prevPct
+
+      // Deadlift variant change indicator
+      const dlId = getDeadliftExerciseId(blockWeek)
+      const prevDlId = getDeadliftExerciseId(prevBlockWeek)
+      const dlChanged = dlId !== prevDlId && template.id === 'strength_b'
+
+      return {
+        headline: mainLifts.join(' · ') + ' + ' + coreLabel,
+        intensityBadge: intensity,
+        progressIcon: isUp ? 'up' : dlChanged ? 'new-variant' : undefined,
+      }
+    }
+
+    case 'foundation_run': {
+      return {
+        headline: 'Zone 2 easy, conversational pace',
+        detail: '15-20 min · HR 130-145 · nasal breathing',
+      }
+    }
+
+    case 'running': {
+      const plan = getRunPlanForWeek(weekNumber)
+      if (plan) {
+        // Extract first sentence or up to 60 chars
+        const desc = plan.targetDesc.length > 70
+          ? plan.targetDesc.slice(0, 67) + '...'
+          : plan.targetDesc
+        return {
+          headline: desc,
+          detail: plan.targetDistKm ? `~${plan.targetDistKm} km` : undefined,
+        }
+      }
+      return { headline: 'Progression run' }
+    }
+
+    case 'mt_class': {
+      return {
+        headline: 'Muay Thai class: pad work, drills, sparring',
+      }
+    }
+
+    case 'bag_work': {
+      return {
+        headline: 'Heavy bag rounds: combos + conditioning',
+      }
+    }
+
+    case 'posture_corrective': {
+      return {
+        headline: 'Upper release + Lower mobility',
+        detail: '19 exercises · ~25 min',
+      }
+    }
+
+    case 'active_recovery': {
+      return {
+        headline: 'Light movement, foam rolling, stretching',
+        detail: 'Keep it easy, focus on recovery',
+      }
+    }
+
+    case 'skip_rope': {
+      return {
+        headline: 'Jump rope conditioning',
+      }
+    }
+
+    default:
+      return null
   }
 }
 
-function getStatusLabel(status: string): string {
+// ─── Skipped Indicator ─────────────────────────────────────────
+
+function SkippedIndicator({ sessionType, label }: { sessionType: string; label: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const mark = getMarkAsset(sessionType)
+  return (
+    <div className="flex items-center gap-1.5">
+      {expanded && (
+        <div className="flex items-center gap-1 animate-fade-in">
+          <img src={mark.png} alt="" className="h-3.5 w-3.5 object-contain opacity-40 saturate-0" />
+          <span className="text-[10px] text-muted-foreground/60">{label}</span>
+        </div>
+      )}
+      <button
+        type="button"
+        aria-label="Show skipped session"
+        onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+        className="rounded-full p-1.5 active:bg-border/30"
+      >
+        <svg className="h-3.5 w-3.5 text-muted-foreground/50" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 10h10" strokeLinecap="round" /></svg>
+      </button>
+    </div>
+  )
+}
+
+// ─── Status Icon ───────────────────────────────────────────────
+
+function StatusIcon({ status, sessionType, label }: { status: string; sessionType?: string; label?: string }) {
   switch (status) {
-    case 'completed': return 'Done'
-    case 'in_progress': return 'Active'
-    case 'skipped': return 'Skipped'
-    default: return 'Planned'
+    case 'completed':
+      return (
+        <svg className="h-4 w-4 text-forest-light" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M5 10l4 4 6-7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'in_progress':
+      return <span className="h-2 w-2 rounded-full bg-teal animate-pulse-glow" />
+    case 'skipped':
+      return sessionType && label
+        ? <SkippedIndicator sessionType={sessionType} label={label} />
+        : <svg className="h-3.5 w-3.5 text-muted-foreground/50" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 10h10" strokeLinecap="round" /></svg>
+    default:
+      return null
   }
 }
 
-export function WeekView({ sessions, weekStatus, onApprove }: WeekViewProps) {
+// ─── Progress Icon ─────────────────────────────────────────────
+
+function ProgressIcon({ type }: { type: 'up' | 'new-variant' }) {
+  if (type === 'up') {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-forest/15 px-1.5 py-px text-[9px] text-forest-light" title="Intensity increase">
+        <svg className="h-2.5 w-2.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 12V4M5 7l3-3 3 3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-gold/10 px-1.5 py-px text-[9px] text-gold/70" title="New variant">
+      new
+    </span>
+  )
+}
+
+// ─── Session Row (with long-press action tray) ─────────────────
+
+function SessionRow({
+  session,
+  epochDay,
+  weekStatus,
+  isActionTrayOpen,
+  showOverview,
+  weekNumber,
+  onLongPress,
+  onSkip,
+  onReplace,
+}: {
+  session: SessionSummary
+  epochDay: number
+  weekStatus: string
+  isActionTrayOpen: boolean
+  showOverview: boolean
+  weekNumber: number
+  onLongPress: () => void
+  onSkip: () => void
+  onReplace: () => void
+}) {
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const date = new Date(epochDay * 86400 * 1000)
+  const dayOfWeek = date.getUTCDay()
+  const label = getSessionLabel(session.type, dayOfWeek)
+  const mark = getMarkAsset(session.type)
+  const isSkippable = session.status === 'planned' || session.status === 'in_progress'
+  const blockWeek = session.blockWeek ?? 1
+  const overview = showOverview && session.status !== 'skipped'
+    ? getRoutineOverview(session.type, dayOfWeek, blockWeek, weekNumber)
+    : null
+
+  function handleTouchStart() {
+    if (!isSkippable) return
+    longPressTimer.current = setTimeout(() => {
+      onLongPress()
+    }, 500)
+  }
+
+  function handleTouchEnd() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+
+  function handleTouchMove() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-md">
+      <div
+        className="flex items-center justify-between py-0.5"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchMove={handleTouchMove}
+        onMouseDown={handleTouchStart}
+        onMouseUp={handleTouchEnd}
+        onMouseLeave={handleTouchEnd}
+        onContextMenu={(e) => {
+          if (!isSkippable) return
+          e.preventDefault()
+          onLongPress()
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center rounded-sm border px-1.5 py-px font-[Cinzel] text-[10px] tracking-[0.2em] ${
+            session.timeSlot === 'am'
+              ? 'border-gold/25 text-gold/80'
+              : 'border-teal/25 text-teal/80'
+          }`}>
+            {session.timeSlot === 'am' ? 'AM' : 'PM'}
+          </span>
+          <img
+            src={mark.png}
+            alt=""
+            className={`h-5 w-5 shrink-0 object-contain ${
+              session.status === 'skipped' ? 'opacity-20 saturate-0' : 'opacity-70'
+            }`}
+          />
+          <span className={`text-sm ${session.status === 'skipped' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+            {label}
+          </span>
+          {session.adjustmentId && (
+            <span className="text-[9px] text-gold/50">makeup</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {weekStatus === 'draft' && session.status === 'planned' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onSkip() }}
+              className="px-2 py-0.5 text-[10px] font-medium text-muted-foreground active:text-red-400"
+            >
+              Skip
+            </button>
+          )}
+          <StatusIcon status={session.status} sessionType={session.type} label={label} />
+        </div>
+      </div>
+
+      {/* Routine overview detail (when day is expanded) */}
+      {overview && (
+        <div className="ml-[4.5rem] mb-1.5 animate-fade-in">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-[11px] text-muted-foreground/60 leading-tight">{overview.headline}</p>
+            {overview.progressIcon && <ProgressIcon type={overview.progressIcon} />}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            {overview.intensityBadge && (
+              <span className="rounded-sm border border-gold/20 bg-gold/5 px-1.5 py-px font-[Cinzel] text-[9px] tracking-wider text-gold/60">
+                {overview.intensityBadge}
+              </span>
+            )}
+            {overview.detail && (
+              <span className="text-[10px] text-muted-foreground/40">{overview.detail}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Action tray — slides in from right on long-press */}
+      {isActionTrayOpen && isSkippable && (
+        <div className="absolute inset-y-0 right-0 flex items-center gap-1 pr-1 animate-slide-in-right">
+          <button
+            onClick={(e) => { e.stopPropagation(); onReplace() }}
+            className="rounded-md bg-gold/15 px-3 py-1 text-[11px] font-medium text-gold active:bg-gold/25"
+          >
+            Replace
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onSkip() }}
+            className="rounded-md bg-red-500/10 px-3 py-1 text-[11px] font-medium text-red-400 active:bg-red-500/20"
+          >
+            Skip
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── WeekView ──────────────────────────────────────────────────
+
+export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekNumber = 1, onApprove, onSessionUpdate, onSessionAdded }: WeekViewProps) {
+  const [pickerDate, setPickerDate] = useState<string | null>(null)
+  const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
+  const [adjustments, setAdjustments] = useState<WeekAdjustment[]>([])
+  const [expandedDay, setExpandedDay] = useState<number | null>(null)
+  const [actionTraySessionId, setActionTraySessionId] = useState<string | null>(null)
+  const [replacingSession, setReplacingSession] = useState<SessionSummary | null>(null)
+
+  // Parse analysis from JSON
+  const analysis: WeekAnalysis | null = analysisJson ? (() => {
+    try { return JSON.parse(analysisJson) } catch { return null }
+  })() : null
+
+  // Fetch pending adjustments
+  useEffect(() => {
+    if (!weekPlanId) return
+    apiFetch<WeekAdjustment[]>(`/api/adjustments?weekPlanId=${weekPlanId}`)
+      .then(setAdjustments)
+      .catch(() => setAdjustments([]))
+  }, [weekPlanId])
+
+  function toggleDay(epochDay: number) {
+    setExpandedDay(prev => prev === epochDay ? null : epochDay)
+    setActionTraySessionId(null)
+  }
+
+  function openPicker(epochDay: number) {
+    const date = new Date(epochDay * 86400 * 1000)
+    const isoDate = date.toISOString().split('T')[0]
+    setPickerDate(isoDate)
+    apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${isoDate}`)
+      .then(setPickerSuggestions)
+      .catch(() => setPickerSuggestions(null))
+  }
+
+  async function handleAddSession(option: SessionOption) {
+    if (!pickerDate) return
+    const date = pickerDate
+    setPickerDate(null)
+    setPickerSuggestions(null)
+    setReplacingSession(null)
+    try {
+      const created = await apiFetch<SessionSummary>('/api/sessions/insert-ad-hoc', {
+        method: 'POST',
+        body: JSON.stringify({
+          date,
+          type: option.type,
+          timeSlot: option.timeSlot,
+          runCategory: option.runCategory,
+        }),
+      })
+      onSessionAdded?.(created)
+    } catch (e) {
+      console.error('Failed to add session:', e)
+    }
+  }
+
+  async function handleSkip(sessionId: string) {
+    setActionTraySessionId(null)
+    try {
+      await apiFetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'skipped' }),
+      })
+      onSessionUpdate?.(sessionId, 'skipped')
+    } catch (e) {
+      console.error('Failed to skip session:', e)
+    }
+  }
+
+  async function handleReplace(session: SessionSummary) {
+    setActionTraySessionId(null)
+    try {
+      await apiFetch(`/api/sessions/${session.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'skipped' }),
+      })
+      onSessionUpdate?.(session.id, 'skipped')
+    } catch (e) {
+      console.error('Failed to skip session for replace:', e)
+      return
+    }
+    setReplacingSession(session)
+    openPicker(session.scheduledDate ?? 0)
+  }
+
+  async function handleAcceptAdjustment(adjId: string) {
+    try {
+      const result = await apiFetch<{ adjustment: WeekAdjustment; session?: SessionSummary }>(`/api/adjustments/${adjId}/accept`, { method: 'POST' })
+      setAdjustments(prev => prev.map(a => a.id === adjId ? { ...a, status: 'accepted' } : a))
+      if (result.session) onSessionAdded?.(result.session)
+    } catch (e) {
+      console.error('Failed to accept adjustment:', e)
+    }
+  }
+
+  async function handleRejectAdjustment(adjId: string) {
+    try {
+      await apiFetch(`/api/adjustments/${adjId}/reject`, { method: 'POST' })
+      setAdjustments(prev => prev.map(a => a.id === adjId ? { ...a, status: 'rejected' } : a))
+    } catch (e) {
+      console.error('Failed to reject adjustment:', e)
+    }
+  }
+
   // Group sessions by epoch day
   const dayMap = new Map<number, SessionSummary[]>()
   for (const s of sessions) {
@@ -43,60 +463,189 @@ export function WeekView({ sessions, weekStatus, onApprove }: WeekViewProps) {
     if (!dayMap.has(date)) dayMap.set(date, [])
     dayMap.get(date)!.push(s)
   }
-
-  // Sort days
   const days = Array.from(dayMap.entries()).sort(([a], [b]) => a - b)
+  const proposedAdj = adjustments.filter(a => a.status === 'proposed')
 
   return (
     <div>
+      {/* Draft approval banner */}
       {weekStatus === 'draft' && (
-        <div className="mb-4 border border-[#E8C860]/30 bg-[#E8C860]/5 p-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-[#E8C860]">Week plan ready for review</p>
-            <Button size="sm" onClick={onApprove}>
-              Approve
-            </Button>
-          </div>
+        <div className="mb-4 rounded-md border border-gold/30 bg-gold/5 p-3">
+          <p className="mb-1 text-sm text-gold">Auto-generated. Review and approve</p>
+          <p className="mb-2 text-xs text-muted-foreground">Skip any sessions you want to remove, then approve.</p>
+          <Button size="sm" onClick={onApprove}>
+            Approve Week
+          </Button>
         </div>
       )}
 
+      {/* Week Intelligence Card */}
+      {(analysis || proposedAdj.length > 0) && (
+        <div className="mb-4 rounded-md border border-border bg-card p-3 space-y-3">
+          <p className="text-xs font-medium uppercase tracking-wider text-gold/60">Week Intelligence</p>
+
+          {analysis && (
+            <p className="text-xs text-muted-foreground">{analysis.summary}</p>
+          )}
+
+          {analysis?.volumeByType && (
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(analysis.volumeByType)
+                .filter(([, v]) => v.target > 0)
+                .map(([key, v]) => {
+                  const isBehind = v.completed < v.target
+                  return (
+                    <span
+                      key={key}
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] border ${
+                        isBehind
+                          ? 'border-amber-500/30 bg-amber-500/5 text-amber-400/80'
+                          : 'border-forest/30 bg-forest/5 text-forest-light/80'
+                      }`}
+                    >
+                      {key.split(':')[0]} {v.completed}/{v.target}
+                    </span>
+                  )
+                })}
+            </div>
+          )}
+
+          {analysis?.wellness && (
+            <div className="flex gap-3 text-[10px] text-muted-foreground/70">
+              {analysis.wellness.avgSoreness != null && (
+                <span>Soreness {analysis.wellness.avgSoreness.toFixed(1)}/5 ({analysis.wellness.sorenessTrajectory})</span>
+              )}
+              {analysis.wellness.avgSleep != null && (
+                <span>Sleep {analysis.wellness.avgSleep.toFixed(1)}h ({analysis.wellness.sleepTrajectory})</span>
+              )}
+            </div>
+          )}
+
+          {proposedAdj.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">Proposed Adjustments</p>
+              {proposedAdj.map(adj => (
+                <div key={adj.id} className="flex items-start gap-2 rounded-md border border-gold/15 bg-gold/5 px-3 py-2">
+                  <span className="flex-1 text-xs text-gold/80">{adj.reason}</span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => handleAcceptAdjustment(adj.id)}
+                      className="rounded px-2 py-0.5 text-[10px] font-medium bg-gold/20 text-gold active:bg-gold/30"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => handleRejectAdjustment(adj.id)}
+                      className="rounded px-2 py-0.5 text-[10px] text-muted-foreground active:text-red-400"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Day-by-day schedule */}
       <div className="space-y-2">
         {days.map(([epochDay, daySessions]) => {
           const date = new Date(epochDay * 86400 * 1000)
           const dayName = DAY_NAMES[date.getUTCDay()]
           const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+          const isExpanded = expandedDay === epochDay
+          const sortedSessions = daySessions.sort((a, b) =>
+            (a.timeSlot === 'am' ? -1 : 1) - (b.timeSlot === 'am' ? -1 : 1)
+          )
 
           return (
-            <div key={epochDay} className="border border-border bg-card p-3">
-              <div className="mb-2 flex items-baseline justify-between">
+            <div key={epochDay} className="rounded-md border border-border bg-card p-3">
+              {/* Day header — tap to expand/collapse details */}
+              <button
+                type="button"
+                onClick={() => toggleDay(epochDay)}
+                className="mb-2 flex w-full items-center justify-between"
+              >
                 <span className="text-sm font-semibold text-foreground">{dayName}</span>
-                <span className="text-xs text-muted-foreground">{dateStr}</span>
-              </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{dateStr}</span>
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-full border border-gold/25 text-gold/60 transition-transform duration-300 ${
+                      isExpanded ? 'rotate-45' : ''
+                    }`}
+                  >
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M10 4v12M4 10h12" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                </div>
+              </button>
+
+              {/* Sessions — always visible */}
               <div className="space-y-1.5">
-                {daySessions
-                  .sort((a, b) => (a.timeSlot === 'am' ? -1 : 1) - (b.timeSlot === 'am' ? -1 : 1))
-                  .map((s) => (
-                    <div key={s.id} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                          s.timeSlot === 'am' ? 'bg-[#C8A030]/15 text-[#E8C860]' : 'bg-[#1E8A68]/15 text-[#4ACAAA]'
-                        }`}>
-                          {s.timeSlot === 'am' ? 'AM' : 'PM'}
-                        </span>
-                        <span className={`text-sm ${s.status === 'skipped' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
-                          {getSessionLabel(s.type)}
-                        </span>
-                      </div>
-                      <span className={`px-2 py-0.5 text-[10px] font-medium ${getStatusColor(s.status)}`}>
-                        {getStatusLabel(s.status)}
-                      </span>
-                    </div>
+                {/* Dismiss overlay for action tray */}
+                {actionTraySessionId && isExpanded && (
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setActionTraySessionId(null)}
+                  />
+                )}
+
+                <div className={isExpanded ? 'relative z-20' : ''}>
+                  {sortedSessions.map(s => (
+                    <SessionRow
+                      key={s.id}
+                      session={s}
+                      epochDay={epochDay}
+                      weekStatus={weekStatus}
+                      isActionTrayOpen={actionTraySessionId === s.id}
+                      showOverview={isExpanded}
+                      weekNumber={weekNumber}
+                      onLongPress={() => setActionTraySessionId(s.id)}
+                      onSkip={() => handleSkip(s.id)}
+                      onReplace={() => handleReplace(s)}
+                    />
                   ))}
+                </div>
               </div>
+
+              {/* Expanded: ghost "Add Session" row */}
+              {isExpanded && (
+                <div className="relative z-20 mt-2 animate-fade-in">
+                  <button
+                    type="button"
+                    onClick={() => openPicker(epochDay)}
+                    className="flex w-full items-center gap-2 rounded-md border border-dashed border-border/40 px-2 py-2 text-muted-foreground/40 active:bg-border/20 transition-colors"
+                  >
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M10 4v12M4 10h12" strokeLinecap="round" />
+                    </svg>
+                    <span className="text-xs">Add Session</span>
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}
       </div>
+
+      {/* Session Picker modal */}
+      {pickerDate && (
+        <SessionPicker
+          onSelect={handleAddSession}
+          onClose={() => {
+            setPickerDate(null)
+            setPickerSuggestions(null)
+            setReplacingSession(null)
+          }}
+          suggestions={pickerSuggestions}
+          filter={replacingSession
+            ? (opt) => opt.type !== replacingSession.type
+            : undefined
+          }
+        />
+      )}
     </div>
   )
 }

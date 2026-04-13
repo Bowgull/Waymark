@@ -10,6 +10,8 @@ interface SetTrackerProps {
   isWarmup: boolean
   suggestedWeightKg: number | null
   targetReps: number
+  lastSessionData?: { weightLbs: number; reps: number }
+  suggestion?: { weightLbs: number; message: string }
   onComplete: (weightKg: number | null, reps: number) => void
 }
 
@@ -19,6 +21,8 @@ export function SetTracker({
   isWarmup,
   suggestedWeightKg,
   targetReps,
+  lastSessionData,
+  suggestion,
   onComplete,
 }: SetTrackerProps) {
   const suggestedLbs = suggestedWeightKg != null ? kgToLbs(suggestedWeightKg) : ''
@@ -33,11 +37,32 @@ export function SetTracker({
     onComplete(actualWeightKg, actualReps)
   }
 
+  function handleUseSuggestion() {
+    if (!suggestion) return
+    setWeight(String(suggestion.weightLbs))
+  }
+
   return (
-    <div className="mt-6 border border-border bg-deep-forest p-4">
-      <p className="mb-3 text-sm font-medium text-muted-foreground">
+    <div className="mt-6 rounded-md border border-gold/20 bg-deep-forest p-4 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
+      <p className="mb-3 font-cinzel text-xs uppercase tracking-wider text-gold/50">
         {isWarmup ? `Warmup ${setNumber}` : `Set ${setNumber}`} of {totalSets}
       </p>
+
+      {lastSessionData && !isWarmup && (
+        <div className="mb-3 flex items-baseline gap-3">
+          <p className="text-xs text-muted-foreground">
+            Last: {lastSessionData.weightLbs}lb × {lastSessionData.reps}
+          </p>
+          {suggestion && (
+            <button
+              onClick={handleUseSuggestion}
+              className="rounded-full border border-gold/30 bg-gold/10 px-2.5 py-0.5 text-xs font-medium text-gold active:bg-gold/20"
+            >
+              Try {suggestion.weightLbs}lb?
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex items-end gap-4">
         <div className="flex-1">
@@ -47,8 +72,8 @@ export function SetTracker({
             inputMode="decimal"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
-            placeholder="—"
-            className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground focus:border-gold focus:outline-none"
+            placeholder="-"
+            className="min-h-[44px] w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-gold/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(232,200,96,0.15)] focus:outline-none"
           />
         </div>
         <div className="flex-1">
@@ -61,7 +86,7 @@ export function SetTracker({
             value={reps}
             onChange={(e) => setReps(e.target.value)}
             placeholder={targetReps === 0 ? 'Max' : String(targetReps)}
-            className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground focus:border-gold focus:outline-none"
+            className="min-h-[44px] w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-gold/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(232,200,96,0.15)] focus:outline-none"
           />
         </div>
         <Button onClick={handleDone} size="sm" className="min-h-[44px] px-5">

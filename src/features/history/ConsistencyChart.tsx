@@ -23,16 +23,13 @@ export function ConsistencyChart({ weeks, currentStreak, longestStreak }: Consis
   }))
 
   return (
-    <div className="mb-6">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-display-sm text-gold">Consistency</p>
-        <div className="flex gap-4 text-xs text-muted-foreground">
-          <span>Streak: <span className="text-foreground">{currentStreak}d</span></span>
-          <span>Best: <span className="text-foreground">{longestStreak}d</span></span>
-        </div>
+    <div>
+      <div className="mb-3 flex gap-4 text-xs text-muted-foreground">
+        <span>Streak: <span className="text-foreground">{currentStreak}d</span></span>
+        <span>Best: <span className="text-foreground">{longestStreak}d</span></span>
       </div>
 
-      <div className="border border-border bg-deep-forest p-3">
+      <div className="rounded-md border border-border bg-deep-forest p-3">
         <ResponsiveContainer width="100%" height={160}>
           <BarChart data={chartData}>
             <XAxis dataKey="week" {...AXIS_STYLE} />

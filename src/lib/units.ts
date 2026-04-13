@@ -7,6 +7,6 @@ export function lbsToKg(lbs: number): number {
 }
 
 export function formatWeight(kg: number | null): string {
-  if (kg == null) return '—'
+  if (kg == null) return '-'
   return `${kgToLbs(kg)} lbs`
 }

@@ -22,9 +22,8 @@ export function VolumeChart({ data }: VolumeChartProps) {
   }))
 
   return (
-    <div className="mb-6">
-      <p className="text-display-sm mb-3 text-gold">Volume Trend</p>
-      <div className="border border-border bg-deep-forest p-3">
+    <div>
+      <div className="rounded-md border border-border bg-deep-forest p-3">
         <ResponsiveContainer width="100%" height={160}>
           <AreaChart data={chartData}>
             <defs>

@@ -57,7 +57,7 @@ export function SkipRopeView({ skipSession, onComplete }: SkipRopeViewProps) {
     return (
       <div className="animate-fade-in">
         <p className="text-label text-center text-muted-foreground">
-          Round {currentRound} of {totalRounds} — Rest
+          Round {currentRound} of {totalRounds} · Rest
         </p>
         <RestTimer
           totalSeconds={60}

@@ -40,12 +40,11 @@ export function SessionList({ sessions }: SessionListProps) {
 
   return (
     <div>
-      <p className="text-display-sm mb-3 text-foreground">Recent Sessions</p>
       <div className="space-y-2">
         {sessions.map((s) => (
           <div
             key={s.id}
-            className={`flex items-center justify-between border border-border bg-card p-3 ${
+            className={`flex items-center justify-between rounded-md border border-border bg-card p-3 ${
               s.status === 'skipped' ? 'opacity-50' : ''
             }`}
           >
@@ -54,7 +53,7 @@ export function SessionList({ sessions }: SessionListProps) {
                 {getSessionLabel(s.type)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {s.completedAt ? formatDate(s.completedAt) : s.scheduledDate ? formatDate(s.scheduledDate * 86400) : '—'}
+                {s.completedAt ? formatDate(s.completedAt) : s.scheduledDate ? formatDate(s.scheduledDate * 86400) : '-'}
                 {s.durationSec ? ` \u00B7 ${formatDuration(s.durationSec)}` : ''}
               </p>
             </div>

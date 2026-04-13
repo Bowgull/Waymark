@@ -16,8 +16,7 @@ export function PRList({ prs }: PRListProps) {
   if (prs.length === 0) return null
 
   return (
-    <div className="mb-6">
-      <p className="text-display-sm mb-3 text-gold">Personal Records</p>
+    <div>
       <div className="space-y-2">
         {prs.map((pr) => {
           const delta = pr.previousMaxKg
@@ -26,7 +25,7 @@ export function PRList({ prs }: PRListProps) {
           return (
             <div
               key={pr.exerciseId}
-              className="flex items-center justify-between border border-border bg-deep-forest p-3"
+              className="flex items-center justify-between rounded-md border border-border bg-deep-forest p-3"
             >
               <div>
                 <p className="text-sm font-medium text-foreground">{pr.exerciseName}</p>

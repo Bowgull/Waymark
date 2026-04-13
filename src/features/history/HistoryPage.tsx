@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
+import { PageHeader } from '@/components/PageHeader'
 
 import { ConsistencyChart } from './ConsistencyChart'
+
 import { LifestyleSnapshot } from './LifestyleSnapshot'
 import { PRList } from './PRList'
 import { SessionList } from './SessionList'
@@ -64,6 +66,45 @@ interface Exercise {
 
 type Period = 7 | 30 | 90
 
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={`h-4 w-4 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  )
+}
+
+function Section({
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string
+  open: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="mb-5">
+      <button
+        onClick={onToggle}
+        className="mb-3 flex w-full items-center gap-2"
+      >
+        <ChevronIcon open={open} />
+        <span className="text-display-sm text-gold">{title}</span>
+      </button>
+      {open && children}
+    </div>
+  )
+}
+
 export function HistoryPage() {
   const [period, setPeriod] = useState<Period>(30)
   const [stats, setStats] = useState<Stats | null>(null)
@@ -74,6 +115,20 @@ export function HistoryPage() {
   const [prs, setPrs] = useState<PR[]>([])
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Collapsible section state — all open by default
+  const [openSections, setOpenSections] = useState<Set<string>>(
+    new Set(['stats', 'consistency', 'weight', 'volume', 'prs', 'lifestyle', 'sessions'])
+  )
+
+  function toggleSection(key: string) {
+    setOpenSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   useEffect(() => {
     async function load() {
@@ -117,14 +172,13 @@ export function HistoryPage() {
 
   return (
     <div className="pb-4">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-display-lg text-foreground">Ledger</h2>
+      <PageHeader title="Ledger">
         <div className="flex gap-1">
           {([7, 30, 90] as Period[]).map((p) => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
-              className={`px-3 py-1 text-xs font-medium ${
+              className={`rounded-md px-3 py-1 text-xs font-medium ${
                 period === p
                   ? 'bg-gold text-near-black'
                   : 'bg-secondary text-muted-foreground'
@@ -134,29 +188,48 @@ export function HistoryPage() {
             </button>
           ))}
         </div>
-      </div>
+      </PageHeader>
 
+      {/* Stats — always visible, no collapsible wrapper needed */}
       {stats && <StatsSummary stats={stats} />}
 
       {consistency && (
-        <ConsistencyChart
-          weeks={consistency.weeks}
-          currentStreak={consistency.currentStreak}
-          longestStreak={consistency.longestStreak}
-        />
+        <Section title="Consistency" open={openSections.has('consistency')} onToggle={() => toggleSection('consistency')}>
+          <ConsistencyChart
+            weeks={consistency.weeks}
+            currentStreak={consistency.currentStreak}
+            longestStreak={consistency.longestStreak}
+          />
+        </Section>
       )}
 
       {exercises.length > 0 && (
-        <WeightProgressionChart exercises={exercises} days={period} />
+        <Section title="Weight Progression" open={openSections.has('weight')} onToggle={() => toggleSection('weight')}>
+          <WeightProgressionChart exercises={exercises} days={period} />
+        </Section>
       )}
 
-      <VolumeChart data={volumeData} />
+      {volumeData.length > 0 && (
+        <Section title="Volume Trend" open={openSections.has('volume')} onToggle={() => toggleSection('volume')}>
+          <VolumeChart data={volumeData} />
+        </Section>
+      )}
 
-      <PRList prs={prs} />
+      {prs.length > 0 && (
+        <Section title="Personal Records" open={openSections.has('prs')} onToggle={() => toggleSection('prs')}>
+          <PRList prs={prs} />
+        </Section>
+      )}
 
-      {wellness && <LifestyleSnapshot wellness={wellness} />}
+      {wellness && (
+        <Section title="Lifestyle" open={openSections.has('lifestyle')} onToggle={() => toggleSection('lifestyle')}>
+          <LifestyleSnapshot wellness={wellness} />
+        </Section>
+      )}
 
-      <SessionList sessions={sessions} />
+      <Section title="Recent Sessions" open={openSections.has('sessions')} onToggle={() => toggleSection('sessions')}>
+        <SessionList sessions={sessions} />
+      </Section>
     </div>
   )
 }

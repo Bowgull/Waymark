@@ -43,13 +43,12 @@ export function WeightProgressionChart({ exercises, days }: WeightProgressionCha
   }))
 
   return (
-    <div className="mb-6">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-display-sm text-gold">Weight Progression</p>
+    <div>
+      <div className="mb-3 flex items-center justify-end">
         <select
           value={selectedExercise}
           onChange={(e) => setSelectedExercise(e.target.value)}
-          className="border border-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none"
+          className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none"
         >
           {exercises.map(ex => (
             <option key={ex.id} value={ex.id}>{ex.name}</option>
@@ -60,7 +59,7 @@ export function WeightProgressionChart({ exercises, days }: WeightProgressionCha
       {chartData.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">No data for {exerciseName}</p>
       ) : (
-        <div className="border border-border bg-deep-forest p-3">
+        <div className="rounded-md border border-border bg-deep-forest p-3">
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={chartData}>
               <XAxis dataKey="date" {...AXIS_STYLE} />

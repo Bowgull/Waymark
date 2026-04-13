@@ -1,3 +1,4 @@
+import corePng from '@/assets/brand/Core.png'
 import mobilityPng from '@/assets/brand/Mobility.png'
 import strengthPng from '@/assets/brand/Strength.png'
 import muayThaiPng from '@/assets/brand/MuayThai.png'
@@ -12,13 +13,14 @@ export interface MarkAsset {
 }
 
 const SESSION_MARK_MAP: Record<string, MarkAsset> = {
+  foundation_run: { png: mobilityPng, label: 'Foundation Run' },
   posture_corrective: { png: mobilityPng, label: 'Foundation' },
   strength: { png: strengthPng, label: 'Strength' },
   mt_class: { png: muayThaiPng, label: 'Muay Thai' },
   bag_work: { png: bagworkPng, label: 'Bagwork' },
   running: { png: cardioPng, label: 'Cardio' },
   skip_rope: { png: cardioPng, label: 'Cardio' },
-  active_recovery: { png: wellnessPng, label: 'Wellness' },
+  active_recovery: { png: wellnessPng, label: 'Reset' },
 }
 
 const FALLBACK: MarkAsset = { png: wellnessPng, label: 'Wellness' }
@@ -37,6 +39,7 @@ export function getSessionAccent(sessionType: string): string {
     case 'strength':
     case 'bag_work':
       return '#E8C860'
+    case 'foundation_run':
     case 'posture_corrective':
     case 'active_recovery':
     case 'mt_class':
@@ -47,6 +50,18 @@ export function getSessionAccent(sessionType: string): string {
     default:
       return '#E8C860'
   }
+}
+
+/** Map exercise categories to their mark assets */
+const CATEGORY_MARK_MAP: Record<string, MarkAsset> = {
+  strength: { png: strengthPng, label: 'Strength' },
+  core: { png: corePng, label: 'Core' },
+  posture: { png: mobilityPng, label: 'Foundation' },
+  mobility: { png: mobilityPng, label: 'Mobility' },
+}
+
+export function getCategoryMark(category: string): MarkAsset {
+  return CATEGORY_MARK_MAP[category] ?? FALLBACK
 }
 
 export { logoPng }

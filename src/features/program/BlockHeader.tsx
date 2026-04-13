@@ -21,7 +21,7 @@ export function BlockHeader({ block, currentWeek }: BlockHeaderProps) {
       {/* Progress bar */}
       <div className="mt-2 h-1.5 bg-border">
         <div
-          className="h-full bg-[#E8C860] transition-all"
+          className="h-full bg-gold transition-all"
           style={{ width: `${(currentWeek / block.totalWeeks) * 100}%` }}
         />
       </div>

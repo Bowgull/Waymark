@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { getMarkAsset, getSessionLabel } from '@/lib/markAssets'
+import { getMarkAsset, getSessionLabel, logoPng } from '@/lib/markAssets'
 import { completeHaptic } from '@/lib/haptics'
 
 interface MarkEarnedOverlayProps {
@@ -31,9 +31,19 @@ export function MarkEarnedOverlay({ sessionType, onComplete }: MarkEarnedOverlay
         phase === 'fading' ? 'opacity-0' : 'opacity-100'
       }`}
     >
+      {/* Logo backdrop — faint, behind the mark */}
+      <img
+        src={logoPng}
+        alt=""
+        draggable={false}
+        className={`absolute h-72 w-72 object-contain pointer-events-none transition-opacity duration-700 ${
+          phase === 'illuminate' ? 'opacity-0' : 'opacity-[0.04]'
+        }`}
+      />
+
       {/* Mark illuminating */}
       <div
-        className={`${
+        className={`relative ${
           phase === 'illuminate'
             ? 'animate-mark-illuminate'
             : 'animate-glow-pulse'

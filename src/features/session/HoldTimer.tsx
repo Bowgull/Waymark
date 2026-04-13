@@ -35,12 +35,14 @@ export function HoldTimer({ targetSec, onDone }: HoldTimerProps) {
   if (!running) {
     return (
       <div className="flex flex-col items-center py-8">
-        <RingTimer
-          totalSeconds={targetSec}
-          secondsRemaining={targetSec}
-          label="Hold"
-          accentColor="#4ACAAA"
-        />
+        <div className="rounded-lg border border-gold/10 bg-deep-forest/50 p-6 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
+          <RingTimer
+            totalSeconds={targetSec}
+            secondsRemaining={targetSec}
+            label="Hold"
+            accentColor="#4ACAAA"
+          />
+        </div>
         <Button
           onClick={start}
           size="lg"
@@ -57,13 +59,15 @@ export function HoldTimer({ targetSec, onDone }: HoldTimerProps) {
 
   return (
     <div className="flex flex-col items-center py-8">
-      <RingTimer
-        totalSeconds={targetSec}
-        secondsRemaining={secondsRemaining}
-        label={reachedTarget ? 'Done' : 'Hold'}
-        accentColor="#4ACAAA"
-        isComplete={reachedTarget}
-      />
+      <div className="rounded-lg border border-gold/10 bg-deep-forest/50 p-6 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
+        <RingTimer
+          totalSeconds={targetSec}
+          secondsRemaining={secondsRemaining}
+          label={reachedTarget ? 'Done' : 'Hold'}
+          accentColor="#4ACAAA"
+          isComplete={reachedTarget}
+        />
+      </div>
       <Button
         onClick={() => {
           if (intervalRef.current) clearInterval(intervalRef.current)

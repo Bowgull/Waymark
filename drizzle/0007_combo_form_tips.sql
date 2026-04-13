@@ -1,0 +1,1 @@
+ALTER TABLE combos ADD COLUMN form_tips TEXT DEFAULT '';

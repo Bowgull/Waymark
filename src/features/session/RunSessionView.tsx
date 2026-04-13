@@ -14,14 +14,32 @@ interface RunSession {
   onePaceEp: string | null
 }
 
+interface RunPrescription {
+  weekNumber: number
+  runType: string
+  targetDesc: string
+  targetDurSec: number | null
+  targetDistKm: number | null
+}
+
 type RunPhase = 'ready' | 'running' | 'logging'
+
+const RUN_TYPE_LABELS: Record<string, string> = {
+  zone2: 'Zone 2 Run',
+  easy: 'Easy Run',
+  easy_strides: 'Easy + Strides',
+  tempo: 'Tempo Run',
+  intervals: 'Intervals',
+  '5k_test': '5K Test',
+}
 
 interface RunSessionViewProps {
   runSession: RunSession
+  prescription?: RunPrescription | null
   onComplete: () => void
 }
 
-export function RunSessionView({ runSession, onComplete }: RunSessionViewProps) {
+export function RunSessionView({ runSession, prescription, onComplete }: RunSessionViewProps) {
   const [phase, setPhase] = useState<RunPhase>('ready')
   const [isIndoor, setIsIndoor] = useState(runSession.isIndoor === 1)
   const [elapsed, setElapsed] = useState(0)
@@ -83,14 +101,48 @@ export function RunSessionView({ runSession, onComplete }: RunSessionViewProps) 
     }
   }
 
+  const isZone2 = prescription?.runType === 'zone2'
+  const runTypeLabel = prescription
+    ? (RUN_TYPE_LABELS[prescription.runType] ?? 'Run')
+    : 'Easy Run'
+  const runDesc = prescription?.targetDesc
+    ?? 'Keep it conversational pace. Focus on form: upright posture, relaxed shoulders, short strides.'
+  const timerEstimate = prescription?.targetDurSec ?? 3600
+
   if (phase === 'ready') {
     return (
       <div className="animate-fade-in">
-        <p className="text-label mb-1 text-muted-foreground">Run</p>
-        <h2 className="text-display-lg text-foreground">Easy Run</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Keep it conversational pace. Focus on form: upright posture, relaxed shoulders, short strides.
+        <p className="text-label mb-1 text-muted-foreground">
+          {isZone2 ? 'Morning Run' : prescription ? `Week ${prescription.weekNumber}` : 'Run'}
         </p>
+        <h2 className="text-display-lg text-foreground">{runTypeLabel}</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {runDesc}
+        </p>
+
+        {/* Target badges */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {prescription?.targetDurSec && (
+            <span className="rounded-md border border-teal/30 bg-teal/10 px-3 py-1 text-sm text-teal">
+              {Math.round(prescription.targetDurSec / 60)} min
+            </span>
+          )}
+          {prescription?.targetDistKm && (
+            <span className="rounded-md border border-teal/30 bg-teal/10 px-3 py-1 text-sm text-teal">
+              {prescription.targetDistKm} km
+            </span>
+          )}
+          {isZone2 && (
+            <>
+              <span className="rounded-md border border-[#1E8A68]/30 bg-[#1E8A68]/10 px-3 py-1 text-sm text-[#1E8A68]">
+                HR 130-145 bpm
+              </span>
+              <span className="rounded-md border border-[#1E8A68]/30 bg-[#1E8A68]/10 px-3 py-1 text-sm text-[#1E8A68]">
+                Nasal breathing
+              </span>
+            </>
+          )}
+        </div>
 
         <div className="mt-6 flex items-center gap-3">
           <button
@@ -127,7 +179,7 @@ export function RunSessionView({ runSession, onComplete }: RunSessionViewProps) 
   }
 
   if (phase === 'running') {
-    const estimatedTotal = 3600
+    const estimatedTotal = timerEstimate
     const remaining = Math.max(0, estimatedTotal - elapsed)
 
     return (
@@ -161,7 +213,7 @@ export function RunSessionView({ runSession, onComplete }: RunSessionViewProps) 
             value={distance}
             onChange={(e) => setDistance(e.target.value)}
             placeholder="5.0"
-            className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
+            className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
           />
         </div>
         <div className="flex-1">
@@ -172,26 +224,26 @@ export function RunSessionView({ runSession, onComplete }: RunSessionViewProps) 
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
             placeholder="25:00"
-            className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
+            className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
           />
         </div>
       </div>
 
       {isIndoor && (
-        <div className="border border-border bg-deep-forest p-4">
+        <div className="rounded-md border border-border bg-deep-forest p-4">
           <p className="mb-3 text-sm font-medium text-teal">One Pace</p>
           <div className="flex gap-4">
             <div className="flex-1">
               <label className="text-label mb-1 block text-muted-foreground">Arc</label>
               <input type="text" value={onePaceArc} onChange={(e) => setOnePaceArc(e.target.value)}
                 placeholder="e.g. Water 7"
-                className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+                className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
             </div>
             <div className="flex-1">
               <label className="text-label mb-1 block text-muted-foreground">Episode</label>
               <input type="text" value={onePaceEp} onChange={(e) => setOnePaceEp(e.target.value)}
                 placeholder="e.g. 3"
-                className="min-h-[44px] w-full border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+                className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
             </div>
           </div>
         </div>
