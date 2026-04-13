@@ -4,28 +4,46 @@ import { apiFetch } from '@/lib/api'
 import { PageHeader } from '@/components/PageHeader'
 
 import { ConsistencyChart } from './ConsistencyChart'
-
-import { LifestyleSnapshot } from './LifestyleSnapshot'
+import { LifestyleCorrelations } from './LifestyleCorrelations'
 import { PRList } from './PRList'
+import { RunningProgressChart } from './RunningProgressChart'
 import { SessionList } from './SessionList'
 import { StatsSummary } from './StatsSummary'
 import { VolumeChart } from './VolumeChart'
 import { WeightProgressionChart } from './WeightProgressionChart'
 
-interface Stats {
-  completed: number
-  planned: number
-  totalDurationMin: number
-  avgRpe: number | null
-  streak: number
+interface DashboardData {
+  currentStreak: number
+  prsThisMonth: number
+  completionRate: number
+  topLift: { name: string; weightLbs: number } | null
+  totalRuns: number
+  thisWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null }
+  lastWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null }
 }
 
-interface WellnessData {
-  entries: number
-  avgSleep: number | null
-  avgSoreness: number | null
-  avgWeed: number | null
-  avgAlcohol: number | null
+interface CorrelationDataPoint {
+  date: string
+  sleepHours: number | null
+  soreness: number | null
+  weedGrams: number | null
+  alcoholScale: number | null
+  avgRpe: number | null
+  sessionCount: number
+}
+
+interface RunDataPoint {
+  date: string
+  distanceKm: number
+  paceSecKm: number
+  type: string
+}
+
+interface RunSummary {
+  totalRuns: number
+  totalDistanceKm: number
+  avgPaceSecKm: number | null
+  bestPaceSecKm: number | null
 }
 
 interface Session {
@@ -107,8 +125,10 @@ function Section({
 
 export function HistoryPage() {
   const [period, setPeriod] = useState<Period>(30)
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [wellness, setWellness] = useState<WellnessData | null>(null)
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null)
+  const [correlations, setCorrelations] = useState<CorrelationDataPoint[]>([])
+  const [runData, setRunData] = useState<RunDataPoint[]>([])
+  const [runSummary, setRunSummary] = useState<RunSummary | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [consistency, setConsistency] = useState<ConsistencyData | null>(null)
   const [volumeData, setVolumeData] = useState<VolumePoint[]>([])
@@ -116,9 +136,8 @@ export function HistoryPage() {
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Collapsible section state — all open by default
   const [openSections, setOpenSections] = useState<Set<string>>(
-    new Set(['stats', 'consistency', 'weight', 'volume', 'prs', 'lifestyle', 'sessions'])
+    new Set(['consistency', 'weight', 'volume', 'running', 'prs', 'lifestyle', 'sessions'])
   )
 
   function toggleSection(key: string) {
@@ -135,22 +154,33 @@ export function HistoryPage() {
       setLoading(true)
       try {
         const weeks = period === 7 ? 4 : period === 30 ? 8 : 12
-        const [statsData, wellnessData, sessionsData, consistencyData, volumeRes, prsData, exercisesData] = await Promise.all([
-          apiFetch<Stats>(`/api/history/stats?days=${period}`),
-          apiFetch<WellnessData | null>(`/api/history/wellness?days=${period}`),
+        const [
+          dashboardData,
+          correlationData,
+          runProgressData,
+          sessionsData,
+          consistencyData,
+          volumeRes,
+          prsData,
+          exercisesData,
+        ] = await Promise.all([
+          apiFetch<DashboardData>('/api/history/dashboard'),
+          apiFetch<{ dataPoints: CorrelationDataPoint[] }>(`/api/history/correlations?days=${period}`),
+          apiFetch<{ dataPoints: RunDataPoint[]; summary: RunSummary }>(`/api/history/running-progress?days=${period}`),
           apiFetch<Session[]>('/api/history/sessions?limit=30'),
           apiFetch<ConsistencyData>(`/api/history/consistency?weeks=${weeks}`),
           apiFetch<{ dataPoints: VolumePoint[] }>(`/api/history/volume-trends?days=${period}`),
           apiFetch<{ prs: PR[] }>('/api/history/prs'),
           apiFetch<Exercise[]>('/api/exercises'),
         ])
-        setStats(statsData)
-        setWellness(wellnessData)
+        setDashboard(dashboardData)
+        setCorrelations(correlationData.dataPoints)
+        setRunData(runProgressData.dataPoints)
+        setRunSummary(runProgressData.summary)
         setSessions(sessionsData)
         setConsistency(consistencyData)
         setVolumeData(volumeRes.dataPoints)
         setPrs(prsData.prs)
-        // Filter to exercises that have strength data (appear in PRs)
         const prExIds = new Set(prsData.prs.map(p => p.exerciseId))
         setExercises(exercisesData.filter(e => prExIds.has(e.id)))
       } catch (e) {
@@ -190,8 +220,7 @@ export function HistoryPage() {
         </div>
       </PageHeader>
 
-      {/* Stats — always visible, no collapsible wrapper needed */}
-      {stats && <StatsSummary stats={stats} />}
+      <StatsSummary dashboard={dashboard} />
 
       {consistency && (
         <Section title="Consistency" open={openSections.has('consistency')} onToggle={() => toggleSection('consistency')}>
@@ -210,8 +239,14 @@ export function HistoryPage() {
       )}
 
       {volumeData.length > 0 && (
-        <Section title="Volume Trend" open={openSections.has('volume')} onToggle={() => toggleSection('volume')}>
+        <Section title="Volume" open={openSections.has('volume')} onToggle={() => toggleSection('volume')}>
           <VolumeChart data={volumeData} />
+        </Section>
+      )}
+
+      {runSummary && runSummary.totalRuns > 0 && (
+        <Section title="Running" open={openSections.has('running')} onToggle={() => toggleSection('running')}>
+          <RunningProgressChart data={runData} summary={runSummary} />
         </Section>
       )}
 
@@ -221,11 +256,9 @@ export function HistoryPage() {
         </Section>
       )}
 
-      {wellness && (
-        <Section title="Lifestyle" open={openSections.has('lifestyle')} onToggle={() => toggleSection('lifestyle')}>
-          <LifestyleSnapshot wellness={wellness} />
-        </Section>
-      )}
+      <Section title="Lifestyle" open={openSections.has('lifestyle')} onToggle={() => toggleSection('lifestyle')}>
+        <LifestyleCorrelations data={correlations} />
+      </Section>
 
       <Section title="Recent Sessions" open={openSections.has('sessions')} onToggle={() => toggleSection('sessions')}>
         <SessionList sessions={sessions} />

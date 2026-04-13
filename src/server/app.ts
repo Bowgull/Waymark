@@ -2401,4 +2401,241 @@ app.get('/api/history/prs', async (c) => {
   return c.json({ prs })
 })
 
+// ─── History: Lifestyle Correlations ─────────────────────────
+
+app.get('/api/history/correlations', async (c) => {
+  const days = parseInt(c.req.query('days') ?? '30')
+  const db = createDB(c.env)
+  const nowEpochDay = Math.floor(Date.now() / 1000 / 86400)
+  const cutoffDay = nowEpochDay - days
+
+  const logs = await db.select().from(dailyLogs)
+  const recentLogs = logs.filter(l => l.logDate >= cutoffDay)
+
+  const allSessions = await db.select().from(sessions)
+  const completedSessions = allSessions.filter(s => s.status === 'completed' && s.scheduledDate != null && s.scheduledDate >= cutoffDay)
+
+  // Group sessions by scheduledDate
+  const sessionsByDay = new Map<number, typeof completedSessions>()
+  for (const s of completedSessions) {
+    const day = s.scheduledDate!
+    const group = sessionsByDay.get(day) ?? []
+    group.push(s)
+    sessionsByDay.set(day, group)
+  }
+
+  const dataPoints: {
+    date: string
+    sleepHours: number | null
+    soreness: number | null
+    weedGrams: number | null
+    alcoholScale: number | null
+    avgRpe: number | null
+    sessionCount: number
+  }[] = []
+
+  for (const log of recentLogs) {
+    const daySessions = sessionsByDay.get(log.logDate)
+    if (!daySessions || daySessions.length === 0) continue
+
+    const rpeValues = daySessions.filter(s => s.rpe != null).map(s => s.rpe!)
+    const avgRpe = rpeValues.length > 0
+      ? Math.round(rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length * 10) / 10
+      : null
+
+    const dateStr = new Date(log.logDate * 86400 * 1000).toISOString().split('T')[0]
+
+    dataPoints.push({
+      date: dateStr,
+      sleepHours: log.sleepHours,
+      soreness: log.soreness,
+      weedGrams: log.weedGrams,
+      alcoholScale: log.alcoholScale,
+      avgRpe,
+      sessionCount: daySessions.length,
+    })
+  }
+
+  dataPoints.sort((a, b) => a.date.localeCompare(b.date))
+  return c.json({ dataPoints })
+})
+
+// ─── History: Running Progress ───────────────────────────────
+
+app.get('/api/history/running-progress', async (c) => {
+  const days = parseInt(c.req.query('days') ?? '90')
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const cutoff = nowSec - days * 86400
+
+  const allRuns = await db.select().from(runSessions)
+  const allSessions = await db.select().from(sessions)
+  const sessionMap = new Map(allSessions.map(s => [s.id, s]))
+
+  const dataPoints: { date: string; distanceKm: number; paceSecKm: number; type: string }[] = []
+
+  for (const run of allRuns) {
+    const session = sessionMap.get(run.sessionId)
+    if (!session || session.status !== 'completed' || session.createdAt < cutoff) continue
+    if (run.distanceKm == null || run.paceSecKm == null) continue
+
+    const date = new Date((session.completedAt ?? session.createdAt) * 1000).toISOString().split('T')[0]
+    dataPoints.push({
+      date,
+      distanceKm: run.distanceKm,
+      paceSecKm: run.paceSecKm,
+      type: run.runType ?? session.type,
+    })
+  }
+
+  dataPoints.sort((a, b) => a.date.localeCompare(b.date))
+
+  const totalDistanceKm = Math.round(dataPoints.reduce((sum, d) => sum + d.distanceKm, 0) * 10) / 10
+  const paces = dataPoints.map(d => d.paceSecKm)
+  const avgPaceSecKm = paces.length > 0 ? Math.round(paces.reduce((a, b) => a + b, 0) / paces.length) : null
+  const bestPaceSecKm = paces.length > 0 ? Math.min(...paces) : null
+
+  return c.json({
+    dataPoints,
+    summary: { totalRuns: dataPoints.length, totalDistanceKm, avgPaceSecKm, bestPaceSecKm },
+  })
+})
+
+// ─── History: Dashboard Summary ──────────────────────────────
+
+app.get('/api/history/dashboard', async (c) => {
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const todayEpochDay = Math.floor(nowSec / 86400)
+
+  const allSessions = await db.select().from(sessions)
+
+  // Streak
+  const completedDays = new Set(
+    allSessions.filter(s => s.status === 'completed').map(s => s.scheduledDate).filter(Boolean)
+  )
+  let currentStreak = 0
+  for (let d = todayEpochDay; d >= todayEpochDay - 60; d--) {
+    if (completedDays.has(d)) currentStreak++
+    else break
+  }
+
+  // Completion rate (last 30 days)
+  const cutoff30 = nowSec - 30 * 86400
+  const recent30 = allSessions.filter(s => s.createdAt >= cutoff30)
+  const completed30 = recent30.filter(s => s.status === 'completed').length
+  const total30 = recent30.filter(s => s.status !== 'planned').length // completed + skipped
+  const completionRate = total30 > 0 ? Math.round(completed30 / total30 * 100) : 0
+
+  // PRs this month
+  const allSexes = await db.select().from(strengthSessionExercises)
+  const allExercises = await db.select().from(exercises)
+  const exMap = new Map(allExercises.map(e => [e.id, e]))
+  const completedSessionMap = new Map(
+    allSessions.filter(s => s.status === 'completed').map(s => [s.id, s])
+  )
+
+  // Track max weight per exercise with date
+  const exerciseMaxes = new Map<string, { maxKg: number; date: number }[]>()
+  for (const se of allSexes) {
+    const session = completedSessionMap.get(se.sessionId)
+    if (!session) continue
+    const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
+    const weights = sets.filter(s => s.weightKg != null && s.weightKg > 0 && s.isWarmup === 0).map(s => s.weightKg!)
+    if (weights.length === 0) continue
+    const maxW = Math.max(...weights)
+    const entries = exerciseMaxes.get(se.exerciseId) ?? []
+    entries.push({ maxKg: maxW, date: session.completedAt ?? session.createdAt })
+    exerciseMaxes.set(se.exerciseId, entries)
+  }
+
+  let prsThisMonth = 0
+  let topLift: { name: string; weightLbs: number } | null = null
+  let overallMaxKg = 0
+  let overallMaxExId = ''
+
+  for (const [exId, entries] of exerciseMaxes) {
+    entries.sort((a, b) => a.date - b.date)
+    const allTimeMax = Math.max(...entries.map(e => e.maxKg))
+
+    // Track overall top lift
+    if (allTimeMax > overallMaxKg) {
+      overallMaxKg = allTimeMax
+      overallMaxExId = exId
+    }
+
+    // Check if the all-time max was first achieved in the last 30 days
+    let firstMaxDate = entries.find(e => e.maxKg === allTimeMax)?.date ?? 0
+    if (firstMaxDate >= cutoff30) prsThisMonth++
+  }
+
+  if (overallMaxExId) {
+    const ex = exMap.get(overallMaxExId)
+    topLift = { name: ex?.name ?? '', weightLbs: Math.round(overallMaxKg * 2.20462) }
+  }
+
+  // Total runs (last 30 days)
+  const runSessionIds = new Set(
+    allSessions.filter(s => s.status === 'completed' && s.createdAt >= cutoff30 &&
+      (s.type === 'foundation_run' || s.type === 'running')).map(s => s.id)
+  )
+  const totalRuns = runSessionIds.size
+
+  // Week-over-week comparison
+  const today = new Date()
+  const dayOfWeek = today.getDay()
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  const thisMonday = todayEpochDay + mondayOffset
+  const lastMonday = thisMonday - 7
+
+  async function getWeekStats(mondayEpochDay: number) {
+    const weekSessions = allSessions.filter(s =>
+      s.scheduledDate != null && s.scheduledDate >= mondayEpochDay && s.scheduledDate < mondayEpochDay + 7
+    )
+    const completedWeek = weekSessions.filter(s => s.status === 'completed')
+
+    // Volume
+    let volume = 0
+    for (const s of completedWeek.filter(ws => ws.type === 'strength')) {
+      const sexes = await db.select().from(strengthSessionExercises).where(eq(strengthSessionExercises.sessionId, s.id))
+      for (const se of sexes) {
+        const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
+        for (const st of sets) {
+          if (st.weightKg != null && st.weightKg > 0) volume += st.weightKg * st.reps
+        }
+      }
+    }
+
+    // RPE
+    const rpeValues = completedWeek.filter(s => s.rpe != null).map(s => s.rpe!)
+    const avgRpe = rpeValues.length > 0 ? Math.round(rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length * 10) / 10 : null
+
+    // Sleep (from dailyLogs)
+    const logs = await db.select().from(dailyLogs)
+    const weekLogs = logs.filter(l => l.logDate >= mondayEpochDay && l.logDate < mondayEpochDay + 7)
+    const sleepValues = weekLogs.filter(l => l.sleepHours != null).map(l => l.sleepHours!)
+    const avgSleep = sleepValues.length > 0 ? Math.round(sleepValues.reduce((a, b) => a + b, 0) / sleepValues.length * 10) / 10 : null
+
+    return {
+      volume: Math.round(volume * 2.20462), // kg to lbs
+      sessions: completedWeek.length,
+      avgRpe,
+      avgSleep,
+    }
+  }
+
+  const thisWeek = await getWeekStats(thisMonday)
+  const lastWeek = await getWeekStats(lastMonday)
+
+  return c.json({
+    currentStreak,
+    prsThisMonth,
+    completionRate,
+    topLift,
+    totalRuns,
+    thisWeek,
+    lastWeek,
+  })
+})
+
 export default app

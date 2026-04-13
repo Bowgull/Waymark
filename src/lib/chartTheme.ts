@@ -32,3 +32,9 @@ export const TOOLTIP_STYLE = {
 export function kgToLbsDisplay(kg: number): number {
   return Math.round(kg * 2.20462)
 }
+
+export function paceToMinSec(paceSecKm: number): string {
+  const min = Math.floor(paceSecKm / 60)
+  const sec = Math.round(paceSecKm % 60)
+  return `${min}:${String(sec).padStart(2, '0')}`
+}
