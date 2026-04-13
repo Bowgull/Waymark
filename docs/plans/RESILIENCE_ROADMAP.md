@@ -255,11 +255,8 @@ These are known gaps that may warrant separate efforts:
 8. **Phase E (step 15):** Systemic data-fetching improvement
 9. Test on Simulator after each step before moving to the next
 
-### Minimum viable for first workout
+### Build session plan
 
-If time is tight, the absolute minimum to safely start training:
-- Step 1 (error boundary — catch crashes)
-- Step 6 (Block Zero template + TM reduction — safe starting weights)
-- Step 7 (auto-detection — so Block Zero triggers on first launch)
-
-Everything else improves the experience but these three keep you safe.
+Complete all 15 steps in order across one evening/morning session. No steps skipped.
+Test on Simulator after each step before moving to the next.
+Deploy to iPhone via Xcode when all steps are complete.
