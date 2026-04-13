@@ -1,0 +1,235 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 260">
+<defs>
+  <linearGradient id="gg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%"   stop-color="#EAC860"/>
+    <stop offset="50%"  stop-color="#C8A030"/>
+    <stop offset="100%" stop-color="#7A5C18"/>
+  </linearGradient>
+  <linearGradient id="gv" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#EAC860"/>
+    <stop offset="100%" stop-color="#A07830"/>
+  </linearGradient>
+  <radialGradient id="sg" cx="45%" cy="38%" r="65%">
+    <stop offset="0%"   stop-color="#2A3A28"/>
+    <stop offset="60%"  stop-color="#111C10"/>
+    <stop offset="100%" stop-color="#060C06"/>
+  </radialGradient>
+  <radialGradient id="eg" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#5AC8AA"/>
+    <stop offset="60%"  stop-color="#1D9E75"/>
+    <stop offset="100%" stop-color="#0A3828"/>
+  </radialGradient>
+  <filter id="fs">
+    <feDropShadow dx="0" dy="5" stdDeviation="10" flood-color="#000" flood-opacity="0.88"/>
+  </filter>
+  <filter id="fss">
+    <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.75"/>
+  </filter>
+</defs>
+
+<!-- ═══ OUTER DIAMOND FRAME ═══════════════════════════════════ -->
+<path fill="#010402" filter="url(#fs)"
+  d="M110,6 L200,110 L110,254 L20,110 Z"/>
+<path fill="url(#gg)"
+  d="M110,8 L198,110 L110,252 L22,110 Z"/>
+<path fill="#020806"
+  d="M110,22 L184,110 L110,236 L36,110 Z"/>
+<path fill="url(#gg)" opacity="0.25"
+  d="M110,28 L178,110 L110,228 L42,110 Z"/>
+<path fill="#030E08"
+  d="M110,36 L172,110 L110,220 L48,110 Z"/>
+
+<!-- ═══ CORNER NOTCHES ════════════════════════════════════════ -->
+<path fill="#EAC860" d="M110,8 L116,20 L110,17 L104,20 Z"/>
+<path fill="#EAC860" d="M110,252 L116,240 L110,243 L104,240 Z"/>
+<path fill="#EAC860" d="M22,110 L34,104 L31,110 L34,116 Z"/>
+<path fill="#EAC860" d="M198,110 L186,104 L189,110 L186,116 Z"/>
+
+<!-- ═══ TEAL SIDE TABS ════════════════════════════════════════ -->
+<path fill="url(#gg)" d="M31,110 L40,102 L40,118 Z"/>
+<path fill="#020806"  d="M33,110 L39,104 L39,116 Z"/>
+<path fill="#1D9E75"  d="M35,110 L38,106 L38,114 Z"/>
+<path fill="url(#gg)" d="M189,110 L180,102 L180,118 Z"/>
+<path fill="#020806"  d="M187,110 L181,104 L181,116 Z"/>
+<path fill="#1D9E75"  d="M185,110 L182,106 L182,114 Z"/>
+
+<!-- ═══ LAYER 1: CROSSED BONES ════════════════════════════════
+     X center: 110,108
+     Knobs: TL(46,62) TR(174,62) BL(46,154) BR(174,154)
+-->
+
+<!-- Shaft: TL to BR -->
+<path fill="none" stroke="#010402" stroke-width="7"  stroke-linecap="round" d="M46,62 L174,154"/>
+<path fill="none" stroke="url(#gv)" stroke-width="5" stroke-linecap="round" d="M46,62 L174,154"/>
+<path fill="none" stroke="#0A1810" stroke-width="2.5" stroke-linecap="round" d="M46,62 L174,154"/>
+
+<!-- Shaft: TR to BL -->
+<path fill="none" stroke="#010402" stroke-width="7"  stroke-linecap="round" d="M174,62 L46,154"/>
+<path fill="none" stroke="url(#gv)" stroke-width="5" stroke-linecap="round" d="M174,62 L46,154"/>
+<path fill="none" stroke="#0A1810" stroke-width="2.5" stroke-linecap="round" d="M174,62 L46,154"/>
+
+<!-- Knob TL (46,62) -->
+<circle cx="46" cy="62" r="10" fill="#010402"/>
+<circle cx="46" cy="62" r="8.5" fill="url(#gg)"/>
+<circle cx="46" cy="62" r="5.5" fill="#010402"/>
+<circle cx="46" cy="62" r="4"   fill="#1D9E75"/>
+<circle cx="46" cy="62" r="2"   fill="#5AC8AA"/>
+<circle cx="46" cy="62" r="8.5" fill="none" stroke="#010402" stroke-width="2.5"/>
+<circle cx="46" cy="62" r="8.5" fill="none" stroke="url(#gg)" stroke-width="1.2" opacity="0.7"/>
+
+<!-- Knob TR (174,62) -->
+<circle cx="174" cy="62" r="10" fill="#010402"/>
+<circle cx="174" cy="62" r="8.5" fill="url(#gg)"/>
+<circle cx="174" cy="62" r="5.5" fill="#010402"/>
+<circle cx="174" cy="62" r="4"   fill="#1D9E75"/>
+<circle cx="174" cy="62" r="2"   fill="#5AC8AA"/>
+<circle cx="174" cy="62" r="8.5" fill="none" stroke="#010402" stroke-width="2.5"/>
+<circle cx="174" cy="62" r="8.5" fill="none" stroke="url(#gg)" stroke-width="1.2" opacity="0.7"/>
+
+<!-- Knob BL (46,154) -->
+<circle cx="46" cy="154" r="10" fill="#010402"/>
+<circle cx="46" cy="154" r="8.5" fill="url(#gg)"/>
+<circle cx="46" cy="154" r="5.5" fill="#010402"/>
+<circle cx="46" cy="154" r="4"   fill="#1D9E75"/>
+<circle cx="46" cy="154" r="2"   fill="#5AC8AA"/>
+<circle cx="46" cy="154" r="8.5" fill="none" stroke="#010402" stroke-width="2.5"/>
+<circle cx="46" cy="154" r="8.5" fill="none" stroke="url(#gg)" stroke-width="1.2" opacity="0.7"/>
+
+<!-- Knob BR (174,154) -->
+<circle cx="174" cy="154" r="10" fill="#010402"/>
+<circle cx="174" cy="154" r="8.5" fill="url(#gg)"/>
+<circle cx="174" cy="154" r="5.5" fill="#010402"/>
+<circle cx="174" cy="154" r="4"   fill="#1D9E75"/>
+<circle cx="174" cy="154" r="2"   fill="#5AC8AA"/>
+<circle cx="174" cy="154" r="8.5" fill="none" stroke="#010402" stroke-width="2.5"/>
+<circle cx="174" cy="154" r="8.5" fill="none" stroke="url(#gg)" stroke-width="1.2" opacity="0.7"/>
+
+<!-- ═══ LAYER 2: STRAW HAT ════════════════════════════════════
+     Brim center: 110,72 — clearly above skull top
+-->
+<!-- Brim shadow -->
+<ellipse cx="110" cy="74" rx="38" ry="6" fill="#000" opacity="0.5"/>
+<!-- Brim gold outer -->
+<ellipse cx="110" cy="72" rx="36" ry="5.5" fill="url(#gg)"/>
+<!-- Brim dark bevel -->
+<ellipse cx="110" cy="72" rx="32" ry="3.8" fill="#020806"/>
+<!-- Brim teal surface -->
+<ellipse cx="110" cy="71" rx="30" ry="3"   fill="#0F4030"/>
+<!-- Brim highlight -->
+<ellipse cx="110" cy="70" rx="22" ry="1.5" fill="#1D6A50" opacity="0.7"/>
+<!-- Crown dome -->
+<path fill="#0A2818" d="M94,72 Q98,56 110,52 Q122,56 126,72"/>
+<path fill="#0F3520" d="M96,72 Q100,58 110,54 Q120,58 124,72"/>
+<!-- Hat band -->
+<path fill="none" stroke="#6A2010" stroke-width="2"   d="M98,72 Q104,64 110,62 Q116,64 122,72"/>
+<path fill="none" stroke="#922818" stroke-width="1"   d="M99,72 Q105,65 110,63 Q115,65 121,72"/>
+<!-- Brim strokes -->
+<ellipse cx="110" cy="72" rx="36" ry="5.5" fill="none" stroke="#020806" stroke-width="2.5"/>
+<ellipse cx="110" cy="72" rx="36" ry="5.5" fill="none" stroke="url(#gg)" stroke-width="1.2" opacity="0.75"/>
+
+<!-- ═══ LAYER 3: SKULL ═════════════════════════════════════════
+     Cranium center: 110,100  rx=26 ry=24  top y≈76
+     Jaw connects flush at bottom of cranium ~y=122
+-->
+<!-- Cranium shadow -->
+<ellipse cx="110" cy="102" rx="28" ry="26" fill="#000" opacity="0.7" filter="url(#fss)"/>
+<!-- Cranium gold bevel -->
+<ellipse cx="110" cy="100" rx="27" ry="25" fill="url(#gg)"/>
+<!-- Cranium dark inner -->
+<ellipse cx="110" cy="100" rx="23" ry="21" fill="#010402"/>
+<!-- Cranium surface -->
+<ellipse cx="110" cy="100" rx="21" ry="19" fill="url(#sg)"/>
+
+<!-- Jaw -->
+<path fill="#010402"
+  d="M86,108
+     Q84,118 87,126
+     Q94,134 101,135
+     L102,142 L107,142 L107,135
+     Q108,136 110,136 Q112,136 113,135
+     L113,142 L118,142 L118,135
+     Q125,134 133,126
+     Q136,118 134,108
+     Q124,114 110,114
+     Q96,114 86,108 Z"/>
+<path fill="url(#sg)"
+  d="M87,109
+     Q85,118 88,125
+     Q94,132 101,133
+     L102,140 L106,140 L106,133
+     Q108,134 110,134 Q112,134 114,133
+     L114,140 L118,140 L118,133
+     Q126,132 132,125
+     Q135,118 133,109
+     Q122,116 110,116
+     Q98,116 87,109 Z"/>
+
+<!-- Teeth dividers -->
+<line x1="110" y1="133" x2="110" y2="141" stroke="#010402" stroke-width="1.5"/>
+<line x1="106" y1="134" x2="106" y2="140" stroke="#010402" stroke-width="1.2"/>
+<line x1="114" y1="134" x2="114" y2="140" stroke="#010402" stroke-width="1.2"/>
+<!-- Tooth gold outlines -->
+<path fill="none" stroke="url(#gg)" stroke-width="0.8" opacity="0.5"
+  d="M101,133 L102,141 L107,141 L107,133"/>
+<path fill="none" stroke="url(#gg)" stroke-width="0.8" opacity="0.5"
+  d="M107,133 L107,141 L113,141 L113,133"/>
+<path fill="none" stroke="url(#gg)" stroke-width="0.8" opacity="0.5"
+  d="M113,133 L113,141 L118,141 L118,133"/>
+
+<!-- Cheekbone line -->
+<path fill="none" stroke="url(#gg)" stroke-width="0.8" opacity="0.4"
+  d="M87,109 Q98,116 110,117 Q122,116 133,109"/>
+
+<!-- Left eye -->
+<ellipse cx="101" cy="96"  rx="8"   ry="7.5" fill="#010402" filter="url(#fss)"/>
+<ellipse cx="101" cy="96"  rx="7"   ry="6.5" fill="url(#eg)"/>
+<ellipse cx="101" cy="96"  rx="4.5" ry="4"   fill="#010402"/>
+<ellipse cx="101" cy="96"  rx="3"   ry="2.8" fill="#1D9E75"/>
+<ellipse cx="101" cy="96"  rx="1.2" ry="1.2" fill="#010402"/>
+<ellipse cx="101" cy="96"  rx="0.7" ry="0.7" fill="#5AC8AA"/>
+<ellipse cx="101" cy="96"  rx="7"   ry="6.5" fill="none" stroke="#010402" stroke-width="2"/>
+<ellipse cx="101" cy="96"  rx="7"   ry="6.5" fill="none" stroke="url(#gg)" stroke-width="1" opacity="0.6"/>
+
+<!-- Right eye -->
+<ellipse cx="119" cy="96"  rx="8"   ry="7.5" fill="#010402" filter="url(#fss)"/>
+<ellipse cx="119" cy="96"  rx="7"   ry="6.5" fill="url(#eg)"/>
+<ellipse cx="119" cy="96"  rx="4.5" ry="4"   fill="#010402"/>
+<ellipse cx="119" cy="96"  rx="3"   ry="2.8" fill="#1D9E75"/>
+<ellipse cx="119" cy="96"  rx="1.2" ry="1.2" fill="#010402"/>
+<ellipse cx="119" cy="96"  rx="0.7" ry="0.7" fill="#5AC8AA"/>
+<ellipse cx="119" cy="96"  rx="7"   ry="6.5" fill="none" stroke="#010402" stroke-width="2"/>
+<ellipse cx="119" cy="96"  rx="7"   ry="6.5" fill="none" stroke="url(#gg)" stroke-width="1" opacity="0.6"/>
+
+<!-- Nose -->
+<path fill="#010402" opacity="0.85"
+  d="M107,109 Q110,105 113,109 Q111,112 110,112 Q109,112 107,109 Z"/>
+
+<!-- Cranium bevel strokes -->
+<ellipse cx="110" cy="100" rx="27" ry="25" fill="none" stroke="#010402" stroke-width="3"/>
+<ellipse cx="110" cy="100" rx="27" ry="25" fill="none" stroke="url(#gg)" stroke-width="1.5" opacity="0.75"/>
+
+<!-- ═══ CENTER ORB (below teeth) ═════════════════════════════ -->
+<circle cx="110" cy="164" r="6"   fill="#010402"/>
+<circle cx="110" cy="164" r="5"   fill="url(#gg)"/>
+<circle cx="110" cy="164" r="3.2" fill="#010402"/>
+<circle cx="110" cy="164" r="2.2" fill="#1D9E75"/>
+<circle cx="110" cy="164" r="1"   fill="#5AC8AA"/>
+
+<!-- ═══ APEX CHEVRON ═════════════════════════════════════════ -->
+<path fill="#010402" d="M110,6 L122,22 L116,22 L110,30 L104,22 L98,22 Z"/>
+<path fill="url(#gg)"  d="M110,8 L120,22 L114,22 L110,29 L106,22 L100,22 Z"/>
+<path fill="#020806"   d="M110,14 L115,22 L110,27 L105,22 Z"/>
+<path fill="url(#gg)"  d="M110,17 L113,21 L110,25 L107,21 Z"/>
+
+<!-- ═══ BASE ANCHOR ══════════════════════════════════════════ -->
+<path fill="#010402" d="M88,234 L110,248 L132,234 L126,224 L110,236 L94,224 Z"/>
+<path fill="url(#gg)"  d="M90,233 L110,246 L130,233 L124,224 L110,235 L96,224 Z"/>
+<path fill="#020806"   d="M96,230 L110,240 L124,230 L120,224 L110,233 L100,224 Z"/>
+
+<!-- ═══ OUTER FRAME BORDER FINISH ════════════════════════════ -->
+<path fill="none" stroke="#020806" stroke-width="7" stroke-linejoin="miter"
+  d="M110,8 L198,110 L110,252 L22,110 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="3.5" stroke-linejoin="miter" opacity="0.8"
+  d="M110,8 L198,110 L110,252 L22,110 Z"/>
+
+</svg>

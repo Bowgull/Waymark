@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api'
+import { onePaceSvg } from '@/lib/markAssets'
 
 interface RunSession {
   id: string
@@ -57,6 +58,18 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
     }
   }, [])
 
+  // Auto-fill One Pace arc/ep from settings if not already set
+  useEffect(() => {
+    if (runSession.onePaceArc || runSession.onePaceEp) return
+    apiFetch('/api/settings')
+      .then((r) => r.json())
+      .then((s: any) => {
+        if (s?.onePaceArc) setOnePaceArc(s.onePaceArc)
+        if (s?.onePaceEp) setOnePaceEp(s.onePaceEp)
+      })
+      .catch(() => {})
+  }, [])
+
   const startRun = useCallback(() => {
     setPhase('running')
     intervalRef.current = setInterval(() => {
@@ -109,6 +122,19 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
     ?? 'Keep it conversational pace. Focus on form: upright posture, relaxed shoulders, short strides.'
   const timerEstimate = prescription?.targetDurSec ?? 3600
 
+  // Build inscription-style target segments
+  const targetSegments: string[] = []
+  if (prescription?.targetDurSec) {
+    targetSegments.push(`${Math.round(prescription.targetDurSec / 60)} min`)
+  }
+  if (prescription?.targetDistKm) {
+    targetSegments.push(`${prescription.targetDistKm} km`)
+  }
+  if (isZone2) {
+    targetSegments.push('HR 130–145')
+    targetSegments.push('nasal breathing')
+  }
+
   if (phase === 'ready') {
     return (
       <div className="animate-fade-in">
@@ -120,34 +146,16 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
           {runDesc}
         </p>
 
-        {/* Target badges */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {prescription?.targetDurSec && (
-            <span className="rounded-md border border-teal/30 bg-teal/10 px-3 py-1 text-sm text-teal">
-              {Math.round(prescription.targetDurSec / 60)} min
-            </span>
-          )}
-          {prescription?.targetDistKm && (
-            <span className="rounded-md border border-teal/30 bg-teal/10 px-3 py-1 text-sm text-teal">
-              {prescription.targetDistKm} km
-            </span>
-          )}
-          {isZone2 && (
-            <>
-              <span className="rounded-md border border-[#1E8A68]/30 bg-[#1E8A68]/10 px-3 py-1 text-sm text-[#1E8A68]">
-                HR 130-145 bpm
-              </span>
-              <span className="rounded-md border border-[#1E8A68]/30 bg-[#1E8A68]/10 px-3 py-1 text-sm text-[#1E8A68]">
-                Nasal breathing
-              </span>
-            </>
-          )}
-        </div>
+        {targetSegments.length > 0 && (
+          <p className="mt-3 font-[family-name:var(--font-display)] text-xs tracking-wider text-gold/60">
+            {targetSegments.join(' · ')}
+          </p>
+        )}
 
         <div className="mt-6 flex items-center gap-3">
           <button
             onClick={() => setIsIndoor(false)}
-            className={`flex-1 py-3 text-sm font-medium ${
+            className={`flex-1 rounded-md py-3 text-sm font-medium ${
               !isIndoor ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
             }`}
           >
@@ -155,25 +163,45 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
           </button>
           <button
             onClick={() => setIsIndoor(true)}
-            className={`flex-1 py-3 text-sm font-medium ${
+            className={`flex-1 flex items-center justify-center gap-2 rounded-md py-3 text-sm font-medium ${
               isIndoor ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
             }`}
           >
+            <img src={onePaceSvg} alt="" className="h-5 w-5 object-contain" />
             Indoor
           </button>
         </div>
 
-        {isIndoor && (
-          <p className="mt-3 text-sm italic text-teal/80">
-            Put on One Pace and enjoy the run.
-          </p>
+        {isIndoor ? (
+          <div className="mt-8 flex flex-col items-center gap-4">
+            <button
+              onClick={() => window.open('https://onepace.net', '_blank')}
+              className="w-full flex flex-col items-center gap-4 rounded-md border border-gold/15 bg-deep-forest px-6 py-8"
+            >
+              <img
+                src={onePaceSvg}
+                alt="One Pace"
+                className="h-24 w-24 object-contain"
+                style={{ mixBlendMode: 'screen' }}
+              />
+              <span className="font-[family-name:var(--font-display)] text-sm tracking-wider text-gold/70">
+                Open One Pace
+              </span>
+            </button>
+            <button
+              onClick={() => setPhase('logging')}
+              className="w-full rounded-md border border-border bg-surface-light px-4 py-3 text-sm text-muted-foreground"
+            >
+              Log Run
+            </button>
+          </div>
+        ) : (
+          <div className="mt-8 flex justify-center">
+            <Button onClick={startRun} size="lg" style={{ backgroundColor: '#1E8A68' }}>
+              Start Run
+            </Button>
+          </div>
         )}
-
-        <div className="mt-8 flex justify-center">
-          <Button onClick={startRun} size="lg" style={{ backgroundColor: '#1E8A68' }}>
-            Start Run
-          </Button>
-        </div>
       </div>
     )
   }
@@ -187,7 +215,7 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
         <RingTimer
           totalSeconds={estimatedTotal}
           secondsRemaining={remaining}
-          label={isIndoor ? 'Treadmill' : 'Running'}
+          label="Running"
           accentColor="#1E8A68"
           size={260}
         />
@@ -231,7 +259,20 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
 
       {isIndoor && (
         <div className="rounded-md border border-border bg-deep-forest p-4">
-          <p className="mb-3 text-sm font-medium text-teal">One Pace</p>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <img src={onePaceSvg} alt="" className="h-6 w-6 object-contain" style={{ mixBlendMode: 'screen' }} />
+              <p className="text-sm font-medium text-teal">One Pace</p>
+            </div>
+            <a
+              href="https://onepace.net"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-teal/70 underline decoration-teal/30 active:text-teal"
+            >
+              onepace.net ↗
+            </a>
+          </div>
           <div className="flex gap-4">
             <div className="flex-1">
               <label className="text-label mb-1 block text-muted-foreground">Arc</label>
