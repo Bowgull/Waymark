@@ -1,0 +1,246 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 260">
+<defs>
+  <radialGradient id="gg" cx="32%" cy="24%" r="74%">
+    <stop offset="0%"   stop-color="#EAC860"/>
+    <stop offset="38%"  stop-color="#C8A030"/>
+    <stop offset="78%"  stop-color="#7A5C18"/>
+    <stop offset="100%" stop-color="#3A2A08"/>
+  </radialGradient>
+  <radialGradient id="gt" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#5AC8AA"/>
+    <stop offset="45%"  stop-color="#2A8A6C"/>
+    <stop offset="85%"  stop-color="#0A3828"/>
+    <stop offset="100%" stop-color="#030E0A"/>
+  </radialGradient>
+  <radialGradient id="gt2" cx="36%" cy="28%" r="68%">
+    <stop offset="0%"   stop-color="#4ABCAA"/>
+    <stop offset="55%"  stop-color="#1A6A52"/>
+    <stop offset="100%" stop-color="#030E0A"/>
+  </radialGradient>
+  <filter id="fs">
+    <feDropShadow dx="0" dy="5" stdDeviation="10" flood-color="#000" flood-opacity="0.88"/>
+  </filter>
+  <filter id="fss">
+    <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.75"/>
+  </filter>
+</defs>
+
+<!-- ═══ OUTER DIAMOND FRAME ═══════════════════════════════════ -->
+<path fill="#010402" filter="url(#fs)"
+  d="M110,6 L200,110 L110,254 L20,110 Z"/>
+<path fill="url(#gg)"
+  d="M110,8 L198,110 L110,252 L22,110 Z"/>
+<path fill="#020806"
+  d="M110,22 L184,110 L110,236 L36,110 Z"/>
+<path fill="url(#gg)" opacity="0.45"
+  d="M110,30 L176,110 L110,226 L44,110 Z"/>
+<path fill="#010402"
+  d="M110,38 L168,110 L110,216 L52,110 Z"/>
+
+<!-- ═══ TEAL SIDE ACCENTS ══════════════════════════════════════ -->
+<!-- Left accent -->
+<path fill="#010402" filter="url(#fss)"
+  d="M52,110 L66,96 L66,124 Z"/>
+<path fill="url(#gg)"
+  d="M54,110 L65,98 L65,122 Z"/>
+<path fill="#020806"
+  d="M57,110 L64,100 L64,120 Z"/>
+<path fill="url(#gt)" opacity="0.85"
+  d="M59,110 L63,102 L63,118 Z"/>
+
+<!-- Right accent -->
+<path fill="#010402" filter="url(#fss)"
+  d="M168,110 L154,96 L154,124 Z"/>
+<path fill="url(#gg)"
+  d="M166,110 L155,98 L155,122 Z"/>
+<path fill="#020806"
+  d="M163,110 L156,100 L156,120 Z"/>
+<path fill="url(#gt)" opacity="0.85"
+  d="M161,110 L157,102 L157,118 Z"/>
+
+<!-- ═══ QUILL FEATHER BODY ════════════════════════════════════ -->
+<!-- Shadow -->
+<path fill="#010402" filter="url(#fss)"
+  d="M110,52
+     C128,58 144,80 146,106
+     C148,128 138,148 128,162
+     L110,182
+     L92,162
+     C82,148 72,128 74,106
+     C76,80 92,58 110,52 Z"/>
+<!-- Gold outer bevel -->
+<path fill="url(#gg)"
+  d="M110,54
+     C127,60 142,81 144,106
+     C146,127 136,147 126,161
+     L110,180
+     L94,161
+     C84,147 74,127 76,106
+     C78,81 93,60 110,54 Z"/>
+<!-- Dark inner -->
+<path fill="#020806"
+  d="M110,60
+     C125,66 138,85 140,108
+     C142,128 133,146 124,159
+     L110,176
+     L96,159
+     C87,146 78,128 80,108
+     C82,85 95,66 110,60 Z"/>
+<!-- Teal fill -->
+<path fill="url(#gt)"
+  d="M110,64
+     C124,70 136,88 138,109
+     C140,128 131,145 123,157
+     L110,173
+     L97,157
+     C89,145 80,128 82,109
+     C84,88 96,70 110,64 Z"/>
+<!-- Feather outline stroke -->
+<path fill="none" stroke="#020806" stroke-width="4"
+  d="M110,54
+     C127,60 142,81 144,106
+     C146,127 136,147 126,161
+     L110,180
+     L94,161
+     C84,147 74,127 76,106
+     C78,81 93,60 110,54 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.7"
+  d="M110,54
+     C127,60 142,81 144,106
+     C146,127 136,147 126,161
+     L110,180
+     L94,161
+     C84,147 74,127 76,106
+     C78,81 93,60 110,54 Z"/>
+
+<!-- ═══ FEATHER SPINE ══════════════════════════════════════════ -->
+<path fill="#010402" d="M107,56 L113,56 L112,182 L108,182 Z"/>
+<path fill="url(#gg)"  d="M108,57 L112,57 L111,181 L109,181 Z"/>
+<path fill="#020806"   d="M109,58 L111,58 L110.5,180 L109.5,180 Z"/>
+<path fill="url(#gt)"  opacity="0.6" d="M109.3,60 L110.7,60 L110.4,178 L109.6,178 Z"/>
+
+<!-- ═══ FEATHER VANE LINES ════════════════════════════════════ -->
+<!-- Left vanes -->
+<path fill="none" stroke="#020806" stroke-width="2.5"
+  d="M110,80 C102,86 90,95 82,102"/>
+<path fill="none" stroke="url(#gt)" stroke-width="1.2" opacity="0.7"
+  d="M110,80 C102,86 90,95 82,102"/>
+
+<path fill="none" stroke="#020806" stroke-width="2.5"
+  d="M110,100 C101,106 88,115 79,122"/>
+<path fill="none" stroke="url(#gt)" stroke-width="1.2" opacity="0.7"
+  d="M110,100 C101,106 88,115 79,122"/>
+
+<path fill="none" stroke="#020806" stroke-width="2.5"
+  d="M110,120 C103,126 92,133 84,139"/>
+<path fill="none" stroke="url(#gt)" stroke-width="1.2" opacity="0.65"
+  d="M110,120 C103,126 92,133 84,139"/>
+
+<path fill="none" stroke="#020806" stroke-width="2"
+  d="M110,140 C104,145 95,151 88,155"/>
+<path fill="none" stroke="url(#gt)" stroke-width="1" opacity="0.55"
+  d="M110,140 C104,145 95,151 88,155"/>
+
+<!-- Right vanes -->
+<path fill="none" stroke="#020806" stroke-width="2.5"
+  d="M110,80 C118,86 130,95 138,102"/>
+<path fill="none" stroke="url(#gt)" stroke-width="1.2" opacity="0.7"
+  d="M110,80 C118,86 130,95 138,102"/>
+
+<path fill="none" stroke="#020806" stroke-width="2.5"
+  d="M110,100 C119,106 132,115 141,122"/>
+<path fill="none" stroke="url(#gt)" stroke-width="1.2" opacity="0.7"
+  d="M110,100 C119,106 132,115 141,122"/>
+
+<path fill="none" stroke="#020806" stroke-width="2.5"
+  d="M110,120 C117,126 128,133 136,139"/>
+<path fill="none" stroke="url(#gt)" stroke-width="1.2" opacity="0.65"
+  d="M110,120 C117,126 128,133 136,139"/>
+
+<path fill="none" stroke="#020806" stroke-width="2"
+  d="M110,140 C116,145 125,151 132,155"/>
+<path fill="none" stroke="url(#gt)" stroke-width="1" opacity="0.55"
+  d="M110,140 C116,145 125,151 132,155"/>
+
+<!-- ═══ NIB TIP ════════════════════════════════════════════════ -->
+<path fill="#010402" filter="url(#fss)"
+  d="M110,182 L118,168 L110,176 L102,168 Z"/>
+<path fill="url(#gg)"
+  d="M110,180 L117,168 L110,175 L103,168 Z"/>
+<path fill="#020806"
+  d="M110,176 L115,168 L110,173 L105,168 Z"/>
+<path fill="url(#gg)" opacity="0.8"
+  d="M110,174 L113,168 L110,172 L107,168 Z"/>
+
+<!-- ═══ INK DROP AT TIP ════════════════════════════════════════ -->
+<ellipse cx="110" cy="187" rx="5" ry="7" fill="#010402" filter="url(#fss)"/>
+<ellipse cx="110" cy="186" rx="4" ry="6" fill="url(#gt)"/>
+<ellipse cx="110" cy="185" rx="2.5" ry="3.5" fill="#5AC8AA" opacity="0.9"/>
+
+<!-- ═══ SCROLL RIBBON ══════════════════════════════════════════ -->
+<!-- Shadow -->
+<path fill="#010402" opacity="0.5"
+  d="M68,210 Q110,202 152,210 Q152,218 110,214 Q68,218 68,210 Z"/>
+<!-- Gold outer -->
+<path fill="url(#gg)"
+  d="M70,208 Q110,200 150,208 L150,213 Q110,205 70,213 Z"/>
+<!-- Dark bevel -->
+<path fill="#020806"
+  d="M72,209 Q110,202 148,209 L148,212 Q110,205 72,212 Z"/>
+<!-- Teal fill stripe -->
+<path fill="url(#gt)" opacity="0.6"
+  d="M74,209.5 Q110,203 146,209.5 L146,211.5 Q110,205 74,211.5 Z"/>
+<!-- Stroke -->
+<path fill="none" stroke="#020806" stroke-width="3"
+  d="M70,208 Q110,200 150,208 L150,213 Q110,205 70,213 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="1.5" opacity="0.7"
+  d="M70,208 Q110,200 150,208 L150,213 Q110,205 70,213 Z"/>
+
+<!-- Left scroll curl -->
+<path fill="#010402"
+  d="M70,208 Q58,208 56,214 Q54,220 62,220 Q68,220 70,215"/>
+<path fill="url(#gg)"
+  d="M70,209 Q59,209 57,214 Q55,219 62,219 Q67,219 70,215"/>
+<path fill="none" stroke="#020806" stroke-width="3"
+  d="M70,209 Q59,209 57,214 Q55,219 62,219 Q67,219 70,215"/>
+<path fill="none" stroke="url(#gg)" stroke-width="1.5" opacity="0.7"
+  d="M70,209 Q59,209 57,214 Q55,219 62,219 Q67,219 70,215"/>
+
+<!-- Right scroll curl -->
+<path fill="#010402"
+  d="M150,208 Q162,208 164,214 Q166,220 158,220 Q152,220 150,215"/>
+<path fill="url(#gg)"
+  d="M150,209 Q161,209 163,214 Q165,219 158,219 Q153,219 150,215"/>
+<path fill="none" stroke="#020806" stroke-width="3"
+  d="M150,209 Q161,209 163,214 Q165,219 158,219 Q153,219 150,215"/>
+<path fill="none" stroke="url(#gg)" stroke-width="1.5" opacity="0.7"
+  d="M150,209 Q161,209 163,214 Q165,219 158,219 Q153,219 150,215"/>
+
+<!-- ═══ CENTER ORB ══════════════════════════════════════════════ -->
+<circle cx="110" cy="110" r="12" fill="#010402" filter="url(#fss)"/>
+<circle cx="110" cy="110" r="10" fill="url(#gg)"/>
+<circle cx="110" cy="110" r="6.5" fill="#020806"/>
+<circle cx="110" cy="110" r="5"   fill="url(#gt)"/>
+<circle cx="110" cy="110" r="2"   fill="#020806"/>
+<circle cx="110" cy="110" r="1.2" fill="#EAC860"/>
+<circle cx="110" cy="110" r="10" fill="none" stroke="#020806" stroke-width="4"/>
+<circle cx="110" cy="110" r="10" fill="none" stroke="url(#gg)" stroke-width="2" opacity="0.7"/>
+
+<!-- ═══ APEX CHEVRON ═════════════════════════════════════════ -->
+<path fill="#010402" d="M110,6 L122,22 L116,22 L110,30 L104,22 L98,22 Z"/>
+<path fill="url(#gg)"  d="M110,8 L120,22 L114,22 L110,29 L106,22 L100,22 Z"/>
+<path fill="#020806"   d="M110,14 L115,22 L110,27 L105,22 Z"/>
+<path fill="url(#gg)"  d="M110,17 L113,21 L110,25 L107,21 Z"/>
+
+<!-- ═══ BASE ANCHOR ══════════════════════════════════════════ -->
+<path fill="#010402" d="M88,234 L110,248 L132,234 L126,224 L110,236 L94,224 Z"/>
+<path fill="url(#gg)"  d="M90,233 L110,246 L130,233 L124,224 L110,235 L96,224 Z"/>
+<path fill="#020806"   d="M96,230 L110,240 L124,230 L120,224 L110,233 L100,224 Z"/>
+
+<!-- ═══ OUTER FRAME BORDER FINISH ════════════════════════════ -->
+<path fill="none" stroke="#020806" stroke-width="7" stroke-linejoin="miter"
+  d="M110,8 L198,110 L110,252 L22,110 Z"/>
+<path fill="none" stroke="url(#gg)" stroke-width="3.5" stroke-linejoin="miter" opacity="0.8"
+  d="M110,8 L198,110 L110,252 L22,110 Z"/>
+
+</svg>

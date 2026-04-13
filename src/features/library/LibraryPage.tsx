@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
-import { getCategoryMark } from '@/lib/markAssets'
+import { getCategoryMark, waybookPng } from '@/lib/markAssets'
 import bagworkPng from '@/assets/brand/Bagwork.png'
 import { PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/components/ui/badge'
@@ -57,28 +57,10 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const CATEGORY_ORDER = ['strength', 'core', 'posture', 'mobility']
 
-function QuillIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M20 2C15 2 11 6 9 10L7.5 14.5L3 22L10.5 17.5L15 16C19 14 22 9.5 22 4.5C22 3.5 21 2 20 2Z" />
-      <path d="M7.5 14.5L10.5 17.5" />
-      <path d="M14 6C14 6 12 8 11 11" />
-    </svg>
-  )
-}
-
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
-      className={`ml-auto h-4 w-4 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
+      className={`h-4 w-4 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -321,6 +303,7 @@ export function LibraryPage() {
               onClick={() => !isSearching && toggleCategory(cat)}
               className="flex w-full items-center gap-3 px-1 py-2"
             >
+              {!isSearching && <ChevronIcon open={isOpen} />}
               <img
                 src={getCategoryMark(cat).png}
                 alt=""
@@ -333,7 +316,6 @@ export function LibraryPage() {
               <Badge variant="muted" className="ml-1 text-[10px]">
                 {items.length}
               </Badge>
-              {!isSearching && <ChevronIcon open={isOpen} />}
             </button>
 
             {isOpen && (
@@ -393,6 +375,7 @@ export function LibraryPage() {
           onClick={() => setCombosOpen(!combosOpen)}
           className="flex w-full items-center gap-3 px-1 py-2"
         >
+          <ChevronIcon open={combosOpen} />
           <img
             src={bagworkPng}
             alt=""
@@ -403,7 +386,6 @@ export function LibraryPage() {
           <Badge variant="muted" className="ml-1 text-[10px]">
             {comboList.filter(c => c.unlocked).length}/{comboList.length}
           </Badge>
-          <ChevronIcon open={combosOpen} />
         </button>
 
         {combosOpen && (
@@ -537,7 +519,7 @@ export function LibraryPage() {
       {isSearching && filteredJournal.length > 0 && (
         <div className="mb-4">
           <div className="flex items-center gap-3 px-1 py-2">
-            <QuillIcon className="h-8 w-8 text-gold/50" />
+            <img src={waybookPng} alt="" className="h-8 w-8 object-contain opacity-50" style={{ mixBlendMode: 'screen' }} />
             <span className="text-label text-gold/70">Waybook</span>
             <Badge variant="muted" className="ml-1 text-[10px]">
               {filteredJournal.length}
@@ -547,7 +529,7 @@ export function LibraryPage() {
             {filteredJournal.map((entry, i) => (
               <div key={entry.id}>
                 <div className="mb-2 flex items-center gap-2">
-                  <p className="text-label text-gold/60">
+                  <p className="font-[family-name:var(--font-display)] text-xs tracking-wider text-gold/60">
                     {formatEpochDay(entry.date)}
                   </p>
                   <Badge
@@ -573,9 +555,9 @@ export function LibraryPage() {
           onClick={loadJournal}
           className="flex w-full items-center gap-3 px-1 py-2"
         >
-          <QuillIcon className="h-8 w-8 text-gold/50" />
-          <span className="text-label text-gold/70">Waybook</span>
           <ChevronIcon open={journalOpen} />
+          <img src={waybookPng} alt="" className="h-8 w-8 object-contain opacity-50" style={{ mixBlendMode: 'screen' }} />
+          <span className="text-label text-gold/70">Waybook</span>
         </button>
 
         {journalOpen && (
@@ -620,7 +602,7 @@ export function LibraryPage() {
                           {group.entries.map((entry, i) => (
                             <div key={entry.id}>
                               <div className="mb-2 flex items-center gap-2">
-                                <p className="text-label text-gold/60">
+                                <p className="font-[family-name:var(--font-display)] text-xs tracking-wider text-gold/60">
                                   {formatEpochDay(entry.date)}
                                 </p>
                                 {entry.type === 'weekly' && (
@@ -675,7 +657,7 @@ export function LibraryPage() {
                           {group.entries.map((entry, i) => (
                             <div key={entry.id}>
                               <div className="mb-2 flex items-center gap-2">
-                                <p className="text-label text-gold/60">
+                                <p className="font-[family-name:var(--font-display)] text-xs tracking-wider text-gold/60">
                                   {formatEpochDay(entry.date)}
                                 </p>
                               </div>

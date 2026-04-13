@@ -6,6 +6,8 @@ import bagworkPng from '@/assets/brand/Bagwork.png'
 import cardioPng from '@/assets/brand/Cardio.png'
 import wellnessPng from '@/assets/brand/Wellness.png'
 import logoPng from '@/assets/brand/Logo.png'
+import waybookPng from '@/assets/brand/Waybook.png'
+import onePaceSvg from '@/assets/brand/OnePace.svg'
 
 export interface MarkAsset {
   png: string
@@ -64,4 +66,4 @@ export function getCategoryMark(category: string): MarkAsset {
   return CATEGORY_MARK_MAP[category] ?? FALLBACK
 }
 
-export { logoPng }
+export { logoPng, waybookPng, onePaceSvg }
