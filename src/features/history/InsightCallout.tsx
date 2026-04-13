@@ -10,13 +10,20 @@ export function InsightCallout({ insights }: InsightCalloutProps) {
 
   return (
     <div className="mx-4 mb-6 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-      <div className="rounded-md border-l-2 border-gold/30 bg-card/60 px-4 py-3">
+      <div className="border-y border-border/20 px-5 py-4">
         {visible.map((text, i) => (
           <p
             key={i}
-            className={`text-sm leading-relaxed ${i > 0 ? 'mt-2 text-muted-foreground' : 'text-foreground'}`}
+            className={`leading-relaxed ${
+              i > 0
+                ? 'mt-2 text-sm text-muted-foreground'
+                : 'text-base text-foreground'
+            }`}
             style={{ fontFamily: i === 0 ? "'Cinzel Variable', serif" : undefined }}
           >
+            {i === 0 && (
+              <span className="text-gold/60 mr-2" aria-hidden>~</span>
+            )}
             {text}
           </p>
         ))}

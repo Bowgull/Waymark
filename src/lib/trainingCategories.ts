@@ -1,25 +1,39 @@
 // Maps session types into ring categories for the Ledger dashboard.
 // Used by CompletionRings and the category-completion API endpoint.
 
-export const TRAINING_CATEGORIES = {
+import mobilityIcon from '@/assets/brand/Mobility.png'
+import strengthIcon from '@/assets/brand/Strength.png'
+import wellnessIcon from '@/assets/brand/Wellness.png'
+
+export interface TrainingCategory {
+  label: string
+  types: readonly string[]
+  color: string
+  icon: string
+}
+
+export type CategoryKey = 'strength' | 'conditioning' | 'recovery'
+
+export const TRAINING_CATEGORIES: Record<CategoryKey, TrainingCategory> = {
   strength: {
     label: 'Strength',
     types: ['strength'],
     color: '#E8C860', // gold
+    icon: strengthIcon,
   },
   conditioning: {
     label: 'Conditioning',
     types: ['foundation_run', 'running', 'mt_class', 'bag_work', 'skip_rope'],
-    color: '#4ACAAA', // teal
+    color: '#3BB5CC', // cyan-blue
+    icon: mobilityIcon,
   },
   recovery: {
     label: 'Recovery',
     types: ['active_recovery', 'posture_corrective'],
     color: '#4ABA8A', // forest-light
+    icon: wellnessIcon,
   },
-} as const
-
-export type CategoryKey = keyof typeof TRAINING_CATEGORIES
+}
 
 export function categorizeSession(type: string): CategoryKey | null {
   for (const [key, cat] of Object.entries(TRAINING_CATEGORIES)) {

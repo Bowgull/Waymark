@@ -23,8 +23,8 @@ interface DashboardData {
   completionRate: number
   topLift: { name: string; weightLbs: number } | null
   totalRuns: number
-  thisWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null }
-  lastWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null }
+  thisWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null; distanceKm: number }
+  lastWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null; distanceKm: number }
 }
 
 interface CorrelationDataPoint {
@@ -212,19 +212,22 @@ export function HistoryPage() {
     <div className="pb-4">
       <PageHeader title="Ledger">
         <div className="flex gap-1">
-          {([7, 30, 90] as Period[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`rounded-md px-3 py-1 text-xs font-medium ${
-                period === p
-                  ? 'bg-gold text-near-black'
-                  : 'bg-secondary text-muted-foreground'
-              }`}
-            >
-              {p}d
-            </button>
-          ))}
+          {([7, 30, 90] as Period[]).map((p) => {
+            const label = { 7: 'Week', 30: 'Month', 90: 'Season' }[p]
+            return (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`rounded-md px-3 py-1 text-xs font-display uppercase tracking-wider ${
+                  period === p
+                    ? 'bg-gold text-near-black'
+                    : 'bg-secondary text-muted-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            )
+          })}
         </div>
       </PageHeader>
 
@@ -253,6 +256,7 @@ export function HistoryPage() {
               weeks={consistency.weeks}
               currentStreak={consistency.currentStreak}
               longestStreak={consistency.longestStreak}
+              period={period}
             />
           </ChartCard>
         )}

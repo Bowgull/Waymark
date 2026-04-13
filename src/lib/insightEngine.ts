@@ -1,4 +1,4 @@
-// Generates lore-coach flavored insights from dashboard data.
+// Generates encouraging coach-style insights from dashboard data.
 // Pure logic, no AI. Returns ranked insight strings.
 
 import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
@@ -37,19 +37,19 @@ export function generateInsights(data: InsightData): string[] {
   if (consistency) {
     if (consistency.currentStreak >= 7) {
       insights.push({
-        text: `${consistency.currentStreak} days unbroken. The chain holds.`,
+        text: `${consistency.currentStreak}-day streak. Consistency is doing the work.`,
         priority: 8,
       })
     } else if (consistency.currentStreak >= 3) {
       insights.push({
-        text: `${consistency.currentStreak} days running. Keep the chain forged.`,
+        text: `${consistency.currentStreak} days in a row. Keep it going.`,
         priority: 5,
       })
     }
 
     if (consistency.longestStreak > 0 && consistency.currentStreak >= consistency.longestStreak) {
       insights.push({
-        text: `New longest streak. ${consistency.currentStreak} days and counting.`,
+        text: `New longest streak at ${consistency.currentStreak} days. Well earned.`,
         priority: 9,
       })
     }
@@ -68,7 +68,7 @@ export function generateInsights(data: InsightData): string[] {
       const best = recentPrs[0]
       const lbs = kgToLbsDisplay(best.maxWeightKg)
       insights.push({
-        text: `The iron remembers: ${best.exerciseName} PR, ${lbs} lbs.`,
+        text: `New PR on ${best.exerciseName}, ${lbs} lbs. Keep building.`,
         priority: 9,
       })
 
@@ -76,7 +76,7 @@ export function generateInsights(data: InsightData): string[] {
         const gain = kgToLbsDisplay(best.maxWeightKg - best.previousMaxKg)
         if (gain > 0) {
           insights.push({
-            text: `${best.exerciseName} climbed ${gain} lbs since the last mark.`,
+            text: `${best.exerciseName} up ${gain} lbs from your last best. Solid progress.`,
             priority: 7,
           })
         }
@@ -92,12 +92,12 @@ export function generateInsights(data: InsightData): string[] {
       const pctChange = Math.round(((thisVol - lastVol) / lastVol) * 100)
       if (pctChange >= 15) {
         insights.push({
-          text: `Volume up ${pctChange}% over last week. The path widens.`,
+          text: `Volume up ${pctChange}% this week. Solid momentum.`,
           priority: 6,
         })
       } else if (pctChange <= -20) {
         insights.push({
-          text: `Lighter week on volume. Recovery has its own strength.`,
+          text: `Lighter volume this week. Good time to recover or push next week.`,
           priority: 4,
         })
       }
@@ -108,7 +108,7 @@ export function generateInsights(data: InsightData): string[] {
     const lastSessions = dashboard.lastWeek.sessions
     if (thisSessions > lastSessions && lastSessions > 0) {
       insights.push({
-        text: `${thisSessions} sessions this week, up from ${lastSessions}. Momentum building.`,
+        text: `${thisSessions} sessions this week, up from ${lastSessions}. Building momentum.`,
         priority: 5,
       })
     }
@@ -125,7 +125,7 @@ export function generateInsights(data: InsightData): string[] {
         const poorAvgRpe = poorSleep.reduce((s, c) => s + c.avgRpe!, 0) / poorSleep.length
         if (poorAvgRpe - goodAvgRpe > 0.5) {
           insights.push({
-            text: `Your strongest sessions follow 7+ hours of sleep.`,
+            text: `Your strongest sessions follow 7+ hours of sleep. Worth protecting.`,
             priority: 7,
           })
         }
@@ -137,13 +137,13 @@ export function generateInsights(data: InsightData): string[] {
   if (runSummary && runSummary.totalRuns > 0) {
     if (runSummary.bestPaceSecKm) {
       insights.push({
-        text: `Best pace: ${paceToMinSec(runSummary.bestPaceSecKm)}/km. The road knows your name.`,
+        text: `Best pace: ${paceToMinSec(runSummary.bestPaceSecKm)}/km. Getting faster.`,
         priority: 5,
       })
     }
     if (runSummary.totalDistanceKm >= 10) {
       insights.push({
-        text: `${runSummary.totalDistanceKm.toFixed(1)} km covered. Every step counts.`,
+        text: `${runSummary.totalDistanceKm.toFixed(1)} km covered. Putting in the miles.`,
         priority: 4,
       })
     }
@@ -159,12 +159,12 @@ export function generateInsights(data: InsightData): string[] {
 
     if (allDone) {
       insights.push({
-        text: `All rings closed. A full week forged.`,
+        text: `All rings closed. Full week complete.`,
         priority: 10,
       })
     } else if (remaining <= 2 && remaining > 0) {
       insights.push({
-        text: `${remaining} session${remaining === 1 ? '' : 's'} left to close the rings.`,
+        text: `${remaining} session${remaining === 1 ? '' : 's'} left to close the rings. Almost there.`,
         priority: 7,
       })
     }
@@ -173,7 +173,7 @@ export function generateInsights(data: InsightData): string[] {
   // Completion rate
   if (dashboard && dashboard.completionRate >= 90) {
     insights.push({
-      text: `${dashboard.completionRate}% completion. Discipline made visible.`,
+      text: `${dashboard.completionRate}% completion. Staying locked in.`,
       priority: 6,
     })
   }

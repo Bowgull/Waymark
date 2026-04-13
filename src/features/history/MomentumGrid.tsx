@@ -3,6 +3,7 @@ interface WeekStats {
   sessions: number
   avgRpe: number | null
   avgSleep: number | null
+  distanceKm: number
 }
 
 interface MomentumGridProps {
@@ -40,15 +41,17 @@ function MomentumCard({
   unit,
   delta,
   improved,
+  className,
 }: {
   label: string
   value: string
   unit?: string
   delta: string
   improved: 'up' | 'down' | 'flat'
+  className?: string
 }) {
   return (
-    <div className="rounded-md border border-border bg-card p-3 animate-fade-in-up">
+    <div className={`rounded-md border border-border bg-card p-3 animate-fade-in-up ${className ?? ''}`}>
       <p className="text-label text-muted-foreground">{label}</p>
       <div className="mt-1 flex items-baseline gap-1.5">
         <span className="text-stat text-foreground">{value}</span>
@@ -84,6 +87,7 @@ export function MomentumGrid({ thisWeek, lastWeek }: MomentumGridProps) {
   const sess = getDelta(thisWeek.sessions, lastWeek.sessions)
   const effort = getDelta(thisWeek.avgRpe, lastWeek.avgRpe, true) // lower RPE = better
   const sleep = getDelta(thisWeek.avgSleep, lastWeek.avgSleep)
+  const dist = getDelta(thisWeek.distanceKm, lastWeek.distanceKm)
 
   const formatVal = (v: number | null) => {
     if (v == null) return '-'
@@ -117,6 +121,14 @@ export function MomentumGrid({ thisWeek, lastWeek }: MomentumGridProps) {
         unit="hrs"
         delta={sleep.delta}
         improved={sleep.direction}
+      />
+      <MomentumCard
+        label="Distance"
+        value={thisWeek.distanceKm > 0 ? thisWeek.distanceKm.toFixed(1) : '0'}
+        unit="km"
+        delta={dist.delta}
+        improved={dist.direction}
+        className="col-span-2"
       />
     </div>
   )

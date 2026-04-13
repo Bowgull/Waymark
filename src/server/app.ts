@@ -2652,11 +2652,26 @@ app.get('/api/history/dashboard', async (c) => {
     const sleepValues = weekLogs.filter(l => l.sleepHours != null).map(l => l.sleepHours!)
     const avgSleep = sleepValues.length > 0 ? Math.round(sleepValues.reduce((a, b) => a + b, 0) / sleepValues.length * 10) / 10 : null
 
+    // Distance (from run sessions)
+    const runIds = completedWeek
+      .filter(s => s.type === 'foundation_run' || s.type === 'running')
+      .map(s => s.id)
+    let distanceKm = 0
+    if (runIds.length > 0) {
+      const allRuns = await db.select().from(runSessions)
+      for (const r of allRuns) {
+        if (runIds.includes(r.sessionId) && r.distanceKm != null) {
+          distanceKm += r.distanceKm
+        }
+      }
+    }
+
     return {
       volume: Math.round(volume * 2.20462), // kg to lbs
       sessions: completedWeek.length,
       avgRpe,
       avgSleep,
+      distanceKm: Math.round(distanceKm * 10) / 10,
     }
   }
 
