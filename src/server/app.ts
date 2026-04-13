@@ -2350,6 +2350,42 @@ app.get('/api/history/consistency', async (c) => {
   return c.json({ weeks: weekData, currentStreak: streak, longestStreak })
 })
 
+// ─── History: Category Completion (for ring display) ─────────
+
+app.get('/api/history/category-completion', async (c) => {
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const todayEpochDay = Math.floor(nowSec / 86400)
+
+  // Find Monday of current week
+  const today = new Date()
+  const dayOfWeek = today.getDay()
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  const mondayEpochDay = todayEpochDay + mondayOffset
+  const sundayEpochDay = mondayEpochDay + 7
+
+  const weekSessions = await db.select().from(sessions)
+  const thisWeek = weekSessions.filter(s =>
+    s.scheduledDate != null && s.scheduledDate >= mondayEpochDay && s.scheduledDate < sundayEpochDay
+  )
+
+  const categories: Record<string, { types: string[]; target: number }> = {
+    strength: { types: ['strength'], target: 2 },
+    conditioning: { types: ['foundation_run', 'running', 'mt_class', 'bag_work', 'skip_rope'], target: 8 },
+    recovery: { types: ['active_recovery', 'posture_corrective'], target: 2 },
+  }
+
+  const result: Record<string, { completed: number; target: number }> = {}
+  for (const [key, cat] of Object.entries(categories)) {
+    const completed = thisWeek.filter(
+      s => cat.types.includes(s.type) && s.status === 'completed'
+    ).length
+    result[key] = { completed, target: cat.target }
+  }
+
+  return c.json(result)
+})
+
 // ─── History: Personal Records ────────────────────────────────
 
 app.get('/api/history/prs', async (c) => {
