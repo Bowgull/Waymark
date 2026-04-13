@@ -1,14 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
+import { kgToLbsDisplay, paceToMinSec } from '@/lib/chartTheme'
+import { generateInsights } from '@/lib/insightEngine'
 import { PageHeader } from '@/components/PageHeader'
 
+import { ChartCard } from './ChartCard'
+import { CompletionRings } from './CompletionRings'
 import { ConsistencyChart } from './ConsistencyChart'
+import { InsightCallout } from './InsightCallout'
 import { LifestyleCorrelations } from './LifestyleCorrelations'
+import { MomentumGrid } from './MomentumGrid'
 import { PRList } from './PRList'
 import { RunningProgressChart } from './RunningProgressChart'
 import { SessionList } from './SessionList'
-import { StatsSummary } from './StatsSummary'
 import { VolumeChart } from './VolumeChart'
 import { WeightProgressionChart } from './WeightProgressionChart'
 
@@ -82,46 +87,11 @@ interface Exercise {
   name: string
 }
 
+interface CategoryCompletion {
+  [key: string]: { completed: number; target: number }
+}
+
 type Period = 7 | 30 | 90
-
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className={`h-4 w-4 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={2}
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-    </svg>
-  )
-}
-
-function Section({
-  title,
-  open,
-  onToggle,
-  children,
-}: {
-  title: string
-  open: boolean
-  onToggle: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <div className="mb-5">
-      <button
-        onClick={onToggle}
-        className="mb-3 flex w-full items-center gap-2"
-      >
-        <ChevronIcon open={open} />
-        <span className="text-display-sm text-gold">{title}</span>
-      </button>
-      {open && children}
-    </div>
-  )
-}
 
 export function HistoryPage() {
   const [period, setPeriod] = useState<Period>(30)
@@ -134,20 +104,8 @@ export function HistoryPage() {
   const [volumeData, setVolumeData] = useState<VolumePoint[]>([])
   const [prs, setPrs] = useState<PR[]>([])
   const [exercises, setExercises] = useState<Exercise[]>([])
+  const [categoryCompletion, setCategoryCompletion] = useState<CategoryCompletion | null>(null)
   const [loading, setLoading] = useState(true)
-
-  const [openSections, setOpenSections] = useState<Set<string>>(
-    new Set(['consistency', 'weight', 'volume', 'running', 'prs', 'lifestyle', 'sessions'])
-  )
-
-  function toggleSection(key: string) {
-    setOpenSections((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
 
   useEffect(() => {
     async function load() {
@@ -163,6 +121,7 @@ export function HistoryPage() {
           volumeRes,
           prsData,
           exercisesData,
+          categoryData,
         ] = await Promise.all([
           apiFetch<DashboardData>('/api/history/dashboard'),
           apiFetch<{ dataPoints: CorrelationDataPoint[] }>(`/api/history/correlations?days=${period}`),
@@ -172,6 +131,7 @@ export function HistoryPage() {
           apiFetch<{ dataPoints: VolumePoint[] }>(`/api/history/volume-trends?days=${period}`),
           apiFetch<{ prs: PR[] }>('/api/history/prs'),
           apiFetch<Exercise[]>('/api/exercises'),
+          apiFetch<CategoryCompletion>('/api/history/category-completion'),
         ])
         setDashboard(dashboardData)
         setCorrelations(correlationData.dataPoints)
@@ -183,6 +143,7 @@ export function HistoryPage() {
         setPrs(prsData.prs)
         const prExIds = new Set(prsData.prs.map(p => p.exerciseId))
         setExercises(exercisesData.filter(e => prExIds.has(e.id)))
+        setCategoryCompletion(categoryData)
       } catch (e) {
         console.error('Failed to load history:', e)
       } finally {
@@ -192,6 +153,28 @@ export function HistoryPage() {
     load()
   }, [period])
 
+  // Generate insights from all loaded data
+  const insights = useMemo(() => {
+    if (!dashboard) return []
+    return generateInsights({
+      dashboard,
+      consistency,
+      prs,
+      correlations,
+      runSummary,
+      categoryCompletion,
+    })
+  }, [dashboard, consistency, prs, correlations, runSummary, categoryCompletion])
+
+  // Sparkline data derivations
+  const consistencySparkline = consistency
+    ? consistency.weeks.map(w => w.sessionsCompleted)
+    : []
+
+  const volumeSparkline = volumeData.map(v => kgToLbsDisplay(v.totalVolume))
+
+  const runSparkline = runData.map(r => r.paceSecKm)
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -199,6 +182,31 @@ export function HistoryPage() {
       </div>
     )
   }
+
+  // Headline stats for chart cards
+  const streakHeadline = consistency
+    ? `${consistency.currentStreak}d streak`
+    : undefined
+
+  const volumeHeadline = dashboard && dashboard.thisWeek.volume > 0
+    ? `${Math.round(dashboard.thisWeek.volume).toLocaleString()} lb`
+    : undefined
+
+  const runHeadline = runSummary?.avgPaceSecKm
+    ? `${paceToMinSec(runSummary.avgPaceSecKm)}/km avg`
+    : undefined
+
+  const prHeadline = prs.length > 0
+    ? `${prs.length} mark${prs.length === 1 ? '' : 's'}`
+    : undefined
+
+  const sleepAvg = correlations.length > 0
+    ? correlations.filter(c => c.sleepHours != null).reduce((s, c) => s + c.sleepHours!, 0) /
+      (correlations.filter(c => c.sleepHours != null).length || 1)
+    : null
+  const lifestyleHeadline = sleepAvg
+    ? `${sleepAvg.toFixed(1)}h avg sleep`
+    : undefined
 
   return (
     <div className="pb-4">
@@ -220,49 +228,87 @@ export function HistoryPage() {
         </div>
       </PageHeader>
 
-      <StatsSummary dashboard={dashboard} />
+      {/* ZONE A: Hero */}
+      <CompletionRings data={categoryCompletion} />
+      <InsightCallout insights={insights} />
 
-      {consistency && (
-        <Section title="Consistency" open={openSections.has('consistency')} onToggle={() => toggleSection('consistency')}>
-          <ConsistencyChart
-            weeks={consistency.weeks}
-            currentStreak={consistency.currentStreak}
-            longestStreak={consistency.longestStreak}
-          />
-        </Section>
+      {/* ZONE B: Momentum */}
+      {dashboard && (
+        <MomentumGrid
+          thisWeek={dashboard.thisWeek}
+          lastWeek={dashboard.lastWeek}
+        />
       )}
 
-      {exercises.length > 0 && (
-        <Section title="Weight Progression" open={openSections.has('weight')} onToggle={() => toggleSection('weight')}>
-          <WeightProgressionChart exercises={exercises} days={period} />
-        </Section>
-      )}
+      {/* ZONE C: Detail Cards */}
+      <div className="space-y-3 px-4">
+        {consistency && (
+          <ChartCard
+            title="Consistency"
+            headline={streakHeadline}
+            sparklineData={consistencySparkline}
+            sparklineColor="#E8C860"
+          >
+            <ConsistencyChart
+              weeks={consistency.weeks}
+              currentStreak={consistency.currentStreak}
+              longestStreak={consistency.longestStreak}
+            />
+          </ChartCard>
+        )}
 
-      {volumeData.length > 0 && (
-        <Section title="Volume" open={openSections.has('volume')} onToggle={() => toggleSection('volume')}>
-          <VolumeChart data={volumeData} />
-        </Section>
-      )}
+        {exercises.length > 0 && (
+          <ChartCard
+            title="Iron Log"
+            headline={dashboard?.topLift ? `${dashboard.topLift.name} ${dashboard.topLift.weightLbs} lb` : undefined}
+          >
+            <WeightProgressionChart exercises={exercises} days={period} />
+          </ChartCard>
+        )}
 
-      {runSummary && runSummary.totalRuns > 0 && (
-        <Section title="Running" open={openSections.has('running')} onToggle={() => toggleSection('running')}>
-          <RunningProgressChart data={runData} summary={runSummary} />
-        </Section>
-      )}
+        {volumeData.length > 0 && (
+          <ChartCard
+            title="Volume"
+            headline={volumeHeadline}
+            sparklineData={volumeSparkline}
+            sparklineColor="#4ACAAA"
+          >
+            <VolumeChart data={volumeData} />
+          </ChartCard>
+        )}
 
-      {prs.length > 0 && (
-        <Section title="Personal Records" open={openSections.has('prs')} onToggle={() => toggleSection('prs')}>
-          <PRList prs={prs} />
-        </Section>
-      )}
+        {runSummary && runSummary.totalRuns > 0 && (
+          <ChartCard
+            title="Running"
+            headline={runHeadline}
+            sparklineData={runSparkline}
+            sparklineColor="#4ACAAA"
+          >
+            <RunningProgressChart data={runData} summary={runSummary} />
+          </ChartCard>
+        )}
 
-      <Section title="Lifestyle" open={openSections.has('lifestyle')} onToggle={() => toggleSection('lifestyle')}>
-        <LifestyleCorrelations data={correlations} />
-      </Section>
+        <ChartCard
+          title="Body & Mind"
+          headline={lifestyleHeadline}
+          sparklineColor="#4ABA8A"
+        >
+          <LifestyleCorrelations data={correlations} />
+        </ChartCard>
 
-      <Section title="Recent Sessions" open={openSections.has('sessions')} onToggle={() => toggleSection('sessions')}>
-        <SessionList sessions={sessions} />
-      </Section>
+        {prs.length > 0 && (
+          <ChartCard
+            title="Marks Earned"
+            headline={prHeadline}
+          >
+            <PRList prs={prs} />
+          </ChartCard>
+        )}
+
+        <ChartCard title="Recent Sessions">
+          <SessionList sessions={sessions} />
+        </ChartCard>
+      </div>
     </div>
   )
 }
