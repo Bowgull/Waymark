@@ -313,7 +313,7 @@ export function LibraryPage() {
               <span className="text-label text-muted-foreground">
                 {CATEGORY_LABELS[cat] ?? cat}
               </span>
-              <Badge variant="muted" className="ml-1 text-[10px]">
+              <Badge variant="muted" className="ml-1 text-[12px]">
                 {items.length}
               </Badge>
             </button>
@@ -337,7 +337,7 @@ export function LibraryPage() {
                           {ex.name}
                         </span>
                         {ex.equipment && (
-                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                          <span className="shrink-0 text-[12px] text-muted-foreground">
                             {ex.equipment}
                           </span>
                         )}
@@ -346,7 +346,7 @@ export function LibraryPage() {
                       {muscles.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
                           {muscles.map((m) => (
-                            <Badge key={m} variant="gold" className="text-[10px] py-0">
+                            <Badge key={m} variant="gold" className="text-[12px] py-0">
                               {m}
                             </Badge>
                           ))}
@@ -383,7 +383,7 @@ export function LibraryPage() {
             style={{ mixBlendMode: 'screen' }}
           />
           <span className="text-label text-muted-foreground">Bagwork</span>
-          <Badge variant="muted" className="ml-1 text-[10px]">
+          <Badge variant="muted" className="ml-1 text-[12px]">
             {comboList.filter(c => c.unlocked).length}/{comboList.length}
           </Badge>
         </button>
@@ -407,7 +407,7 @@ export function LibraryPage() {
                     <span className="font-cinzel text-sm tracking-wider text-gold/70">
                       {TIER_LABELS[tier]}
                     </span>
-                    <Badge variant="muted" className="ml-1 text-[10px]">
+                    <Badge variant="muted" className="ml-1 text-[12px]">
                       {unlockedCount > 0 ? `${masteredCount}/${unlockedCount}` : <LockIcon size={12} />}
                     </Badge>
                   </button>
@@ -464,7 +464,7 @@ export function LibraryPage() {
                                 {techniques.length > 0 && (
                                   <div className="flex gap-1">
                                     {techniques.map(t => (
-                                      <Badge key={t} variant="muted" className="text-[9px] py-0">{t}</Badge>
+                                      <Badge key={t} variant="muted" className="text-[13px] py-0">{t}</Badge>
                                     ))}
                                   </div>
                                 )}
@@ -474,7 +474,7 @@ export function LibraryPage() {
                             {isExpanded && c.unlocked === 1 && (
                               <div className="mt-3 border-l-2 border-gold/30 pl-3 text-xs text-muted-foreground space-y-1">
                                 {c.formTips && (
-                                  <p className="font-cinzel text-[11px] leading-snug text-teal/80 mb-2">{c.formTips}</p>
+                                  <p className="font-cinzel text-[13px] leading-snug text-teal/80 mb-2">{c.formTips}</p>
                                 )}
                                 <p>Mastery: {c.masteryScore}/15</p>
                                 <p>Sharp ratings: {c.timesSharp}</p>
@@ -499,14 +499,14 @@ export function LibraryPage() {
           <div className="flex items-center gap-3 px-1 py-2">
             <img src={bagworkPng} alt="" className="h-8 w-8 object-contain opacity-50" style={{ mixBlendMode: 'screen' }} />
             <span className="text-label text-muted-foreground">Bagwork</span>
-            <Badge variant="muted" className="ml-1 text-[10px]">{filteredCombos.length}</Badge>
+            <Badge variant="muted" className="ml-1 text-[12px]">{filteredCombos.length}</Badge>
           </div>
           <div className="space-y-1.5 pl-1">
             {filteredCombos.map(c => (
               <div key={c.id} className="rounded-md border border-border bg-card p-3">
                 <span className="text-sm text-foreground">{c.text}</span>
                 <div className="mt-1 flex gap-1">
-                  <Badge variant="gold" className="text-[9px] py-0">{TIER_LABELS[c.tier]}</Badge>
+                  <Badge variant="gold" className="text-[13px] py-0">{TIER_LABELS[c.tier]}</Badge>
                   {(c.isFavourite === 1 || c.masteryScore >= 9) && <span className="text-gold"><ForgeIcon size={12} mastered={c.masteryScore >= 9} /></span>}
                 </div>
               </div>
@@ -521,7 +521,7 @@ export function LibraryPage() {
           <div className="flex items-center gap-3 px-1 py-2">
             <img src={waybookPng} alt="" className="h-8 w-8 object-contain opacity-50" style={{ mixBlendMode: 'screen' }} />
             <span className="text-label text-gold/70">Waybook</span>
-            <Badge variant="muted" className="ml-1 text-[10px]">
+            <Badge variant="muted" className="ml-1 text-[12px]">
               {filteredJournal.length}
             </Badge>
           </div>
@@ -534,7 +534,7 @@ export function LibraryPage() {
                   </p>
                   <Badge
                     variant={entry.type === 'wellness' ? 'muted' : 'gold'}
-                    className="text-[10px] py-0"
+                    className="text-[12px] py-0"
                   >
                     {entry.type === 'wellness' ? 'body' : entry.type}
                   </Badge>
@@ -577,7 +577,7 @@ export function LibraryPage() {
                 >
                   <ChevronIcon open={reflectionsOpen} />
                   <span className="text-label text-muted-foreground">Reflections</span>
-                  <Badge variant="muted" className="ml-1 text-[10px]">
+                  <Badge variant="muted" className="ml-1 text-[12px]">
                     {reflections.length}
                   </Badge>
                 </button>
@@ -592,7 +592,7 @@ export function LibraryPage() {
                       >
                         <ChevronIcon open={isOpen} />
                         <span className="text-display-sm text-gold">{group.key}</span>
-                        <Badge variant="muted" className="ml-1 text-[10px]">
+                        <Badge variant="muted" className="ml-1 text-[12px]">
                           {group.entries.length}
                         </Badge>
                       </button>
@@ -606,7 +606,7 @@ export function LibraryPage() {
                                   {formatEpochDay(entry.date)}
                                 </p>
                                 {entry.type === 'weekly' && (
-                                  <Badge variant="gold" className="text-[10px] py-0">weekly</Badge>
+                                  <Badge variant="gold" className="text-[12px] py-0">weekly</Badge>
                                 )}
                               </div>
                               <JournalEntry content={entry.content} />
@@ -632,7 +632,7 @@ export function LibraryPage() {
                 >
                   <ChevronIcon open={bodyLogOpen} />
                   <span className="text-label text-muted-foreground">Body Log</span>
-                  <Badge variant="muted" className="ml-1 text-[10px]">
+                  <Badge variant="muted" className="ml-1 text-[12px]">
                     {bodyLog.length}
                   </Badge>
                 </button>
@@ -647,7 +647,7 @@ export function LibraryPage() {
                       >
                         <ChevronIcon open={isOpen} />
                         <span className="text-display-sm text-gold">{group.key}</span>
-                        <Badge variant="muted" className="ml-1 text-[10px]">
+                        <Badge variant="muted" className="ml-1 text-[12px]">
                           {group.entries.length}
                         </Badge>
                       </button>

@@ -149,7 +149,7 @@ function SkippedIndicator({ sessionType, label }: { sessionType: string; label: 
       {expanded && (
         <div className="flex items-center gap-1 animate-fade-in">
           <img src={mark.png} alt="" className="h-3.5 w-3.5 object-contain opacity-40 saturate-0" />
-          <span className="text-[10px] text-muted-foreground/60">{label}</span>
+          <span className="text-[12px] text-muted-foreground/60">{label}</span>
         </div>
       )}
       <button
@@ -190,13 +190,13 @@ function StatusIcon({ status, sessionType, label }: { status: string; sessionTyp
 function ProgressIcon({ type }: { type: 'up' | 'new-variant' }) {
   if (type === 'up') {
     return (
-      <span className="inline-flex items-center gap-0.5 rounded-full bg-forest/15 px-1.5 py-px text-[9px] text-forest-light" title="Intensity increase">
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-forest/15 px-1.5 py-px text-[13px] text-forest-light" title="Intensity increase">
         <svg className="h-2.5 w-2.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 12V4M5 7l3-3 3 3" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center rounded-full bg-gold/10 px-1.5 py-px text-[9px] text-gold/70" title="New variant">
+    <span className="inline-flex items-center rounded-full bg-gold/10 px-1.5 py-px text-[13px] text-gold/70" title="New variant">
       new
     </span>
   )
@@ -274,7 +274,7 @@ function SessionRow({
         }}
       >
         <div className="flex items-center gap-2">
-          <span className={`inline-flex items-center rounded-sm border px-1.5 py-px font-[Cinzel] text-[10px] tracking-[0.2em] ${
+          <span className={`inline-flex items-center rounded-sm border px-1.5 py-px font-[Cinzel] text-[12px] tracking-[0.2em] ${
             session.timeSlot === 'am'
               ? 'border-gold/25 text-gold/80'
               : 'border-teal/25 text-teal/80'
@@ -292,14 +292,14 @@ function SessionRow({
             {label}
           </span>
           {session.adjustmentId && (
-            <span className="text-[9px] text-gold/50">makeup</span>
+            <span className="text-[13px] text-gold/50">makeup</span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {weekStatus === 'draft' && session.status === 'planned' && (
             <button
               onClick={(e) => { e.stopPropagation(); onSkip() }}
-              className="px-2 py-0.5 text-[10px] font-medium text-muted-foreground active:text-red-400"
+              className="px-2 py-0.5 text-[12px] font-medium text-muted-foreground active:text-red-400"
             >
               Skip
             </button>
@@ -312,17 +312,17 @@ function SessionRow({
       {overview && (
         <div className="ml-[4.5rem] mb-1.5 animate-fade-in">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="text-[11px] text-muted-foreground/60 leading-tight">{overview.headline}</p>
+            <p className="text-[13px] text-muted-foreground/60 leading-tight">{overview.headline}</p>
             {overview.progressIcon && <ProgressIcon type={overview.progressIcon} />}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             {overview.intensityBadge && (
-              <span className="rounded-sm border border-gold/20 bg-gold/5 px-1.5 py-px font-[Cinzel] text-[9px] tracking-wider text-gold/60">
+              <span className="rounded-sm border border-gold/20 bg-gold/5 px-1.5 py-px font-[Cinzel] text-[13px] tracking-wider text-gold/60">
                 {overview.intensityBadge}
               </span>
             )}
             {overview.detail && (
-              <span className="text-[10px] text-muted-foreground/40">{overview.detail}</span>
+              <span className="text-[12px] text-muted-foreground/40">{overview.detail}</span>
             )}
           </div>
         </div>
@@ -333,13 +333,13 @@ function SessionRow({
         <div className="absolute inset-y-0 right-0 flex items-center gap-1 pr-1 animate-slide-in-right">
           <button
             onClick={(e) => { e.stopPropagation(); onReplace() }}
-            className="rounded-md bg-gold/15 px-3 py-1 text-[11px] font-medium text-gold active:bg-gold/25"
+            className="rounded-md bg-gold/15 px-3 py-1 text-[13px] font-medium text-gold active:bg-gold/25"
           >
             Replace
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onSkip() }}
-            className="rounded-md bg-red-500/10 px-3 py-1 text-[11px] font-medium text-red-400 active:bg-red-500/20"
+            className="rounded-md bg-red-500/10 px-3 py-1 text-[13px] font-medium text-red-400 active:bg-red-500/20"
           >
             Skip
           </button>
@@ -497,7 +497,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
                   return (
                     <span
                       key={key}
-                      className={`rounded-full px-2.5 py-0.5 text-[10px] border ${
+                      className={`rounded-full px-2.5 py-0.5 text-[12px] border ${
                         isBehind
                           ? 'border-amber-500/30 bg-amber-500/5 text-amber-400/80'
                           : 'border-forest/30 bg-forest/5 text-forest-light/80'
@@ -511,7 +511,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
           )}
 
           {analysis?.wellness && (
-            <div className="flex gap-3 text-[10px] text-muted-foreground/70">
+            <div className="flex gap-3 text-[12px] text-muted-foreground/70">
               {analysis.wellness.avgSoreness != null && (
                 <span>Soreness {analysis.wellness.avgSoreness.toFixed(1)}/5 ({analysis.wellness.sorenessTrajectory})</span>
               )}
@@ -523,20 +523,20 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
 
           {proposedAdj.length > 0 && (
             <div className="space-y-2 pt-1">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">Proposed Adjustments</p>
+              <p className="text-[12px] font-medium uppercase tracking-wider text-muted-foreground/50">Proposed Adjustments</p>
               {proposedAdj.map(adj => (
                 <div key={adj.id} className="flex items-start gap-2 rounded-md border border-gold/15 bg-gold/5 px-3 py-2">
                   <span className="flex-1 text-xs text-gold/80">{adj.reason}</span>
                   <div className="flex gap-1">
                     <button
                       onClick={() => handleAcceptAdjustment(adj.id)}
-                      className="rounded px-2 py-0.5 text-[10px] font-medium bg-gold/20 text-gold active:bg-gold/30"
+                      className="rounded px-2 py-0.5 text-[12px] font-medium bg-gold/20 text-gold active:bg-gold/30"
                     >
                       Accept
                     </button>
                     <button
                       onClick={() => handleRejectAdjustment(adj.id)}
-                      className="rounded px-2 py-0.5 text-[10px] text-muted-foreground active:text-red-400"
+                      className="rounded px-2 py-0.5 text-[12px] text-muted-foreground active:text-red-400"
                     >
                       Dismiss
                     </button>
