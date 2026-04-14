@@ -292,7 +292,7 @@
   .text-label {
     font-family: var(--font-body);
     font-weight: 600;
-    font-size: 0.625rem;
+    font-size: 0.75rem;
     letter-spacing: 0.15em;
     text-transform: uppercase;
     line-height: 1.4;
