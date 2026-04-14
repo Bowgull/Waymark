@@ -242,7 +242,7 @@ export function TodayPage() {
                 .catch(() => setPickerSuggestions(null))
             }}
             aria-label="Add session"
-            className="mx-auto mt-4 flex items-center gap-2 font-cinzel text-[11px] uppercase tracking-widest text-gold/40 active:text-gold/70 transition-colors"
+            className="mx-auto mt-4 flex items-center gap-2 font-cinzel text-[13px] uppercase tracking-widest text-gold/40 active:text-gold/70 transition-colors"
           >
             <span className="text-gold/25">+</span>
             Add Session

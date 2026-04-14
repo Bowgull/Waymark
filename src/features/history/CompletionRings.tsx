@@ -180,7 +180,7 @@ export function CompletionRings({ data }: CompletionRingsProps) {
           return (
             <div key={key} className="flex items-center gap-1.5 sm:gap-2">
               <Icon color={cat.color} />
-              <span className="text-[10px] sm:text-label uppercase tracking-wider text-muted-foreground">
+              <span className="text-[12px] sm:text-label uppercase tracking-wider text-muted-foreground">
                 {cat.label}
               </span>
             </div>
