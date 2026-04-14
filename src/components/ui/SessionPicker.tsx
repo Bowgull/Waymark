@@ -87,7 +87,7 @@ function SuggestedPicker({ baseOptions, suggestions, onSelect, onClose }: {
       <div className="flex flex-col gap-0.5">
         {suggested.length > 0 && (
           <>
-            <p className="px-3 pb-1 font-cinzel text-[10px] font-medium uppercase tracking-[0.2em] text-gold/40">Suggested</p>
+            <p className="px-3 pb-1 font-cinzel text-[12px] font-medium uppercase tracking-[0.2em] text-gold/40">Suggested</p>
             {suggested.map((opt, i) => (
               <FlexibleSessionRow
                 key={`s-${i}`}
@@ -169,11 +169,11 @@ function FlexibleSessionRow({ opt, onSelect, reason, accent }: {
       <img src={mark.png} alt="" className="h-4 w-4 object-contain opacity-40" />
       <span className="flex-1 min-w-0">
         <span className="block text-sm text-foreground">{opt.label}</span>
-        {reason && <span className="block text-[11px] text-muted-foreground/50 leading-tight">{reason}</span>}
+        {reason && <span className="block text-[13px] text-muted-foreground/50 leading-tight">{reason}</span>}
       </span>
       {opt.flexibleTimeSlot ? (
         <span
-          className="flex rounded-full border border-border/50 text-[9px] uppercase tracking-wider"
+          className="flex rounded-full border border-border/50 text-[11px] uppercase tracking-wider"
           onClick={(e) => e.stopPropagation()}
         >
           <span
@@ -186,7 +186,7 @@ function FlexibleSessionRow({ opt, onSelect, reason, accent }: {
           >PM</span>
         </span>
       ) : (
-        <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">{opt.timeSlot}</span>
+        <span className="text-[11px] text-muted-foreground/40 uppercase tracking-wider">{opt.timeSlot}</span>
       )}
     </button>
   )
