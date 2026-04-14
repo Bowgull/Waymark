@@ -70,7 +70,7 @@ export function SlidingGauge({
               />
               <span
                 className={cn(
-                  'text-[10px] leading-tight transition-colors',
+                  'text-[12px] leading-tight transition-colors',
                   isSelected ? 'text-gold font-medium' : 'text-muted-foreground'
                 )}
               >
