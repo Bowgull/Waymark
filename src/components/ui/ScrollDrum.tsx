@@ -11,7 +11,7 @@ interface ScrollDrumProps {
   className?: string
 }
 
-const ITEM_HEIGHT = 40
+const ITEM_HEIGHT = 44
 const VISIBLE_ITEMS = 5
 
 export function ScrollDrum({

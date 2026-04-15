@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { ApiHealthDevBadge } from '../components/dev/ApiHealthDevBadge'
+import { OfflineBanner } from '../components/ui/OfflineBanner'
 import { HistoryIcon, LibraryIcon, ProgramIcon, SettingsIcon, TodayIcon } from '../components/icons/NavIcons'
 
 function NavTab({ to, label, icon, end }: { to: string; label: string; icon: React.ReactNode; end?: boolean }) {
@@ -29,6 +30,7 @@ function NavTab({ to, label, icon, end }: { to: string; label: string; icon: Rea
 export function ShellLayout() {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <OfflineBanner />
       <main className="min-h-0 flex-1 overflow-auto px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-4">
         <Outlet />
       </main>

@@ -37,6 +37,8 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
         <img
           src={mark.png}
           alt={mark.label}
+          width={64}
+          height={64}
           className="mb-4 h-16 w-16 object-contain animate-glow-pulse"
           draggable={false}
         />

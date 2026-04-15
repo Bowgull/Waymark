@@ -83,7 +83,7 @@ export function WellnessPromptCard({ onSubmit, isLogged }: WellnessPromptCardPro
           <p className="text-display text-gold">Morning Report</p>
           <button
             onClick={() => { setCollapsed(false); setShowNotes(true) }}
-            className="flex items-center gap-1.5 rounded-full border border-gold/20 px-3 py-1.5 text-xs text-gold/60 active:bg-gold/10"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-gold/20 px-3 py-1.5 text-xs text-gold/60 active:bg-gold/10"
           >
             <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M5 12h14" />
@@ -185,7 +185,7 @@ export function WellnessPromptCard({ onSubmit, isLogged }: WellnessPromptCardPro
       ) : (
         <button
           onClick={() => setShowNotes(true)}
-          className="mt-3 mb-1 flex items-center gap-1.5 rounded-full border border-gold/15 px-3 py-1.5 text-[13px] text-gold/40 active:bg-gold/10 transition-colors"
+          className="mt-3 mb-1 flex min-h-[44px] items-center gap-1.5 rounded-full border border-gold/15 px-3 py-1.5 text-[13px] text-gold/40 active:bg-gold/10 transition-colors"
         >
           <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 5v14M5 12h14" />

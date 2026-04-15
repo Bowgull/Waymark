@@ -186,7 +186,7 @@ export function BagWorkRoundView({
                   )}
                 </span>
                 {techniques.length > 0 && (
-                  <p className="mt-0.5 text-[12px] italic text-muted-foreground">
+                  <p className="mt-0.5 text-[13px] italic text-muted-foreground">
                     {techniques.join(' \u00b7 ')}
                   </p>
                 )}

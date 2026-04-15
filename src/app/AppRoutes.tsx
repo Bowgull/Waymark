@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { ShellLayout } from './ShellLayout'
 import { HistoryPage } from '../features/history/HistoryPage'
 import { LibraryPage } from '../features/library/LibraryPage'
@@ -34,15 +35,15 @@ export function AppRoutes() {
   return (
     <Routes>
       {/* Full-screen workout route — no shell/nav */}
-      <Route path="/session/:id" element={<WorkoutPage />} />
+      <Route path="/session/:id" element={<ErrorBoundary level="session"><WorkoutPage /></ErrorBoundary>} />
 
       <Route element={<ShellLayout />}>
         <Route path="/" element={<Navigate to="/today" replace />} />
-        <Route path="/today" element={<TodayPage />} />
-        <Route path="/program" element={<ProgramPage />} />
-        <Route path="/library" element={<LibraryPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/today" element={<ErrorBoundary level="page"><TodayPage /></ErrorBoundary>} />
+        <Route path="/program" element={<ErrorBoundary level="page"><ProgramPage /></ErrorBoundary>} />
+        <Route path="/library" element={<ErrorBoundary level="page"><LibraryPage /></ErrorBoundary>} />
+        <Route path="/history" element={<ErrorBoundary level="page"><HistoryPage /></ErrorBoundary>} />
+        <Route path="/settings" element={<ErrorBoundary level="page"><SettingsPage /></ErrorBoundary>} />
         <Route path="*" element={<Navigate to="/today" replace />} />
       </Route>
     </Routes>

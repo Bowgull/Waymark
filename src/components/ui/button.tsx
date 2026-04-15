@@ -16,9 +16,9 @@ const variants = {
 
 const sizes = {
   default: 'min-h-[52px] px-6 py-3 text-sm',
-  sm: 'min-h-[36px] px-3 py-1.5 text-xs',
+  sm: 'min-h-[44px] px-3 py-2 text-xs',
   lg: 'min-h-[60px] px-8 py-4 text-base',
-  icon: 'h-10 w-10',
+  icon: 'h-11 w-11',
 }
 
 export function Button({

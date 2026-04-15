@@ -5,6 +5,7 @@ import { cors } from 'hono/cors'
 import { createDB } from '../db/client'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
+import { adHocSessionSchema, completeSessionSchema, dailyLogSchema } from '../lib/validators/schemas'
 import { POSTURE_TEMPLATE } from '../lib/postureTemplate'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import type { TemplateSession } from '../lib/weeklyTemplate'
@@ -20,6 +21,15 @@ type Bindings = {
 const app = new Hono<{ Bindings: Bindings }>()
 
 app.use('/api/*', cors())
+
+app.onError((err, c) => {
+  console.error('[Waymark API Error]', err.message, err.stack)
+  const status = 'status' in err && typeof err.status === 'number' ? err.status : 500
+  return c.json(
+    { error: status === 500 ? 'Internal server error' : err.message, code: status },
+    status as any,
+  )
+})
 
 type DrizzleDB = ReturnType<typeof createDB>
 
@@ -382,8 +392,10 @@ app.get('/api/sessions/suggestions', async (c) => {
 // ─── Ad-hoc session insertion ────────────────────────────────
 
 app.post('/api/sessions/insert-ad-hoc', async (c) => {
-  const body = await c.req.json<{ date: string; type: string; timeSlot: 'am' | 'pm'; runCategory?: string }>()
-  if (!body.date || !body.type || !body.timeSlot) return c.json({ error: 'date, type, timeSlot required' }, 400)
+  const raw = await c.req.json()
+  const parsed = adHocSessionSchema.safeParse(raw)
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
+  const body = parsed.data
 
   const epochDay = isoToEpochDay(body.date)
   const nowSec = Math.floor(Date.now() / 1000)
@@ -699,11 +711,10 @@ app.patch('/api/strength-sets/:id', async (c) => {
 
 app.post('/api/sessions/:id/complete', async (c) => {
   const sessionId = c.req.param('id')
-  const body = await c.req.json<{
-    rpe?: number
-    difficulty?: number
-    notes?: string
-  }>()
+  const raw = await c.req.json()
+  const parsed = completeSessionSchema.safeParse(raw)
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
+  const body = parsed.data
 
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
@@ -1324,15 +1335,10 @@ app.get('/api/daily-logs/today', async (c) => {
 })
 
 app.post('/api/daily-logs', async (c) => {
-  const body = await c.req.json<{
-    date: string
-    sleepHours?: number
-    weedGrams?: number
-    alcoholScale?: number
-    soreness?: number
-    notes?: string
-  }>()
-  if (!body.date) return c.json({ error: 'date required' }, 400)
+  const raw = await c.req.json()
+  const parsed = dailyLogSchema.safeParse(raw)
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
+  const body = parsed.data
 
   const epochDay = isoToEpochDay(body.date)
   const nowSec = Math.floor(Date.now() / 1000)
@@ -2409,34 +2415,29 @@ app.get('/api/history/consistency', async (c) => {
 // ─── History: Category Completion (for ring display) ─────────
 
 app.get('/api/history/category-completion', async (c) => {
+  const days = parseInt(c.req.query('days') ?? '7')
   const db = createDB(c.env)
-  const nowSec = Math.floor(Date.now() / 1000)
-  const todayEpochDay = Math.floor(nowSec / 86400)
+  const nowEpochDay = Math.floor(Date.now() / 1000 / 86400)
+  const cutoffDay = nowEpochDay - days
 
-  // Find Monday of current week
-  const today = new Date()
-  const dayOfWeek = today.getDay()
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-  const mondayEpochDay = todayEpochDay + mondayOffset
-  const sundayEpochDay = mondayEpochDay + 7
-
-  const weekSessions = await db.select().from(sessions)
-  const thisWeek = weekSessions.filter(s =>
-    s.scheduledDate != null && s.scheduledDate >= mondayEpochDay && s.scheduledDate < sundayEpochDay
+  const allSessions = await db.select().from(sessions)
+  const periodSessions = allSessions.filter(s =>
+    s.scheduledDate != null && s.scheduledDate >= cutoffDay && s.scheduledDate <= nowEpochDay
   )
 
-  const categories: Record<string, { types: string[]; target: number }> = {
+  const weeks = Math.max(1, Math.round(days / 7))
+  const weeklyTargets: Record<string, { types: string[]; target: number }> = {
     strength: { types: ['strength'], target: 2 },
     conditioning: { types: ['foundation_run', 'running', 'mt_class', 'bag_work', 'skip_rope'], target: 8 },
     recovery: { types: ['active_recovery', 'posture_corrective'], target: 2 },
   }
 
   const result: Record<string, { completed: number; target: number }> = {}
-  for (const [key, cat] of Object.entries(categories)) {
-    const completed = thisWeek.filter(
+  for (const [key, cat] of Object.entries(weeklyTargets)) {
+    const completed = periodSessions.filter(
       s => cat.types.includes(s.type) && s.status === 'completed'
     ).length
-    result[key] = { completed, target: cat.target }
+    result[key] = { completed, target: cat.target * weeks }
   }
 
   return c.json(result)

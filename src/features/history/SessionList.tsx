@@ -60,7 +60,7 @@ export function SessionList({ sessions }: SessionListProps) {
             <div className="flex items-center gap-2">
               {s.rpe != null && <RpeBadge rpe={s.rpe} />}
               {s.status === 'skipped' && (
-                <span className="bg-secondary px-2 py-0.5 text-[12px] text-muted-foreground">Passed</span>
+                <span className="bg-secondary px-2 py-0.5 text-[13px] text-muted-foreground">Passed</span>
               )}
             </div>
           </div>

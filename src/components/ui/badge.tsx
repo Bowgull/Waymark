@@ -23,7 +23,7 @@ export function Badge({ className, variant = 'default', ...props }: BadgeProps) 
       className={cn(
         'inline-flex items-center font-medium',
         isInscription
-          ? 'rounded-sm px-1.5 py-px text-[12px] font-[Cinzel] tracking-[0.2em] uppercase'
+          ? 'rounded-sm px-1.5 py-px text-[13px] font-[Cinzel] tracking-[0.2em] uppercase'
           : 'rounded-full px-2 py-0.5 text-xs',
         variants[variant],
         className
