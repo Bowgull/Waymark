@@ -22,6 +22,17 @@ const TIER_LABELS: Record<string, string> = {
   mastery: 'Mastery',
 }
 
+// Intensity-progression model: each round has a coaching intent.
+// Technical → Rhythm → Volume × 2 → Pressure → Power
+const ROUND_INTENTS = [
+  { label: 'Technical', hint: 'Sharp mechanics, controlled pace' },
+  { label: 'Rhythm', hint: 'Find your flow' },
+  { label: 'Volume', hint: 'Push the output' },
+  { label: 'Volume', hint: 'Stay consistent' },
+  { label: 'Pressure', hint: 'Controlled aggression' },
+  { label: 'Power', hint: 'Max output' },
+]
+
 interface RoundData {
   id: string
   roundNumber: number
@@ -90,6 +101,7 @@ export function BagWorkRoundView({
 
   // Determine tier of combos in this round
   const roundTier = round.combos[0]?.combo?.tier
+  const roundIntent = ROUND_INTENTS[round.roundNumber - 1] ?? null
 
   if (phase === 'rest') {
     return (
@@ -116,6 +128,11 @@ export function BagWorkRoundView({
       {roundTier && (
         <p className="text-xs font-cinzel tracking-wider text-gold/50">
           {TIER_LABELS[roundTier] ?? roundTier}
+        </p>
+      )}
+      {roundIntent && (
+        <p className="text-[11px] text-muted-foreground/50 mt-0.5">
+          {roundIntent.label} — {roundIntent.hint}
         </p>
       )}
 
