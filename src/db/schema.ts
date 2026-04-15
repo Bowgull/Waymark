@@ -5,6 +5,7 @@ import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-or
 export const trainingBlocks = sqliteTable('training_blocks', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  blockType: text('block_type').notNull().default('fighter'),
   totalWeeks: integer('total_weeks').notNull(),
   startedAt: integer('started_at'),
   endedAt: integer('ended_at'),
@@ -54,6 +55,7 @@ export const sessions = sqliteTable('sessions', {
   rpe: integer('rpe'),
   difficulty: integer('difficulty'),
   blockWeek: integer('block_week'),
+  blockType: text('block_type').notNull().default('fighter'),
   notes: text('notes'),
   adjustmentId: text('adjustment_id'),
   createdAt: integer('created_at').notNull(),

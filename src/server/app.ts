@@ -9,7 +9,7 @@ import { POSTURE_TEMPLATE } from '../lib/postureTemplate'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import type { TemplateSession } from '../lib/weeklyTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
-import { WEEKLY_TEMPLATE } from '../lib/weeklyTemplate'
+import { WEEKLY_TEMPLATE, getBlockZeroTemplate } from '../lib/weeklyTemplate'
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek, proposeReschedule } from '../lib/weekAnalysis'
 
@@ -35,7 +35,8 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const maxRows = await db.select().from(trainingMaxes)
   const tmMap = new Map(maxRows.map(m => [m.exerciseId, m.weightKg]))
   const blockWeek = session?.blockWeek ?? 1
-  const wavePct = getWeekPercentage(blockWeek)
+  const blockType = (session?.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
+  const wavePct = getWeekPercentage(blockWeek, blockType)
 
   const result = []
   for (const se of sexes.sort((a, b) => a.orderIndex - b.orderIndex)) {
@@ -607,8 +608,9 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   const dateMs = epochDay * 86400 * 1000
   const dayOfWeek = new Date(dateMs).getUTCDay()
   const blockWeek = session.blockWeek ?? 1
-  const template = getStrengthTemplate(dayOfWeek, blockWeek)
-  const weekPct = getWeekPercentage(blockWeek)
+  const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
+  const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType)
+  const weekPct = getWeekPercentage(blockWeek, blockType)
 
   // Get training maxes for weight suggestions
   const maxes = await db.select().from(trainingMaxes)
@@ -1367,7 +1369,7 @@ app.get('/api/blocks/current', async (c) => {
 })
 
 app.post('/api/blocks', async (c) => {
-  const body = await c.req.json<{ name?: string; totalWeeks?: number }>()
+  const body = await c.req.json<{ name?: string; totalWeeks?: number; blockType?: string }>()
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
 
@@ -1375,6 +1377,7 @@ app.post('/api/blocks', async (c) => {
   await db.insert(trainingBlocks).values({
     id,
     name: body.name ?? '12-Week Base Build',
+    blockType: body.blockType === 'block_zero' ? 'block_zero' : 'fighter',
     totalWeeks: body.totalWeeks ?? 12,
     startedAt: nowSec,
     status: 'active',
@@ -1383,6 +1386,48 @@ app.post('/api/blocks', async (c) => {
 
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, id))
   return c.json(block)
+})
+
+// ─── Block Zero — safe return-to-training entry point ─────────
+
+app.post('/api/blocks/block-zero', async (c) => {
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+
+  // End any currently active block
+  const activeBlocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
+  for (const active of activeBlocks) {
+    await db.update(trainingBlocks)
+      .set({ status: 'ended', endedAt: nowSec })
+      .where(eq(trainingBlocks.id, active.id))
+  }
+
+  // Create the Block Zero block
+  const id = crypto.randomUUID()
+  await db.insert(trainingBlocks).values({
+    id,
+    name: 'Block Zero',
+    blockType: 'block_zero',
+    totalWeeks: 6,
+    startedAt: nowSec,
+    status: 'active',
+    createdAt: nowSec,
+  })
+
+  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, id))
+  return c.json(block)
+})
+
+// ─── Last completed session (for return-from-break detection) ─
+
+app.get('/api/sessions/last-completed', async (c) => {
+  const db = createDB(c.env)
+  const completed = await db.select()
+    .from(sessions)
+    .where(eq(sessions.status, 'completed'))
+    .orderBy(desc(sessions.completedAt))
+    .limit(1)
+  return c.json(completed[0] ?? null)
 })
 
 app.get('/api/weeks/current', async (c) => {
@@ -1437,8 +1482,17 @@ app.post('/api/weeks/generate', async (c) => {
   const startDate = new Date(`${body.startDate}T12:00:00Z`)
   const createdSessions = []
 
+  // Determine block type for template and session stamping
+  const [blockRow] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, body.blockId))
+  const blockType = (blockRow?.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
+
   // Block week for strength sessions (use weekNumber modulo 6)
   const blockWeek = ((body.weekNumber - 1) % 6) + 1
+
+  // Pick the correct weekly template
+  const weeklyTemplate = blockType === 'block_zero'
+    ? getBlockZeroTemplate(body.weekNumber)
+    : WEEKLY_TEMPLATE
 
   // Generate sessions for 7 days (Mon=0 through Sun=6)
   for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
@@ -1447,7 +1501,7 @@ app.post('/api/weeks/generate', async (c) => {
     const dayOfWeek = date.getUTCDay()
     const epochDay = Math.floor(date.getTime() / 1000 / 86400)
 
-    const template = WEEKLY_TEMPLATE[dayOfWeek] ?? []
+    const template = weeklyTemplate[dayOfWeek] ?? []
     for (const entry of template) {
       const sessionId = crypto.randomUUID()
       const isStrength = entry.type === 'strength'
@@ -1458,6 +1512,7 @@ app.post('/api/weeks/generate', async (c) => {
         scheduledDate: epochDay,
         timeSlot: entry.timeSlot,
         blockWeek: isStrength ? blockWeek : null,
+        blockType,
         status: 'planned',
         createdAt: nowSec,
       })
@@ -1468,6 +1523,7 @@ app.post('/api/weeks/generate', async (c) => {
         scheduledDate: epochDay,
         timeSlot: entry.timeSlot,
         blockWeek: isStrength ? blockWeek : null,
+        blockType,
         status: 'planned',
         startedAt: null,
         completedAt: null,

@@ -13,6 +13,7 @@ import { WeekView } from './WeekView'
 interface Block {
   id: string
   name: string
+  blockType: string
   totalWeeks: number
   startedAt: number | null
   status: string
@@ -25,6 +26,7 @@ interface Session {
   status: string
   scheduledDate: number | null
   blockWeek?: number | null
+  completedAt?: number | null
 }
 
 interface WeekPlan {
@@ -39,6 +41,8 @@ interface WeekData {
   week: WeekPlan
   sessions: Session[]
 }
+
+type BlockZeroPrompt = 'first_launch' | 'return_from_break' | null
 
 function getMonday(weekOffset = 0): string {
   const now = new Date()
@@ -55,6 +59,8 @@ export function ProgramPage() {
   const [weekNumber, setWeekNumber] = useState(1)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const [blockZeroPrompt, setBlockZeroPrompt] = useState<BlockZeroPrompt>(null)
+  const [startingBlockZero, setStartingBlockZero] = useState(false)
 
   function getCurrentWeekNumber(b: Block): number {
     if (!b.startedAt) return 1
@@ -87,20 +93,29 @@ export function ProgramPage() {
   useEffect(() => {
     async function load() {
       try {
-        let b = await apiFetch<Block | null>('/api/blocks/current')
+        const existingBlock = await apiFetch<Block | null>('/api/blocks/current')
 
-        // Auto-create block if none exists
-        if (!b) {
-          b = await apiFetch<Block>('/api/blocks', {
-            method: 'POST',
-            body: JSON.stringify({ name: '6-Week Fighter Block', totalWeeks: 12 }),
-          })
+        if (!existingBlock) {
+          // First launch — no block has ever been created. Recommend Block Zero.
+          setBlockZeroPrompt('first_launch')
+          setBlock(null)
+          setLoading(false)
+          return
         }
 
-        setBlock(b)
-        const wn = getCurrentWeekNumber(b)
+        // Check for return-from-break: last completed session > 10 days ago
+        const lastSession = await apiFetch<Session | null>('/api/sessions/last-completed')
+        if (lastSession?.completedAt) {
+          const daysSince = (Date.now() / 1000 - lastSession.completedAt) / 86400
+          if (daysSince >= 10 && existingBlock.blockType !== 'block_zero') {
+            setBlockZeroPrompt('return_from_break')
+          }
+        }
+
+        setBlock(existingBlock)
+        const wn = getCurrentWeekNumber(existingBlock)
         setWeekNumber(wn)
-        await loadWeek(b, wn)
+        await loadWeek(existingBlock, wn)
       } catch (e) {
         console.error('Failed to load program:', e)
         setBlock(null)
@@ -110,6 +125,41 @@ export function ProgramPage() {
     }
     load()
   }, [])
+
+  async function handleStartBlockZero() {
+    setStartingBlockZero(true)
+    try {
+      const newBlock = await apiFetch<Block>('/api/blocks/block-zero', { method: 'POST' })
+      setBlock(newBlock)
+      setBlockZeroPrompt(null)
+      setWeekNumber(1)
+      const monday = getMonday(0)
+      const wd = await apiFetch<WeekData>('/api/weeks/generate', {
+        method: 'POST',
+        body: JSON.stringify({ blockId: newBlock.id, weekNumber: 1, startDate: monday }),
+      })
+      setWeekData(wd)
+    } catch (e) {
+      console.error('Failed to start Block Zero:', e)
+    } finally {
+      setStartingBlockZero(false)
+    }
+  }
+
+  async function handleContinueExisting() {
+    setBlockZeroPrompt(null)
+    // If no block yet (first launch and dismissed), create a Fighter block
+    if (!block) {
+      const newBlock = await apiFetch<Block>('/api/blocks', {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Fighter Block', totalWeeks: 12 }),
+      })
+      setBlock(newBlock)
+      const wn = getCurrentWeekNumber(newBlock)
+      setWeekNumber(wn)
+      await loadWeek(newBlock, wn)
+    }
+  }
 
   async function handleGenerateWeek() {
     if (!block) return
@@ -163,6 +213,62 @@ export function ProgramPage() {
     )
   }
 
+  // ─── Block Zero Prompt ────────────────────────────────────────
+
+  if (blockZeroPrompt) {
+    const isFirstLaunch = blockZeroPrompt === 'first_launch'
+    return (
+      <div className="space-y-4">
+        <PageBackground />
+        <Link to="/today" className="inline-block mb-1">
+          <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
+        </Link>
+        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          <div>
+            <p className="text-label text-gold mb-1">
+              {isFirstLaunch ? 'BEFORE YOU BEGIN' : 'WELCOME BACK'}
+            </p>
+            <h2 className="text-display-sm text-foreground">
+              {isFirstLaunch ? 'Start with Block Zero' : 'Time for a Reset'}
+            </h2>
+          </div>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {isFirstLaunch
+              ? 'After time away from training, jumping straight into heavy weights risks tendon injury — muscle memory returns faster than connective tissue adapts. Block Zero is a 6-week ramp-up that gets your body ready to train hard without breaking down.'
+              : "It's been a while since your last session. Tendons and ligaments detrain faster than muscle. Block Zero resets your starting weights and volume so you can build back up safely."}
+          </p>
+          <ul className="space-y-1.5">
+            {[
+              'Weeks 1–2: Foundation + light strength (40% weights). No MT class.',
+              'Weeks 3–4: MT class returns. Weights climb to 50–55%.',
+              'Weeks 5–6: Full schedule. Ready for Block 1.',
+            ].map(item => (
+              <li key={item} className="flex gap-2 text-sm text-muted-foreground">
+                <span className="text-teal mt-0.5">→</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="space-y-2 pt-1">
+            <Button
+              className="w-full"
+              onClick={handleStartBlockZero}
+              disabled={startingBlockZero}
+            >
+              {startingBlockZero ? 'Setting up...' : 'Start Block Zero'}
+            </Button>
+            <button
+              onClick={handleContinueExisting}
+              className="w-full py-2 text-sm text-muted-foreground active:text-foreground"
+            >
+              {isFirstLaunch ? 'Skip — go straight to Fighter block' : 'Continue current block'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!block) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -173,8 +279,10 @@ export function ProgramPage() {
 
   const currentWeek = getCurrentWeekNumber(block)
   const blockWeek = getBlockWeek(weekNumber)
-  const weekInfo = getWeekLabel(blockWeek)
+  const blockType = block.blockType === 'block_zero' ? 'block_zero' : 'fighter'
+  const weekInfo = getWeekLabel(blockWeek, blockType)
   const isCurrentWeek = weekNumber === currentWeek
+  const isBlockZero = block.blockType === 'block_zero'
 
   return (
     <div className="space-y-4">
@@ -184,6 +292,14 @@ export function ProgramPage() {
       <Link to="/today" className="inline-block mb-1">
         <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
       </Link>
+
+      {/* Block Zero badge */}
+      {isBlockZero && (
+        <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">
+          <p className="text-label text-teal">BLOCK ZERO — RETURN TO TRAINING</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">Building your foundation. Weights are intentionally light.</p>
+        </div>
+      )}
 
       {/* Week Navigator */}
       <div className="mb-2">
@@ -202,7 +318,7 @@ export function ProgramPage() {
             </h2>
             <p className="mt-0.5 text-sm text-gold">{weekInfo}</p>
             <p className="text-xs text-muted-foreground">
-              Block week {blockWeek} of 6
+              {isBlockZero ? `Block Zero week ${blockWeek} of 6` : `Block week ${blockWeek} of 6`}
             </p>
           </div>
           <button
@@ -217,7 +333,7 @@ export function ProgramPage() {
         {/* Block progress bar */}
         <div className="mt-3 h-1.5 rounded-full bg-border">
           <div
-            className="h-full rounded-full bg-gold transition-all"
+            className={`h-full rounded-full transition-all ${isBlockZero ? 'bg-teal' : 'bg-gold'}`}
             style={{ width: `${(weekNumber / block.totalWeeks) * 100}%` }}
           />
         </div>
@@ -253,6 +369,18 @@ export function ProgramPage() {
             } : null)
           }}
         />
+      )}
+
+      {/* Manual Block Zero reset — always available */}
+      {!isBlockZero && (
+        <div className="pt-2 pb-4">
+          <button
+            onClick={() => setBlockZeroPrompt('return_from_break')}
+            className="w-full py-2 text-xs text-muted-foreground/60 active:text-muted-foreground"
+          >
+            Reset with Block Zero
+          </button>
+        </div>
       )}
     </div>
   )

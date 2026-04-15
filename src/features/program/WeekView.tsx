@@ -17,6 +17,7 @@ interface SessionSummary {
   scheduledDate: number | null
   adjustmentId?: string | null
   blockWeek?: number | null
+  blockType?: string | null
 }
 
 interface WeekAdjustment {
@@ -52,15 +53,15 @@ interface RoutineOverview {
   progressIcon?: 'up' | 'new-variant'
 }
 
-function getRoutineOverview(type: string, dayOfWeek: number, blockWeek: number, weekNumber: number): RoutineOverview | null {
+function getRoutineOverview(type: string, dayOfWeek: number, blockWeek: number, weekNumber: number, blockType: 'fighter' | 'block_zero' = 'fighter'): RoutineOverview | null {
   switch (type) {
     case 'strength': {
-      const template = getStrengthTemplate(dayOfWeek, blockWeek)
+      const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType)
       const mainLifts = template.exercises
         .filter(e => e.section === 'main')
         .map(e => e.label.replace(' Press', '').replace(' Progression', ''))
       const coreLabel = template.id === 'strength_a' ? 'Core A' : 'Core B'
-      const intensity = getWeekLabel(blockWeek)
+      const intensity = getWeekLabel(blockWeek, blockType)
 
       // Check if intensity increased from previous week
       const prevBlockWeek = blockWeek > 1 ? blockWeek - 1 : 6
@@ -232,8 +233,9 @@ function SessionRow({
   const mark = getMarkAsset(session.type)
   const isSkippable = session.status === 'planned' || session.status === 'in_progress'
   const blockWeek = session.blockWeek ?? 1
+  const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
   const overview = showOverview && session.status !== 'skipped'
-    ? getRoutineOverview(session.type, dayOfWeek, blockWeek, weekNumber)
+    ? getRoutineOverview(session.type, dayOfWeek, blockWeek, weekNumber, blockType)
     : null
 
   function handleTouchStart() {
