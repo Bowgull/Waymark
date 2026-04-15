@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ShellLayout } from './ShellLayout'
 import { HistoryPage } from '../features/history/HistoryPage'
@@ -6,8 +7,30 @@ import { ProgramPage } from '../features/program/ProgramPage'
 import { WorkoutPage } from '../features/session/WorkoutPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { TodayPage } from '../features/today/TodayPage'
+import { initNotificationListeners, handleForegroundAlarmCheck } from '../lib/notifications'
+import { apiFetch } from '../lib/api'
 
 export function AppRoutes() {
+  useEffect(() => {
+    initNotificationListeners()
+
+    // Option C: app coming to foreground within 30 min of alarm = you're up, kill the sequence
+    async function onVisibilityChange() {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const settings = await apiFetch<{ amReminder: string | null } | null>('/api/settings')
+        if (settings?.amReminder) {
+          handleForegroundAlarmCheck(settings.amReminder)
+        }
+      } catch {
+        // settings unavailable, skip
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [])
+
   return (
     <Routes>
       {/* Full-screen workout route — no shell/nav */}

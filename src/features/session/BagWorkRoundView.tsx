@@ -4,6 +4,7 @@ import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
 import { ForgeIcon } from '@/components/icons/SessionIcons'
 import { heavyHaptic } from '@/lib/haptics'
+import { soundRoundStart, soundRoundEnd, soundFinishWarning, soundRestWarning } from '@/lib/sounds'
 
 import { RestTimer } from './RestTimer'
 import { useRestTimer } from './useRestTimer'
@@ -67,11 +68,13 @@ export function BagWorkRoundView({
 
   function handleStartRound() {
     heavyHaptic()
+    soundRoundStart()
     roundTimer.start(round.durationSec)
     onPhaseChange('fighting')
   }
 
   function handleRoundEnd() {
+    soundRoundEnd()
     roundTimer.stop()
     if (isLastRound) {
       onComplete()
@@ -92,12 +95,26 @@ export function BagWorkRoundView({
     }
   }, [roundTimer.secondsRemaining, roundTimer.isOvertime, roundTimer.isRunning, phase])
 
+  // Last 10 seconds of round — finish warning
+  useEffect(() => {
+    if (phase === 'fighting' && roundTimer.secondsRemaining === 10) {
+      soundFinishWarning()
+    }
+  }, [roundTimer.secondsRemaining, phase])
+
   // Auto-advance rest timer
   useEffect(() => {
     if (phase === 'rest' && restTimer.secondsRemaining === 0 && !restTimer.isOvertime && restTimer.isRunning) {
       handleRestDone()
     }
   }, [restTimer.secondsRemaining, restTimer.isOvertime, restTimer.isRunning, phase])
+
+  // 10 seconds left in rest — heads up
+  useEffect(() => {
+    if (phase === 'rest' && restTimer.secondsRemaining === 10) {
+      soundRestWarning()
+    }
+  }, [restTimer.secondsRemaining, phase])
 
   // Determine tier of combos in this round
   const roundTier = round.combos[0]?.combo?.tier
