@@ -44,6 +44,61 @@ export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
   ],
 }
 
+// ─── Block Zero template ───────────────────────────────────────
+
+/**
+ * Returns the weekly template for a given Block Zero week (1-6).
+ *
+ * Phase 1 (weeks 1-2): No MT class. Foundation + Strength + Bag Work only.
+ *   Connective tissue adaptation before adding class volume.
+ * Phase 2 (weeks 3-4): MT class returns (Mon/Wed/Fri PM). Easy run added Saturday.
+ * Phase 3 (weeks 5-6): Full template — same as Fighter block.
+ */
+export function getBlockZeroTemplate(blockZeroWeek: number): Record<number, TemplateSession[]> {
+  if (blockZeroWeek <= 2) {
+    return {
+      0: [],
+      1: [{ timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 45 }],
+      2: [{ timeSlot: 'am', type: 'strength', label: 'Strength: Push', estimatedMin: 60 }],
+      3: [{ timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 45 }],
+      4: [{ timeSlot: 'am', type: 'strength', label: 'Strength: Pull', estimatedMin: 60 }],
+      5: [{ timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 45 }],
+      6: [
+        { timeSlot: 'am', type: 'bag_work', label: 'Bag Work', estimatedMin: 25 },
+        { timeSlot: 'pm', type: 'active_recovery', label: 'Reset', estimatedMin: 30 },
+      ],
+    }
+  }
+
+  if (blockZeroWeek <= 4) {
+    return {
+      0: [],
+      1: [
+        { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 45 },
+        { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
+      ],
+      2: [{ timeSlot: 'am', type: 'strength', label: 'Strength: Push', estimatedMin: 65 }],
+      3: [
+        { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 45 },
+        { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
+      ],
+      4: [{ timeSlot: 'am', type: 'strength', label: 'Strength: Pull', estimatedMin: 65 }],
+      5: [
+        { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 45 },
+        { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
+      ],
+      6: [
+        { timeSlot: 'am', type: 'bag_work', label: 'Bag Work', estimatedMin: 30 },
+        { timeSlot: 'am', type: 'running', label: 'Easy Run', estimatedMin: 20, runCategory: 'zone2' },
+        { timeSlot: 'pm', type: 'active_recovery', label: 'Reset', estimatedMin: 30 },
+      ],
+    }
+  }
+
+  // Weeks 5-6: full Fighter template — ready to transition
+  return WEEKLY_TEMPLATE
+}
+
 /** Get the human-readable label for a session type, optionally using day of week for disambiguation. */
 export function getSessionLabel(type: string, dayOfWeek?: number): string {
   // If we have the day, use exact template match
