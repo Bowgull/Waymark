@@ -131,7 +131,7 @@ export function HistoryPage() {
           apiFetch<{ dataPoints: VolumePoint[] }>(`/api/history/volume-trends?days=${period}`),
           apiFetch<{ prs: PR[] }>('/api/history/prs'),
           apiFetch<Exercise[]>('/api/exercises'),
-          apiFetch<CategoryCompletion>('/api/history/category-completion'),
+          apiFetch<CategoryCompletion>(`/api/history/category-completion?days=${period}`),
         ])
         setDashboard(dashboardData)
         setCorrelations(correlationData.dataPoints)

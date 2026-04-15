@@ -39,7 +39,7 @@ export function useToast() {
   }, [])
 
   const ToastContainer = useCallback(() => (
-    <div className="fixed bottom-20 left-0 right-0 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none">
+    <div className="fixed left-0 right-0 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
       {toasts.map(t => (
         <div
           key={t.id}

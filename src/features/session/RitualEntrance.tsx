@@ -37,6 +37,8 @@ export function RitualEntrance({ sessionType, onComplete }: RitualEntranceProps)
           <img
             src={mark.png}
             alt={label}
+            width={192}
+            height={192}
             className="h-48 w-48 object-contain"
             draggable={false}
           />

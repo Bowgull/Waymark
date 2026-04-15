@@ -7,9 +7,11 @@ import { getSessionLabel } from '@/lib/weeklyTemplate'
 import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd } from '@/lib/notifications'
+import { saveWorkoutProgress, getWorkoutRecovery, clearWorkoutRecovery } from '@/lib/workoutRecovery'
 import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { Button } from '@/components/ui/button'
 import { GoldDivider } from '@/components/ui/GoldDivider'
+import { RingTimer } from '@/components/RingTimer'
 
 import { ActiveRecoveryView } from './ActiveRecoveryView'
 import { BagWorkRoundView } from './BagWorkRoundView'
@@ -211,7 +213,7 @@ const SECTION_LABELS: Record<string, string> = {
 
 // ─── Phases ────────────────────────────────────────────────────
 
-type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'combo-rating' | 'combo-unlock' | 'fr-run' | 'fr-transition' | 'fr-posture'
+type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-run' | 'fr-transition' | 'fr-posture'
 type RoundPhase = 'ready' | 'fighting' | 'rest'
 
 function FrTransition({ onComplete }: { onComplete: () => void }) {
@@ -227,6 +229,55 @@ function FrTransition({ onComplete }: { onComplete: () => void }) {
       <div className="h-1 w-48 rounded bg-surface overflow-hidden">
         <div className="h-full bg-teal animate-pulse" style={{ width: '100%' }} />
       </div>
+    </div>
+  )
+}
+
+function SkipWarmupTimer({ durationSec, onComplete, description }: {
+  durationSec: number
+  onComplete: () => void
+  description?: string
+}) {
+  const timer = useRestTimer()
+  const [started, setStarted] = useState(false)
+
+  function handleStart() {
+    timer.start(durationSec)
+    setStarted(true)
+  }
+
+  useEffect(() => {
+    if (started && timer.isRunning && timer.secondsRemaining <= 0 && !timer.isOvertime) {
+      timer.stop()
+      onComplete()
+    }
+  }, [started, timer.secondsRemaining, timer.isRunning, timer.isOvertime, onComplete])
+
+  return (
+    <div className="animate-fade-in flex flex-col items-center py-8">
+      <p className="text-label mb-1 text-muted-foreground">Warm Up</p>
+      <h2 className="text-display-lg text-foreground">Skip Rope</h2>
+      {description && (
+        <p className="mt-2 max-w-xs text-center text-sm text-muted-foreground">{description}</p>
+      )}
+      <div className="mt-8">
+        <RingTimer
+          totalSeconds={durationSec}
+          secondsRemaining={started ? timer.secondsRemaining : durationSec}
+          isOvertime={timer.isOvertime}
+          label={started ? (timer.secondsRemaining <= 10 ? 'Finish' : 'Skip') : 'Warm Up'}
+          accentColor={started && timer.secondsRemaining <= 10 ? '#C45A3C' : '#E8C860'}
+        />
+      </div>
+      {!started ? (
+        <Button onClick={handleStart} size="lg" className="mt-6">
+          Start Warm Up
+        </Button>
+      ) : (
+        <Button onClick={onComplete} variant="secondary" size="lg" className="mt-6">
+          Skip Warm Up
+        </Button>
+      )}
     </div>
   )
 }
@@ -274,7 +325,15 @@ export function WorkoutPage() {
 
         // Skip entrance for in-progress sessions (returning to continue)
         if (session.status === 'in_progress') {
-          setPhase(session.type === 'foundation_run' ? 'fr-run' : 'exercise')
+          const recovery = getWorkoutRecovery(id!)
+          if (recovery) {
+            setExerciseIdx(recovery.exerciseIdx)
+            setSetIdx(recovery.setIdx)
+            setRoundIdx(recovery.roundIdx)
+            setPhase(recovery.phase as Phase)
+          } else {
+            setPhase(session.type === 'foundation_run' ? 'fr-run' : 'exercise')
+          }
         }
 
         if (session.type === 'foundation_run') {
@@ -324,14 +383,21 @@ export function WorkoutPage() {
     load()
   }, [id])
 
+  // Auto-save workout progress for crash recovery
+  useEffect(() => {
+    if (!id || phase === 'entrance' || phase === 'complete' || phase === 'mark-earned') return
+    saveWorkoutProgress({ sessionId: id, exerciseIdx, setIdx, roundIdx, phase })
+  }, [id, exerciseIdx, setIdx, roundIdx, phase])
+
   const handleEntranceComplete = useCallback(() => {
-    // Show preview for bag work before starting rounds
     if (sessionType === 'bag_work') {
       setPhase('bag-preview')
+    } else if (strengthData) {
+      setPhase('strength-warmup-skip')
     } else {
       setPhase('exercise')
     }
-  }, [sessionType])
+  }, [sessionType, strengthData])
 
   const handleMarkEarnedComplete = useCallback(() => {
     setPhase('complete')
@@ -345,6 +411,7 @@ export function WorkoutPage() {
         method: 'POST',
         body: JSON.stringify({ rpe, difficulty, notes }),
       })
+      clearWorkoutRecovery()
       navigate('/today', { replace: true })
     } catch (e) {
       console.error('Failed to complete session:', e)
@@ -412,7 +479,7 @@ export function WorkoutPage() {
         <SessionBackground accentColor={accent} />
         {markAsset && (
           <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
-            <img src={markAsset.png} alt="" className="h-64 w-64 object-contain opacity-[0.04]" />
+            <img src={markAsset.png} alt="" width={256} height={256} className="h-64 w-64 object-contain opacity-[0.04]" />
           </div>
         )}
       </>
@@ -777,11 +844,29 @@ export function WorkoutPage() {
                   ))}
                 </div>
               ))}
-              <Button onClick={() => setPhase('exercise')} size="lg" className="w-full">
+              <Button onClick={() => setPhase('bag-warmup')} size="lg" className="w-full">
                 Begin Session
               </Button>
             </div>
           </main>
+        </div>
+      )
+    }
+
+    // Skip rope warmup before bag rounds
+    if (phase === 'bag-warmup') {
+      return (
+        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+          <SessionAtmosphere />
+          <SessionHeader counter="Warm Up" />
+          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
+            <SkipWarmupTimer
+              durationSec={300}
+              onComplete={() => setPhase('exercise')}
+              description="Light and easy. Get the blood flowing before you hit the bag."
+            />
+          </main>
+          <ProgressBar value={5} />
         </div>
       )
     }
@@ -855,6 +940,24 @@ export function WorkoutPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-near-black">
         <p className="text-sm text-muted-foreground">No workout data found.</p>
+      </div>
+    )
+  }
+
+  // Skip rope warmup before strength exercises
+  if (phase === 'strength-warmup-skip') {
+    return (
+      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+        <SessionAtmosphere />
+        <SessionHeader counter="Warm Up" />
+        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
+          <SkipWarmupTimer
+            durationSec={180}
+            onComplete={() => setPhase('exercise')}
+            description="Light and easy. Loosen up before you lift."
+          />
+        </main>
+        <ProgressBar value={2} />
       </div>
     )
   }
