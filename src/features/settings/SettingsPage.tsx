@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
+import { scheduleAlarms } from '@/lib/notifications'
 import { Button } from '@/components/ui/button'
 import { ScrollDrum } from '@/components/ui/ScrollDrum'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
@@ -99,6 +100,9 @@ export function SettingsPage() {
       setSettings(updated)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
+
+      // Re-schedule alarms with updated values
+      scheduleAlarms(amReminder, pmSessionTime, pmLeadMin)
 
       // Show cascade feedback if MT days changed
       if (updated.cascade) {
