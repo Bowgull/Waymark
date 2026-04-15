@@ -16,6 +16,8 @@ export function PageHeader({ title, children }: PageHeaderProps) {
             <img
               src={logoPng}
               alt="Waymark"
+              width={24}
+              height={24}
               className="h-6 w-6 object-contain opacity-50 transition-opacity active:opacity-80"
               style={{ mixBlendMode: 'screen' }}
             />

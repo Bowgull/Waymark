@@ -87,7 +87,7 @@ function SuggestedPicker({ baseOptions, suggestions, onSelect, onClose }: {
       <div className="flex flex-col gap-0.5">
         {suggested.length > 0 && (
           <>
-            <p className="px-3 pb-1 font-cinzel text-[12px] font-medium uppercase tracking-[0.2em] text-gold/40">Suggested</p>
+            <p className="px-3 pb-1 font-cinzel text-[13px] font-medium uppercase tracking-[0.2em] text-gold/40">Suggested</p>
             {suggested.map((opt, i) => (
               <FlexibleSessionRow
                 key={`s-${i}`}
@@ -124,14 +124,15 @@ function PickerShell({ children, onClose, flags }: { children: React.ReactNode; 
     <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60" />
       <div
-        className="relative w-full max-w-md rounded-t-xl border-t border-gold/10 bg-surface p-4 pb-8 animate-fade-in-up"
+        className="relative w-full max-w-md rounded-t-xl border-t border-gold/10 bg-surface p-4 animate-fade-in-up"
+        style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with inline flags */}
         <div className="mb-4">
           <div className="flex items-center justify-between">
             <p className="text-display-sm text-foreground">Add Session</p>
-            <button onClick={onClose} className="text-muted-foreground/60 text-xs uppercase tracking-wider active:text-muted-foreground">Cancel</button>
+            <button onClick={onClose} className="min-h-[44px] px-3 text-muted-foreground/60 text-xs uppercase tracking-wider active:text-muted-foreground">Cancel</button>
           </div>
           {flags && flags.length > 0 && (
             <p className="mt-1 text-xs text-gold/50">{flags.join(' · ')}</p>

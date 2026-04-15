@@ -150,7 +150,7 @@ function SkippedIndicator({ sessionType, label }: { sessionType: string; label: 
       {expanded && (
         <div className="flex items-center gap-1 animate-fade-in">
           <img src={mark.png} alt="" className="h-3.5 w-3.5 object-contain opacity-40 saturate-0" />
-          <span className="text-[12px] text-muted-foreground/60">{label}</span>
+          <span className="text-[13px] text-muted-foreground/60">{label}</span>
         </div>
       )}
       <button
@@ -276,7 +276,7 @@ function SessionRow({
         }}
       >
         <div className="flex items-center gap-2">
-          <span className={`inline-flex items-center rounded-sm border px-1.5 py-px font-[Cinzel] text-[12px] tracking-[0.2em] ${
+          <span className={`inline-flex items-center rounded-sm border px-1.5 py-px font-[Cinzel] text-[13px] tracking-[0.2em] ${
             session.timeSlot === 'am'
               ? 'border-gold/25 text-gold/80'
               : 'border-teal/25 text-teal/80'
@@ -301,7 +301,7 @@ function SessionRow({
           {weekStatus === 'draft' && session.status === 'planned' && (
             <button
               onClick={(e) => { e.stopPropagation(); onSkip() }}
-              className="px-2 py-0.5 text-[12px] font-medium text-muted-foreground active:text-red-400"
+              className="px-2 py-0.5 text-[13px] font-medium text-muted-foreground active:text-red-400"
             >
               Skip
             </button>
@@ -324,7 +324,7 @@ function SessionRow({
               </span>
             )}
             {overview.detail && (
-              <span className="text-[12px] text-muted-foreground/40">{overview.detail}</span>
+              <span className="text-[13px] text-muted-foreground/40">{overview.detail}</span>
             )}
           </div>
         </div>
@@ -499,7 +499,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
                   return (
                     <span
                       key={key}
-                      className={`rounded-full px-2.5 py-0.5 text-[12px] border ${
+                      className={`rounded-full px-2.5 py-0.5 text-[13px] border ${
                         isBehind
                           ? 'border-amber-500/30 bg-amber-500/5 text-amber-400/80'
                           : 'border-forest/30 bg-forest/5 text-forest-light/80'
@@ -513,7 +513,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
           )}
 
           {analysis?.wellness && (
-            <div className="flex gap-3 text-[12px] text-muted-foreground/70">
+            <div className="flex gap-3 text-[13px] text-muted-foreground/70">
               {analysis.wellness.avgSoreness != null && (
                 <span>Soreness {analysis.wellness.avgSoreness.toFixed(1)}/5 ({analysis.wellness.sorenessTrajectory})</span>
               )}
@@ -525,20 +525,20 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
 
           {proposedAdj.length > 0 && (
             <div className="space-y-2 pt-1">
-              <p className="text-[12px] font-medium uppercase tracking-wider text-muted-foreground/50">Proposed Adjustments</p>
+              <p className="text-[13px] font-medium uppercase tracking-wider text-muted-foreground/50">Proposed Adjustments</p>
               {proposedAdj.map(adj => (
                 <div key={adj.id} className="flex items-start gap-2 rounded-md border border-gold/15 bg-gold/5 px-3 py-2">
                   <span className="flex-1 text-xs text-gold/80">{adj.reason}</span>
                   <div className="flex gap-1">
                     <button
                       onClick={() => handleAcceptAdjustment(adj.id)}
-                      className="rounded px-2 py-0.5 text-[12px] font-medium bg-gold/20 text-gold active:bg-gold/30"
+                      className="rounded px-2 py-0.5 text-[13px] font-medium bg-gold/20 text-gold active:bg-gold/30"
                     >
                       Accept
                     </button>
                     <button
                       onClick={() => handleRejectAdjustment(adj.id)}
-                      className="rounded px-2 py-0.5 text-[12px] text-muted-foreground active:text-red-400"
+                      className="rounded px-2 py-0.5 text-[13px] text-muted-foreground active:text-red-400"
                     >
                       Dismiss
                     </button>

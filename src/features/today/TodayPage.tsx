@@ -242,7 +242,7 @@ export function TodayPage() {
                 .catch(() => setPickerSuggestions(null))
             }}
             aria-label="Add session"
-            className="mx-auto mt-4 flex items-center gap-2 font-cinzel text-[13px] uppercase tracking-widest text-gold/40 active:text-gold/70 transition-colors"
+            className="mx-auto mt-4 flex min-h-[44px] items-center gap-2 font-cinzel text-[13px] uppercase tracking-widest text-gold/40 active:text-gold/70 transition-colors"
           >
             <span className="text-gold/25">+</span>
             Add Session
@@ -260,7 +260,7 @@ export function TodayPage() {
 
       {/* Reschedule prompt after skip */}
       {reschedulePrompt && (
-        <div className="fixed inset-x-0 bottom-20 z-40 flex justify-center px-4 animate-fade-in-up">
+        <div className="fixed inset-x-0 z-40 flex justify-center px-4 animate-fade-in-up" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
           <div className="w-full max-w-md rounded-lg border border-gold/10 bg-surface p-4 shadow-lg">
             {reschedulePrompt.skipContext && (
               <p className="mb-1 text-xs text-muted-foreground/50">{reschedulePrompt.skipContext}</p>

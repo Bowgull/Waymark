@@ -35,6 +35,8 @@ export function MarkEarnedOverlay({ sessionType, onComplete }: MarkEarnedOverlay
       <img
         src={logoPng}
         alt=""
+        width={288}
+        height={288}
         draggable={false}
         className={`absolute h-72 w-72 object-contain pointer-events-none transition-opacity duration-700 ${
           phase === 'illuminate' ? 'opacity-0' : 'opacity-[0.04]'
@@ -53,6 +55,8 @@ export function MarkEarnedOverlay({ sessionType, onComplete }: MarkEarnedOverlay
           <img
             src={mark.png}
             alt={label}
+            width={192}
+            height={192}
             className="h-48 w-48 object-contain"
             draggable={false}
           />

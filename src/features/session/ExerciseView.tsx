@@ -79,7 +79,7 @@ export function ExerciseView({
         <div className="mt-4 rounded border border-gold/15 bg-gradient-to-b from-[#1A1A10]/60 to-[#12170E]/40 p-5 shadow-[0_0_12px_rgba(0,0,0,0.3)]">
           {section === 'main' && prescription?.weightLbs && (
             <div>
-              <p className="mb-1 font-cinzel text-[12px] uppercase tracking-widest text-gold/40">Prescribed</p>
+              <p className="mb-1 font-cinzel text-[13px] uppercase tracking-widest text-gold/40">Prescribed</p>
               <p className="font-cinzel text-lg font-semibold text-gold">
                 {prescription.setsReps} @ {prescription.weightLbs}lb
               </p>
@@ -101,7 +101,7 @@ export function ExerciseView({
 
           {section === 'accessory' && history && (
             <div>
-              <p className="mb-1 font-cinzel text-[12px] uppercase tracking-widest text-gold/40">Last Session</p>
+              <p className="mb-1 font-cinzel text-[13px] uppercase tracking-widest text-gold/40">Last Session</p>
               {history.lastWeightLbs && history.lastDate && (
                 <p className="text-xs text-muted-foreground">
                   {history.lastWeightLbs}lb × {history.lastReps} ({formatShortDate(history.lastDate)})
@@ -122,7 +122,7 @@ export function ExerciseView({
 
           {section === 'core' && history && (
             <div>
-              <p className="mb-1 font-cinzel text-[12px] uppercase tracking-widest text-gold/40">Last Session</p>
+              <p className="mb-1 font-cinzel text-[13px] uppercase tracking-widest text-gold/40">Last Session</p>
               {history.lastWeightLbs != null && history.lastDate && (
                 <p className="text-xs text-muted-foreground">
                   {history.lastReps} reps ({formatShortDate(history.lastDate)})
