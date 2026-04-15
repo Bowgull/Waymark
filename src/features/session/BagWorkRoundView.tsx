@@ -5,6 +5,12 @@ import { Button } from '@/components/ui/button'
 import { ForgeIcon } from '@/components/icons/SessionIcons'
 import { heavyHaptic } from '@/lib/haptics'
 import { soundRoundStart, soundRoundEnd, soundFinishWarning, soundRestWarning } from '@/lib/sounds'
+import {
+  scheduleRoundActiveCues,
+  cancelRoundActiveCues,
+  scheduleRestCues,
+  cancelRestCues,
+} from '@/lib/notifications'
 
 import { RestTimer } from './RestTimer'
 import { useRestTimer } from './useRestTimer'
@@ -70,32 +76,37 @@ export function BagWorkRoundView({
     heavyHaptic()
     soundRoundStart()
     roundTimer.start(round.durationSec)
+    scheduleRoundActiveCues(round.durationSec)
     onPhaseChange('fighting')
   }
 
   function handleRoundEnd() {
     soundRoundEnd()
     roundTimer.stop()
+    cancelRoundActiveCues()
     if (isLastRound) {
       onComplete()
     } else {
       restTimer.start(round.restSec)
+      scheduleRestCues(round.restSec)
       onPhaseChange('rest')
     }
   }
 
   function handleRestDone() {
     restTimer.stop()
+    cancelRestCues()
     onNextRound()
   }
 
   useEffect(() => {
-    if (phase === 'fighting' && roundTimer.secondsRemaining === 0 && !roundTimer.isOvertime && roundTimer.isRunning) {
+    // Use <= 0 so a locked-screen jump past zero still fires
+    if (phase === 'fighting' && roundTimer.secondsRemaining <= 0 && roundTimer.isRunning) {
       handleRoundEnd()
     }
-  }, [roundTimer.secondsRemaining, roundTimer.isOvertime, roundTimer.isRunning, phase])
+  }, [roundTimer.secondsRemaining, roundTimer.isRunning, phase])
 
-  // Last 10 seconds of round — finish warning
+  // Last 10 seconds of round — finish warning (screen on only; notification handles locked)
   useEffect(() => {
     if (phase === 'fighting' && roundTimer.secondsRemaining === 10) {
       soundFinishWarning()
@@ -104,12 +115,12 @@ export function BagWorkRoundView({
 
   // Auto-advance rest timer
   useEffect(() => {
-    if (phase === 'rest' && restTimer.secondsRemaining === 0 && !restTimer.isOvertime && restTimer.isRunning) {
+    if (phase === 'rest' && restTimer.secondsRemaining <= 0 && restTimer.isRunning) {
       handleRestDone()
     }
-  }, [restTimer.secondsRemaining, restTimer.isOvertime, restTimer.isRunning, phase])
+  }, [restTimer.secondsRemaining, restTimer.isRunning, phase])
 
-  // 10 seconds left in rest — heads up
+  // 10 seconds left in rest — heads up (screen on only; notification handles locked)
   useEffect(() => {
     if (phase === 'rest' && restTimer.secondsRemaining === 10) {
       soundRestWarning()

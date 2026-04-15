@@ -45,6 +45,7 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
   const [isIndoor, setIsIndoor] = useState(runSession.isIndoor === 1)
   const [elapsed, setElapsed] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const startedAtRef = useRef<number>(0)
 
   const [distance, setDistance] = useState('')
   const [duration, setDuration] = useState('')
@@ -71,10 +72,11 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
   }, [])
 
   const startRun = useCallback(() => {
+    startedAtRef.current = Date.now()
     setPhase('running')
     intervalRef.current = setInterval(() => {
-      setElapsed((prev) => prev + 1)
-    }, 1000)
+      setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
+    }, 500)
   }, [])
 
   function finishRun() {

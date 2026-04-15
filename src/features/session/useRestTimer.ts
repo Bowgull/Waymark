@@ -8,10 +8,16 @@ interface RestTimerState {
   stop: () => void
 }
 
+// Timestamp-based timer — survives screen lock.
+// Instead of decrementing a counter, we record when the timer ends and
+// calculate remaining time from the wall clock on every tick.
+// When iOS unsuspends the JS thread after the screen unlocks,
+// the next tick immediately snaps to the correct time.
 export function useRestTimer(): RestTimerState {
   const [secondsRemaining, setSecondsRemaining] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const endsAtRef = useRef<number>(0) // wall-clock ms when timer expires
 
   useEffect(() => {
     return () => {
@@ -21,12 +27,16 @@ export function useRestTimer(): RestTimerState {
 
   const start = useCallback((durationSec: number) => {
     if (intervalRef.current) clearInterval(intervalRef.current)
+    const endsAt = Date.now() + durationSec * 1000
+    endsAtRef.current = endsAt
     setSecondsRemaining(durationSec)
     setIsRunning(true)
 
     intervalRef.current = setInterval(() => {
-      setSecondsRemaining((prev) => prev - 1)
-    }, 1000)
+      // Calculate from wall clock, not accumulated ticks
+      const remaining = Math.round((endsAtRef.current - Date.now()) / 1000)
+      setSecondsRemaining(remaining)
+    }, 500) // 500ms ticks for faster recovery after screen unlock
   }, [])
 
   const stop = useCallback(() => {
@@ -34,6 +44,7 @@ export function useRestTimer(): RestTimerState {
     intervalRef.current = null
     setIsRunning(false)
     setSecondsRemaining(0)
+    endsAtRef.current = 0
   }, [])
 
   return {
