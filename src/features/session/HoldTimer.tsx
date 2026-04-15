@@ -13,13 +13,15 @@ export function HoldTimer({ targetSec, onDone }: HoldTimerProps) {
   const [elapsed, setElapsed] = useState(0)
   const [running, setRunning] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const startedAtRef = useRef<number>(0)
   const reachedTarget = elapsed >= targetSec
 
   const start = useCallback(() => {
+    startedAtRef.current = Date.now()
     setRunning(true)
     intervalRef.current = setInterval(() => {
-      setElapsed((prev) => prev + 1)
-    }, 1000)
+      setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
+    }, 500)
   }, [])
 
   useEffect(() => {

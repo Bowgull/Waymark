@@ -15,6 +15,14 @@ const ALARM_SNOOZE_3_ID = 1003
 const NUCLEAR_IDS = Array.from({ length: 20 }, (_, i) => 2000 + i)
 const LEAVE_BY_ID = 3000
 
+// Round timer audio cues — fire as notifications when screen is locked
+// so headphone audio still signals the right moment
+const CUE_FINISH_WARN = 4001  // last 10s of round
+const CUE_ROUND_END   = 4002  // round ends, rest starts
+const CUE_REST_WARN   = 4003  // 10s before rest ends
+const CUE_REST_END    = 4004  // rest over, go again
+const CUE_STRENGTH_REST_END = 4005 // strength set rest over
+
 const ALL_ALARM_IDS = [
   ALARM_BASE_ID,
   ALARM_SNOOZE_1_ID,
@@ -196,6 +204,105 @@ export async function handleForegroundAlarmCheck(amReminder: string): Promise<vo
   if (diffMin >= 0 && diffMin <= 30) {
     await cancelAllAlarms()
   }
+}
+
+// ─── Round cue notifications ─────────────────────────────────────────────────
+// These fire via the OS when the screen is locked so headphone audio
+// still signals the right training moment.
+
+function addSeconds(date: Date, seconds: number): Date {
+  return new Date(date.getTime() + seconds * 1000)
+}
+
+// Schedule cues for an active round (finish warning + round end).
+// Call when a round starts. durationSec is the round length.
+export async function scheduleRoundActiveCues(durationSec: number): Promise<void> {
+  if (!isNative) return
+  const now = new Date()
+  const notifications = []
+
+  const finishAt = addSeconds(now, durationSec - 10)
+  const roundEndAt = addSeconds(now, durationSec)
+
+  if (durationSec > 10 && finishAt > now) {
+    notifications.push({
+      id: CUE_FINISH_WARN,
+      title: 'Waymark',
+      body: 'Finish.',
+      schedule: { at: finishAt },
+    })
+  }
+  notifications.push({
+    id: CUE_ROUND_END,
+    title: 'Waymark',
+    body: 'Rest.',
+    schedule: { at: roundEndAt },
+  })
+
+  if (notifications.length > 0) {
+    await LocalNotifications.schedule({ notifications })
+  }
+}
+
+// Cancel round active cues (finish warning + round end).
+// Call when a round ends — naturally or early — before scheduling rest cues.
+export async function cancelRoundActiveCues(): Promise<void> {
+  if (!isNative) return
+  await LocalNotifications.cancel({
+    notifications: [{ id: CUE_FINISH_WARN }, { id: CUE_ROUND_END }],
+  })
+}
+
+// Schedule cues for the rest period (rest warning + rest end).
+// Call when rest starts. restSec is the rest duration.
+export async function scheduleRestCues(restSec: number): Promise<void> {
+  if (!isNative) return
+  const now = new Date()
+  const notifications = []
+
+  const restWarnAt = addSeconds(now, restSec - 10)
+  const restEndAt = addSeconds(now, restSec)
+
+  if (restSec > 10 && restWarnAt > now) {
+    notifications.push({
+      id: CUE_REST_WARN,
+      title: 'Waymark',
+      body: 'Get ready.',
+      schedule: { at: restWarnAt },
+    })
+  }
+  notifications.push({
+    id: CUE_REST_END,
+    title: 'Waymark',
+    body: 'Go.',
+    schedule: { at: restEndAt },
+  })
+
+  if (notifications.length > 0) {
+    await LocalNotifications.schedule({ notifications })
+  }
+}
+
+// Cancel rest cues. Call when rest ends or is skipped.
+export async function cancelRestCues(): Promise<void> {
+  if (!isNative) return
+  await LocalNotifications.cancel({
+    notifications: [{ id: CUE_REST_WARN }, { id: CUE_REST_END }],
+  })
+}
+
+// Single cue for strength set rest — fires when rest is over.
+export async function scheduleStrengthRestEnd(restSec: number): Promise<void> {
+  if (!isNative) return
+  const at = addSeconds(new Date(), restSec)
+  await LocalNotifications.schedule({
+    notifications: [{ id: CUE_STRENGTH_REST_END, title: 'Waymark', body: 'Next set.', schedule: { at } }],
+  })
+}
+
+export async function cancelStrengthRestEnd(): Promise<void> {
+  if (!isNative) return
+  await LocalNotifications.cancel({ notifications: [{ id: CUE_STRENGTH_REST_END }] })
 }
 
 // Register action types + listen for "I'm Up" taps

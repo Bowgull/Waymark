@@ -6,6 +6,7 @@ import { getMarkAsset, getSessionAccent } from '@/lib/markAssets'
 import { getSessionLabel } from '@/lib/weeklyTemplate'
 import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
+import { scheduleStrengthRestEnd, cancelStrengthRestEnd } from '@/lib/notifications'
 import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { Button } from '@/components/ui/button'
 import { GoldDivider } from '@/components/ui/GoldDivider'
@@ -882,11 +883,13 @@ export function WorkoutPage() {
 
     const restSec = currentSet.restSec ?? 60
     restTimer.start(restSec)
+    scheduleStrengthRestEnd(restSec)
     setPhase('rest')
   }
 
   function handleNextSet() {
     restTimer.stop()
+    cancelStrengthRestEnd()
 
     const isLastSet = setIdx >= totalSetsForExercise - 1
     const isLastExercise = exerciseIdx >= totalExercises - 1

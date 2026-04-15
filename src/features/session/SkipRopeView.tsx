@@ -2,6 +2,12 @@ import { useState } from 'react'
 
 import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
+import {
+  scheduleRoundActiveCues,
+  cancelRoundActiveCues,
+  scheduleRestCues,
+  cancelRestCues,
+} from '@/lib/notifications'
 
 import { RestTimer } from './RestTimer'
 import { useRestTimer } from './useRestTimer'
@@ -30,21 +36,25 @@ export function SkipRopeView({ skipSession, onComplete }: SkipRopeViewProps) {
 
   function startRound() {
     roundTimer.start(skipSession.roundDurSec)
+    scheduleRoundActiveCues(skipSession.roundDurSec)
     setSkipPhase('skipping')
   }
 
   function endRound() {
     roundTimer.stop()
+    cancelRoundActiveCues()
     if (isLastRound) {
       onComplete()
     } else {
       restTimer.start(60)
+      scheduleRestCues(60)
       setSkipPhase('rest')
     }
   }
 
   function nextRound() {
     restTimer.stop()
+    cancelRestCues()
     setCurrentRound(currentRound + 1)
     setSkipPhase('ready')
   }
