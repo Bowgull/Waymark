@@ -129,9 +129,20 @@
   to { opacity: 1; transform: translateX(0); }
 }
 
+@keyframes loading-entrance {
+  0% { opacity: 0; transform: scale(0.75); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
 @keyframes loading-breathe {
-  0%, 100% { opacity: 0.4; transform: scale(0.95); filter: drop-shadow(0 0 0px rgba(232, 200, 96, 0)); }
-  50% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 16px rgba(232, 200, 96, 0.3)); }
+  0% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 20px rgba(232, 200, 96, 0.35)); }
+  50% { opacity: 0.5; transform: scale(0.93); filter: drop-shadow(0 0 0px rgba(232, 200, 96, 0)); }
+  100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 20px rgba(232, 200, 96, 0.35)); }
+}
+
+@keyframes loading-glow-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
 }
 
 @keyframes scale-in {
@@ -210,8 +221,14 @@
   .animate-celebration {
     animation: celebration 0.5s ease-in-out;
   }
+  .animate-loading-entrance {
+    animation: loading-entrance 0.6s ease-out forwards;
+  }
   .animate-loading-breathe {
-    animation: loading-breathe 2s ease-in-out infinite;
+    animation: loading-breathe 2.5s ease-in-out infinite;
+  }
+  .animate-loading-glow-pulse {
+    animation: loading-glow-pulse 2.5s ease-in-out infinite;
   }
   .animate-mark-breathe {
     animation: mark-breathe 4s ease-in-out infinite;

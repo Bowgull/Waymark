@@ -6,8 +6,9 @@ interface LoadingScreenProps {
   minDisplayMs?: number
 }
 
-export function LoadingScreen({ onReady, minDisplayMs = 1500 }: LoadingScreenProps) {
+export function LoadingScreen({ onReady, minDisplayMs = 2000 }: LoadingScreenProps) {
   const [fading, setFading] = useState(false)
+  const [entered, setEntered] = useState(false)
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -19,18 +20,33 @@ export function LoadingScreen({ onReady, minDisplayMs = 1500 }: LoadingScreenPro
 
   return (
     <div
-      className={`fixed inset-0 z-[9999] flex items-center justify-center bg-[#0a0a0a] transition-opacity duration-500 ${
+      className={`fixed inset-0 z-[9999] bg-[#0a0a0a] transition-opacity duration-500 ${
         fading ? 'opacity-0' : 'opacity-100'
       }`}
     >
-      <img
-        src={logoPng}
-        alt="Waymark"
-        width={80}
-        height={80}
-        className="animate-loading-breathe object-contain"
-        style={{ mixBlendMode: 'screen' }}
-      />
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        {/* Ambient radial glow */}
+        <div
+          className="animate-loading-glow-pulse pointer-events-none absolute"
+          style={{
+            background: 'radial-gradient(ellipse at center, rgba(232,200,96,0.1) 0%, transparent 70%)',
+            width: '320px',
+            height: '320px',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+          }}
+        />
+        <img
+          src={logoPng}
+          alt="Waymark"
+          width={200}
+          height={200}
+          className={`relative object-contain ${entered ? 'animate-loading-breathe' : 'animate-loading-entrance'}`}
+          style={{ mixBlendMode: 'screen' }}
+          onAnimationEnd={() => setEntered(true)}
+        />
+      </div>
     </div>
   )
 }
