@@ -73,12 +73,15 @@ export function LoadingScreen({ onReady, minDisplayMs = 2000 }: LoadingScreenPro
   const [fading, setFading] = useState(false)
   const [breathe, setBreathe] = useState(false)
 
+  const dismiss = () => {
+    if (fading) return
+    setFading(true)
+    setTimeout(() => onReady?.(), 500)
+  }
+
   useEffect(() => {
     const breatheTimer = setTimeout(() => setBreathe(true), 2900)
-    const dismissTimer = setTimeout(() => {
-      setFading(true)
-      setTimeout(() => onReady?.(), 500)
-    }, Math.max(minDisplayMs, 3600))
+    const dismissTimer = setTimeout(dismiss, Math.max(minDisplayMs, 3600))
 
     return () => {
       clearTimeout(breatheTimer)
@@ -89,6 +92,7 @@ export function LoadingScreen({ onReady, minDisplayMs = 2000 }: LoadingScreenPro
   return (
     <div
       className={`fixed inset-0 z-[9999] bg-[#0a0a0a] transition-opacity duration-500 ${fading ? 'opacity-0' : 'opacity-100'}`}
+      onClick={dismiss}
     >
       {/* Ambient glow */}
       <div
