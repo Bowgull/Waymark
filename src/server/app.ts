@@ -237,7 +237,61 @@ app.get('/api/sessions/today', async (c) => {
   const db = createDB(c.env)
   const rows = await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay))
 
-  rows.sort((a, b) => (a.timeSlot === 'am' ? -1 : 1) - (b.timeSlot === 'am' ? -1 : 1))
+  // Attach run_sessions (Strava ingestion results) per session so Today can
+  // render the confirm / orphan variants inline.
+  const runs = rows.length > 0
+    ? await db.select().from(runSessions)
+    : []
+  const runBySession = new Map(runs.map(r => [r.sessionId, r]))
+
+  const enriched = rows.map(s => {
+    const r = runBySession.get(s.id)
+    if (!r) return s
+    return {
+      ...s,
+      runSession: {
+        id: r.id,
+        stravaActivityId: r.stravaActivityId,
+        attachmentStatus: r.attachmentStatus,
+        source: r.source,
+        distanceKm: r.distanceKm,
+        durationSec: r.durationSec,
+        paceSecKm: r.paceSecKm,
+        avgHr: r.avgHr,
+        maxHr: r.maxHr,
+        elevationGainM: r.elevationGainM,
+      },
+    }
+  })
+
+  enriched.sort((a, b) => (a.timeSlot === 'am' ? -1 : 1) - (b.timeSlot === 'am' ? -1 : 1))
+  return c.json(enriched)
+})
+
+// Running sessions for the Mon-Sun week containing `date`. Used by the Strava
+// reassign sheet so the user can move an auto-matched activity to another run.
+app.get('/api/sessions/week-runs', async (c) => {
+  const date = c.req.query('date')
+  if (!date) return c.json({ error: 'date query param required' }, 400)
+
+  const epochDay = isoToEpochDay(date)
+  const d = new Date(`${date}T00:00:00Z`)
+  const dow = d.getUTCDay() // 0=Sun..6=Sat
+  const daysFromMon = (dow + 6) % 7
+  const mondayEpoch = epochDay - daysFromMon
+  const sundayEpoch = mondayEpoch + 6
+
+  const db = createDB(c.env)
+  const rows = await db.select().from(sessions)
+    .where(and(
+      eq(sessions.type, 'running'),
+      gte(sessions.scheduledDate, mondayEpoch),
+      lte(sessions.scheduledDate, sundayEpoch),
+    ))
+  rows.sort((a, b) =>
+    (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0)
+    || ((a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1))
+  )
   return c.json(rows)
 })
 

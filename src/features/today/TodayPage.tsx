@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
@@ -6,6 +6,7 @@ import { getTodayISO } from '@/lib/dates'
 
 import { PageBackground } from '@/components/backgrounds/PageBackground'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
+import { useToast } from '@/components/ui/Toast'
 import { SkipReasonSheet } from '@/features/session/SkipReasonSheet'
 import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
@@ -15,6 +16,8 @@ import { DaySummary } from './DaySummary'
 import { DayTimeline } from './DayTimeline'
 import { GeneratePlanButton } from './GeneratePlanButton'
 import { JournalCard } from './JournalCard'
+import { ReassignRunSheet } from './ReassignRunSheet'
+import type { RunSessionSummary } from './TimelineRow'
 import { WellnessPromptCard, type WellnessData } from './WellnessPromptCard'
 
 interface Session {
@@ -27,6 +30,7 @@ interface Session {
   durationSec: number | null
   rpe: number | null
   scheduledDate?: number | null
+  runSession?: RunSessionSummary | null
 }
 
 interface DailyLog {
@@ -37,8 +41,11 @@ interface DailyLog {
 // Session types that have a dedicated workout engine
 const WORKOUT_SESSION_TYPES = ['strength', 'posture_corrective', 'bag_work', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
 
+const MAX_HR_LS_KEY = 'waymark_last_seen_max_hr'
+
 export function TodayPage() {
   const navigate = useNavigate()
+  const { show: showToast, ToastContainer } = useToast()
   const [sessions, setSessions] = useState<Session[]>([])
   const [dailyLog, setDailyLog] = useState<DailyLog | null | undefined>(undefined)
   const [loading, setLoading] = useState(true)
@@ -60,9 +67,19 @@ export function TodayPage() {
     | { sessionId: string; stage: 'picker'; reason: string }
     | null
   >(null)
+  const [reassignFor, setReassignFor] = useState<{ activityId: number; sessionId: string } | null>(null)
 
   const today = getTodayISO()
   const todayDate = new Date(`${today}T12:00:00`)
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      const next = await apiFetch<Session[]>(`/api/sessions/today?date=${today}`)
+      setSessions(next)
+    } catch (e) {
+      console.error('Failed to refresh sessions:', e)
+    }
+  }, [today])
 
   useEffect(() => {
     async function load() {
@@ -83,11 +100,40 @@ export function TodayPage() {
     load()
   }, [today])
 
+  // Silent Strava poll on mount. Refreshes Today once ingestion completes so
+  // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
+  // one-time toast.
   useEffect(() => {
-    apiFetch('/api/strava/poll-recent', { method: 'POST' }).catch(() => {
-      // Silent: Strava can be offline or disconnected; not fatal.
-    })
-  }, [])
+    async function poll() {
+      try {
+        const result = await apiFetch<{ ingested: number; connected: boolean }>('/api/strava/poll-recent', { method: 'POST' })
+        if (result.connected && result.ingested > 0) {
+          await refreshSessions()
+        }
+        if (result.connected) {
+          await checkMaxHrBump()
+        }
+      } catch {
+        // Strava disconnected or offline; silent.
+      }
+    }
+    async function checkMaxHrBump() {
+      try {
+        const profile = await apiFetch<{ maxHr: number | null } | null>('/api/user-profile')
+        if (!profile || profile.maxHr == null) return
+        const lastSeen = Number(localStorage.getItem(MAX_HR_LS_KEY) ?? '0')
+        if (profile.maxHr > lastSeen) {
+          localStorage.setItem(MAX_HR_LS_KEY, String(profile.maxHr))
+          if (lastSeen > 0) {
+            showToast(`Max HR now ${profile.maxHr}. Zones updated.`, 'info')
+          }
+        }
+      } catch {
+        // profile fetch failed; skip bump notice.
+      }
+    }
+    poll()
+  }, [refreshSessions, showToast])
 
   async function handleGenerate() {
     setGenerating(true)
@@ -279,6 +325,47 @@ export function TodayPage() {
     }
   }
 
+  async function handleConfirmMatch(activityId: number) {
+    try {
+      await apiFetch(`/api/strava/activity/${activityId}/confirm`, { method: 'POST' })
+      await refreshSessions()
+      showToast('Logged.', 'success')
+    } catch (e) {
+      console.error('Failed to confirm match:', e)
+    }
+  }
+
+  function handleReassignStart(activityId: number) {
+    const target = sessions.find(s => s.runSession?.stravaActivityId === activityId)
+    if (!target) return
+    setReassignFor({ activityId, sessionId: target.id })
+  }
+
+  async function handleReassignPick(newSessionId: string) {
+    if (!reassignFor) return
+    const { activityId } = reassignFor
+    setReassignFor(null)
+    try {
+      await apiFetch(`/api/strava/activity/${activityId}/reassign`, {
+        method: 'POST',
+        body: JSON.stringify({ newSessionId }),
+      })
+      await refreshSessions()
+      showToast('Reassigned.', 'success')
+    } catch (e) {
+      console.error('Failed to reassign match:', e)
+    }
+  }
+
+  async function handleDismissMatch(activityId: number) {
+    try {
+      await apiFetch(`/api/strava/activity/${activityId}/dismiss`, { method: 'POST' })
+      await refreshSessions()
+    } catch (e) {
+      console.error('Failed to dismiss match:', e)
+    }
+  }
+
   async function handleWellnessSubmit(data: WellnessData) {
     try {
       const log = await apiFetch<DailyLog>('/api/daily-logs', {
@@ -299,7 +386,10 @@ export function TodayPage() {
     )
   }
 
-  const allDone = sessions.length > 0 && sessions.every(s => s.status === 'completed' || s.status === 'skipped')
+  const allDone = sessions.length > 0 && sessions.every(s => {
+    const pending = s.runSession?.attachmentStatus === 'auto_pending' || s.runSession?.attachmentStatus === 'orphan'
+    return !pending && (s.status === 'completed' || s.status === 'skipped')
+  })
 
   return (
     <div className="relative flex flex-col gap-5 pb-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
@@ -327,7 +417,15 @@ export function TodayPage() {
         </div>
       ) : (
         <>
-          <DayTimeline sessions={sessions} onStart={handleStart} onSkip={handleSkip} onReplace={handleReplaceStart} />
+          <DayTimeline
+            sessions={sessions}
+            onStart={handleStart}
+            onSkip={handleSkip}
+            onReplace={handleReplaceStart}
+            onConfirmMatch={handleConfirmMatch}
+            onReassignMatch={handleReassignStart}
+            onDismissMatch={handleDismissMatch}
+          />
           <button
             onClick={() => {
               setShowPicker(true)
@@ -383,6 +481,15 @@ export function TodayPage() {
           onDismiss={handleDismissReschedule}
         />
       )}
+
+      <ReassignRunSheet
+        open={reassignFor != null}
+        onClose={() => setReassignFor(null)}
+        onSelect={handleReassignPick}
+        excludeSessionId={reassignFor?.sessionId}
+      />
+
+      <ToastContainer />
     </div>
   )
 }

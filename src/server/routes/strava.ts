@@ -1,12 +1,23 @@
-// Strava OAuth + token storage. Single-user app: one row in strava_tokens (id='default').
-// Access tokens live 6 hours, refresh tokens are long-lived. Call getStravaAccessToken
-// from ingestion code; it refreshes transparently when expired.
+// Strava OAuth + token storage + activity ingestion.
+// Single-user app: one row in strava_tokens (id='default'). Access tokens live 6 hours,
+// refresh tokens are long-lived; getStravaAccessToken refreshes transparently.
+//
+// Ingestion pipeline:
+//   webhook POST /webhook  → aspect_type=create → ingestStravaActivity
+//   Today mount             → /poll-recent      → ingest any recent unlinked activities
+// Both paths dedupe on run_sessions.strava_activity_id (unique index).
+//
+// Match logic: new activity → look for planned running session on same local date
+// with no existing strava link. Found → attachment_status='auto_pending' (user confirms
+// inline on Today). None → create a new sessions row + run_sessions with
+// attachment_status='orphan'. Confirm/reassign/dismiss routes finalize the state.
 
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 
 import { createDB } from '../../db/client'
-import { stravaTokens } from '../../db/schema'
+import { runSessions, runSplits, sessions, stravaTokens, userProfile } from '../../db/schema'
+import { isoToEpochDay } from '../../lib/dates'
 
 type Bindings = {
   DB: D1Database
@@ -21,6 +32,7 @@ const AUTH_URL = 'https://www.strava.com/oauth/authorize'
 const TOKEN_URL = 'https://www.strava.com/oauth/token'
 const DEAUTH_URL = 'https://www.strava.com/oauth/deauthorize'
 const ACTIVITIES_URL = 'https://www.strava.com/api/v3/athlete/activities'
+const ACTIVITY_URL = 'https://www.strava.com/api/v3/activities'
 const POLL_WINDOW_SEC = 48 * 60 * 60 // 48h
 
 const strava = new Hono<{ Bindings: Bindings }>()
@@ -125,57 +137,128 @@ strava.get('/webhook', (c) => {
   return c.json({ 'hub.challenge': challenge })
 })
 
-// Activity lifecycle events from Strava. Must respond 200 within 2s.
-// Step 2 only logs; actual ingestion lands in step 4.
+// Activity events from Strava. Must respond 200 within 2s, so we ack immediately
+// and ingest via c.executionCtx.waitUntil so the platform keeps the worker alive
+// past the response without blocking Strava's retry clock.
 strava.post('/webhook', async (c) => {
-  let body: unknown = null
+  let body: StravaWebhookEvent | null = null
   try {
-    body = await c.req.json()
+    body = await c.req.json<StravaWebhookEvent>()
   } catch {
-    // Empty or non-JSON body; Strava sometimes sends pings.
+    // Ping or malformed — ack so Strava doesn't retry.
   }
-  console.log('[strava-webhook]', JSON.stringify(body))
+  if (body && body.object_type === 'activity' && body.aspect_type === 'create') {
+    c.executionCtx.waitUntil(
+      ingestStravaActivity(body.object_id, c.env).catch(err => {
+        console.error('[strava-webhook] ingest failed', body!.object_id, err)
+      }),
+    )
+  }
   return c.json({ ok: true })
 })
 
-// Safety-net poll. Called silently on Today page mount. Returns recent
-// athlete activities from the last 48h so step 4 can fill gaps missed
-// by the webhook. `alreadyLinked` is a placeholder until step 3 adds
-// the strava_activity_id column to run_sessions.
+// Safety net. Called silently on Today mount. Ingests any recent activity
+// not yet linked in run_sessions. Bounded to last 48h.
 strava.post('/poll-recent', async (c) => {
   const token = await getStravaAccessToken(c.env)
-  if (!token) return c.json({ activities: [], connected: false })
+  if (!token) return c.json({ ingested: 0, connected: false })
 
   const after = Math.floor(Date.now() / 1000) - POLL_WINDOW_SEC
   const url = `${ACTIVITIES_URL}?after=${after}&per_page=30`
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) {
     console.error('[strava-poll] list failed', res.status, await res.text().catch(() => ''))
-    return c.json({ activities: [], connected: true, error: `strava_${res.status}` })
+    return c.json({ ingested: 0, connected: true, error: `strava_${res.status}` })
   }
 
-  const list = await res.json() as Array<{
-    id: number
-    name: string
-    type: string
-    sport_type?: string
-    start_date_local: string
-    distance?: number
-    moving_time?: number
-  }>
+  const list = await res.json() as Array<{ id: number; type: string; sport_type?: string }>
+  const runs = list.filter(a => a.type === 'Run' || a.sport_type === 'Run')
+  let ingested = 0
+  for (const act of runs) {
+    const result = await ingestStravaActivity(act.id, c.env)
+    if (result.status === 'ingested') ingested += 1
+  }
+  return c.json({ ingested, connected: true })
+})
 
-  const activities = list.map(a => ({
-    id: a.id,
-    name: a.name,
-    type: a.type,
-    sportType: a.sport_type ?? a.type,
-    startDateLocal: a.start_date_local,
-    distanceM: a.distance ?? null,
-    movingTimeSec: a.moving_time ?? null,
-    alreadyLinked: false,
-  }))
+// User taps Confirm on an auto_pending match. Locks the link and marks the
+// parent session completed with activity totals.
+strava.post('/activity/:activityId/confirm', async (c) => {
+  const activityId = Number(c.req.param('activityId'))
+  if (!Number.isFinite(activityId)) return c.json({ error: 'bad_activity_id' }, 400)
+  const db = createDB(c.env)
+  const [run] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
+  if (!run) return c.json({ error: 'not_found' }, 404)
 
-  return c.json({ activities, connected: true })
+  await db.update(runSessions)
+    .set({ attachmentStatus: 'confirmed' })
+    .where(eq(runSessions.stravaActivityId, activityId))
+
+  await db.update(sessions)
+    .set({
+      status: 'completed',
+      completedAt: Date.now(),
+      durationSec: run.durationSec,
+    })
+    .where(eq(sessions.id, run.sessionId))
+
+  return c.json({ ok: true })
+})
+
+// User taps Reassign → picks a different planned session for this activity.
+strava.post('/activity/:activityId/reassign', async (c) => {
+  const activityId = Number(c.req.param('activityId'))
+  if (!Number.isFinite(activityId)) return c.json({ error: 'bad_activity_id' }, 400)
+  const { newSessionId } = await c.req.json<{ newSessionId: string }>()
+  if (!newSessionId) return c.json({ error: 'newSessionId required' }, 400)
+
+  const db = createDB(c.env)
+  const [run] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
+  if (!run) return c.json({ error: 'not_found' }, 404)
+  const [target] = await db.select().from(sessions).where(eq(sessions.id, newSessionId))
+  if (!target) return c.json({ error: 'target_not_found' }, 404)
+
+  const prevSessionId = run.sessionId
+  await db.update(runSessions)
+    .set({ sessionId: newSessionId, attachmentStatus: 'confirmed' })
+    .where(eq(runSessions.stravaActivityId, activityId))
+
+  await db.update(sessions)
+    .set({
+      status: 'completed',
+      completedAt: Date.now(),
+      durationSec: run.durationSec,
+    })
+    .where(eq(sessions.id, newSessionId))
+
+  // If the previous parent was an orphan session (created by ingestion), drop
+  // it so the old row vanishes from Today. Planned-match sources are left alone.
+  if (prevSessionId !== newSessionId) {
+    const [prev] = await db.select().from(sessions).where(eq(sessions.id, prevSessionId))
+    if (prev && prev.weekPlanId == null && prev.notes == null) {
+      await db.delete(sessions).where(eq(sessions.id, prevSessionId))
+    }
+  }
+
+  return c.json({ ok: true })
+})
+
+// User taps "not training" — Strava logged a hike, bike, walk etc. Drops the
+// run_session. If the parent session was a synthetic orphan, drop that too.
+strava.post('/activity/:activityId/dismiss', async (c) => {
+  const activityId = Number(c.req.param('activityId'))
+  if (!Number.isFinite(activityId)) return c.json({ error: 'bad_activity_id' }, 400)
+  const db = createDB(c.env)
+  const [run] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
+  if (!run) return c.json({ ok: true })
+
+  await db.delete(runSplits).where(eq(runSplits.runSessionId, run.id))
+  await db.delete(runSessions).where(eq(runSessions.id, run.id))
+
+  if (run.attachmentStatus === 'orphan') {
+    await db.delete(sessions).where(eq(sessions.id, run.sessionId))
+  }
+  return c.json({ ok: true })
 })
 
 strava.post('/disconnect', async (c) => {
@@ -196,6 +279,8 @@ strava.post('/disconnect', async (c) => {
 })
 
 export { strava }
+
+// ─── Token refresh helper ──────────────────────────────────────
 
 // Called by ingestion code. Refreshes the access token on demand.
 export async function getStravaAccessToken(env: Bindings): Promise<string | null> {
@@ -233,4 +318,191 @@ export async function getStravaAccessToken(env: Bindings): Promise<string | null
     .where(eq(stravaTokens.id, 'default'))
 
   return data.access_token
+}
+
+// ─── Ingestion ─────────────────────────────────────────────────
+
+type StravaWebhookEvent = {
+  object_type: 'activity' | 'athlete'
+  object_id: number
+  aspect_type: 'create' | 'update' | 'delete'
+  owner_id: number
+  updates?: Record<string, string>
+}
+
+type StravaActivity = {
+  id: number
+  type: string
+  sport_type?: string
+  name?: string
+  start_date: string           // ISO UTC
+  start_date_local: string     // ISO local (Z-suffixed but represents local wall time)
+  distance: number             // meters
+  moving_time: number          // seconds
+  total_elevation_gain?: number
+  average_heartrate?: number
+  max_heartrate?: number
+  trainer?: boolean
+  splits_metric?: Array<{
+    split: number
+    moving_time: number
+    average_heartrate?: number
+    elevation_difference?: number
+  }>
+}
+
+type StravaStreams = {
+  heartrate?: { data: number[] }
+  time?: { data: number[] }
+}
+
+type IngestResult =
+  | { status: 'ingested'; runSessionId: string; attachmentStatus: 'auto_pending' | 'orphan'; maxHrBumped: null | { from: number | null; to: number } }
+  | { status: 'duplicate' }
+  | { status: 'non_run' }
+  | { status: 'no_token' }
+  | { status: 'fetch_failed'; code: number }
+
+export async function ingestStravaActivity(activityId: number, env: Bindings): Promise<IngestResult> {
+  const db = createDB(env)
+
+  const [existing] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
+  if (existing) return { status: 'duplicate' }
+
+  const token = await getStravaAccessToken(env)
+  if (!token) return { status: 'no_token' }
+
+  const actRes = await fetch(`${ACTIVITY_URL}/${activityId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!actRes.ok) {
+    const text = await actRes.text().catch(() => '')
+    console.error('[strava-ingest] activity fetch failed', activityId, actRes.status, text)
+    return { status: 'fetch_failed', code: actRes.status }
+  }
+  const act = await actRes.json() as StravaActivity
+
+  if (act.type !== 'Run' && act.sport_type !== 'Run') {
+    return { status: 'non_run' }
+  }
+
+  const localISO = act.start_date_local.slice(0, 10)
+  const epochDay = isoToEpochDay(localISO)
+  const nowSec = Math.floor(Date.now() / 1000)
+
+  // Find a planned running session on this date with no existing strava link.
+  const planned = await db.select().from(sessions)
+    .where(and(eq(sessions.type, 'running'), eq(sessions.scheduledDate, epochDay)))
+  const linked = await db.select().from(runSessions)
+  const linkedSessionIds = new Set(linked.map(r => r.sessionId))
+  const candidate = planned.find(s =>
+    s.status !== 'skipped' &&
+    s.status !== 'completed' &&
+    !linkedSessionIds.has(s.id),
+  )
+
+  let parentSessionId: string
+  let attachmentStatus: 'auto_pending' | 'orphan'
+  if (candidate) {
+    parentSessionId = candidate.id
+    attachmentStatus = 'auto_pending'
+  } else {
+    parentSessionId = crypto.randomUUID()
+    await db.insert(sessions).values({
+      id: parentSessionId,
+      type: 'running',
+      scheduledDate: epochDay,
+      timeSlot: null,
+      blockType: 'fighter',
+      status: 'completed',
+      completedAt: new Date(act.start_date).getTime(),
+      durationSec: act.moving_time,
+      createdAt: nowSec,
+    })
+    attachmentStatus = 'orphan'
+  }
+
+  // Optional HR stream → zone_seconds if profile.max_hr is known.
+  const [profile] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+  let zoneSeconds: { z1: number; z2: number; z3: number; z4: number; z5: number } | null = null
+  if (profile?.maxHr && act.average_heartrate != null) {
+    const streams = await fetchStreams(activityId, token).catch(() => null)
+    if (streams?.heartrate?.data && streams.time?.data) {
+      zoneSeconds = bucketZones(streams.heartrate.data, streams.time.data, profile.maxHr)
+    }
+  }
+
+  const runSessionId = crypto.randomUUID()
+  const distanceKm = act.distance ? act.distance / 1000 : null
+  const paceSecKm = distanceKm && act.moving_time
+    ? Math.round(act.moving_time / distanceKm)
+    : null
+
+  await db.insert(runSessions).values({
+    id: runSessionId,
+    sessionId: parentSessionId,
+    planWeek: null,
+    runType: null,
+    distanceKm,
+    durationSec: act.moving_time,
+    paceSecKm,
+    isIndoor: act.trainer ? 1 : 0,
+    avgHr: act.average_heartrate != null ? Math.round(act.average_heartrate) : null,
+    maxHr: act.max_heartrate != null ? Math.round(act.max_heartrate) : null,
+    zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
+    elevationGainM: act.total_elevation_gain != null ? Math.round(act.total_elevation_gain) : null,
+    source: 'strava',
+    stravaActivityId: activityId,
+    attachmentStatus,
+  })
+
+  if (act.splits_metric && act.splits_metric.length > 0) {
+    for (const sp of act.splits_metric) {
+      await db.insert(runSplits).values({
+        id: crypto.randomUUID(),
+        runSessionId,
+        kmIndex: sp.split,
+        durationSec: sp.moving_time,
+        avgHr: sp.average_heartrate != null ? Math.round(sp.average_heartrate) : null,
+        elevationGainM: sp.elevation_difference != null ? Math.round(sp.elevation_difference) : null,
+      })
+    }
+  }
+
+  let maxHrBumped: { from: number | null; to: number } | null = null
+  if (act.max_heartrate && profile) {
+    const observed = Math.round(act.max_heartrate)
+    if (observed > (profile.maxHr ?? 0)) {
+      await db.update(userProfile)
+        .set({ maxHr: observed, updatedAt: Date.now() })
+        .where(eq(userProfile.id, 'default'))
+      maxHrBumped = { from: profile.maxHr ?? null, to: observed }
+    }
+  }
+
+  return { status: 'ingested', runSessionId, attachmentStatus, maxHrBumped }
+}
+
+async function fetchStreams(activityId: number, token: string): Promise<StravaStreams | null> {
+  const url = `${ACTIVITY_URL}/${activityId}/streams?keys=heartrate,time&key_by_type=true`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) return null
+  return await res.json() as StravaStreams
+}
+
+// Bucket HR samples into Z1-Z5 by % of max HR. Z1 <60, Z2 60-70, Z3 70-80,
+// Z4 80-90, Z5 >=90. Each sample's dwell is the gap to the next time point.
+function bucketZones(hr: number[], time: number[], maxHr: number): { z1: number; z2: number; z3: number; z4: number; z5: number } {
+  const zones = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 }
+  const n = Math.min(hr.length, time.length)
+  for (let i = 0; i < n; i++) {
+    const dt = i < n - 1 ? Math.max(0, time[i + 1] - time[i]) : 1
+    const pct = hr[i] / maxHr
+    if (pct < 0.6) zones.z1 += dt
+    else if (pct < 0.7) zones.z2 += dt
+    else if (pct < 0.8) zones.z3 += dt
+    else if (pct < 0.9) zones.z4 += dt
+    else zones.z5 += dt
+  }
+  return zones
 }
