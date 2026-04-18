@@ -193,9 +193,31 @@ export function SettingsPage() {
     )
   }
 
+  const buildTime = Number(import.meta.env.VITE_BUILD_TIME)
+  const daysLeft = Number.isFinite(buildTime) && buildTime > 0
+    ? Math.max(0, 7 - Math.floor((Date.now() - buildTime) / 86400000))
+    : null
+  const daysColor =
+    daysLeft === null ? 'text-foreground'
+    : daysLeft <= 1 ? 'text-destructive'
+    : daysLeft === 2 ? 'text-gold'
+    : 'text-foreground'
+
   return (
     <div className="space-y-6">
       <PageHeader title="Settings" />
+
+      {daysLeft !== null && (
+        <section
+          aria-label="Days until redeploy"
+          className="rounded-md border border-gold/10 bg-near-black/40 px-4 py-3 text-center"
+        >
+          <p className={`font-[family-name:var(--font-display)] text-display-lg leading-none ${daysColor}`}>
+            {daysLeft}
+          </p>
+          <p className="mt-1 text-label text-muted-foreground">Days Until Redeploy</p>
+        </section>
+      )}
 
       {/* MT Class Schedule */}
       <section>
