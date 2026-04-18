@@ -142,7 +142,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 ### Phase 3: Block Zero AI
 
-- **Step 7** `TODO` Block Zero assessment call (Sonnet, extended thinking). Takes onboarding answers, produces 4-week plan and training max calibration targets.
+- **Step 7** `DONE` Block Zero assessment call (Sonnet, extended thinking). Takes onboarding answers, produces 6-week plan overview and starting weight calibration targets.
   - Files: `src/server/routes/blockZero.ts`, `src/features/program/ProgramPage.tsx`
   - Acceptance: Output passes tool schema. Voice canon applies to all user-facing strings in output.
 - **Step 8** `TODO` Transition readiness check at end of Block Zero. Sonnet reviews 4 weeks of wellness + Drive + adherence + calibration data, decides proceed/hold/adjust.
@@ -202,3 +202,7 @@ Append one entry per session. Keep under 5 lines each.
 ### Session 6 (2026-04-17) · Step 6
 - Did: Created `src/lib/prompts/summarizer.ts`. Exports `summarizeOldWeeks` (Haiku call, tool use, writes to `coaching_outputs`) and `getWeekSummaries` (reads stored summaries for context building). Added `POST /api/ai/summarize-old-weeks` route. Added sequential session rule to BUILD_PLAN.
 - Next: Step 7 (Block Zero assessment call).
+
+### Session 7 (2026-04-18) · Step 7
+- Did: Created `src/server/routes/blockZero.ts` (Sonnet extended thinking, `blockZeroAssessment` tool schema, `runBlockZeroAssessment`, `getStoredBlockZeroAssessment`). Added `POST /api/ai/block-zero-assessment` and `GET /api/ai/block-zero-assessment` routes to `app.ts`. Updated `ProgramPage.tsx`: assessment loading state, assessment result card (narrative, week themes, starting weights, coachNote, Begin button), and resume-after-crash recovery in the mount effect.
+- Next: Step 8 (Block Zero transition readiness check).
