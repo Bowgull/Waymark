@@ -228,4 +228,4 @@ Append one entry per session. Keep under 5 lines each.
 ### Session 12 (2026-04-18) · Step 12
 - Did: Added `getToolInputs` helper in `src/lib/anthropic.ts` (collects all tool_use blocks). Created `src/lib/ledgerInsightsAI.ts` (Haiku, `tool_choice: any`, emits 2-4 `insight` tool calls, formats dashboard/consistency/PRs/correlations/runs/rings into prompt, logs to `coaching_outputs` with kind `ledger_insights`, sorts by priority). Added `POST /api/ai/ledger-insights` route in `src/server/app.ts`. Updated `src/features/history/HistoryPage.tsx` to POST data payload to AI endpoint, fall back to local `generateInsights` on null/error.
 - Next: Step 13 (body metrics entry).
-- Notes: `generateInsights` in `insightEngine.ts` retained as offline fallback. No new DB migration.
+- Notes: `generateInsights` in `insightEngine.ts` retained as offline fallback. No new DB migration. Typecheck passes on Step 12 files (`npx tsc -b`). Three preexisting errors remain on main (anthropic unused var, two app.ts null type errors) untouched by this step. No worker dev server on this machine so runtime verification deferred.
