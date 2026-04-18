@@ -149,7 +149,9 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 ### Phase 4: Weekly intelligence
 
-- **Step 9** `TODO` Haiku-based weekly plan generation. Replaces rule engine in `weekAnalysis.ts`. Respects MT hard cap.
+- **Step 9** `DONE` Haiku-based weekly plan generation. Replaces rule engine in `weekAnalysis.ts`. Respects MT hard cap.
+  - Files: `src/lib/weeklyPlanAI.ts` (new), `src/server/app.ts` (auto-generate route)
+  - Acceptance: AI generates `WeekPlanOutput` via `weekPlan` tool. MT day filter applied post-AI as safety net. Offline falls back to `analyzeWeek` + template.
 - **Step 10** `TODO` MT skill loop. Logs from MT class sessions feed back into next week's MT programming focus.
 - **Step 11** `TODO` Session review capture. Post-session Haiku call produces one-line review stored on the session record.
 
@@ -210,3 +212,7 @@ Append one entry per session. Keep under 5 lines each.
 ### Session 8 (2026-04-18) · Step 8
 - Did: Merged step 7 branch to main. Added `runBlockZeroTransition` and `getStoredBlockZeroTransition` to `src/server/routes/blockZero.ts`. Gathers week adherence, RPE, difficulty, sleep, and soreness. Calls Sonnet with extended thinking using `TOOL_BLOCK_TRANSITION`. Applies calibration targets to training maxes. Added `POST /api/ai/block-zero-transition` and `GET /api/ai/block-zero-transition` routes. Added transition panel to `ProgramPage.tsx`, visible from week 4 onward during Block Zero.
 - Next: Step 9 (Haiku weekly plan generation).
+
+### Session 9 (2026-04-18) · Step 9
+- Did: Created `src/lib/weeklyPlanAI.ts` (Haiku call, `weekPlan` tool, gathers user profile + training maxes + compressed history + previous week sessions and wellness, stores result in `coaching_outputs`). Updated `POST /api/weeks/auto-generate` in `app.ts`: AI path uses `aiPlan.days[]` to create sessions with `blockType` set correctly; offline falls back to existing `analyzeWeek` + template logic. MT class day filter applied as post-AI safety net.
+- Next: Step 10 (MT skill loop).
