@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
-import { getMarkAsset, logoPng } from '@/lib/markAssets'
+import { getMarkAsset } from '@/lib/markAssets'
 import { WEEKLY_TEMPLATE } from '@/lib/weeklyTemplate'
 import { getStrengthTemplate } from '@/lib/strengthTemplates'
 
@@ -99,13 +99,6 @@ export function DaySummary({ sessions, todayDate }: DaySummaryProps) {
 
   return (
     <div className="relative animate-fade-in-up overflow-hidden">
-      {/* Watermark */}
-      <img
-        src={logoPng}
-        alt=""
-        className="pointer-events-none absolute left-1/2 top-1/3 h-40 w-40 -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.03]"
-      />
-
       {/* ─── Day Closed + Stats ─── */}
       <div className="rounded-md border border-border bg-surface/30 p-5">
         <h3 className="text-display-sm text-gold mb-4">Day Closed</h3>
