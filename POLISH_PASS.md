@@ -156,62 +156,64 @@ Do not bundle commits. Each session should end with a pushed commit to main and 
 - Preview verified (vite-frontend serverId, indoor run session on today's planned `running` session after priming `start-run` to create the `run_sessions` row): indoor ready readout renders `Water 7 - Ep {ep}` above Open One Pace; saving bumps `onePaceEp` server-side (verified via GET `/api/settings` — 3 → 4 → 43 across three test saves); toast `Ep 42 → Ep 43` captured in DOM during save window.
 - **Device verification: not performed by Claude** (Commits 1, 2, 3 still pending a single device cold-launch from the user; Commit 4 should not begin until that's done unless user says otherwise).
 
+### Commit 4: Redeploy countdown (2026-04-18)
+
+- Commit: `2671323 polish: redeploy countdown`.
+- `vite.config.ts`: added `define: { 'import.meta.env.VITE_BUILD_TIME': JSON.stringify(Date.now()) }`. No existing `define` entries to collide with.
+- `src/vite-env.d.ts`: added `readonly VITE_BUILD_TIME: string` to `ImportMetaEnv`. TS accepts `import.meta.env.VITE_BUILD_TIME` without a cast.
+- `src/lib/notifications.ts`: added a reserved-ID comment block at the top (1000-1012 morning, 2000-2047 nuclear, 3000 PM leave-by, 4000-4099 round cues, 5000-5001 redeploy). Added `REDEPLOY_WARN_ID = 5000` and `REDEPLOY_DAY_ID = 5001`. Exported `cancelRedeployReminders()` and `scheduleRedeployReminders(buildTime)`. Both gated on `isNative`. Scheduler requests permission via existing `requestNotificationPermission()`, computes `buildTime + 6d` and `buildTime + 7d`, skips any trigger already in the past, passes `sound: undefined` and no `interruptionLevel` so they respect silent mode. Copy: "Redeploy tomorrow or the app goes dark." / "Redeploy today. Connect cable." Note: `LocalNotifications.schedule` will reject with an empty `notifications` array, so I only call it when `notifications.length > 0`.
+- `src/app/AppRoutes.tsx`: imported `Capacitor` from `@capacitor/core`, plus `scheduleRedeployReminders` and `cancelRedeployReminders`. Inside the existing `useEffect` that already calls `initNotificationListeners`, added a guarded block: if `Capacitor.isNativePlatform()` and `buildTime` is finite, compare `String(buildTime)` against `localStorage.getItem('lastSeenBuildTime')`; if different, fire-and-forget IIFE that `await`s `cancelRedeployReminders()`, then `scheduleRedeployReminders(buildTime)`, then writes `lastSeenBuildTime`. Errors caught and logged. Web build is skipped entirely by the `isNativePlatform()` gate.
+- `src/features/settings/SettingsPage.tsx`: computed `buildTime` / `daysLeft` / `daysColor` at the top of the component. Rendered a non-interactive `<section aria-label="Days until redeploy">` above the MT Class Days section: big Cinzel `{daysLeft}` (`font-[family-name:var(--font-display)] text-display-lg leading-none`), caption `Days Until Redeploy` via `.text-label text-muted-foreground`. Color tiers match spec: `daysLeft >= 3` → `text-foreground`, `=== 2` → `text-gold`, `<= 1` → `text-destructive`. Pill is skipped entirely if `VITE_BUILD_TIME` is missing (defensive — always present in real builds).
+- Build `tsc -b && vite build`: pass. Lint of touched files: 0 errors, 1 warning (pre-existing `exhaustive-deps` on the onboarding `useEffect` in `AppRoutes.tsx`, unrelated). Project-wide lint still at 284 pre-existing problems; none introduced here.
+- Preview verified (vite-frontend): `/settings` shows the pill at the top with "7" (build was seconds ago), default foreground color (oklch(0.93 0.01 80)), Cinzel 36px, caption all-caps tracking-wider muted. Console clean. No native plugin calls fired on web.
+- **Device verification: not performed by Claude.** Scheduling and cancellation of the two silent notifications is native-only and will only fire on a real iOS cold launch after install. Commits 1-4 still pending a single device cold-launch from the user.
+
 ---
 
 ## Next commit
 
-**Commit 4: Redeploy countdown**
+**Commit 5: Critical Alerts + custom sounds + plugin patch**
 
-Sideload-cert apps go dark after 7 days. Give the user a passive countdown in Settings + 2 silent notifications so they remember to plug in and redeploy before it expires.
+Morning base + morning storm + nuclear follow-ups must bypass silent mode via the Critical Alerts entitlement with a bundled `.caf` sound. PM leave-by and round cues stay respecting silent mode.
 
-**Files to touch:**
-- `vite.config.ts` (inject `VITE_BUILD_TIME` via `define`)
-- `src/features/settings/SettingsPage.tsx` (countdown pill at top of page)
-- `src/lib/notifications.ts` (reserve IDs 5000/5001; add `scheduleRedeployReminders(buildTime)` function with silent notifications; add cancel helper)
-- `src/App.tsx` or `src/main.tsx` (on launch: compare `VITE_BUILD_TIME` to `localStorage.lastSeenBuildTime`; if changed → cancel old, schedule new, save)
+**Blocker:** nuclear sound file not yet chosen. User is still sampling Pixabay options (search terms in section 8 of Locked decisions: `vinyl scratch short`, `low piano hit`, `wood block`, `tape rewind`, `monastery bell short`, `singing bowl strike`). Do not start this commit until the user confirms a file and drops the MP3 at a known path. Morning sound is already decided: Musical Vintage Lo-Fi Piano (pixabay.com/sound-effects/musical-vintage-lo-fi-piano-486284/).
 
-**Build-time injection (vite.config.ts):**
-- Add to `defineConfig`: `define: { 'import.meta.env.VITE_BUILD_TIME': JSON.stringify(Date.now()) }`.
-- Confirm this doesn't collide with existing `define` entries; current config has none (grep first).
-- Add type declaration for `VITE_BUILD_TIME` in `src/vite-env.d.ts` so TS accepts `import.meta.env.VITE_BUILD_TIME` as `string`.
+**Plugin capability check (do this first, before any code):**
+- Read `node_modules/@capacitor/local-notifications/package.json` for the installed version.
+- Read `node_modules/@capacitor/local-notifications/dist/esm/definitions.d.ts` (or equivalent) and the native iOS source under `node_modules/@capacitor/local-notifications/ios/Plugin/` to confirm whether `interruptionLevel: 'critical'` and `criticalSound` / `criticalVolume` are supported by the current version.
+- Report one of three paths before proceeding:
+  - (a) Native support exists → use it directly.
+  - (b) No support → patch the plugin via `patch-package` (add a dev dep if not present). Patch the JS definitions to accept the new fields and the Swift `LocalNotifications.swift` (or equivalent) to map them to `UNNotificationContent.interruptionLevel = .critical` and `UNNotificationSound.criticalSoundNamed(...)`.
+  - (c) Patch too invasive → fall back to a minimal custom iOS plugin in `ios/App/App/Plugins/` that exposes `scheduleCritical({ id, title, body, at, soundName })`. Keep it small, single-purpose.
 
-**Settings pill (SettingsPage.tsx):**
-- Above the first section (MT Class Days), render a small non-interactive pill/card:
-  - Read `import.meta.env.VITE_BUILD_TIME` (string → Number).
-  - Compute `daysLeft = 7 - Math.floor((Date.now() - buildTime) / 86400000)`. Clamp min to 0.
-  - Big Cinzel number (e.g. `text-display-lg font-[family-name:var(--font-display)]`), tiny caption below: `DAYS UNTIL REDEPLOY` (text-label, tracking-wider, muted-foreground).
-  - Color tiers: default foreground at `daysLeft >= 3`, `text-gold` at `daysLeft === 2`, `text-destructive` (or equivalent red) at `daysLeft <= 1`.
-  - Not tappable, no interaction.
+**Files to touch (modulo the plugin path):**
+- `ios/App/App/App.entitlements`: add `<key>com.apple.developer.usernotifications.critical-alerts</key><true/>`.
+- `ios/App/App/Sounds/` (create if absent): drop `morning.caf` and `nuclear.caf` (converted from the MP3s via `afconvert` to `.caf` with 48kHz 16-bit). Wire into Xcode project's Copy Bundle Resources phase via `ios/App/App.xcodeproj/project.pbxproj` if needed (Capacitor usually picks up Resources automatically, but verify).
+- `src/lib/notifications.ts`:
+  - Extend `requestNotificationPermission()` (or add a sibling) to request `criticalAlert: true` on iOS. The existing call already handles base notifications; add a one-time critical-alert request near app boot.
+  - In `scheduleAlarms()`, flag the morning base, snooze trio, and all nuclear notifications with `interruptionLevel: 'critical'` and `sound: 'morning.caf'` / `sound: 'nuclear.caf'` (or the critical-sound field shape the plugin expects).
+  - Consider trimming the nuclear count if total pending exceeds 64 (current: 1 morning + 3 snoozes + 20 nuclear + 1 PM + 2 redeploy + up to ~5 round cues ≈ 32 — plenty of room; spec allows up to 48 nuclear if desired, keep at 20 unless user asks).
+- `src/app/AppRoutes.tsx`: at boot, after `initNotificationListeners()`, trigger the critical-alerts permission request if not yet granted. One-time OS prompt.
+- `patches/@capacitor+local-notifications+*.patch` (if path b) and a `postinstall: patch-package` script in `package.json`.
 
-**Launch-time reschedule (App.tsx / main.tsx — check which owns app-boot side effects):**
-- In a `useEffect(() => { ... }, [])` on app mount (or module-level if simpler):
-  1. Read `buildTime = Number(import.meta.env.VITE_BUILD_TIME)`.
-  2. Read `lastSeen = localStorage.getItem('lastSeenBuildTime')`.
-  3. If `String(buildTime) !== lastSeen`:
-     - Call `notifications.cancel({ notifications: [{ id: 5000 }, { id: 5001 }] })` (wrapped in try/catch; plugin may 404 if nothing scheduled).
-     - Call `scheduleRedeployReminders(buildTime)`.
-     - Write `localStorage.setItem('lastSeenBuildTime', String(buildTime))`.
-- Skip entirely when `!Capacitor.isNativePlatform()` (web dev should not schedule native notifs).
+**iOS entitlement flow:**
+- `com.apple.developer.usernotifications.critical-alerts` is a restricted entitlement in normal Apple dev accounts, but the user is on a personal dev cert and can self-grant. Entitlement file change + Xcode signing flag is enough.
 
-**notifications.ts additions:**
-- At the top of the file, add a comment block reserving IDs 1000-1012 (morning storm + snoozes), 2000-2047 (nuclear), 3000 (PM leave-by), 5000/5001 (redeploy). Keeps ID allocation visible.
-- Export `scheduleRedeployReminders(buildTime: number)`:
-  - ID 5000, trigger `buildTime + 6 * 86400000`, title `"Redeploy tomorrow or the app goes dark."`, body empty (or repeat title).
-  - ID 5001, trigger `buildTime + 7 * 86400000`, title `"Redeploy today. Connect cable."`, body empty.
-  - Both notifications: `sound: undefined` and no `critical*` fields. They must respect silent mode. No `interruptionLevel` needed (defaults to time-sensitive off).
-- Export `cancelRedeployReminders()` for use at launch-time and when we wire the settings toggle later.
+**Sound conversion:**
+- `afconvert -f caff -d LEI16@48000 -c 1 input.mp3 output.caf` converts MP3 to Apple's preferred CAF format. Mono 48k/16-bit plays cleanly through the iPhone speaker at volume 0.6.
+- `criticalSound.volume: 0.6` per spec. Users can still lower system critical-alert volume in Settings.
 
 **Voice canon:**
-- Pill caption: `DAYS UNTIL REDEPLOY` (no period, all-caps label style).
-- Notification copy per spec. No em dashes.
+- No new copy. Existing morning + nuclear strings stay. No em dashes anywhere.
 
 **Done criteria:**
-- [ ] `VITE_BUILD_TIME` injected at build time, readable in renderer, typed in `vite-env.d.ts`.
-- [ ] Settings page shows countdown pill at top with correct day math + color tier, non-interactive.
-- [ ] On native app cold-launch after a new build, old 5000/5001 notifications cancelled and new ones scheduled; `lastSeenBuildTime` updated.
-- [ ] Notifications have no sound field and do not bypass silent mode.
-- [ ] Web build path still works (pill renders; no native plugin calls fire).
+- [ ] Plugin path chosen (a/b/c) and reported before code.
+- [ ] Nuclear sound file confirmed by user and bundled as `.caf`.
+- [ ] Entitlement added; signing still succeeds on user's personal dev cert.
+- [ ] `scheduleAlarms` marks morning + nuclear as critical with `morning.caf` / `nuclear.caf`.
+- [ ] Runtime permission flow requests `criticalAlert: true` once; follow-up launches don't re-prompt.
 - [ ] Build + lint: no new errors.
 - [ ] Commit on main, voice-canon message.
-- [ ] `POLISH_PASS.md`: move Commit 4 to Completed, advance Next commit to Commit 5 (Critical Alerts + sounds + plugin patch) with file-level detail.
-- [ ] Next session prompt emitted at end of final message.
+- [ ] Device verification REQUIRED for this commit (the whole point is that it bypasses silent mode). User should cold-launch, grant the prompt, set phone to silent, set a 1-minute alarm, and confirm audio fires.
+- [ ] `POLISH_PASS.md` updated: Commit 5 moved to Completed, Next commit section removed or replaced with a closing note.
+- [ ] Next session prompt emitted (or a "polish pass complete" note if this is the final commit).
