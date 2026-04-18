@@ -2,6 +2,7 @@ import { and, desc, eq, gt, gte, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
 import { getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
 import { Hono } from 'hono'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
@@ -33,7 +34,7 @@ app.onError((err, c) => {
   const status = 'status' in err && typeof err.status === 'number' ? err.status : 500
   return c.json(
     { error: status === 500 ? 'Internal server error' : err.message, code: status },
-    status as any,
+    status as ContentfulStatusCode,
   )
 })
 
@@ -366,7 +367,7 @@ app.get('/api/sessions/suggestions', async (c) => {
   // Existing sessions on the target date
   const existingOnDate = weekSessions
     .filter(s => s.scheduledDate === targetEpochDay)
-    .map(s => ({ type: s.type, timeSlot: s.timeSlot }))
+    .map(s => ({ type: s.type, timeSlot: s.timeSlot ?? '' }))
 
   // Active block week
   let blockWeek: number | null = null
@@ -381,12 +382,14 @@ app.get('/api/sessions/suggestions', async (c) => {
   const result = computeSuggestions({
     todayWellness,
     recentWellness,
-    weekSessions: weekSessions.map(s => ({
-      type: s.type,
-      status: s.status,
-      scheduledDate: s.scheduledDate,
-      timeSlot: s.timeSlot,
-    })),
+    weekSessions: weekSessions
+      .filter(s => s.scheduledDate != null)
+      .map(s => ({
+        type: s.type,
+        status: s.status,
+        scheduledDate: s.scheduledDate as number,
+        timeSlot: s.timeSlot ?? '',
+      })),
     blockWeek,
     targetDate: targetEpochDay,
     existingSessionsOnDate: existingOnDate,
@@ -2735,7 +2738,7 @@ app.get('/api/history/dashboard', async (c) => {
     }
 
     // Check if the all-time max was first achieved in the last 30 days
-    let firstMaxDate = entries.find(e => e.maxKg === allTimeMax)?.date ?? 0
+    const firstMaxDate = entries.find(e => e.maxKg === allTimeMax)?.date ?? 0
     if (firstMaxDate >= cutoff30) prsThisMonth++
   }
 

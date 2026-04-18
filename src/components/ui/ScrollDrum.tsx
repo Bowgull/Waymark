@@ -25,7 +25,7 @@ export function ScrollDrum({
 }: ScrollDrumProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isScrollingRef = useRef(false)
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const mountedRef = useRef(false)
 
   // Build values array
