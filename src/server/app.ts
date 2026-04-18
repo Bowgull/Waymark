@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, gte, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
-import { getStoredBlockZeroAssessment, runBlockZeroAssessment } from './routes/blockZero'
+import { getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 
@@ -2832,6 +2832,28 @@ app.post('/api/ai/block-zero-assessment', async (c) => {
 app.get('/api/ai/block-zero-assessment', async (c) => {
   const db = createDB(c.env)
   const output = await getStoredBlockZeroAssessment(db)
+  return c.json(output ?? null)
+})
+
+app.post('/api/ai/block-zero-transition', async (c) => {
+  const db = createDB(c.env)
+  const [block] = await db
+    .select()
+    .from(trainingBlocks)
+    .where(eq(trainingBlocks.status, 'active'))
+
+  if (!block || block.blockType !== 'block_zero') {
+    return c.json({ error: 'no active block zero' }, 404)
+  }
+
+  const output = await runBlockZeroTransition(db, c.env.ANTHROPIC_API_KEY, block.id)
+  if (!output) return c.json({ error: 'transition check unavailable' }, 503)
+  return c.json(output)
+})
+
+app.get('/api/ai/block-zero-transition', async (c) => {
+  const db = createDB(c.env)
+  const output = await getStoredBlockZeroTransition(db)
   return c.json(output ?? null)
 })
 

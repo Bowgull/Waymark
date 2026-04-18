@@ -63,6 +63,12 @@ interface BlockZeroAssessmentOutput {
   coachNote?: string
 }
 
+interface TransitionResult {
+  decision: 'proceed' | 'hold' | 'adjust'
+  rationale: string
+  nextBlockNotes?: string
+}
+
 function getMonday(weekOffset = 0): string {
   const now = new Date()
   const day = now.getDay()
@@ -82,6 +88,8 @@ export function ProgramPage() {
   const [startingBlockZero, setStartingBlockZero] = useState(false)
   const [assessment, setAssessment] = useState<BlockZeroAssessmentOutput | null>(null)
   const [assessmentLoading, setAssessmentLoading] = useState(false)
+  const [transitionResult, setTransitionResult] = useState<TransitionResult | null>(null)
+  const [checkingTransition, setCheckingTransition] = useState(false)
 
   function getCurrentWeekNumber(b: Block): number {
     if (!b.startedAt) return 1
@@ -167,6 +175,11 @@ export function ProgramPage() {
         const wn = getCurrentWeekNumber(existingBlock)
         setWeekNumber(wn)
         await loadWeek(existingBlock, wn)
+
+        if (existingBlock.blockType === 'block_zero') {
+          const stored = await apiFetch<TransitionResult | null>('/api/ai/block-zero-transition')
+          if (stored) setTransitionResult(stored)
+        }
       } catch (e) {
         console.error('Failed to load program:', e)
         setBlock(null)
@@ -263,6 +276,18 @@ export function ProgramPage() {
       })
     } catch (e) {
       console.error('Failed to approve week:', e)
+    }
+  }
+
+  async function handleCheckTransition() {
+    setCheckingTransition(true)
+    try {
+      const result = await apiFetch<TransitionResult>('/api/ai/block-zero-transition', { method: 'POST' })
+      setTransitionResult(result)
+    } catch (e) {
+      console.error('Transition check failed:', e)
+    } finally {
+      setCheckingTransition(false)
     }
   }
 
@@ -515,6 +540,53 @@ export function ProgramPage() {
             } : null)
           }}
         />
+      )}
+
+      {/* Block Zero transition readiness — available from week 4 onward */}
+      {isBlockZero && weekNumber >= 4 && (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div>
+            <p className="text-label text-gold">TRANSITION CHECK</p>
+            <p className="mt-0.5 text-sm text-foreground">
+              {transitionResult ? 'Result from last check.' : 'Block Zero nearing completion. Check readiness to advance.'}
+            </p>
+          </div>
+
+          {transitionResult ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium uppercase tracking-wide px-2 py-0.5 rounded ${
+                  transitionResult.decision === 'proceed'
+                    ? 'bg-teal/15 text-teal'
+                    : transitionResult.decision === 'hold'
+                    ? 'bg-clay/15 text-clay'
+                    : 'bg-gold/15 text-gold'
+                }`}>
+                  {transitionResult.decision}
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">{transitionResult.rationale}</p>
+              {transitionResult.nextBlockNotes && (
+                <p className="text-xs text-muted-foreground/70 leading-relaxed">{transitionResult.nextBlockNotes}</p>
+              )}
+              <button
+                onClick={handleCheckTransition}
+                disabled={checkingTransition}
+                className="text-xs text-muted-foreground/60 active:text-muted-foreground pt-1"
+              >
+                {checkingTransition ? 'Checking...' : 'Re-check'}
+              </button>
+            </div>
+          ) : (
+            <Button
+              onClick={handleCheckTransition}
+              disabled={checkingTransition}
+              className="w-full"
+            >
+              {checkingTransition ? 'Checking readiness...' : 'Check readiness'}
+            </Button>
+          )}
+        </div>
       )}
 
       {/* Manual Block Zero reset — always available */}
