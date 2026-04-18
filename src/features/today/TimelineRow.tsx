@@ -19,6 +19,7 @@ interface TimelineRowProps {
   session: Session
   onStart: (id: string) => void
   onSkip: (id: string) => void
+  onReplace: (id: string) => void
   expanded: boolean
   onToggle: () => void
   label: string
@@ -46,7 +47,7 @@ function markStyle(status: string): string {
   }
 }
 
-export function TimelineRow({ session, onStart, onSkip, expanded, onToggle, label }: TimelineRowProps) {
+export function TimelineRow({ session, onStart, onSkip, onReplace, expanded, onToggle, label }: TimelineRowProps) {
   const mark = getMarkAsset(session.type)
   const estMin = getEstimatedMin(session.type)
   const isActionable = session.status === 'planned' || session.status === 'in_progress'
@@ -107,7 +108,7 @@ export function TimelineRow({ session, onStart, onSkip, expanded, onToggle, labe
               <p className="pb-2 text-[13px] text-muted-foreground italic leading-relaxed">
                 {getSessionIntent(session.type)}
               </p>
-              <div className="flex items-center gap-3 pt-1">
+              <div className="flex items-center gap-2 pt-1">
                 <Button
                   size="sm"
                   onClick={() => onStart(session.id)}
@@ -115,13 +116,22 @@ export function TimelineRow({ session, onStart, onSkip, expanded, onToggle, labe
                   {session.status === 'in_progress' ? 'Resume' : 'Enter'}
                 </Button>
                 {session.status === 'planned' && (
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground active:text-foreground"
-                    onClick={() => onSkip(session.id)}
-                  >
-                    Pass
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="min-h-[36px] rounded-full border border-border/50 px-3 py-1.5 text-xs uppercase tracking-wider text-muted-foreground/80 active:bg-surface/30 active:text-foreground"
+                      onClick={() => onReplace(session.id)}
+                    >
+                      Replace
+                    </button>
+                    <button
+                      type="button"
+                      className="min-h-[36px] rounded-full border border-border/30 px-3 py-1.5 text-xs uppercase tracking-wider text-muted-foreground/60 active:bg-surface/30 active:text-foreground"
+                      onClick={() => onSkip(session.id)}
+                    >
+                      Skip
+                    </button>
+                  </>
                 )}
               </div>
             </>
@@ -137,7 +147,7 @@ export function TimelineRow({ session, onStart, onSkip, expanded, onToggle, labe
             </div>
           )}
           {isSkipped && (
-            <p className="pt-1 text-xs text-muted-foreground/50">Session passed</p>
+            <p className="pt-1 text-xs text-muted-foreground/50">Skipped</p>
           )}
         </div>
       )}
