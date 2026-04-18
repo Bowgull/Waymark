@@ -16,6 +16,7 @@ interface ScrollDrumListProps {
   items: readonly string[]
   value: string
   onChange: (value: string) => void
+  onTap?: (value: string) => void
   className?: string
 }
 
@@ -186,6 +187,7 @@ export function ScrollDrumList({
   items,
   value,
   onChange,
+  onTap,
   className,
 }: ScrollDrumListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -243,6 +245,7 @@ export function ScrollDrumList({
     if (!el) return
     el.scrollTo({ top: index * ITEM_HEIGHT, behavior: 'smooth' })
     onChange(items[index])
+    onTap?.(items[index])
   }
 
   const containerHeight = VISIBLE_ITEMS * ITEM_HEIGHT
