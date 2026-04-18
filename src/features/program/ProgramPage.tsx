@@ -44,6 +44,25 @@ interface WeekData {
 
 type BlockZeroPrompt = 'first_launch' | 'return_from_break' | null
 
+interface BlockZeroWeekTheme {
+  weekNumber: number
+  focus: string
+}
+
+interface BlockZeroCalibrationStart {
+  exerciseName: string
+  startingWeightKg: number
+  rationale: string
+}
+
+interface BlockZeroAssessmentOutput {
+  narrative: string
+  weekThemes: BlockZeroWeekTheme[]
+  calibrationStarts: BlockZeroCalibrationStart[]
+  mtCapPerWeek: number
+  coachNote?: string
+}
+
 function getMonday(weekOffset = 0): string {
   const now = new Date()
   const day = now.getDay()
@@ -61,6 +80,8 @@ export function ProgramPage() {
   const [generating, setGenerating] = useState(false)
   const [blockZeroPrompt, setBlockZeroPrompt] = useState<BlockZeroPrompt>(null)
   const [startingBlockZero, setStartingBlockZero] = useState(false)
+  const [assessment, setAssessment] = useState<BlockZeroAssessmentOutput | null>(null)
+  const [assessmentLoading, setAssessmentLoading] = useState(false)
 
   function getCurrentWeekNumber(b: Block): number {
     if (!b.startedAt) return 1
@@ -103,6 +124,36 @@ export function ProgramPage() {
           return
         }
 
+        // Resume-after-crash: block_zero exists but week 1 was never generated.
+        // Show the stored assessment if available so the user can click Begin.
+        if (existingBlock.blockType === 'block_zero') {
+          const week1 = await apiFetch<WeekData | null>(
+            `/api/weeks/current?blockId=${existingBlock.id}&weekNumber=1`,
+          )
+          if (!week1) {
+            setBlock(existingBlock)
+            const stored = await apiFetch<BlockZeroAssessmentOutput | null>(
+              '/api/ai/block-zero-assessment',
+            )
+            if (stored) {
+              setAssessment(stored)
+            } else {
+              // Assessment missing, re-run it.
+              setAssessmentLoading(true)
+              setLoading(false)
+              const result = await apiFetch<BlockZeroAssessmentOutput | null>(
+                '/api/ai/block-zero-assessment',
+                { method: 'POST' },
+              ).catch(() => null)
+              setAssessmentLoading(false)
+              if (result) setAssessment(result)
+              return
+            }
+            setLoading(false)
+            return
+          }
+        }
+
         // Check for return-from-break: last completed session > 10 days ago
         const lastSession = await apiFetch<Session | null>('/api/sessions/last-completed')
         if (lastSession?.completedAt) {
@@ -132,17 +183,37 @@ export function ProgramPage() {
       const newBlock = await apiFetch<Block>('/api/blocks/block-zero', { method: 'POST' })
       setBlock(newBlock)
       setBlockZeroPrompt(null)
-      setWeekNumber(1)
+      setStartingBlockZero(false)
+      setAssessmentLoading(true)
+      const result = await apiFetch<BlockZeroAssessmentOutput | null>(
+        '/api/ai/block-zero-assessment',
+        { method: 'POST' },
+      ).catch(() => null)
+      setAssessmentLoading(false)
+      setAssessment(result)
+    } catch (e) {
+      console.error('Failed to start Block Zero:', e)
+      setStartingBlockZero(false)
+      setAssessmentLoading(false)
+    }
+  }
+
+  async function handleBeginBlockZero() {
+    if (!block) return
+    setGenerating(true)
+    try {
       const monday = getMonday(0)
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: newBlock.id, weekNumber: 1, startDate: monday }),
+        body: JSON.stringify({ blockId: block.id, weekNumber: 1, startDate: monday }),
       })
+      setAssessment(null)
       setWeekData(wd)
+      setWeekNumber(1)
     } catch (e) {
-      console.error('Failed to start Block Zero:', e)
+      console.error('Failed to generate week 1:', e)
     } finally {
-      setStartingBlockZero(false)
+      setGenerating(false)
     }
   }
 
@@ -209,6 +280,81 @@ export function ProgramPage() {
     return (
       <div className="flex items-center justify-center py-16">
         <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    )
+  }
+
+  // ─── Block Zero Assessment Loading ───────────────────────────
+
+  if (assessmentLoading) {
+    return (
+      <div className="space-y-4">
+        <PageBackground />
+        <Link to="/today" className="inline-block mb-1">
+          <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
+        </Link>
+        <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+          <p className="text-label text-teal">BLOCK ZERO</p>
+          <p className="text-sm text-muted-foreground">Reading your profile.</p>
+          <p className="text-xs text-muted-foreground/60">This takes about 20 seconds.</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Block Zero Assessment Result ────────────────────────────
+
+  if (assessment) {
+    return (
+      <div className="space-y-4">
+        <PageBackground />
+        <Link to="/today" className="inline-block mb-1">
+          <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
+        </Link>
+        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          <p className="text-label text-teal">BLOCK ZERO</p>
+          <p className="text-sm text-foreground leading-relaxed">{assessment.narrative}</p>
+
+          {assessment.coachNote && (
+            <p className="text-xs text-amber-400/80 border border-amber-400/20 rounded px-3 py-2 bg-amber-400/5">
+              {assessment.coachNote}
+            </p>
+          )}
+
+          <div className="space-y-1.5">
+            {assessment.weekThemes.map(wt => (
+              <div key={wt.weekNumber} className="flex gap-3 text-sm">
+                <span className="text-muted-foreground/60 w-14 shrink-0 font-mono text-xs pt-0.5">
+                  WK {wt.weekNumber}
+                </span>
+                <span className="text-muted-foreground">{wt.focus}</span>
+              </div>
+            ))}
+          </div>
+
+          {assessment.calibrationStarts.length > 0 && (
+            <div className="pt-1 space-y-1.5">
+              <p className="text-label text-muted-foreground/60">STARTING WEIGHTS</p>
+              {assessment.calibrationStarts.map(cs => (
+                <div key={cs.exerciseName} className="flex items-start justify-between gap-2 text-sm">
+                  <span className="text-foreground">{cs.exerciseName}</span>
+                  <span className="text-muted-foreground shrink-0">{cs.startingWeightKg}kg</span>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground/50 pt-0.5">
+                Block Zero loads at 40-55% of these numbers.
+              </p>
+            </div>
+          )}
+
+          <Button
+            className="w-full"
+            onClick={handleBeginBlockZero}
+            disabled={generating}
+          >
+            {generating ? 'Setting up...' : 'Begin'}
+          </Button>
+        </div>
       </div>
     )
   }
