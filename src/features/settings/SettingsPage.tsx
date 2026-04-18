@@ -66,6 +66,18 @@ export function SettingsPage() {
   const [enabledTechniques, setEnabledTechniques] = useState<Set<string>>(new Set(['boxing', 'kicks', 'defensive']))
   const [activeDrum, setActiveDrum] = useState<'am' | 'pmTime' | 'pmLead' | 'arc' | null>(null)
 
+  // Close drum on any pointerdown that lands outside the drum body
+  useEffect(() => {
+    if (!activeDrum) return
+    function handleOutside(e: PointerEvent) {
+      const target = e.target as HTMLElement
+      if (target.closest('[data-drum-body="true"]')) return
+      setActiveDrum(null)
+    }
+    document.addEventListener('pointerdown', handleOutside)
+    return () => document.removeEventListener('pointerdown', handleOutside)
+  }, [activeDrum])
+
   // Strava
   const [strava, setStrava] = useState<StravaStatus | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
@@ -252,7 +264,7 @@ export function SettingsPage() {
               const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
               const isPm = hh >= 12
               return (
-                <div className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
+                <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
                   <div className="flex gap-3">
                     <div className="flex-1">
                       <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
@@ -288,7 +300,7 @@ export function SettingsPage() {
               const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
               const isPm = hh >= 12
               return (
-                <div className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
+                <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
                   <div className="flex gap-3">
                     <div className="flex-1">
                       <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
@@ -320,7 +332,7 @@ export function SettingsPage() {
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">Leave-By Reminder</label>
             {activeDrum === 'pmLead' ? (
-              <div className="rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
+              <div data-drum-body="true" className="rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
                 <ScrollDrum min={15} max={120} step={15} value={pmLeadMin} onChange={setPmLeadMin} suffix="min" />
                 <button onClick={() => setActiveDrum(null)} className="min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
               </div>
@@ -340,11 +352,12 @@ export function SettingsPage() {
           <div className="min-w-0 flex-1">
             <label className="mb-1 block text-xs text-muted-foreground">Current Arc</label>
             {activeDrum === 'arc' ? (
-              <div className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
+              <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
                 <ScrollDrumList
                   items={ONE_PACE_ARCS}
                   value={ONE_PACE_ARCS.includes(onePaceArc as typeof ONE_PACE_ARCS[number]) ? onePaceArc : ONE_PACE_ARCS[0]}
                   onChange={setOnePaceArc}
+                  onTap={() => setActiveDrum(null)}
                 />
                 <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
               </div>

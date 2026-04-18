@@ -41,16 +41,16 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
   const [activeDrum, setActiveDrum] = useState('')
   const cardRef = useRef<HTMLDivElement>(null)
 
-  // Close drum when clicking outside the card
+  // Close drum on any pointerdown that lands outside the drum body
   useEffect(() => {
     if (!activeDrum) return
-    function handleClickOutside(e: MouseEvent) {
-      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
-        setActiveDrum('')
-      }
+    function handleOutside(e: PointerEvent) {
+      const target = e.target as HTMLElement
+      if (target.closest('[data-drum-body="true"]')) return
+      setActiveDrum('')
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('pointerdown', handleOutside)
+    return () => document.removeEventListener('pointerdown', handleOutside)
   }, [activeDrum])
 
   async function handleSubmit() {
@@ -117,7 +117,7 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
           <Moon className="h-4 w-4 text-gold/50 shrink-0" />
           <span className="text-sm text-foreground flex-1">Sleep</span>
           {activeDrum === 'sleep' ? (
-            <div className="w-24 rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
+            <div data-drum-body="true" className="w-24 rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
               <ScrollDrum min={0} max={12} step={0.5} value={sleep} onChange={setSleep} suffix="hrs" />
             </div>
           ) : (
@@ -135,7 +135,7 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
           <Leaf className="h-4 w-4 text-gold/50 shrink-0" />
           <span className="text-sm text-foreground flex-1">Herb</span>
           {activeDrum === 'weed' ? (
-            <div className="w-24 rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
+            <div data-drum-body="true" className="w-24 rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
               <ScrollDrum min={0} max={10} step={0.5} value={weed} onChange={setWeed} suffix="g" />
             </div>
           ) : (
@@ -153,7 +153,7 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
           <Wine className="h-4 w-4 text-gold/50 shrink-0" />
           <span className="text-sm text-foreground flex-1">Alcohol</span>
           {activeDrum === 'alcohol' ? (
-            <div className="w-24 rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
+            <div data-drum-body="true" className="w-24 rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
               <ScrollDrum min={0} max={10} step={1} value={alcohol} onChange={setAlcohol} />
             </div>
           ) : (
