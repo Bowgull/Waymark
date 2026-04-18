@@ -18,6 +18,7 @@ import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek, proposeReschedule } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
 import { runSessionReview } from '../lib/sessionReviewAI'
+import { runSkipResponse } from '../lib/skipResponseAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 
 type Bindings = {
@@ -479,26 +480,75 @@ app.patch('/api/sessions/:id', async (c) => {
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
 
-  // ─── Skip reschedule proposal ─────────────────────────────
+  // ─── Skip response: AI coach line + action ─────────────────
   if (body.status === 'skipped' && row) {
     const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
-    const weekStart = todayEpochDay - new Date(todayEpochDay * 86400000).getUTCDay()
+    const todayDow = new Date(todayEpochDay * 86400000).getUTCDay()
+    const weekStart = todayEpochDay - todayDow
     const weekEnd = weekStart + 6
 
-    // Get wellness context to auto-detect skip reason
     const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, todayEpochDay))
-    const skipReasons: string[] = []
-    if (trimmedSkipReason) skipReasons.push(trimmedSkipReason)
-    if (todayLog) {
-      if (todayLog.soreness != null && todayLog.soreness >= 4) skipReasons.push('Soreness is high')
-      if (todayLog.sleepHours != null && todayLog.sleepHours < 6) skipReasons.push('Sleep is low')
-      if (todayLog.alcoholScale != null && todayLog.alcoholScale >= 5) skipReasons.push('Recovery day')
-    }
-
     const weekSessions = await db.select().from(sessions).where(
       and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd))
     )
 
+    let aiOutput: Awaited<ReturnType<typeof runSkipResponse>> = null
+    try {
+      aiOutput = await runSkipResponse(db, c.env.ANTHROPIC_API_KEY, {
+        sessionId: id,
+        sessionType: row.type,
+        scheduledDate: row.scheduledDate,
+        timeSlot: (row.timeSlot as 'am' | 'pm' | null) ?? null,
+        skipReason: trimmedSkipReason ?? 'Not provided',
+        todayEpochDay,
+        todayDow,
+      })
+    } catch (e) {
+      console.warn('[skipResponse] failed, falling back to deterministic', e)
+    }
+
+    if (aiOutput) {
+      let adjustmentId: string | null = null
+      if (aiOutput.action === 'move' || aiOutput.action === 'swap') {
+        adjustmentId = crypto.randomUUID()
+        await db.insert(weekAdjustments).values({
+          id: adjustmentId,
+          weekPlanId: row.weekPlanId ?? '',
+          adjustmentType: 'skip_reschedule',
+          sessionType: aiOutput.swapToType ?? row.type,
+          action: aiOutput.action === 'swap' ? 'swap' : 'add',
+          reason: aiOutput.coachLine,
+          targetDay: aiOutput.targetDayOfWeek ?? null,
+          targetTimeSlot: aiOutput.targetTimeSlot ?? null,
+          sourceData: JSON.stringify({
+            wellness: todayLog ? { sleepHours: todayLog.sleepHours, soreness: todayLog.soreness, alcoholScale: todayLog.alcoholScale } : null,
+            userSkipReason: trimmedSkipReason ?? null,
+            originalDate: row.scheduledDate,
+            originalType: row.type,
+            swapToLabel: aiOutput.swapToLabel ?? null,
+            weekImpact: aiOutput.weekImpact ?? null,
+          }),
+          status: 'proposed',
+          createdAt: Math.floor(Date.now() / 1000),
+        })
+      }
+
+      return c.json({
+        session: row,
+        coach: {
+          line: aiOutput.coachLine,
+          action: aiOutput.action,
+          weekImpact: aiOutput.weekImpact ?? null,
+          targetDayOfWeek: aiOutput.targetDayOfWeek ?? null,
+          targetTimeSlot: aiOutput.targetTimeSlot ?? null,
+          swapToType: aiOutput.swapToType ?? null,
+          swapToLabel: aiOutput.swapToLabel ?? null,
+          adjustmentId,
+        },
+      })
+    }
+
+    // AI offline: deterministic fallback (move only)
     const proposal = proposeReschedule(
       { type: row.type, scheduledDate: row.scheduledDate ?? todayEpochDay, timeSlot: row.timeSlot ?? 'am', notes: row.notes },
       weekSessions.map(s => ({ type: s.type, scheduledDate: s.scheduledDate ?? 0, timeSlot: s.timeSlot ?? 'am', status: s.status })),
@@ -506,13 +556,6 @@ app.patch('/api/sessions/:id', async (c) => {
     )
 
     if (proposal) {
-      const sourceData = JSON.stringify({
-        wellness: todayLog ? { sleepHours: todayLog.sleepHours, soreness: todayLog.soreness, alcoholScale: todayLog.alcoholScale } : null,
-        skipReasons,
-        userSkipReason: trimmedSkipReason ?? null,
-        originalDate: row.scheduledDate,
-      })
-
       const adjustmentId = crypto.randomUUID()
       await db.insert(weekAdjustments).values({
         id: adjustmentId,
@@ -523,23 +566,31 @@ app.patch('/api/sessions/:id', async (c) => {
         reason: proposal.reason,
         targetDay: proposal.suggestedDay,
         targetTimeSlot: proposal.suggestedTimeSlot,
-        sourceData,
+        sourceData: JSON.stringify({
+          wellness: todayLog ? { sleepHours: todayLog.sleepHours, soreness: todayLog.soreness, alcoholScale: todayLog.alcoholScale } : null,
+          userSkipReason: trimmedSkipReason ?? null,
+          originalDate: row.scheduledDate,
+        }),
         status: 'proposed',
         createdAt: Math.floor(Date.now() / 1000),
       })
 
       return c.json({
         session: row,
-        skipContext: skipReasons.length > 0 ? skipReasons.join(' · ') : null,
-        reschedule: { ...proposal, adjustmentId },
+        coach: {
+          line: proposal.reason,
+          action: 'move',
+          weekImpact: null,
+          targetDayOfWeek: proposal.suggestedDay,
+          targetTimeSlot: proposal.suggestedTimeSlot,
+          swapToType: null,
+          swapToLabel: null,
+          adjustmentId,
+        },
       })
     }
 
-    // No reschedule proposal but still return skip context
-    return c.json({
-      ...row,
-      skipContext: skipReasons.length > 0 ? skipReasons.join(' · ') : null,
-    })
+    return c.json({ session: row, coach: null })
   }
 
   return c.json(row)
@@ -559,8 +610,8 @@ app.post('/api/adjustments/:id/accept', async (c) => {
   // Mark accepted
   await db.update(weekAdjustments).set({ status: 'accepted' }).where(eq(weekAdjustments.id, adjustmentId))
 
-  // Create the makeup session
-  if (adj.action === 'add' && adj.targetDay != null) {
+  // Create the makeup / swap session
+  if ((adj.action === 'add' || adj.action === 'swap') && adj.targetDay != null) {
     // Calculate the epoch day for the target day this week
     const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
     const weekStart = todayEpochDay - new Date(todayEpochDay * 86400000).getUTCDay()

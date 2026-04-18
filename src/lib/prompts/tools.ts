@@ -92,6 +92,18 @@ export interface InsightOutput {
   priority: 1 | 2 | 3
 }
 
+export type SkipAction = 'hold' | 'move' | 'swap' | 'recover'
+
+export interface SkipResponseOutput {
+  coachLine: string
+  action: SkipAction
+  targetDayOfWeek?: number
+  targetTimeSlot?: TimeSlot
+  swapToType?: SessionType
+  swapToLabel?: string
+  weekImpact?: string
+}
+
 // ─── Tool definitions ─────────────────────────────────────────────
 
 const SESSION_TYPE_ENUM = [
@@ -311,12 +323,56 @@ export const TOOL_INSIGHT: Tool = {
   },
 }
 
+export const TOOL_SKIP_RESPONSE: Tool = {
+  name: 'skipResponse',
+  description:
+    'One-line coach response when the athlete skips a session. Decide the single best next move given the skip reason, wellness, day of week, and what is left in the week. Voice canon: plain, no hype, observation before conclusion.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      coachLine: {
+        type: 'string',
+        description: 'One sentence, under 140 chars. Voice canon. Observation first, then the call. No exclamation marks, no congratulations, no second-guessing the skip.',
+      },
+      action: {
+        type: 'string',
+        enum: ['hold', 'move', 'swap', 'recover'],
+        description: 'hold: accept the skip, no redistribution. move: reschedule the same session later in the week. swap: replace with a different session type better suited to current state. recover: prescribe rest or active recovery instead.',
+      },
+      targetDayOfWeek: {
+        type: 'integer',
+        description: 'Required when action is "move" or "swap". 0=Sun..6=Sat. Must be today or later in the current week.',
+      },
+      targetTimeSlot: {
+        type: 'string',
+        enum: ['am', 'pm'],
+        description: 'Required when action is "move" or "swap".',
+      },
+      swapToType: {
+        type: 'string',
+        enum: SESSION_TYPE_ENUM,
+        description: 'Required when action is "swap". The session type to substitute.',
+      },
+      swapToLabel: {
+        type: 'string',
+        description: 'Required when action is "swap". Short human label for the substitute (e.g. "Reset", "Foundation Run").',
+      },
+      weekImpact: {
+        type: 'string',
+        description: 'Optional one-line note on how this affects the rest of the week. Omit if no downstream change.',
+      },
+    },
+    required: ['coachLine', 'action'],
+  },
+}
+
 export const ALL_TOOLS: Tool[] = [
   TOOL_WEEK_PLAN,
   TOOL_WEEK_REVIEW,
   TOOL_BLOCK_TRANSITION,
   TOOL_SESSION_REVIEW,
   TOOL_INSIGHT,
+  TOOL_SKIP_RESPONSE,
 ]
 
 export const TOOL_BY_NAME: Record<string, Tool> = Object.fromEntries(

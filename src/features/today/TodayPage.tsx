@@ -44,9 +44,13 @@ export function TodayPage() {
   const [showPicker, setShowPicker] = useState(false)
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
   const [reschedulePrompt, setReschedulePrompt] = useState<{
-    adjustmentId: string
-    reason: string
-    skipContext: string | null
+    adjustmentId: string | null
+    line: string
+    action: 'hold' | 'move' | 'swap' | 'recover'
+    weekImpact: string | null
+    targetDayOfWeek: number | null
+    targetTimeSlot: 'am' | 'pm' | null
+    swapToLabel: string | null
   } | null>(null)
   const [skipReasonFor, setSkipReasonFor] = useState<string | null>(null)
 
@@ -140,15 +144,29 @@ export function TodayPage() {
       prev.map((s) => (s.id === id ? { ...s, status: 'skipped' } : s))
     )
     try {
-      const result = await apiFetch<{ session?: Session; skipContext?: string | null; reschedule?: { adjustmentId: string; reason: string } }>(`/api/sessions/${id}`, {
+      type CoachResp = {
+        line: string
+        action: 'hold' | 'move' | 'swap' | 'recover'
+        weekImpact: string | null
+        targetDayOfWeek: number | null
+        targetTimeSlot: 'am' | 'pm' | null
+        swapToType: string | null
+        swapToLabel: string | null
+        adjustmentId: string | null
+      }
+      const result = await apiFetch<{ session?: Session; coach?: CoachResp | null }>(`/api/sessions/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'skipped', skipReason: reason }),
       })
-      if (result.reschedule) {
+      if (result.coach) {
         setReschedulePrompt({
-          adjustmentId: result.reschedule.adjustmentId,
-          reason: result.reschedule.reason,
-          skipContext: result.skipContext ?? null,
+          adjustmentId: result.coach.adjustmentId,
+          line: result.coach.line,
+          action: result.coach.action,
+          weekImpact: result.coach.weekImpact,
+          targetDayOfWeek: result.coach.targetDayOfWeek,
+          targetTimeSlot: result.coach.targetTimeSlot,
+          swapToLabel: result.coach.swapToLabel,
         })
       }
     } catch (e) {
@@ -157,9 +175,18 @@ export function TodayPage() {
   }
 
   async function handleAcceptReschedule() {
-    if (!reschedulePrompt) return
+    if (!reschedulePrompt?.adjustmentId) {
+      setReschedulePrompt(null)
+      return
+    }
     try {
-      await apiFetch(`/api/adjustments/${reschedulePrompt.adjustmentId}/accept`, { method: 'POST' })
+      const r = await apiFetch<{ session?: Session }>(`/api/adjustments/${reschedulePrompt.adjustmentId}/accept`, { method: 'POST' })
+      if (r.session) {
+        setSessions(prev => {
+          const next = [...prev, r.session!]
+          return next.sort((a, b) => (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0) || ((a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)))
+        })
+      }
     } catch (e) {
       console.error('Failed to accept reschedule:', e)
     }
@@ -168,7 +195,9 @@ export function TodayPage() {
 
   function handleDismissReschedule() {
     if (!reschedulePrompt) return
-    apiFetch(`/api/adjustments/${reschedulePrompt.adjustmentId}/reject`, { method: 'POST' }).catch(() => {})
+    if (reschedulePrompt.adjustmentId) {
+      apiFetch(`/api/adjustments/${reschedulePrompt.adjustmentId}/reject`, { method: 'POST' }).catch(() => {})
+    }
     setReschedulePrompt(null)
   }
 
@@ -272,31 +301,75 @@ export function TodayPage() {
         />
       )}
 
-      {/* Reschedule prompt after skip */}
       {reschedulePrompt && (
-        <div className="fixed inset-x-0 z-40 flex justify-center px-4 animate-fade-in-up" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
-          <div className="w-full max-w-md rounded-lg border border-gold/10 bg-surface p-4 shadow-lg">
-            {reschedulePrompt.skipContext && (
-              <p className="mb-1 text-xs text-muted-foreground/50">{reschedulePrompt.skipContext}</p>
-            )}
-            <p className="mb-3 text-sm text-foreground">{reschedulePrompt.reason}</p>
-            <div className="flex gap-2">
+        <RescheduleCoachCard
+          prompt={reschedulePrompt}
+          onAccept={handleAcceptReschedule}
+          onDismiss={handleDismissReschedule}
+        />
+      )}
+    </div>
+  )
+}
+
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function RescheduleCoachCard({ prompt, onAccept, onDismiss }: {
+  prompt: {
+    adjustmentId: string | null
+    line: string
+    action: 'hold' | 'move' | 'swap' | 'recover'
+    weekImpact: string | null
+    targetDayOfWeek: number | null
+    targetTimeSlot: 'am' | 'pm' | null
+    swapToLabel: string | null
+  }
+  onAccept: () => void
+  onDismiss: () => void
+}) {
+  const hasAction = prompt.adjustmentId != null && (prompt.action === 'move' || prompt.action === 'swap')
+
+  let primaryLabel = 'OK'
+  if (prompt.action === 'move' && prompt.targetDayOfWeek != null && prompt.targetTimeSlot) {
+    primaryLabel = `Move to ${DAY_SHORT[prompt.targetDayOfWeek]} ${prompt.targetTimeSlot.toUpperCase()}`
+  } else if (prompt.action === 'swap' && prompt.swapToLabel && prompt.targetTimeSlot) {
+    primaryLabel = `Swap for ${prompt.swapToLabel}`
+  }
+
+  return (
+    <div className="fixed inset-x-0 z-40 flex justify-center px-4 animate-fade-in-up" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
+      <div className="w-full max-w-md rounded-lg border border-gold/10 bg-surface p-4 shadow-lg">
+        <p className="mb-1 font-cinzel text-[11px] uppercase tracking-[0.2em] text-gold/50">Coach</p>
+        <p className="mb-2 text-sm text-foreground">{prompt.line}</p>
+        {prompt.weekImpact && (
+          <p className="mb-3 text-xs text-muted-foreground/60">{prompt.weekImpact}</p>
+        )}
+        <div className="flex gap-2">
+          {hasAction ? (
+            <>
               <button
-                onClick={handleAcceptReschedule}
+                onClick={onAccept}
                 className="flex-1 rounded-md bg-gold/15 px-3 py-2 text-sm text-gold active:bg-gold/25"
               >
-                Reschedule
+                {primaryLabel}
               </button>
               <button
-                onClick={handleDismissReschedule}
+                onClick={onDismiss}
                 className="rounded-md px-3 py-2 text-sm text-muted-foreground/60 active:text-foreground"
               >
-                Dismiss
+                Not now
               </button>
-            </div>
-          </div>
+            </>
+          ) : (
+            <button
+              onClick={onDismiss}
+              className="flex-1 rounded-md bg-secondary px-3 py-2 text-sm text-foreground active:bg-secondary/70"
+            >
+              Got it
+            </button>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
