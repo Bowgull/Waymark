@@ -297,7 +297,7 @@ export function HistoryPage() {
             title="Volume"
             headline={volumeHeadline}
             sparklineData={volumeSparkline}
-            sparklineColor="#4ACAAA"
+            sparklineColor="#1E8A68"
           >
             <VolumeChart data={volumeData} />
           </ChartCard>
@@ -308,7 +308,7 @@ export function HistoryPage() {
             title="Running"
             headline={runHeadline}
             sparklineData={runSparkline}
-            sparklineColor="#4ACAAA"
+            sparklineColor="#C45A3C"
           >
             <RunningProgressChart data={runData} summary={runSummary} />
           </ChartCard>
