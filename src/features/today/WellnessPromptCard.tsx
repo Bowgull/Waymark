@@ -14,18 +14,26 @@ export interface WellnessData {
   notes?: string
 }
 
+interface ExistingWellness {
+  sleepHours?: number | null
+  weedGrams?: number | null
+  alcoholScale?: number | null
+  soreness?: number | null
+}
+
 interface WellnessPromptCardProps {
   onSubmit: (data: WellnessData) => void
   isLogged?: boolean
+  existing?: ExistingWellness | null
 }
 
 const SORENESS_LABELS = ['Fresh', 'Loose', 'Normal', 'Sore', 'Cooked']
 
-export function WellnessPromptCard({ onSubmit, isLogged }: WellnessPromptCardProps) {
-  const [sleep, setSleep] = useState(7)
-  const [weed, setWeed] = useState(0)
-  const [alcohol, setAlcohol] = useState(0)
-  const [soreness, setSoreness] = useState<number | null>(null)
+export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPromptCardProps) {
+  const [sleep, setSleep] = useState(existing?.sleepHours ?? 7)
+  const [weed, setWeed] = useState(existing?.weedGrams ?? 0)
+  const [alcohol, setAlcohol] = useState(existing?.alcoholScale ?? 0)
+  const [soreness, setSoreness] = useState<number | null>(existing?.soreness ?? null)
   const [notes, setNotes] = useState('')
   const [showNotes, setShowNotes] = useState(false)
   const [submitting, setSubmitting] = useState(false)

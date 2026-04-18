@@ -366,6 +366,70 @@ export const TOOL_SKIP_RESPONSE: Tool = {
   },
 }
 
+export type BagRoundType =
+  | 'warmup'
+  | 'technical_flow'
+  | 'drill_isolation'
+  | 'combo_practice'
+  | 'power'
+  | 'conditioning'
+
+export interface BagPrescribedRound {
+  roundNumber: number
+  roundType: BagRoundType
+  rationale: string
+  comboIds: string[]
+}
+
+export interface BagPrescriptionOutput {
+  sessionIntent: string
+  rounds: BagPrescribedRound[]
+}
+
+export const TOOL_BAG_PRESCRIPTION: Tool = {
+  name: 'bagPrescription',
+  description:
+    'Prescribe a structured heavy-bag session as a coach would. 4 to 6 rounds, each with a typed role and a one-sentence rationale in voice canon. No freestyle rounds. Round 1 is always warmup. Finisher is conditioning or power based on today state. Choose combos from the supplied available list by id only. Do not invent ids.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      sessionIntent: {
+        type: 'string',
+        description: 'One-line coach framing for the whole session. Voice canon: observation first, then intent. No hype, no exclamation marks.',
+      },
+      rounds: {
+        type: 'array',
+        minItems: 4,
+        maxItems: 6,
+        items: {
+          type: 'object',
+          properties: {
+            roundNumber: { type: 'integer', description: '1-indexed. Must match position in the array.' },
+            roundType: {
+              type: 'string',
+              enum: ['warmup', 'technical_flow', 'drill_isolation', 'combo_practice', 'power', 'conditioning'],
+              description: 'warmup: first round, light, loosen up. technical_flow: mechanics focus, foundation combos. drill_isolation: one combo ID repeated, cite the Fagan or Sylvie protocol from its form_tips. combo_practice: run prescribed combos at moderate intensity. power: hardest working round, max output. conditioning: Fagan-style finisher, 100-strike burnout.',
+            },
+            rationale: {
+              type: 'string',
+              description: 'One sentence, under 120 chars, voice canon. Why this round exists for this athlete today. Observation before instruction. No exclamation marks.',
+            },
+            comboIds: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 4,
+              items: { type: 'string' },
+              description: 'IDs from the available combos list. For drill_isolation, supply exactly one id. For warmup, 1 or 2 ids. For combo_practice, 2 to 4. For power and conditioning, 1 to 3.',
+            },
+          },
+          required: ['roundNumber', 'roundType', 'rationale', 'comboIds'],
+        },
+      },
+    },
+    required: ['sessionIntent', 'rounds'],
+  },
+}
+
 export const ALL_TOOLS: Tool[] = [
   TOOL_WEEK_PLAN,
   TOOL_WEEK_REVIEW,
@@ -373,6 +437,7 @@ export const ALL_TOOLS: Tool[] = [
   TOOL_SESSION_REVIEW,
   TOOL_INSIGHT,
   TOOL_SKIP_RESPONSE,
+  TOOL_BAG_PRESCRIPTION,
 ]
 
 export const TOOL_BY_NAME: Record<string, Tool> = Object.fromEntries(
