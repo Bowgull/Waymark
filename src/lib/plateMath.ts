@@ -20,7 +20,7 @@ export function calculatePlates(targetLbs: number): PlateResult {
   }
 
   // Per-side load, rounded to nearest 2.5
-  let perSide = Math.round((targetLbs - BAR_LBS) / 2 / 2.5) * 2.5
+  const perSide = Math.round((targetLbs - BAR_LBS) / 2 / 2.5) * 2.5
   if (perSide <= 0) {
     return { plates: 'Bar only', achievedLbs: BAR_LBS }
   }

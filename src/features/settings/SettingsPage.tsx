@@ -39,7 +39,7 @@ const DAY_LABELS = [
 ]
 
 export function SettingsPage() {
-  const [settings, setSettings] = useState<Settings | null>(null)
+  const [, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
