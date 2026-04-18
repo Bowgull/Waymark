@@ -10,5 +10,7 @@
 		}
 	]
 	// Secret bindings (set via `wrangler secret put`):
-	//   ANTHROPIC_API_KEY  - Anthropic API key for AI calls
+	//   ANTHROPIC_API_KEY      - Anthropic API key for AI calls
+	//   STRAVA_CLIENT_ID       - Strava app client id (226927)
+	//   STRAVA_CLIENT_SECRET   - Strava app client secret
 }

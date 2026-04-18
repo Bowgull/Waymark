@@ -339,6 +339,20 @@ export const bodyMetrics = sqliteTable('body_metrics', {
   index('idx_body_metrics_logged').on(t.loggedAt),
 ])
 
+// ─── Strava integration ───────────────────────────────────────
+
+export const stravaTokens = sqliteTable('strava_tokens', {
+  id: text('id').primaryKey().default('default'),
+  athleteId: integer('athlete_id').notNull(),
+  athleteName: text('athlete_name'),
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+  expiresAt: integer('expires_at').notNull(),
+  scope: text('scope').notNull(),
+  connectedAt: integer('connected_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+})
+
 export const coachingOutputs = sqliteTable('coaching_outputs', {
   id: text('id').primaryKey(),
   kind: text('kind').notNull(),
