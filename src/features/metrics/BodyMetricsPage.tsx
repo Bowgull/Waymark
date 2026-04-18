@@ -86,20 +86,21 @@ export function BodyMetricsPage() {
       <PageHeader title="Body metrics" />
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <div className="flex gap-3">
-          <label className="flex flex-1 flex-col gap-1">
-            <span className="text-xs text-muted-foreground">Weight (lbs)</span>
-            <input
-              type="number"
-              step="0.1"
-              min="1"
-              value={weightLbs}
-              onChange={e => setWeightLbs(e.target.value)}
-              placeholder="185"
-              className="rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
-            />
-          </label>
-          <label className="flex w-28 flex-col gap-1">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Weight (lbs)</span>
+          <input
+            type="number"
+            step="0.1"
+            min="1"
+            value={weightLbs}
+            onChange={e => setWeightLbs(e.target.value)}
+            placeholder="185"
+            className="rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
+          />
+        </label>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1">
             <span className="text-xs text-muted-foreground">Resting HR</span>
             <input
               type="number"
@@ -111,7 +112,7 @@ export function BodyMetricsPage() {
               className="rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
             />
           </label>
-          <label className="flex w-24 flex-col gap-1">
+          <label className="flex flex-col gap-1">
             <span className="text-xs text-muted-foreground">Bodyfat %</span>
             <input
               type="number"
@@ -142,7 +143,7 @@ export function BodyMetricsPage() {
         <button
           type="submit"
           disabled={saving}
-          className="self-start rounded-md border border-gold/40 px-5 py-2 text-sm text-gold transition-colors hover:border-gold/70 hover:bg-gold/10 disabled:opacity-40"
+          className="min-h-[44px] rounded-md border border-gold/40 px-5 py-2 text-sm text-gold transition-colors hover:border-gold/70 hover:bg-gold/10 disabled:opacity-40"
         >
           {saving ? 'Saving' : 'Commit'}
         </button>

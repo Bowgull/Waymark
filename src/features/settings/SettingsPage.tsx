@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
 import { scheduleAlarms } from '@/lib/notifications'
@@ -49,6 +50,7 @@ const DAY_LABELS = [
 ]
 
 export function SettingsPage() {
+  const navigate = useNavigate()
   const [, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -430,6 +432,24 @@ export function SettingsPage() {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* Body Metrics */}
+      <section>
+        <p className="mb-2 text-sm font-medium text-foreground">Body metrics</p>
+        <button
+          type="button"
+          onClick={() => navigate('/metrics')}
+          className="flex min-h-[44px] w-full items-center justify-between rounded-md border border-border bg-border/30 px-3 py-2.5 text-left active:bg-border/50"
+        >
+          <div className="min-w-0">
+            <p className="text-sm text-foreground">Weight, resting HR, bodyfat</p>
+            <p className="text-xs text-muted-foreground">Log manually for now. Smart scale sync later.</p>
+          </div>
+          <svg className="h-4 w-4 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </button>
       </section>
 
       {/* Strava */}
