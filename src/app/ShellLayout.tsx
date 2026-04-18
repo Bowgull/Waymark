@@ -31,7 +31,7 @@ export function ShellLayout() {
   return (
     <div className="flex h-dvh flex-col bg-background text-foreground">
       <OfflineBanner />
-      <main className="min-h-0 flex-1 overflow-auto px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-4">
+      <main className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         <Outlet />
       </main>
       <ApiHealthDevBadge />

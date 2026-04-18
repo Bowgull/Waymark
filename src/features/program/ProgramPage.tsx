@@ -476,7 +476,7 @@ export function ProgramPage() {
   const isBlockZero = block.blockType === 'block_zero'
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       <PageBackground />
 
       {/* Logo mark */}

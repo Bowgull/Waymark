@@ -215,7 +215,7 @@ export function TodayPage() {
   const allDone = sessions.length > 0 && sessions.every(s => s.status === 'completed' || s.status === 'skipped')
 
   return (
-    <div className="relative flex flex-col gap-5 pb-4">
+    <div className="relative flex flex-col gap-5 pb-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       <PageBackground />
       <DateHeader date={todayDate} />
 
