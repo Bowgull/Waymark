@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { ShellLayout } from './ShellLayout'
 import { HistoryPage } from '../features/history/HistoryPage'
 import { LibraryPage } from '../features/library/LibraryPage'
+import { OnboardingPage } from '../features/onboarding/OnboardingPage'
 import { ProgramPage } from '../features/program/ProgramPage'
 import { WorkoutPage } from '../features/session/WorkoutPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
@@ -12,6 +13,22 @@ import { initNotificationListeners, handleForegroundAlarmCheck } from '../lib/no
 import { apiFetch } from '../lib/api'
 
 export function AppRoutes() {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (location.pathname === '/onboarding') return
+    apiFetch<{ onboardedAt: number | null } | null>('/api/user-profile')
+      .then(profile => {
+        if (!profile || !profile.onboardedAt) {
+          navigate('/onboarding', { replace: true })
+        }
+      })
+      .catch(() => {
+        // API unavailable, skip redirect
+      })
+  }, [])
+
   useEffect(() => {
     initNotificationListeners()
 
@@ -34,7 +51,8 @@ export function AppRoutes() {
 
   return (
     <Routes>
-      {/* Full-screen workout route — no shell/nav */}
+      {/* Full-screen routes — no shell/nav */}
+      <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/session/:id" element={<ErrorBoundary level="session"><WorkoutPage /></ErrorBoundary>} />
 
       <Route element={<ShellLayout />}>
