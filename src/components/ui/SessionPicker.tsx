@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { getMarkAsset } from '@/lib/markAssets'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import { TRAINING_TARGETS } from '@/lib/trainingTargets'
+import { BottomSheet } from '@/components/ui/BottomSheet'
+import { mediumHaptic, selectHaptic } from '@/lib/haptics'
 
 interface SessionOption {
   type: string
@@ -121,26 +123,18 @@ function SuggestedPicker({ baseOptions, suggestions, onSelect, onClose }: {
 
 function PickerShell({ children, onClose, flags }: { children: React.ReactNode; onClose: () => void; flags?: string[] }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60" />
-      <div
-        className="relative w-full max-w-md rounded-t-xl border-t border-gold/10 bg-surface p-4 animate-fade-in-up"
-        style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header with inline flags */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between">
-            <p className="text-display-sm text-foreground">Add Session</p>
-            <button onClick={onClose} className="min-h-[44px] px-3 text-muted-foreground/60 text-xs uppercase tracking-wider active:text-muted-foreground">Cancel</button>
-          </div>
-          {flags && flags.length > 0 && (
-            <p className="mt-1 text-xs text-gold/50">{flags.join(' · ')}</p>
-          )}
+    <BottomSheet open onClose={onClose} ariaLabel="Add Session">
+      <div className="mb-4">
+        <div className="flex items-center justify-between">
+          <p className="font-cinzel text-display-sm text-foreground">Add Session</p>
+          <button onClick={onClose} className="min-h-[44px] px-3 text-muted-foreground/60 text-xs uppercase tracking-wider active:text-muted-foreground">Cancel</button>
         </div>
-        {children}
+        {flags && flags.length > 0 && (
+          <p className="mt-1 text-xs text-gold/50">{flags.join(' · ')}</p>
+        )}
       </div>
-    </div>
+      {children}
+    </BottomSheet>
   )
 }
 
@@ -156,7 +150,13 @@ function FlexibleSessionRow({ opt, onSelect, reason, accent }: {
   const mark = getMarkAsset(opt.type)
 
   function handleSelect() {
+    mediumHaptic()
     onSelect({ type: opt.type, label: opt.label, timeSlot, runCategory: opt.runCategory })
+  }
+
+  function handleSlot(slot: 'am' | 'pm') {
+    selectHaptic()
+    setTimeSlot(slot)
   }
 
   return (
@@ -178,11 +178,11 @@ function FlexibleSessionRow({ opt, onSelect, reason, accent }: {
           onClick={(e) => e.stopPropagation()}
         >
           <span
-            onClick={(e) => { e.stopPropagation(); setTimeSlot('am') }}
+            onClick={(e) => { e.stopPropagation(); handleSlot('am') }}
             className={`rounded-l-full px-2 py-0.5 transition-colors cursor-pointer ${timeSlot === 'am' ? 'bg-gold/15 text-gold/80' : 'text-muted-foreground/30'}`}
           >AM</span>
           <span
-            onClick={(e) => { e.stopPropagation(); setTimeSlot('pm') }}
+            onClick={(e) => { e.stopPropagation(); handleSlot('pm') }}
             className={`rounded-r-full px-2 py-0.5 transition-colors cursor-pointer ${timeSlot === 'pm' ? 'bg-teal/15 text-teal/80' : 'text-muted-foreground/30'}`}
           >PM</span>
         </span>
