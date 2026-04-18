@@ -5,6 +5,7 @@ import { desc, eq } from 'drizzle-orm'
 import { coachingOutputs, exercises, sessions, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
+import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_SESSION_REVIEW, type SessionReviewOutput } from './prompts/tools'
 import type { createDB } from '../db/client'
 
@@ -70,6 +71,8 @@ export async function runSessionReview(
       .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id)),
   ])
 
+  const latestBodyweightKg = await getLatestBodyweightKg(db)
+
   const profile: UserProfileContext = {
     goals: profileRow?.goals ?? null,
     injuries: profileRow?.injuries ?? null,
@@ -80,6 +83,7 @@ export async function runSessionReview(
     weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
     trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
+    latestBodyweightKg,
   }
 
   const recentOther = recent.filter(r => r.id !== session.id).slice(0, 3)

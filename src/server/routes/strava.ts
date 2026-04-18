@@ -422,13 +422,26 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     attachmentStatus = 'orphan'
   }
 
-  // Optional HR stream → zone_seconds if profile.max_hr is known.
+  // Seed max_hr from Tanaka (208 - 0.7 × age) if profile has DOB but no
+  // max_hr yet. Observed max from real runs will overwrite this. Without the
+  // seed, zones never compute on the first run.
   const [profile] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+  let effectiveMaxHr = profile?.maxHr ?? null
+  if (effectiveMaxHr == null && profile?.dob) {
+    const tanaka = tanakaMaxHrFromDob(profile.dob)
+    if (tanaka != null) {
+      await db.update(userProfile)
+        .set({ maxHr: tanaka, updatedAt: Date.now() })
+        .where(eq(userProfile.id, 'default'))
+      effectiveMaxHr = tanaka
+    }
+  }
+
   let zoneSeconds: { z1: number; z2: number; z3: number; z4: number; z5: number } | null = null
-  if (profile?.maxHr && act.average_heartrate != null) {
+  if (effectiveMaxHr && act.average_heartrate != null) {
     const streams = await fetchStreams(activityId, token).catch(() => null)
     if (streams?.heartrate?.data && streams.time?.data) {
-      zoneSeconds = bucketZones(streams.heartrate.data, streams.time.data, profile.maxHr)
+      zoneSeconds = bucketZones(streams.heartrate.data, streams.time.data, effectiveMaxHr)
     }
   }
 
@@ -469,10 +482,15 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     }
   }
 
+  // Spike clamp: strap contact loss / static can produce false reads in the
+  // 220-250 range. Reject obvious noise. 215 is above any realistic trained-
+  // human max and well below typical strap glitch values.
   let maxHrBumped: { from: number | null; to: number } | null = null
   if (act.max_heartrate && profile) {
     const observed = Math.round(act.max_heartrate)
-    if (observed > (profile.maxHr ?? 0)) {
+    const current = effectiveMaxHr ?? profile.maxHr ?? 0
+    const isNoise = observed > 215
+    if (!isNoise && observed > current) {
       await db.update(userProfile)
         .set({ maxHr: observed, updatedAt: Date.now() })
         .where(eq(userProfile.id, 'default'))
@@ -488,6 +506,20 @@ async function fetchStreams(activityId: number, token: string): Promise<StravaSt
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) return null
   return await res.json() as StravaStreams
+}
+
+// Tanaka formula for age-predicted max HR: 208 - 0.7 × age. More accurate
+// than the classic 220 - age for trained adults. Returns null if DOB is
+// unparseable or yields an implausible age.
+function tanakaMaxHrFromDob(dob: string): number | null {
+  const birth = new Date(dob)
+  if (isNaN(birth.getTime())) return null
+  const now = new Date()
+  let age = now.getFullYear() - birth.getFullYear()
+  const m = now.getMonth() - birth.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--
+  if (age < 10 || age > 100) return null
+  return Math.round(208 - 0.7 * age)
 }
 
 // Bucket HR samples into Z1-Z5 by % of max HR. Z1 <60, Z2 60-70, Z3 70-80,

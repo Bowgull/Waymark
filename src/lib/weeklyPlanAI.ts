@@ -5,6 +5,7 @@ import { and, desc, eq, gte, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, journalEntries, mtClassLogs, sessions, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
+import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_WEEK_PLAN, type BodyIssueDetection, type WeekPlanOutput } from './prompts/tools'
 import { getWeekSummaries } from './prompts/summarizer'
 import type { createDB } from '../db/client'
@@ -244,6 +245,8 @@ export async function generateWeekPlan(
     .from(trainingMaxes)
     .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id))
 
+  const latestBodyweightKg = await getLatestBodyweightKg(db)
+
   const profile: UserProfileContext = {
     goals: profileRow?.goals ?? null,
     injuries: profileRow?.injuries ?? null,
@@ -254,6 +257,7 @@ export async function generateWeekPlan(
     weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
     trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
+    latestBodyweightKg,
   }
 
   const summaries = await getWeekSummaries(db, params.blockId, params.weekNumber - 1)
