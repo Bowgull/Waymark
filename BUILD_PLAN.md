@@ -11,6 +11,17 @@ Living document. Updated at the end of every session. Read this first, every tim
 3. At session end, assistant updates step status, appends to Session Log, commits.
 4. Deploy happens at the end of the full plan, not between steps.
 
+### Sequential session rule (enforced every session)
+
+Before writing any code, the assistant must:
+
+1. Run `git log main --oneline -8` to see what is actually merged.
+2. Identify the highest step number present in main's commit history.
+3. Confirm the requested step is exactly `that number + 1`. If it is not, stop and tell the user which step to run next instead.
+
+This prevents parallel worktrees from forking off the same base and diverging.
+Each step must be merged to main before the next session starts.
+
 ---
 
 ## Hard Rules (non-negotiable)
@@ -126,8 +137,8 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
   - Files: `src/lib/prompts/system.ts` (new), `src/lib/prompts/context.ts` (new)
 - **Step 5** `DONE` Tool schemas for structured outputs: `weekPlan`, `weekReview`, `blockTransition`, `sessionReview`, `insight`.
   - Files: `src/lib/prompts/tools.ts` (new)
-- **Step 6** `TODO` Context summarizer. Rolls weeks 5+ into compressed summaries stored in `coachingOutputs`.
-  - Files: `src/lib/prompts/summarizer.ts` (new), cron or on-demand
+- **Step 6** `DONE` Context summarizer. Rolls weeks 5+ into compressed summaries stored in `coachingOutputs`.
+  - Files: `src/lib/prompts/summarizer.ts` (new), `POST /api/ai/summarize-old-weeks` in `src/server/app.ts`
 
 ### Phase 3: Block Zero AI
 
@@ -172,7 +183,6 @@ Append one entry per session. Keep under 5 lines each.
 
 ### Session 2 (2026-04-17) · Step 2
 - Did: Created `src/lib/anthropic.ts` (direct fetch wrapper, prompt caching headers, retry on 429/5xx/529, offline fallback, tool use, extended thinking for Sonnet). Added `ANTHROPIC_API_KEY` to `Bindings` in `src/server/app.ts`. Noted secret in `wrangler.jsonc`.
-- Next: Step 3 (onboarding screen, three questions, writes to `user_profile`).
 - Notes: Set `ANTHROPIC_API_KEY` via `wrangler secret put ANTHROPIC_API_KEY` before Step 7.
 
 ### Session 3 (2026-04-17) · Step 3
@@ -188,3 +198,7 @@ Append one entry per session. Keep under 5 lines each.
 ### Session 5 (2026-04-17) · Step 5
 - Did: Created `src/lib/prompts/tools.ts` with five Anthropic tool definitions (weekPlan, weekReview, blockTransition, sessionReview, insight) and matching TypeScript output types. Exported ALL_TOOLS array and TOOL_BY_NAME map.
 - Next: Step 6 (context summarizer).
+
+### Session 6 (2026-04-17) · Step 6
+- Did: Created `src/lib/prompts/summarizer.ts`. Exports `summarizeOldWeeks` (Haiku call, tool use, writes to `coaching_outputs`) and `getWeekSummaries` (reads stored summaries for context building). Added `POST /api/ai/summarize-old-weeks` route. Added sequential session rule to BUILD_PLAN.
+- Next: Step 7 (Block Zero assessment call).
