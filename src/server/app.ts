@@ -19,6 +19,7 @@ import { analyzeWeek, proposeReschedule } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { runSkipResponse } from '../lib/skipResponseAI'
+import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 import { strava } from './routes/strava'
 
@@ -1111,61 +1112,101 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
   const allUnlocked = await db.select().from(combos).where(eq(combos.unlocked, 1))
   const unlockedCombos = allUnlocked.filter(c => {
     const comboTechniques = c.techniques.split(',').filter(Boolean)
-    return comboTechniques.every(t => enabledTechniques.has(t))
+    return comboTechniques.length === 0 || comboTechniques.every(t => enabledTechniques.has(t))
   })
 
   if (unlockedCombos.length === 0) {
     return c.json({ error: 'no unlocked combos available' }, 400)
   }
 
-  const ROUND_COUNT = 6
-  const COMBOS_PER_ROUND = 3
-
-  for (let r = 0; r < ROUND_COUNT; r++) {
-    const roundId = crypto.randomUUID()
-    await db.insert(bagWorkRounds).values({
-      id: roundId,
-      sessionId,
-      roundNumber: r + 1,
-      durationSec: 180,
-      restSec: 60,
-      createdAt: nowSec,
-    })
-
-    // Weighted selection: lower mastery = more likely to be picked; favourites get a bonus
-    const weighted = unlockedCombos.map(c => ({
-      combo: c,
-      weight: Math.max(1, 10 - c.masteryScore) + (c.isFavourite ? 2 : 0),
-    }))
-    const totalWeight = weighted.reduce((sum, w) => sum + w.weight, 0)
-
-    const picked: typeof unlockedCombos = []
-    const used = new Set<string>()
-    const pickCount = Math.min(COMBOS_PER_ROUND, unlockedCombos.length)
-
-    for (let ci = 0; ci < pickCount; ci++) {
-      let roll = Math.random() * totalWeight
-      let chosen = weighted[0].combo
-      for (const w of weighted) {
-        if (used.has(w.combo.id)) continue
-        roll -= w.weight
-        if (roll <= 0) { chosen = w.combo; break }
-      }
-      if (used.has(chosen.id)) {
-        // Fallback: pick first unused
-        chosen = unlockedCombos.find(c => !used.has(c.id)) ?? chosen
-      }
-      used.add(chosen.id)
-      picked.push(chosen)
+  // AI prescription path (coach prescribes typed rounds)
+  const apiKey = (c.env as { ANTHROPIC_API_KEY?: string }).ANTHROPIC_API_KEY
+  let prescribed: Awaited<ReturnType<typeof runBagPrescription>> = null
+  if (apiKey) {
+    try {
+      const todayEpochDay = Math.floor(nowSec / 86400)
+      prescribed = await runBagPrescription(db, apiKey, { sessionId, todayEpochDay })
+    } catch (err) {
+      console.warn('[start-bag-work] prescription failed', err)
     }
+  }
 
-    for (let ci = 0; ci < picked.length; ci++) {
-      await db.insert(bagWorkRoundCombos).values({
-        id: crypto.randomUUID(),
-        roundId,
-        comboId: picked[ci].id,
-        orderIndex: ci,
+  if (prescribed && prescribed.rounds.length >= 3) {
+    for (const r of prescribed.rounds) {
+      const roundId = crypto.randomUUID()
+      const durationSec = r.roundType === 'warmup' ? 150 : r.roundType === 'conditioning' ? 180 : 180
+      await db.insert(bagWorkRounds).values({
+        id: roundId,
+        sessionId,
+        roundNumber: r.roundNumber,
+        durationSec,
+        restSec: 60,
+        roundType: r.roundType,
+        coachRationale: r.rationale,
+        createdAt: nowSec,
       })
+      for (let ci = 0; ci < r.comboIds.length; ci++) {
+        await db.insert(bagWorkRoundCombos).values({
+          id: crypto.randomUUID(),
+          roundId,
+          comboId: r.comboIds[ci],
+          orderIndex: ci,
+        })
+      }
+    }
+  } else {
+    // Deterministic fallback: 6 weighted-random rounds with positional round types.
+    // Used when AI is offline or returns too few rounds.
+    const POSITIONAL_TYPES = ['warmup', 'technical_flow', 'combo_practice', 'combo_practice', 'power', 'conditioning'] as const
+    const ROUND_COUNT = 6
+    const COMBOS_PER_ROUND = 3
+
+    for (let r = 0; r < ROUND_COUNT; r++) {
+      const roundId = crypto.randomUUID()
+      await db.insert(bagWorkRounds).values({
+        id: roundId,
+        sessionId,
+        roundNumber: r + 1,
+        durationSec: 180,
+        restSec: 60,
+        roundType: POSITIONAL_TYPES[r],
+        coachRationale: '',
+        createdAt: nowSec,
+      })
+
+      const weighted = unlockedCombos.map(c => ({
+        combo: c,
+        weight: Math.max(1, 10 - c.masteryScore) + (c.isFavourite ? 2 : 0),
+      }))
+      const totalWeight = weighted.reduce((sum, w) => sum + w.weight, 0)
+
+      const picked: typeof unlockedCombos = []
+      const used = new Set<string>()
+      const pickCount = Math.min(COMBOS_PER_ROUND, unlockedCombos.length)
+
+      for (let ci = 0; ci < pickCount; ci++) {
+        let roll = Math.random() * totalWeight
+        let chosen = weighted[0].combo
+        for (const w of weighted) {
+          if (used.has(w.combo.id)) continue
+          roll -= w.weight
+          if (roll <= 0) { chosen = w.combo; break }
+        }
+        if (used.has(chosen.id)) {
+          chosen = unlockedCombos.find(c => !used.has(c.id)) ?? chosen
+        }
+        used.add(chosen.id)
+        picked.push(chosen)
+      }
+
+      for (let ci = 0; ci < picked.length; ci++) {
+        await db.insert(bagWorkRoundCombos).values({
+          id: crypto.randomUUID(),
+          roundId,
+          comboId: picked[ci].id,
+          orderIndex: ci,
+        })
+      }
     }
   }
 
@@ -1563,10 +1604,24 @@ app.post('/api/daily-logs', async (c) => {
   const nowSec = Math.floor(Date.now() / 1000)
   const db = createDB(c.env)
 
-  // Check if log already exists
+  // Partial-update semantics: any field present in the raw request body is written
+  // (including explicit null to clear). Omitted fields preserve existing values.
+  // Lets the user log throughout the day without wiping earlier entries.
+  const rawObj = raw as Record<string, unknown>
+  const hasKey = (k: string) => Object.prototype.hasOwnProperty.call(rawObj, k)
+
   const existing = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, epochDay))
   if (existing.length > 0) {
-    return c.json(existing[0])
+    const prev = existing[0]
+    await db.update(dailyLogs).set({
+      sleepHours: hasKey('sleepHours') ? body.sleepHours ?? null : prev.sleepHours,
+      weedGrams: hasKey('weedGrams') ? body.weedGrams ?? null : prev.weedGrams,
+      alcoholScale: hasKey('alcoholScale') ? body.alcoholScale ?? null : prev.alcoholScale,
+      soreness: hasKey('soreness') ? body.soreness ?? null : prev.soreness,
+      notes: hasKey('notes') ? body.notes ?? null : prev.notes,
+    }).where(eq(dailyLogs.id, prev.id))
+    const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, prev.id))
+    return c.json(row)
   }
 
   const id = crypto.randomUUID()

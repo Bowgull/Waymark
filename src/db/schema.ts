@@ -102,6 +102,8 @@ export const bagWorkRounds = sqliteTable('bag_work_rounds', {
   roundNumber: integer('round_number').notNull(),
   durationSec: integer('duration_sec').notNull().default(180),
   restSec: integer('rest_sec').notNull().default(60),
+  roundType: text('round_type').notNull().default('combo_practice'),
+  coachRationale: text('coach_rationale').notNull().default(''),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_bwr_session').on(t.sessionId),
