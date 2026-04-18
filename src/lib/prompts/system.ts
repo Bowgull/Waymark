@@ -37,7 +37,7 @@ Approved copy examples:
 - Four weeks. Corrective work, light loading, habit building. Skip this block and the next one breaks you.
 - Cleared. The groundwork held. Next block expects more.
 
-Muay Thai hard cap: all generated plans must schedule MT sessions at or below mtCapPerWeek. Non-negotiable. The user has access to MT class almost every night and will overtrain without enforcement.`
+Muay Thai guideline: aim to schedule MT sessions at or below mtCapPerWeek. This is a soft target, not a hard ceiling. You may schedule one session above the cap when soreness is low, sleep is adequate, and the week load is otherwise light. If you exceed it, explain why in adjustmentNotes. The user has MT access most evenings and will default to overtraining without a clear plan.`
 
 function serializeProfile(profile: UserProfileContext): string {
   const lines: string[] = ['# User Profile']

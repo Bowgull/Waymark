@@ -79,7 +79,7 @@ Dark humor, sparse, honest. Lord of the Rings / Stormlight / Kingkiller / Malaza
 - **Goals**: Fit body. Good at MT. Fix posture. All three, ranked roughly equal.
 - **Schedule**: 3-4 training days/week realistic. Sunday is chill by preference. MT gym available most evenings plus Sunday boxing technique class.
 - **Current state**: Brand new install. Block Zero starts fresh. Legacy seed training maxes are **not** their real numbers. Cold start required.
-- **MT cap**: Hard-enforced by AI. Prevents overtraining from available-every-night access.
+- **MT cap**: Soft guideline enforced by AI. Target is mtCapPerWeek. AI may exceed by one session when soreness is low and load is otherwise light.
 
 ---
 

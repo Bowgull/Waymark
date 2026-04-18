@@ -136,7 +136,7 @@ export const TOOL_WEEK_PLAN: Tool = {
       },
       mtSessionsThisWeek: {
         type: 'integer',
-        description: 'Count of mt_class sessions in this plan. Must not exceed mtCapPerWeek.',
+        description: 'Count of mt_class sessions in this plan. Target is mtCapPerWeek. May exceed by one if soreness is low and overall week load is light.',
       },
       adjustmentNotes: {
         type: 'string',
