@@ -17,6 +17,7 @@ import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek, proposeReschedule } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
 import { runSessionReview } from '../lib/sessionReviewAI'
+import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 
 type Bindings = {
   DB: D1Database
@@ -2928,6 +2929,14 @@ app.get('/api/ai/block-zero-transition', async (c) => {
   const db = createDB(c.env)
   const output = await getStoredBlockZeroTransition(db)
   return c.json(output ?? null)
+})
+
+app.post('/api/ai/ledger-insights', async (c) => {
+  const db = createDB(c.env)
+  const data = await c.req.json<LedgerInsightData>()
+  const insights = await runLedgerInsights(db, c.env.ANTHROPIC_API_KEY, data)
+  if (!insights) return c.json({ insights: null }, 503)
+  return c.json({ insights })
 })
 
 export default app

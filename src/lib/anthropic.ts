@@ -174,3 +174,10 @@ export function getToolInput<T>(result: AnthropicResult, toolName: string): T | 
   )
   return block ? (block.input as T) : null
 }
+
+export function getToolInputs<T>(result: AnthropicResult, toolName: string): T[] {
+  if (result.offline || !result.content) return []
+  return result.content
+    .filter((b): b is ToolUseContent => b.type === 'tool_use' && b.name === toolName)
+    .map(b => b.input as T)
+}
