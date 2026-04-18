@@ -20,6 +20,15 @@ interface Settings {
   cascade?: { removed: number; freedDays?: string[] } | null
 }
 
+interface StravaStatus {
+  connected: boolean
+  athleteId?: number
+  athleteName?: string | null
+  scope?: string
+  connectedAt?: number
+  expiresAt?: number
+}
+
 const TECHNIQUE_OPTIONS = [
   { key: 'boxing', label: 'Boxing' },
   { key: 'kicks', label: 'Kicks' },
@@ -58,6 +67,10 @@ export function SettingsPage() {
   const [amDrumStep, setAmDrumStep] = useState<'hour' | 'minute'>('hour')
   const [pmTimeDrumStep, setPmTimeDrumStep] = useState<'hour' | 'minute'>('hour')
 
+  // Strava
+  const [strava, setStrava] = useState<StravaStatus | null>(null)
+  const [disconnecting, setDisconnecting] = useState(false)
+
   useEffect(() => {
     async function load() {
       try {
@@ -80,6 +93,45 @@ export function SettingsPage() {
     }
     load()
   }, [])
+
+  useEffect(() => {
+    async function loadStrava() {
+      try {
+        const s = await apiFetch<StravaStatus>('/api/strava/status')
+        setStrava(s)
+      } catch (e) {
+        console.error('Failed to load Strava status:', e)
+        setStrava({ connected: false })
+      }
+    }
+    loadStrava()
+
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get('strava')
+    if (result === 'connected') {
+      showToast('Strava connected', 'success')
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (result === 'denied') {
+      showToast('Strava access denied', 'info')
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (result && result.startsWith('token')) {
+      showToast('Strava connection failed, try again', 'info')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [showToast])
+
+  async function handleDisconnectStrava() {
+    setDisconnecting(true)
+    try {
+      await apiFetch('/api/strava/disconnect', { method: 'POST' })
+      setStrava({ connected: false })
+      showToast('Strava disconnected', 'info')
+    } catch (e) {
+      console.error('Failed to disconnect Strava:', e)
+    } finally {
+      setDisconnecting(false)
+    }
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -308,6 +360,37 @@ export function SettingsPage() {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* Strava */}
+      <section>
+        <p className="mb-2 text-sm font-medium text-foreground">Strava</p>
+        {strava?.connected ? (
+          <div className="rounded-md border border-border bg-border/30 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm text-foreground truncate">
+                  {strava.athleteName ?? `Athlete ${strava.athleteId}`}
+                </p>
+                <p className="text-xs text-muted-foreground">Runs log themselves.</p>
+              </div>
+              <button
+                onClick={handleDisconnectStrava}
+                disabled={disconnecting}
+                className="shrink-0 rounded-md border border-border bg-deep-forest px-3 py-1.5 text-xs text-muted-foreground active:text-foreground disabled:opacity-50"
+              >
+                {disconnecting ? 'Disconnecting...' : 'Disconnect'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <a
+            href="/api/strava/authorize"
+            className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-gold/15 px-3 py-2 text-sm font-medium text-gold ring-1 ring-gold/40 active:bg-gold/25"
+          >
+            Connect Strava
+          </a>
+        )}
       </section>
 
       {/* Save */}
