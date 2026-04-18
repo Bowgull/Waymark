@@ -29,11 +29,18 @@ export interface PlannedDay {
   sessions: PlannedSession[]
 }
 
+export interface BodyIssueDetection {
+  region: string
+  context: string
+  severity: 'mild' | 'moderate' | 'severe'
+}
+
 export interface WeekPlanOutput {
   narrative: string
   days: PlannedDay[]
   mtSessionsThisWeek: number
   adjustmentNotes?: string
+  bodyIssuesDetected?: BodyIssueDetection[]
 }
 
 export type RecommendedAction = 'add' | 'swap' | 'reduce_intensity' | 'add_recovery' | 'maintain'
@@ -141,6 +148,29 @@ export const TOOL_WEEK_PLAN: Tool = {
       adjustmentNotes: {
         type: 'string',
         description: 'Why this week differs from the default template. Omit if no deviation.',
+      },
+      bodyIssuesDetected: {
+        type: 'array',
+        description: 'Body regions the athlete mentioned in wellness notes or session notes from the previous week. One entry per distinct region mentioned. Omit entirely if nothing body-related surfaced.',
+        items: {
+          type: 'object',
+          properties: {
+            region: {
+              type: 'string',
+              description: 'Normalized body region, lowercase. Examples: "lower_back", "left_knee", "right_shoulder", "neck", "hip", "wrist". Prefer the same wording across weeks so rolled-up counts work.',
+            },
+            context: {
+              type: 'string',
+              description: 'Short phrase quoting or paraphrasing the note that triggered the detection. No interpretation, just the signal.',
+            },
+            severity: {
+              type: 'string',
+              enum: ['mild', 'moderate', 'severe'],
+              description: 'mild: mentioned in passing. moderate: recurring or limiting. severe: explicit pain or stopped a session.',
+            },
+          },
+          required: ['region', 'context', 'severity'],
+        },
       },
     },
     required: ['narrative', 'days', 'mtSessionsThisWeek'],

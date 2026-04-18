@@ -13,7 +13,6 @@ import { DateHeader } from './DateHeader'
 import { DaySummary } from './DaySummary'
 import { DayTimeline } from './DayTimeline'
 import { GeneratePlanButton } from './GeneratePlanButton'
-import { InjuryCheckCard } from './InjuryCheckCard'
 import { JournalCard } from './JournalCard'
 import { WellnessPromptCard, type WellnessData } from './WellnessPromptCard'
 
@@ -221,8 +220,6 @@ export function TodayPage() {
       <DateHeader date={todayDate} />
 
       <WellnessPromptCard onSubmit={handleWellnessSubmit} isLogged={dailyLog !== null && dailyLog !== undefined} />
-
-      <InjuryCheckCard />
 
       <JournalCard />
 
