@@ -78,7 +78,11 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
     intervalRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
     }, 500)
-  }, [])
+    // Outdoor run: open Strava so the athlete can record GPS there
+    if (!isIndoor) {
+      try { window.location.href = 'strava://' } catch {}
+    }
+  }, [isIndoor])
 
   function finishRun() {
     if (intervalRef.current) clearInterval(intervalRef.current)

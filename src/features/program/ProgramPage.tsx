@@ -399,7 +399,7 @@ export function ProgramPage() {
   if (blockZeroPrompt) {
     const isFirstLaunch = blockZeroPrompt === 'first_launch'
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <PageBackground />
         <Link to="/today" className="inline-block mb-1">
           <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
