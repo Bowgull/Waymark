@@ -130,49 +130,69 @@ Do not bundle commits. Each session should end with a pushed commit to main and 
 - `Contents.json` unchanged (three entries at 1x/2x/3x, same three filenames).
 - Logo size (~19% of aspect-fill viewport width on a 1170-wide phone) is matched to `LoadingScreen`'s on-screen SVG size of 220px so the transition reads as the same shield holding position, then tracing itself in.
 - Generated via Pillow (see commit diff). No storyboard edit; `LaunchScreen.storyboard` still aspect-fills the imageView and the new PNG is fully opaque, so its `systemBackgroundColor` never shows through.
-- **Device verification: not performed by Claude** (Mac-side build only). User must cold-launch on device to confirm zero white flash before moving to Commit 2.
+- **Device verification: not performed by Claude** (Mac-side build only). User has not yet confirmed on device; plans to verify later.
+
+### Commit 2: Time picker + nav gear + background polish (2026-04-18)
+
+- Commit: `8af89d8 polish: time picker and chrome pass`.
+- `src/components/ui/ScrollDrum.tsx`: added optional `pad?: number` prop; minute drums pass `pad={2}` so single-digit values render as `07`, `00`, etc.
+- `src/features/settings/SettingsPage.tsx`: removed `amDrumStep` / `pmTimeDrumStep` state + tab buttons. AM alarm and PM session time now render two side-by-side `ScrollDrum`s in one sheet (hour 1-12 step 1, minute 0-59 step 1). AM/PM toggle preserved. Lead-by drum untouched (15-120 step 15). No `% 15` / `/ 15` formatters elsewhere in the file needed fixing; the display callback already zero-pads via `padStart(2, '0')`.
+- `src/app/ShellLayout.tsx`: removed `/settings` NavTab and `SettingsIcon` import. Nav now 4 tabs (Today, Program, Library, Ledger). Nav class changed from `border-t border-border bg-near-black/80 backdrop-blur-md` to `border-t border-gold/10 bg-nav/90 backdrop-blur-md`.
+- `src/features/today/TodayPage.tsx`: imported `SettingsIcon` from `@/components/icons/NavIcons`; added `<button aria-label="Settings" onClick={() => navigate('/settings')}>` at the bottom of the page (inside the main container, before overlays) wrapped in `<div className="mt-8 mb-4 flex justify-end">`.
+- `src/index.css`: added `--color-nav: oklch(0.15 0.025 160);` in `@theme inline` (about +5% L over body `--background: oklch(0.10 0.03 160)`). Body `background` now stacks a radial gold glow (`radial-gradient(ellipse 120% 40% at 50% -10%, oklch(0.75 0.12 90 / 0.03), transparent 60%)`) on top of the existing 175deg forest gradient.
+- Preview verified: nav computed `background-color: oklab(... / 0.9)` at L=0.15, gold top border at alpha 0.1, minute `37` persists through Done (`6:37 AM` display confirmed).
+- Build `tsc -b && vite build`: pass. Lint of touched files: 0 errors, 1 pre-existing warning in `ScrollDrum.tsx` (`values` array deps, unrelated to this change). Project-wide lint has 284 pre-existing problems, none introduced here.
+- **Device verification: not performed by Claude** (user on same cadence as Commit 1; will verify alongside).
 
 ---
 
 ## Next commit
 
-**Commit 2: Time picker + nav gear + background polish**
+**Commit 3: Fighter Block removal + One Piece display + ep bump + toast**
 
-One UI-polish batch across Settings, shell nav, Today, and global CSS.
+Program page cleanup plus indoor-ready surface for Run Session, plus auto-increment of the One Pace episode on indoor run save.
 
 **Files to touch:**
-- `src/features/settings/SettingsPage.tsx` (time picker refactor)
-- `src/app/ShellLayout.tsx` (remove Settings tab)
-- `src/features/today/TodayPage.tsx` (add gear link at page bottom)
-- `src/index.css` (chrome-only background polish)
+- `src/features/program/ProgramPage.tsx` (delete Fighter Block narrative)
+- `src/features/session/RunSessionView.tsx` (big `{arc} — Ep {ep}` readout on indoor ready screen; auto-bump on save)
+- `src/features/settings/SettingsPage.tsx` (+/- stepper next to Episode field)
+- Possibly `src/server/app.ts` if the `/api/settings` PATCH doesn't yet accept numeric incr — grep first; current payload already writes `onePaceEp` as string so a client-side `String(Number(ep)+1)` should work without server change.
 
-**Time picker (SettingsPage.tsx ~lines 234-285):**
-- Replace the AM alarm Hour/Minute tab-drum (currently lines ~236-245) with two `ScrollDrum`s side-by-side in the same sheet: hour (1-12, step 1) and minute (**0-59, step 1**).
-- Same refactor for PM session time (currently lines ~273-282).
-- Remove `amDrumStep` / `pmTimeDrumStep` state and the tab toggle buttons.
-- Keep AM/PM toggle as-is.
-- Lead-by drum (line ~305) unchanged: min 15, max 120, step 15.
-- Minute display elsewhere on the page may assume 15-min multiples — grep for `% 15` / `/ 15` in this file and fix any formatter that can't render, e.g., `:07`.
+**Fighter Block removal (ProgramPage.tsx):**
+- Delete `getFighterBlockNarrative()` function entirely.
+- Delete the JSX render site(s) that call it (likely a conditional block guarded on `programBlock !== 'block_zero'` or similar).
+- Keep `getBlockZeroNarrative()` and the Block Zero render path.
+- Post-Block-Zero, the Program page simply renders no block narrative. That's intentional. Do not substitute a placeholder.
+- Grep the file first for `FighterBlock` / `fighter_block` / `getFighterBlockNarrative` to catch all call sites and any imports.
 
-**Nav + gear (ShellLayout.tsx ~50 lines total):**
-- Delete line 46 `<NavTab to="/settings" label="Settings" icon={<SettingsIcon />} />`.
-- Remove `SettingsIcon` from the `NavIcons` import on line 4.
-- Result: 4 tabs — Today, Program, Library, Ledger.
-- In `TodayPage.tsx`, append a small gear button below the last card: icon-only, `text-muted-foreground`, links to `/settings` via `Link` (or `useNavigate`). Bottom-right aligned, `size-5` icon, margin `mt-8 mb-4`. Use `<SettingsIcon />` from `@/components/icons/NavIcons`.
+**One Piece ready screen (RunSessionView.tsx):**
+- Locate the `phase === 'ready'` branch.
+- Scope: only when `isIndoor === true` (grep for how indoor is derived — likely a `sessionType` or `runCategory` check).
+- Above the existing "Open One Pace" button, render the current arc + episode in a big Cinzel readout: `{arc} — Ep {ep}`. Use `var(--font-display)` (not the character), class `text-display-lg` or `text-display` (confirm which reads better against the ready-screen layout; `text-display-lg` is 2.25rem).
+- Read `onePaceArc` / `onePaceEp` from settings. If `runSession` already carries them, prefer that. Otherwise fetch from `/api/settings` on mount or use an existing context.
+- NO EM DASHES. Use a regular hyphen or the word "Ep". Verify copy matches voice canon: short, plain. Example: `Water 7 — Ep 3` → rewrite as `Water 7  Ep 3` or `Water 7 / Ep 3`. Pick one, stay consistent.
 
-**Background polish (index.css):**
-- Identify the `--nav-bg` / bottom-nav background token (grep `bottom-nav` / `nav-bar` in `index.css`), lift by ~5% L in oklch so it reads as chrome vs. the `--background` body.
-- Add a body-level soft radial gold glow near top center: `background-image: radial-gradient(ellipse at 50% -10%, oklch(0.75 0.12 90 / 0.03), transparent 60%);` on `body` or `html`. Tune alpha to 0.03 and radius so it's felt not seen.
-- Add `border-top: 1px solid oklch(from var(--gold) l c h / 0.1);` (or the equivalent `border-t border-gold/10` Tailwind class) above the bottom nav container.
-- **Do not recolor content surfaces — chrome only.**
+**Auto-bump on save (RunSessionView.tsx + useToast):**
+- On indoor Save Run handler, after the save API call succeeds:
+  1. Compute `newEp = String(Number(onePaceEp ?? '0') + 1)`.
+  2. PATCH `/api/settings` with `{ onePaceEp: newEp }`.
+  3. Show toast via existing `useToast` hook: `"Ep {old} → Ep {new}"`. Keep under voice canon; no exclamation.
+- If PATCH fails: silent, do not block save. Log to console.
+- Guard: if `onePaceEp` is null/empty, skip the bump.
+
+**Settings stepper (SettingsPage.tsx):**
+- In the existing One Pace section, next to the Episode `<input>`, add `-` and `+` buttons that decrement / increment the numeric value.
+- Clamp at 0 minimum. No max.
+- Buttons: `min-h-[44px]`, small square, use existing `bg-border text-muted-foreground active:bg-muted` style. Place them inline with the input (flex row, input flex-1 + two buttons).
+- Value persists on Save like the rest of the form.
 
 **Done criteria:**
-- [ ] AM alarm + PM time show two side-by-side drums; minute drum supports any value 0-59
-- [ ] Settings tab removed from bottom nav; 4 tabs visible
-- [ ] Gear icon present at bottom of Today page and routes to `/settings`
-- [ ] Bottom nav visibly sits a shade lighter than body with a hairline gold top border
-- [ ] Faint gold glow visible at top of body (not on cards)
-- [ ] User confirms on device: no regressions to Program / Library / Ledger / session flows
-- [ ] Commit on main, voice-canon message (example: `polish: time picker and chrome pass`)
-- [ ] `POLISH_PASS.md`: move Commit 2 to Completed, advance Next commit to Commit 3 (Fighter Block removal + One Piece display + ep bump + toast) with file-level detail
+- [ ] `getFighterBlockNarrative` deleted; grep returns zero references in `src/`
+- [ ] Post-Block-Zero users see no block narrative on Program page, no crash
+- [ ] Indoor run ready screen shows Cinzel `{arc}  Ep {ep}` above Open One Pace button
+- [ ] Saving an indoor run bumps `onePaceEp` by 1 on the server and shows `Ep {old} → Ep {new}` toast
+- [ ] Settings Episode field has - / + stepper; disabled/clamped at 0
+- [ ] Build + lint: no new errors
+- [ ] Commit on main, voice-canon message
+- [ ] `POLISH_PASS.md`: move Commit 3 to Completed, advance Next commit to Commit 4 (Redeploy countdown) with file-level detail
 - [ ] Next session prompt emitted at end of final message
