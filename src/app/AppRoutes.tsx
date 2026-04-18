@@ -13,6 +13,7 @@ import { TodayPage } from '../features/today/TodayPage'
 import {
   initNotificationListeners,
   handleForegroundAlarmCheck,
+  requestNotificationPermission,
   scheduleRedeployReminders,
   cancelRedeployReminders,
 } from '../lib/notifications'
@@ -38,6 +39,14 @@ export function AppRoutes() {
 
   useEffect(() => {
     initNotificationListeners()
+
+    // Ask once, at boot. Patched plugin bundles .criticalAlert into
+    // the same authorization prompt so silent mode gets bypassed later.
+    if (Capacitor.isNativePlatform()) {
+      requestNotificationPermission().catch(() => {
+        // If the prompt fails or is denied, scheduleAlarms will re-request later.
+      })
+    }
 
     // Redeploy countdown: if the bundle is fresher than last boot,
     // cancel stale 5000/5001 notifications and schedule new ones.

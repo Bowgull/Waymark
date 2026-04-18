@@ -168,52 +168,49 @@ Do not bundle commits. Each session should end with a pushed commit to main and 
 - Preview verified (vite-frontend): `/settings` shows the pill at the top with "7" (build was seconds ago), default foreground color (oklch(0.93 0.01 80)), Cinzel 36px, caption all-caps tracking-wider muted. Console clean. No native plugin calls fired on web.
 - **Device verification: not performed by Claude.** Scheduling and cancellation of the two silent notifications is native-only and will only fire on a real iOS cold launch after install. Commits 1-4 still pending a single device cold-launch from the user.
 
+### Commit 5: Critical Alerts + custom sounds + plugin patch (2026-04-18)
+
+- Commit: `<hash> polish: critical alerts for morning and nuclear`.
+- **Plugin path: (b) patch-package.** `@capacitor/local-notifications@8.0.2` had no `interruptionLevel` / `criticalSound` / `.criticalAlert` in Swift or in `definitions.d.ts`. Patch (`patches/@capacitor+local-notifications+8.0.2.patch`) adds `.criticalAlert` to `requestAuthorization` options in `LocalNotificationsHandler.swift`; adds `critical` / `criticalVolume` handling and `interruptionLevel` switch in `makeNotificationContent` in `LocalNotificationsPlugin.swift`; extends `LocalNotificationSchema` in `definitions.d.ts` with three optional fields. `patch-package` added as devDep (`^8.0.1`); `postinstall: patch-package` wired in `package.json` scripts so patch re-applies on every `npm install`.
+- Sounds: `ios/App/App/Sounds/morning.caf` (Musical Vintage Lo-Fi Piano, 3.8 MB) and `ios/App/App/Sounds/nuclear.caf` (Dragon Studio nuclear alarm type beat, 731 KB) converted via `afconvert -f caff -d LEI16@48000 -c 1`. Sounds/ added to the App group as a folder reference (blue folder) and wired into the Copy Bundle Resources phase of `App.xcodeproj/project.pbxproj`, so any `.caf` dropped in there auto-bundles.
+- Entitlement: `ios/App/App/App.entitlements` created with `com.apple.developer.usernotifications.critical-alerts = true`. Added as file reference in the App group and `CODE_SIGN_ENTITLEMENTS = App/App.entitlements` set on both Debug and Release target build configs. Signing succeeds on the user's personal dev cert (self-granted restricted entitlement).
+- `src/lib/notifications.ts`:
+  - Nuclear cadence changed from 20 @ 2-min intervals to 20 @ 15-sec intervals starting at base+36min (~5 min of wall-to-wall follow-ups), matching section 8 intent now that the .caf is actually loud.
+  - Added `morningSound` / `nuclearSound` shape (`{ sound, critical: true, criticalVolume: 0.6, interruptionLevel: 'critical' }`) spread into the base alarm, all three snoozes, and every nuclear entry. PM leave-by and all round cues untouched (silent-mode-respecting).
+  - `requestNotificationPermission()` unchanged on the surface — the patched Swift now folds `.criticalAlert` into the same authorization prompt, so no second code path is needed on the JS side.
+- `src/app/AppRoutes.tsx`: imported `requestNotificationPermission`; added a one-shot `requestNotificationPermission().catch(noop)` inside the existing `initNotificationListeners` `useEffect`, gated on `Capacitor.isNativePlatform()`. First cold launch shows the combined alert/badge/sound/critical-alert prompt; subsequent launches short-circuit (permission already granted).
+- Build `tsc -b && vite build`: pass. Lint of touched files: 0 errors, 1 pre-existing warning on the onboarding `useEffect` in `AppRoutes.tsx` (unchanged from Commit 4).
+- **Device verification: REQUIRED and not yet performed.** Full verification flow: cold-launch, grant the OS prompt (now including Critical Alerts), set phone to silent, set AM alarm to 1 minute out, lock screen, wait. Morning piano + all snoozes should fire through silent mode. Also covers Commits 1-4 which are still pending a single device cold-launch.
+
 ---
 
 ## Next commit
 
-**Commit 5: Critical Alerts + custom sounds + plugin patch**
+**Commit 6: One Piece arc picker (drum-style, matching time picker)**
 
-Morning base + morning storm + nuclear follow-ups must bypass silent mode via the Critical Alerts entitlement with a bundled `.caf` sound. PM leave-by and round cues stay respecting silent mode.
+Current UX: in `src/features/settings/SettingsPage.tsx`, "Current Arc" is a plain text `<input>`. After Commit 2 converted the time picker to side-by-side drums, typing an arc name into a text box is now the inconsistent chrome on the page. Replace with a drum picker sourced from the One Pace canonical arc list.
 
-**Blocker:** nuclear sound file not yet chosen. User is still sampling Pixabay options (search terms in section 8 of Locked decisions: `vinyl scratch short`, `low piano hit`, `wood block`, `tape rewind`, `monastery bell short`, `singing bowl strike`). Do not start this commit until the user confirms a file and drops the MP3 at a known path. Morning sound is already decided: Musical Vintage Lo-Fi Piano (pixabay.com/sound-effects/musical-vintage-lo-fi-piano-486284/).
+**Scope:**
+- Add an arc constant somewhere reusable (likely `src/lib/onePace.ts` alongside anything else that consumes arc names, or colocated in `SettingsPage.tsx` if nothing else references it yet). List of arcs in order: Romance Dawn, Orange Town, Syrup Village, Baratie, Arlong Park, Loguetown, Reverse Mountain, Whisky Peak, Little Garden, Drum Island, Arabasta, Jaya, Skypiea, Long Ring Long Land, Water 7, Enies Lobby, Post Enies Lobby, Thriller Bark, Sabaody, Amazon Lily, Impel Down, Marineford, Post War, Return to Sabaody, Fish-Man Island, Punk Hazard, Dressrosa, Zou, Whole Cake Island, Reverie, Wano. Verify against One Pace's current releases before shipping — omit any that aren't released yet (cut list probably ends around Wano, but check).
+- Replace the arc `<input>` with a `<ScrollDrum>` that picks by name. Formatting: same Cinzel font/colour treatment as the hour/minute drums (font-display, text-foreground with selected-emphasis, same row height). Reuse `ScrollDrum.tsx` if it already accepts string arrays; extend if it only does numbers.
+- Trigger surface: keep the existing "Current Arc" label + the small "-" / "+" episode stepper next to the Ep input (added in Commit 3). The arc drum can be inline or behind a `ScrollDrumSheet` tap — match whichever pattern the time picker ended with (should be sheet after Commit 2).
+- Persist exactly like before: PATCH `/api/settings` with `{ onePaceArc: '<name>' }` through the existing Save handler.
 
-**Plugin capability check (do this first, before any code):**
-- Read `node_modules/@capacitor/local-notifications/package.json` for the installed version.
-- Read `node_modules/@capacitor/local-notifications/dist/esm/definitions.d.ts` (or equivalent) and the native iOS source under `node_modules/@capacitor/local-notifications/ios/Plugin/` to confirm whether `interruptionLevel: 'critical'` and `criticalSound` / `criticalVolume` are supported by the current version.
-- Report one of three paths before proceeding:
-  - (a) Native support exists → use it directly.
-  - (b) No support → patch the plugin via `patch-package` (add a dev dep if not present). Patch the JS definitions to accept the new fields and the Swift `LocalNotifications.swift` (or equivalent) to map them to `UNNotificationContent.interruptionLevel = .critical` and `UNNotificationSound.criticalSoundNamed(...)`.
-  - (c) Patch too invasive → fall back to a minimal custom iOS plugin in `ios/App/App/Plugins/` that exposes `scheduleCritical({ id, title, body, at, soundName })`. Keep it small, single-purpose.
+**Files to touch:**
+- `src/components/ui/ScrollDrum.tsx` (only if currently number-only — may need a string variant or generic `T`).
+- `src/features/settings/SettingsPage.tsx` (swap input for drum).
+- Possibly a new `src/lib/onePace.ts` for the arc constant if it doesn't live anywhere yet.
 
-**Files to touch (modulo the plugin path):**
-- `ios/App/App/App.entitlements`: add `<key>com.apple.developer.usernotifications.critical-alerts</key><true/>`.
-- `ios/App/App/Sounds/` (create if absent): drop `morning.caf` and `nuclear.caf` (converted from the MP3s via `afconvert` to `.caf` with 48kHz 16-bit). Wire into Xcode project's Copy Bundle Resources phase via `ios/App/App.xcodeproj/project.pbxproj` if needed (Capacitor usually picks up Resources automatically, but verify).
-- `src/lib/notifications.ts`:
-  - Extend `requestNotificationPermission()` (or add a sibling) to request `criticalAlert: true` on iOS. The existing call already handles base notifications; add a one-time critical-alert request near app boot.
-  - In `scheduleAlarms()`, flag the morning base, snooze trio, and all nuclear notifications with `interruptionLevel: 'critical'` and `sound: 'morning.caf'` / `sound: 'nuclear.caf'` (or the critical-sound field shape the plugin expects).
-  - Consider trimming the nuclear count if total pending exceeds 64 (current: 1 morning + 3 snoozes + 20 nuclear + 1 PM + 2 redeploy + up to ~5 round cues ≈ 32 — plenty of room; spec allows up to 48 nuclear if desired, keep at 20 unless user asks).
-- `src/app/AppRoutes.tsx`: at boot, after `initNotificationListeners()`, trigger the critical-alerts permission request if not yet granted. One-time OS prompt.
-- `patches/@capacitor+local-notifications+*.patch` (if path b) and a `postinstall: patch-package` script in `package.json`.
-
-**iOS entitlement flow:**
-- `com.apple.developer.usernotifications.critical-alerts` is a restricted entitlement in normal Apple dev accounts, but the user is on a personal dev cert and can self-grant. Entitlement file change + Xcode signing flag is enough.
-
-**Sound conversion:**
-- `afconvert -f caff -d LEI16@48000 -c 1 input.mp3 output.caf` converts MP3 to Apple's preferred CAF format. Mono 48k/16-bit plays cleanly through the iPhone speaker at volume 0.6.
-- `criticalSound.volume: 0.6` per spec. Users can still lower system critical-alert volume in Settings.
-
-**Voice canon:**
-- No new copy. Existing morning + nuclear strings stay. No em dashes anywhere.
+**Out of scope:**
+- Any server-side validation of arc names — freeform string field on `/api/settings` stays as-is.
+- Episode drum — leave as the +/- stepper from Commit 3 unless the arc drum happens to make a per-arc episode count obvious (One Pace ep counts vary per arc; don't chase this in Commit 6).
+- Any other remaining polish issues — none known as of 2026-04-18.
 
 **Done criteria:**
-- [ ] Plugin path chosen (a/b/c) and reported before code.
-- [ ] Nuclear sound file confirmed by user and bundled as `.caf`.
-- [ ] Entitlement added; signing still succeeds on user's personal dev cert.
-- [ ] `scheduleAlarms` marks morning + nuclear as critical with `morning.caf` / `nuclear.caf`.
-- [ ] Runtime permission flow requests `criticalAlert: true` once; follow-up launches don't re-prompt.
+- [ ] Arc picker uses same drum component + Cinzel formatting as hour/minute drums.
+- [ ] Only released One Pace arcs appear.
+- [ ] Save persists through existing `/api/settings` PATCH flow.
 - [ ] Build + lint: no new errors.
 - [ ] Commit on main, voice-canon message.
-- [ ] Device verification REQUIRED for this commit (the whole point is that it bypasses silent mode). User should cold-launch, grant the prompt, set phone to silent, set a 1-minute alarm, and confirm audio fires.
-- [ ] `POLISH_PASS.md` updated: Commit 5 moved to Completed, Next commit section removed or replaced with a closing note.
-- [ ] Next session prompt emitted (or a "polish pass complete" note if this is the final commit).
+- [ ] Device verification expected but not required — web preview is sufficient for this one.
+- [ ] `POLISH_PASS.md` updated: Commit 6 moved to Completed, "polish pass complete" closing note added (no further commits expected).
