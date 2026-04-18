@@ -27,6 +27,7 @@ type Bindings = {
   ANTHROPIC_API_KEY: string
   STRAVA_CLIENT_ID: string
   STRAVA_CLIENT_SECRET: string
+  STRAVA_WEBHOOK_VERIFY_TOKEN: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
