@@ -186,30 +186,50 @@ Do not bundle commits. Each session should end with a pushed commit to main and 
 
 ## Next commit
 
-**Commit 6: One Piece arc picker (drum-style, matching time picker)**
+**Commit 6: Settings consistency pass — arc drum + redeploy pill trim**
 
-Current UX: in `src/features/settings/SettingsPage.tsx`, "Current Arc" is a plain text `<input>`. After Commit 2 converted the time picker to side-by-side drums, typing an arc name into a text box is now the inconsistent chrome on the page. Replace with a drum picker sourced from the One Pace canonical arc list.
+Two tightly scoped fixes to `src/features/settings/SettingsPage.tsx`. Bundled because both are small, both are Settings-only, and together they close the polish pass.
 
-**Scope:**
+### Part A: Arc drum
+
+Current UX: "Current Arc" is a plain text `<input>`. After Commit 2 converted the time picker to side-by-side drums, typing an arc name into a text box is now the inconsistent chrome on the page. Replace with a drum picker sourced from the One Pace canonical arc list.
+
+**Scope (Part A):**
 - Add an arc constant somewhere reusable (likely `src/lib/onePace.ts` alongside anything else that consumes arc names, or colocated in `SettingsPage.tsx` if nothing else references it yet). List of arcs in order: Romance Dawn, Orange Town, Syrup Village, Baratie, Arlong Park, Loguetown, Reverse Mountain, Whisky Peak, Little Garden, Drum Island, Arabasta, Jaya, Skypiea, Long Ring Long Land, Water 7, Enies Lobby, Post Enies Lobby, Thriller Bark, Sabaody, Amazon Lily, Impel Down, Marineford, Post War, Return to Sabaody, Fish-Man Island, Punk Hazard, Dressrosa, Zou, Whole Cake Island, Reverie, Wano. Verify against One Pace's current releases before shipping — omit any that aren't released yet (cut list probably ends around Wano, but check).
 - Replace the arc `<input>` with a `<ScrollDrum>` that picks by name. Formatting: same Cinzel font/colour treatment as the hour/minute drums (font-display, text-foreground with selected-emphasis, same row height). Reuse `ScrollDrum.tsx` if it already accepts string arrays; extend if it only does numbers.
 - Trigger surface: keep the existing "Current Arc" label + the small "-" / "+" episode stepper next to the Ep input (added in Commit 3). The arc drum can be inline or behind a `ScrollDrumSheet` tap — match whichever pattern the time picker ended with (should be sheet after Commit 2).
+- **Rebalance the row.** Current layout in `SettingsPage.tsx` at `One Pace Progress` is `flex gap-4` with arc and ep each at `flex-1` (50/50). Arc names like `Post Enies Lobby` or `Long Ring Long Land` are long strings; episode is a 1-3 digit number. Give arc ~70% of the row (or a sensible explicit width) and compact the episode stepper to roughly `w-24` / `w-28` — enough for `- 999 +` to breathe without eating half the row. The `-` / `+` buttons stay `min-h-[44px] w-10`; the middle input shrinks into the remaining narrow band. Keep them in the same row unless the ep stepper gets so tight that wrapping under the arc reads better.
 - Persist exactly like before: PATCH `/api/settings` with `{ onePaceArc: '<name>' }` through the existing Save handler.
 
-**Files to touch:**
-- `src/components/ui/ScrollDrum.tsx` (only if currently number-only — may need a string variant or generic `T`).
-- `src/features/settings/SettingsPage.tsx` (swap input for drum).
+### Part B: Redeploy pill trim
+
+Current UX (Commit 4): the redeploy countdown uses `text-display-lg` Cinzel with a caption — same hero treatment as the indoor One Pace readout. That's too much real estate for a background timer. Shrink it to a small brand-cohesive chip.
+
+**Scope (Part B):**
+- Keep the chip treatment (`rounded-md border border-gold/10 bg-near-black/40` wrapper stays — it's the pill).
+- Change the numeral: `text-display-lg` → roughly `text-base` or `text-lg` (pick what reads clean at chip scale), **Cinzel retained** (`font-[family-name:var(--font-display)]`).
+- Drop the separate caption line. Inline format: `6d` next to the number, or just the number with `d` as suffix — keep it terse.
+- Keep the color tiering: `daysLeft >= 3 → text-foreground`, `=== 2 → text-gold`, `<= 1 → text-destructive`.
+- **No escalation on the last day.** The day-of silent notification is what actually tells you — the pill can stay small.
+- Vertical padding comes down proportionally (current `py-3` → `py-2` or similar). The chip should read as a status badge, not a headline.
+- Placement stays at the top of Settings (above MT Class Days) — no relocation.
+
+**Files to touch (both parts):**
+- `src/components/ui/ScrollDrum.tsx` (Part A only if currently number-only — may need a string variant or generic `T`).
+- `src/features/settings/SettingsPage.tsx` (both parts).
 - Possibly a new `src/lib/onePace.ts` for the arc constant if it doesn't live anywhere yet.
 
 **Out of scope:**
 - Any server-side validation of arc names — freeform string field on `/api/settings` stays as-is.
 - Episode drum — leave as the +/- stepper from Commit 3 unless the arc drum happens to make a per-arc episode count obvious (One Pace ep counts vary per arc; don't chase this in Commit 6).
+- Notification logic for the redeploy countdown — untouched; only the visual pill changes.
 - Any other remaining polish issues — none known as of 2026-04-18.
 
 **Done criteria:**
 - [ ] Arc picker uses same drum component + Cinzel formatting as hour/minute drums.
 - [ ] Only released One Pace arcs appear.
 - [ ] Save persists through existing `/api/settings` PATCH flow.
+- [ ] Redeploy pill reduced to chip scale, Cinzel retained, color tiering intact, caption dropped.
 - [ ] Build + lint: no new errors.
 - [ ] Commit on main, voice-canon message.
 - [ ] Device verification expected but not required — web preview is sufficient for this one.
