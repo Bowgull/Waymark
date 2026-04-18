@@ -122,7 +122,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 ### Phase 2: Prompt infrastructure
 
-- **Step 4** `TODO` System prompt builder. Assembles identity + voice canon + user profile + compressed context.
+- **Step 4** `DONE` System prompt builder. Assembles identity + voice canon + user profile + compressed context.
   - Files: `src/lib/prompts/system.ts` (new), `src/lib/prompts/context.ts` (new)
 - **Step 5** `TODO` Tool schemas for structured outputs: `weekPlan`, `weekReview`, `blockTransition`, `sessionReview`, `insight`.
   - Files: `src/lib/prompts/tools.ts` (new)
@@ -179,3 +179,8 @@ Append one entry per session. Keep under 5 lines each.
 - Did: Created `src/lib/anthropic.ts` (direct fetch wrapper, prompt caching headers, retry on 429/5xx/529, offline fallback, tool use, extended thinking for Sonnet). Added `ANTHROPIC_API_KEY` to `Bindings` in `src/server/app.ts`. Noted secret in `wrangler.jsonc`.
 - Next: Step 3 (onboarding screen, three questions, writes to `user_profile`).
 - Notes: Two sessions ran in parallel directories and diverged. Step 2 artifacts were merged from the other tree into this one. Canonical dir going forward: `/Users/lindsaybell/Developer/Waymark-fresh` (to be renamed to `Waymark` after the broken clone is removed). Set `ANTHROPIC_API_KEY` via `wrangler secret put ANTHROPIC_API_KEY` before Step 7.
+
+### Session 3 (2026-04-17) · Step 4
+- Did: Created `src/lib/prompts/system.ts` (identity + voice canon block cached, user profile block cached, optional compressed history block uncached) and `src/lib/prompts/context.ts` (WeekContext/CompressedWeekSummary types, buildContextBlock formatter for recent raw weeks + older compressed summaries).
+- Next: Step 5 (tool schemas for structured outputs: weekPlan, weekReview, blockTransition, sessionReview, insight).
+- Notes: Step 3 (onboarding) was skipped this session per build plan order. Two cache checkpoints: identity is always stable, profile changes only on onboarding update.
