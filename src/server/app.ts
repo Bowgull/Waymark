@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
-import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
+import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
 import { adHocSessionSchema, completeSessionSchema, dailyLogSchema } from '../lib/validators/schemas'
 import { POSTURE_TEMPLATE } from '../lib/postureTemplate'
@@ -2745,6 +2745,49 @@ app.get('/api/history/dashboard', async (c) => {
     thisWeek,
     lastWeek,
   })
+})
+
+// ─── User profile ─────────────────────────────────────────────
+
+app.get('/api/user-profile', async (c) => {
+  const db = createDB(c.env)
+  const rows = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+  return c.json(rows[0] ?? null)
+})
+
+app.post('/api/user-profile', async (c) => {
+  const body = await c.req.json<{
+    goals: string[]
+    injuries: string | null
+    trainingHistory: string
+  }>()
+  const db = createDB(c.env)
+  const now = Math.floor(Date.now() / 1000)
+  const rows = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+  if (rows.length > 0) {
+    await db
+      .update(userProfile)
+      .set({
+        goals: JSON.stringify(body.goals),
+        injuries: body.injuries,
+        trainingHistory: body.trainingHistory,
+        onboardedAt: rows[0].onboardedAt ?? now,
+        updatedAt: now,
+      })
+      .where(eq(userProfile.id, 'default'))
+  } else {
+    await db.insert(userProfile).values({
+      id: 'default',
+      goals: JSON.stringify(body.goals),
+      injuries: body.injuries,
+      trainingHistory: body.trainingHistory,
+      onboardedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+  const [profile] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+  return c.json(profile)
 })
 
 export default app
