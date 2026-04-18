@@ -10,6 +10,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],
+  define: {
+    'import.meta.env.VITE_BUILD_TIME': JSON.stringify(Date.now()),
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

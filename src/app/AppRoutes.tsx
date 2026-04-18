@@ -10,8 +10,14 @@ import { WorkoutPage } from '../features/session/WorkoutPage'
 import { BodyMetricsPage } from '../features/metrics/BodyMetricsPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { TodayPage } from '../features/today/TodayPage'
-import { initNotificationListeners, handleForegroundAlarmCheck } from '../lib/notifications'
+import {
+  initNotificationListeners,
+  handleForegroundAlarmCheck,
+  scheduleRedeployReminders,
+  cancelRedeployReminders,
+} from '../lib/notifications'
 import { apiFetch } from '../lib/api'
+import { Capacitor } from '@capacitor/core'
 
 export function AppRoutes() {
   const navigate = useNavigate()
@@ -32,6 +38,26 @@ export function AppRoutes() {
 
   useEffect(() => {
     initNotificationListeners()
+
+    // Redeploy countdown: if the bundle is fresher than last boot,
+    // cancel stale 5000/5001 notifications and schedule new ones.
+    if (Capacitor.isNativePlatform()) {
+      const buildTime = Number(import.meta.env.VITE_BUILD_TIME)
+      if (Number.isFinite(buildTime) && buildTime > 0) {
+        const lastSeen = localStorage.getItem('lastSeenBuildTime')
+        if (String(buildTime) !== lastSeen) {
+          ;(async () => {
+            try {
+              await cancelRedeployReminders()
+              await scheduleRedeployReminders(buildTime)
+              localStorage.setItem('lastSeenBuildTime', String(buildTime))
+            } catch (e) {
+              console.error('Failed to reschedule redeploy reminders:', e)
+            }
+          })()
+        }
+      }
+    }
 
     // Option C: app coming to foreground within 30 min of alarm = you're up, kill the sequence
     async function onVisibilityChange() {

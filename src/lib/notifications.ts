@@ -8,6 +8,12 @@ import { Capacitor } from '@capacitor/core'
 const isNative = Capacitor.isNativePlatform()
 
 // ─── Notification IDs ────────────────────────────────────────────────────────
+// Reserved ID ranges (keep allocation visible):
+//   1000-1012  morning alarm base + snoozes
+//   2000-2047  nuclear follow-ups
+//   3000       PM leave-by
+//   4000-4099  round timer cues
+//   5000-5001  redeploy reminders (6-day warn + day-of)
 const ALARM_BASE_ID = 1000
 const ALARM_SNOOZE_1_ID = 1001
 const ALARM_SNOOZE_2_ID = 1002
@@ -22,6 +28,9 @@ const CUE_ROUND_END   = 4002  // round ends, rest starts
 const CUE_REST_WARN   = 4003  // 10s before rest ends
 const CUE_REST_END    = 4004  // rest over, go again
 const CUE_STRENGTH_REST_END = 4005 // strength set rest over
+
+const REDEPLOY_WARN_ID = 5000
+const REDEPLOY_DAY_ID = 5001
 
 const ALL_ALARM_IDS = [
   ALARM_BASE_ID,
@@ -203,6 +212,53 @@ export async function handleForegroundAlarmCheck(amReminder: string): Promise<vo
 
   if (diffMin >= 0 && diffMin <= 30) {
     await cancelAllAlarms()
+  }
+}
+
+// ─── Redeploy reminders ──────────────────────────────────────────────────────
+// Sideload cert lives 7 days. Fire a silent heads-up the day before
+// and another the morning it dies. No sound — must respect silent mode.
+
+export async function cancelRedeployReminders(): Promise<void> {
+  if (!isNative) return
+  await LocalNotifications.cancel({
+    notifications: [{ id: REDEPLOY_WARN_ID }, { id: REDEPLOY_DAY_ID }],
+  })
+}
+
+export async function scheduleRedeployReminders(buildTime: number): Promise<void> {
+  if (!isNative) return
+  const permitted = await requestNotificationPermission()
+  if (!permitted) return
+
+  const warnAt = new Date(buildTime + 6 * 86400000)
+  const dayAt = new Date(buildTime + 7 * 86400000)
+  const now = new Date()
+
+  const notifications = []
+  if (warnAt > now) {
+    notifications.push({
+      id: REDEPLOY_WARN_ID,
+      title: 'Waymark',
+      body: 'Redeploy tomorrow or the app goes dark.',
+      schedule: { at: warnAt },
+      sound: undefined,
+      extra: { type: 'redeploy' },
+    })
+  }
+  if (dayAt > now) {
+    notifications.push({
+      id: REDEPLOY_DAY_ID,
+      title: 'Waymark',
+      body: 'Redeploy today. Connect cable.',
+      schedule: { at: dayAt },
+      sound: undefined,
+      extra: { type: 'redeploy' },
+    })
+  }
+
+  if (notifications.length > 0) {
+    await LocalNotifications.schedule({ notifications })
   }
 }
 
