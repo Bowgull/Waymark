@@ -1,11 +1,11 @@
 // Haiku-based weekly plan generation. Replaces the rule-based weekAnalysis engine.
 // Falls back to null on AI offline so the route can use the template fallback.
 
-import { and, eq, gte, lte } from 'drizzle-orm'
-import { coachingOutputs, dailyLogs, exercises, mtClassLogs, sessions, trainingMaxes, userProfile } from '../db/schema'
+import { and, desc, eq, gte, lte } from 'drizzle-orm'
+import { coachingOutputs, dailyLogs, exercises, journalEntries, mtClassLogs, sessions, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
-import { TOOL_WEEK_PLAN, type WeekPlanOutput } from './prompts/tools'
+import { TOOL_WEEK_PLAN, type BodyIssueDetection, type WeekPlanOutput } from './prompts/tools'
 import { getWeekSummaries } from './prompts/summarizer'
 import type { createDB } from '../db/client'
 
@@ -38,12 +38,114 @@ interface MtLogRecord {
   actionItems: string | null
 }
 
+interface TrackedIssue {
+  region: string
+  lastSeenWeek: number
+  mentionsLast4Weeks: number
+}
+
+interface StoredBodyIssuesEntry {
+  weekNumber: number
+  detections: BodyIssueDetection[]
+}
+
+function rollupTrackedIssues(
+  rows: Array<{ outputJson: string; createdAt: number }>,
+  currentWeekNumber: number,
+): TrackedIssue[] {
+  const counts = new Map<string, { mentions: number; lastSeenWeek: number }>()
+  for (const row of rows) {
+    let parsed: StoredBodyIssuesEntry | null = null
+    try {
+      parsed = JSON.parse(row.outputJson) as StoredBodyIssuesEntry
+    } catch {
+      continue
+    }
+    if (!parsed || !Array.isArray(parsed.detections)) continue
+    for (const d of parsed.detections) {
+      const region = d.region?.trim().toLowerCase()
+      if (!region) continue
+      const existing = counts.get(region)
+      if (existing) {
+        existing.mentions += 1
+        existing.lastSeenWeek = Math.max(existing.lastSeenWeek, parsed.weekNumber)
+      } else {
+        counts.set(region, { mentions: 1, lastSeenWeek: parsed.weekNumber })
+      }
+    }
+  }
+
+  const tracked: TrackedIssue[] = []
+  for (const [region, info] of counts) {
+    const weeksSilent = currentWeekNumber - 1 - info.lastSeenWeek
+    if (weeksSilent >= 3) continue
+    tracked.push({
+      region,
+      lastSeenWeek: info.lastSeenWeek,
+      mentionsLast4Weeks: info.mentions,
+    })
+  }
+  tracked.sort((a, b) => b.mentionsLast4Weeks - a.mentionsLast4Weeks)
+  return tracked
+}
+
+function mergeActiveInjuries(
+  tracked: TrackedIssue[],
+  newDetections: BodyIssueDetection[],
+  currentWeekNumber: number,
+): { injuriesText: string | null; promoted: string[] } {
+  const counts = new Map<string, { mentions: number; lastSeenWeek: number; severity: BodyIssueDetection['severity'] }>()
+
+  for (const t of tracked) {
+    counts.set(t.region, {
+      mentions: t.mentionsLast4Weeks,
+      lastSeenWeek: t.lastSeenWeek,
+      severity: 'mild',
+    })
+  }
+
+  for (const d of newDetections) {
+    const region = d.region?.trim().toLowerCase()
+    if (!region) continue
+    const existing = counts.get(region)
+    if (existing) {
+      existing.mentions += 1
+      existing.lastSeenWeek = currentWeekNumber
+      if (rankSeverity(d.severity) > rankSeverity(existing.severity)) existing.severity = d.severity
+    } else {
+      counts.set(region, { mentions: 1, lastSeenWeek: currentWeekNumber, severity: d.severity })
+    }
+  }
+
+  const promoted: string[] = []
+  for (const [region, info] of counts) {
+    const weeksSilent = currentWeekNumber - info.lastSeenWeek
+    if (weeksSilent >= 3) continue
+    if (info.mentions >= 2 || info.severity === 'severe') {
+      promoted.push(`${region} (${info.severity})`)
+    }
+  }
+  promoted.sort()
+  return {
+    injuriesText: promoted.length > 0 ? promoted.join(', ') : null,
+    promoted,
+  }
+}
+
+function rankSeverity(s: BodyIssueDetection['severity']): number {
+  if (s === 'severe') return 3
+  if (s === 'moderate') return 2
+  return 1
+}
+
 function buildPrompt(
   params: WeekPlanParams,
   prevSessions: Array<{ type: string; status: string; rpe: number | null; difficulty: number | null; notes: string | null }>,
-  prevLogs: Array<{ sleepHours: number | null; soreness: number | null }>,
+  prevLogs: Array<{ sleepHours: number | null; soreness: number | null; notes: string | null }>,
   compressedNote: string,
   prevMtLogs: MtLogRecord[],
+  prevJournal: string[],
+  trackedIssues: TrackedIssue[],
 ): string {
   const lines: string[] = [
     `Generate week plan for week ${params.weekNumber} (block week ${params.blockWeek}).`,
@@ -83,11 +185,34 @@ function buildPrompt(
       const parts: string[] = []
       if (l.sleepHours != null) parts.push(`sleep ${l.sleepHours}h`)
       if (l.soreness != null) parts.push(`soreness ${l.soreness}/5`)
-      lines.push(`  ${parts.join(', ') || 'no data'}`)
+      const row = parts.join(', ') || 'no data'
+      lines.push(`  ${row}${l.notes ? ` — ${l.notes}` : ''}`)
     }
   } else {
     lines.push('  none logged')
   }
+
+  if (prevJournal.length > 0) {
+    lines.push('', 'Previous week journal entries:')
+    for (const entry of prevJournal) {
+      lines.push(`  ${entry}`)
+    }
+  }
+
+  if (trackedIssues.length > 0) {
+    lines.push('', 'Body regions already on file (from prior weeks):')
+    for (const t of trackedIssues) {
+      lines.push(`  ${t.region} (${t.mentionsLast4Weeks} mention(s) in last 4 weeks, last seen week ${t.lastSeenWeek})`)
+    }
+    lines.push('When filling bodyIssuesDetected, reuse the same region strings so roll-up counts stay consistent.')
+  }
+
+  lines.push(
+    '',
+    'Scan the notes above for mentions of pain, soreness beyond normal training, stiffness, tweaks, or movement limitations.',
+    'Only populate bodyIssuesDetected when an athlete explicitly surfaces a body signal — do not invent or infer.',
+    'If nothing relevant surfaced, omit bodyIssuesDetected entirely.',
+  )
 
   if (prevMtLogs.length > 0) {
     lines.push('', 'MT class logs (recent sessions):')
@@ -137,13 +262,15 @@ export async function generateWeekPlan(
       summaries.map(s => `  Week ${s.weekNumber}: ${s.narrative} ${s.adherence}. ${s.wellnessTrend}`).join('\n')
     : ''
 
-  const [prevSessions, prevLogs, prevMtLogs] = await Promise.all([
+  const fourWeeksAgo = params.prevWeekStart - 28 * 86400
+
+  const [prevSessions, prevLogs, prevMtLogs, prevJournalRows, priorBodyIssueRows] = await Promise.all([
     db
       .select({ type: sessions.type, status: sessions.status, rpe: sessions.rpe, difficulty: sessions.difficulty, notes: sessions.notes })
       .from(sessions)
       .where(and(gte(sessions.scheduledDate, params.prevWeekStart), lte(sessions.scheduledDate, params.prevWeekEnd))),
     db
-      .select({ sleepHours: dailyLogs.sleepHours, soreness: dailyLogs.soreness })
+      .select({ sleepHours: dailyLogs.sleepHours, soreness: dailyLogs.soreness, notes: dailyLogs.notes })
       .from(dailyLogs)
       .where(and(gte(dailyLogs.logDate, params.prevWeekStart), lte(dailyLogs.logDate, params.prevWeekEnd))),
     db
@@ -157,10 +284,25 @@ export async function generateWeekPlan(
       .from(mtClassLogs)
       .innerJoin(sessions, eq(mtClassLogs.sessionId, sessions.id))
       .where(and(gte(sessions.scheduledDate, params.prevWeekStart), lte(sessions.scheduledDate, params.prevWeekEnd))),
+    db
+      .select({ content: journalEntries.content, type: journalEntries.type })
+      .from(journalEntries)
+      .where(and(gte(journalEntries.date, params.prevWeekStart), lte(journalEntries.date, params.prevWeekEnd))),
+    db
+      .select({ outputJson: coachingOutputs.outputJson, createdAt: coachingOutputs.createdAt })
+      .from(coachingOutputs)
+      .where(and(eq(coachingOutputs.kind, 'body_issues'), gte(coachingOutputs.createdAt, fourWeeksAgo)))
+      .orderBy(desc(coachingOutputs.createdAt)),
   ])
 
+  const prevJournal: string[] = prevJournalRows
+    .map(r => r.content?.trim())
+    .filter((c): c is string => !!c && c.length > 0)
+
+  const trackedIssues = rollupTrackedIssues(priorBodyIssueRows, params.weekNumber)
+
   const systemBlocks = buildSystemPrompt(profile, null)
-  const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs)
+  const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues)
 
   const result = await anthropicCall(apiKey, {
     model: 'claude-haiku-4-5-20251001',
@@ -182,6 +324,8 @@ export async function generateWeekPlan(
     return null
   }
 
+  const nowSec = Math.floor(Date.now() / 1000)
+
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'week_plan',
@@ -193,9 +337,28 @@ export async function generateWeekPlan(
     tokensIn: result.usage.input_tokens,
     tokensOut: result.usage.output_tokens,
     cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
-    createdAt: Math.floor(Date.now() / 1000),
+    createdAt: nowSec,
   })
 
-  console.log(`[weeklyPlan] week ${params.weekNumber} generated (mt=${output.mtSessionsThisWeek})`)
+  const detections = output.bodyIssuesDetected ?? []
+  if (detections.length > 0) {
+    await db.insert(coachingOutputs).values({
+      id: crypto.randomUUID(),
+      kind: 'body_issues',
+      model: 'claude-haiku-4-5-20251001',
+      scopeWeekPlanId: params.weekId,
+      scopeSessionId: null,
+      inputHash: null,
+      outputJson: JSON.stringify({ weekNumber: params.weekNumber, detections } satisfies StoredBodyIssuesEntry),
+      tokensIn: 0,
+      tokensOut: 0,
+      cachedTokensIn: 0,
+      createdAt: nowSec,
+    })
+  }
+
+  const { promoted } = mergeActiveInjuries(trackedIssues, detections, params.weekNumber)
+
+  console.log(`[weeklyPlan] week ${params.weekNumber} generated (mt=${output.mtSessionsThisWeek}, bodyIssues=${detections.length}, active=${promoted.length})`)
   return output
 }
