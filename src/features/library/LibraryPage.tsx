@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/components/ui/badge'
 import { ForgeIcon, LockIcon } from '@/components/icons/SessionIcons'
 import { GoldDivider } from '@/components/ui/GoldDivider'
+import { LibrarySkeleton } from '@/components/ui/Skeleton'
 import { JournalEntry } from '@/features/today/JournalCard'
 
 interface Exercise {
@@ -256,11 +257,7 @@ export function LibraryPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    )
+    return <LibrarySkeleton />
   }
 
   return (
