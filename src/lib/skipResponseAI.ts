@@ -6,6 +6,7 @@ import { and, eq, gte, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, sessions, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
+import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_SKIP_RESPONSE, type SkipResponseOutput } from './prompts/tools'
 import type { createDB } from '../db/client'
 
@@ -118,6 +119,8 @@ export async function runSkipResponse(
     db.select().from(dailyLogs).where(eq(dailyLogs.logDate, input.todayEpochDay)).limit(1).then(rows => rows[0] ?? null),
   ])
 
+  const latestBodyweightKg = await getLatestBodyweightKg(db)
+
   const profile: UserProfileContext = {
     goals: profileRow?.goals ?? null,
     injuries: profileRow?.injuries ?? null,
@@ -128,6 +131,7 @@ export async function runSkipResponse(
     weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
     trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
+    latestBodyweightKg,
   }
 
   const systemBlocks = buildSystemPrompt(profile, null)

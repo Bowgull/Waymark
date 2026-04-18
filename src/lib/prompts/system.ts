@@ -15,6 +15,7 @@ export interface UserProfileContext {
   weeklyDayTarget: number | null
   constraints: string | null
   trainingMaxes: TrainingMax[]
+  latestBodyweightKg: number | null
 }
 
 const IDENTITY_AND_VOICE = `You are a training coach embedded in a personal training app. You produce structured JSON outputs only via tool use. You never write conversational text. You never address the user directly in your outputs.
@@ -50,6 +51,7 @@ function serializeProfile(profile: UserProfileContext): string {
   if (profile.mtGymAccessDays) lines.push(`MT gym access days: ${profile.mtGymAccessDays}`)
   if (profile.mtCapPerWeek != null) lines.push(`MT cap per week: ${profile.mtCapPerWeek} sessions`)
   if (profile.weeklyDayTarget != null) lines.push(`Weekly training days target: ${profile.weeklyDayTarget}`)
+  if (profile.latestBodyweightKg != null) lines.push(`Bodyweight: ${profile.latestBodyweightKg.toFixed(1)}kg (logged within last 30 days)`)
 
   if (profile.trainingMaxes.length > 0) {
     lines.push('')
@@ -89,5 +91,6 @@ export function emptyProfile(): UserProfileContext {
     weeklyDayTarget: null,
     constraints: null,
     trainingMaxes: [],
+    latestBodyweightKg: null,
   }
 }

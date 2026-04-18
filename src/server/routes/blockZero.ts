@@ -6,6 +6,7 @@ import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, sessions, trainingBlocks, trainingMaxes, userProfile, weekPlans } from '../../db/schema'
 import { anthropicCall, getToolInput, type Tool } from '../../lib/anthropic'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
+import { getLatestBodyweightKg } from '../../lib/bodyMetrics'
 import { TOOL_BLOCK_TRANSITION, type BlockTransitionOutput } from '../../lib/prompts/tools'
 import type { createDB } from '../../db/client'
 
@@ -133,6 +134,8 @@ export async function runBlockZeroAssessment(
     .from(trainingMaxes)
     .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id))
 
+  const latestBodyweightKg = await getLatestBodyweightKg(db)
+
   const profile: UserProfileContext = {
     goals: profileRow?.goals ?? null,
     injuries: profileRow?.injuries ?? null,
@@ -143,6 +146,7 @@ export async function runBlockZeroAssessment(
     weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
     trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
+    latestBodyweightKg,
   }
 
   const systemBlocks = buildSystemPrompt(profile, null)
@@ -337,6 +341,8 @@ export async function runBlockZeroTransition(
     .from(trainingMaxes)
     .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id))
 
+  const latestBodyweightKg = await getLatestBodyweightKg(db)
+
   const profile: UserProfileContext = {
     goals: profileRow?.goals ?? null,
     injuries: profileRow?.injuries ?? null,
@@ -347,6 +353,7 @@ export async function runBlockZeroTransition(
     weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
     trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
+    latestBodyweightKg,
   }
 
   const systemBlocks = buildSystemPrompt(profile, null)
