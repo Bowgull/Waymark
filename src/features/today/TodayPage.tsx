@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 
 import { PageBackground } from '@/components/backgrounds/PageBackground'
+import { SettingsIcon } from '@/components/icons/NavIcons'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { useToast } from '@/components/ui/Toast'
 import { SkipReasonSheet } from '@/features/session/SkipReasonSheet'
@@ -447,6 +448,17 @@ export function TodayPage() {
           </button>
         </>
       )}
+
+      <div className="mt-8 mb-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => navigate('/settings')}
+          aria-label="Settings"
+          className="size-5 text-muted-foreground active:text-foreground"
+        >
+          <SettingsIcon />
+        </button>
+      </div>
 
       {showPicker && (
         <SessionPicker
