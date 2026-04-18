@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/Toast'
 import { apiFetch } from '@/lib/api'
 import { onePaceSvg } from '@/lib/markAssets'
 
@@ -52,6 +53,7 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
   const [onePaceArc, setOnePaceArc] = useState(runSession.onePaceArc ?? '')
   const [onePaceEp, setOnePaceEp] = useState(runSession.onePaceEp ?? '')
   const [saving, setSaving] = useState(false)
+  const { show: showToast, ToastContainer } = useToast()
 
   useEffect(() => {
     return () => {
@@ -108,6 +110,19 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
           onePaceEp: isIndoor && onePaceEp ? onePaceEp : undefined,
         }),
       })
+
+      if (isIndoor && onePaceEp) {
+        const oldEp = onePaceEp
+        const newEp = String(Number(oldEp) + 1)
+        apiFetch('/api/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({ onePaceEp: newEp }),
+        }).catch((err) => console.error('Failed to bump onePaceEp:', err))
+        showToast(`Ep ${oldEp} → Ep ${newEp}`, 'success')
+        setTimeout(() => onComplete(), 1800)
+        return
+      }
+
       onComplete()
     } catch (e) {
       console.error('Failed to save run:', e)
@@ -175,6 +190,11 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
 
         {isIndoor ? (
           <div className="mt-8 flex flex-col items-center gap-4">
+            {(onePaceArc || onePaceEp) && (
+              <p className="font-[family-name:var(--font-display)] text-display-lg text-gold text-center">
+                {[onePaceArc, onePaceEp ? `Ep ${onePaceEp}` : ''].filter(Boolean).join(' - ')}
+              </p>
+            )}
             <button
               onClick={() => window.open('https://onepace.net', '_blank')}
               className="w-full flex flex-col items-center gap-4 rounded-md border border-gold/15 bg-deep-forest px-6 py-8"
@@ -294,6 +314,8 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
       <Button onClick={handleSave} disabled={saving} size="lg" className="w-full">
         {saving ? 'Saving...' : 'Save Run'}
       </Button>
+
+      <ToastContainer />
     </div>
   )
 }
