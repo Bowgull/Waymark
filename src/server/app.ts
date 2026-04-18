@@ -1,4 +1,5 @@
 import { and, desc, eq, gt, gte, lte } from 'drizzle-orm'
+import { summarizeOldWeeks } from '../lib/prompts/summarizer'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 
@@ -2745,6 +2746,27 @@ app.get('/api/history/dashboard', async (c) => {
     thisWeek,
     lastWeek,
   })
+})
+
+// ─── AI context management ────────────────────────────────────
+
+app.post('/api/ai/summarize-old-weeks', async (c) => {
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+
+  const [block] = await db
+    .select()
+    .from(trainingBlocks)
+    .where(eq(trainingBlocks.status, 'active'))
+
+  if (!block) return c.json({ error: 'no active block' }, 404)
+
+  const startedAt = block.startedAt ?? nowSec
+  const weeksSinceStart = Math.floor((nowSec - startedAt) / (7 * 86400))
+  const currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks)
+
+  const summarized = await summarizeOldWeeks(db, c.env.ANTHROPIC_API_KEY, block.id, currentWeekNumber)
+  return c.json({ summarized, currentWeekNumber })
 })
 
 export default app
