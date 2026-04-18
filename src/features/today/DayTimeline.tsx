@@ -11,11 +11,13 @@ interface Session {
   completedAt: number | null
   durationSec: number | null
   rpe: number | null
+  notes: string | null
   runSession?: RunSessionSummary | null
 }
 
 interface DayTimelineProps {
   sessions: Session[]
+  maxHr?: number | null
   onStart: (id: string) => void
   onSkip: (id: string) => void
   onReplace: (id: string) => void
@@ -26,6 +28,7 @@ interface DayTimelineProps {
 
 export function DayTimeline({
   sessions,
+  maxHr,
   onStart,
   onSkip,
   onReplace,
@@ -53,6 +56,7 @@ export function DayTimeline({
             >
               <TimelineRow
                 session={session}
+                maxHr={maxHr}
                 onStart={onStart}
                 onSkip={onSkip}
                 onReplace={onReplace}
