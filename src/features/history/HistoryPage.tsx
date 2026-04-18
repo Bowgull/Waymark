@@ -4,6 +4,7 @@ import { apiFetch } from '@/lib/api'
 import { kgToLbsDisplay, paceToMinSec } from '@/lib/chartTheme'
 import { generateInsights } from '@/lib/insightEngine'
 import { PageHeader } from '@/components/PageHeader'
+import { HistorySkeleton } from '@/components/ui/Skeleton'
 
 import { ChartCard } from './ChartCard'
 import { CompletionRings } from './CompletionRings'
@@ -198,11 +199,7 @@ export function HistoryPage() {
   const runSparkline = runData.map(r => r.paceSecKm)
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    )
+    return <HistorySkeleton />
   }
 
   // Headline stats for chart cards

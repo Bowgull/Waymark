@@ -7,6 +7,7 @@ import { getTodayISO } from '@/lib/dates'
 import { TodayTexture } from '@/components/backgrounds/TodayTexture'
 import { SettingsIcon } from '@/components/icons/NavIcons'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
+import { TodaySkeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
 import { SkipReasonSheet } from '@/features/session/SkipReasonSheet'
 import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
@@ -388,11 +389,7 @@ export function TodayPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    )
+    return <TodaySkeleton />
   }
 
   const allDone = sessions.length > 0 && sessions.every(s => {

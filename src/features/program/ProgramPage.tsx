@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { GoldDivider } from '@/components/ui/GoldDivider'
 import { PageBackground } from '@/components/backgrounds/PageBackground'
+import { ProgramSkeleton } from '@/components/ui/Skeleton'
 import { getWeekLabel } from '@/lib/strengthTemplates'
 import logoPng from '@/assets/brand/Logo.png'
 
@@ -312,11 +313,7 @@ export function ProgramPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    )
+    return <ProgramSkeleton />
   }
 
   // ─── Block Zero Assessment Loading ───────────────────────────

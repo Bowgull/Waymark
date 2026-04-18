@@ -9,6 +9,7 @@ import { ScrollDrum, ScrollDrumList } from '@/components/ui/ScrollDrum'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { useToast } from '@/components/ui/Toast'
 import { PageHeader } from '@/components/PageHeader'
+import { SettingsSkeleton } from '@/components/ui/Skeleton'
 
 interface Settings {
   mtClassDays: string | null
@@ -201,11 +202,7 @@ export function SettingsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    )
+    return <SettingsSkeleton />
   }
 
   const buildTime = Number(import.meta.env.VITE_BUILD_TIME)
