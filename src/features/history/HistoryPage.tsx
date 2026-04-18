@@ -124,7 +124,7 @@ export function HistoryPage() {
           exercisesData,
           categoryData,
         ] = await Promise.all([
-          apiFetch<DashboardData>('/api/history/dashboard'),
+          apiFetch<DashboardData>(`/api/history/dashboard?days=${period}`),
           apiFetch<{ dataPoints: CorrelationDataPoint[] }>(`/api/history/correlations?days=${period}`),
           apiFetch<{ dataPoints: RunDataPoint[]; summary: RunSummary }>(`/api/history/running-progress?days=${period}`),
           apiFetch<Session[]>('/api/history/sessions?limit=30'),
@@ -262,6 +262,7 @@ export function HistoryPage() {
         <MomentumGrid
           thisWeek={dashboard.thisWeek}
           lastWeek={dashboard.lastWeek}
+          period={period}
         />
       )}
 

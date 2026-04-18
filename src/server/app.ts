@@ -2638,21 +2638,37 @@ app.get('/api/history/volume-trends', async (c) => {
   const nowSec = Math.floor(Date.now() / 1000)
   const cutoff = nowSec - days * 86400
 
-  const allSessions = await db.select().from(sessions)
+  const [allSessions, allSexes, allSets] = await Promise.all([
+    db.select().from(sessions),
+    db.select().from(strengthSessionExercises),
+    db.select().from(strengthSets),
+  ])
   const completed = allSessions.filter(s => s.status === 'completed' && s.type === 'strength' && s.createdAt >= cutoff)
+
+  const setsByExerciseId = new Map<string, typeof allSets>()
+  for (const st of allSets) {
+    const arr = setsByExerciseId.get(st.sessionExerciseId) ?? []
+    arr.push(st)
+    setsByExerciseId.set(st.sessionExerciseId, arr)
+  }
+  const sexesBySessionId = new Map<string, typeof allSexes>()
+  for (const se of allSexes) {
+    const arr = sexesBySessionId.get(se.sessionId) ?? []
+    arr.push(se)
+    sexesBySessionId.set(se.sessionId, arr)
+  }
 
   const dailyData = new Map<string, { totalSets: number; totalVolume: number; sessionCount: number }>()
 
   for (const session of completed) {
     const date = new Date((session.completedAt ?? session.createdAt) * 1000).toISOString().split('T')[0]
-    const sexes = await db.select().from(strengthSessionExercises)
-      .where(eq(strengthSessionExercises.sessionId, session.id))
+    const sexes = sexesBySessionId.get(session.id) ?? []
 
     let dayVolume = 0
     let daySets = 0
 
     for (const se of sexes) {
-      const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
+      const sets = setsByExerciseId.get(se.id) ?? []
       for (const s of sets) {
         if (s.weightKg != null && s.weightKg > 0) {
           dayVolume += s.weightKg * s.reps
@@ -2777,11 +2793,20 @@ app.get('/api/history/category-completion', async (c) => {
 app.get('/api/history/prs', async (c) => {
   const db = createDB(c.env)
 
-  const allSexes = await db.select().from(strengthSessionExercises)
-  const allExercises = await db.select().from(exercises)
+  const [allSexes, allExercises, allSessions, allSets] = await Promise.all([
+    db.select().from(strengthSessionExercises),
+    db.select().from(exercises),
+    db.select().from(sessions),
+    db.select().from(strengthSets),
+  ])
   const exMap = new Map(allExercises.map(e => [e.id, e]))
-  const allSessions = await db.select().from(sessions)
   const sessionMap = new Map(allSessions.filter(s => s.status === 'completed').map(s => [s.id, s]))
+  const setsByExerciseId = new Map<string, typeof allSets>()
+  for (const st of allSets) {
+    const arr = setsByExerciseId.get(st.sessionExerciseId) ?? []
+    arr.push(st)
+    setsByExerciseId.set(st.sessionExerciseId, arr)
+  }
 
   // Group by exercise
   const exercisePRs = new Map<string, { maxWeightKg: number; date: string; allMaxes: number[] }>()
@@ -2790,7 +2815,7 @@ app.get('/api/history/prs', async (c) => {
     const session = sessionMap.get(se.sessionId)
     if (!session) continue
 
-    const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
+    const sets = setsByExerciseId.get(se.id) ?? []
     const weights = sets.filter(s => s.weightKg != null && s.weightKg > 0 && s.isWarmup === 0).map(s => s.weightKg!)
     if (weights.length === 0) continue
 
@@ -2930,6 +2955,9 @@ app.get('/api/history/dashboard', async (c) => {
   const nowSec = Math.floor(Date.now() / 1000)
   const todayEpochDay = Math.floor(nowSec / 86400)
 
+  const daysRaw = Number(c.req.query('days') ?? 7)
+  const periodDays = [7, 30, 90].includes(daysRaw) ? daysRaw : 7
+
   const allSessions = await db.select().from(sessions)
 
   // Streak
@@ -2949,20 +2977,37 @@ app.get('/api/history/dashboard', async (c) => {
   const total30 = recent30.filter(s => s.status !== 'planned').length // completed + skipped
   const completionRate = total30 > 0 ? Math.round(completed30 / total30 * 100) : 0
 
-  // PRs this month
-  const allSexes = await db.select().from(strengthSessionExercises)
-  const allExercises = await db.select().from(exercises)
+  // PRs this month — batch-load all sets once, group in memory (avoids N+1)
+  const [allSexes, allExercises, allSets, allDailyLogs, allRunSessions] = await Promise.all([
+    db.select().from(strengthSessionExercises),
+    db.select().from(exercises),
+    db.select().from(strengthSets),
+    db.select().from(dailyLogs),
+    db.select().from(runSessions),
+  ])
   const exMap = new Map(allExercises.map(e => [e.id, e]))
   const completedSessionMap = new Map(
     allSessions.filter(s => s.status === 'completed').map(s => [s.id, s])
   )
+  const setsByExerciseId = new Map<string, typeof allSets>()
+  for (const st of allSets) {
+    const arr = setsByExerciseId.get(st.sessionExerciseId) ?? []
+    arr.push(st)
+    setsByExerciseId.set(st.sessionExerciseId, arr)
+  }
+  const sexesBySessionId = new Map<string, typeof allSexes>()
+  for (const se of allSexes) {
+    const arr = sexesBySessionId.get(se.sessionId) ?? []
+    arr.push(se)
+    sexesBySessionId.set(se.sessionId, arr)
+  }
 
   // Track max weight per exercise with date
   const exerciseMaxes = new Map<string, { maxKg: number; date: number }[]>()
   for (const se of allSexes) {
     const session = completedSessionMap.get(se.sessionId)
     if (!session) continue
-    const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
+    const sets = setsByExerciseId.get(se.id) ?? []
     const weights = sets.filter(s => s.weightKg != null && s.weightKg > 0 && s.isWarmup === 0).map(s => s.weightKg!)
     if (weights.length === 0) continue
     const maxW = Math.max(...weights)
@@ -3003,25 +3048,32 @@ app.get('/api/history/dashboard', async (c) => {
   )
   const totalRuns = runSessionIds.size
 
-  // Week-over-week comparison
-  const today = new Date()
-  const dayOfWeek = today.getDay()
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-  const thisMonday = todayEpochDay + mondayOffset
-  const lastMonday = thisMonday - 7
+  // Period-over-period comparison (7/30/90 day windows)
+  let currentStart: number
+  if (periodDays === 7) {
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+    currentStart = todayEpochDay + mondayOffset
+  } else {
+    currentStart = todayEpochDay - (periodDays - 1)
+  }
+  const previousStart = currentStart - periodDays
 
-  async function getWeekStats(mondayEpochDay: number) {
-    const weekSessions = allSessions.filter(s =>
-      s.scheduledDate != null && s.scheduledDate >= mondayEpochDay && s.scheduledDate < mondayEpochDay + 7
+  function getRangeStats(startEpochDay: number, dayCount: number) {
+    const endEpochDay = startEpochDay + dayCount
+    const rangeSessions = allSessions.filter(s =>
+      s.scheduledDate != null && s.scheduledDate >= startEpochDay && s.scheduledDate < endEpochDay
     )
-    const completedWeek = weekSessions.filter(s => s.status === 'completed')
+    const completedRange = rangeSessions.filter(s => s.status === 'completed')
 
-    // Volume
+    // Volume — use prefetched grouped maps
     let volume = 0
-    for (const s of completedWeek.filter(ws => ws.type === 'strength')) {
-      const sexes = await db.select().from(strengthSessionExercises).where(eq(strengthSessionExercises.sessionId, s.id))
+    for (const s of completedRange) {
+      if (s.type !== 'strength') continue
+      const sexes = sexesBySessionId.get(s.id) ?? []
       for (const se of sexes) {
-        const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
+        const sets = setsByExerciseId.get(se.id) ?? []
         for (const st of sets) {
           if (st.weightKg != null && st.weightKg > 0) volume += st.weightKg * st.reps
         }
@@ -3029,40 +3081,38 @@ app.get('/api/history/dashboard', async (c) => {
     }
 
     // RPE
-    const rpeValues = completedWeek.filter(s => s.rpe != null).map(s => s.rpe!)
+    const rpeValues = completedRange.filter(s => s.rpe != null).map(s => s.rpe!)
     const avgRpe = rpeValues.length > 0 ? Math.round(rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length * 10) / 10 : null
 
-    // Sleep (from dailyLogs)
-    const logs = await db.select().from(dailyLogs)
-    const weekLogs = logs.filter(l => l.logDate >= mondayEpochDay && l.logDate < mondayEpochDay + 7)
-    const sleepValues = weekLogs.filter(l => l.sleepHours != null).map(l => l.sleepHours!)
+    // Sleep
+    const rangeLogs = allDailyLogs.filter(l => l.logDate >= startEpochDay && l.logDate < endEpochDay)
+    const sleepValues = rangeLogs.filter(l => l.sleepHours != null).map(l => l.sleepHours!)
     const avgSleep = sleepValues.length > 0 ? Math.round(sleepValues.reduce((a, b) => a + b, 0) / sleepValues.length * 10) / 10 : null
 
-    // Distance (from run sessions)
-    const runIds = completedWeek
-      .filter(s => s.type === 'foundation_run' || s.type === 'running')
-      .map(s => s.id)
+    // Distance
+    const runIdSet = new Set(
+      completedRange
+        .filter(s => s.type === 'foundation_run' || s.type === 'running')
+        .map(s => s.id)
+    )
     let distanceKm = 0
-    if (runIds.length > 0) {
-      const allRuns = await db.select().from(runSessions)
-      for (const r of allRuns) {
-        if (runIds.includes(r.sessionId) && r.distanceKm != null) {
-          distanceKm += r.distanceKm
-        }
+    for (const r of allRunSessions) {
+      if (runIdSet.has(r.sessionId) && r.distanceKm != null) {
+        distanceKm += r.distanceKm
       }
     }
 
     return {
-      volume: Math.round(volume * 2.20462), // kg to lbs
-      sessions: completedWeek.length,
+      volume: Math.round(volume * 2.20462),
+      sessions: completedRange.length,
       avgRpe,
       avgSleep,
       distanceKm: Math.round(distanceKm * 10) / 10,
     }
   }
 
-  const thisWeek = await getWeekStats(thisMonday)
-  const lastWeek = await getWeekStats(lastMonday)
+  const thisWeek = getRangeStats(currentStart, periodDays)
+  const lastWeek = getRangeStats(previousStart, periodDays)
 
   return c.json({
     currentStreak,
