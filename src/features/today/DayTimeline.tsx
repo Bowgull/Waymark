@@ -17,9 +17,10 @@ interface DayTimelineProps {
   sessions: Session[]
   onStart: (id: string) => void
   onSkip: (id: string) => void
+  onReplace: (id: string) => void
 }
 
-export function DayTimeline({ sessions, onStart, onSkip }: DayTimelineProps) {
+export function DayTimeline({ sessions, onStart, onSkip, onReplace }: DayTimelineProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const amSessions = sessions.filter(s => s.timeSlot === 'am')
@@ -42,6 +43,7 @@ export function DayTimeline({ sessions, onStart, onSkip }: DayTimelineProps) {
                 session={session}
                 onStart={onStart}
                 onSkip={onSkip}
+                onReplace={onReplace}
                 expanded={expandedId === session.id}
                 onToggle={() => setExpandedId(expandedId === session.id ? null : session.id)}
                 label={getSessionLabel(session.type, new Date().getDay())}

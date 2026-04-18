@@ -7,6 +7,7 @@ import { getTodayISO } from '@/lib/dates'
 import { PageBackground } from '@/components/backgrounds/PageBackground'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { SkipReasonSheet } from '@/features/session/SkipReasonSheet'
+import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 
 import { DateHeader } from './DateHeader'
@@ -25,6 +26,7 @@ interface Session {
   completedAt: number | null
   durationSec: number | null
   rpe: number | null
+  scheduledDate?: number | null
 }
 
 interface DailyLog {
@@ -53,6 +55,11 @@ export function TodayPage() {
     swapToLabel: string | null
   } | null>(null)
   const [skipReasonFor, setSkipReasonFor] = useState<string | null>(null)
+  const [replaceState, setReplaceState] = useState<
+    | { sessionId: string; stage: 'reason' }
+    | { sessionId: string; stage: 'picker'; reason: string }
+    | null
+  >(null)
 
   const today = getTodayISO()
   const todayDate = new Date(`${today}T12:00:00`)
@@ -201,6 +208,51 @@ export function TodayPage() {
     setReschedulePrompt(null)
   }
 
+  function handleReplaceStart(id: string) {
+    setReplaceState({ sessionId: id, stage: 'reason' })
+  }
+
+  async function handleReplaceReasonCommit(reason: string) {
+    if (!replaceState) return
+    setReplaceState({ sessionId: replaceState.sessionId, stage: 'picker', reason })
+    try {
+      const s = await apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
+      setPickerSuggestions(s)
+    } catch {
+      setPickerSuggestions(null)
+    }
+  }
+
+  async function handleReplaceSelect(option: SessionOption) {
+    if (!replaceState || replaceState.stage !== 'picker') return
+    const sessionId = replaceState.sessionId
+    const reason = replaceState.reason
+    setReplaceState(null)
+    setPickerSuggestions(null)
+    try {
+      const result = await apiFetch<{ original: Session; replacement: Session }>(`/api/sessions/${sessionId}/replace`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reason,
+          type: option.type,
+          label: option.label,
+          timeSlot: option.timeSlot,
+          runCategory: option.runCategory,
+        }),
+      })
+      setSessions(prev => {
+        const withOriginal = prev.map(s => (s.id === result.original.id ? result.original : s))
+        const next = [...withOriginal, result.replacement]
+        return next.sort((a, b) =>
+          (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0)
+          || ((a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1))
+        )
+      })
+    } catch (e) {
+      console.error('Failed to replace session:', e)
+    }
+  }
+
   async function handleAddSession(option: SessionOption) {
     setShowPicker(false)
     try {
@@ -269,7 +321,7 @@ export function TodayPage() {
         </div>
       ) : (
         <>
-          <DayTimeline sessions={sessions} onStart={handleStart} onSkip={handleSkip} />
+          <DayTimeline sessions={sessions} onStart={handleStart} onSkip={handleSkip} onReplace={handleReplaceStart} />
           <button
             onClick={() => {
               setShowPicker(true)
@@ -298,6 +350,23 @@ export function TodayPage() {
         <SkipReasonSheet
           onCommit={(reason) => commitSkip(skipReasonFor, reason)}
           onClose={() => setSkipReasonFor(null)}
+        />
+      )}
+
+      {replaceState?.stage === 'reason' && (
+        <ReplaceReasonSheet
+          onCommit={(reason) => handleReplaceReasonCommit(reason)}
+          onClose={() => setReplaceState(null)}
+        />
+      )}
+
+      {replaceState?.stage === 'picker' && (
+        <SessionPicker
+          onSelect={handleReplaceSelect}
+          onClose={() => { setReplaceState(null); setPickerSuggestions(null) }}
+          suggestions={pickerSuggestions}
+          title="Replace"
+          subtitle={replaceState.reason ? `Reason: ${replaceState.reason}` : undefined}
         />
       )}
 

@@ -443,6 +443,77 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   return c.json(row)
 })
 
+// ─── Replace a session with a different one ──────────────────
+
+app.post('/api/sessions/:id/replace', async (c) => {
+  const id = c.req.param('id')
+  const body = await c.req.json<{
+    reason: string
+    type: string
+    label?: string
+    timeSlot: 'am' | 'pm'
+    runCategory?: string
+  }>()
+
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+
+  const [original] = await db.select().from(sessions).where(eq(sessions.id, id))
+  if (!original) return c.json({ error: 'session not found' }, 404)
+  if (original.status !== 'planned' && original.status !== 'in_progress') {
+    return c.json({ error: 'session is not replaceable' }, 400)
+  }
+
+  const skipLine = body.reason.trim() ? `Replaced: ${body.reason.trim()}` : 'Replaced'
+  const priorNotes = (original.notes ?? '').trim()
+  const updatedNotes = priorNotes ? `${skipLine}\n${priorNotes}` : skipLine
+
+  await db.update(sessions)
+    .set({ status: 'skipped', notes: updatedNotes })
+    .where(eq(sessions.id, id))
+
+  const runTag = body.type === 'running' ? (body.runCategory ?? null) : null
+  const scheduledDate = original.scheduledDate ?? isoToEpochDay(new Date().toISOString().split('T')[0])
+
+  const adjustmentId = crypto.randomUUID()
+  await db.insert(weekAdjustments).values({
+    id: adjustmentId,
+    weekPlanId: original.weekPlanId ?? '',
+    adjustmentType: 'skip_reschedule',
+    sessionType: body.type,
+    action: 'swap',
+    reason: body.reason,
+    targetDay: new Date(scheduledDate * 86400000).getUTCDay(),
+    targetTimeSlot: body.timeSlot,
+    sourceData: JSON.stringify({
+      userSkipReason: body.reason,
+      originalSessionId: id,
+      originalType: original.type,
+      swapToLabel: body.label ?? null,
+    }),
+    status: 'accepted',
+    createdAt: nowSec,
+  })
+
+  const newId = crypto.randomUUID()
+  await db.insert(sessions).values({
+    id: newId,
+    type: body.type,
+    weekPlanId: original.weekPlanId,
+    scheduledDate,
+    timeSlot: body.timeSlot,
+    blockWeek: null,
+    status: 'planned',
+    notes: runTag,
+    adjustmentId,
+    createdAt: nowSec,
+  })
+
+  const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
+  const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
+  return c.json({ original: replaced, replacement: created })
+})
+
 app.patch('/api/sessions/:id', async (c) => {
   const id = c.req.param('id')
   const body = await c.req.json<{

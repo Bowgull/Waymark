@@ -28,11 +28,13 @@ interface SessionPickerProps {
   onClose: () => void
   filter?: (option: SessionOption) => boolean
   suggestions?: SuggestionsResponse | null
+  title?: string
+  subtitle?: string
 }
 
 export type { SessionOption }
 
-export function SessionPicker({ onSelect, onClose, filter, suggestions }: SessionPickerProps) {
+export function SessionPicker({ onSelect, onClose, filter, suggestions, title, subtitle }: SessionPickerProps) {
   const baseOptions = filter ? SESSION_OPTIONS.filter(filter) : SESSION_OPTIONS
 
   if (suggestions && suggestions.suggestions.length > 0) {
@@ -42,12 +44,14 @@ export function SessionPicker({ onSelect, onClose, filter, suggestions }: Sessio
         suggestions={suggestions}
         onSelect={onSelect}
         onClose={onClose}
+        title={title}
+        subtitle={subtitle}
       />
     )
   }
 
   return (
-    <PickerShell onClose={onClose}>
+    <PickerShell onClose={onClose} title={title} subtitle={subtitle}>
       <div className="flex flex-col gap-0.5">
         {baseOptions.map((opt, i) => (
           <FlexibleSessionRow key={i} opt={opt} onSelect={onSelect} />
@@ -59,11 +63,13 @@ export function SessionPicker({ onSelect, onClose, filter, suggestions }: Sessio
 
 // ─── Suggested Picker ───────────────────────────────────────────
 
-function SuggestedPicker({ baseOptions, suggestions, onSelect, onClose }: {
+function SuggestedPicker({ baseOptions, suggestions, onSelect, onClose, title, subtitle }: {
   baseOptions: (SessionOption & { flexibleTimeSlot: boolean })[]
   suggestions: SuggestionsResponse
   onSelect: (option: SessionOption) => void
   onClose: () => void
+  title?: string
+  subtitle?: string
 }) {
   const suggestionMap = new Map(
     suggestions.suggestions.map(s => [s.runCategory ? `${s.type}:${s.runCategory}` : s.type, s])
@@ -85,11 +91,11 @@ function SuggestedPicker({ baseOptions, suggestions, onSelect, onClose }: {
   const { flags } = suggestions
 
   return (
-    <PickerShell onClose={onClose} flags={flags}>
+    <PickerShell onClose={onClose} flags={flags} title={title} subtitle={subtitle}>
       <div className="flex flex-col gap-0.5">
         {suggested.length > 0 && (
           <>
-            <p className="px-3 pb-1 font-cinzel text-[13px] font-medium uppercase tracking-[0.2em] text-gold/40">Suggested</p>
+            <p className="px-3 pb-1 font-cinzel text-[13px] font-medium uppercase tracking-[0.2em] text-gold/40">Coach Picks</p>
             {suggested.map((opt, i) => (
               <FlexibleSessionRow
                 key={`s-${i}`}
@@ -121,14 +127,18 @@ function SuggestedPicker({ baseOptions, suggestions, onSelect, onClose }: {
 
 // ─── Picker Shell ───────────────────────────────────────────────
 
-function PickerShell({ children, onClose, flags }: { children: React.ReactNode; onClose: () => void; flags?: string[] }) {
+function PickerShell({ children, onClose, flags, title, subtitle }: { children: React.ReactNode; onClose: () => void; flags?: string[]; title?: string; subtitle?: string }) {
+  const heading = title ?? 'Add Session'
   return (
-    <BottomSheet open onClose={onClose} ariaLabel="Add Session">
+    <BottomSheet open onClose={onClose} ariaLabel={heading}>
       <div className="mb-4">
         <div className="flex items-center justify-between">
-          <p className="font-cinzel text-display-sm text-foreground">Add Session</p>
+          <p className="font-cinzel text-display-sm text-foreground">{heading}</p>
           <button onClick={onClose} className="min-h-[44px] px-3 text-muted-foreground/60 text-xs uppercase tracking-wider active:text-muted-foreground">Cancel</button>
         </div>
+        {subtitle && (
+          <p className="mt-1 text-xs text-muted-foreground/70">{subtitle}</p>
+        )}
         {flags && flags.length > 0 && (
           <p className="mt-1 text-xs text-gold/50">{flags.join(' · ')}</p>
         )}
