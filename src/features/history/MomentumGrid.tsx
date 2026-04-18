@@ -9,6 +9,7 @@ interface WeekStats {
 interface MomentumGridProps {
   thisWeek: WeekStats
   lastWeek: WeekStats
+  period: 7 | 30 | 90
 }
 
 function Arrow({ direction }: { direction: 'up' | 'down' | 'flat' }) {
@@ -82,7 +83,10 @@ function getDelta(current: number | null, previous: number | null, invert = fals
   }
 }
 
-export function MomentumGrid({ thisWeek, lastWeek }: MomentumGridProps) {
+export function MomentumGrid({ thisWeek, lastWeek, period }: MomentumGridProps) {
+  const periodLabel = period === 7 ? { current: 'This Week', prior: 'vs last week' }
+    : period === 30 ? { current: 'Last 30 Days', prior: 'vs prior 30' }
+    : { current: 'Last 90 Days', prior: 'vs prior 90' }
   const vol = getDelta(thisWeek.volume, lastWeek.volume)
   const sess = getDelta(thisWeek.sessions, lastWeek.sessions)
   const effort = getDelta(thisWeek.avgRpe, lastWeek.avgRpe, true) // lower RPE = better
@@ -95,7 +99,9 @@ export function MomentumGrid({ thisWeek, lastWeek }: MomentumGridProps) {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 px-4 mb-5">
+    <div className="px-4 mb-5">
+      <p className="text-label text-muted-foreground mb-2">{periodLabel.current} <span className="text-muted-foreground/60">· {periodLabel.prior}</span></p>
+      <div className="grid grid-cols-2 gap-3">
       <MomentumCard
         label="Volume"
         value={thisWeek.volume > 0 ? `${Math.round(thisWeek.volume).toLocaleString()}` : '0'}
@@ -104,7 +110,7 @@ export function MomentumGrid({ thisWeek, lastWeek }: MomentumGridProps) {
         improved={vol.direction}
       />
       <MomentumCard
-        label="Sessions"
+        label="Workouts"
         value={String(thisWeek.sessions)}
         delta={sess.delta}
         improved={sess.direction}
@@ -130,6 +136,7 @@ export function MomentumGrid({ thisWeek, lastWeek }: MomentumGridProps) {
         improved={dist.direction}
         className="col-span-2"
       />
+      </div>
     </div>
   )
 }
