@@ -24,3 +24,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local demo snapshots (contains personal training data)
+.demo-backup/
+
+# Claude worktree staging
+.claude/worktrees/
