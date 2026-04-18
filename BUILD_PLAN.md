@@ -122,13 +122,12 @@ Confirmation UI: every auto-attached activity shows a one-time "This run was the
 Compressed. Steps 1-5 all ship today. Steps 6-7 deferred to the following week so they can be built against real HR data.
 
 - **Today (2026-04-18)**: steps 1-5. One commit per step. Prod deploy mid-day at end of step 2 (webhooks need a public URL).
-- **Mon (04-20)**: training begins. No HR yet. RPE + soreness + adherence drive coaching.
-- **Wed (04-22)**: strap arrives. Pair to iPhone Strava. Short test run end of day to verify pipeline.
-- **Thu (04-23)**: first HR-captured session. Target-HR line, auto-match, schema all exercised for real.
-- **Thu-Sun (04-23 to 04-26)**: data accumulates. No new build.
-- **Following week (04-27+)**: steps 6-7 built against real data. Final deploy after step 7.
+- **Mon (04-20)**: training begins. Strap arrives same day. Pair to iPhone Strava before bed. No HR on Mon session (pair first, train later).
+- **Tue (04-21)**: first HR-captured session. Target-HR line, auto-match, schema all exercised for real.
+- **Tue-Sun (04-21 to 04-26)**: data accumulates. No new build.
+- **Following week (04-27+)**: steps 6-7 built against 5+ HR-captured runs. Final deploy after step 7.
 
-If the Wed strap ship slips, move the test run to Thu. No effect on steps 6-7 pacing — data just starts accumulating a day later.
+If the Mon strap ship slips, move the first HR session to whichever day it arrives. No effect on steps 6-7 pacing — they just build against fewer real runs.
 
 ---
 

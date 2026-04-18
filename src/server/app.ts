@@ -20,15 +20,20 @@ import { generateWeekPlan } from '../lib/weeklyPlanAI'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { runSkipResponse } from '../lib/skipResponseAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
+import { strava } from './routes/strava'
 
 type Bindings = {
   DB: D1Database
   ANTHROPIC_API_KEY: string
+  STRAVA_CLIENT_ID: string
+  STRAVA_CLIENT_SECRET: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
 
 app.use('/api/*', cors())
+
+app.route('/api/strava', strava)
 
 app.onError((err, c) => {
   console.error('[Waymark API Error]', err.message, err.stack)
