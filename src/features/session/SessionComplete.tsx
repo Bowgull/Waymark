@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { ScrollDrum } from '@/components/ui/ScrollDrum'
 import { SlidingGauge } from '@/components/ui/SlidingGauge'
 import { getMarkAsset } from '@/lib/markAssets'
 import { completeHaptic } from '@/lib/haptics'
+
+const DRIVE_EXPLAINER_KEY = 'waymark.drive_explainer_seen'
 
 interface SessionCompleteProps {
   sessionType: string
@@ -24,7 +26,27 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
   const [rpe, setRpe] = useState(7)
   const [difficulty, setDifficulty] = useState(3)
   const [notes, setNotes] = useState('')
+  const [showDriveExplainer, setShowDriveExplainer] = useState(false)
   const mark = getMarkAsset(sessionType)
+
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(DRIVE_EXPLAINER_KEY)) {
+        setShowDriveExplainer(true)
+      }
+    } catch {
+      // storage blocked, skip
+    }
+  }, [])
+
+  function dismissDriveExplainer() {
+    setShowDriveExplainer(false)
+    try {
+      localStorage.setItem(DRIVE_EXPLAINER_KEY, '1')
+    } catch {
+      // storage blocked, skip
+    }
+  }
 
   function handleFinish() {
     completeHaptic()
@@ -51,6 +73,18 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
         <label className="mb-2 block text-sm font-medium text-foreground">
           RPE: {rpe} · {RPE_LABELS[rpe]}
         </label>
+        {showDriveExplainer && (
+          <div className="mb-2 rounded-md border border-gold/20 bg-gold/5 px-3 py-2 text-xs text-muted-foreground leading-relaxed animate-fade-in">
+            <p className="text-foreground">How hard you drove. 1 is a warm-up. 10 is all you had.</p>
+            <p className="mt-1 text-muted-foreground/70">Honest numbers make the next week fit. Guess high and the load stays stuck.</p>
+            <button
+              onClick={dismissDriveExplainer}
+              className="mt-2 text-[13px] text-gold/70 active:text-gold"
+            >
+              Got it
+            </button>
+          </div>
+        )}
         <div className="rounded-md bg-deep-forest border border-gold/10 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
           <ScrollDrum min={1} max={10} step={1} value={rpe} onChange={setRpe} />
         </div>
