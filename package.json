@@ -13,7 +13,8 @@
     "db:migrate:remote": "npx wrangler d1 execute waymark-db --remote --file=./drizzle/0001_open_supernaut.sql",
     "db:seed:generate": "tsx src/db/seed.ts",
     "db:seed:local": "npx wrangler d1 execute waymark-db --local --file=./src/db/seed.sql",
-    "db:seed:remote": "npx wrangler d1 execute waymark-db --remote --file=./src/db/seed.sql"
+    "db:seed:remote": "npx wrangler d1 execute waymark-db --remote --file=./src/db/seed.sql",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
@@ -56,6 +57,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "patch-package": "^8.0.1",
     "shadcn": "^4.2.0",
     "tsx": "^4.21.0",
     "typescript": "~5.9.3",
