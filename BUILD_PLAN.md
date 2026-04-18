@@ -158,7 +158,9 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 ### Phase 5: Ledger and surfacing
 
 - **Step 12** `DONE` Ledger AI insights. Replace placeholder `insightEngine.ts` output with Haiku-generated insights. UI slots already exist.
-- **Step 13** `TODO` Body metrics entry. Weight and optional fields. Simple form. Graph reuses existing sparkline component.
+- **Step 13** `DONE` Body metrics entry. Weight and optional fields. Simple form. Graph reuses existing sparkline component.
+  - Files: `src/features/metrics/BodyMetricsPage.tsx` (new), `src/server/app.ts` (two routes), `src/app/AppRoutes.tsx` (/metrics route)
+  - Acceptance: POST /api/body-metrics writes weight (required), resting HR / bodyfat / notes (optional). GET returns recent entries. /metrics page shows form and sparkline once 2+ entries exist.
 - **Step 14** `TODO` Coach surfaces: Block narrative view, Drive first-use explainer, injury check-in, session intent preview, skip-reason capture.
 
 ### Deploy
@@ -229,3 +231,8 @@ Append one entry per session. Keep under 5 lines each.
 - Did: Added `getToolInputs` helper in `src/lib/anthropic.ts` (collects all tool_use blocks). Created `src/lib/ledgerInsightsAI.ts` (Haiku, `tool_choice: any`, emits 2-4 `insight` tool calls, formats dashboard/consistency/PRs/correlations/runs/rings into prompt, logs to `coaching_outputs` with kind `ledger_insights`, sorts by priority). Added `POST /api/ai/ledger-insights` route in `src/server/app.ts`. Updated `src/features/history/HistoryPage.tsx` to POST data payload to AI endpoint, fall back to local `generateInsights` on null/error.
 - Next: Step 13 (body metrics entry).
 - Notes: `generateInsights` in `insightEngine.ts` retained as offline fallback. No new DB migration. Typecheck passes on Step 12 files (`npx tsc -b`). Three preexisting errors remain on main (anthropic unused var, two app.ts null type errors) untouched by this step. No worker dev server on this machine so runtime verification deferred.
+
+### Session 13 (2026-04-18) · Step 13
+- Did: Created `src/features/metrics/BodyMetricsPage.tsx` (form with weight required, resting HR / bodyfat / notes optional, weight sparkline via existing Sparkline component, recent entry list). Added `bodyMetrics` to schema import in `app.ts`. Added `POST /api/body-metrics` and `GET /api/body-metrics` routes. Added `/metrics` route to `AppRoutes.tsx`. Merged step 12 worktree branch to main before starting.
+- Next: Step 14 (coach surfaces).
+- Notes: Weight stored as kg, displayed as lbs using existing `kgToLbsDisplay`. No migration needed (body_metrics table in schema since step 1). No node on this machine, typecheck deferred.

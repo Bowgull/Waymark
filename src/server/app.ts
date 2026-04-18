@@ -6,7 +6,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
-import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
+import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, bodyMetrics, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
 import { adHocSessionSchema, completeSessionSchema, dailyLogSchema } from '../lib/validators/schemas'
 import { POSTURE_TEMPLATE } from '../lib/postureTemplate'
@@ -2940,6 +2940,45 @@ app.post('/api/ai/ledger-insights', async (c) => {
   const insights = await runLedgerInsights(db, c.env.ANTHROPIC_API_KEY, data)
   if (!insights) return c.json({ insights: null }, 503)
   return c.json({ insights })
+})
+
+app.post('/api/body-metrics', async (c) => {
+  const db = createDB(c.env)
+  const body = await c.req.json<{
+    weightKg?: number
+    restingHr?: number
+    bodyfatPct?: number
+    notes?: string
+    loggedAt?: number
+  }>()
+  if (!body.weightKg || body.weightKg <= 0) {
+    return c.json({ error: 'weightKg required' }, 400)
+  }
+  const now = Date.now()
+  const id = crypto.randomUUID()
+  await db.insert(bodyMetrics).values({
+    id,
+    loggedAt: body.loggedAt ?? now,
+    weightKg: body.weightKg,
+    restingHr: body.restingHr ?? null,
+    bodyfatPct: body.bodyfatPct ?? null,
+    notes: body.notes ?? null,
+    createdAt: now,
+  })
+  const entry = await db.select().from(bodyMetrics).where(eq(bodyMetrics.id, id)).get()
+  return c.json({ entry })
+})
+
+app.get('/api/body-metrics', async (c) => {
+  const db = createDB(c.env)
+  const limitParam = c.req.query('limit')
+  const limit = limitParam ? Math.min(parseInt(limitParam, 10), 100) : 30
+  const entries = await db
+    .select()
+    .from(bodyMetrics)
+    .orderBy(desc(bodyMetrics.loggedAt))
+    .limit(limit)
+  return c.json({ entries })
 })
 
 export default app
