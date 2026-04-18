@@ -1,0 +1,38 @@
+// Released One Pace arcs, in chronological order.
+// Verified 2026-04-18 against One Pace's current releases (through Egghead).
+export const ONE_PACE_ARCS = [
+  'Romance Dawn',
+  'Orange Town',
+  'Syrup Village',
+  'Baratie',
+  'Arlong Park',
+  'Loguetown',
+  'Reverse Mountain',
+  'Whisky Peak',
+  'Little Garden',
+  'Drum Island',
+  'Arabasta',
+  'Jaya',
+  'Skypiea',
+  'Long Ring Long Land',
+  'Water 7',
+  'Enies Lobby',
+  'Post Enies Lobby',
+  'Thriller Bark',
+  'Sabaody',
+  'Amazon Lily',
+  'Impel Down',
+  'Marineford',
+  'Post War',
+  'Return to Sabaody',
+  'Fish-Man Island',
+  'Punk Hazard',
+  'Dressrosa',
+  'Zou',
+  'Whole Cake Island',
+  'Reverie',
+  'Wano',
+  'Egghead',
+] as const
+
+export type OnePaceArc = (typeof ONE_PACE_ARCS)[number]
