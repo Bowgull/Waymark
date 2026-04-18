@@ -129,8 +129,27 @@ export const runSessions = sqliteTable('run_sessions', {
   isIndoor: integer('is_indoor').notNull().default(0),
   onePaceArc: text('one_pace_arc'),
   onePaceEp: text('one_pace_ep'),
+  avgHr: integer('avg_hr'),
+  maxHr: integer('max_hr'),
+  zoneSeconds: text('zone_seconds'),
+  elevationGainM: integer('elevation_gain_m'),
+  source: text('source').notNull().default('manual'),
+  stravaActivityId: integer('strava_activity_id'),
+  attachmentStatus: text('attachment_status'),
 }, (t) => [
   uniqueIndex('idx_run_session').on(t.sessionId),
+  uniqueIndex('idx_run_strava').on(t.stravaActivityId),
+])
+
+export const runSplits = sqliteTable('run_splits', {
+  id: text('id').primaryKey(),
+  runSessionId: text('run_session_id').notNull().references(() => runSessions.id),
+  kmIndex: integer('km_index').notNull(),
+  durationSec: integer('duration_sec').notNull(),
+  avgHr: integer('avg_hr'),
+  elevationGainM: integer('elevation_gain_m'),
+}, (t) => [
+  index('idx_run_splits_session').on(t.runSessionId),
 ])
 
 // ─── Posture corrective sessions ───────────────────────────────
@@ -322,6 +341,8 @@ export const userProfile = sqliteTable('user_profile', {
   mtCapPerWeek: integer('mt_cap_per_week'),
   weeklyDayTarget: integer('weekly_day_target'),
   constraints: text('constraints'),
+  maxHr: integer('max_hr'),
+  dob: text('dob'),
   onboardedAt: integer('onboarded_at'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
