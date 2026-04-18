@@ -124,7 +124,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 - **Step 4** `DONE` System prompt builder. Assembles identity + voice canon + user profile + compressed context.
   - Files: `src/lib/prompts/system.ts` (new), `src/lib/prompts/context.ts` (new)
-- **Step 5** `TODO` Tool schemas for structured outputs: `weekPlan`, `weekReview`, `blockTransition`, `sessionReview`, `insight`.
+- **Step 5** `DONE` Tool schemas for structured outputs: `weekPlan`, `weekReview`, `blockTransition`, `sessionReview`, `insight`.
   - Files: `src/lib/prompts/tools.ts` (new)
 - **Step 6** `TODO` Context summarizer. Rolls weeks 5+ into compressed summaries stored in `coachingOutputs`.
   - Files: `src/lib/prompts/summarizer.ts` (new), cron or on-demand
@@ -170,17 +170,21 @@ Append one entry per session. Keep under 5 lines each.
 - Next: Step 2 (Anthropic client).
 - Notes: This project hand-writes migrations and applies them via wrangler, not via `drizzle-kit generate`. Meta journal is intentionally stale. Apply `0010_ai_foundation.sql` to local D1 with `wrangler d1 execute` to verify.
 
+### Session 2 (2026-04-17) · Step 2
+- Did: Created `src/lib/anthropic.ts` (direct fetch wrapper, prompt caching headers, retry on 429/5xx/529, offline fallback, tool use, extended thinking for Sonnet). Added `ANTHROPIC_API_KEY` to `Bindings` in `src/server/app.ts`. Noted secret in `wrangler.jsonc`.
+- Next: Step 3 (onboarding screen, three questions, writes to `user_profile`).
+- Notes: Set `ANTHROPIC_API_KEY` via `wrangler secret put ANTHROPIC_API_KEY` before Step 7.
+
 ### Session 3 (2026-04-17) · Step 3
 - Did: Created `src/features/onboarding/OnboardingPage.tsx` (three Voice Canon questions, step indicator, goals multi-select, physical textarea with Pass, training history single-select, Commit to write). Added `GET /api/user-profile` and `POST /api/user-profile` to `src/server/app.ts`. Added `/onboarding` route and profile check redirect to `src/app/AppRoutes.tsx`.
 - Next: Step 4 (system prompt builder).
 - Notes: Profile check runs once on app mount, skips if already on `/onboarding`. Offline fallback skips redirect. Completion navigates to `/program` with replace.
 
-### Session 2 (2026-04-17) · Step 2
-- Did: Created `src/lib/anthropic.ts` (direct fetch wrapper, prompt caching headers, retry on 429/5xx/529, offline fallback, tool use, extended thinking for Sonnet). Added `ANTHROPIC_API_KEY` to `Bindings` in `src/server/app.ts`. Noted secret in `wrangler.jsonc`.
-- Next: Step 3 (onboarding screen, three questions, writes to `user_profile`).
-- Notes: Two sessions ran in parallel directories and diverged. Step 2 artifacts were merged from the other tree into this one. Canonical dir going forward: `/Users/lindsaybell/Developer/Waymark-fresh` (to be renamed to `Waymark` after the broken clone is removed). Set `ANTHROPIC_API_KEY` via `wrangler secret put ANTHROPIC_API_KEY` before Step 7.
-
-### Session 3 (2026-04-17) · Step 4
+### Session 4 (2026-04-17) · Step 4
 - Did: Created `src/lib/prompts/system.ts` (identity + voice canon block cached, user profile block cached, optional compressed history block uncached) and `src/lib/prompts/context.ts` (WeekContext/CompressedWeekSummary types, buildContextBlock formatter for recent raw weeks + older compressed summaries).
-- Next: Step 5 (tool schemas for structured outputs: weekPlan, weekReview, blockTransition, sessionReview, insight).
-- Notes: Step 3 (onboarding) was skipped this session per build plan order. Two cache checkpoints: identity is always stable, profile changes only on onboarding update.
+- Next: Step 5 (tool schemas).
+- Notes: Two cache checkpoints: identity is always stable, profile changes only on onboarding update.
+
+### Session 5 (2026-04-17) · Step 5
+- Did: Created `src/lib/prompts/tools.ts` with five Anthropic tool definitions (weekPlan, weekReview, blockTransition, sessionReview, insight) and matching TypeScript output types. Exported ALL_TOOLS array and TOOL_BY_NAME map.
+- Next: Step 6 (context summarizer).
