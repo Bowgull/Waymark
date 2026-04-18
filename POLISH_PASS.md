@@ -144,55 +144,74 @@ Do not bundle commits. Each session should end with a pushed commit to main and 
 - Build `tsc -b && vite build`: pass. Lint of touched files: 0 errors, 1 pre-existing warning in `ScrollDrum.tsx` (`values` array deps, unrelated to this change). Project-wide lint has 284 pre-existing problems, none introduced here.
 - **Device verification: not performed by Claude** (user on same cadence as Commit 1; will verify alongside).
 
+### Commit 3: Fighter Block removal + One Piece display + ep bump + toast (2026-04-18)
+
+- Commit: `c0ffe96 polish: drop fighter block, surface one pace`.
+- `src/features/program/ProgramPage.tsx`: deleted `getFighterBlockNarrative()` function and the Fighter-Block JSX render branch. The narrative block is now guarded by `isBlockZero && ...` (no `else` branch). Post-Block-Zero users see the week header + WeekView directly, no narrative card. Grep `FighterBlock|getFighterBlockNarrative` across `src/` returns zero matches.
+- `src/features/session/RunSessionView.tsx`: imported `useToast`, wired `const { show: showToast, ToastContainer } = useToast()`. Inside the `phase === 'ready'` indoor branch, added a Cinzel readout above the Open One Pace button: `<p className="font-[family-name:var(--font-display)] text-display-lg text-gold text-center">{[onePaceArc, onePaceEp ? 'Ep ${onePaceEp}' : ''].filter(Boolean).join(' - ')}</p>`, gated on `(onePaceArc || onePaceEp)`. Separator chosen: hyphen with surrounding spaces (` - `) per POLISH_PASS options; voice canon bans em dashes, and hyphen reads cleanest against the existing inscription-style `targetSegments`.
+- `src/features/session/RunSessionView.tsx` save path: after the PATCH to `/api/run-sessions/{id}` succeeds, if `isIndoor && onePaceEp`, compute `newEp = String(Number(oldEp) + 1)`, fire-and-forget PATCH `/api/settings` with `{ onePaceEp: newEp }` (errors logged, never block save), call `showToast('Ep ${old} → Ep ${new}', 'success')`, and defer `onComplete()` by `setTimeout(..., 1800)` so the toast is visible before the view unmounts into `mark-earned`. Non-indoor or empty-ep saves take the original immediate-onComplete path. `<ToastContainer />` rendered inside the logging-phase JSX tree.
+- `src/features/settings/SettingsPage.tsx`: wrapped the Episode `<input>` in a flex row with `-` / `+` buttons on either side. Buttons are `min-h-[44px] w-10 rounded-md bg-border text-muted-foreground active:bg-muted`. Decrement clamps at 0 (`Math.max(0, (Number(onePaceEp) || 0) - 1)`); increment is unbounded. Value flows through the existing Save handler which already PATCHes `onePaceEp` as string. No server change needed.
+- No `src/server/app.ts` change: the existing PATCH `/api/settings` already accepts `onePaceEp` as string and is used for the auto-bump.
+- Build `tsc -b && vite build`: pass. Lint of touched files: 0 errors, 2 pre-existing warnings (missing-deps in `ProgramPage` `useEffect` and `RunSessionView` settings-autofill `useEffect` — both predate this commit). Project-wide lint still at 284 pre-existing problems; no new ones introduced.
+- Preview verified (vite-frontend serverId, indoor run session on today's planned `running` session after priming `start-run` to create the `run_sessions` row): indoor ready readout renders `Water 7 - Ep {ep}` above Open One Pace; saving bumps `onePaceEp` server-side (verified via GET `/api/settings` — 3 → 4 → 43 across three test saves); toast `Ep 42 → Ep 43` captured in DOM during save window.
+- **Device verification: not performed by Claude** (Commits 1, 2, 3 still pending a single device cold-launch from the user; Commit 4 should not begin until that's done unless user says otherwise).
+
 ---
 
 ## Next commit
 
-**Commit 3: Fighter Block removal + One Piece display + ep bump + toast**
+**Commit 4: Redeploy countdown**
 
-Program page cleanup plus indoor-ready surface for Run Session, plus auto-increment of the One Pace episode on indoor run save.
+Sideload-cert apps go dark after 7 days. Give the user a passive countdown in Settings + 2 silent notifications so they remember to plug in and redeploy before it expires.
 
 **Files to touch:**
-- `src/features/program/ProgramPage.tsx` (delete Fighter Block narrative)
-- `src/features/session/RunSessionView.tsx` (big `{arc} — Ep {ep}` readout on indoor ready screen; auto-bump on save)
-- `src/features/settings/SettingsPage.tsx` (+/- stepper next to Episode field)
-- Possibly `src/server/app.ts` if the `/api/settings` PATCH doesn't yet accept numeric incr — grep first; current payload already writes `onePaceEp` as string so a client-side `String(Number(ep)+1)` should work without server change.
+- `vite.config.ts` (inject `VITE_BUILD_TIME` via `define`)
+- `src/features/settings/SettingsPage.tsx` (countdown pill at top of page)
+- `src/lib/notifications.ts` (reserve IDs 5000/5001; add `scheduleRedeployReminders(buildTime)` function with silent notifications; add cancel helper)
+- `src/App.tsx` or `src/main.tsx` (on launch: compare `VITE_BUILD_TIME` to `localStorage.lastSeenBuildTime`; if changed → cancel old, schedule new, save)
 
-**Fighter Block removal (ProgramPage.tsx):**
-- Delete `getFighterBlockNarrative()` function entirely.
-- Delete the JSX render site(s) that call it (likely a conditional block guarded on `programBlock !== 'block_zero'` or similar).
-- Keep `getBlockZeroNarrative()` and the Block Zero render path.
-- Post-Block-Zero, the Program page simply renders no block narrative. That's intentional. Do not substitute a placeholder.
-- Grep the file first for `FighterBlock` / `fighter_block` / `getFighterBlockNarrative` to catch all call sites and any imports.
+**Build-time injection (vite.config.ts):**
+- Add to `defineConfig`: `define: { 'import.meta.env.VITE_BUILD_TIME': JSON.stringify(Date.now()) }`.
+- Confirm this doesn't collide with existing `define` entries; current config has none (grep first).
+- Add type declaration for `VITE_BUILD_TIME` in `src/vite-env.d.ts` so TS accepts `import.meta.env.VITE_BUILD_TIME` as `string`.
 
-**One Piece ready screen (RunSessionView.tsx):**
-- Locate the `phase === 'ready'` branch.
-- Scope: only when `isIndoor === true` (grep for how indoor is derived — likely a `sessionType` or `runCategory` check).
-- Above the existing "Open One Pace" button, render the current arc + episode in a big Cinzel readout: `{arc} — Ep {ep}`. Use `var(--font-display)` (not the character), class `text-display-lg` or `text-display` (confirm which reads better against the ready-screen layout; `text-display-lg` is 2.25rem).
-- Read `onePaceArc` / `onePaceEp` from settings. If `runSession` already carries them, prefer that. Otherwise fetch from `/api/settings` on mount or use an existing context.
-- NO EM DASHES. Use a regular hyphen or the word "Ep". Verify copy matches voice canon: short, plain. Example: `Water 7 — Ep 3` → rewrite as `Water 7  Ep 3` or `Water 7 / Ep 3`. Pick one, stay consistent.
+**Settings pill (SettingsPage.tsx):**
+- Above the first section (MT Class Days), render a small non-interactive pill/card:
+  - Read `import.meta.env.VITE_BUILD_TIME` (string → Number).
+  - Compute `daysLeft = 7 - Math.floor((Date.now() - buildTime) / 86400000)`. Clamp min to 0.
+  - Big Cinzel number (e.g. `text-display-lg font-[family-name:var(--font-display)]`), tiny caption below: `DAYS UNTIL REDEPLOY` (text-label, tracking-wider, muted-foreground).
+  - Color tiers: default foreground at `daysLeft >= 3`, `text-gold` at `daysLeft === 2`, `text-destructive` (or equivalent red) at `daysLeft <= 1`.
+  - Not tappable, no interaction.
 
-**Auto-bump on save (RunSessionView.tsx + useToast):**
-- On indoor Save Run handler, after the save API call succeeds:
-  1. Compute `newEp = String(Number(onePaceEp ?? '0') + 1)`.
-  2. PATCH `/api/settings` with `{ onePaceEp: newEp }`.
-  3. Show toast via existing `useToast` hook: `"Ep {old} → Ep {new}"`. Keep under voice canon; no exclamation.
-- If PATCH fails: silent, do not block save. Log to console.
-- Guard: if `onePaceEp` is null/empty, skip the bump.
+**Launch-time reschedule (App.tsx / main.tsx — check which owns app-boot side effects):**
+- In a `useEffect(() => { ... }, [])` on app mount (or module-level if simpler):
+  1. Read `buildTime = Number(import.meta.env.VITE_BUILD_TIME)`.
+  2. Read `lastSeen = localStorage.getItem('lastSeenBuildTime')`.
+  3. If `String(buildTime) !== lastSeen`:
+     - Call `notifications.cancel({ notifications: [{ id: 5000 }, { id: 5001 }] })` (wrapped in try/catch; plugin may 404 if nothing scheduled).
+     - Call `scheduleRedeployReminders(buildTime)`.
+     - Write `localStorage.setItem('lastSeenBuildTime', String(buildTime))`.
+- Skip entirely when `!Capacitor.isNativePlatform()` (web dev should not schedule native notifs).
 
-**Settings stepper (SettingsPage.tsx):**
-- In the existing One Pace section, next to the Episode `<input>`, add `-` and `+` buttons that decrement / increment the numeric value.
-- Clamp at 0 minimum. No max.
-- Buttons: `min-h-[44px]`, small square, use existing `bg-border text-muted-foreground active:bg-muted` style. Place them inline with the input (flex row, input flex-1 + two buttons).
-- Value persists on Save like the rest of the form.
+**notifications.ts additions:**
+- At the top of the file, add a comment block reserving IDs 1000-1012 (morning storm + snoozes), 2000-2047 (nuclear), 3000 (PM leave-by), 5000/5001 (redeploy). Keeps ID allocation visible.
+- Export `scheduleRedeployReminders(buildTime: number)`:
+  - ID 5000, trigger `buildTime + 6 * 86400000`, title `"Redeploy tomorrow or the app goes dark."`, body empty (or repeat title).
+  - ID 5001, trigger `buildTime + 7 * 86400000`, title `"Redeploy today. Connect cable."`, body empty.
+  - Both notifications: `sound: undefined` and no `critical*` fields. They must respect silent mode. No `interruptionLevel` needed (defaults to time-sensitive off).
+- Export `cancelRedeployReminders()` for use at launch-time and when we wire the settings toggle later.
+
+**Voice canon:**
+- Pill caption: `DAYS UNTIL REDEPLOY` (no period, all-caps label style).
+- Notification copy per spec. No em dashes.
 
 **Done criteria:**
-- [ ] `getFighterBlockNarrative` deleted; grep returns zero references in `src/`
-- [ ] Post-Block-Zero users see no block narrative on Program page, no crash
-- [ ] Indoor run ready screen shows Cinzel `{arc}  Ep {ep}` above Open One Pace button
-- [ ] Saving an indoor run bumps `onePaceEp` by 1 on the server and shows `Ep {old} → Ep {new}` toast
-- [ ] Settings Episode field has - / + stepper; disabled/clamped at 0
-- [ ] Build + lint: no new errors
-- [ ] Commit on main, voice-canon message
-- [ ] `POLISH_PASS.md`: move Commit 3 to Completed, advance Next commit to Commit 4 (Redeploy countdown) with file-level detail
-- [ ] Next session prompt emitted at end of final message
+- [ ] `VITE_BUILD_TIME` injected at build time, readable in renderer, typed in `vite-env.d.ts`.
+- [ ] Settings page shows countdown pill at top with correct day math + color tier, non-interactive.
+- [ ] On native app cold-launch after a new build, old 5000/5001 notifications cancelled and new ones scheduled; `lastSeenBuildTime` updated.
+- [ ] Notifications have no sound field and do not bypass silent mode.
+- [ ] Web build path still works (pill renders; no native plugin calls fire).
+- [ ] Build + lint: no new errors.
+- [ ] Commit on main, voice-canon message.
+- [ ] `POLISH_PASS.md`: move Commit 4 to Completed, advance Next commit to Commit 5 (Critical Alerts + sounds + plugin patch) with file-level detail.
+- [ ] Next session prompt emitted at end of final message.
