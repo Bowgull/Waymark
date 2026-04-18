@@ -38,6 +38,9 @@ interface Session {
 interface DailyLog {
   id: string
   sleepHours: number | null
+  weedGrams?: number | null
+  alcoholScale?: number | null
+  soreness?: number | null
 }
 
 // Session types that have a dedicated workout engine
@@ -402,7 +405,11 @@ export function TodayPage() {
       <PageBackground />
       <DateHeader date={todayDate} />
 
-      <WellnessPromptCard onSubmit={handleWellnessSubmit} isLogged={dailyLog !== null && dailyLog !== undefined} />
+      <WellnessPromptCard
+        onSubmit={handleWellnessSubmit}
+        isLogged={dailyLog !== null && dailyLog !== undefined}
+        existing={dailyLog ?? null}
+      />
 
       <JournalCard />
 

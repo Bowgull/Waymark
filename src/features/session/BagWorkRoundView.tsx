@@ -45,7 +45,18 @@ interface RoundData {
   roundNumber: number
   durationSec: number
   restSec: number
+  roundType?: string | null
+  coachRationale?: string | null
   combos: ComboData[]
+}
+
+const ROUND_TYPE_LABELS: Record<string, string> = {
+  warmup: 'Warmup',
+  technical_flow: 'Technical',
+  drill_isolation: 'Drill',
+  combo_practice: 'Combos',
+  power: 'Power',
+  conditioning: 'Conditioning',
 }
 
 type RoundPhase = 'ready' | 'fighting' | 'rest'
@@ -129,7 +140,9 @@ export function BagWorkRoundView({
 
   // Determine tier of combos in this round
   const roundTier = round.combos[0]?.combo?.tier
-  const roundIntent = ROUND_INTENTS[round.roundNumber - 1] ?? null
+  const coachRationale = (round.coachRationale ?? '').trim()
+  const roundTypeLabel = round.roundType ? ROUND_TYPE_LABELS[round.roundType] ?? null : null
+  const positionalIntent = ROUND_INTENTS[round.roundNumber - 1] ?? null
 
   if (phase === 'rest') {
     return (
@@ -153,16 +166,20 @@ export function BagWorkRoundView({
       <p className="text-label mb-1 text-muted-foreground">
         Round {round.roundNumber} of {totalRounds}
       </p>
-      {roundTier && (
+      {(roundTypeLabel || roundTier) && (
         <p className="text-xs font-cinzel tracking-wider text-gold/50">
-          {TIER_LABELS[roundTier] ?? roundTier}
+          {roundTypeLabel ?? TIER_LABELS[roundTier ?? ''] ?? roundTier}
         </p>
       )}
-      {roundIntent && (
+      {coachRationale ? (
+        <p className="text-[11px] text-muted-foreground/70 mt-0.5 italic">
+          {coachRationale}
+        </p>
+      ) : positionalIntent ? (
         <p className="text-[11px] text-muted-foreground/50 mt-0.5">
-          {roundIntent.label}. {roundIntent.hint}
+          {positionalIntent.label}. {positionalIntent.hint}
         </p>
-      )}
+      ) : null}
 
       {/* Combo card — Option 3: Parchment/worn page */}
       <div className="mt-4 rounded border border-gold/15 bg-gradient-to-b from-[#1A1A10]/60 to-[#12170E]/40 p-5 shadow-[0_0_12px_rgba(0,0,0,0.3)]">

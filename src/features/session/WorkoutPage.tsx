@@ -118,6 +118,8 @@ interface BagRoundData {
   roundNumber: number
   durationSec: number
   restSec: number
+  roundType?: string | null
+  coachRationale?: string | null
   combos: BagComboData[]
 }
 
