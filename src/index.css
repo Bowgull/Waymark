@@ -62,6 +62,9 @@
   --color-near-black: #020A08;
   --color-surface: #0A2018;
   --color-surface-light: #122E26;
+
+  /* Chrome surfaces (bottom nav) — one step lighter than body for separation */
+  --color-nav: oklch(0.15 0.025 160);
 }
 
 @layer base {
@@ -70,7 +73,9 @@
     height: 100%;
     margin: 0;
     padding: 0;
-    background: linear-gradient(175deg, var(--background) 0%, oklch(0.08 0.025 160) 100%);
+    background:
+      radial-gradient(ellipse 120% 40% at 50% -10%, oklch(0.75 0.12 90 / 0.03), transparent 60%),
+      linear-gradient(175deg, var(--background) 0%, oklch(0.08 0.025 160) 100%);
     background-attachment: fixed;
     color: var(--foreground);
     font-family: 'Geist Variable', system-ui, -apple-system, sans-serif;

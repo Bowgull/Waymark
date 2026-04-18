@@ -64,8 +64,6 @@ export function SettingsPage() {
   const [onePaceEp, setOnePaceEp] = useState('')
   const [enabledTechniques, setEnabledTechniques] = useState<Set<string>>(new Set(['boxing', 'kicks', 'defensive']))
   const [activeDrum, setActiveDrum] = useState<'am' | 'pmTime' | 'pmLead' | null>(null)
-  const [amDrumStep, setAmDrumStep] = useState<'hour' | 'minute'>('hour')
-  const [pmTimeDrumStep, setPmTimeDrumStep] = useState<'hour' | 'minute'>('hour')
 
   // Strava
   const [strava, setStrava] = useState<StravaStatus | null>(null)
@@ -232,29 +230,28 @@ export function SettingsPage() {
               const isPm = hh >= 12
               return (
                 <div className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
-                  <div className="mb-2 flex gap-2 text-center">
-                    <button onClick={() => setAmDrumStep('hour')} className={`flex-1 rounded py-1 text-xs font-medium ${amDrumStep === 'hour' ? 'bg-gold/20 text-gold' : 'text-muted-foreground'}`}>Hour</button>
-                    <button onClick={() => setAmDrumStep('minute')} className={`flex-1 rounded py-1 text-xs font-medium ${amDrumStep === 'minute' ? 'bg-gold/20 text-gold' : 'text-muted-foreground'}`}>Minute</button>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
+                        const h24 = isPm ? (v === 12 ? 12 : v + 12) : (v === 12 ? 0 : v)
+                        setAmReminder(`${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
+                      }} />
+                    </div>
+                    <div className="flex-1">
+                      <ScrollDrum min={0} max={59} step={1} value={mm} pad={2} onChange={(v) => {
+                        setAmReminder(`${String(hh).padStart(2, '0')}:${String(v).padStart(2, '0')}`)
+                      }} />
+                    </div>
                   </div>
-                  {amDrumStep === 'hour' ? (
-                    <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
-                      const h24 = isPm ? (v === 12 ? 12 : v + 12) : (v === 12 ? 0 : v)
-                      setAmReminder(`${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
-                    }} />
-                  ) : (
-                    <ScrollDrum min={0} max={45} step={15} value={Math.round(mm / 15) * 15} onChange={(v) => {
-                      setAmReminder(`${String(hh).padStart(2, '0')}:${String(v).padStart(2, '0')}`)
-                    }} suffix="min" />
-                  )}
                   <div className="mt-2 flex gap-1">
                     <button onClick={() => { if (isPm) { const h24 = hh - 12; setAmReminder(`${String(h24 < 0 ? h24 + 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${!isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>AM</button>
                     <button onClick={() => { if (!isPm) { const h24 = hh + 12; setAmReminder(`${String(h24 >= 24 ? h24 - 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>PM</button>
                   </div>
-                  <button onClick={() => { setActiveDrum(null); setAmDrumStep('hour') }} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
+                  <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
                 </div>
               )
             })() : (
-              <button onClick={() => { setActiveDrum('am'); setAmDrumStep('hour') }} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
+              <button onClick={() => setActiveDrum('am')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
                 {(() => { const [hh, mm] = amReminder.split(':').map(Number); const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh; return `${is12}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}` })()}
               </button>
             )}
@@ -269,29 +266,28 @@ export function SettingsPage() {
               const isPm = hh >= 12
               return (
                 <div className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
-                  <div className="mb-2 flex gap-2 text-center">
-                    <button onClick={() => setPmTimeDrumStep('hour')} className={`flex-1 rounded py-1 text-xs font-medium ${pmTimeDrumStep === 'hour' ? 'bg-gold/20 text-gold' : 'text-muted-foreground'}`}>Hour</button>
-                    <button onClick={() => setPmTimeDrumStep('minute')} className={`flex-1 rounded py-1 text-xs font-medium ${pmTimeDrumStep === 'minute' ? 'bg-gold/20 text-gold' : 'text-muted-foreground'}`}>Minute</button>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
+                        const h24 = isPm ? (v === 12 ? 12 : v + 12) : (v === 12 ? 0 : v)
+                        setPmSessionTime(`${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
+                      }} />
+                    </div>
+                    <div className="flex-1">
+                      <ScrollDrum min={0} max={59} step={1} value={mm} pad={2} onChange={(v) => {
+                        setPmSessionTime(`${String(hh).padStart(2, '0')}:${String(v).padStart(2, '0')}`)
+                      }} />
+                    </div>
                   </div>
-                  {pmTimeDrumStep === 'hour' ? (
-                    <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
-                      const h24 = isPm ? (v === 12 ? 12 : v + 12) : (v === 12 ? 0 : v)
-                      setPmSessionTime(`${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
-                    }} />
-                  ) : (
-                    <ScrollDrum min={0} max={45} step={15} value={Math.round(mm / 15) * 15} onChange={(v) => {
-                      setPmSessionTime(`${String(hh).padStart(2, '0')}:${String(v).padStart(2, '0')}`)
-                    }} suffix="min" />
-                  )}
                   <div className="mt-2 flex gap-1">
                     <button onClick={() => { if (isPm) { const h24 = hh - 12; setPmSessionTime(`${String(h24 < 0 ? h24 + 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${!isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>AM</button>
                     <button onClick={() => { if (!isPm) { const h24 = hh + 12; setPmSessionTime(`${String(h24 >= 24 ? h24 - 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>PM</button>
                   </div>
-                  <button onClick={() => { setActiveDrum(null); setPmTimeDrumStep('hour') }} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
+                  <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
                 </div>
               )
             })() : (
-              <button onClick={() => { setActiveDrum('pmTime'); setPmTimeDrumStep('hour') }} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
+              <button onClick={() => setActiveDrum('pmTime')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
                 {(() => { const [hh, mm] = pmSessionTime.split(':').map(Number); const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh; return `${is12}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}` })()}
               </button>
             )}
