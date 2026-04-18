@@ -7,7 +7,7 @@ import type { WeekAnalysis } from '@/lib/weekAnalysis'
 import { getSessionLabel } from '@/lib/weeklyTemplate'
 import { getMarkAsset } from '@/lib/markAssets'
 import { getStrengthTemplate, getWeekLabel, getDeadliftExerciseId } from '@/lib/strengthTemplates'
-import { getRunPlanForWeek, ZONE2_PRESCRIPTION } from '@/lib/runningPlanTemplate'
+import { getRunPlanForWeek } from '@/lib/runningPlanTemplate'
 
 interface SessionSummary {
   id: string
