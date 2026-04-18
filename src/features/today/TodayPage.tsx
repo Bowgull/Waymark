@@ -461,9 +461,9 @@ export function TodayPage() {
           type="button"
           onClick={() => navigate('/settings')}
           aria-label="Settings"
-          className="size-5 text-muted-foreground active:text-foreground"
+          className="-m-3 flex size-11 items-center justify-center text-muted-foreground active:text-foreground"
         >
-          <SettingsIcon />
+          <span className="size-5"><SettingsIcon /></span>
         </button>
       </div>
 
