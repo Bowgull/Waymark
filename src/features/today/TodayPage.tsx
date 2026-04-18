@@ -83,6 +83,12 @@ export function TodayPage() {
     load()
   }, [today])
 
+  useEffect(() => {
+    apiFetch('/api/strava/poll-recent', { method: 'POST' }).catch(() => {
+      // Silent: Strava can be offline or disconnected; not fatal.
+    })
+  }, [])
+
   async function handleGenerate() {
     setGenerating(true)
     try {
