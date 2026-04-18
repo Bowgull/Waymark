@@ -109,9 +109,10 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 ### Phase 1: Foundation
 
-- **Step 1** `TODO` Schema additions: `userProfile`, `bodyMetrics`, `coachingOutputs` tables. Migration. Seed sane defaults.
-  - Files: `src/db/schema.ts`, `migrations/`
+- **Step 1** `DONE` Schema additions: `userProfile`, `bodyMetrics`, `coachingOutputs` tables. Migration. Seed sane defaults.
+  - Files: `src/db/schema.ts`, `drizzle/0010_ai_foundation.sql`
   - Acceptance: `drizzle-kit` generates clean migration. Tables queryable.
+  - Notes: `user_profile` is singleton with `id` default `'default'`, written on onboarding. No seed defaults yet. Typecheck deferred (no node on this machine). Verify on the machine that has node before Step 2 runs its migration.
 - **Step 2** `TODO` Anthropic client: direct `fetch` wrapper with caching, tool use, retry, offline fallback.
   - Files: `src/lib/anthropic.ts` (new), `wrangler.jsonc` (secret binding)
   - Acceptance: Haiku and Sonnet both callable. Cache hits logged. Offline returns typed fallback.
@@ -163,3 +164,8 @@ Append one entry per session. Keep under 5 lines each.
 - Next: Step Y
 - Notes: ...
 -->
+
+### Session 1 (2026-04-17) · Step 1
+- Did: Added `user_profile`, `body_metrics`, `coaching_outputs` tables to `src/db/schema.ts` and wrote `drizzle/0010_ai_foundation.sql`.
+- Next: Step 2 (Anthropic client).
+- Notes: No node on build machine. Run `drizzle-kit` locally to verify generated migration matches `0010_ai_foundation.sql` before applying. If drift, regenerate and commit.

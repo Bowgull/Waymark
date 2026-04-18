@@ -307,3 +307,50 @@ export const trainingMaxes = sqliteTable('training_maxes', {
 }, (t) => [
   uniqueIndex('idx_max_exercise').on(t.exerciseId),
 ])
+
+// ─── AI coaching foundation ────────────────────────────────────
+
+export const userProfile = sqliteTable('user_profile', {
+  id: text('id').primaryKey().default('default'),
+  goals: text('goals'),
+  injuries: text('injuries'),
+  postureIssues: text('posture_issues'),
+  trainingHistory: text('training_history'),
+  mtGymAccessDays: text('mt_gym_access_days'),
+  mtCapPerWeek: integer('mt_cap_per_week'),
+  weeklyDayTarget: integer('weekly_day_target'),
+  constraints: text('constraints'),
+  onboardedAt: integer('onboarded_at'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+})
+
+export const bodyMetrics = sqliteTable('body_metrics', {
+  id: text('id').primaryKey(),
+  loggedAt: integer('logged_at').notNull(),
+  weightKg: real('weight_kg'),
+  restingHr: integer('resting_hr'),
+  bodyfatPct: real('bodyfat_pct'),
+  notes: text('notes'),
+  createdAt: integer('created_at').notNull(),
+}, (t) => [
+  index('idx_body_metrics_logged').on(t.loggedAt),
+])
+
+export const coachingOutputs = sqliteTable('coaching_outputs', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(),
+  model: text('model').notNull(),
+  scopeWeekPlanId: text('scope_week_plan_id').references(() => weekPlans.id),
+  scopeSessionId: text('scope_session_id').references(() => sessions.id),
+  inputHash: text('input_hash'),
+  outputJson: text('output_json').notNull(),
+  tokensIn: integer('tokens_in'),
+  tokensOut: integer('tokens_out'),
+  cachedTokensIn: integer('cached_tokens_in'),
+  createdAt: integer('created_at').notNull(),
+}, (t) => [
+  index('idx_coaching_kind_created').on(t.kind, t.createdAt),
+  index('idx_coaching_week').on(t.scopeWeekPlanId),
+  index('idx_coaching_session').on(t.scopeSessionId),
+])
