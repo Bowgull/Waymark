@@ -29,14 +29,14 @@ function NavTab({ to, label, icon, end }: { to: string; label: string; icon: Rea
 
 export function ShellLayout() {
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex h-dvh flex-col bg-background text-foreground">
       <OfflineBanner />
       <main className="min-h-0 flex-1 overflow-auto px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-4">
         <Outlet />
       </main>
       <ApiHealthDevBadge />
       <nav
-        className="relative flex shrink-0 border-t border-border bg-near-black/90"
+        className="sticky bottom-0 z-30 flex shrink-0 border-t border-border bg-near-black/80 backdrop-blur-md"
         aria-label="Main"
       >
         <NavTab to="/today" label="Today" icon={<TodayIcon />} end />

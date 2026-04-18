@@ -68,10 +68,10 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
         <p className="mt-1 text-sm text-muted-foreground">How was it?</p>
       </div>
 
-      {/* RPE — scroll drum */}
+      {/* Drive — scroll drum */}
       <div className="animate-fade-in-up animation-delay-100">
         <label className="mb-2 block text-sm font-medium text-foreground">
-          RPE: {rpe} · {RPE_LABELS[rpe]}
+          Drive: {rpe} · {RPE_LABELS[rpe]}
         </label>
         {showDriveExplainer && (
           <div className="mb-2 rounded-md border border-gold/20 bg-gold/5 px-3 py-2 text-xs text-muted-foreground leading-relaxed animate-fade-in">

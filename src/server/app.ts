@@ -2881,42 +2881,6 @@ app.post('/api/user-profile', async (c) => {
   return c.json(profile)
 })
 
-// Injury check-in. Merges new note with existing injuries string,
-// or clears it when note is null.
-app.post('/api/user-profile/injury-check', async (c) => {
-  const body = await c.req.json<{ note: string | null }>()
-  const db = createDB(c.env)
-  const now = Math.floor(Date.now() / 1000)
-  const rows = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
-
-  const dateLabel = new Date().toISOString().split('T')[0]
-  const trimmed = body.note?.trim() ?? ''
-
-  if (rows.length === 0) {
-    await db.insert(userProfile).values({
-      id: 'default',
-      injuries: trimmed ? `${dateLabel}: ${trimmed}` : null,
-      createdAt: now,
-      updatedAt: now,
-    })
-  } else {
-    const existing = rows[0].injuries?.trim() ?? ''
-    let next: string | null
-    if (!trimmed) {
-      next = existing || null
-    } else {
-      const entry = `${dateLabel}: ${trimmed}`
-      next = existing ? `${existing}\n${entry}` : entry
-    }
-    await db
-      .update(userProfile)
-      .set({ injuries: next, updatedAt: now })
-      .where(eq(userProfile.id, 'default'))
-  }
-
-  const [profile] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
-  return c.json(profile)
-})
 
 // ─── AI context management ────────────────────────────────────
 

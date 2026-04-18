@@ -8,23 +8,34 @@ interface PageHeaderProps {
 }
 
 export function PageHeader({ title, children }: PageHeaderProps) {
+  const firstChar = title.charAt(0)
+  const rest = title.slice(1)
   return (
-    <div className="mb-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+    <div
+      className="sticky top-0 z-30 -mx-4 mb-4 bg-background/85 px-4 pb-3 backdrop-blur-md"
+      style={{
+        marginTop: 'calc((env(safe-area-inset-top) + 0.75rem) * -1)',
+        paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)',
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Link to="/today" className="shrink-0">
             <img
               src={logoPng}
               alt="Waymark"
-              width={24}
-              height={24}
-              className="h-6 w-6 object-contain opacity-50 transition-opacity active:opacity-80"
+              width={40}
+              height={40}
+              className="h-10 w-10 object-contain opacity-60 transition-opacity active:opacity-90"
               style={{ mixBlendMode: 'screen' }}
             />
           </Link>
-          <h2 className="text-display-lg text-foreground">{title}</h2>
+          <h2 className="truncate text-display-sm text-foreground">
+            <span className="text-gold">{firstChar}</span>
+            {rest}
+          </h2>
         </div>
-        {children}
+        {children && <div className="shrink-0">{children}</div>}
       </div>
       <GoldDivider className="mt-3" />
     </div>
