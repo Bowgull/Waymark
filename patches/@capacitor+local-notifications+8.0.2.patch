@@ -1,0 +1,84 @@
+diff --git a/node_modules/@capacitor/local-notifications/dist/esm/definitions.d.ts b/node_modules/@capacitor/local-notifications/dist/esm/definitions.d.ts
+index f2db0f6..334d562 100644
+--- a/node_modules/@capacitor/local-notifications/dist/esm/definitions.d.ts
++++ b/node_modules/@capacitor/local-notifications/dist/esm/definitions.d.ts
+@@ -690,6 +690,26 @@ export interface LocalNotificationSchema {
+      * @since 5.0.0
+      */
+     silent?: boolean;
++    /**
++     * iOS interruption level. `'critical'` bypasses silent mode and Do Not Disturb
++     * when the app holds the critical-alerts entitlement.
++     *
++     * Only available for iOS 15+.
++     */
++    interruptionLevel?: 'passive' | 'active' | 'timeSensitive' | 'critical';
++    /**
++     * If true, `sound` is loaded as a critical sound (bypasses silent mode).
++     * Requires the `com.apple.developer.usernotifications.critical-alerts` entitlement.
++     *
++     * Only available for iOS.
++     */
++    critical?: boolean;
++    /**
++     * Playback volume for a critical sound (0.0 - 1.0). Ignored unless `critical` is true.
++     *
++     * Only available for iOS.
++     */
++    criticalVolume?: number;
+ }
+ /**
+  * Represents a schedule for a notification.
+diff --git a/node_modules/@capacitor/local-notifications/ios/Sources/LocalNotificationsPlugin/LocalNotificationsHandler.swift b/node_modules/@capacitor/local-notifications/ios/Sources/LocalNotificationsPlugin/LocalNotificationsHandler.swift
+index e0bf257..b36bf5f 100644
+--- a/node_modules/@capacitor/local-notifications/ios/Sources/LocalNotificationsPlugin/LocalNotificationsHandler.swift
++++ b/node_modules/@capacitor/local-notifications/ios/Sources/LocalNotificationsPlugin/LocalNotificationsHandler.swift
+@@ -11,7 +11,11 @@ public class LocalNotificationsHandler: NSObject, NotificationHandlerProtocol {
+ 
+     public func requestPermissions(with completion: ((Bool, Error?) -> Void)? = nil) {
+         let center = UNUserNotificationCenter.current()
+-        center.requestAuthorization(options: [.badge, .alert, .sound]) { (granted, error) in
++        var options: UNAuthorizationOptions = [.badge, .alert, .sound]
++        if #available(iOS 12.0, *) {
++            options.insert(.criticalAlert)
++        }
++        center.requestAuthorization(options: options) { (granted, error) in
+             completion?(granted, error)
+         }
+     }
+diff --git a/node_modules/@capacitor/local-notifications/ios/Sources/LocalNotificationsPlugin/LocalNotificationsPlugin.swift b/node_modules/@capacitor/local-notifications/ios/Sources/LocalNotificationsPlugin/LocalNotificationsPlugin.swift
+index 463be9a..20af6e8 100644
+--- a/node_modules/@capacitor/local-notifications/ios/Sources/LocalNotificationsPlugin/LocalNotificationsPlugin.swift
++++ b/node_modules/@capacitor/local-notifications/ios/Sources/LocalNotificationsPlugin/LocalNotificationsPlugin.swift
+@@ -260,7 +260,30 @@ public class LocalNotificationsPlugin: CAPPlugin, CAPBridgedPlugin {
+         }
+ 
+         if let sound = notification["sound"] as? String {
+-            content.sound = UNNotificationSound(named: UNNotificationSoundName(sound))
++            let isCritical = notification["critical"] as? Bool ?? false
++            if isCritical {
++                let volume = notification["criticalVolume"] as? Double
++                if let vol = volume {
++                    content.sound = UNNotificationSound.criticalSoundNamed(
++                        UNNotificationSoundName(sound),
++                        withAudioVolume: Float(vol)
++                    )
++                } else {
++                    content.sound = UNNotificationSound.criticalSoundNamed(UNNotificationSoundName(sound))
++                }
++            } else {
++                content.sound = UNNotificationSound(named: UNNotificationSoundName(sound))
++            }
++        }
++
++        if #available(iOS 15.0, *), let level = notification["interruptionLevel"] as? String {
++            switch level {
++            case "passive": content.interruptionLevel = .passive
++            case "active": content.interruptionLevel = .active
++            case "timeSensitive": content.interruptionLevel = .timeSensitive
++            case "critical": content.interruptionLevel = .critical
++            default: break
++            }
+         }
+ 
+         if let attachments = notification["attachments"] as? [JSObject] {

@@ -131,8 +131,14 @@ export async function scheduleAlarms(
   const snooze1 = addMinutes(base, 9)
   const snooze2 = addMinutes(base, 18)
   const snooze3 = addMinutes(base, 27)
-  // Nuclear starts at +36 min, fires every 2 min for 40 min
-  const nuclearDates = NUCLEAR_IDS.map((_, i) => addMinutes(base, 36 + i * 2))
+  // Nuclear starts at +36 min, fires every 15 seconds for 5 minutes.
+  // Bundled critical sound means silent mode doesn't mute these.
+  const nuclearDates = NUCLEAR_IDS.map(
+    (_, i) => new Date(addMinutes(base, 36).getTime() + i * 15_000),
+  )
+
+  const morningSound = { sound: 'morning.caf', critical: true, criticalVolume: 0.6, interruptionLevel: 'critical' as const }
+  const nuclearSound = { sound: 'nuclear.caf', critical: true, criticalVolume: 0.6, interruptionLevel: 'critical' as const }
 
   await LocalNotifications.schedule({
     notifications: [
@@ -143,6 +149,7 @@ export async function scheduleAlarms(
         schedule: { at: base },
         actionTypeId: 'alarm',
         extra: { type: 'alarm' },
+        ...morningSound,
       },
       {
         id: ALARM_SNOOZE_1_ID,
@@ -151,6 +158,7 @@ export async function scheduleAlarms(
         schedule: { at: snooze1 },
         actionTypeId: 'alarm',
         extra: { type: 'alarm' },
+        ...morningSound,
       },
       {
         id: ALARM_SNOOZE_2_ID,
@@ -159,6 +167,7 @@ export async function scheduleAlarms(
         schedule: { at: snooze2 },
         actionTypeId: 'alarm',
         extra: { type: 'alarm' },
+        ...morningSound,
       },
       {
         id: ALARM_SNOOZE_3_ID,
@@ -167,6 +176,7 @@ export async function scheduleAlarms(
         schedule: { at: snooze3 },
         actionTypeId: 'alarmNuclear',
         extra: { type: 'alarm' },
+        ...morningSound,
       },
       ...NUCLEAR_IDS.map((id, i) => ({
         id,
@@ -175,6 +185,7 @@ export async function scheduleAlarms(
         schedule: { at: nuclearDates[i] },
         actionTypeId: 'alarmNuclear',
         extra: { type: 'alarmNuclear' },
+        ...nuclearSound,
       })),
     ],
   })
