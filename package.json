@@ -14,6 +14,11 @@
     "db:seed:generate": "tsx src/db/seed.ts",
     "db:seed:local": "npx wrangler d1 execute waymark-db --local --file=./src/db/seed.sql",
     "db:seed:remote": "npx wrangler d1 execute waymark-db --remote --file=./src/db/seed.sql",
+    "db:demo:seed:generate": "tsx src/db/demoSeed.ts",
+    "db:demo:wipe:local": "npx wrangler d1 execute waymark-db --local --file=./src/db/demoWipe.sql",
+    "db:demo:wipe:remote": "npx wrangler d1 execute waymark-db --remote --file=./src/db/demoWipe.sql",
+    "db:demo:seed:local": "npx wrangler d1 execute waymark-db --local --file=./src/db/demoSeed.sql",
+    "db:demo:seed:remote": "npx wrangler d1 execute waymark-db --remote --file=./src/db/demoSeed.sql",
     "postinstall": "patch-package"
   },
   "dependencies": {
