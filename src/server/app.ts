@@ -15,6 +15,7 @@ import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates
 import { WEEKLY_TEMPLATE, getBlockZeroTemplate } from '../lib/weeklyTemplate'
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek, proposeReschedule } from '../lib/weekAnalysis'
+import { generateWeekPlan } from '../lib/weeklyPlanAI'
 
 type Bindings = {
   DB: D1Database
@@ -1595,20 +1596,83 @@ app.post('/api/weeks/auto-generate', async (c) => {
   })
 
   const blockWeek = ((currentWeekNumber - 1) % 6) + 1
+  const isBlockZero = block.blockType === 'block_zero'
 
-  // ─── Analyze previous week for adaptive generation ─────────
   const mondayEpochDay = Math.floor(startDate.getTime() / 1000 / 86400)
   const prevWeekStart = mondayEpochDay - 7
   const prevWeekEnd = mondayEpochDay - 1
+
+  const [settingsRow] = await db.select().from(settings)
+  const mtDaysStr = settingsRow?.mtClassDays ?? '1,3,5'
+  const mtClassDays = new Set(mtDaysStr.split(',').filter(Boolean).map(Number))
+
+  const createdSessions = []
+
+  // ─── AI plan generation ────────────────────────────────────
+  const aiPlan = await generateWeekPlan(db, c.env.ANTHROPIC_API_KEY, {
+    blockId: body.blockId,
+    weekId,
+    weekNumber: currentWeekNumber,
+    blockWeek,
+    isBlockZero,
+    mtClassDays,
+    prevWeekStart,
+    prevWeekEnd,
+  })
+
+  if (aiPlan) {
+    await db.update(weekPlans).set({ analysisJson: JSON.stringify(aiPlan) }).where(eq(weekPlans.id, weekId))
+
+    for (const day of aiPlan.days) {
+      const dayOffset = (day.dayOfWeek + 6) % 7
+      const date = new Date(startDate)
+      date.setUTCDate(date.getUTCDate() + dayOffset)
+      const epochDay = Math.floor(date.getTime() / 1000 / 86400)
+
+      const validSessions = day.sessions.filter(s =>
+        s.type !== 'mt_class' || mtClassDays.has(day.dayOfWeek)
+      )
+
+      for (const entry of validSessions) {
+        const sessionId = crypto.randomUUID()
+        const isStrength = entry.type === 'strength'
+        await db.insert(sessions).values({
+          id: sessionId,
+          type: entry.type,
+          weekPlanId: weekId,
+          scheduledDate: epochDay,
+          timeSlot: entry.timeSlot,
+          blockWeek: isStrength ? blockWeek : null,
+          blockType: isBlockZero ? 'block_zero' : 'fighter',
+          status: 'planned',
+          notes: entry.runCategory ?? entry.notes ?? null,
+          createdAt: nowSec,
+        })
+        createdSessions.push({
+          id: sessionId, type: entry.type, weekPlanId: weekId,
+          scheduledDate: epochDay, timeSlot: entry.timeSlot,
+          blockWeek: isStrength ? blockWeek : null,
+          blockType: isBlockZero ? 'block_zero' : 'fighter',
+          status: 'planned',
+          startedAt: null, completedAt: null, durationSec: null,
+          rpe: null, difficulty: null,
+          notes: entry.runCategory ?? entry.notes ?? null,
+          adjustmentId: null, createdAt: nowSec,
+        })
+      }
+    }
+
+    const [week] = await db.select().from(weekPlans).where(eq(weekPlans.id, weekId))
+    return c.json({ week, sessions: createdSessions, analysis: null, adjustments: [] })
+  }
+
+  // ─── Fallback: rule engine + template ─────────────────────
   const prevPrevWeekStart = mondayEpochDay - 14
   const prevPrevWeekEnd = mondayEpochDay - 8
 
-  // Get previous week's sessions
   const prevWeekSessions = await db.select().from(sessions).where(
     and(gte(sessions.scheduledDate, prevWeekStart), lte(sessions.scheduledDate, prevWeekEnd))
   )
-
-  // Get daily logs for this and previous week
   const thisWeekLogs = await db.select().from(dailyLogs).where(
     and(gte(dailyLogs.logDate, prevWeekStart), lte(dailyLogs.logDate, prevWeekEnd))
   )
@@ -1616,7 +1680,6 @@ app.post('/api/weeks/auto-generate', async (c) => {
     and(gte(dailyLogs.logDate, prevPrevWeekStart), lte(dailyLogs.logDate, prevPrevWeekEnd))
   )
 
-  // Get previous week's analysis (if it exists) for pattern detection
   const prevWeekPlan = existing.find(w => w.weekNumber === currentWeekNumber - 1)
   let previousAnalysis = null
   if (prevWeekPlan?.analysisJson) {
@@ -1639,16 +1702,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
     previousAnalysis,
   )
 
-  // Store analysis on the new week plan
   await db.update(weekPlans).set({ analysisJson: JSON.stringify(analysis) }).where(eq(weekPlans.id, weekId))
-
-  // ─── Apply MT class day filter ─────────────────────────────
-  const [settingsRow] = await db.select().from(settings)
-  const mtDaysStr = settingsRow?.mtClassDays ?? '1,3,5'
-  const mtClassDays = new Set(mtDaysStr.split(',').map(Number))
-
-  // ─── Generate sessions from template ───────────────────────
-  const createdSessions = []
 
   for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
     const date = new Date(startDate)
@@ -1667,6 +1721,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
         scheduledDate: epochDay,
         timeSlot: entry.timeSlot,
         blockWeek: isStrength ? blockWeek : null,
+        blockType: isBlockZero ? 'block_zero' : 'fighter',
         status: 'planned',
         notes: entry.runCategory ?? null,
         createdAt: nowSec,
@@ -1674,7 +1729,9 @@ app.post('/api/weeks/auto-generate', async (c) => {
       createdSessions.push({
         id: sessionId, type: entry.type, weekPlanId: weekId,
         scheduledDate: epochDay, timeSlot: entry.timeSlot,
-        blockWeek: isStrength ? blockWeek : null, status: 'planned',
+        blockWeek: isStrength ? blockWeek : null,
+        blockType: isBlockZero ? 'block_zero' : 'fighter',
+        status: 'planned',
         startedAt: null, completedAt: null, durationSec: null,
         rpe: null, difficulty: null, notes: entry.runCategory ?? null,
         adjustmentId: null, createdAt: nowSec,
@@ -1682,7 +1739,6 @@ app.post('/api/weeks/auto-generate', async (c) => {
     }
   }
 
-  // ─── Create adjustment proposals from analysis ─────────────
   const adjustments = []
   for (const rec of analysis.recommendations) {
     if (rec.action === 'maintain') continue
