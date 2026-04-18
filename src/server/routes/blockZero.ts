@@ -1,11 +1,12 @@
-// Block Zero entry assessment. Sonnet with extended thinking.
-// Called once when Block Zero starts. Reads onboarding answers, produces
-// a 6-week plan overview and starting weight estimates.
+// Block Zero entry assessment and transition readiness check. Sonnet with extended thinking.
+// Assessment: called once when Block Zero starts.
+// Transition: called at end of Block Zero (week 4+) to decide proceed/hold/adjust.
 
-import { desc, eq } from 'drizzle-orm'
-import { coachingOutputs, exercises, trainingMaxes, userProfile } from '../../db/schema'
+import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
+import { coachingOutputs, dailyLogs, exercises, sessions, trainingBlocks, trainingMaxes, userProfile, weekPlans } from '../../db/schema'
 import { anthropicCall, getToolInput, type Tool } from '../../lib/anthropic'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
+import { TOOL_BLOCK_TRANSITION, type BlockTransitionOutput } from '../../lib/prompts/tools'
 import type { createDB } from '../../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -201,6 +202,237 @@ export async function getStoredBlockZeroAssessment(
     return JSON.parse(row.outputJson) as BlockZeroAssessmentOutput
   } catch {
     console.warn('[blockZero] malformed stored assessment')
+    return null
+  }
+}
+
+// ─── Block Zero Transition ─────────────────────────────────────
+
+const DIFFICULTY_LABELS = ['Too Easy', 'Easy', 'Just Right', 'Hard', 'Too Hard']
+
+interface WeekSummary {
+  weekNumber: number
+  planned: number
+  completed: number
+  avgRpe: number | null
+  avgDifficulty: number | null
+  avgSleepHours: number | null
+  avgSoreness: number | null
+}
+
+async function gatherTransitionData(db: DB, blockId: string): Promise<{
+  block: { startedAt: number | null; totalWeeks: number }
+  weeks: WeekSummary[]
+  mainLifts: Array<{ id: string; name: string; currentMaxKg: number | null }>
+}> {
+  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
+  const blockStartSec = block?.startedAt ?? 0
+
+  const blockWeeks = await db
+    .select()
+    .from(weekPlans)
+    .where(eq(weekPlans.blockId, blockId))
+
+  const weekPlanIds = blockWeeks.map(w => w.id)
+
+  const allSessions = weekPlanIds.length > 0
+    ? await db.select().from(sessions).where(inArray(sessions.weekPlanId, weekPlanIds))
+    : []
+
+  const weeks: WeekSummary[] = []
+
+  for (const wk of blockWeeks.sort((a, b) => a.weekNumber - b.weekNumber)) {
+    const wkSessions = allSessions.filter(s => s.weekPlanId === wk.id)
+    const planned = wkSessions.length
+    const completedSessions = wkSessions.filter(s => s.status === 'completed')
+    const completed = completedSessions.length
+
+    const rpeValues = completedSessions.filter(s => s.rpe != null).map(s => s.rpe!)
+    const diffValues = completedSessions.filter(s => s.difficulty != null).map(s => s.difficulty!)
+    const avgRpe = rpeValues.length > 0 ? rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length : null
+    const avgDifficulty = diffValues.length > 0 ? diffValues.reduce((a, b) => a + b, 0) / diffValues.length : null
+
+    // Daily logs during this week (epoch days)
+    const weekStartDay = Math.floor((blockStartSec + (wk.weekNumber - 1) * 7 * 86400) / 86400)
+    const weekEndDay = weekStartDay + 6
+    const wellnessRows = await db
+      .select({ sleepHours: dailyLogs.sleepHours, soreness: dailyLogs.soreness })
+      .from(dailyLogs)
+      .where(and(gte(dailyLogs.logDate, weekStartDay), lte(dailyLogs.logDate, weekEndDay)))
+
+    const sleepVals = wellnessRows.filter(r => r.sleepHours != null).map(r => r.sleepHours!)
+    const sorenessVals = wellnessRows.filter(r => r.soreness != null).map(r => r.soreness!)
+    const avgSleepHours = sleepVals.length > 0 ? sleepVals.reduce((a, b) => a + b, 0) / sleepVals.length : null
+    const avgSoreness = sorenessVals.length > 0 ? sorenessVals.reduce((a, b) => a + b, 0) / sorenessVals.length : null
+
+    weeks.push({ weekNumber: wk.weekNumber, planned, completed, avgRpe, avgDifficulty, avgSleepHours, avgSoreness })
+  }
+
+  // Main compound lifts with current training maxes
+  const tmRows = await db
+    .select({ weightKg: trainingMaxes.weightKg, exerciseId: trainingMaxes.exerciseId })
+    .from(trainingMaxes)
+  const tmMap = new Map(tmRows.map(t => [t.exerciseId, t.weightKg]))
+
+  const allExercises = await db.select({ id: exercises.id, name: exercises.name }).from(exercises)
+  const MAIN_LIFT_NAMES = ['Squat', 'Deadlift', 'Bench Press', 'Overhead Press', 'Barbell Row']
+  const mainLifts = allExercises
+    .filter(e => MAIN_LIFT_NAMES.includes(e.name))
+    .map(e => ({ id: e.id, name: e.name, currentMaxKg: tmMap.get(e.id) ?? null }))
+
+  return {
+    block: { startedAt: block?.startedAt ?? null, totalWeeks: block?.totalWeeks ?? 6 },
+    weeks,
+    mainLifts,
+  }
+}
+
+function buildTransitionPrompt(
+  data: Awaited<ReturnType<typeof gatherTransitionData>>,
+): string {
+  const lines: string[] = [
+    `Block Zero transition readiness check. ${data.weeks.length} weeks of data available.`,
+    '',
+    'Week summary:',
+  ]
+
+  for (const w of data.weeks) {
+    const rpeStr = w.avgRpe != null ? `RPE ${w.avgRpe.toFixed(1)}` : 'no RPE data'
+    const diffStr = w.avgDifficulty != null
+      ? `difficulty ${DIFFICULTY_LABELS[Math.round(w.avgDifficulty)] ?? w.avgDifficulty.toFixed(1)}`
+      : 'no difficulty data'
+    const sleepStr = w.avgSleepHours != null ? `sleep ${w.avgSleepHours.toFixed(1)}h` : 'no sleep data'
+    const sorenessStr = w.avgSoreness != null ? `soreness ${w.avgSoreness.toFixed(1)}/5` : 'no soreness data'
+    lines.push(
+      `  Week ${w.weekNumber}: ${w.completed}/${w.planned} sessions completed. ${rpeStr}. ${diffStr}. ${sleepStr}. ${sorenessStr}.`,
+    )
+  }
+
+  lines.push('')
+  lines.push('Main lifts (with database IDs for calibrationTargets):')
+  for (const lift of data.mainLifts) {
+    const maxStr = lift.currentMaxKg != null ? `current max ${lift.currentMaxKg}kg` : 'no max set'
+    lines.push(`  ${lift.name} (id: ${lift.id}): ${maxStr}`)
+  }
+
+  lines.push('')
+  lines.push('Decide: proceed (advance to Fighter Block 1), hold (extend Block Zero one more week), or adjust (advance with modified starting loads).')
+  lines.push('Set calibrationTargets with updated training max estimates based on observed Block Zero performance. Use the exact exercise IDs from above.')
+  lines.push('Voice canon applies to rationale and nextBlockNotes: short sentences, no exclamation marks, no congratulations.')
+  lines.push('')
+  lines.push('Call blockTransition.')
+
+  return lines.join('\n')
+}
+
+export async function runBlockZeroTransition(
+  db: DB,
+  apiKey: string,
+  blockId: string,
+): Promise<BlockTransitionOutput | null> {
+  const [profileRow] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+
+  const tmRows = await db
+    .select({ weightKg: trainingMaxes.weightKg, name: exercises.name })
+    .from(trainingMaxes)
+    .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id))
+
+  const profile: UserProfileContext = {
+    goals: profileRow?.goals ?? null,
+    injuries: profileRow?.injuries ?? null,
+    postureIssues: profileRow?.postureIssues ?? null,
+    trainingHistory: profileRow?.trainingHistory ?? null,
+    mtGymAccessDays: profileRow?.mtGymAccessDays ?? null,
+    mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
+    weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
+    constraints: profileRow?.constraints ?? null,
+    trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
+  }
+
+  const systemBlocks = buildSystemPrompt(profile, null)
+  const transitionData = await gatherTransitionData(db, blockId)
+  const userPrompt = buildTransitionPrompt(transitionData)
+
+  const result = await anthropicCall(apiKey, {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8000,
+    thinking: { type: 'enabled', budget_tokens: 5000 },
+    system: systemBlocks,
+    messages: [{ role: 'user', content: userPrompt }],
+    tools: [TOOL_BLOCK_TRANSITION],
+    tool_choice: { type: 'tool', name: 'blockTransition' },
+  })
+
+  if (result.offline) {
+    console.warn('[blockZero] offline during transition check')
+    return null
+  }
+
+  const output = getToolInput<BlockTransitionOutput>(result, 'blockTransition')
+  if (!output) {
+    console.warn('[blockZero] no tool output from transition check')
+    return null
+  }
+
+  // Store result
+  await db.insert(coachingOutputs).values({
+    id: crypto.randomUUID(),
+    kind: 'block_zero_transition',
+    model: 'claude-sonnet-4-6',
+    scopeWeekPlanId: null,
+    scopeSessionId: null,
+    inputHash: blockId,
+    outputJson: JSON.stringify(output),
+    tokensIn: result.usage.input_tokens,
+    tokensOut: result.usage.output_tokens,
+    cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
+    createdAt: Math.floor(Date.now() / 1000),
+  })
+
+  // Apply calibration targets to training maxes regardless of decision
+  for (const target of output.calibrationTargets) {
+    if (!target.exerciseId || target.estimatedMaxKg <= 0) continue
+    const nowSec = Math.floor(Date.now() / 1000)
+    const existing = await db
+      .select({ id: trainingMaxes.id })
+      .from(trainingMaxes)
+      .where(eq(trainingMaxes.exerciseId, target.exerciseId))
+
+    if (existing.length > 0) {
+      await db
+        .update(trainingMaxes)
+        .set({ weightKg: target.estimatedMaxKg, updatedAt: nowSec })
+        .where(eq(trainingMaxes.exerciseId, target.exerciseId))
+    } else {
+      await db.insert(trainingMaxes).values({
+        id: crypto.randomUUID(),
+        exerciseId: target.exerciseId,
+        weightKg: target.estimatedMaxKg,
+        updatedAt: nowSec,
+      })
+    }
+  }
+
+  console.log(`[blockZero] transition check complete for block ${blockId}: ${output.decision}`)
+  return output
+}
+
+export async function getStoredBlockZeroTransition(
+  db: DB,
+): Promise<BlockTransitionOutput | null> {
+  const [row] = await db
+    .select({ outputJson: coachingOutputs.outputJson })
+    .from(coachingOutputs)
+    .where(eq(coachingOutputs.kind, 'block_zero_transition'))
+    .orderBy(desc(coachingOutputs.createdAt))
+    .limit(1)
+
+  if (!row) return null
+
+  try {
+    return JSON.parse(row.outputJson) as BlockTransitionOutput
+  } catch {
+    console.warn('[blockZero] malformed stored transition')
     return null
   }
 }
