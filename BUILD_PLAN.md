@@ -124,7 +124,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 - **Step 4** `TODO` System prompt builder. Assembles identity + voice canon + user profile + compressed context.
   - Files: `src/lib/prompts/system.ts` (new), `src/lib/prompts/context.ts` (new)
-- **Step 5** `TODO` Tool schemas for structured outputs: `weekPlan`, `weekReview`, `blockTransition`, `sessionReview`, `insight`.
+- **Step 5** `DONE` Tool schemas for structured outputs: `weekPlan`, `weekReview`, `blockTransition`, `sessionReview`, `insight`.
   - Files: `src/lib/prompts/tools.ts` (new)
 - **Step 6** `TODO` Context summarizer. Rolls weeks 5+ into compressed summaries stored in `coachingOutputs`.
   - Files: `src/lib/prompts/summarizer.ts` (new), cron or on-demand
@@ -169,6 +169,11 @@ Append one entry per session. Keep under 5 lines each.
 - Did: Added `user_profile`, `body_metrics`, `coaching_outputs` tables to `src/db/schema.ts` and wrote `drizzle/0010_ai_foundation.sql`.
 - Next: Step 2 (Anthropic client).
 - Notes: This project hand-writes migrations and applies them via wrangler, not via `drizzle-kit generate`. Meta journal is intentionally stale. Apply `0010_ai_foundation.sql` to local D1 with `wrangler d1 execute` to verify.
+
+### Session 3 (2026-04-17) · Step 5
+- Did: Created `src/lib/prompts/tools.ts` with five Anthropic tool definitions (weekPlan, weekReview, blockTransition, sessionReview, insight) and matching TypeScript output types. Exported ALL_TOOLS array and TOOL_BY_NAME map.
+- Next: Step 3 (onboarding screen) or Step 4 (system prompt builder), whichever the user directs.
+- Notes: Steps 3 and 4 were skipped this session per user instruction (execute step 5 only).
 
 ### Session 2 (2026-04-17) · Step 2
 - Did: Created `src/lib/anthropic.ts` (direct fetch wrapper, prompt caching headers, retry on 429/5xx/529, offline fallback, tool use, extended thinking for Sonnet). Added `ANTHROPIC_API_KEY` to `Bindings` in `src/server/app.ts`. Noted secret in `wrangler.jsonc`.
