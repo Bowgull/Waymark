@@ -326,13 +326,35 @@ export function SettingsPage() {
           </div>
           <div className="flex-1">
             <label className="mb-1 block text-xs text-muted-foreground">Episode</label>
-            <input
-              type="text"
-              value={onePaceEp}
-              onChange={(e) => setOnePaceEp(e.target.value)}
-              placeholder="e.g. 3"
-              className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
-            />
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const n = Math.max(0, (Number(onePaceEp) || 0) - 1)
+                  setOnePaceEp(String(n))
+                }}
+                className="min-h-[44px] w-10 rounded-md bg-border text-muted-foreground active:bg-muted"
+              >
+                -
+              </button>
+              <input
+                type="text"
+                value={onePaceEp}
+                onChange={(e) => setOnePaceEp(e.target.value)}
+                placeholder="e.g. 3"
+                className="min-h-[44px] flex-1 rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const n = (Number(onePaceEp) || 0) + 1
+                  setOnePaceEp(String(n))
+                }}
+                className="min-h-[44px] w-10 rounded-md bg-border text-muted-foreground active:bg-muted"
+              >
+                +
+              </button>
+            </div>
           </div>
         </div>
       </section>
