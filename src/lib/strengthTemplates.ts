@@ -64,7 +64,7 @@ export function getWaveLoadingSetsReps(blockWeek: number, blockType: 'fighter' |
 export function getWeekLabel(blockWeek: number, blockType: 'fighter' | 'block_zero' = 'fighter'): string {
   const pct = Math.round(getWeekPercentage(blockWeek, blockType) * 100)
   const { sets, reps } = getWaveLoadingSetsReps(blockWeek, blockType)
-  if (blockType === 'block_zero') return `Block Zero — ${pct}%, ${sets}×${reps}`
+  if (blockType === 'block_zero') return `Block Zero · ${pct}%, ${sets}×${reps}`
   return `${pct}%, ${sets}×${reps}`
 }
 
