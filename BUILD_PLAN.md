@@ -153,7 +153,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
   - Files: `src/lib/weeklyPlanAI.ts` (new), `src/server/app.ts` (auto-generate route)
   - Acceptance: AI generates `WeekPlanOutput` via `weekPlan` tool. MT day filter applied post-AI as safety net. Offline falls back to `analyzeWeek` + template.
 - **Step 10** `DONE` MT skill loop. Logs from MT class sessions feed back into next week's MT programming focus.
-- **Step 11** `TODO` Session review capture. Post-session Haiku call produces one-line review stored on the session record.
+- **Step 11** `DONE` Session review capture. Post-session Haiku call produces one-line review stored on the session record.
 
 ### Phase 5: Ledger and surfacing
 
@@ -220,3 +220,7 @@ Append one entry per session. Keep under 5 lines each.
 ### Session 10 (2026-04-18) · Step 10
 - Did: Imported `mtClassLogs` in `weeklyPlanAI.ts`. Added `MtLogRecord` interface and `prevMtLogs` parameter to `buildPrompt`. Fetches MT class logs (classType, focusSkill, weakness, concept, actionItems) joined to previous week sessions in parallel with session and wellness queries. Injects them as a labeled block in the Haiku prompt so AI can tailor MT focus notes for next week.
 - Next: Step 11 (session review capture).
+
+### Session 11 (2026-04-18) · Step 11
+- Did: Added `review` and `review_flag` columns to `sessions` table in `schema.ts`. Wrote `drizzle/0011_session_review.sql`. Created `src/lib/sessionReviewAI.ts` (Haiku call, `sessionReview` tool, recent session context, logs to `coaching_outputs`). Updated `POST /api/sessions/:id/complete` to await the review call and write `review` + `reviewFlag` back to the session row.
+- Next: Step 12 (ledger AI insights).
