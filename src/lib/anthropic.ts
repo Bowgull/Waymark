@@ -115,8 +115,6 @@ export async function anthropicCall(
   const headers = buildHeaders(req.model, apiKey)
   const body = JSON.stringify(req)
 
-  let lastError: unknown
-
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(ANTHROPIC_URL, {
@@ -135,7 +133,6 @@ export async function anthropicCall(
       console.error(`[anthropic] ${res.status} ${errBody}`)
 
       if (RETRYABLE_STATUSES.has(res.status) && attempt === 0) {
-        lastError = new Error(`${res.status}: ${errBody}`)
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
         continue
       }
@@ -145,7 +142,6 @@ export async function anthropicCall(
       if (err instanceof Error && err.message.startsWith('Anthropic ')) throw err
 
       if (attempt === 0) {
-        lastError = err
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
         continue
       }
@@ -173,4 +169,11 @@ export function getToolInput<T>(result: AnthropicResult, toolName: string): T | 
     (b): b is ToolUseContent => b.type === 'tool_use' && b.name === toolName
   )
   return block ? (block.input as T) : null
+}
+
+export function getToolInputs<T>(result: AnthropicResult, toolName: string): T[] {
+  if (result.offline || !result.content) return []
+  return result.content
+    .filter((b): b is ToolUseContent => b.type === 'tool_use' && b.name === toolName)
+    .map(b => b.input as T)
 }

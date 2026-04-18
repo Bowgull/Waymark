@@ -13,6 +13,7 @@ import './index.css'
 SplashScreen.hide().catch(() => {})
 initKeyboardHandling()
 
+// eslint-disable-next-line react-refresh/only-export-components
 function App() {
   const [showLoading, setShowLoading] = useState(true)
   const handleReady = useCallback(() => setShowLoading(false), [])

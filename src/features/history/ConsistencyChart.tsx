@@ -55,14 +55,16 @@ export function ConsistencyChart({ weeks, currentStreak, longestStreak, period }
 
   const ctx = PERIOD_CONTEXT[period]
 
-  function MonthTick(props: any) {
+  const renderMonthTick = (props: { x?: string | number; y?: string | number; index?: number }) => {
     const { x, y, index } = props
+    if (index == null) return <g />
     const entry = chartData[index]
-    if (!entry?.monthLabel) return null
+    if (!entry?.monthLabel) return <g />
+    const yNum = typeof y === 'number' ? y : Number(y ?? 0)
     return (
       <text
         x={x}
-        y={y + 14}
+        y={yNum + 14}
         textAnchor="middle"
         fill={CHART_COLORS.text}
         fontSize={10}
@@ -93,7 +95,7 @@ export function ConsistencyChart({ weeks, currentStreak, longestStreak, period }
           <BarChart data={chartData}>
             <XAxis
               dataKey="key"
-              tick={<MonthTick />}
+              tick={renderMonthTick}
               tickLine={false}
               axisLine={false}
             />

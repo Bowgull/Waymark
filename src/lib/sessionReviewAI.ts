@@ -2,9 +2,9 @@
 // Falls back to null on AI offline so the caller can skip the update.
 
 import { desc, eq } from 'drizzle-orm'
-import { coachingOutputs, sessions, userProfile } from '../db/schema'
+import { coachingOutputs, exercises, sessions, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
-import { buildSystemPrompt } from './prompts/system'
+import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { TOOL_SESSION_REVIEW, type SessionReviewOutput } from './prompts/tools'
 import type { createDB } from '../db/client'
 
@@ -56,7 +56,7 @@ export async function runSessionReview(
   apiKey: string,
   session: { id: string; type: string; rpe: number | null; difficulty: number | null; notes: string | null; durationSec: number | null },
 ): Promise<SessionReviewOutput | null> {
-  const [profile, recent] = await Promise.all([
+  const [profileRow, recent, tmRows] = await Promise.all([
     db.select().from(userProfile).limit(1).then(rows => rows[0] ?? null),
     db
       .select({ id: sessions.id, type: sessions.type, rpe: sessions.rpe, difficulty: sessions.difficulty })
@@ -64,7 +64,23 @@ export async function runSessionReview(
       .where(eq(sessions.status, 'completed'))
       .orderBy(desc(sessions.completedAt))
       .limit(4),
+    db
+      .select({ weightKg: trainingMaxes.weightKg, name: exercises.name })
+      .from(trainingMaxes)
+      .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id)),
   ])
+
+  const profile: UserProfileContext = {
+    goals: profileRow?.goals ?? null,
+    injuries: profileRow?.injuries ?? null,
+    postureIssues: profileRow?.postureIssues ?? null,
+    trainingHistory: profileRow?.trainingHistory ?? null,
+    mtGymAccessDays: profileRow?.mtGymAccessDays ?? null,
+    mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
+    weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
+    constraints: profileRow?.constraints ?? null,
+    trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
+  }
 
   const recentOther = recent.filter(r => r.id !== session.id).slice(0, 3)
 

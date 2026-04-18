@@ -106,6 +106,7 @@ export function HistoryPage() {
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [categoryCompletion, setCategoryCompletion] = useState<CategoryCompletion | null>(null)
   const [loading, setLoading] = useState(true)
+  const [aiInsights, setAiInsights] = useState<string[] | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -153,8 +154,8 @@ export function HistoryPage() {
     load()
   }, [period])
 
-  // Generate insights from all loaded data
-  const insights = useMemo(() => {
+  // Local rule-based insights, used as offline fallback.
+  const localInsights = useMemo(() => {
     if (!dashboard) return []
     return generateInsights({
       dashboard,
@@ -165,6 +166,27 @@ export function HistoryPage() {
       categoryCompletion,
     })
   }, [dashboard, consistency, prs, correlations, runSummary, categoryCompletion])
+
+  useEffect(() => {
+    if (!dashboard) return
+    let cancelled = false
+    const payload = { dashboard, consistency, prs, correlations, runSummary, categoryCompletion }
+    apiFetch<{ insights: string[] | null }>('/api/ai/ledger-insights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(res => {
+        if (cancelled) return
+        setAiInsights(res.insights && res.insights.length > 0 ? res.insights : null)
+      })
+      .catch(() => {
+        if (!cancelled) setAiInsights(null)
+      })
+    return () => { cancelled = true }
+  }, [dashboard, consistency, prs, correlations, runSummary, categoryCompletion])
+
+  const insights = aiInsights ?? localInsights
 
   // Sparkline data derivations
   const consistencySparkline = consistency

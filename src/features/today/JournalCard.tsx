@@ -4,7 +4,7 @@ import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { Button } from '@/components/ui/button'
 
-function BrandW({ className }: { className?: string }) {
+function BrandW({ className, style }: { className?: string; style?: React.CSSProperties }) {
   return (
     <svg
       width="24"
@@ -13,6 +13,7 @@ function BrandW({ className }: { className?: string }) {
       fill="#E8C860"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
+      style={style}
       aria-hidden="true"
     >
       <path d="

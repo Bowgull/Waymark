@@ -157,7 +157,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 ### Phase 5: Ledger and surfacing
 
-- **Step 12** `TODO` Ledger AI insights. Replace placeholder `insightEngine.ts` output with Haiku-generated insights. UI slots already exist.
+- **Step 12** `DONE` Ledger AI insights. Replace placeholder `insightEngine.ts` output with Haiku-generated insights. UI slots already exist.
 - **Step 13** `TODO` Body metrics entry. Weight and optional fields. Simple form. Graph reuses existing sparkline component.
 - **Step 14** `TODO` Coach surfaces: Block narrative view, Drive first-use explainer, injury check-in, session intent preview, skip-reason capture.
 
@@ -224,3 +224,8 @@ Append one entry per session. Keep under 5 lines each.
 ### Session 11 (2026-04-18) · Step 11
 - Did: Added `review` and `review_flag` columns to `sessions` table in `schema.ts`. Wrote `drizzle/0011_session_review.sql`. Created `src/lib/sessionReviewAI.ts` (Haiku call, `sessionReview` tool, recent session context, logs to `coaching_outputs`). Updated `POST /api/sessions/:id/complete` to await the review call and write `review` + `reviewFlag` back to the session row.
 - Next: Step 12 (ledger AI insights).
+
+### Session 12 (2026-04-18) · Step 12
+- Did: Added `getToolInputs` helper in `src/lib/anthropic.ts` (collects all tool_use blocks). Created `src/lib/ledgerInsightsAI.ts` (Haiku, `tool_choice: any`, emits 2-4 `insight` tool calls, formats dashboard/consistency/PRs/correlations/runs/rings into prompt, logs to `coaching_outputs` with kind `ledger_insights`, sorts by priority). Added `POST /api/ai/ledger-insights` route in `src/server/app.ts`. Updated `src/features/history/HistoryPage.tsx` to POST data payload to AI endpoint, fall back to local `generateInsights` on null/error.
+- Next: Step 13 (body metrics entry).
+- Notes: `generateInsights` in `insightEngine.ts` retained as offline fallback. No new DB migration. Typecheck passes on Step 12 files (`npx tsc -b`). Three preexisting errors remain on main (anthropic unused var, two app.ts null type errors) untouched by this step. No worker dev server on this machine so runtime verification deferred.

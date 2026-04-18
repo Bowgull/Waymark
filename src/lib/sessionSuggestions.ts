@@ -3,7 +3,7 @@
 // wellness metrics, skip patterns, training block position,
 // and volume deficits from training targets.
 
-import { TRAINING_TARGETS, getTarget } from './trainingTargets'
+import { TRAINING_TARGETS } from './trainingTargets'
 
 export interface WellnessSnapshot {
   sleepHours: number | null
