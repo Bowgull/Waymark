@@ -2,10 +2,10 @@
 // Returns ordered text[] by priority. Offline fallback returns null so caller can
 // revert to the local rule-based generator.
 
-import { userProfile } from '../db/schema'
-import { coachingOutputs } from '../db/schema'
+import { eq } from 'drizzle-orm'
+import { coachingOutputs, exercises, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInputs } from './anthropic'
-import { buildSystemPrompt } from './prompts/system'
+import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { TOOL_INSIGHT, type InsightOutput } from './prompts/tools'
 import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
 import type { createDB } from '../db/client'
@@ -108,7 +108,26 @@ export async function runLedgerInsights(
   apiKey: string,
   data: LedgerInsightData,
 ): Promise<string[] | null> {
-  const profile = await db.select().from(userProfile).limit(1).then(rows => rows[0] ?? null)
+  const [profileRow, tmRows] = await Promise.all([
+    db.select().from(userProfile).limit(1).then(rows => rows[0] ?? null),
+    db
+      .select({ weightKg: trainingMaxes.weightKg, name: exercises.name })
+      .from(trainingMaxes)
+      .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id)),
+  ])
+
+  const profile: UserProfileContext = {
+    goals: profileRow?.goals ?? null,
+    injuries: profileRow?.injuries ?? null,
+    postureIssues: profileRow?.postureIssues ?? null,
+    trainingHistory: profileRow?.trainingHistory ?? null,
+    mtGymAccessDays: profileRow?.mtGymAccessDays ?? null,
+    mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
+    weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
+    constraints: profileRow?.constraints ?? null,
+    trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
+  }
+
   const systemBlocks = buildSystemPrompt(profile, null)
   const prompt = buildPrompt(data)
 
