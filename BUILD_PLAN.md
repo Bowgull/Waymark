@@ -113,8 +113,8 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
   - Files: `src/db/schema.ts`, `drizzle/0010_ai_foundation.sql`
   - Acceptance: `drizzle-kit` generates clean migration. Tables queryable.
   - Notes: `user_profile` is singleton with `id` default `'default'`, written on onboarding. No seed defaults yet. Typecheck deferred (no node on this machine). Verify on the machine that has node before Step 2 runs its migration.
-- **Step 2** `TODO` Anthropic client: direct `fetch` wrapper with caching, tool use, retry, offline fallback.
-  - Files: `src/lib/anthropic.ts` (new), `wrangler.jsonc` (secret binding)
+- **Step 2** `DONE` Anthropic client: direct `fetch` wrapper with caching, tool use, retry, offline fallback.
+  - Files: `src/lib/anthropic.ts` (new), `src/server/app.ts` (Bindings), `wrangler.jsonc` (secret note)
   - Acceptance: Haiku and Sonnet both callable. Cache hits logged. Offline returns typed fallback.
 - **Step 3** `TODO` Onboarding screen. Three questions from Voice Canon (why, physical, recent training). Writes to `userProfile`.
   - Files: `src/features/onboarding/*` (new), routing, server endpoint
@@ -168,4 +168,9 @@ Append one entry per session. Keep under 5 lines each.
 ### Session 1 (2026-04-17) · Step 1
 - Did: Added `user_profile`, `body_metrics`, `coaching_outputs` tables to `src/db/schema.ts` and wrote `drizzle/0010_ai_foundation.sql`.
 - Next: Step 2 (Anthropic client).
-- Notes: No node on build machine. Run `drizzle-kit` locally to verify generated migration matches `0010_ai_foundation.sql` before applying. If drift, regenerate and commit.
+- Notes: This project hand-writes migrations and applies them via wrangler, not via `drizzle-kit generate`. Meta journal is intentionally stale. Apply `0010_ai_foundation.sql` to local D1 with `wrangler d1 execute` to verify.
+
+### Session 2 (2026-04-17) · Step 2
+- Did: Created `src/lib/anthropic.ts` (direct fetch wrapper, prompt caching headers, retry on 429/5xx/529, offline fallback, tool use, extended thinking for Sonnet). Added `ANTHROPIC_API_KEY` to `Bindings` in `src/server/app.ts`. Noted secret in `wrangler.jsonc`.
+- Next: Step 3 (onboarding screen, three questions, writes to `user_profile`).
+- Notes: Two sessions ran in parallel directories and diverged. Step 2 artifacts were merged from the other tree into this one. Canonical dir going forward: `/Users/lindsaybell/Developer/Waymark-fresh` (to be renamed to `Waymark` after the broken clone is removed). Set `ANTHROPIC_API_KEY` via `wrangler secret put ANTHROPIC_API_KEY` before Step 7.
