@@ -45,6 +45,16 @@ interface WeekViewProps {
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+function actionVerb(action: string): string {
+  switch (action) {
+    case 'swap': return 'Swapped'
+    case 'add': return 'Added'
+    case 'remove': return 'Removed'
+    case 'move_timeslot': return 'Moved'
+    default: return 'Changed'
+  }
+}
+
 // ─── Routine Overview ──────────────────────────────────────────
 
 interface RoutineOverview {
@@ -477,6 +487,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
   }
   const days = Array.from(dayMap.entries()).sort(([a], [b]) => a - b)
   const proposedAdj = adjustments.filter(a => a.status === 'proposed')
+  const acceptedAdj = adjustments.filter(a => a.status === 'accepted')
 
   return (
     <div>
@@ -557,6 +568,33 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Week Changes — persistent log of accepted adjustments */}
+      {acceptedAdj.length > 0 && (
+        <div className="mb-4 rounded-md border border-border/60 bg-card/50 p-3">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+            Week Changes · {acceptedAdj.length}
+          </p>
+          <ul className="space-y-1.5">
+            {acceptedAdj.map(adj => {
+              const verb = actionVerb(adj.action)
+              const day = adj.targetDay != null ? DAY_NAMES[adj.targetDay] : null
+              const slot = adj.targetTimeSlot ? adj.targetTimeSlot.toUpperCase() : null
+              const when = [day, slot].filter(Boolean).join(' ')
+              return (
+                <li key={adj.id} className="flex items-start gap-2 text-[13px] text-muted-foreground/80">
+                  <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/40" />
+                  <span className="flex-1">
+                    <span className="text-foreground/80">{verb}</span>
+                    {when && <span className="text-muted-foreground/60"> · {when}</span>}
+                    <span className="text-muted-foreground/60"> · {adj.reason}</span>
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
 
