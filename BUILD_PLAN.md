@@ -11,6 +11,17 @@ Living document. Updated at the end of every session. Read this first, every tim
 3. At session end, assistant updates step status, appends to Session Log, commits.
 4. Deploy happens at the end of the full plan, not between steps.
 
+### Sequential session rule (enforced every session)
+
+Before writing any code, the assistant must:
+
+1. Run `git log main --oneline -8` to see what is actually merged.
+2. Identify the highest step number present in main's commit history.
+3. Confirm the requested step is exactly `that number + 1`. If it is not, stop and tell the user which step to run next instead.
+
+This prevents parallel worktrees from forking off the same base and diverging.
+Each step must be merged to main before the next session starts.
+
 ---
 
 ## Hard Rules (non-negotiable)
