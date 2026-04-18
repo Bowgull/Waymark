@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { ApiHealthDevBadge } from '../components/dev/ApiHealthDevBadge'
 import { OfflineBanner } from '../components/ui/OfflineBanner'
-import { HistoryIcon, LibraryIcon, ProgramIcon, SettingsIcon, TodayIcon } from '../components/icons/NavIcons'
+import { HistoryIcon, LibraryIcon, ProgramIcon, TodayIcon } from '../components/icons/NavIcons'
 
 function NavTab({ to, label, icon, end }: { to: string; label: string; icon: React.ReactNode; end?: boolean }) {
   return (
@@ -36,14 +36,13 @@ export function ShellLayout() {
       </main>
       <ApiHealthDevBadge />
       <nav
-        className="sticky bottom-0 z-30 flex shrink-0 border-t border-border bg-near-black/80 backdrop-blur-md"
+        className="sticky bottom-0 z-30 flex shrink-0 border-t border-gold/10 bg-nav/90 backdrop-blur-md"
         aria-label="Main"
       >
         <NavTab to="/today" label="Today" icon={<TodayIcon />} end />
         <NavTab to="/program" label="Program" icon={<ProgramIcon />} />
         <NavTab to="/library" label="Library" icon={<LibraryIcon />} />
         <NavTab to="/history" label="Ledger" icon={<HistoryIcon />} />
-        <NavTab to="/settings" label="Settings" icon={<SettingsIcon />} />
       </nav>
     </div>
   )

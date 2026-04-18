@@ -9,6 +9,7 @@ interface ScrollDrumProps {
   onChange: (value: number) => void
   suffix?: string
   className?: string
+  pad?: number
 }
 
 const ITEM_HEIGHT = 44
@@ -22,6 +23,7 @@ export function ScrollDrum({
   onChange,
   suffix,
   className,
+  pad,
 }: ScrollDrumProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isScrollingRef = useRef(false)
@@ -126,7 +128,8 @@ export function ScrollDrum({
           const opacity = isSelected ? 1 : distance === 1 ? 0.4 : 0.2
           const scale = isSelected ? 1 : distance === 1 ? 0.9 : 0.8
 
-          const displayValue = step % 1 === 0 ? String(v) : v.toFixed(1)
+          const base = step % 1 === 0 ? String(v) : v.toFixed(1)
+          const displayValue = pad ? base.padStart(pad, '0') : base
 
           return (
             <div
