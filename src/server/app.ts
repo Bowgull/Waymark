@@ -16,6 +16,7 @@ import { analyzeWeek, proposeReschedule } from '../lib/weekAnalysis'
 
 type Bindings = {
   DB: D1Database
+  ANTHROPIC_API_KEY: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
