@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
 import { scheduleAlarms } from '@/lib/notifications'
+import { ONE_PACE_ARCS } from '@/lib/onePace'
 import { Button } from '@/components/ui/button'
-import { ScrollDrum } from '@/components/ui/ScrollDrum'
+import { ScrollDrum, ScrollDrumList } from '@/components/ui/ScrollDrum'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { useToast } from '@/components/ui/Toast'
 import { PageHeader } from '@/components/PageHeader'
@@ -63,7 +64,7 @@ export function SettingsPage() {
   const [onePaceArc, setOnePaceArc] = useState('')
   const [onePaceEp, setOnePaceEp] = useState('')
   const [enabledTechniques, setEnabledTechniques] = useState<Set<string>>(new Set(['boxing', 'kicks', 'defensive']))
-  const [activeDrum, setActiveDrum] = useState<'am' | 'pmTime' | 'pmLead' | null>(null)
+  const [activeDrum, setActiveDrum] = useState<'am' | 'pmTime' | 'pmLead' | 'arc' | null>(null)
 
   // Strava
   const [strava, setStrava] = useState<StravaStatus | null>(null)
@@ -210,12 +211,12 @@ export function SettingsPage() {
       {daysLeft !== null && (
         <section
           aria-label="Days until redeploy"
-          className="rounded-md border border-gold/10 bg-near-black/40 px-4 py-3 text-center"
+          className="flex w-fit items-baseline gap-1.5 rounded-md border border-gold/10 bg-near-black/40 px-3 py-1.5"
         >
-          <p className={`font-[family-name:var(--font-display)] text-display-lg leading-none ${daysColor}`}>
-            {daysLeft}
-          </p>
-          <p className="mt-1 text-label text-muted-foreground">Days Until Redeploy</p>
+          <span className={`font-[family-name:var(--font-display)] text-base leading-none ${daysColor}`}>
+            {daysLeft}d
+          </span>
+          <span className="text-label text-muted-foreground">until redeploy</span>
         </section>
       )}
 
@@ -335,18 +336,33 @@ export function SettingsPage() {
       {/* One Pace */}
       <section>
         <p className="mb-2 text-sm font-medium text-foreground">One Pace Progress</p>
-        <div className="flex gap-4">
-          <div className="flex-1">
+        <div className="flex items-end gap-3">
+          <div className="min-w-0 flex-1">
             <label className="mb-1 block text-xs text-muted-foreground">Current Arc</label>
-            <input
-              type="text"
-              value={onePaceArc}
-              onChange={(e) => setOnePaceArc(e.target.value)}
-              placeholder="e.g. Water 7"
-              className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
-            />
+            {activeDrum === 'arc' ? (
+              <div className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
+                <ScrollDrumList
+                  items={ONE_PACE_ARCS}
+                  value={ONE_PACE_ARCS.includes(onePaceArc as typeof ONE_PACE_ARCS[number]) ? onePaceArc : ONE_PACE_ARCS[0]}
+                  onChange={setOnePaceArc}
+                />
+                <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!onePaceArc) setOnePaceArc(ONE_PACE_ARCS[0])
+                  setActiveDrum('arc')
+                }}
+                className="min-h-[44px] w-full truncate rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground"
+                style={{ fontFamily: 'var(--font-display)' }}
+              >
+                {onePaceArc || 'Select arc'}
+              </button>
+            )}
           </div>
-          <div className="flex-1">
+          <div className="w-28 shrink-0">
             <label className="mb-1 block text-xs text-muted-foreground">Episode</label>
             <div className="flex gap-1">
               <button
@@ -355,16 +371,17 @@ export function SettingsPage() {
                   const n = Math.max(0, (Number(onePaceEp) || 0) - 1)
                   setOnePaceEp(String(n))
                 }}
-                className="min-h-[44px] w-10 rounded-md bg-border text-muted-foreground active:bg-muted"
+                className="min-h-[44px] w-8 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
               >
                 -
               </button>
               <input
                 type="text"
+                inputMode="numeric"
                 value={onePaceEp}
                 onChange={(e) => setOnePaceEp(e.target.value)}
-                placeholder="e.g. 3"
-                className="min-h-[44px] flex-1 rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
+                placeholder="0"
+                className="min-h-[44px] w-full min-w-0 flex-1 rounded-md border border-border bg-border px-1 py-2 text-center text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
               />
               <button
                 type="button"
@@ -372,7 +389,7 @@ export function SettingsPage() {
                   const n = (Number(onePaceEp) || 0) + 1
                   setOnePaceEp(String(n))
                 }}
-                className="min-h-[44px] w-10 rounded-md bg-border text-muted-foreground active:bg-muted"
+                className="min-h-[44px] w-8 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
               >
                 +
               </button>
