@@ -126,8 +126,8 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
   - Files: `src/lib/prompts/system.ts` (new), `src/lib/prompts/context.ts` (new)
 - **Step 5** `TODO` Tool schemas for structured outputs: `weekPlan`, `weekReview`, `blockTransition`, `sessionReview`, `insight`.
   - Files: `src/lib/prompts/tools.ts` (new)
-- **Step 6** `TODO` Context summarizer. Rolls weeks 5+ into compressed summaries stored in `coachingOutputs`.
-  - Files: `src/lib/prompts/summarizer.ts` (new), cron or on-demand
+- **Step 6** `DONE` Context summarizer. Rolls weeks 5+ into compressed summaries stored in `coachingOutputs`.
+  - Files: `src/lib/prompts/summarizer.ts` (new), `POST /api/ai/summarize-old-weeks` in `src/server/app.ts`
 
 ### Phase 3: Block Zero AI
 
@@ -174,3 +174,8 @@ Append one entry per session. Keep under 5 lines each.
 - Did: Created `src/lib/anthropic.ts` (direct fetch wrapper, prompt caching headers, retry on 429/5xx/529, offline fallback, tool use, extended thinking for Sonnet). Added `ANTHROPIC_API_KEY` to `Bindings` in `src/server/app.ts`. Noted secret in `wrangler.jsonc`.
 - Next: Step 3 (onboarding screen, three questions, writes to `user_profile`).
 - Notes: Two sessions ran in parallel directories and diverged. Step 2 artifacts were merged from the other tree into this one. Canonical dir going forward: `/Users/lindsaybell/Developer/Waymark-fresh` (to be renamed to `Waymark` after the broken clone is removed). Set `ANTHROPIC_API_KEY` via `wrangler secret put ANTHROPIC_API_KEY` before Step 7.
+
+### Session 3 (2026-04-17) · Step 6
+- Did: Created `src/lib/prompts/summarizer.ts`. Exports `summarizeOldWeeks` (Haiku call, tool use, writes to `coaching_outputs`) and `getWeekSummaries` (reads stored summaries for context building). Added `POST /api/ai/summarize-old-weeks` route to `src/server/app.ts`. Steps 3-5 still TODO.
+- Next: Step 3 (onboarding) or Step 4 (system prompt builder), depending on priority.
+- Notes: `getWeekSummaries` is ready for Step 4/9 to pull compressed context. Route is on-demand. Cron can be wired in Step 15 if needed.
