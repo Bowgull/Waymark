@@ -62,9 +62,8 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
   // Auto-fill One Pace arc/ep from settings if not already set
   useEffect(() => {
     if (runSession.onePaceArc || runSession.onePaceEp) return
-    apiFetch('/api/settings')
-      .then((r) => r.json())
-      .then((s: any) => {
+    apiFetch<{ onePaceArc?: string | null; onePaceEp?: string | null } | null>('/api/settings')
+      .then((s) => {
         if (s?.onePaceArc) setOnePaceArc(s.onePaceArc)
         if (s?.onePaceEp) setOnePaceEp(s.onePaceEp)
       })

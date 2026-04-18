@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
 import { getMarkAsset, getSessionAccent } from '@/lib/markAssets'
-import { getSessionLabel } from '@/lib/weeklyTemplate'
 import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd } from '@/lib/notifications'
@@ -287,8 +286,6 @@ export function WorkoutPage() {
   const navigate = useNavigate()
 
   const [sessionType, setSessionType] = useState<string | null>(null)
-  const [sessionStatus, setSessionStatus] = useState<string | null>(null)
-  const [sessionDayOfWeek, setSessionDayOfWeek] = useState<number | undefined>(undefined)
   const [strengthData, setStrengthData] = useState<StrengthWorkoutData | null>(null)
   const [postureData, setPostureData] = useState<PostureWorkoutData | null>(null)
   const [bagData, setBagData] = useState<BagWorkoutData | null>(null)
@@ -318,10 +315,6 @@ export function WorkoutPage() {
         if (!session) throw new Error('Session not found')
 
         setSessionType(session.type)
-        setSessionStatus(session.status)
-        if (session.scheduledDate != null) {
-          setSessionDayOfWeek(new Date(session.scheduledDate * 86400000).getUTCDay())
-        }
 
         // Skip entrance for in-progress sessions (returning to continue)
         if (session.status === 'in_progress') {
@@ -468,7 +461,6 @@ export function WorkoutPage() {
   }
 
   const accent = sessionType ? getSessionAccent(sessionType) : '#E8C860'
-  const label = sessionType ? getSessionLabel(sessionType, sessionDayOfWeek) : ''
   const markAsset = sessionType ? getMarkAsset(sessionType) : null
 
   // ─── Session atmosphere (shared across types) ─────────────
@@ -554,7 +546,7 @@ export function WorkoutPage() {
     let frProgress = 0
     if (phase === 'fr-run') frProgress = 10
     else if (phase === 'fr-transition') frProgress = 25
-    else if (phase === 'fr-posture' || phase === 'breathe') {
+    else if (phase === 'fr-posture') {
       frProgress = 25 + ((exerciseIdx / frTotalExercises) * 65)
     } else if (phase === 'mark-earned' || phase === 'complete') frProgress = 100
 
@@ -562,7 +554,7 @@ export function WorkoutPage() {
       <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
         <SessionAtmosphere />
         <SessionHeader counter={
-          phase === 'fr-posture' || phase === 'breathe'
+          phase === 'fr-posture'
             ? `${exerciseIdx + 1} / ${frTotalExercises}`
             : phase === 'fr-run' ? 'Run' : undefined
         } />
@@ -586,24 +578,15 @@ export function WorkoutPage() {
           {phase === 'fr-transition' && (
             <FrTransition onComplete={() => setPhase('fr-posture')} />
           )}
-          {(phase === 'fr-posture' || phase === 'breathe') && frCurrentExercise && (
-            <>
-              {phase === 'breathe' ? (
-                <div className="flex flex-col items-center justify-center py-16 animate-fade-in">
-                  <p className="text-display text-teal">Breathe</p>
-                  <p className="mt-2 text-sm text-muted-foreground">Next exercise coming...</p>
-                </div>
-              ) : (
-                <PostureExerciseView
-                  exercise={frCurrentExercise}
-                  exerciseIndex={exerciseIdx}
-                  totalExercises={frTotalExercises}
-                  currentSet={setIdx}
-                  showSectionHeader={frShowSectionHeader}
-                  onSetDone={handleFrPostureSetDone}
-                />
-              )}
-            </>
+          {phase === 'fr-posture' && frCurrentExercise && (
+            <PostureExerciseView
+              exercise={frCurrentExercise}
+              exerciseIndex={exerciseIdx}
+              totalExercises={frTotalExercises}
+              currentSet={setIdx}
+              showSectionHeader={frShowSectionHeader}
+              onSetDone={handleFrPostureSetDone}
+            />
           )}
         </main>
         <ProgressBar value={frProgress} />
@@ -779,7 +762,8 @@ export function WorkoutPage() {
       setPhase('combo-rating')
     }
 
-    async function handleRatingComplete(newFavourites: string[]) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    async function handleRatingComplete(_newFavourites: string[]) {
       // Check for unlock suggestions
       try {
         const result = await apiFetch<{ suggestions: UnlockSuggestion[]; message: string | null }>(

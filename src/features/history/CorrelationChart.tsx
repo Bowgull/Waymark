@@ -27,9 +27,10 @@ export function CorrelationChart({ data, xLabel, yLabel, xDomain, jitter }: Corr
 
   const meanY = Math.round(data.reduce((sum, d) => sum + d.y, 0) / data.length * 10) / 10
 
-  // Apply slight jitter to integer x values to prevent dot stacking
+  // Apply slight jitter to integer x values to prevent dot stacking.
+  // Deterministic to keep render pure.
   const chartData = jitter
-    ? data.map(d => ({ ...d, x: d.x + (Math.random() - 0.5) * 0.3 }))
+    ? data.map((d, i) => ({ ...d, x: d.x + (((i * 2654435761) % 97) / 97 - 0.5) * 0.3 }))
     : data
 
   return (
@@ -52,8 +53,8 @@ export function CorrelationChart({ data, xLabel, yLabel, xDomain, jitter }: Corr
           />
           <Tooltip
             {...TOOLTIP_STYLE}
-            formatter={(value: number, name: string) => [
-              Math.round(value * 10) / 10,
+            formatter={(value, name) => [
+              Math.round(Number(value) * 10) / 10,
               name === 'x' ? xLabel : yLabel,
             ]}
             labelFormatter={() => ''}

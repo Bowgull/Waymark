@@ -62,9 +62,10 @@ export function RunningProgressChart({ data, summary }: RunningProgressChartProp
             />
             <Tooltip
               {...TOOLTIP_STYLE}
-              formatter={(value: number, name: string) => {
-                if (name === 'pace') return [paceToMinSec(value) + '/km', 'Pace']
-                return [value + ' km', 'Distance']
+              formatter={(value, name) => {
+                const v = Number(value)
+                if (name === 'pace') return [paceToMinSec(v) + '/km', 'Pace']
+                return [v + ' km', 'Distance']
               }}
             />
             <Line
