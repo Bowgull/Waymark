@@ -170,7 +170,7 @@ Do not bundle commits. Each session should end with a pushed commit to main and 
 
 ### Commit 5: Critical Alerts + custom sounds + plugin patch (2026-04-18)
 
-- Commit: `<hash> polish: critical alerts for morning and nuclear`.
+- Commit: `e51bdbe polish: critical alerts for morning and nuclear`.
 - **Plugin path: (b) patch-package.** `@capacitor/local-notifications@8.0.2` had no `interruptionLevel` / `criticalSound` / `.criticalAlert` in Swift or in `definitions.d.ts`. Patch (`patches/@capacitor+local-notifications+8.0.2.patch`) adds `.criticalAlert` to `requestAuthorization` options in `LocalNotificationsHandler.swift`; adds `critical` / `criticalVolume` handling and `interruptionLevel` switch in `makeNotificationContent` in `LocalNotificationsPlugin.swift`; extends `LocalNotificationSchema` in `definitions.d.ts` with three optional fields. `patch-package` added as devDep (`^8.0.1`); `postinstall: patch-package` wired in `package.json` scripts so patch re-applies on every `npm install`.
 - Sounds: `ios/App/App/Sounds/morning.caf` (Musical Vintage Lo-Fi Piano, 3.8 MB) and `ios/App/App/Sounds/nuclear.caf` (Dragon Studio nuclear alarm type beat, 731 KB) converted via `afconvert -f caff -d LEI16@48000 -c 1`. Sounds/ added to the App group as a folder reference (blue folder) and wired into the Copy Bundle Resources phase of `App.xcodeproj/project.pbxproj`, so any `.caf` dropped in there auto-bundles.
 - Entitlement: `ios/App/App/App.entitlements` created with `com.apple.developer.usernotifications.critical-alerts = true`. Added as file reference in the App group and `CODE_SIGN_ENTITLEMENTS = App/App.entitlements` set on both Debug and Release target build configs. Signing succeeds on the user's personal dev cert (self-granted restricted entitlement).
