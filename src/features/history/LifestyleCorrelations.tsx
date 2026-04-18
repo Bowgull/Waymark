@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { CorrelationChart } from './CorrelationChart'
 
 interface CorrelationDataPoint {
@@ -14,6 +16,24 @@ interface LifestyleCorrelationsProps {
   data: CorrelationDataPoint[]
   insights?: string[]
 }
+
+type MetricKey = 'sleep' | 'soreness' | 'herb' | 'alcohol'
+
+interface MetricConfig {
+  key: MetricKey
+  label: string
+  get: (d: CorrelationDataPoint) => number | null
+  xLabel: string
+  xDomain?: [number, number]
+  jitter?: boolean
+}
+
+const METRICS: MetricConfig[] = [
+  { key: 'sleep', label: 'Sleep', get: d => d.sleepHours, xLabel: 'Sleep', xDomain: [4, 10] },
+  { key: 'soreness', label: 'Soreness', get: d => d.soreness, xLabel: 'Soreness', xDomain: [1, 5], jitter: true },
+  { key: 'herb', label: 'Herb', get: d => d.weedGrams, xLabel: 'Herb (g)' },
+  { key: 'alcohol', label: 'Alcohol', get: d => d.alcoholScale, xLabel: 'Alcohol', xDomain: [0, 10], jitter: true },
+]
 
 function toScatter(
   data: CorrelationDataPoint[],
@@ -60,15 +80,14 @@ function deriveInsights(data: CorrelationDataPoint[]): string[] {
 }
 
 export function LifestyleCorrelations({ data, insights }: LifestyleCorrelationsProps) {
-  const sleepData = toScatter(data, d => d.sleepHours)
-  const sorenessData = toScatter(data, d => d.soreness)
-  const weedData = toScatter(data, d => d.weedGrams)
-  const alcoholData = toScatter(data, d => d.alcoholScale)
+  const [active, setActive] = useState<MetricKey>('sleep')
 
   const localInsights = insights && insights.length > 0 ? insights : deriveInsights(data)
+  const activeMetric = METRICS.find(m => m.key === active) ?? METRICS[0]
+  const scatterData = toScatter(data, activeMetric.get)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {localInsights.length > 0 && (
         <div className="rounded-md border-l-2 border-teal/30 bg-card/40 px-3 py-2">
           {localInsights.slice(0, 2).map((note, i) => (
@@ -79,23 +98,33 @@ export function LifestyleCorrelations({ data, insights }: LifestyleCorrelationsP
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <p className="mb-1.5 text-label text-muted-foreground">Sleep vs Effort</p>
-          <CorrelationChart data={sleepData} xLabel="Sleep" yLabel="Effort" xDomain={[4, 10]} />
-        </div>
-        <div>
-          <p className="mb-1.5 text-label text-muted-foreground">Soreness vs Effort</p>
-          <CorrelationChart data={sorenessData} xLabel="Soreness" yLabel="Effort" xDomain={[1, 5]} jitter />
-        </div>
-        <div>
-          <p className="mb-1.5 text-label text-muted-foreground">Herb vs Effort</p>
-          <CorrelationChart data={weedData} xLabel="Herb (g)" yLabel="Effort" />
-        </div>
-        <div>
-          <p className="mb-1.5 text-label text-muted-foreground">Alcohol vs Effort</p>
-          <CorrelationChart data={alcoholData} xLabel="Alcohol" yLabel="Effort" xDomain={[0, 10]} jitter />
-        </div>
+      <div className="flex flex-wrap gap-1.5">
+        {METRICS.map(m => (
+          <button
+            key={m.key}
+            onClick={() => setActive(m.key)}
+            className={`rounded-md px-3 py-1 text-[11px] font-display uppercase tracking-wider transition-colors ${
+              active === m.key
+                ? 'bg-gold text-near-black'
+                : 'bg-secondary text-muted-foreground active:bg-surface-light/50'
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-label text-muted-foreground">
+          {activeMetric.label} vs Effort
+        </p>
+        <CorrelationChart
+          data={scatterData}
+          xLabel={activeMetric.xLabel}
+          yLabel="Effort"
+          xDomain={activeMetric.xDomain}
+          jitter={activeMetric.jitter}
+        />
       </div>
     </div>
   )
