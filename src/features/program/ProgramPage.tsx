@@ -69,6 +69,26 @@ interface TransitionResult {
   nextBlockNotes?: string
 }
 
+function getBlockZeroNarrative(blockWeek: number): string {
+  if (blockWeek <= 2) {
+    return 'Foundation. Corrective work, light loading, habit building. Skip this stretch and the next one breaks you.'
+  }
+  if (blockWeek <= 4) {
+    return 'MT returns. Weights climb past 50%. Tendons catch up to muscle.'
+  }
+  return 'Full schedule live. Six weeks of runway ends with the body ready for real load.'
+}
+
+function getFighterBlockNarrative(blockWeek: number): string {
+  if (blockWeek <= 2) {
+    return 'Fighter block opens. Strength base first. Volume is honest, not heroic.'
+  }
+  if (blockWeek <= 4) {
+    return 'Middle weeks. Loads sit at working weight. This is where the body adapts or quits.'
+  }
+  return 'Closing weeks. Peak intensity. Next block expects more.'
+}
+
 function getMonday(weekOffset = 0): string {
   const now = new Date()
   const day = now.getDay()
@@ -464,11 +484,20 @@ export function ProgramPage() {
         <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
       </Link>
 
-      {/* Block Zero badge */}
-      {isBlockZero && (
-        <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">
-          <p className="text-label text-teal">BLOCK ZERO — RETURN TO TRAINING</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">Building your foundation. Weights are intentionally light.</p>
+      {/* Block narrative */}
+      {isBlockZero ? (
+        <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2.5 space-y-1">
+          <p className="text-label text-teal">BLOCK ZERO</p>
+          <p className="text-sm text-foreground leading-relaxed">
+            {getBlockZeroNarrative(blockWeek)}
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-gold/20 bg-gold/5 px-3 py-2.5 space-y-1">
+          <p className="text-label text-gold">FIGHTER BLOCK</p>
+          <p className="text-sm text-foreground leading-relaxed">
+            {getFighterBlockNarrative(blockWeek)}
+          </p>
         </div>
       )}
 
