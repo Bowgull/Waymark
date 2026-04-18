@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
+import { SkipReasonSheet } from '@/features/session/SkipReasonSheet'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import type { WeekAnalysis } from '@/lib/weekAnalysis'
 import { getSessionLabel } from '@/lib/weeklyTemplate'
@@ -360,6 +361,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
   const [expandedDay, setExpandedDay] = useState<number | null>(null)
   const [actionTraySessionId, setActionTraySessionId] = useState<string | null>(null)
   const [replacingSession, setReplacingSession] = useState<SessionSummary | null>(null)
+  const [skipReasonFor, setSkipReasonFor] = useState<{ id: string; replace: boolean } | null>(null)
 
   // Parse analysis from JSON
   const analysis: WeekAnalysis | null = analysisJson ? (() => {
@@ -410,33 +412,41 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
     }
   }
 
-  async function handleSkip(sessionId: string) {
+  function handleSkip(sessionId: string) {
     setActionTraySessionId(null)
+    setSkipReasonFor({ id: sessionId, replace: false })
+  }
+
+  function handleReplace(session: SessionSummary) {
+    setActionTraySessionId(null)
+    setReplacingSession(session)
+    setSkipReasonFor({ id: session.id, replace: true })
+  }
+
+  async function commitSkip(reason: string) {
+    if (!skipReasonFor) return
+    const { id, replace } = skipReasonFor
+    setSkipReasonFor(null)
     try {
-      await apiFetch(`/api/sessions/${sessionId}`, {
+      await apiFetch(`/api/sessions/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: 'skipped' }),
+        body: JSON.stringify({ status: 'skipped', skipReason: reason }),
       })
-      onSessionUpdate?.(sessionId, 'skipped')
+      onSessionUpdate?.(id, 'skipped')
     } catch (e) {
       console.error('Failed to skip session:', e)
+      if (replace) setReplacingSession(null)
+      return
+    }
+    if (replace) {
+      const target = sessions.find(s => s.id === id)
+      openPicker(target?.scheduledDate ?? 0)
     }
   }
 
-  async function handleReplace(session: SessionSummary) {
-    setActionTraySessionId(null)
-    try {
-      await apiFetch(`/api/sessions/${session.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'skipped' }),
-      })
-      onSessionUpdate?.(session.id, 'skipped')
-    } catch (e) {
-      console.error('Failed to skip session for replace:', e)
-      return
-    }
-    setReplacingSession(session)
-    openPicker(session.scheduledDate ?? 0)
+  function cancelSkip() {
+    setReplacingSession(null)
+    setSkipReasonFor(null)
   }
 
   async function handleAcceptAdjustment(adjId: string) {
@@ -631,6 +641,13 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
           )
         })}
       </div>
+
+      {skipReasonFor && (
+        <SkipReasonSheet
+          onCommit={commitSkip}
+          onClose={cancelSkip}
+        />
+      )}
 
       {/* Session Picker modal */}
       {pickerDate && (

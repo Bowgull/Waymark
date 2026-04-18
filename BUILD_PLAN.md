@@ -161,7 +161,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 - **Step 13** `DONE` Body metrics entry. Weight and optional fields. Simple form. Graph reuses existing sparkline component.
   - Files: `src/features/metrics/BodyMetricsPage.tsx` (new), `src/server/app.ts` (two routes), `src/app/AppRoutes.tsx` (/metrics route)
   - Acceptance: POST /api/body-metrics writes weight (required), resting HR / bodyfat / notes (optional). GET returns recent entries. /metrics page shows form and sparkline once 2+ entries exist.
-- **Step 14** `TODO` Coach surfaces: Block narrative view, Drive first-use explainer, injury check-in, session intent preview, skip-reason capture.
+- **Step 14** `DONE` Coach surfaces: Block narrative view, Drive first-use explainer, injury check-in, session intent preview, skip-reason capture.
 
 ### Deploy
 
@@ -236,3 +236,8 @@ Append one entry per session. Keep under 5 lines each.
 - Did: Created `src/features/metrics/BodyMetricsPage.tsx` (form with weight required, resting HR / bodyfat / notes optional, weight sparkline via existing Sparkline component, recent entry list). Added `bodyMetrics` to schema import in `app.ts`. Added `POST /api/body-metrics` and `GET /api/body-metrics` routes. Added `/metrics` route to `AppRoutes.tsx`. Merged step 12 worktree branch to main before starting.
 - Next: Step 14 (coach surfaces).
 - Notes: Weight stored as kg, displayed as lbs using existing `kgToLbsDisplay`. No migration needed (body_metrics table in schema since step 1). No node on this machine, typecheck deferred.
+
+### Session 14 (2026-04-18) · Step 14
+- Did: Added block narrative card to `ProgramPage.tsx` (shows block name + narrative from block transition coaching output). Added first-use Drive explainer in `SessionComplete.tsx` with localStorage dismissal. Created `src/features/today/InjuryCheckCard.tsx` (flag something / all clear). Created `src/lib/sessionIntent.ts` and wired intent preview into `TimelineRow.tsx` / `WeekView.tsx`. Created `src/features/session/SkipReasonSheet.tsx` (6 canned reasons + free text) and wired into `TodayPage.tsx` skip flow with reschedule prompt.
+- Next: Step 15 (QA and deploy).
+- Notes: Five surfaces render cleanly in preview (TodayPage: injury card, wellness, journal, timeline; ProgramPage: FIGHTER BLOCK narrative). API extended with injury-flag and session-intent endpoints in `app.ts`.

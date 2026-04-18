@@ -1,5 +1,6 @@
 import { getMarkAsset } from '@/lib/markAssets'
 import { getEstimatedMin } from '@/lib/weeklyTemplate'
+import { getSessionIntent } from '@/lib/sessionIntent'
 import { Button } from '@/components/ui/button'
 import { tapHaptic } from '@/lib/haptics'
 
@@ -102,23 +103,28 @@ export function TimelineRow({ session, onStart, onSkip, expanded, onToggle, labe
       {expanded && (
         <div className="animate-fade-in px-3 pb-3 pl-10">
           {isActionable && (
-            <div className="flex items-center gap-3 pt-1">
-              <Button
-                size="sm"
-                onClick={() => onStart(session.id)}
-              >
-                {session.status === 'in_progress' ? 'Resume' : 'Enter'}
-              </Button>
-              {session.status === 'planned' && (
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground active:text-foreground"
-                  onClick={() => onSkip(session.id)}
+            <>
+              <p className="pb-2 text-[13px] text-muted-foreground italic leading-relaxed">
+                {getSessionIntent(session.type)}
+              </p>
+              <div className="flex items-center gap-3 pt-1">
+                <Button
+                  size="sm"
+                  onClick={() => onStart(session.id)}
                 >
-                  Pass
-                </button>
-              )}
-            </div>
+                  {session.status === 'in_progress' ? 'Resume' : 'Enter'}
+                </Button>
+                {session.status === 'planned' && (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground active:text-foreground"
+                    onClick={() => onSkip(session.id)}
+                  >
+                    Pass
+                  </button>
+                )}
+              </div>
+            </>
           )}
           {isCompleted && (
             <div className="flex gap-4 pt-1 text-xs text-muted-foreground">

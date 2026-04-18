@@ -452,9 +452,11 @@ app.patch('/api/sessions/:id', async (c) => {
     rpe?: number
     difficulty?: number
     notes?: string
+    skipReason?: string
   }>()
 
   const db = createDB(c.env)
+  const [existing] = await db.select().from(sessions).where(eq(sessions.id, id))
   const updates: Record<string, unknown> = {}
 
   if (body.status !== undefined) updates.status = body.status
@@ -464,6 +466,14 @@ app.patch('/api/sessions/:id', async (c) => {
   if (body.rpe !== undefined) updates.rpe = body.rpe
   if (body.difficulty !== undefined) updates.difficulty = body.difficulty
   if (body.notes !== undefined) updates.notes = body.notes
+
+  // Capture user-provided skip reason on the session notes.
+  const trimmedSkipReason = body.skipReason?.trim()
+  if (body.status === 'skipped' && trimmedSkipReason) {
+    const skipLine = `Skipped: ${trimmedSkipReason}`
+    const priorNotes = (body.notes ?? existing?.notes ?? '').trim()
+    updates.notes = priorNotes ? `${skipLine}\n${priorNotes}` : skipLine
+  }
 
   await db.update(sessions).set(updates).where(eq(sessions.id, id))
 
@@ -478,6 +488,7 @@ app.patch('/api/sessions/:id', async (c) => {
     // Get wellness context to auto-detect skip reason
     const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, todayEpochDay))
     const skipReasons: string[] = []
+    if (trimmedSkipReason) skipReasons.push(trimmedSkipReason)
     if (todayLog) {
       if (todayLog.soreness != null && todayLog.soreness >= 4) skipReasons.push('Soreness is high')
       if (todayLog.sleepHours != null && todayLog.sleepHours < 6) skipReasons.push('Sleep is low')
@@ -498,6 +509,7 @@ app.patch('/api/sessions/:id', async (c) => {
       const sourceData = JSON.stringify({
         wellness: todayLog ? { sleepHours: todayLog.sleepHours, soreness: todayLog.soreness, alcoholScale: todayLog.alcoholScale } : null,
         skipReasons,
+        userSkipReason: trimmedSkipReason ?? null,
         originalDate: row.scheduledDate,
       })
 
@@ -2865,6 +2877,43 @@ app.post('/api/user-profile', async (c) => {
       updatedAt: now,
     })
   }
+  const [profile] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+  return c.json(profile)
+})
+
+// Injury check-in. Merges new note with existing injuries string,
+// or clears it when note is null.
+app.post('/api/user-profile/injury-check', async (c) => {
+  const body = await c.req.json<{ note: string | null }>()
+  const db = createDB(c.env)
+  const now = Math.floor(Date.now() / 1000)
+  const rows = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+
+  const dateLabel = new Date().toISOString().split('T')[0]
+  const trimmed = body.note?.trim() ?? ''
+
+  if (rows.length === 0) {
+    await db.insert(userProfile).values({
+      id: 'default',
+      injuries: trimmed ? `${dateLabel}: ${trimmed}` : null,
+      createdAt: now,
+      updatedAt: now,
+    })
+  } else {
+    const existing = rows[0].injuries?.trim() ?? ''
+    let next: string | null
+    if (!trimmed) {
+      next = existing || null
+    } else {
+      const entry = `${dateLabel}: ${trimmed}`
+      next = existing ? `${existing}\n${entry}` : entry
+    }
+    await db
+      .update(userProfile)
+      .set({ injuries: next, updatedAt: now })
+      .where(eq(userProfile.id, 'default'))
+  }
+
   const [profile] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
   return c.json(profile)
 })

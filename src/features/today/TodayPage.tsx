@@ -6,12 +6,14 @@ import { getTodayISO } from '@/lib/dates'
 
 import { PageBackground } from '@/components/backgrounds/PageBackground'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
+import { SkipReasonSheet } from '@/features/session/SkipReasonSheet'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 
 import { DateHeader } from './DateHeader'
 import { DaySummary } from './DaySummary'
 import { DayTimeline } from './DayTimeline'
 import { GeneratePlanButton } from './GeneratePlanButton'
+import { InjuryCheckCard } from './InjuryCheckCard'
 import { JournalCard } from './JournalCard'
 import { WellnessPromptCard, type WellnessData } from './WellnessPromptCard'
 
@@ -47,6 +49,7 @@ export function TodayPage() {
     reason: string
     skipContext: string | null
   } | null>(null)
+  const [skipReasonFor, setSkipReasonFor] = useState<string | null>(null)
 
   const today = getTodayISO()
   const todayDate = new Date(`${today}T12:00:00`)
@@ -128,14 +131,19 @@ export function TodayPage() {
     }
   }
 
-  async function handleSkip(id: string) {
+  function handleSkip(id: string) {
+    setSkipReasonFor(id)
+  }
+
+  async function commitSkip(id: string, reason: string) {
+    setSkipReasonFor(null)
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, status: 'skipped' } : s))
     )
     try {
       const result = await apiFetch<{ session?: Session; skipContext?: string | null; reschedule?: { adjustmentId: string; reason: string } }>(`/api/sessions/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: 'skipped' }),
+        body: JSON.stringify({ status: 'skipped', skipReason: reason }),
       })
       if (result.reschedule) {
         setReschedulePrompt({
@@ -214,6 +222,8 @@ export function TodayPage() {
 
       <WellnessPromptCard onSubmit={handleWellnessSubmit} isLogged={dailyLog !== null && dailyLog !== undefined} />
 
+      <InjuryCheckCard />
+
       <JournalCard />
 
       {sessions.length === 0 ? (
@@ -255,6 +265,13 @@ export function TodayPage() {
           onSelect={handleAddSession}
           onClose={() => { setShowPicker(false); setPickerSuggestions(null) }}
           suggestions={pickerSuggestions}
+        />
+      )}
+
+      {skipReasonFor && (
+        <SkipReasonSheet
+          onCommit={(reason) => commitSkip(skipReasonFor, reason)}
+          onClose={() => setSkipReasonFor(null)}
         />
       )}
 
