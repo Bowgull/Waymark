@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 
-import { PageBackground } from '@/components/backgrounds/PageBackground'
+import { TodayTexture } from '@/components/backgrounds/TodayTexture'
 import { SettingsIcon } from '@/components/icons/NavIcons'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { useToast } from '@/components/ui/Toast'
@@ -402,7 +402,7 @@ export function TodayPage() {
 
   return (
     <div className="relative flex flex-col gap-5 pb-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-      <PageBackground />
+      <TodayTexture />
       <DateHeader date={todayDate} />
 
       <WellnessPromptCard
@@ -456,16 +456,15 @@ export function TodayPage() {
         </>
       )}
 
-      <div className="mt-8 mb-4 flex justify-end">
-        <button
-          type="button"
-          onClick={() => navigate('/settings')}
-          aria-label="Settings"
-          className="-m-3 flex size-11 items-center justify-center text-muted-foreground active:text-foreground"
-        >
-          <span className="size-5"><SettingsIcon /></span>
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => navigate('/settings')}
+        aria-label="Settings"
+        className="mx-auto mt-8 mb-2 flex min-h-[44px] items-center gap-2 font-cinzel text-[13px] uppercase tracking-widest text-gold/40 active:text-gold/70 transition-colors"
+      >
+        <span className="size-3.5"><SettingsIcon /></span>
+        Settings
+      </button>
 
       {showPicker && (
         <SessionPicker
