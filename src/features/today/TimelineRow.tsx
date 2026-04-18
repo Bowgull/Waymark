@@ -1,6 +1,6 @@
 import { getMarkAsset } from '@/lib/markAssets'
 import { getEstimatedMin } from '@/lib/weeklyTemplate'
-import { getSessionIntent } from '@/lib/sessionIntent'
+import { getSessionIntent, getSessionTargetHr } from '@/lib/sessionIntent'
 import { Button } from '@/components/ui/button'
 import { tapHaptic, mediumHaptic } from '@/lib/haptics'
 
@@ -26,11 +26,13 @@ interface Session {
   completedAt: number | null
   durationSec: number | null
   rpe: number | null
+  notes: string | null
   runSession?: RunSessionSummary | null
 }
 
 interface TimelineRowProps {
   session: Session
+  maxHr?: number | null
   onStart: (id: string) => void
   onSkip: (id: string) => void
   onReplace: (id: string) => void
@@ -77,6 +79,7 @@ function markStyle(status: string): string {
 
 export function TimelineRow({
   session,
+  maxHr,
   onStart,
   onSkip,
   onReplace,
@@ -97,6 +100,7 @@ export function TimelineRow({
   const isSkipped = session.status === 'skipped'
 
   const displayLabel = isOrphan ? 'Unplanned Run' : label
+  const targetHr = getSessionTargetHr(session.type, session.notes, maxHr ?? null)
 
   return (
     <div className={`rounded-lg ${statusBg(session.status, isAutoPending)} transition-colors`}>
@@ -186,6 +190,11 @@ export function TimelineRow({
               <p className="pb-2 text-[13px] text-muted-foreground italic leading-relaxed">
                 {getSessionIntent(session.type)}
               </p>
+              {targetHr && (
+                <p className="pb-2 text-[13px] text-muted-foreground italic leading-relaxed">
+                  {targetHr}
+                </p>
+              )}
               <div className="flex items-center gap-2 pt-1">
                 <Button
                   size="sm"
