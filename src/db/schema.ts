@@ -57,6 +57,8 @@ export const sessions = sqliteTable('sessions', {
   blockWeek: integer('block_week'),
   blockType: text('block_type').notNull().default('fighter'),
   notes: text('notes'),
+  review: text('review'),
+  reviewFlag: text('review_flag'),
   adjustmentId: text('adjustment_id'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [

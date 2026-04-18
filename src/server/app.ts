@@ -16,6 +16,7 @@ import { WEEKLY_TEMPLATE, getBlockZeroTemplate } from '../lib/weeklyTemplate'
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek, proposeReschedule } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
+import { runSessionReview } from '../lib/sessionReviewAI'
 
 type Bindings = {
   DB: D1Database
@@ -739,6 +740,22 @@ app.post('/api/sessions/:id/complete', async (c) => {
 
   // TM progression is handled by POST /api/blocks/:id/progress-tm after 6-week blocks.
   // We track exercise-level weight history via the last-session endpoint instead of auto-updating TMs.
+
+  const reviewOutput = await runSessionReview(db, c.env.ANTHROPIC_API_KEY, {
+    id: sessionId,
+    type: session.type,
+    rpe: body.rpe ?? null,
+    difficulty: body.difficulty ?? null,
+    notes: body.notes ?? null,
+    durationSec,
+  })
+
+  if (reviewOutput) {
+    await db.update(sessions).set({
+      review: reviewOutput.line,
+      reviewFlag: reviewOutput.flag,
+    }).where(eq(sessions.id, sessionId))
+  }
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   return c.json(updated)
