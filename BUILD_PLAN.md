@@ -116,7 +116,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 - **Step 2** `DONE` Anthropic client: direct `fetch` wrapper with caching, tool use, retry, offline fallback.
   - Files: `src/lib/anthropic.ts` (new), `src/server/app.ts` (Bindings), `wrangler.jsonc` (secret note)
   - Acceptance: Haiku and Sonnet both callable. Cache hits logged. Offline returns typed fallback.
-- **Step 3** `TODO` Onboarding screen. Three questions from Voice Canon (why, physical, recent training). Writes to `userProfile`.
+- **Step 3** `DONE` Onboarding screen. Three questions from Voice Canon (why, physical, recent training). Writes to `userProfile`.
   - Files: `src/features/onboarding/*` (new), routing, server endpoint
   - Acceptance: First launch with no profile routes to onboarding. Completion writes row, routes to Block Zero intro.
 
@@ -169,6 +169,11 @@ Append one entry per session. Keep under 5 lines each.
 - Did: Added `user_profile`, `body_metrics`, `coaching_outputs` tables to `src/db/schema.ts` and wrote `drizzle/0010_ai_foundation.sql`.
 - Next: Step 2 (Anthropic client).
 - Notes: This project hand-writes migrations and applies them via wrangler, not via `drizzle-kit generate`. Meta journal is intentionally stale. Apply `0010_ai_foundation.sql` to local D1 with `wrangler d1 execute` to verify.
+
+### Session 3 (2026-04-17) · Step 3
+- Did: Created `src/features/onboarding/OnboardingPage.tsx` (three Voice Canon questions, step indicator, goals multi-select, physical textarea with Pass, training history single-select, Commit to write). Added `GET /api/user-profile` and `POST /api/user-profile` to `src/server/app.ts`. Added `/onboarding` route and profile check redirect to `src/app/AppRoutes.tsx`.
+- Next: Step 4 (system prompt builder).
+- Notes: Profile check runs once on app mount, skips if already on `/onboarding`. Offline fallback skips redirect. Completion navigates to `/program` with replace.
 
 ### Session 2 (2026-04-17) · Step 2
 - Did: Created `src/lib/anthropic.ts` (direct fetch wrapper, prompt caching headers, retry on 429/5xx/529, offline fallback, tool use, extended thinking for Sonnet). Added `ANTHROPIC_API_KEY` to `Bindings` in `src/server/app.ts`. Noted secret in `wrangler.jsonc`.
