@@ -186,7 +186,7 @@ function buildPrompt(
       if (l.sleepHours != null) parts.push(`sleep ${l.sleepHours}h`)
       if (l.soreness != null) parts.push(`soreness ${l.soreness}/5`)
       const row = parts.join(', ') || 'no data'
-      lines.push(`  ${row}${l.notes ? ` — ${l.notes}` : ''}`)
+      lines.push(`  ${row}${l.notes ? `. ${l.notes}` : ''}`)
     }
   } else {
     lines.push('  none logged')
@@ -210,7 +210,7 @@ function buildPrompt(
   lines.push(
     '',
     'Scan the notes above for mentions of pain, soreness beyond normal training, stiffness, tweaks, or movement limitations.',
-    'Only populate bodyIssuesDetected when an athlete explicitly surfaces a body signal — do not invent or infer.',
+    'Only populate bodyIssuesDetected when an athlete explicitly surfaces a body signal. Do not invent or infer.',
     'If nothing relevant surfaced, omit bodyIssuesDetected entirely.',
   )
 

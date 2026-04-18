@@ -425,7 +425,7 @@ export function ProgramPage() {
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed">
             {isFirstLaunch
-              ? 'After time away from training, jumping straight into heavy weights risks tendon injury — muscle memory returns faster than connective tissue adapts. Block Zero is a 6-week ramp-up that gets your body ready to train hard without breaking down.'
+              ? 'After time away from training, jumping straight into heavy weights risks tendon injury. Muscle memory returns faster than connective tissue adapts. Block Zero is a 6-week ramp-up that gets your body ready to train hard without breaking down.'
               : "It's been a while since your last session. Tendons and ligaments detrain faster than muscle. Block Zero resets your starting weights and volume so you can build back up safely."}
           </p>
           <ul className="space-y-1.5">
@@ -452,7 +452,7 @@ export function ProgramPage() {
               onClick={handleContinueExisting}
               className="w-full py-2 text-sm text-muted-foreground active:text-foreground"
             >
-              {isFirstLaunch ? 'Skip — go straight to Fighter block' : 'Continue current block'}
+              {isFirstLaunch ? 'Skip. Go straight to Fighter block' : 'Continue current block'}
             </button>
           </div>
         </div>

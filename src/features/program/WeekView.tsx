@@ -371,6 +371,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
   const [expandedDay, setExpandedDay] = useState<number | null>(null)
   const [actionTraySessionId, setActionTraySessionId] = useState<string | null>(null)
   const [replacingSession, setReplacingSession] = useState<SessionSummary | null>(null)
+  const [replaceReason, setReplaceReason] = useState<string | null>(null)
   const [skipReasonFor, setSkipReasonFor] = useState<{ id: string; replace: boolean } | null>(null)
 
   // Parse analysis from JSON
@@ -403,9 +404,36 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
   async function handleAddSession(option: SessionOption) {
     if (!pickerDate) return
     const date = pickerDate
+    const replaceTarget = replacingSession
+    const reason = replaceReason
     setPickerDate(null)
     setPickerSuggestions(null)
     setReplacingSession(null)
+    setReplaceReason(null)
+
+    if (replaceTarget && reason) {
+      try {
+        const result = await apiFetch<{ original: SessionSummary; replacement: SessionSummary }>(
+          `/api/sessions/${replaceTarget.id}/replace`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              reason,
+              type: option.type,
+              label: option.label,
+              timeSlot: option.timeSlot,
+              runCategory: option.runCategory,
+            }),
+          },
+        )
+        onSessionUpdate?.(result.original.id, result.original.status)
+        onSessionAdded?.(result.replacement)
+      } catch (e) {
+        console.error('Failed to replace session:', e)
+      }
+      return
+    }
+
     try {
       const created = await apiFetch<SessionSummary>('/api/sessions/insert-ad-hoc', {
         method: 'POST',
@@ -437,6 +465,14 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
     if (!skipReasonFor) return
     const { id, replace } = skipReasonFor
     setSkipReasonFor(null)
+
+    if (replace) {
+      setReplaceReason(reason)
+      const target = sessions.find(s => s.id === id)
+      openPicker(target?.scheduledDate ?? 0)
+      return
+    }
+
     try {
       await apiFetch(`/api/sessions/${id}`, {
         method: 'PATCH',
@@ -445,17 +481,12 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
       onSessionUpdate?.(id, 'skipped')
     } catch (e) {
       console.error('Failed to skip session:', e)
-      if (replace) setReplacingSession(null)
-      return
-    }
-    if (replace) {
-      const target = sessions.find(s => s.id === id)
-      openPicker(target?.scheduledDate ?? 0)
     }
   }
 
   function cancelSkip() {
     setReplacingSession(null)
+    setReplaceReason(null)
     setSkipReasonFor(null)
   }
 
@@ -695,6 +726,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
             setPickerDate(null)
             setPickerSuggestions(null)
             setReplacingSession(null)
+            setReplaceReason(null)
           }}
           suggestions={pickerSuggestions}
           filter={replacingSession

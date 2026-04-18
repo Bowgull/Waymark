@@ -160,7 +160,7 @@ export function BagWorkRoundView({
       )}
       {roundIntent && (
         <p className="text-[11px] text-muted-foreground/50 mt-0.5">
-          {roundIntent.label} — {roundIntent.hint}
+          {roundIntent.label}. {roundIntent.hint}
         </p>
       )}
 

@@ -165,7 +165,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 ### Deploy
 
-- **Step 15** `TODO` End-to-end QA on device. Preview build. Production deploy. Secret rotation check.
+- **Step 15** `DONE` End-to-end QA on device. Preview build. Production deploy. Secret rotation check.
 
 ---
 
@@ -241,3 +241,8 @@ Append one entry per session. Keep under 5 lines each.
 - Did: Added block narrative card to `ProgramPage.tsx` (shows block name + narrative from block transition coaching output). Added first-use Drive explainer in `SessionComplete.tsx` with localStorage dismissal. Created `src/features/today/InjuryCheckCard.tsx` (flag something / all clear). Created `src/lib/sessionIntent.ts` and wired intent preview into `TimelineRow.tsx` / `WeekView.tsx`. Created `src/features/session/SkipReasonSheet.tsx` (6 canned reasons + free text) and wired into `TodayPage.tsx` skip flow with reschedule prompt.
 - Next: Step 15 (QA and deploy).
 - Notes: Five surfaces render cleanly in preview (TodayPage: injury card, wellness, journal, timeline; ProgramPage: FIGHTER BLOCK narrative). API extended with injury-flag and session-intent endpoints in `app.ts`.
+
+### Session 15 (2026-04-18) · Step 15
+- Did: QA sweep fixed 4 user-facing em-dashes (`ProgramPage.tsx`, `BagWorkRoundView.tsx`, `strengthTemplates.ts`) and 2 prompt em-dashes in `weeklyPlanAI.ts`. Fixed replace-then-cancel bug in `WeekView.tsx`: skip is no longer PATCHed optimistically; replace flow now defers all mutation to atomic `POST /api/sessions/:id/replace` fired only on picker-select, so cancel paths touch nothing. `tsc -b && vite build` clean (886.69 kB / 260.11 kB gzip). Set `ANTHROPIC_API_KEY` via `wrangler secret put` (old key rotated). Deployed to `https://waymark.bocas-joshua.workers.dev` (version `d81f4431-faaa-4e26-845d-fe333af9894d`). `/api/health` returns 200, no errors in tail.
+- Next: Build plan complete. Future work out of plan.
+- Notes: Repo grep clean (no `sk-ant-` tokens, no inline `ANTHROPIC_API_KEY=`). `wrangler.jsonc` references secret in comment only.
