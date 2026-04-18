@@ -2,7 +2,7 @@
 // Falls back to null on AI offline so the route can use the template fallback.
 
 import { and, eq, gte, lte } from 'drizzle-orm'
-import { coachingOutputs, dailyLogs, exercises, sessions, trainingMaxes, userProfile } from '../db/schema'
+import { coachingOutputs, dailyLogs, exercises, mtClassLogs, sessions, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { TOOL_WEEK_PLAN, type WeekPlanOutput } from './prompts/tools'
@@ -30,11 +30,20 @@ function blockZeroPhaseNote(blockWeek: number): string {
   return 'Phase 3 (weeks 5-6): full schedule. Weights at 55-60%. Transition readiness building.'
 }
 
+interface MtLogRecord {
+  classType: string | null
+  focusSkill: string | null
+  weakness: string | null
+  concept: string | null
+  actionItems: string | null
+}
+
 function buildPrompt(
   params: WeekPlanParams,
   prevSessions: Array<{ type: string; status: string; rpe: number | null; difficulty: number | null; notes: string | null }>,
   prevLogs: Array<{ sleepHours: number | null; soreness: number | null }>,
   compressedNote: string,
+  prevMtLogs: MtLogRecord[],
 ): string {
   const lines: string[] = [
     `Generate week plan for week ${params.weekNumber} (block week ${params.blockWeek}).`,
@@ -80,6 +89,20 @@ function buildPrompt(
     lines.push('  none logged')
   }
 
+  if (prevMtLogs.length > 0) {
+    lines.push('', 'MT class logs (recent sessions):')
+    for (const log of prevMtLogs) {
+      const parts: string[] = []
+      if (log.classType) parts.push(log.classType)
+      if (log.focusSkill) parts.push(`focus: ${log.focusSkill}`)
+      if (log.weakness) parts.push(`weakness: ${log.weakness}`)
+      lines.push(`  ${parts.join(' | ')}`)
+      if (log.concept) lines.push(`    concept: ${log.concept}`)
+      if (log.actionItems) lines.push(`    action items: ${log.actionItems}`)
+    }
+    lines.push('Use these to tailor MT session focus notes for next week.')
+  }
+
   lines.push('', 'Call weekPlan.')
   return lines.join('\n')
 }
@@ -114,7 +137,7 @@ export async function generateWeekPlan(
       summaries.map(s => `  Week ${s.weekNumber}: ${s.narrative} ${s.adherence}. ${s.wellnessTrend}`).join('\n')
     : ''
 
-  const [prevSessions, prevLogs] = await Promise.all([
+  const [prevSessions, prevLogs, prevMtLogs] = await Promise.all([
     db
       .select({ type: sessions.type, status: sessions.status, rpe: sessions.rpe, difficulty: sessions.difficulty, notes: sessions.notes })
       .from(sessions)
@@ -123,10 +146,21 @@ export async function generateWeekPlan(
       .select({ sleepHours: dailyLogs.sleepHours, soreness: dailyLogs.soreness })
       .from(dailyLogs)
       .where(and(gte(dailyLogs.logDate, params.prevWeekStart), lte(dailyLogs.logDate, params.prevWeekEnd))),
+    db
+      .select({
+        classType: mtClassLogs.classType,
+        focusSkill: mtClassLogs.focusSkill,
+        weakness: mtClassLogs.weakness,
+        concept: mtClassLogs.concept,
+        actionItems: mtClassLogs.actionItems,
+      })
+      .from(mtClassLogs)
+      .innerJoin(sessions, eq(mtClassLogs.sessionId, sessions.id))
+      .where(and(gte(sessions.scheduledDate, params.prevWeekStart), lte(sessions.scheduledDate, params.prevWeekEnd))),
   ])
 
   const systemBlocks = buildSystemPrompt(profile, null)
-  const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote)
+  const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs)
 
   const result = await anthropicCall(apiKey, {
     model: 'claude-haiku-4-5-20251001',
