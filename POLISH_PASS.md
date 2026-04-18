@@ -182,55 +182,40 @@ Do not bundle commits. Each session should end with a pushed commit to main and 
 - Build `tsc -b && vite build`: pass. Lint of touched files: 0 errors, 1 pre-existing warning on the onboarding `useEffect` in `AppRoutes.tsx` (unchanged from Commit 4).
 - **Device verification: REQUIRED and not yet performed.** Full verification flow: cold-launch, grant the OS prompt (now including Critical Alerts), set phone to silent, set AM alarm to 1 minute out, lock screen, wait. Morning piano + all snoozes should fire through silent mode. Also covers Commits 1-4 which are still pending a single device cold-launch.
 
+### Commit 6: Arc drum + redeploy chip (2026-04-18)
+
+- Commit: `8f21176 polish: arc drum and redeploy chip`.
+- `src/lib/onePace.ts` (new): exports `ONE_PACE_ARCS` as a readonly tuple of the 32 released One Pace arcs in chronological order (Romance Dawn through Egghead). Verified against One Pace's current releases on 2026-04-18 — Egghead is their latest released arc (index 36 in their numbering, skipping filler arcs that One Pace omits entirely). Wano is included despite One Pace's in-progress Onigashima project because the Wano arc itself reads as one unit for user-facing labeling.
+- `src/components/ui/ScrollDrum.tsx`: added a sibling `ScrollDrumList` component with the same item-height/snap/fade-edge chrome as the numeric `ScrollDrum`, but driven by a `readonly string[]` prop (`items`, `value: string`, `onChange: (value: string) => void`). Same Cinzel treatment on selected row (`text-gold font-semibold`), same dim/muted treatment for neighbours (opacity 0.4 at distance 1, 0.2 further out). Truncates long names with `.truncate` so entries like "Long Ring Long Land" don't overflow the constrained column. Some duplication with the numeric drum is deliberate — TS discriminated unions across value shapes were messier than two small components.
+- `src/features/settings/SettingsPage.tsx`:
+  - Arc: replaced the `<input type="text">` with a sheet-pattern trigger matching the time drums. Trigger button shows the current arc in Cinzel (`var(--font-display)`); tapping opens an inline panel with the `ScrollDrumList` and a Done button, consistent with AM/PM time drums. `activeDrum` state union extended to include `'arc'`. If the stored arc is missing or not in the canonical list, the drum defaults to `ONE_PACE_ARCS[0]` (Romance Dawn) on open. Persist path untouched — existing `PATCH /api/settings` with `{ onePaceArc }` still applies.
+  - Row layout: `flex gap-4` with two `flex-1` children → `flex items-end gap-3` with arc as `min-w-0 flex-1` and ep as `w-28 shrink-0`. Arc column measures ~219px on a 343px settings column (~64%, close enough to the 70% target without crushing `- 999 +`). Ep stepper buttons trimmed from `w-10` to `w-8` so `- NNN +` fits in w-28 with breathing room; input uses `min-w-0 flex-1` + center text + `inputMode="numeric"`.
+  - Redeploy pill: `px-4 py-3 text-center` block with `text-display-lg` Cinzel + caption line → `flex w-fit items-baseline gap-1.5 rounded-md border border-gold/10 bg-near-black/40 px-3 py-1.5`. Numeral is `text-base` Cinzel with inline `d` suffix (`7d`), followed by a muted `until redeploy` label. Color tiering intact (`text-foreground` / `text-gold` / `text-destructive`). Day-of escalation deliberately NOT added — the silent notification is what actually signals the deadline.
+- Preview verified (vite-frontend): pill reads `7D UNTIL REDEPLOY` as a compact chip at the top of Settings, Cinzel "7d" at 16px. Arc row shows `WATER 7` in Cinzel 18px taking the wide column; Episode stepper `- 3 +` fits cleanly in the narrow column. Opening the drum renders all 32 arcs; selected highlight follows the stored value ("Water 7" highlighted gold on mount). Scrolling to "Zou" and clicking Done updates the trigger button to Cinzel "Zou"; Save Settings PATCHes the API and GET `/api/settings` confirms `onePaceArc: "Zou"` persisted. Restored to Water 7 post-verification.
+- Build `tsc -b && vite build`: pass. Lint of touched files: 0 errors, 1 pre-existing warning on `ScrollDrum.tsx`'s numeric `values` array (unchanged from earlier commits).
+- **Device verification: not performed by Claude** (web preview covers this commit per done-criteria). Still folds into the single pending device cold-launch covering Commits 1-6.
+
 ---
 
-## Next commit
+## Polish pass complete
 
-**Commit 6: Settings consistency pass — arc drum + redeploy pill trim**
+All six polish-pass commits are merged to main. No further polish-pass commits are planned as of 2026-04-18. Any remaining rough edges should be opened as fresh feedback rather than appended here.
 
-Two tightly scoped fixes to `src/features/settings/SettingsPage.tsx`. Bundled because both are small, both are Settings-only, and together they close the polish pass.
+Outstanding across all six commits: a single device cold-launch to verify Commits 1-6 together. Commit 5 (Critical Alerts + sounds + entitlement) is the only one that strictly cannot be validated in the web preview and is the reason the cold-launch still matters.
 
-### Part A: Arc drum
+---
 
-Current UX: "Current Arc" is a plain text `<input>`. After Commit 2 converted the time picker to side-by-side drums, typing an arc name into a text box is now the inconsistent chrome on the page. Replace with a drum picker sourced from the One Pace canonical arc list.
+## Device verification prompt
 
-**Scope (Part A):**
-- Add an arc constant somewhere reusable (likely `src/lib/onePace.ts` alongside anything else that consumes arc names, or colocated in `SettingsPage.tsx` if nothing else references it yet). List of arcs in order: Romance Dawn, Orange Town, Syrup Village, Baratie, Arlong Park, Loguetown, Reverse Mountain, Whisky Peak, Little Garden, Drum Island, Arabasta, Jaya, Skypiea, Long Ring Long Land, Water 7, Enies Lobby, Post Enies Lobby, Thriller Bark, Sabaody, Amazon Lily, Impel Down, Marineford, Post War, Return to Sabaody, Fish-Man Island, Punk Hazard, Dressrosa, Zou, Whole Cake Island, Reverie, Wano. Verify against One Pace's current releases before shipping — omit any that aren't released yet (cut list probably ends around Wano, but check).
-- Replace the arc `<input>` with a `<ScrollDrum>` that picks by name. Formatting: same Cinzel font/colour treatment as the hour/minute drums (font-display, text-foreground with selected-emphasis, same row height). Reuse `ScrollDrum.tsx` if it already accepts string arrays; extend if it only does numbers.
-- Trigger surface: keep the existing "Current Arc" label + the small "-" / "+" episode stepper next to the Ep input (added in Commit 3). The arc drum can be inline or behind a `ScrollDrumSheet` tap — match whichever pattern the time picker ended with (should be sheet after Commit 2).
-- **Rebalance the row.** Current layout in `SettingsPage.tsx` at `One Pace Progress` is `flex gap-4` with arc and ep each at `flex-1` (50/50). Arc names like `Post Enies Lobby` or `Long Ring Long Land` are long strings; episode is a 1-3 digit number. Give arc ~70% of the row (or a sensible explicit width) and compact the episode stepper to roughly `w-24` / `w-28` — enough for `- 999 +` to breathe without eating half the row. The `-` / `+` buttons stay `min-h-[44px] w-10`; the middle input shrinks into the remaining narrow band. Keep them in the same row unless the ep stepper gets so tight that wrapping under the arc reads better.
-- Persist exactly like before: PATCH `/api/settings` with `{ onePaceArc: '<name>' }` through the existing Save handler.
+Paste this when ready to verify on the phone:
 
-### Part B: Redeploy pill trim
-
-Current UX (Commit 4): the redeploy countdown uses `text-display-lg` Cinzel with a caption — same hero treatment as the indoor One Pace readout. That's too much real estate for a background timer. Shrink it to a small brand-cohesive chip.
-
-**Scope (Part B):**
-- Keep the chip treatment (`rounded-md border border-gold/10 bg-near-black/40` wrapper stays — it's the pill).
-- Change the numeral: `text-display-lg` → roughly `text-base` or `text-lg` (pick what reads clean at chip scale), **Cinzel retained** (`font-[family-name:var(--font-display)]`).
-- Drop the separate caption line. Inline format: `6d` next to the number, or just the number with `d` as suffix — keep it terse.
-- Keep the color tiering: `daysLeft >= 3 → text-foreground`, `=== 2 → text-gold`, `<= 1 → text-destructive`.
-- **No escalation on the last day.** The day-of silent notification is what actually tells you — the pill can stay small.
-- Vertical padding comes down proportionally (current `py-3` → `py-2` or similar). The chip should read as a status badge, not a headline.
-- Placement stays at the top of Settings (above MT Class Days) — no relocation.
-
-**Files to touch (both parts):**
-- `src/components/ui/ScrollDrum.tsx` (Part A only if currently number-only — may need a string variant or generic `T`).
-- `src/features/settings/SettingsPage.tsx` (both parts).
-- Possibly a new `src/lib/onePace.ts` for the arc constant if it doesn't live anywhere yet.
-
-**Out of scope:**
-- Any server-side validation of arc names — freeform string field on `/api/settings` stays as-is.
-- Episode drum — leave as the +/- stepper from Commit 3 unless the arc drum happens to make a per-arc episode count obvious (One Pace ep counts vary per arc; don't chase this in Commit 6).
-- Notification logic for the redeploy countdown — untouched; only the visual pill changes.
-- Any other remaining polish issues — none known as of 2026-04-18.
-
-**Done criteria:**
-- [ ] Arc picker uses same drum component + Cinzel formatting as hour/minute drums.
-- [ ] Only released One Pace arcs appear.
-- [ ] Save persists through existing `/api/settings` PATCH flow.
-- [ ] Redeploy pill reduced to chip scale, Cinzel retained, color tiering intact, caption dropped.
-- [ ] Build + lint: no new errors.
-- [ ] Commit on main, voice-canon message.
-- [ ] Device verification expected but not required — web preview is sufficient for this one.
-- [ ] `POLISH_PASS.md` updated: Commit 6 moved to Completed, "polish pass complete" closing note added (no further commits expected).
+> Cold-launch Waymark on the phone after a fresh build/install. Work through the full polish pass in one sitting:
+>
+> 1. **Splash (Commit 1)** — app should open with no white flash. Static shield on `#0a0a0a` should blend into the React `LoadingScreen` shield holding position, then tracing in.
+> 2. **Time picker + nav gear + background (Commit 2)** — bottom nav is 4 tabs (Today, Program, Library, Ledger). Today page has a small gear icon at bottom-right linking to `/settings`. In Settings, AM alarm and PM session time each open a sheet with side-by-side hour and minute drums, minute step is 1 (e.g. `6:37` picks correctly). Background shows a soft gold top-glow; nav bar reads as chrome (~5% lighter than body) with a hairline gold border on top.
+> 3. **Fighter Block + One Pace (Commit 3)** — Program page shows no Fighter Block narrative (Block Zero still shows its narrative if applicable). Start an indoor session: the ready screen shows a big Cinzel `{arc} - Ep {N}` readout above Open One Pace. Save Run: ep bumps by +1, toast reads `Ep N → Ep N+1`, and the new ep persists on a subsequent run.
+> 4. **Redeploy pill (Commit 4 + 6)** — Settings shows a small Cinzel chip `{N}d until redeploy` at the top. No hero-sized numeral, no caption line. Color defaults to foreground; should be gold at 2 days, destructive at ≤1 day. On a fresh install, check notification list (or just wait): silent reminders scheduled for build + 6d and build + 7d.
+> 5. **Critical Alerts (Commit 5)** — grant the one-time OS prompt including Critical Alerts. Set phone to silent, set AM alarm to 1 minute out, lock the screen, wait. Morning Musical Vintage Lo-Fi Piano should fire through silent mode (base + storm + snoozes). Confirm nuclear alarm audio also fires through silent mode if you want to test it (it's loud).
+> 6. **Arc drum (Commit 6)** — in Settings, the Current Arc control is a Cinzel drum (not a text input). Only released One Pace arcs appear. Row layout: arc takes the wide column, `- N +` ep stepper fits in the narrow column. Save persists.
+>
+> Flag anything that reads wrong on the device so it can be followed up as a fresh feedback item.
