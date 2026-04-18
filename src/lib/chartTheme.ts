@@ -1,7 +1,10 @@
 export const CHART_COLORS = {
   gold: '#E8C860',
   goldDark: '#C8A030',
-  teal: '#3BB5CC',
+  teal: '#4ACAAA',
+  tealDark: '#1E8A68',
+  clay: '#C45A3C',
+  forestLight: '#4ABA8A',
   muted: '#4A7A6A',
   grid: '#1A3A2E',
   bg: '#081A14',

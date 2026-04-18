@@ -28,17 +28,17 @@ export function VolumeChart({ data }: VolumeChartProps) {
           <AreaChart data={chartData}>
             <defs>
               <linearGradient id="volumeGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={CHART_COLORS.gold} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={CHART_COLORS.gold} stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.tealDark} stopOpacity={0.45} />
+                <stop offset="95%" stopColor={CHART_COLORS.tealDark} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <XAxis dataKey="date" {...AXIS_STYLE} />
+            <XAxis dataKey="date" {...AXIS_STYLE} minTickGap={32} interval="preserveStartEnd" />
             <YAxis {...AXIS_STYLE} unit=" lb" />
             <Tooltip {...TOOLTIP_STYLE} />
             <Area
               type="monotone"
               dataKey="volume"
-              stroke={CHART_COLORS.gold}
+              stroke={CHART_COLORS.tealDark}
               fill="url(#volumeGradient)"
               strokeWidth={2}
               name="Total Volume (lb)"

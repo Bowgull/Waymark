@@ -116,15 +116,15 @@ export function WeightProgressionChart({ exercises, days }: WeightProgressionCha
         <div className="rounded-md border border-border bg-deep-forest p-3">
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={chartData}>
-              <XAxis dataKey="date" {...AXIS_STYLE} />
+              <XAxis dataKey="date" {...AXIS_STYLE} minTickGap={32} interval="preserveStartEnd" />
               <YAxis {...AXIS_STYLE} unit=" lb" />
               <Tooltip {...TOOLTIP_STYLE} />
               <Line
                 type="monotone"
                 dataKey="weight"
-                stroke={CHART_COLORS.gold}
+                stroke={CHART_COLORS.goldDark}
                 strokeWidth={2}
-                dot={{ fill: CHART_COLORS.gold, r: 3 }}
+                dot={{ fill: CHART_COLORS.goldDark, r: 3 }}
                 name="Max Weight (lb)"
               />
             </LineChart>
