@@ -30,6 +30,7 @@ interface Session {
   durationSec: number | null
   rpe: number | null
   scheduledDate?: number | null
+  notes: string | null
   runSession?: RunSessionSummary | null
 }
 
@@ -68,6 +69,7 @@ export function TodayPage() {
     | null
   >(null)
   const [reassignFor, setReassignFor] = useState<{ activityId: number; sessionId: string } | null>(null)
+  const [maxHr, setMaxHr] = useState<number | null>(null)
 
   const today = getTodayISO()
   const todayDate = new Date(`${today}T12:00:00`)
@@ -84,12 +86,14 @@ export function TodayPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [sessionsData, logData] = await Promise.all([
+        const [sessionsData, logData, profile] = await Promise.all([
           apiFetch<Session[]>(`/api/sessions/today?date=${today}`),
           apiFetch<DailyLog | null>(`/api/daily-logs/today?date=${today}`),
+          apiFetch<{ maxHr: number | null } | null>('/api/user-profile').catch(() => null),
         ])
         setSessions(sessionsData)
         setDailyLog(logData)
+        setMaxHr(profile?.maxHr ?? null)
       } catch (e) {
         console.error('Failed to load today data:', e)
         setDailyLog(null)
@@ -121,6 +125,7 @@ export function TodayPage() {
       try {
         const profile = await apiFetch<{ maxHr: number | null } | null>('/api/user-profile')
         if (!profile || profile.maxHr == null) return
+        setMaxHr(profile.maxHr)
         const lastSeen = Number(localStorage.getItem(MAX_HR_LS_KEY) ?? '0')
         if (profile.maxHr > lastSeen) {
           localStorage.setItem(MAX_HR_LS_KEY, String(profile.maxHr))
@@ -419,6 +424,7 @@ export function TodayPage() {
         <>
           <DayTimeline
             sessions={sessions}
+            maxHr={maxHr}
             onStart={handleStart}
             onSkip={handleSkip}
             onReplace={handleReplaceStart}

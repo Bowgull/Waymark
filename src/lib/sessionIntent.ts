@@ -20,3 +20,34 @@ export function getSessionIntent(sessionType: string): string {
       return 'Show up and put in the work.'
   }
 }
+
+type ZoneBand = { label: string; low: number; high: number }
+
+// Zone % ranges off max HR. Standard 5-zone model.
+const ZONE_2: ZoneBand = { label: 'Zone 2', low: 0.6, high: 0.7 }
+const ZONE_2_TO_4: ZoneBand = { label: 'Zone 2 to 4', low: 0.6, high: 0.9 }
+
+function pickZone(sessionType: string, runCategory: string | null): ZoneBand | null {
+  if (sessionType === 'foundation_run') return ZONE_2
+  if (sessionType === 'running') {
+    if (runCategory === 'zone2') return ZONE_2
+    if (runCategory === 'progression') return ZONE_2_TO_4
+  }
+  return null
+}
+
+// Target HR line for a running session. Returns null when session has no
+// defined zone, or when user's max_hr hasn't been observed / set yet.
+// Copy matches voice canon: "Zone 2. 114 to 133 bpm."
+export function getSessionTargetHr(
+  sessionType: string,
+  runCategory: string | null,
+  maxHr: number | null,
+): string | null {
+  if (maxHr == null || maxHr <= 0) return null
+  const zone = pickZone(sessionType, runCategory)
+  if (!zone) return null
+  const low = Math.round(maxHr * zone.low)
+  const high = Math.round(maxHr * zone.high)
+  return `${zone.label}. ${low} to ${high} bpm.`
+}
