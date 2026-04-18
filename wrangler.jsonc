@@ -9,4 +9,6 @@
 			"database_id": "93509b7f-2a0b-420c-8e80-f2b1aebd771d"
 		}
 	]
+	// Secret bindings (set via `wrangler secret put`):
+	//   ANTHROPIC_API_KEY  - Anthropic API key for AI calls
 }
