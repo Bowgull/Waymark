@@ -1955,7 +1955,7 @@ app.patch('/api/settings', async (c) => {
   const [row] = await db.select().from(settings).where(eq(settings.id, 'default'))
 
   // Cascade: if MT class days changed, clean up future planned sessions
-  let cascade: { removed: number } | null = null
+  let cascade: { removed: number; freedDays?: string[] } | null = null
   if (body.mtClassDays !== undefined && body.mtClassDays !== oldMtDays) {
     const newMtDays = new Set(body.mtClassDays.split(',').filter(Boolean).map(Number))
     const removedDays = oldMtDays.split(',').filter(Boolean).map(Number).filter(d => !newMtDays.has(d))
