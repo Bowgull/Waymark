@@ -7,6 +7,7 @@ import { LibraryPage } from '../features/library/LibraryPage'
 import { OnboardingPage } from '../features/onboarding/OnboardingPage'
 import { ProgramPage } from '../features/program/ProgramPage'
 import { WorkoutPage } from '../features/session/WorkoutPage'
+import { BodyMetricsPage } from '../features/metrics/BodyMetricsPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { TodayPage } from '../features/today/TodayPage'
 import { initNotificationListeners, handleForegroundAlarmCheck } from '../lib/notifications'
@@ -62,6 +63,7 @@ export function AppRoutes() {
         <Route path="/library" element={<ErrorBoundary level="page"><LibraryPage /></ErrorBoundary>} />
         <Route path="/history" element={<ErrorBoundary level="page"><HistoryPage /></ErrorBoundary>} />
         <Route path="/settings" element={<ErrorBoundary level="page"><SettingsPage /></ErrorBoundary>} />
+        <Route path="/metrics" element={<ErrorBoundary level="page"><BodyMetricsPage /></ErrorBoundary>} />
         <Route path="*" element={<Navigate to="/today" replace />} />
       </Route>
     </Routes>
