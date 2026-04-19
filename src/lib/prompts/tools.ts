@@ -10,7 +10,7 @@ export type SessionType =
   | 'running'
   | 'skip_rope'
   | 'active_recovery'
-  | 'posture_corrective'
+  | 'mobility'
 
 export type TimeSlot = 'am' | 'pm'
 export type RunCategory = 'zone2' | 'progression'
@@ -114,7 +114,7 @@ const SESSION_TYPE_ENUM = [
   'running',
   'skip_rope',
   'active_recovery',
-  'posture_corrective',
+  'mobility',
 ]
 
 export const TOOL_WEEK_PLAN: Tool = {

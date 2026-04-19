@@ -67,7 +67,7 @@ const ALL_OPTIONS: Omit<SessionSuggestion, 'reason' | 'priority'>[] = TRAINING_T
     runCategory: t.runCategory,
   }))
 
-const RECOVERY_TYPES = new Set(['active_recovery', 'posture_corrective', 'foundation_run'])
+const RECOVERY_TYPES = new Set(['active_recovery', 'mobility', 'foundation_run'])
 const INTENSE_TYPES = new Set(['bag_work', 'skip_rope'])
 
 export function computeSuggestions(input: SuggestionInput): SuggestionsResponse {

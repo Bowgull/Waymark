@@ -376,6 +376,22 @@ export const stravaTokens = sqliteTable('strava_tokens', {
   updatedAt: integer('updated_at').notNull(),
 })
 
+export const appLogs = sqliteTable('app_logs', {
+  id: text('id').primaryKey(),
+  ts: integer('ts').notNull(),
+  level: text('level').notNull(), // 'debug' | 'info' | 'warn' | 'error'
+  category: text('category').notNull(), // 'api' | 'session' | 'nav' | 'error' | 'system'
+  message: text('message').notNull(),
+  contextJson: text('context_json'),
+  screen: text('screen'),
+  sessionId: text('session_id'),
+  createdAt: integer('created_at').notNull(),
+}, (t) => [
+  index('idx_app_logs_ts').on(t.ts),
+  index('idx_app_logs_level_ts').on(t.level, t.ts),
+  index('idx_app_logs_session').on(t.sessionId, t.ts),
+])
+
 export const coachingOutputs = sqliteTable('coaching_outputs', {
   id: text('id').primaryKey(),
   kind: text('kind').notNull(),

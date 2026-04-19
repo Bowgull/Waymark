@@ -71,11 +71,11 @@ export const TRAINING_TARGETS: SessionTarget[] = [
     carryForwardWeight: 0.1, // recovery doesn't "stack", just do it when you can
   },
   {
-    type: 'posture_corrective',
-    label: 'Foundation',
-    weeklyTarget: 0, // built into foundation runs, ad-hoc only
+    type: 'mobility',
+    label: 'Mobility',
+    weeklyTarget: 7, // daily AM habit
     priority: 'low',
-    flexibleTimeSlot: true,
+    flexibleTimeSlot: false,
     defaultTimeSlot: 'am',
     carryForwardWeight: 0.1,
   },

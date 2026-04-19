@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from './apiBase'
+import { logger } from './logger'
 
 export class ApiError extends Error {
   status: number
@@ -30,6 +31,7 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${getApiBaseUrl()}${path}`
+  const method = (options?.method ?? 'GET').toUpperCase()
   const init: RequestInit = {
     ...options,
     headers: {
@@ -38,6 +40,10 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     },
   }
 
+  // Don't self-log the logger endpoint or we'd loop.
+  const shouldLog = !path.startsWith('/api/logs')
+  const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+
   let lastError: unknown
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -45,7 +51,30 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
       const res = await fetchWithTimeout(url, init, TIMEOUT_MS)
 
       if (res.ok) {
-        return res.json() as Promise<T>
+        let parsed: T
+        try {
+          parsed = (await res.json()) as T
+        } catch (parseErr) {
+          const text = await res.clone().text().catch(() => '')
+          const msg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+          if (shouldLog) {
+            const dur = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+            logger.apiCall({
+              url: path,
+              method,
+              status: res.status,
+              durationMs: Math.round(dur),
+              ok: false,
+              error: `JSON parse: ${msg}. body[0..200]: ${text.slice(0, 200)}`,
+            })
+          }
+          throw new ApiError(res.status, `Invalid JSON response: ${msg}`, 'server')
+        }
+        if (shouldLog) {
+          const dur = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+          logger.apiCall({ url: path, method, status: res.status, durationMs: Math.round(dur), ok: true })
+        }
+        return parsed
       }
 
       const body = await res.text().catch(() => '')
@@ -57,7 +86,12 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
         continue
       }
 
-      throw new ApiError(res.status, body, type)
+      const err = new ApiError(res.status, body, type)
+      if (shouldLog) {
+        const dur = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+        logger.apiCall({ url: path, method, status: res.status, durationMs: Math.round(dur), ok: false, error: body.slice(0, 500) })
+      }
+      throw err
     } catch (err) {
       if (err instanceof ApiError) throw err
 
@@ -67,6 +101,11 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
         continue
       }
 
+      if (shouldLog) {
+        const dur = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+        const message = err instanceof Error ? err.message : String(err)
+        logger.apiCall({ url: path, method, status: 0, durationMs: Math.round(dur), ok: false, error: message })
+      }
       throw new ApiError(0, '', 'network')
     }
   }

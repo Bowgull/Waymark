@@ -185,8 +185,14 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && hasAnyData && !submitting) {
+              e.preventDefault()
+              handleSubmit()
+            }
+          }}
           rows={2}
-          placeholder="How does the body feel..."
+          placeholder="How does the body feel... (Cmd+Enter to log)"
           className="mt-4 mb-3 w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 focus:border-gold/40 focus:outline-none animate-fade-in"
           autoFocus
         />

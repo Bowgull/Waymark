@@ -9,7 +9,8 @@ import {
   cancelRestCues,
 } from '@/lib/notifications'
 
-import { RestTimer } from './RestTimer'
+import { SessionShell } from './SessionShell'
+import { resolveSkipRopeMoment } from './skipRopeMicrocopy'
 import { useRestTimer } from './useRestTimer'
 
 interface SkipSession {
@@ -23,9 +24,10 @@ type SkipPhase = 'ready' | 'skipping' | 'rest'
 interface SkipRopeViewProps {
   skipSession: SkipSession
   onComplete: () => void
+  onExit?: () => void
 }
 
-export function SkipRopeView({ skipSession, onComplete }: SkipRopeViewProps) {
+export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewProps) {
   const [currentRound, setCurrentRound] = useState(1)
   const [skipPhase, setSkipPhase] = useState<SkipPhase>('ready')
   const roundTimer = useRestTimer()
@@ -33,6 +35,7 @@ export function SkipRopeView({ skipSession, onComplete }: SkipRopeViewProps) {
 
   const totalRounds = skipSession.roundCount
   const isLastRound = currentRound >= totalRounds
+  const accent = '#1E8A68'
 
   function startRound() {
     roundTimer.start(skipSession.roundDurSec)
@@ -63,59 +66,120 @@ export function SkipRopeView({ skipSession, onComplete }: SkipRopeViewProps) {
     endRound()
   }
 
-  if (skipPhase === 'rest') {
-    return (
-      <div className="animate-fade-in">
-        <p className="text-label text-center text-muted-foreground">
-          Round {currentRound} of {totalRounds} · Rest
-        </p>
-        <RestTimer
-          totalSeconds={60}
-          secondsRemaining={restTimer.secondsRemaining}
-          isOvertime={restTimer.isOvertime}
-          onNext={nextRound}
-          accentColor="#1E8A68"
-        />
-      </div>
-    )
+  const moment = resolveSkipRopeMoment({
+    phase:
+      skipPhase === 'rest'
+        ? 'rest'
+        : skipPhase === 'skipping'
+          ? 'skipping'
+          : 'ready',
+    isLastRound,
+    secondsRemaining:
+      skipPhase === 'skipping'
+        ? roundTimer.secondsRemaining
+        : skipPhase === 'rest'
+          ? restTimer.secondsRemaining
+          : undefined,
+  })
+
+  const counter =
+    skipPhase === 'rest'
+      ? 'Rest'
+      : `Round ${currentRound} of ${totalRounds}`
+
+  const progress = {
+    completed: currentRound - 1,
+    active: currentRound - 1,
+    total: totalRounds,
   }
 
-  return (
-    <div className="animate-fade-in">
-      <p className="text-label mb-1 text-muted-foreground">
-        Round {currentRound} of {totalRounds}
-      </p>
-      <h2 className="text-display-lg text-foreground">Skip Rope</h2>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Steady rhythm. Stay light on the balls of your feet. Relax your shoulders.
-      </p>
+  const footer =
+    skipPhase === 'ready' ? (
+      <Button
+        onClick={startRound}
+        size="lg"
+        className="w-full"
+        style={{ backgroundColor: accent, color: '#020A08' }}
+      >
+        Start Round
+      </Button>
+    ) : skipPhase === 'skipping' ? (
+      <Button onClick={endRound} variant="secondary" size="lg" className="w-full">
+        End Round Early
+      </Button>
+    ) : (
+      <Button
+        onClick={nextRound}
+        size="lg"
+        className="w-full"
+        style={{ backgroundColor: accent, color: '#020A08' }}
+      >
+        Next Round
+      </Button>
+    )
 
-      {skipPhase === 'ready' ? (
-        <div className="mt-8 flex flex-col items-center">
+  const body =
+    skipPhase === 'rest' ? (
+      <div className="mx-auto flex max-w-md flex-col items-center pt-6 animate-fade-in">
+        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/50">
+          Between Rounds
+        </p>
+        <h2 className="mt-1 text-display-lg text-foreground">Recover</h2>
+        <div className="mt-8 rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
           <RingTimer
-            totalSeconds={skipSession.roundDurSec}
-            secondsRemaining={skipSession.roundDurSec}
-            label="Round"
-            accentColor="#1E8A68"
+            totalSeconds={60}
+            secondsRemaining={restTimer.secondsRemaining}
+            isOvertime={restTimer.isOvertime}
+            label={restTimer.isOvertime ? 'Over' : 'Rest'}
+            accentColor={accent}
           />
-          <Button onClick={startRound} size="lg" className="mt-6" style={{ backgroundColor: '#1E8A68' }}>
-            Start Round
-          </Button>
         </div>
-      ) : (
-        <div className="mt-6 flex flex-col items-center">
-          <RingTimer
-            totalSeconds={skipSession.roundDurSec}
-            secondsRemaining={roundTimer.secondsRemaining}
-            isOvertime={roundTimer.isOvertime}
-            label={roundTimer.secondsRemaining <= 10 ? 'Finish' : 'Skip'}
-            accentColor={roundTimer.secondsRemaining <= 10 ? '#C45A3C' : '#1E8A68'}
-          />
-          <Button onClick={endRound} variant="secondary" className="mt-6">
-            End Round Early
-          </Button>
+      </div>
+    ) : (
+      <div className="mx-auto max-w-md animate-fade-in">
+        <h2 className="text-display-lg leading-[1.1] text-foreground">Skip Rope</h2>
+        <p className="mt-3 text-sm leading-relaxed text-foreground/85">
+          Steady rhythm. Stay light on the balls of your feet. Relax your shoulders.
+        </p>
+
+        <div className="mt-8 flex justify-center">
+          <div className="rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
+            <RingTimer
+              totalSeconds={skipSession.roundDurSec}
+              secondsRemaining={
+                skipPhase === 'skipping'
+                  ? roundTimer.secondsRemaining
+                  : skipSession.roundDurSec
+              }
+              isOvertime={skipPhase === 'skipping' ? roundTimer.isOvertime : false}
+              label={
+                skipPhase === 'skipping'
+                  ? roundTimer.secondsRemaining <= 10
+                    ? 'Finish'
+                    : 'Skip'
+                  : 'Round'
+              }
+              accentColor={
+                skipPhase === 'skipping' && roundTimer.secondsRemaining <= 10
+                  ? '#C45A3C'
+                  : accent
+              }
+            />
+          </div>
         </div>
-      )}
-    </div>
+      </div>
+    )
+
+  return (
+    <SessionShell
+      sessionType="skip_rope"
+      counter={counter}
+      progress={progress}
+      moment={moment}
+      onExit={onExit}
+      footer={footer}
+    >
+      {body}
+    </SessionShell>
   )
 }

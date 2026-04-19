@@ -3,13 +3,13 @@
   "configurations": [
     {
       "name": "vite-frontend",
-      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeExecutable": "/opt/homebrew/bin/node",
       "runtimeArgs": ["node_modules/.bin/vite"],
       "port": 5173
     },
     {
       "name": "wrangler-api",
-      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeExecutable": "/opt/homebrew/bin/node",
       "runtimeArgs": ["node_modules/.bin/wrangler", "dev"],
       "port": 8787
     }

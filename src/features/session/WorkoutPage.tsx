@@ -7,25 +7,25 @@ import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd } from '@/lib/notifications'
 import { saveWorkoutProgress, getWorkoutRecovery, clearWorkoutRecovery } from '@/lib/workoutRecovery'
+import { logger } from '@/lib/logger'
 import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { Button } from '@/components/ui/button'
-import { GoldDivider } from '@/components/ui/GoldDivider'
 import { RingTimer } from '@/components/RingTimer'
+import { useToast } from '@/components/ui/Toast'
 
 import { ActiveRecoveryView } from './ActiveRecoveryView'
 import { BagWorkRoundView } from './BagWorkRoundView'
 import { ComboRatingScreen } from './ComboRatingScreen'
 import { ComboUnlockSuggestion } from './ComboUnlockSuggestion'
-import { ExerciseView } from './ExerciseView'
 import { MarkEarnedOverlay } from './MarkEarnedOverlay'
 import { MtClassLogView } from './MtClassLogView'
-import { PostureExerciseView } from './PostureExerciseView'
-import { RestTimer } from './RestTimer'
+import { MobilityExerciseView } from './MobilityExerciseView'
 import { RitualEntrance } from './RitualEntrance'
 import { RunSessionView } from './RunSessionView'
 import { SessionComplete } from './SessionComplete'
 import { SkipRopeView } from './SkipRopeView'
-import { SetTracker } from './SetTracker'
+import { StrengthExerciseView } from './StrengthExerciseView'
+import type { StrengthSection } from './strengthMicrocopy'
 import { useRestTimer } from './useRestTimer'
 
 // ─── Shared types ──────────────────────────────────────────────
@@ -79,9 +79,9 @@ interface StrengthWorkoutData {
   exercises: StrengthExerciseData[]
 }
 
-// ─── Posture types ─────────────────────────────────────────────
+// ─── Mobility types ────────────────────────────────────────────
 
-interface PostureExerciseData {
+interface MobilityExerciseData {
   id: string
   exerciseId: string
   orderIndex: number
@@ -93,9 +93,9 @@ interface PostureExerciseData {
   notes: string | null
 }
 
-interface PostureWorkoutData {
+interface MobilityWorkoutData {
   session: SessionData
-  exercises: PostureExerciseData[]
+  exercises: MobilityExerciseData[]
 }
 
 // ─── Bag work types ────────────────────────────────────────────
@@ -158,7 +158,7 @@ interface FoundationRunWorkoutData {
   session: SessionData
   runSession: RunSessionData | null
   prescription?: RunPrescription | null
-  postureExercises: PostureExerciseData[]
+  postureExercises: MobilityExerciseData[]
 }
 
 // ─── Skip rope types ───────────────────────────────────────────
@@ -203,18 +203,9 @@ interface MtClassWorkoutData {
   mtLog: MtLogData | null
 }
 
-// ─── Section labels ────────────────────────────────────────────
-
-const SECTION_LABELS: Record<string, string> = {
-  warmup: 'WARM UP',
-  main: 'MAIN LIFTS',
-  accessory: 'ACCESSORIES',
-  core: 'CORE CIRCUIT',
-}
-
 // ─── Phases ────────────────────────────────────────────────────
 
-type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-run' | 'fr-transition' | 'fr-posture'
+type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-run' | 'fr-transition' | 'fr-mobility'
 type RoundPhase = 'ready' | 'fighting' | 'rest'
 
 function FrTransition({ onComplete }: { onComplete: () => void }) {
@@ -289,7 +280,7 @@ export function WorkoutPage() {
 
   const [sessionType, setSessionType] = useState<string | null>(null)
   const [strengthData, setStrengthData] = useState<StrengthWorkoutData | null>(null)
-  const [postureData, setPostureData] = useState<PostureWorkoutData | null>(null)
+  const [mobilityData, setMobilityData] = useState<MobilityWorkoutData | null>(null)
   const [bagData, setBagData] = useState<BagWorkoutData | null>(null)
   const [runData, setRunData] = useState<RunWorkoutData | null>(null)
   const [skipData, setSkipData] = useState<SkipWorkoutData | null>(null)
@@ -305,8 +296,14 @@ export function WorkoutPage() {
   const [phase, setPhase] = useState<Phase>('entrance')
   const [submitting, setSubmitting] = useState(false)
   const [unlockSuggestions, setUnlockSuggestions] = useState<{ suggestions: UnlockSuggestion[]; message: string } | null>(null)
+  const { show: showToast, ToastContainer } = useToast()
 
   const restTimer = useRestTimer()
+
+  useEffect(() => {
+    if (id) logger.setSessionId(id)
+    return () => logger.setSessionId(undefined)
+  }, [id])
 
   useEffect(() => {
     if (!id) return
@@ -334,9 +331,9 @@ export function WorkoutPage() {
         if (session.type === 'foundation_run') {
           const data = await apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/foundation-run-workout`)
           setFoundationRunData(data)
-        } else if (session.type === 'posture_corrective') {
-          const data = await apiFetch<PostureWorkoutData>(`/api/sessions/${id}/posture-workout`)
-          setPostureData(data)
+        } else if (session.type === 'mobility') {
+          const data = await apiFetch<MobilityWorkoutData>(`/api/sessions/${id}/mobility-workout`)
+          setMobilityData(data)
         } else if (session.type === 'bag_work') {
           const data = await apiFetch<BagWorkoutData>(`/api/sessions/${id}/bag-workout`)
           setBagData(data)
@@ -370,12 +367,16 @@ export function WorkoutPage() {
           setExerciseHistories(histories)
         }
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
         console.error('Failed to load workout:', e)
+        logger.error('session', 'workout load failed', { sessionId: id, message })
+        showToast("Couldn't load workout. Check logs in Settings.", 'warning')
       } finally {
         setLoading(false)
       }
     }
     load()
+
   }, [id])
 
   // Auto-save workout progress for crash recovery
@@ -401,15 +402,20 @@ export function WorkoutPage() {
   async function handleFinish(rpe: number, difficulty: number, notes: string) {
     if (!id) return
     setSubmitting(true)
+    logger.sessionEvent('session finish attempt', { sessionId: id, rpe, difficulty, hasNotes: notes.length > 0 })
     try {
       await apiFetch(`/api/sessions/${id}/complete`, {
         method: 'POST',
         body: JSON.stringify({ rpe, difficulty, notes }),
       })
+      logger.sessionEvent('session finish ok', { sessionId: id })
       clearWorkoutRecovery()
       navigate('/today', { replace: true })
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to complete session:', e)
+      logger.error('session', 'session finish failed', { sessionId: id, message })
+      showToast("Couldn't save. Check connection and try again.", 'warning')
       setSubmitting(false)
     }
   }
@@ -523,9 +529,12 @@ export function WorkoutPage() {
 
     function handleFrPostureSetDone() {
       if (!frCurrentExercise) return
-      apiFetch(`/api/posture-exercises/${frCurrentExercise.id}`, {
+      apiFetch(`/api/mobility-exercises/${frCurrentExercise.id}`, {
         method: 'PATCH', body: JSON.stringify({ completed: 1 }),
-      }).catch(console.error)
+      }).catch((e) => {
+        const message = e instanceof Error ? e.message : String(e)
+        logger.warn('session', 'FR mobility complete flag persist failed', { exerciseId: frCurrentExercise.id, message })
+      })
 
       const isLastSet = (setIdx + 1) >= frTotalSets
       const isLastExercise = exerciseIdx >= frTotalExercises - 1
@@ -537,7 +546,7 @@ export function WorkoutPage() {
         setSetIdx(0)
         setTimeout(() => {
           setExerciseIdx(prev => prev + 1)
-          setPhase('fr-posture')
+          setPhase('fr-mobility')
         }, 3000)
       } else {
         setSetIdx(prev => prev + 1)
@@ -548,7 +557,7 @@ export function WorkoutPage() {
     let frProgress = 0
     if (phase === 'fr-run') frProgress = 10
     else if (phase === 'fr-transition') frProgress = 25
-    else if (phase === 'fr-posture') {
+    else if (phase === 'fr-mobility') {
       frProgress = 25 + ((exerciseIdx / frTotalExercises) * 65)
     } else if (phase === 'mark-earned' || phase === 'complete') frProgress = 100
 
@@ -556,7 +565,7 @@ export function WorkoutPage() {
       <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
         <SessionAtmosphere />
         <SessionHeader counter={
-          phase === 'fr-posture'
+          phase === 'fr-mobility'
             ? `${exerciseIdx + 1} / ${frTotalExercises}`
             : phase === 'fr-run' ? 'Run' : undefined
         } />
@@ -568,20 +577,22 @@ export function WorkoutPage() {
             <MarkEarnedOverlay sessionType="foundation_run" onComplete={() => setPhase('complete')} />
           )}
           {phase === 'complete' && (
-            <SessionComplete sessionType="foundation_run" onFinish={handleFinish} submitting={submitting} />
+            <><SessionComplete sessionType="foundation_run" onFinish={handleFinish} submitting={submitting} /><ToastContainer /></>
           )}
           {phase === 'fr-run' && foundationRunData.runSession && (
             <RunSessionView
+              inline
               runSession={foundationRunData.runSession}
               prescription={foundationRunData.prescription}
               onComplete={() => setPhase('fr-transition')}
             />
           )}
           {phase === 'fr-transition' && (
-            <FrTransition onComplete={() => setPhase('fr-posture')} />
+            <FrTransition onComplete={() => setPhase('fr-mobility')} />
           )}
-          {phase === 'fr-posture' && frCurrentExercise && (
-            <PostureExerciseView
+          {phase === 'fr-mobility' && frCurrentExercise && (
+            <MobilityExerciseView
+              inline
               exercise={frCurrentExercise}
               exerciseIndex={exerciseIdx}
               totalExercises={frTotalExercises}
@@ -596,10 +607,10 @@ export function WorkoutPage() {
     )
   }
 
-  // ─── Posture workout ───────────────────────────────────────
+  // ─── Mobility workout ──────────────────────────────────────
 
-  if (sessionType === 'posture_corrective' && postureData) {
-    const exercises = postureData.exercises
+  if (sessionType === 'mobility' && mobilityData) {
+    const exercises = mobilityData.exercises
     const totalExercises = exercises.length
     const currentExercise = exercises[exerciseIdx]
     const totalSets = currentExercise?.sets ?? 1
@@ -608,12 +619,15 @@ export function WorkoutPage() {
     const prevExercise = exerciseIdx > 0 ? exercises[exerciseIdx - 1] : null
     const showSectionHeader = !prevExercise || prevExercise.section !== currentExercise?.section
 
-    function handlePostureSetDone() {
+    function handleMobilitySetDone() {
       if (currentExercise) {
-        apiFetch(`/api/posture-exercises/${currentExercise.id}`, {
+        apiFetch(`/api/mobility-exercises/${currentExercise.id}`, {
           method: 'PATCH',
           body: JSON.stringify({ completed: 1 }),
-        }).catch(console.error)
+        }).catch((e) => {
+          const message = e instanceof Error ? e.message : String(e)
+          logger.warn('session', 'mobility complete flag persist failed', { exerciseId: currentExercise.id, message })
+        })
       }
 
       const isLastSet = setIdx >= totalSets - 1
@@ -634,111 +648,139 @@ export function WorkoutPage() {
       }
     }
 
-    const progress = totalExercises > 0
-      ? ((exerciseIdx * totalSets + setIdx) / (totalExercises * totalSets)) * 100
-      : 0
+    // Mobility engine owns its own SessionShell (see MobilityExerciseView).
+    // WorkoutPage only intervenes for the complete phase.
+    if (phase === 'complete') {
+      return (
+        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+          <SessionAtmosphere />
+          <SessionHeader />
+          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
+            <><SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} /><ToastContainer /></>
+          </main>
+        </div>
+      )
+    }
+
+    if (!currentExercise) return null
 
     return (
-      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-        <SessionAtmosphere />
-        <SessionHeader counter={`${exerciseIdx + 1}/${totalExercises}`} />
-        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-          {phase === 'complete' ? (
-            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-          ) : currentExercise ? (
-            <PostureExerciseView
-              key={`${exerciseIdx}-${setIdx}`}
-              exercise={currentExercise}
-              exerciseIndex={exerciseIdx}
-              totalExercises={totalExercises}
-              currentSet={setIdx + 1}
-              showSectionHeader={showSectionHeader}
-              onSetDone={handlePostureSetDone}
-            />
-          ) : null}
-        </main>
-        <ProgressBar value={progress} />
-      </div>
+      <MobilityExerciseView
+        key={`${exerciseIdx}-${setIdx}`}
+        exercise={currentExercise}
+        exerciseIndex={exerciseIdx}
+        totalExercises={totalExercises}
+        currentSet={setIdx + 1}
+        showSectionHeader={showSectionHeader}
+        onSetDone={handleMobilitySetDone}
+        onExit={() => navigate('/today')}
+      />
     )
   }
 
   // ─── MT class workout ───────────────────────────────────────
+  // MtClassLogView owns its SessionShell. WorkoutPage handles only complete.
 
   if (sessionType === 'mt_class' && mtData?.mtLog) {
-    return (
-      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-        <SessionAtmosphere />
-        <SessionHeader />
-        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-          {phase === 'complete' ? (
+    if (phase === 'complete') {
+      return (
+        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+          <SessionAtmosphere />
+          <SessionHeader />
+          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
             <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-          ) : (
-            <MtClassLogView mtLog={mtData.mtLog} onComplete={() => setPhase('mark-earned')} />
-          )}
-        </main>
-        <ProgressBar value={phase === 'complete' ? 100 : 50} />
-      </div>
+            <ToastContainer />
+          </main>
+        </div>
+      )
+    }
+    return (
+      <>
+        <MtClassLogView
+          mtLog={mtData.mtLog}
+          onComplete={() => setPhase('mark-earned')}
+        />
+        <ToastContainer />
+      </>
     )
   }
 
   // ─── Running workout ────────────────────────────────────────
+  // RunSessionView owns its SessionShell. WorkoutPage handles only complete.
 
   if (sessionType === 'running' && runData?.runSession) {
-    return (
-      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-        <SessionAtmosphere />
-        <SessionHeader />
-        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-          {phase === 'complete' ? (
+    if (phase === 'complete') {
+      return (
+        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+          <SessionAtmosphere />
+          <SessionHeader />
+          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
             <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-          ) : (
-            <RunSessionView
-              runSession={runData.runSession}
-              prescription={runData.prescription}
-              onComplete={() => setPhase('mark-earned')}
-            />
-          )}
-        </main>
-        <ProgressBar value={phase === 'complete' ? 100 : 0} />
-      </div>
+            <ToastContainer />
+          </main>
+        </div>
+      )
+    }
+    return (
+      <>
+        <RunSessionView
+          runSession={runData.runSession}
+          prescription={runData.prescription}
+          onComplete={() => setPhase('mark-earned')}
+        />
+        <ToastContainer />
+      </>
     )
   }
 
   // ─── Skip rope workout ──────────────────────────────────────
+  // SkipRopeView owns its SessionShell.
 
   if (sessionType === 'skip_rope' && skipData?.skipSession) {
-    return (
-      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-        <SessionAtmosphere />
-        <SessionHeader />
-        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-          {phase === 'complete' ? (
+    if (phase === 'complete') {
+      return (
+        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+          <SessionAtmosphere />
+          <SessionHeader />
+          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
             <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-          ) : (
-            <SkipRopeView skipSession={skipData.skipSession} onComplete={() => setPhase('mark-earned')} />
-          )}
-        </main>
-        <ProgressBar value={phase === 'complete' ? 100 : 0} />
-      </div>
+            <ToastContainer />
+          </main>
+        </div>
+      )
+    }
+    return (
+      <>
+        <SkipRopeView skipSession={skipData.skipSession} onComplete={() => setPhase('mark-earned')} />
+        <ToastContainer />
+      </>
     )
   }
 
   // ─── Active recovery workout ───────────────────────────────
+  // ActiveRecoveryView owns its SessionShell. WorkoutPage handles only complete.
 
   if (sessionType === 'active_recovery' && recoveryData?.recoverySession) {
-    return (
-      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-        <SessionAtmosphere />
-        <SessionHeader />
-        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-          {phase === 'complete' ? (
+    if (phase === 'complete') {
+      return (
+        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+          <SessionAtmosphere />
+          <SessionHeader />
+          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
             <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-          ) : (
-            <ActiveRecoveryView recoverySession={recoveryData.recoverySession} onComplete={() => setPhase('mark-earned')} />
-          )}
-        </main>
-        <ProgressBar value={phase === 'complete' ? 100 : 0} />
-      </div>
+            <ToastContainer />
+          </main>
+        </div>
+      )
+    }
+    return (
+      <>
+        <ActiveRecoveryView
+          recoverySession={recoveryData.recoverySession}
+          onComplete={() => setPhase('mark-earned')}
+        />
+        <ToastContainer />
+      </>
     )
   }
 
@@ -748,7 +790,6 @@ export function WorkoutPage() {
     const rounds = bagData.rounds
     const totalRounds = rounds.length
     const currentRound = rounds[roundIdx]
-    const bagProgress = totalRounds > 0 ? (roundIdx / totalRounds) * 100 : 0
 
     // Collect all combos for rating screen
     const allCombosForRating = rounds.flatMap(r =>
@@ -766,7 +807,10 @@ export function WorkoutPage() {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async function handleRatingComplete(_newFavourites: string[]) {
-      // Check for unlock suggestions
+      // Check for unlock suggestions. If AI is offline or returns garbage, we
+      // still progress — the user has already committed the rating (see
+      // ComboRating.tsx), so skipping straight to mark-earned is the right
+      // fallback. We log it so a broken AI doesn't stay invisible forever.
       try {
         const result = await apiFetch<{ suggestions: UnlockSuggestion[]; message: string | null }>(
           `/api/sessions/${id}/suggest-unlocks`,
@@ -777,7 +821,10 @@ export function WorkoutPage() {
           setPhase('combo-unlock')
           return
         }
-      } catch { /* ignore */ }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        logger.warn('session', 'suggest-unlocks failed', { sessionId: id, message })
+      }
       setPhase('mark-earned')
     }
 
@@ -791,41 +838,14 @@ export function WorkoutPage() {
             <div className="animate-fade-in space-y-4">
               <div className="text-center">
                 <p className="font-cinzel text-xl tracking-wider text-foreground">Bag Work Preview</p>
-                <p className="mt-1 text-xs text-muted-foreground">{totalRounds} rounds. Tap a combo to re-roll</p>
+                <p className="mt-1 text-xs text-muted-foreground">{totalRounds} rounds</p>
               </div>
               {rounds.map((round) => (
                 <div key={round.id} className="rounded-md border border-border bg-deep-forest p-3">
                   <p className="mb-2 text-xs font-medium text-gold/60">Round {round.roundNumber}</p>
                   {round.combos.map((rc) => (
-                    <div key={rc.id} className="mb-1.5 flex items-center justify-between last:mb-0">
+                    <div key={rc.id} className="mb-1.5 last:mb-0">
                       <span className="text-sm text-foreground">{rc.combo?.text ?? 'Unknown'}</span>
-                      <button
-                        onClick={async () => {
-                          if (!rc.combo) return
-                          try {
-                            const result = await apiFetch<{ combo: BagComboData['combo'] }>(
-                              `/api/sessions/${id}/swap-combo`,
-                              { method: 'POST', body: JSON.stringify({ roundId: round.id, oldComboId: rc.combo.id }) }
-                            )
-                            // Update local state
-                            setBagData(prev => {
-                              if (!prev) return prev
-                              return {
-                                ...prev,
-                                rounds: prev.rounds.map(r => r.id === round.id ? {
-                                  ...r,
-                                  combos: r.combos.map(c => c.id === rc.id ? { ...c, combo: result.combo } : c),
-                                } : r),
-                              }
-                            })
-                          } catch (e) {
-                            console.error('Failed to swap combo:', e)
-                          }
-                        }}
-                        className="ml-2 text-xs text-muted-foreground active:text-gold"
-                      >
-                        ↻
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -893,31 +913,38 @@ export function WorkoutPage() {
       )
     }
 
-    return (
-      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-        <SessionAtmosphere />
-        <SessionHeader counter={`Round ${roundIdx + 1}/${totalRounds}`} />
-        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-          {phase === 'complete' ? (
+    // Complete screen keeps the legacy shell until SessionComplete itself moves.
+    if (phase === 'complete') {
+      return (
+        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+          <SessionAtmosphere />
+          <SessionHeader counter={`Round ${roundIdx + 1}/${totalRounds}`} />
+          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
             <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-          ) : currentRound ? (
-            <BagWorkRoundView
-              key={roundIdx}
-              round={currentRound}
-              totalRounds={totalRounds}
-              phase={roundPhase}
-              onPhaseChange={setRoundPhase}
-              onNextRound={() => {
-                setRoundIdx(roundIdx + 1)
-                setRoundPhase('ready')
-              }}
-              onComplete={handleBagWorkComplete}
-            />
-          ) : null}
-        </main>
-        <ProgressBar value={bagProgress} />
-      </div>
-    )
+            <ToastContainer />
+          </main>
+        </div>
+      )
+    }
+
+    // Bag round view owns its own SessionShell.
+    return currentRound ? (
+      <>
+        <BagWorkRoundView
+          key={roundIdx}
+          round={currentRound}
+          totalRounds={totalRounds}
+          phase={roundPhase}
+          onPhaseChange={setRoundPhase}
+          onNextRound={() => {
+            setRoundIdx(roundIdx + 1)
+            setRoundPhase('ready')
+          }}
+          onComplete={handleBagWorkComplete}
+        />
+        <ToastContainer />
+      </>
+    ) : null
   }
 
   // ─── Strength workout ──────────────────────────────────────
@@ -968,7 +995,11 @@ export function WorkoutPage() {
         reps,
         completedAt: Math.floor(Date.now() / 1000),
       }),
-    }).catch(console.error)
+    }).catch((e) => {
+      const message = e instanceof Error ? e.message : String(e)
+      logger.error('session', 'strength set persist failed', { setId: currentSet.id, message })
+      showToast("Set didn't save. Keep training — we'll retry at finish.", 'warning')
+    })
 
     const restSec = currentSet.restSec ?? 60
     restTimer.start(restSec)
@@ -995,113 +1026,120 @@ export function WorkoutPage() {
     }
   }
 
-  const strengthProgress = totalExercises > 0
-    ? ((exerciseIdx * 3 + setIdx) / Math.max(1, totalExercises * 3)) * 100
-    : 0
+  // Session-wide last-set flag: fires only on the final set of the final exercise.
+  const isLastSetOfSession =
+    setIdx === totalSetsForExercise - 1 && exerciseIdx === totalExercises - 1
+
+  // Strength complete screen keeps the legacy shell for now.
+  if (phase === 'complete') {
+    return (
+      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
+        <SessionAtmosphere />
+        <SessionHeader counter={`${exerciseIdx + 1}/${totalExercises}`} />
+        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
+          <SessionComplete sessionType={sessionType!} onFinish={handleFinish} submitting={submitting} />
+          <ToastContainer />
+        </main>
+      </div>
+    )
+  }
+
+  // Build display props for StrengthExerciseView.
+  const sectionKey = (currentExercise?.section ?? null) as StrengthSection | null
+
+  const prescriptionDisplay = (() => {
+    if (!currentExercise?.prescription) return undefined
+    const rx = currentExercise.prescription
+    const weightLbs = rx.prescribedWeightKg ? Math.round(kgToLbs(rx.prescribedWeightKg)) : null
+    const tmLbs = rx.trainingMaxKg ? Math.round(kgToLbs(rx.trainingMaxKg)) : null
+    const isBarbell = currentExercise.exercise?.equipment === 'barbell'
+    return {
+      weightLbs,
+      tmLbs,
+      setsReps: rx.setsReps,
+      plateMath: isBarbell && weightLbs ? calculatePlates(weightLbs).plates : null,
+      wavePercentage: rx.wavePercentage,
+    }
+  })()
+
+  const historyDisplay = (() => {
+    if (!currentExercise) return undefined
+    const h = exerciseHistories.get(currentExercise.exerciseId)
+    if (!h) return undefined
+    return {
+      lastWeightLbs: h.lastSession ? Math.round(kgToLbs(h.lastSession.weightKg)) : null,
+      lastReps: h.lastSession?.reps ?? null,
+      lastDate: h.lastSession?.date ?? null,
+      prWeightLbs: h.pr ? Math.round(kgToLbs(h.pr.weightKg)) : null,
+      prReps: h.pr?.reps ?? null,
+      prDate: h.pr?.date ?? null,
+      recentTrend: h.recentTrend.map(t => ({
+        date: t.date,
+        weightLbs: Math.round(kgToLbs(t.maxWeightKg)),
+        avgReps: t.avgReps,
+      })),
+      suggestion: h.suggestion ? { message: h.suggestion.message } : null,
+    }
+  })()
+
+  const lastSessionData = (() => {
+    if (!currentExercise) return undefined
+    const h = exerciseHistories.get(currentExercise.exerciseId)
+    if (!h?.lastSession) return undefined
+    return {
+      weightLbs: Math.round(kgToLbs(h.lastSession.weightKg)),
+      reps: h.lastSession.reps,
+    }
+  })()
+
+  const suggestionDisplay = (() => {
+    if (!currentExercise) return undefined
+    const h = exerciseHistories.get(currentExercise.exerciseId)
+    if (!h?.suggestion?.suggestedWeightKg) return undefined
+    return {
+      weightLbs: Math.round(kgToLbs(h.suggestion.suggestedWeightKg)),
+      message: h.suggestion.message,
+    }
+  })()
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-      <SessionAtmosphere />
-      <SessionHeader counter={`${exerciseIdx + 1}/${totalExercises}`} />
-      <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-        {phase === 'complete' ? (
-          <SessionComplete sessionType={sessionType!} onFinish={handleFinish} submitting={submitting} />
-        ) : phase === 'rest' ? (
-          <div className="animate-fade-in">
-            <ExerciseView
-              name={currentExercise.exercise?.name ?? ''}
-              formCues={null}
-              equipment={null}
-              notes={null}
-              exerciseIndex={exerciseIdx}
-              totalExercises={totalExercises}
-            />
-            <RestTimer
-              totalSeconds={currentSet?.restSec ?? 60}
-              secondsRemaining={restTimer.secondsRemaining}
-              isOvertime={restTimer.isOvertime}
-              onNext={handleNextSet}
-              accentColor={accent}
-            />
-          </div>
-        ) : (
-          <div className="animate-fade-in">
-            {/* Section divider */}
-            {showSectionHeader && currentSection && (
-              <div className="mb-5 pb-2">
-                <h3 className={`font-cinzel text-sm font-semibold tracking-[0.2em] ${currentSection === 'core' ? 'text-gold' : 'text-gold/70'}`}>
-                  {SECTION_LABELS[currentSection] ?? currentSection.toUpperCase()}
-                </h3>
-                {currentSection === 'core' && (
-                  <p className="mt-1 text-xs text-muted-foreground">15-18 min dedicated block</p>
-                )}
-                <GoldDivider className="mt-2" />
-              </div>
-            )}
-
-            <ExerciseView
-              name={currentExercise.exercise?.name ?? ''}
-              formCues={currentExercise.exercise?.formCues ?? null}
-              equipment={currentExercise.exercise?.equipment ?? null}
-              notes={currentExercise.notes}
-              formVideoUrl={currentExercise.exercise?.formVideoUrl}
-              section={currentExercise.section}
-              exerciseIndex={exerciseIdx}
-              totalExercises={totalExercises}
-              prescription={currentExercise.prescription ? (() => {
-                const rx = currentExercise.prescription!
-                const weightLbs = rx.prescribedWeightKg ? Math.round(kgToLbs(rx.prescribedWeightKg)) : null
-                const tmLbs = rx.trainingMaxKg ? Math.round(kgToLbs(rx.trainingMaxKg)) : null
-                const isBarbell = currentExercise.exercise?.equipment === 'barbell'
-                return {
-                  weightLbs,
-                  tmLbs,
-                  setsReps: rx.setsReps,
-                  plateMath: isBarbell && weightLbs ? calculatePlates(weightLbs).plates : null,
-                  wavePercentage: rx.wavePercentage,
-                  section: currentExercise.section ?? 'main',
-                }
-              })() : undefined}
-              history={(() => {
-                const h = exerciseHistories.get(currentExercise.exerciseId)
-                if (!h) return undefined
-                return {
-                  lastWeightLbs: h.lastSession ? Math.round(kgToLbs(h.lastSession.weightKg)) : null,
-                  lastReps: h.lastSession?.reps ?? null,
-                  lastDate: h.lastSession?.date ?? null,
-                  prWeightLbs: h.pr ? Math.round(kgToLbs(h.pr.weightKg)) : null,
-                  prReps: h.pr?.reps ?? null,
-                  prDate: h.pr?.date ?? null,
-                  recentTrend: h.recentTrend.map(t => ({ date: t.date, weightLbs: Math.round(kgToLbs(t.maxWeightKg)), avgReps: t.avgReps })),
-                  suggestion: h.suggestion ? { message: h.suggestion.message } : null,
-                }
-              })()}
-            >
-              {currentSet && (
-                <SetTracker
-                  setNumber={currentSet.setNumber}
-                  totalSets={totalSetsForExercise}
-                  isWarmup={currentSet.isWarmup === 1}
-                  suggestedWeightKg={currentSet.weightKg}
-                  targetReps={currentSet.reps}
-                  lastSessionData={(() => {
-                    const h = exerciseHistories.get(currentExercise.exerciseId)
-                    if (!h?.lastSession) return undefined
-                    return { weightLbs: Math.round(kgToLbs(h.lastSession.weightKg)), reps: h.lastSession.reps }
-                  })()}
-                  suggestion={(() => {
-                    const h = exerciseHistories.get(currentExercise.exerciseId)
-                    if (!h?.suggestion?.suggestedWeightKg) return undefined
-                    return { weightLbs: Math.round(kgToLbs(h.suggestion.suggestedWeightKg)), message: h.suggestion.message }
-                  })()}
-                  onComplete={handleSetComplete}
-                />
-              )}
-            </ExerciseView>
-          </div>
-        )}
-      </main>
-      <ProgressBar value={strengthProgress} />
-    </div>
+    <>
+      <StrengthExerciseView
+        phase={phase === 'rest' ? 'rest' : 'exercise'}
+        exerciseIndex={exerciseIdx}
+        totalExercises={totalExercises}
+        exerciseName={currentExercise.exercise?.name ?? ''}
+        exerciseId={currentExercise.exerciseId}
+        formCues={currentExercise.exercise?.formCues ?? null}
+        equipment={currentExercise.exercise?.equipment ?? null}
+        notes={currentExercise.notes}
+        formVideoUrl={currentExercise.exercise?.formVideoUrl}
+        section={sectionKey}
+        showSectionHeader={showSectionHeader}
+        setIdx={setIdx}
+        isLastSetOfSession={isLastSetOfSession}
+        currentSet={currentSet ? {
+          setNumber: currentSet.setNumber,
+          totalSets: totalSetsForExercise,
+          isWarmup: currentSet.isWarmup === 1,
+          suggestedWeightKg: currentSet.weightKg,
+          targetReps: currentSet.reps,
+          restSec: currentSet.restSec ?? 60,
+        } : undefined}
+        prescription={prescriptionDisplay}
+        history={historyDisplay}
+        lastSessionData={lastSessionData}
+        suggestion={suggestionDisplay}
+        restState={phase === 'rest' ? {
+          totalSeconds: currentSet?.restSec ?? 60,
+          secondsRemaining: restTimer.secondsRemaining,
+          isOvertime: restTimer.isOvertime,
+        } : undefined}
+        onSetComplete={handleSetComplete}
+        onNextSet={handleNextSet}
+        accentColor={accent}
+      />
+      <ToastContainer />
+    </>
   )
 }

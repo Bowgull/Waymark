@@ -106,7 +106,7 @@ export function LockIcon({ size = 14 }: { size?: number }) {
 /** Get icon component for a session type */
 export function SessionTypeIcon({ type }: { type: string }) {
   switch (type) {
-    case 'posture_corrective': return <PostureIcon />
+    case 'mobility': return <PostureIcon />
     case 'strength': return <StrengthIcon />
     case 'mt_class': return <MtClassIcon />
     case 'bag_work': return <BagWorkIcon />

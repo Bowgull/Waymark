@@ -20,7 +20,7 @@ const SESSION_LABEL: Record<string, string> = {
   running: 'run',
   skip_rope: 'skip rope',
   active_recovery: 'active recovery',
-  posture_corrective: 'posture corrective',
+  mobility: 'mobility',
 }
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']

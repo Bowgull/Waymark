@@ -29,7 +29,7 @@ export const TRAINING_CATEGORIES: Record<CategoryKey, TrainingCategory> = {
   },
   recovery: {
     label: 'Recovery',
-    types: ['active_recovery', 'posture_corrective'],
+    types: ['active_recovery', 'mobility'],
     color: '#4ABA8A', // forest-light
     icon: wellnessIcon,
   },
@@ -47,7 +47,7 @@ export function getCategoryTarget(key: CategoryKey): number {
   const targets: Record<CategoryKey, number> = {
     strength: 2,
     conditioning: 8, // 3 foundation + 3 MT + 1 progression + 1 bag
-    recovery: 2,
+    recovery: 9, // 7 daily mobility + 2 active recovery
   }
   return targets[key]
 }

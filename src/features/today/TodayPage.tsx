@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
+import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
+import { logger } from '@/lib/logger'
 
 import { TodayTexture } from '@/components/backgrounds/TodayTexture'
 import { SettingsIcon } from '@/components/icons/NavIcons'
@@ -45,7 +47,7 @@ interface DailyLog {
 }
 
 // Session types that have a dedicated workout engine
-const WORKOUT_SESSION_TYPES = ['strength', 'posture_corrective', 'bag_work', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
+const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
 
 const MAX_HR_LS_KEY = 'waymark_last_seen_max_hr'
 
@@ -131,9 +133,9 @@ export function TodayPage() {
         const profile = await apiFetch<{ maxHr: number | null } | null>('/api/user-profile')
         if (!profile || profile.maxHr == null) return
         setMaxHr(profile.maxHr)
-        const lastSeen = Number(localStorage.getItem(MAX_HR_LS_KEY) ?? '0')
+        const lastSeen = Number(storageGet(MAX_HR_LS_KEY) ?? '0')
         if (profile.maxHr > lastSeen) {
-          localStorage.setItem(MAX_HR_LS_KEY, String(profile.maxHr))
+          storageSet(MAX_HR_LS_KEY, String(profile.maxHr))
           if (lastSeen > 0) {
             showToast(`Max HR now ${profile.maxHr}. Zones updated.`, 'info')
           }
@@ -162,14 +164,20 @@ export function TodayPage() {
 
   async function handleStart(id: string) {
     const session = sessions.find((s) => s.id === id)
-    if (!session) return
+    if (!session) {
+      logger.warn('session', 'Enter pressed for unknown session', { id })
+      showToast("Session not found. Refresh and try again.", 'warning')
+      return
+    }
+
+    logger.sessionEvent('Enter pressed', { sessionId: id, type: session.type, status: session.status })
 
     // Sessions with dedicated workout engines
     if (WORKOUT_SESSION_TYPES.includes(session.type)) {
       try {
         const typeEndpoints: Record<string, string> = {
           foundation_run: `/api/sessions/${id}/start-foundation-run`,
-          posture_corrective: `/api/sessions/${id}/start-posture`,
+          mobility: `/api/sessions/${id}/start-mobility`,
           strength: `/api/sessions/${id}/start-strength`,
           bag_work: `/api/sessions/${id}/start-bag-work`,
           running: `/api/sessions/${id}/start-run`,
@@ -181,7 +189,10 @@ export function TodayPage() {
         await apiFetch(startEndpoint, { method: 'POST' })
         navigate(`/session/${id}`)
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
         console.error('Failed to start session:', e)
+        logger.error('session', 'start-session failed', { sessionId: id, type: session.type, message })
+        showToast("Couldn't start. Check logs in Settings.", 'warning')
       }
       return
     }
@@ -199,7 +210,10 @@ export function TodayPage() {
         body: JSON.stringify({ status: 'in_progress', startedAt: nowSec }),
       })
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to start session:', e)
+      logger.error('session', 'patch start-session failed', { sessionId: id, message })
+      showToast("Couldn't start. Check logs in Settings.", 'warning')
     }
   }
 
@@ -265,7 +279,10 @@ export function TodayPage() {
   function handleDismissReschedule() {
     if (!reschedulePrompt) return
     if (reschedulePrompt.adjustmentId) {
-      apiFetch(`/api/adjustments/${reschedulePrompt.adjustmentId}/reject`, { method: 'POST' }).catch(() => {})
+      apiFetch(`/api/adjustments/${reschedulePrompt.adjustmentId}/reject`, { method: 'POST' }).catch((e) => {
+        const message = e instanceof Error ? e.message : String(e)
+        logger.warn('system', 'reschedule reject persist failed', { adjustmentId: reschedulePrompt.adjustmentId, message })
+      })
     }
     setReschedulePrompt(null)
   }

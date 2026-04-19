@@ -445,6 +445,71 @@ const exercises: Exercise[] = [
     formVideoUrl: 'https://www.youtube.com/watch?v=YOKVKq5IZXA',
   },
 
+  // ── Daily Mobility (added in mobility refactor) ─────────────
+  {
+    id: 'ex-crocodile-breathing',
+    name: 'Crocodile Breathing',
+    category: 'mobility',
+    muscleGroups: 'diaphragm,ribcage',
+    equipment: 'bodyweight',
+    formCues: 'Face down, forehead on hands. Breathe into your lower back and ribs, not your chest. Resets the diaphragm that shallow chest breathing has parked.',
+    formVideoUrl: null,
+  },
+  {
+    id: 'ex-foam-roll-thoracic',
+    name: 'Thoracic Extension on Foam Roller',
+    category: 'mobility',
+    muscleGroups: 'thoracic_spine,upper_back',
+    equipment: 'foam roller',
+    formCues: 'Roller under mid-back, hands behind head. Let the spine extend backwards. This is the single best move against desk kyphosis.',
+    formVideoUrl: null,
+  },
+  {
+    id: 'ex-prone-cobra',
+    name: 'Prone Cobra',
+    category: 'mobility',
+    muscleGroups: 'posterior_chain,lower_traps,rear_delts',
+    equipment: 'bodyweight',
+    formCues: 'Lie face down, lift chest and arms, thumbs up. Hold 3s. Activates the entire posterior chain the desk switches off.',
+    formVideoUrl: null,
+  },
+  {
+    id: 'ex-band-external-rotation',
+    name: 'Band External Rotations',
+    category: 'mobility',
+    muscleGroups: 'rear_delts,rotator_cuff',
+    equipment: 'band',
+    formCues: 'Elbow tucked to side, rotate forearm outward against band. 10 each arm. Rear delt and rotator cuff, the muscles that pull shoulders back.',
+    formVideoUrl: null,
+  },
+  {
+    id: 'ex-couch-stretch',
+    name: 'Couch Stretch',
+    category: 'mobility',
+    muscleGroups: 'hip_flexors,quads',
+    equipment: 'bodyweight,couch',
+    formCues: 'Back foot on couch, front knee forward, tuck tailbone and squeeze back glute. 30s each side. Deep hip flexor lengthening that a standing stretch can not reach.',
+    formVideoUrl: null,
+  },
+  {
+    id: 'ex-worlds-greatest-stretch',
+    name: "World's Greatest Stretch",
+    category: 'mobility',
+    muscleGroups: 'hips,groin,thoracic_spine',
+    equipment: 'bodyweight',
+    formCues: 'Lunge, hand inside front foot, rotate top arm to ceiling. 30s each side. Opens hip, groin, and thoracic spine in one move.',
+    formVideoUrl: null,
+  },
+  {
+    id: 'ex-ankle-cars',
+    name: 'Ankle CARs',
+    category: 'mobility',
+    muscleGroups: 'ankles',
+    equipment: 'bodyweight',
+    formCues: 'Controlled articular rotations. Slow full circles, both directions, each ankle. Dorsiflexion quality drives squat depth and kick mechanics.',
+    formVideoUrl: null,
+  },
+
   // ── Removed: ex-foam-roller-thoracic (merged into foam roll series) ──
   // ── Removed: ex-wall-slides (replaced by wall angels) ──
   // ── Removed: ex-prone-y-raises (replaced by YTW raises) ──
