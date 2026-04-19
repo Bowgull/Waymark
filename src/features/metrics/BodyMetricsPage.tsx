@@ -99,7 +99,7 @@ export function BodyMetricsPage() {
             value={weightLbs}
             onChange={e => setWeightLbs(e.target.value)}
             placeholder="185"
-            className="rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
+            className="min-h-[44px] rounded-md border border-border bg-secondary/50 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
           />
         </label>
 
@@ -113,7 +113,7 @@ export function BodyMetricsPage() {
               value={restingHr}
               onChange={e => setRestingHr(e.target.value)}
               placeholder="60"
-              className="rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
+              className="min-h-[44px] rounded-md border border-border bg-secondary/50 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
             />
           </label>
           <label className="flex flex-col gap-1">
@@ -126,7 +126,7 @@ export function BodyMetricsPage() {
               value={bodyfatPct}
               onChange={e => setBodyfatPct(e.target.value)}
               placeholder="18"
-              className="rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
+              className="min-h-[44px] rounded-md border border-border bg-secondary/50 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
             />
           </label>
         </div>
@@ -138,7 +138,7 @@ export function BodyMetricsPage() {
             onChange={e => setNotes(e.target.value)}
             placeholder="dehydrated, post-travel, etc."
             rows={2}
-            className="resize-none rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
+            className="resize-none rounded-md border border-border bg-secondary/50 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
           />
         </label>
 

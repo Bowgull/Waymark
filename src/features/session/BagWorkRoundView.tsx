@@ -10,6 +10,7 @@ import {
   soundFinishWarning,
   soundRestWarning,
 } from '@/lib/sounds'
+import { activateSessionAudio, deactivateSessionAudio } from '@/lib/sessionAudio'
 import {
   scheduleRoundActiveCues,
   cancelRoundActiveCues,
@@ -23,6 +24,7 @@ import {
   type BagWorkIntent,
 } from './bagWorkMicrocopy'
 import { useRestTimer } from './useRestTimer'
+import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
 interface ComboData {
   id: string
@@ -103,6 +105,14 @@ export function BagWorkRoundView({
 
   const isLastRound = round.roundNumber >= totalRounds
 
+  // Activate the native AVAudioSession so in-session cues duck Spotify / other
+  // apps' audio. Deactivates with .notifyOthersOnDeactivation on unmount so the
+  // music returns to full volume immediately when the user leaves the view.
+  useEffect(() => {
+    void activateSessionAudio()
+    return () => { void deactivateSessionAudio() }
+  }, [])
+
   function handleStartRound() {
     heavyHaptic()
     soundRoundStart()
@@ -157,6 +167,54 @@ export function BagWorkRoundView({
       soundRestWarning()
     }
   }, [restTimer.secondsRemaining, phase])
+
+  // Live Activity: drive the lock-screen timer + Dynamic Island.
+  const firstComboName = round.combos[0]?.combo?.text ?? undefined
+  const activityConfig: LiveActivityConfig | null =
+    phase === 'fighting' && roundTimer.isRunning
+      ? {
+          sessionType: 'bag_work',
+          sessionLabel: 'Bag Work',
+          state: {
+            phase: 'active',
+            label: `Round ${round.roundNumber} of ${totalRounds}`,
+            detail: firstComboName,
+            startedAt: roundTimer.startedAtMs,
+            endsAt: roundTimer.endsAtMs,
+            isPaused: roundTimer.isPaused,
+            pausedRemaining: roundTimer.isPaused
+              ? roundTimer.secondsRemaining
+              : undefined,
+          },
+        }
+      : phase === 'rest' && restTimer.isRunning
+        ? {
+            sessionType: 'bag_work',
+            sessionLabel: 'Bag Work',
+            state: {
+              phase: 'rest',
+              label: 'Rest',
+              detail: `Next: Round ${round.roundNumber + 1}`,
+              startedAt: restTimer.startedAtMs,
+              endsAt: restTimer.endsAtMs,
+              isPaused: restTimer.isPaused,
+              pausedRemaining: restTimer.isPaused
+                ? restTimer.secondsRemaining
+                : undefined,
+            },
+          }
+        : null
+
+  useSessionLiveActivity(activityConfig, {
+    onPause: () => {
+      if (phase === 'fighting') roundTimer.pause()
+      else if (phase === 'rest') restTimer.pause()
+    },
+    onResume: (newEndsAtMs) => {
+      if (phase === 'fighting') roundTimer.resume(newEndsAtMs)
+      else if (phase === 'rest') restTimer.resume(newEndsAtMs)
+    },
+  })
 
   // Determine tier of combos + intent labels for this round
   const roundTier = round.combos[0]?.combo?.tier

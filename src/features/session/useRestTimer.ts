@@ -4,8 +4,14 @@ interface RestTimerState {
   secondsRemaining: number
   isOvertime: boolean
   isRunning: boolean
+  isPaused: boolean
+  startedAtMs: number
+  endsAtMs: number
   start: (durationSec: number) => void
   stop: () => void
+  pause: () => void
+  /** Resume with remaining time from pause (or an explicit new endsAt from Live Activity). */
+  resume: (newEndsAtMs?: number) => void
 }
 
 // Timestamp-based timer — survives screen lock.
@@ -16,8 +22,12 @@ interface RestTimerState {
 export function useRestTimer(): RestTimerState {
   const [secondsRemaining, setSecondsRemaining] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
+  const [startedAtMs, setStartedAtMs] = useState(0)
+  const [endsAtMs, setEndsAtMs] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const endsAtRef = useRef<number>(0) // wall-clock ms when timer expires
+  const pausedRemainingRef = useRef<number>(0)
 
   useEffect(() => {
     return () => {
@@ -25,33 +35,71 @@ export function useRestTimer(): RestTimerState {
     }
   }, [])
 
-  const start = useCallback((durationSec: number) => {
+  const startTicking = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
-    const endsAt = Date.now() + durationSec * 1000
-    endsAtRef.current = endsAt
-    setSecondsRemaining(durationSec)
-    setIsRunning(true)
-
     intervalRef.current = setInterval(() => {
-      // Calculate from wall clock, not accumulated ticks
       const remaining = Math.round((endsAtRef.current - Date.now()) / 1000)
       setSecondsRemaining(remaining)
-    }, 500) // 500ms ticks for faster recovery after screen unlock
+    }, 500)
   }, [])
+
+  const start = useCallback((durationSec: number) => {
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    const now = Date.now()
+    const endsAt = now + durationSec * 1000
+    endsAtRef.current = endsAt
+    setStartedAtMs(now)
+    setEndsAtMs(endsAt)
+    setSecondsRemaining(durationSec)
+    setIsRunning(true)
+    setIsPaused(false)
+    startTicking()
+  }, [startTicking])
 
   const stop = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
     intervalRef.current = null
     setIsRunning(false)
+    setIsPaused(false)
     setSecondsRemaining(0)
+    setStartedAtMs(0)
+    setEndsAtMs(0)
     endsAtRef.current = 0
+    pausedRemainingRef.current = 0
   }, [])
+
+  const pause = useCallback(() => {
+    if (!isRunning || isPaused) return
+    const remainingMs = Math.max(0, endsAtRef.current - Date.now())
+    pausedRemainingRef.current = remainingMs
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    intervalRef.current = null
+    setIsPaused(true)
+    setSecondsRemaining(Math.round(remainingMs / 1000))
+  }, [isRunning, isPaused])
+
+  const resume = useCallback((newEndsAtMs?: number) => {
+    if (!isRunning) return
+    const now = Date.now()
+    const endsAt = newEndsAtMs ?? now + pausedRemainingRef.current
+    endsAtRef.current = endsAt
+    setStartedAtMs(now)
+    setEndsAtMs(endsAt)
+    setIsPaused(false)
+    setSecondsRemaining(Math.round((endsAt - now) / 1000))
+    startTicking()
+  }, [isRunning, startTicking])
 
   return {
     secondsRemaining,
     isOvertime: secondsRemaining < 0,
     isRunning,
+    isPaused,
+    startedAtMs,
+    endsAtMs,
     start,
     stop,
+    pause,
+    resume,
   }
 }

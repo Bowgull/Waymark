@@ -106,7 +106,7 @@ export function SessionShell({
         ) : (
           <button
             onClick={handleExit}
-            className="min-h-[44px] -ml-2 px-2 text-sm font-medium text-muted-foreground active:text-teal"
+            className="-ml-2 inline-flex min-h-[44px] min-w-[44px] items-center px-3 text-sm font-medium text-muted-foreground active:text-teal"
           >
             {exitLabel}
           </button>

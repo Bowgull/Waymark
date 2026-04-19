@@ -11,6 +11,10 @@ export interface HoldTimerState {
   reachedTarget: boolean
   /** Seconds left on the clock (0 if not yet running). */
   secondsRemaining: number
+  /** Wall-clock ms when this hold started (0 if not running). */
+  startedAtMs: number
+  /** Wall-clock ms when this hold should complete (0 if not running). */
+  endsAtMs: number
 }
 
 export interface HoldTimerActions {
@@ -27,15 +31,19 @@ export interface HoldTimerActions {
 export function useHoldTimer(targetSec: number): HoldTimerState & HoldTimerActions {
   const [elapsed, setElapsed] = useState(0)
   const [running, setRunning] = useState(false)
+  const [startedAtMs, setStartedAtMs] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startedAtRef = useRef<number>(0)
 
   const reachedTarget = elapsed >= targetSec
   const secondsRemaining = Math.max(0, targetSec - elapsed)
+  const endsAtMs = startedAtMs > 0 ? startedAtMs + targetSec * 1000 : 0
 
   const start = useCallback(() => {
     if (intervalRef.current) return
-    startedAtRef.current = Date.now()
+    const now = Date.now()
+    startedAtRef.current = now
+    setStartedAtMs(now)
     setRunning(true)
     intervalRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
@@ -64,6 +72,8 @@ export function useHoldTimer(targetSec: number): HoldTimerState & HoldTimerActio
     running,
     reachedTarget,
     secondsRemaining,
+    startedAtMs,
+    endsAtMs,
     start,
     stop,
   }

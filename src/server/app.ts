@@ -2620,49 +2620,17 @@ app.get('/api/history/volume-trends', async (c) => {
   const nowSec = Math.floor(Date.now() / 1000)
   const cutoff = nowSec - days * 86400
 
-  const [allSessions, allSexes, allSets] = await Promise.all([
-    db.select().from(sessions),
-    db.select().from(strengthSessionExercises),
-    db.select().from(strengthSets),
-  ])
-  const completed = allSessions.filter(s => s.status === 'completed' && s.type === 'strength' && s.createdAt >= cutoff)
+  const allSessions = await db.select().from(sessions)
+  const completed = allSessions.filter(s => s.status === 'completed' && s.createdAt >= cutoff)
 
-  const setsByExerciseId = new Map<string, typeof allSets>()
-  for (const st of allSets) {
-    const arr = setsByExerciseId.get(st.sessionExerciseId) ?? []
-    arr.push(st)
-    setsByExerciseId.set(st.sessionExerciseId, arr)
-  }
-  const sexesBySessionId = new Map<string, typeof allSexes>()
-  for (const se of allSexes) {
-    const arr = sexesBySessionId.get(se.sessionId) ?? []
-    arr.push(se)
-    sexesBySessionId.set(se.sessionId, arr)
-  }
-
-  const dailyData = new Map<string, { totalSets: number; totalVolume: number; sessionCount: number }>()
+  const dailyData = new Map<string, { totalDurationMin: number; sessionCount: number }>()
 
   for (const session of completed) {
     const date = new Date((session.completedAt ?? session.createdAt) * 1000).toISOString().split('T')[0]
-    const sexes = sexesBySessionId.get(session.id) ?? []
-
-    let dayVolume = 0
-    let daySets = 0
-
-    for (const se of sexes) {
-      const sets = setsByExerciseId.get(se.id) ?? []
-      for (const s of sets) {
-        if (s.weightKg != null && s.weightKg > 0) {
-          dayVolume += s.weightKg * s.reps
-          daySets++
-        }
-      }
-    }
-
-    const existing = dailyData.get(date) ?? { totalSets: 0, totalVolume: 0, sessionCount: 0 }
+    const durationMin = Math.round((session.durationSec ?? 0) / 60)
+    const existing = dailyData.get(date) ?? { totalDurationMin: 0, sessionCount: 0 }
     dailyData.set(date, {
-      totalSets: existing.totalSets + daySets,
-      totalVolume: existing.totalVolume + dayVolume,
+      totalDurationMin: existing.totalDurationMin + durationMin,
       sessionCount: existing.sessionCount + 1,
     })
   }
@@ -3049,18 +3017,10 @@ app.get('/api/history/dashboard', async (c) => {
     )
     const completedRange = rangeSessions.filter(s => s.status === 'completed')
 
-    // Volume — use prefetched grouped maps
-    let volume = 0
-    for (const s of completedRange) {
-      if (s.type !== 'strength') continue
-      const sexes = sexesBySessionId.get(s.id) ?? []
-      for (const se of sexes) {
-        const sets = setsByExerciseId.get(se.id) ?? []
-        for (const st of sets) {
-          if (st.weightKg != null && st.weightKg > 0) volume += st.weightKg * st.reps
-        }
-      }
-    }
+    // Training time — all completed sessions
+    const durationMin = Math.round(
+      completedRange.reduce((sum, s) => sum + (s.durationSec ?? 0), 0) / 60
+    )
 
     // RPE
     const rpeValues = completedRange.filter(s => s.rpe != null).map(s => s.rpe!)
@@ -3085,7 +3045,7 @@ app.get('/api/history/dashboard', async (c) => {
     }
 
     return {
-      volume: Math.round(volume * 2.20462),
+      durationMin,
       sessions: completedRange.length,
       avgRpe,
       avgSleep,
