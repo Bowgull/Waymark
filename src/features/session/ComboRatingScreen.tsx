@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/Toast'
+import { logger } from '@/lib/logger'
 
 interface ComboForRating {
   comboId: string
@@ -21,6 +23,8 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
     () => new Map(combos.map(c => [c.comboId, 2]))
   )
   const [submitting, setSubmitting] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const { show: showToast, ToastContainer } = useToast()
 
   function setRating(comboId: string, rating: number) {
     setRatings(prev => {
@@ -32,6 +36,7 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
 
   async function handleSubmit() {
     setSubmitting(true)
+    setSaveError(null)
     try {
       const ratingData = combos.map(c => ({
         roundId: c.roundId,
@@ -44,11 +49,25 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
         { method: 'POST', body: JSON.stringify({ ratings: ratingData }) }
       )
 
+      logger.sessionEvent('combo ratings saved', {
+        sessionId,
+        count: ratingData.length,
+        newFavouritesCount: result.newFavourites?.length ?? 0,
+      })
       onComplete(result.newFavourites ?? [])
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to rate combos:', e)
-      onComplete([])
+      logger.error('session', 'combo ratings save failed', { sessionId, message })
+      setSaveError(message)
+      showToast("Couldn't save ratings. Tap Retry or continue unrated.", 'warning')
+      setSubmitting(false)
     }
+  }
+
+  function handleContinueUnrated() {
+    logger.warn('session', 'combo ratings skipped after failure', { sessionId })
+    onComplete([])
   }
 
   // Deduplicate combos (same combo might appear in multiple rounds)
@@ -99,8 +118,19 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
       </div>
 
       <Button onClick={handleSubmit} disabled={submitting} size="lg" className="w-full">
-        {submitting ? 'Saving...' : 'Continue'}
+        {submitting ? 'Saving...' : saveError ? 'Retry Save' : 'Continue'}
       </Button>
+
+      {saveError && (
+        <button
+          onClick={handleContinueUnrated}
+          className="mt-1 w-full text-center text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/70 active:text-muted-foreground"
+        >
+          Continue Without Saving
+        </button>
+      )}
+
+      <ToastContainer />
     </div>
   )
 }

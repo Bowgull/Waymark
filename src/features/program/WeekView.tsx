@@ -126,10 +126,10 @@ function getRoutineOverview(type: string, dayOfWeek: number, blockWeek: number, 
       }
     }
 
-    case 'posture_corrective': {
+    case 'mobility': {
       return {
-        headline: 'Upper release + Lower mobility',
-        detail: '19 exercises · ~25 min',
+        headline: 'Breathing, upper release, lower mobility',
+        detail: '7 exercises · ~10 min',
       }
     }
 

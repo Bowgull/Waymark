@@ -217,7 +217,7 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Settings" />
+      <PageHeader title="Settings" onLogoLongPress={() => navigate('/settings/logs')} />
 
       {daysLeft !== null && (
         <section
@@ -344,9 +344,9 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* One Pace */}
+      {/* One Piece */}
       <section>
-        <p className="mb-2 text-sm font-medium text-foreground">One Pace Progress</p>
+        <p className="mb-2 text-sm font-medium text-foreground">One Piece Progress</p>
         <div className="flex items-end gap-3">
           <div className="min-w-0 flex-1">
             <label className="mb-1 block text-xs text-muted-foreground">Current Arc</label>

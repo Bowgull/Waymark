@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import logoPng from '@/assets/brand/Logo.png'
+import { logger } from '@/lib/logger'
+import { apiFetch } from '@/lib/api'
 
 interface Props {
   children: ReactNode
@@ -19,7 +21,14 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error(`[ErrorBoundary:${this.props.level ?? 'app'}]`, error, info.componentStack)
+    const level = this.props.level ?? 'app'
+    console.error(`[ErrorBoundary:${level}]`, error, info.componentStack)
+    logger.error('error', `ErrorBoundary(${level}) caught: ${error.message}`, {
+      level,
+      name: error.name,
+      stack: error.stack,
+      componentStack: info.componentStack,
+    })
   }
 
   handleReload = () => {
@@ -28,6 +37,16 @@ export class ErrorBoundary extends Component<Props, State> {
 
   handleRetry = () => {
     this.setState({ hasError: false, error: null })
+  }
+
+  handleAbandonSession = () => {
+    const match = typeof window !== 'undefined' ? window.location.pathname.match(/\/session\/([^/]+)/) : null
+    const sessionId = match?.[1]
+    if (sessionId) {
+      logger.warn('session', 'session abandoned via error boundary', { sessionId })
+      apiFetch(`/api/sessions/${sessionId}/abandon`, { method: 'POST' }).catch(() => {})
+    }
+    window.location.href = '/today'
   }
 
   render() {
@@ -85,7 +104,7 @@ export class ErrorBoundary extends Component<Props, State> {
               Resume
             </button>
             <button
-              onClick={() => { window.location.href = '/today' }}
+              onClick={this.handleAbandonSession}
               className="rounded-md border border-[#8a9a90]/20 px-5 py-3 text-sm font-medium text-[#8a9a90] transition-colors active:bg-[#8a9a90]/10"
             >
               Back to Today

@@ -140,6 +140,25 @@ for (let w = 1; w <= 4; w++) {
 const w2fri = sessions.find(s => s.dayIdx === 11)
 if (w2fri) { w2fri.rpe = 8; w2fri.durationSec = 60 * 60 }
 
+// ─── Daily mobility (every AM, 7 days/week across all 4 weeks) ──
+// Low-effort, high-consistency habit from the new Block Zero template.
+// Past days: completed. Today + future: planned so the walkthrough is reachable.
+for (let d = 0; d < 28; d++) {
+  const isFutureOrToday = d >= todayDayIdx
+  const weekNumber = Math.floor(d / 7) + 1
+  sessions.push({
+    dayIdx: d,
+    type: 'mobility',
+    timeSlot: 'am',
+    hour: 6,
+    weekNumber,
+    scheduled: true,
+    completed: !isFutureOrToday,
+    rpe: !isFutureOrToday ? 3 : undefined,
+    durationSec: 10 * 60,
+  })
+}
+
 // ─── Exercise data (matching existing seed IDs) ──────────────
 // Progression target: PRs land in week 3.
 const STRENGTH_MAIN_UPPER: Array<{ exerciseId: string; weekKg: [number, number, number, number]; reps: number; sets: number }> = [
@@ -362,23 +381,6 @@ lines.push(
 lines.push(
   `UPDATE settings SET last_deploy = ${nowSec - 3600}, updated_at = ${nowSec} WHERE id = 'default';`
 )
-
-// ─── Today's morning mobility (completed, keeps streak alive) ──
-// Add a completed AM posture/recovery session today so the streak counter shows.
-// Without this, today's only session (the planned bag_work) leaves streak = 0.
-{
-  const amSid = `demo-sess-d${todayDayIdx}-am-mobility`
-  const scheduledDay = blockStartDay + todayDayIdx
-  const createdAt = dayHour(todayDayIdx, 5)
-  const startedAt = dayHour(todayDayIdx, 7)
-  const completedAt = dayHour(todayDayIdx, 7) + 25 * 60
-  lines.push(
-    `INSERT INTO sessions (id, type, week_plan_id, scheduled_date, time_slot, status, started_at, completed_at, duration_sec, rpe, difficulty, block_week, block_type, notes, review, review_flag, adjustment_id, created_at) VALUES ('${amSid}', 'active_recovery', 'demo-wp-w4', ${scheduledDay}, 'am', 'completed', ${startedAt}, ${completedAt}, 1500, 4, NULL, 4, 'block_zero', 'Morning mobility: hips + thoracic.', NULL, NULL, NULL, ${createdAt});`
-  )
-  lines.push(
-    `INSERT INTO active_recovery_sessions (id, session_id, hip_mobility, foam_rolling) VALUES ('demo-rec-today-am', '${amSid}', 1, 1);`
-  )
-}
 
 // ─── Today's planned bag work gets its prescribed rounds ─────
 // (The hero session for the demo — walks the viewer through a ready prescription.)

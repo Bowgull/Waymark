@@ -26,9 +26,9 @@ export interface WeekPlanParams {
 }
 
 function blockZeroPhaseNote(blockWeek: number): string {
-  if (blockWeek <= 2) return 'Phase 1 (weeks 1-2): no MT class. Foundation run, strength, bag work only.'
-  if (blockWeek <= 4) return 'Phase 2 (weeks 3-4): MT class returns Mon/Wed/Fri PM. Strength climbing to 50-55%.'
-  return 'Phase 3 (weeks 5-6): full schedule. Weights at 55-60%. Transition readiness building.'
+  if (blockWeek <= 2) return 'Phase 1 (weeks 1-2): no MT class. Foundation run, strength, bag work only. Daily mobility every AM.'
+  if (blockWeek <= 4) return 'Phase 2 (weeks 3-4): MT class returns Mon/Wed/Fri PM. Strength climbing to 50-55%. Daily mobility every AM.'
+  return 'Phase 3 (weeks 5-6): full schedule. Weights at 55-60%. Transition readiness building. Daily mobility every AM.'
 }
 
 interface MtLogRecord {

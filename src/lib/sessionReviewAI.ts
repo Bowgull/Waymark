@@ -19,7 +19,7 @@ const SESSION_LABEL: Record<string, string> = {
   running: 'run',
   skip_rope: 'skip rope',
   active_recovery: 'active recovery',
-  posture_corrective: 'posture corrective',
+  mobility: 'mobility',
 }
 
 function buildPrompt(

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
+import { logger } from '@/lib/logger'
 import { Button } from '@/components/ui/button'
 
 function BrandW({ className, style }: { className?: string; style?: React.CSSProperties }) {
@@ -91,7 +92,10 @@ export function JournalCard() {
           setJustSaved(true)
         }
       })
-      .catch(console.error)
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : String(e)
+        logger.warn('system', 'journal load failed', { date: today, entryType, message })
+      })
       .finally(() => setLoaded(true))
   }, [today, entryType])
 
@@ -150,8 +154,14 @@ export function JournalCard() {
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && draft.trim() && !saving) {
+                e.preventDefault()
+                handleSave()
+              }
+            }}
             rows={5}
-            placeholder={isSunday ? 'Reflect on your week...' : "What's on your mind..."}
+            placeholder={isSunday ? 'Reflect on your week...' : "What's on your mind... (Cmd+Enter to save)"}
             className="mb-3 w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2.5 font-[Cinzel] text-base leading-relaxed text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none"
           />
           <Button onClick={handleSave} disabled={saving || !draft.trim()} className="w-full">

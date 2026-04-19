@@ -4,7 +4,12 @@ import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
 import { ForgeIcon } from '@/components/icons/SessionIcons'
 import { heavyHaptic } from '@/lib/haptics'
-import { soundRoundStart, soundRoundEnd, soundFinishWarning, soundRestWarning } from '@/lib/sounds'
+import {
+  soundRoundStart,
+  soundRoundEnd,
+  soundFinishWarning,
+  soundRestWarning,
+} from '@/lib/sounds'
 import {
   scheduleRoundActiveCues,
   cancelRoundActiveCues,
@@ -12,13 +17,26 @@ import {
   cancelRestCues,
 } from '@/lib/notifications'
 
-import { RestTimer } from './RestTimer'
+import { SessionShell } from './SessionShell'
+import {
+  resolveBagWorkMoment,
+  type BagWorkIntent,
+} from './bagWorkMicrocopy'
 import { useRestTimer } from './useRestTimer'
 
 interface ComboData {
   id: string
   orderIndex: number
-  combo: { id: string; text: string; tier: string; level: string; masteryScore?: number; isFavourite?: number; techniques?: string; formTips?: string } | null
+  combo: {
+    id: string
+    text: string
+    tier: string
+    level: string
+    masteryScore?: number
+    isFavourite?: number
+    techniques?: string
+    formTips?: string
+  } | null
 }
 
 const TIER_LABELS: Record<string, string> = {
@@ -31,7 +49,7 @@ const TIER_LABELS: Record<string, string> = {
 
 // Intensity-progression model: each round has a coaching intent.
 // Technical → Rhythm → Volume × 2 → Pressure → Power
-const ROUND_INTENTS = [
+const ROUND_INTENTS: { label: BagWorkIntent; hint: string }[] = [
   { label: 'Technical', hint: 'Sharp mechanics, controlled pace' },
   { label: 'Rhythm', hint: 'Find your flow' },
   { label: 'Volume', hint: 'Push the output' },
@@ -68,6 +86,7 @@ interface BagWorkRoundViewProps {
   onPhaseChange: (phase: RoundPhase) => void
   onNextRound: () => void
   onComplete: () => void
+  onExit?: () => void
 }
 
 export function BagWorkRoundView({
@@ -77,6 +96,7 @@ export function BagWorkRoundView({
   onPhaseChange,
   onNextRound,
   onComplete,
+  onExit,
 }: BagWorkRoundViewProps) {
   const roundTimer = useRestTimer()
   const restTimer = useRestTimer()
@@ -138,126 +158,184 @@ export function BagWorkRoundView({
     }
   }, [restTimer.secondsRemaining, phase])
 
-  // Determine tier of combos in this round
+  // Determine tier of combos + intent labels for this round
   const roundTier = round.combos[0]?.combo?.tier
   const coachRationale = (round.coachRationale ?? '').trim()
   const roundTypeLabel = round.roundType ? ROUND_TYPE_LABELS[round.roundType] ?? null : null
   const positionalIntent = ROUND_INTENTS[round.roundNumber - 1] ?? null
 
-  if (phase === 'rest') {
-    return (
-      <div className="animate-fade-in">
-        <p className="text-label text-center text-muted-foreground">
-          Round {round.roundNumber} of {totalRounds} · Rest
-        </p>
-        <RestTimer
-          totalSeconds={round.restSec}
-          secondsRemaining={restTimer.secondsRemaining}
-          isOvertime={restTimer.isOvertime}
-          onNext={handleRestDone}
-          accentColor="#E8C860"
-        />
-      </div>
-    )
+  // Shell counter + progress
+  const counter = phase === 'rest'
+    ? 'Rest'
+    : `Round ${round.roundNumber} of ${totalRounds}`
+  const progress = {
+    completed: round.roundNumber - 1,
+    active: round.roundNumber - 1,
+    total: totalRounds,
   }
 
-  return (
-    <div className="animate-fade-in">
-      <p className="text-label mb-1 text-muted-foreground">
-        Round {round.roundNumber} of {totalRounds}
-      </p>
-      {(roundTypeLabel || roundTier) && (
-        <p className="text-xs font-cinzel tracking-wider text-gold/50">
-          {roundTypeLabel ?? TIER_LABELS[roundTier ?? ''] ?? roundTier}
+  // Moment line (Flavor C)
+  const moment = resolveBagWorkMoment({
+    phase:
+      phase === 'rest'
+        ? 'rest'
+        : phase === 'fighting'
+          ? 'fighting'
+          : 'ready',
+    intent: positionalIntent?.label,
+    roundType: round.roundType ?? null,
+    isLastRound,
+    secondsRemaining:
+      phase === 'fighting'
+        ? roundTimer.secondsRemaining
+        : phase === 'rest'
+          ? restTimer.secondsRemaining
+          : undefined,
+  })
+
+  // Footer action per phase
+  const footer =
+    phase === 'ready' ? (
+      <Button
+        onClick={handleStartRound}
+        size="lg"
+        className="w-full"
+        style={{ backgroundColor: '#E8C860', color: '#020A08' }}
+      >
+        Start Round
+      </Button>
+    ) : phase === 'fighting' ? (
+      <Button onClick={handleRoundEnd} variant="secondary" size="lg" className="w-full">
+        End Round Early
+      </Button>
+    ) : (
+      <Button
+        onClick={handleRestDone}
+        size="lg"
+        className="w-full"
+        style={{ backgroundColor: '#E8C860', color: '#020A08' }}
+      >
+        Next Round
+      </Button>
+    )
+
+  // ─── Body ────────────────────────────────────────────────────
+
+  const body =
+    phase === 'rest' ? (
+      <div className="mx-auto flex max-w-md flex-col items-center pt-6 animate-fade-in">
+        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/50">
+          Between Rounds
         </p>
-      )}
-      {coachRationale ? (
-        <p className="text-[11px] text-muted-foreground/70 mt-0.5 italic">
-          {coachRationale}
-        </p>
-      ) : positionalIntent ? (
-        <p className="text-[11px] text-muted-foreground/50 mt-0.5">
-          {positionalIntent.label}. {positionalIntent.hint}
-        </p>
-      ) : null}
-
-      {/* Combo card — Option 3: Parchment/worn page */}
-      <div className="mt-4 rounded border border-gold/15 bg-gradient-to-b from-[#1A1A10]/60 to-[#12170E]/40 p-5 shadow-[0_0_12px_rgba(0,0,0,0.3)]">
-        {round.combos.map((rc, i) => {
-          const mastery = rc.combo?.masteryScore ?? 0
-          const isFav = rc.combo?.isFavourite === 1
-          const dots = Math.min(Math.floor(mastery / 3), 5)
-
-          const techniques = rc.combo?.techniques?.split(',').filter(Boolean) ?? []
-
-          return (
-            <div key={rc.id} className="mb-3 last:mb-0 flex items-start gap-2">
-              <span className="text-sm font-bold text-gold shrink-0">{i + 1}.</span>
-              <div className="flex-1">
-                <span className="text-base text-foreground">
-                  {rc.combo?.text ?? 'Unknown combo'}
-                  {(isFav || mastery >= 9) && (
-                    <span className="ml-1.5 inline-flex text-gold">
-                      <ForgeIcon size={12} mastered={mastery >= 9} />
-                    </span>
-                  )}
-                </span>
-                {techniques.length > 0 && (
-                  <p className="mt-0.5 text-[13px] italic text-muted-foreground">
-                    {techniques.join(' \u00b7 ')}
-                  </p>
-                )}
-                {rc.combo?.formTips && (
-                  <p className="mt-1.5 font-cinzel text-xs leading-snug text-teal/80">
-                    {rc.combo.formTips}
-                  </p>
-                )}
-                {mastery > 0 && (
-                  <div className="mt-1 flex gap-1">
-                    {Array.from({ length: 5 }, (_, di) => (
-                      <span
-                        key={di}
-                        className={`h-1.5 w-1.5 rounded-full ${di < dots ? 'bg-gold' : 'bg-border'}`}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {phase === 'ready' ? (
-        <div className="mt-8 flex flex-col items-center">
+        <h2 className="mt-1 text-display-lg text-foreground">Recover</h2>
+        <div className="mt-8 rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
           <RingTimer
-            totalSeconds={round.durationSec}
-            secondsRemaining={round.durationSec}
-            label="Round"
+            totalSeconds={round.restSec}
+            secondsRemaining={restTimer.secondsRemaining}
+            isOvertime={restTimer.isOvertime}
+            label={restTimer.isOvertime ? 'Over' : 'Rest'}
             accentColor="#E8C860"
           />
-          <Button onClick={handleStartRound} size="lg" className="mt-6">
-            Start Round
-          </Button>
         </div>
-      ) : (
-        <div className="mt-6 flex flex-col items-center">
-          <RingTimer
-            totalSeconds={round.durationSec}
-            secondsRemaining={roundTimer.secondsRemaining}
-            isOvertime={roundTimer.isOvertime}
-            label={roundTimer.secondsRemaining <= 10 ? 'Finish' : 'Fight'}
-            accentColor={roundTimer.secondsRemaining <= 10 ? '#C45A3C' : '#E8C860'}
-          />
-          <Button
-            onClick={handleRoundEnd}
-            variant="secondary"
-            className="mt-6"
-          >
-            End Round Early
-          </Button>
+      </div>
+    ) : (
+      <div className="mx-auto max-w-md animate-fade-in">
+        {(roundTypeLabel || roundTier) && (
+          <p className="font-cinzel text-xs uppercase tracking-[0.22em] text-gold/60">
+            {roundTypeLabel ?? TIER_LABELS[roundTier ?? ''] ?? roundTier}
+          </p>
+        )}
+        {coachRationale ? (
+          <p className="mt-1 text-[12px] italic text-muted-foreground/75">
+            {coachRationale}
+          </p>
+        ) : positionalIntent ? (
+          <p className="mt-1 text-[12px] text-muted-foreground/60">
+            {positionalIntent.label}. {positionalIntent.hint}.
+          </p>
+        ) : null}
+
+        {/* Combo card */}
+        <div className="mt-4 rounded border border-gold/15 bg-gradient-to-b from-[#1A1A10]/60 to-[#12170E]/40 p-5 shadow-[0_0_12px_rgba(0,0,0,0.3)]">
+          {round.combos.map((rc, i) => {
+            const mastery = rc.combo?.masteryScore ?? 0
+            const isFav = rc.combo?.isFavourite === 1
+            const dots = Math.min(Math.floor(mastery / 3), 5)
+            const techniques = rc.combo?.techniques?.split(',').filter(Boolean) ?? []
+
+            return (
+              <div key={rc.id} className="mb-3 last:mb-0 flex items-start gap-2">
+                <span className="shrink-0 text-sm font-bold text-gold">{i + 1}.</span>
+                <div className="flex-1">
+                  <span className="text-base text-foreground">
+                    {rc.combo?.text ?? 'Unknown combo'}
+                    {(isFav || mastery >= 9) && (
+                      <span className="ml-1.5 inline-flex text-gold">
+                        <ForgeIcon size={12} mastered={mastery >= 9} />
+                      </span>
+                    )}
+                  </span>
+                  {techniques.length > 0 && (
+                    <p className="mt-0.5 text-[13px] italic text-muted-foreground">
+                      {techniques.join(' \u00b7 ')}
+                    </p>
+                  )}
+                  {rc.combo?.formTips && (
+                    <p className="mt-1.5 font-cinzel text-xs leading-snug text-teal/80">
+                      {rc.combo.formTips}
+                    </p>
+                  )}
+                  {mastery > 0 && (
+                    <div className="mt-1 flex gap-1">
+                      {Array.from({ length: 5 }, (_, di) => (
+                        <span
+                          key={di}
+                          className={`h-1.5 w-1.5 rounded-full ${di < dots ? 'bg-gold' : 'bg-border'}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
-      )}
-    </div>
+
+        {/* Timer card */}
+        <div className="mt-8 flex justify-center">
+          <div className="rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
+            <RingTimer
+              totalSeconds={round.durationSec}
+              secondsRemaining={phase === 'fighting' ? roundTimer.secondsRemaining : round.durationSec}
+              isOvertime={phase === 'fighting' ? roundTimer.isOvertime : false}
+              label={
+                phase === 'fighting'
+                  ? roundTimer.secondsRemaining <= 10
+                    ? 'Finish'
+                    : 'Fight'
+                  : 'Round'
+              }
+              accentColor={
+                phase === 'fighting' && roundTimer.secondsRemaining <= 10
+                  ? '#C45A3C'
+                  : '#E8C860'
+              }
+            />
+          </div>
+        </div>
+      </div>
+    )
+
+  return (
+    <SessionShell
+      sessionType="bag_work"
+      counter={counter}
+      progress={progress}
+      moment={moment}
+      onExit={onExit}
+      footer={footer}
+    >
+      {body}
+    </SessionShell>
   )
 }

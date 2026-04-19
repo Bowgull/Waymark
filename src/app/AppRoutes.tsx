@@ -9,6 +9,7 @@ import { ProgramPage } from '../features/program/ProgramPage'
 import { WorkoutPage } from '../features/session/WorkoutPage'
 import { BodyMetricsPage } from '../features/metrics/BodyMetricsPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
+import { LogsPage } from '../features/settings/LogsPage'
 import { TodayPage } from '../features/today/TodayPage'
 import {
   initNotificationListeners,
@@ -18,6 +19,7 @@ import {
   cancelRedeployReminders,
 } from '../lib/notifications'
 import { apiFetch } from '../lib/api'
+import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
 import { Capacitor } from '@capacitor/core'
 
 export function AppRoutes() {
@@ -53,13 +55,13 @@ export function AppRoutes() {
     if (Capacitor.isNativePlatform()) {
       const buildTime = Number(import.meta.env.VITE_BUILD_TIME)
       if (Number.isFinite(buildTime) && buildTime > 0) {
-        const lastSeen = localStorage.getItem('lastSeenBuildTime')
+        const lastSeen = storageGet('lastSeenBuildTime')
         if (String(buildTime) !== lastSeen) {
           ;(async () => {
             try {
               await cancelRedeployReminders()
               await scheduleRedeployReminders(buildTime)
-              localStorage.setItem('lastSeenBuildTime', String(buildTime))
+              storageSet('lastSeenBuildTime', String(buildTime))
             } catch (e) {
               console.error('Failed to reschedule redeploy reminders:', e)
             }
@@ -90,6 +92,7 @@ export function AppRoutes() {
       {/* Full-screen routes — no shell/nav */}
       <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/session/:id" element={<ErrorBoundary level="session"><WorkoutPage /></ErrorBoundary>} />
+      <Route path="/settings/logs" element={<ErrorBoundary level="page"><LogsPage /></ErrorBoundary>} />
 
       <Route element={<ShellLayout />}>
         <Route path="/" element={<Navigate to="/today" replace />} />
