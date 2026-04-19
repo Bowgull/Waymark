@@ -132,13 +132,14 @@ export async function scheduleAlarms(
   const snooze2 = addMinutes(base, 18)
   const snooze3 = addMinutes(base, 27)
   // Nuclear starts at +36 min, fires every 15 seconds for 5 minutes.
-  // Bundled critical sound means silent mode doesn't mute these.
+  // Silent switch will mute the sound on a sideloaded build (no critical-alerts
+  // entitlement). User-facing guidance: ring mode on training mornings.
   const nuclearDates = NUCLEAR_IDS.map(
     (_, i) => new Date(addMinutes(base, 36).getTime() + i * 15_000),
   )
 
-  const morningSound = { sound: 'morning.caf', critical: true, criticalVolume: 0.6, interruptionLevel: 'critical' as const }
-  const nuclearSound = { sound: 'nuclear.caf', critical: true, criticalVolume: 0.6, interruptionLevel: 'critical' as const }
+  const morningSound = { sound: 'morning.caf', interruptionLevel: 'timeSensitive' as const }
+  const nuclearSound = { sound: 'nuclear.caf', interruptionLevel: 'timeSensitive' as const }
 
   await LocalNotifications.schedule({
     notifications: [
@@ -208,6 +209,21 @@ export async function scheduleAlarms(
       ],
     })
   }
+}
+
+// Boot-time sync: rehydrate scheduled alarms from the user's saved settings.
+// Without this, `scheduleAlarms()` only ran on Settings save — so fresh installs
+// or reinstalls (sideload cert regen) had no OS-level alarms until the user
+// re-opened Settings and hit Save. Call once at app boot after permission prompt.
+export async function syncAlarmsFromSettings(settings: {
+  amReminder?: string | null
+  pmSessionTime?: string | null
+  pmLeadMin?: number | null
+}): Promise<void> {
+  if (!isNative) return
+  const { amReminder, pmSessionTime, pmLeadMin } = settings
+  if (!amReminder || !pmSessionTime || pmLeadMin == null) return
+  await scheduleAlarms(amReminder, pmSessionTime, pmLeadMin)
 }
 
 // Called when app comes to foreground — Option C kill switch
@@ -297,6 +313,8 @@ export async function scheduleRoundActiveCues(durationSec: number): Promise<void
       title: 'Waymark',
       body: 'Finish.',
       schedule: { at: finishAt },
+      sound: 'finish_warning.caf',
+      interruptionLevel: 'timeSensitive' as const,
     })
   }
   notifications.push({
@@ -304,6 +322,8 @@ export async function scheduleRoundActiveCues(durationSec: number): Promise<void
     title: 'Waymark',
     body: 'Rest.',
     schedule: { at: roundEndAt },
+    sound: 'round_end.caf',
+    interruptionLevel: 'timeSensitive' as const,
   })
 
   if (notifications.length > 0) {
@@ -336,6 +356,8 @@ export async function scheduleRestCues(restSec: number): Promise<void> {
       title: 'Waymark',
       body: 'Get ready.',
       schedule: { at: restWarnAt },
+      sound: 'rest_warning.caf',
+      interruptionLevel: 'timeSensitive' as const,
     })
   }
   notifications.push({
@@ -343,6 +365,8 @@ export async function scheduleRestCues(restSec: number): Promise<void> {
     title: 'Waymark',
     body: 'Go.',
     schedule: { at: restEndAt },
+    sound: 'round_start.caf',
+    interruptionLevel: 'timeSensitive' as const,
   })
 
   if (notifications.length > 0) {
@@ -363,7 +387,14 @@ export async function scheduleStrengthRestEnd(restSec: number): Promise<void> {
   if (!isNative) return
   const at = addSeconds(new Date(), restSec)
   await LocalNotifications.schedule({
-    notifications: [{ id: CUE_STRENGTH_REST_END, title: 'Waymark', body: 'Next set.', schedule: { at } }],
+    notifications: [{
+      id: CUE_STRENGTH_REST_END,
+      title: 'Waymark',
+      body: 'Next set.',
+      schedule: { at },
+      sound: 'round_start.caf',
+      interruptionLevel: 'timeSensitive' as const,
+    }],
   })
 }
 

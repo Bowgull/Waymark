@@ -60,6 +60,13 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const CATEGORY_ORDER = ['strength', 'core', 'posture', 'mobility']
 
+function formatMuscleGroup(raw: string): string {
+  return raw
+    .split('_')
+    .map(w => (w.length <= 2 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)))
+    .join(' ')
+}
+
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
@@ -345,23 +352,29 @@ export function LibraryPage() {
                       {muscles.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
                           {muscles.map((m) => (
-                            <Badge key={m} variant="gold" className="text-[13px] py-0">
-                              {m}
+                            <Badge key={m} variant="inscription-gold">
+                              {formatMuscleGroup(m)}
                             </Badge>
                           ))}
                         </div>
                       )}
 
                       {isExpanded && (ex.formCues || ex.formVideoUrl) && (
-                        <div className="mt-3 border-l-2 border-gold/30 pl-3">
+                        <div className="mt-3">
                           {ex.formCues && (
-                            <p className="text-sm italic leading-relaxed text-muted-foreground">
-                              {ex.formCues}
-                            </p>
+                            <>
+                              <GoldDivider className="my-3" />
+                              <p className="font-cinzel text-[10px] uppercase tracking-[0.3em] text-gold/50 mb-1.5">
+                                Cues
+                              </p>
+                              <p className="text-sm leading-relaxed text-foreground/80">
+                                {ex.formCues}
+                              </p>
+                            </>
                           )}
                           {ex.formVideoUrl && (
                             <div className={ex.formCues ? 'mt-3' : ''}>
-                              <FormVideoLink url={ex.formVideoUrl} variant="pill" />
+                              <FormVideoLink url={ex.formVideoUrl} />
                             </div>
                           )}
                         </div>
@@ -512,7 +525,7 @@ export function LibraryPage() {
               <div key={c.id} className="rounded-md border border-border bg-card p-3">
                 <span className="text-sm text-foreground">{c.text}</span>
                 <div className="mt-1 flex gap-1">
-                  <Badge variant="gold" className="text-[13px] py-0">{TIER_LABELS[c.tier]}</Badge>
+                  <Badge variant="inscription-gold">{TIER_LABELS[c.tier]}</Badge>
                   {(c.isFavourite === 1 || c.masteryScore >= 9) && <span className="text-gold"><ForgeIcon size={12} mastered={c.masteryScore >= 9} /></span>}
                 </div>
               </div>
@@ -612,7 +625,7 @@ export function LibraryPage() {
                                   {formatEpochDay(entry.date)}
                                 </p>
                                 {entry.type === 'weekly' && (
-                                  <Badge variant="gold" className="text-[13px] py-0">weekly</Badge>
+                                  <Badge variant="inscription-gold">Weekly</Badge>
                                 )}
                               </div>
                               <JournalEntry content={entry.content} />
