@@ -10,8 +10,8 @@ export function getSessionIntent(sessionType: string): string {
       return 'Live skill. Pads, drills, sparring if it happens.'
     case 'bag_work':
       return 'Solo rounds. Combos and timing on the bag.'
-    case 'posture_corrective':
-      return 'Undo the desk. Upper release, lower mobility.'
+    case 'mobility':
+      return 'Undo the desk. Breathing, upper release, lower mobility.'
     case 'active_recovery':
       return 'Keep blood moving. Nothing heavy.'
     case 'skip_rope':

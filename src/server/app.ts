@@ -9,7 +9,7 @@ import { createDB } from '../db/client'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, bodyMetrics, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
 import { adHocSessionSchema, completeSessionSchema, dailyLogSchema } from '../lib/validators/schemas'
-import { POSTURE_TEMPLATE } from '../lib/postureTemplate'
+import { DAILY_MOBILITY_TEMPLATE, FR_COOLDOWN_TEMPLATE } from '../lib/mobilityTemplate'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import type { TemplateSession } from '../lib/weeklyTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
@@ -22,6 +22,7 @@ import { runSkipResponse } from '../lib/skipResponseAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 import { strava } from './routes/strava'
+import { logs } from './routes/logs'
 
 type Bindings = {
   DB: D1Database
@@ -36,6 +37,7 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
 
 app.route('/api/strava', strava)
+app.route('/api/logs', logs)
 
 app.onError((err, c) => {
   console.error('[Waymark API Error]', err.message, err.stack)
@@ -106,7 +108,7 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   return { session, exercises: result }
 }
 
-async function buildPostureWorkoutResponse(db: DrizzleDB, sessionId: string) {
+async function buildMobilityWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const pExercises = await db.select().from(postureSessionExercises)
     .where(eq(postureSessionExercises.sessionId, sessionId))
@@ -114,8 +116,11 @@ async function buildPostureWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const exRows = await db.select().from(exercises)
   const exMap = new Map(exRows.map(e => [e.id, e]))
 
-  // Also get template notes and sections
-  const templateMap = new Map(POSTURE_TEMPLATE.map(t => [t.exerciseId, { notes: t.notes ?? null, section: t.section }]))
+  // Template notes/sections/reps come from whichever template this exercise lives in.
+  // Daily Mobility and FR Cooldown use disjoint exerciseIds, so one lookup covers both.
+  const templateMap = new Map(
+    [...DAILY_MOBILITY_TEMPLATE, ...FR_COOLDOWN_TEMPLATE].map(t => [t.exerciseId, { notes: t.notes ?? null, section: t.section, reps: t.reps ?? null }]),
+  )
 
   const result = pExercises
     .sort((a, b) => a.orderIndex - b.orderIndex)
@@ -125,6 +130,7 @@ async function buildPostureWorkoutResponse(db: DrizzleDB, sessionId: string) {
       return {
         ...pe,
         section: tmpl?.section ?? null,
+        reps: tmpl?.reps ?? null,
         exercise: exercise ? { name: exercise.name, formCues: exercise.formCues, equipment: exercise.equipment, formVideoUrl: exercise.formVideoUrl } : null,
         notes: tmpl?.notes ?? null,
       }
@@ -960,7 +966,20 @@ app.post('/api/sessions/:id/complete', async (c) => {
   return c.json(updated)
 })
 
-// ─── Foundation Run (combined Zone 2 + posture) ───────────────
+app.post('/api/sessions/:id/abandon', async (c) => {
+  // Called by the session ErrorBoundary when a crash makes the session
+  // unrecoverable. Returns the session to 'planned' so the next app launch
+  // doesn't try to resume a broken workout.
+  const sessionId = c.req.param('id')
+  const db = createDB(c.env)
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
+  if (!session) return c.json({ error: 'session not found' }, 404)
+  if (session.status !== 'in_progress') return c.json({ ok: true, noop: true })
+  await db.update(sessions).set({ status: 'planned', startedAt: null }).where(eq(sessions.id, sessionId))
+  return c.json({ ok: true })
+})
+
+// ─── Foundation Run (Zone 2 + cooldown mobility block) ────────
 
 app.post('/api/sessions/:id/start-foundation-run', async (c) => {
   const sessionId = c.req.param('id')
@@ -973,11 +992,11 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
 
   // Idempotent
   const existingRun = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
-  const existingPosture = await db.select().from(postureSessionExercises).where(eq(postureSessionExercises.sessionId, sessionId))
-  if (existingRun.length > 0 && existingPosture.length > 0) {
+  const existingCooldown = await db.select().from(postureSessionExercises).where(eq(postureSessionExercises.sessionId, sessionId))
+  if (existingRun.length > 0 && existingCooldown.length > 0) {
     const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' })
-    const postureResponse = await buildPostureWorkoutResponse(db, sessionId)
-    return c.json({ session, runSession: existingRun[0], prescription, postureExercises: postureResponse.exercises })
+    const mobilityResponse = await buildMobilityWorkoutResponse(db, sessionId)
+    return c.json({ session, runSession: existingRun[0], prescription, postureExercises: mobilityResponse.exercises })
   }
 
   // Create run session (Zone 2)
@@ -990,9 +1009,9 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
     isIndoor: 0,
   })
 
-  // Create posture exercises
-  for (let i = 0; i < POSTURE_TEMPLATE.length; i++) {
-    const tmpl = POSTURE_TEMPLATE[i]
+  // Create FR cooldown exercises (trimmed, post-run deep stretches)
+  for (let i = 0; i < FR_COOLDOWN_TEMPLATE.length; i++) {
+    const tmpl = FR_COOLDOWN_TEMPLATE[i]
     await db.insert(postureSessionExercises).values({
       id: crypto.randomUUID(),
       sessionId,
@@ -1009,9 +1028,9 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const [run] = await db.select().from(runSessions).where(eq(runSessions.id, runId))
   const prescription = await getRunPrescription(db, { ...updated, notes: 'zone2' })
-  const postureResponse = await buildPostureWorkoutResponse(db, sessionId)
+  const mobilityResponse = await buildMobilityWorkoutResponse(db, sessionId)
 
-  return c.json({ session: updated, runSession: run, prescription, postureExercises: postureResponse.exercises })
+  return c.json({ session: updated, runSession: run, prescription, postureExercises: mobilityResponse.exercises })
 })
 
 app.get('/api/sessions/:id/foundation-run-workout', async (c) => {
@@ -1023,31 +1042,31 @@ app.get('/api/sessions/:id/foundation-run-workout', async (c) => {
 
   const [run] = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
   const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' })
-  const postureResponse = await buildPostureWorkoutResponse(db, sessionId)
+  const mobilityResponse = await buildMobilityWorkoutResponse(db, sessionId)
 
-  return c.json({ session, runSession: run ?? null, prescription, postureExercises: postureResponse.exercises })
+  return c.json({ session, runSession: run ?? null, prescription, postureExercises: mobilityResponse.exercises })
 })
 
-// ─── Posture Workout ───────────────────────────────────────────
+// ─── Mobility Workout ──────────────────────────────────────────
 
-app.post('/api/sessions/:id/start-posture', async (c) => {
+app.post('/api/sessions/:id/start-mobility', async (c) => {
   const sessionId = c.req.param('id')
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
 
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
-  if (session.type !== 'posture_corrective') return c.json({ error: 'not a posture session' }, 400)
+  if (session.type !== 'mobility') return c.json({ error: 'not a mobility session' }, 400)
 
   // Idempotent: return existing if already started
   const existing = await db.select().from(postureSessionExercises)
     .where(eq(postureSessionExercises.sessionId, sessionId))
   if (existing.length > 0) {
-    return c.json(await buildPostureWorkoutResponse(db, sessionId))
+    return c.json(await buildMobilityWorkoutResponse(db, sessionId))
   }
 
-  for (let i = 0; i < POSTURE_TEMPLATE.length; i++) {
-    const tmpl = POSTURE_TEMPLATE[i]
+  for (let i = 0; i < DAILY_MOBILITY_TEMPLATE.length; i++) {
+    const tmpl = DAILY_MOBILITY_TEMPLATE[i]
     await db.insert(postureSessionExercises).values({
       id: crypto.randomUUID(),
       sessionId,
@@ -1060,20 +1079,20 @@ app.post('/api/sessions/:id/start-posture', async (c) => {
   }
 
   await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
-  return c.json(await buildPostureWorkoutResponse(db, sessionId))
+  return c.json(await buildMobilityWorkoutResponse(db, sessionId))
 })
 
-app.get('/api/sessions/:id/posture-workout', async (c) => {
+app.get('/api/sessions/:id/mobility-workout', async (c) => {
   const sessionId = c.req.param('id')
   const db = createDB(c.env)
 
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
 
-  return c.json(await buildPostureWorkoutResponse(db, sessionId))
+  return c.json(await buildMobilityWorkoutResponse(db, sessionId))
 })
 
-app.patch('/api/posture-exercises/:id', async (c) => {
+app.patch('/api/mobility-exercises/:id', async (c) => {
   const exId = c.req.param('id')
   const body = await c.req.json<{ completed?: number }>()
   const db = createDB(c.env)
@@ -1333,43 +1352,6 @@ app.patch('/api/combos/:id/favourite', async (c) => {
 
   const [updated] = await db.select().from(combos).where(eq(combos.id, comboId))
   return c.json(updated)
-})
-
-// Swap a combo in a round (re-roll)
-app.post('/api/sessions/:id/swap-combo', async (c) => {
-  const body = await c.req.json<{ roundId: string; oldComboId: string }>()
-  const db = createDB(c.env)
-
-  // Get combos already in this round
-  const roundCombos = await db.select().from(bagWorkRoundCombos).where(eq(bagWorkRoundCombos.roundId, body.roundId))
-  const usedIds = new Set(roundCombos.map(rc => rc.comboId))
-
-  // Get user's enabled techniques
-  const [userSettings] = await db.select().from(settings)
-  const enabledTechniques = new Set((userSettings?.enabledTechniques ?? 'boxing,kicks,defensive').split(','))
-
-  // Pick a new combo from unlocked pool excluding current round's combos
-  const allUnlocked = await db.select().from(combos).where(eq(combos.unlocked, 1))
-  const available = allUnlocked.filter(c => {
-    if (usedIds.has(c.id) && c.id !== body.oldComboId) return false
-    if (c.id === body.oldComboId) return false
-    const techniques = c.techniques.split(',').filter(Boolean)
-    return techniques.every(t => enabledTechniques.has(t))
-  })
-
-  if (available.length === 0) {
-    return c.json({ error: 'no other combos available' }, 400)
-  }
-
-  const newCombo = available[Math.floor(Math.random() * available.length)]
-
-  // Update the junction row
-  const targetRow = roundCombos.find(rc => rc.comboId === body.oldComboId)
-  if (targetRow) {
-    await db.update(bagWorkRoundCombos).set({ comboId: newCombo.id }).where(eq(bagWorkRoundCombos.id, targetRow.id))
-  }
-
-  return c.json({ combo: newCombo })
 })
 
 // ─── Running Workout ───────────────────────────────────────────
@@ -2774,7 +2756,7 @@ app.get('/api/history/category-completion', async (c) => {
   const weeklyTargets: Record<string, { types: string[]; target: number }> = {
     strength: { types: ['strength'], target: 2 },
     conditioning: { types: ['foundation_run', 'running', 'mt_class', 'bag_work', 'skip_rope'], target: 8 },
-    recovery: { types: ['active_recovery', 'posture_corrective'], target: 2 },
+    recovery: { types: ['active_recovery', 'mobility'], target: 2 },
   }
 
   const result: Record<string, { completed: number; target: number }> = {}

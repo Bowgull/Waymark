@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 
 import { apiFetch } from '@/lib/api'
 import { CHART_COLORS, AXIS_STYLE, TOOLTIP_STYLE, kgToLbsDisplay } from '@/lib/chartTheme'
+import { logger } from '@/lib/logger'
 
 interface DataPoint {
   date: string
@@ -91,7 +92,10 @@ export function WeightProgressionChart({ exercises, days }: WeightProgressionCha
     ).then((res) => {
       setData(res.dataPoints)
       setExerciseName(res.exerciseName)
-    }).catch(console.error)
+    }).catch((e) => {
+      const message = e instanceof Error ? e.message : String(e)
+      logger.warn('system', 'weight-progression load failed', { exerciseId: selectedExercise, days, message })
+    })
   }, [selectedExercise, days])
 
   const chartData = data.map(d => ({

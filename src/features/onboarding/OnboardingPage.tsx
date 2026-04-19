@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -33,6 +33,22 @@ export function OnboardingPage() {
   function toggleGoal(g: Goal) {
     setGoals(prev => prev.includes(g) ? prev.filter(x => x !== g) : [...prev, g])
   }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null
+      const inTextarea = target?.tagName === 'TEXTAREA'
+      if (inTextarea && !(e.metaKey || e.ctrlKey)) return
+      if (e.key !== 'Enter') return
+      e.preventDefault()
+      if (step === 1 && goals.length > 0) setStep(2)
+      else if (step === 2) setStep(3)
+      else if (step === 3 && trainingHistory && !submitting) commit()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, goals, trainingHistory, submitting])
 
   async function commit() {
     if (!trainingHistory || submitting) return

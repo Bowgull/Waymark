@@ -37,6 +37,13 @@ export function SetTracker({
     onComplete(actualWeightKg, actualReps)
   }
 
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleDone()
+    }
+  }
+
   function handleUseSuggestion() {
     if (!suggestion) return
     setWeight(String(suggestion.weightLbs))
@@ -72,6 +79,7 @@ export function SetTracker({
             inputMode="decimal"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="-"
             className="min-h-[44px] w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-gold/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(232,200,96,0.15)] focus:outline-none"
           />
@@ -85,6 +93,7 @@ export function SetTracker({
             inputMode="numeric"
             value={reps}
             onChange={(e) => setReps(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder={targetReps === 0 ? 'Max' : String(targetReps)}
             className="min-h-[44px] w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-gold/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(232,200,96,0.15)] focus:outline-none"
           />

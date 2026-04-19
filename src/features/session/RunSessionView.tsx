@@ -4,7 +4,39 @@ import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/Toast'
 import { apiFetch } from '@/lib/api'
+import { logger } from '@/lib/logger'
 import { onePaceSvg } from '@/lib/markAssets'
+
+import { SessionShell } from './SessionShell'
+import { resolveRunMoment, type RunType } from './runMicrocopy'
+
+const STRAVA_APP_STORE_URL = 'https://apps.apple.com/app/strava/id426826309'
+
+// Try to launch the Strava app. If the page is still visible ~1.8s later,
+// the scheme didn't resolve — offer an App Store link.
+function tryOpenStrava(onNotInstalled: () => void) {
+  const before = Date.now()
+  const handle = window.setTimeout(() => {
+    const elapsed = Date.now() - before
+    if (document.visibilityState === 'visible' && elapsed >= 1500) {
+      onNotInstalled()
+    }
+  }, 1800)
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') {
+      window.clearTimeout(handle)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }
+  document.addEventListener('visibilitychange', onVisibility)
+  try {
+    window.location.href = 'strava://'
+  } catch {
+    window.clearTimeout(handle)
+    document.removeEventListener('visibilitychange', onVisibility)
+    onNotInstalled()
+  }
+}
 
 interface RunSession {
   id: string
@@ -39,9 +71,21 @@ interface RunSessionViewProps {
   runSession: RunSession
   prescription?: RunPrescription | null
   onComplete: () => void
+  onExit?: () => void
+  /**
+   * When true, render body + inline footer only (no SessionShell wrapper).
+   * Used by Foundation Run which provides its own outer frame.
+   */
+  inline?: boolean
 }
 
-export function RunSessionView({ runSession, prescription, onComplete }: RunSessionViewProps) {
+export function RunSessionView({
+  runSession,
+  prescription,
+  onComplete,
+  onExit,
+  inline = false,
+}: RunSessionViewProps) {
   const [phase, setPhase] = useState<RunPhase>('ready')
   const [isIndoor, setIsIndoor] = useState(runSession.isIndoor === 1)
   const [elapsed, setElapsed] = useState(0)
@@ -69,7 +113,10 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
         if (s?.onePaceArc) setOnePaceArc(s.onePaceArc)
         if (s?.onePaceEp) setOnePaceEp(s.onePaceEp)
       })
-      .catch(() => {})
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : String(e)
+        logger.warn('system', 'settings autofill load failed', { message })
+      })
   }, [])
 
   const startRun = useCallback(() => {
@@ -78,11 +125,17 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
     intervalRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
     }, 500)
-    // Outdoor run: open Strava so the athlete can record GPS there
     if (!isIndoor) {
-      try { window.location.href = 'strava://' } catch {}
+      logger.sessionEvent('strava launch attempt', { runSessionId: runSession.id })
+      tryOpenStrava(() => {
+        logger.warn('session', 'strava not installed', { runSessionId: runSession.id })
+        showToast('Strava not installed. Tap to get it from the App Store.', 'warning', {
+          actionLabel: 'App Store',
+          onAction: () => window.open(STRAVA_APP_STORE_URL, '_blank'),
+        })
+      })
     }
-  }, [isIndoor])
+  }, [isIndoor, runSession.id, showToast])
 
   function finishRun() {
     if (intervalRef.current) clearInterval(intervalRef.current)
@@ -151,24 +204,43 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
     targetSegments.push(`${prescription.targetDistKm} km`)
   }
   if (isZone2) {
-    targetSegments.push('HR 130–145')
+    targetSegments.push('HR 130-145')
     targetSegments.push('nasal breathing')
   }
 
-  if (phase === 'ready') {
-    return (
-      <div className="animate-fade-in">
-        <p className="text-label mb-1 text-muted-foreground">
+  const runType = (prescription?.runType ?? undefined) as RunType | undefined
+  const remaining = Math.max(0, timerEstimate - elapsed)
+
+  const moment = resolveRunMoment({
+    phase,
+    runType,
+    isIndoor,
+    secondsRemaining: phase === 'running' ? remaining : undefined,
+  })
+
+  const counter =
+    phase === 'logging'
+      ? 'Log'
+      : phase === 'running'
+        ? 'Running'
+        : prescription
+          ? `Week ${prescription.weekNumber}`
+          : undefined
+
+  // ─── Body renderers per phase ────────────────────────────────
+
+  const body =
+    phase === 'ready' ? (
+      <div className="mx-auto max-w-md animate-fade-in">
+        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/50">
           {isZone2 ? 'Morning Run' : prescription ? `Week ${prescription.weekNumber}` : 'Run'}
         </p>
-        <h2 className="text-display-lg text-foreground">{runTypeLabel}</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {runDesc}
-        </p>
+        <h2 className="mt-1 text-display-lg text-foreground">{runTypeLabel}</h2>
+        <p className="mt-3 text-sm leading-relaxed text-foreground/85">{runDesc}</p>
 
         {targetSegments.length > 0 && (
-          <p className="mt-3 font-[family-name:var(--font-display)] text-xs tracking-wider text-gold/60">
-            {targetSegments.join(' · ')}
+          <p className="mt-3 font-cinzel text-xs uppercase tracking-[0.22em] text-gold/60">
+            {targetSegments.join(' \u00b7 ')}
           </p>
         )}
 
@@ -192,16 +264,16 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
           </button>
         </div>
 
-        {isIndoor ? (
+        {isIndoor && (
           <div className="mt-8 flex flex-col items-center gap-4">
             {(onePaceArc || onePaceEp) && (
-              <p className="font-[family-name:var(--font-display)] text-display-lg text-gold text-center">
+              <p className="font-cinzel text-display-lg text-gold text-center">
                 {[onePaceArc, onePaceEp ? `Ep ${onePaceEp}` : ''].filter(Boolean).join(' - ')}
               </p>
             )}
             <button
               onClick={() => window.open('https://onepace.net', '_blank')}
-              className="w-full flex flex-col items-center gap-4 rounded-md border border-gold/15 bg-deep-forest px-6 py-8"
+              className="flex w-full flex-col items-center gap-4 rounded-md border border-gold/15 bg-deep-forest px-6 py-8"
             >
               <img
                 src={onePaceSvg}
@@ -209,117 +281,153 @@ export function RunSessionView({ runSession, prescription, onComplete }: RunSess
                 className="h-24 w-24 object-contain"
                 style={{ mixBlendMode: 'screen' }}
               />
-              <span className="font-[family-name:var(--font-display)] text-sm tracking-wider text-gold/70">
+              <span className="font-cinzel text-sm tracking-wider text-gold/70">
                 Open One Pace
               </span>
             </button>
-            <button
-              onClick={() => setPhase('logging')}
-              className="w-full rounded-md border border-border bg-surface-light px-4 py-3 text-sm text-muted-foreground"
-            >
-              Log Run
-            </button>
           </div>
-        ) : (
-          <div className="mt-8 flex justify-center">
-            <Button onClick={startRun} size="lg" style={{ backgroundColor: '#1E8A68' }}>
-              Start Run
-            </Button>
+        )}
+      </div>
+    ) : phase === 'running' ? (
+      <div className="mx-auto flex max-w-md flex-col items-center pt-6 animate-fade-in">
+        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/50">
+          Running
+        </p>
+        <h2 className="mt-1 text-display-lg text-foreground">{runTypeLabel}</h2>
+        <div className="mt-8 rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
+          <RingTimer
+            totalSeconds={timerEstimate}
+            secondsRemaining={remaining}
+            label="Running"
+            accentColor="#1E8A68"
+            size={240}
+          />
+        </div>
+      </div>
+    ) : (
+      // logging
+      <div className="mx-auto max-w-md space-y-5 animate-fade-in">
+        <div className="text-center">
+          <h2 className="text-display-lg text-foreground">Log Your Run</h2>
+        </div>
+
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="text-label mb-1 block text-muted-foreground">Distance (km)</label>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={distance}
+              onChange={(e) => setDistance(e.target.value)}
+              placeholder="5.0"
+              className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-label mb-1 block text-muted-foreground">Duration</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              placeholder="25:00"
+              className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {isIndoor && (
+          <div className="rounded-md border border-border bg-deep-forest p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <img src={onePaceSvg} alt="" className="h-6 w-6 object-contain" style={{ mixBlendMode: 'screen' }} />
+                <p className="text-sm font-medium text-teal">One Pace</p>
+              </div>
+              <a
+                href="https://onepace.net"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-teal/70 underline decoration-teal/30 active:text-teal"
+              >
+                onepace.net \u2197
+              </a>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="text-label mb-1 block text-muted-foreground">Arc</label>
+                <input type="text" value={onePaceArc} onChange={(e) => setOnePaceArc(e.target.value)}
+                  placeholder="e.g. Water 7"
+                  className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+              </div>
+              <div className="flex-1">
+                <label className="text-label mb-1 block text-muted-foreground">Episode</label>
+                <input type="text" value={onePaceEp} onChange={(e) => setOnePaceEp(e.target.value)}
+                  placeholder="e.g. 3"
+                  className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+              </div>
+            </div>
           </div>
         )}
       </div>
     )
-  }
 
-  if (phase === 'running') {
-    const estimatedTotal = timerEstimate
-    const remaining = Math.max(0, estimatedTotal - elapsed)
+  // ─── Footer per phase ────────────────────────────────────────
 
-    return (
-      <div className="flex flex-col items-center py-8 animate-fade-in">
-        <RingTimer
-          totalSeconds={estimatedTotal}
-          secondsRemaining={remaining}
-          label="Running"
-          accentColor="#1E8A68"
-          size={260}
-        />
-        <Button onClick={finishRun} size="lg" className="mt-8">
-          Finish Run
+  const footer =
+    phase === 'ready' ? (
+      isIndoor ? (
+        <Button
+          onClick={() => setPhase('logging')}
+          size="lg"
+          className="w-full"
+          style={{ backgroundColor: '#1E8A68', color: '#020A08' }}
+        >
+          Log Run
         </Button>
-      </div>
+      ) : (
+        <Button
+          onClick={startRun}
+          size="lg"
+          className="w-full"
+          style={{ backgroundColor: '#1E8A68', color: '#020A08' }}
+        >
+          Start Run
+        </Button>
+      )
+    ) : phase === 'running' ? (
+      <Button onClick={finishRun} size="lg" className="w-full">
+        Finish Run
+      </Button>
+    ) : (
+      <Button onClick={handleSave} disabled={saving} size="lg" className="w-full">
+        {saving ? 'Saving...' : 'Save Run'}
+      </Button>
+    )
+
+  if (inline) {
+    return (
+      <>
+        <div className="flex flex-col gap-4">
+          {body}
+          <div className="mx-auto w-full max-w-md">{footer}</div>
+        </div>
+        <ToastContainer />
+      </>
     )
   }
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="text-center">
-        <p className="text-display text-foreground">Log Your Run</p>
-      </div>
-
-      <div className="flex gap-4">
-        <div className="flex-1">
-          <label className="text-label mb-1 block text-muted-foreground">Distance (km)</label>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={distance}
-            onChange={(e) => setDistance(e.target.value)}
-            placeholder="5.0"
-            className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
-          />
-        </div>
-        <div className="flex-1">
-          <label className="text-label mb-1 block text-muted-foreground">Duration</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            placeholder="25:00"
-            className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
-          />
-        </div>
-      </div>
-
-      {isIndoor && (
-        <div className="rounded-md border border-border bg-deep-forest p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <img src={onePaceSvg} alt="" className="h-6 w-6 object-contain" style={{ mixBlendMode: 'screen' }} />
-              <p className="text-sm font-medium text-teal">One Pace</p>
-            </div>
-            <a
-              href="https://onepace.net"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-teal/70 underline decoration-teal/30 active:text-teal"
-            >
-              onepace.net ↗
-            </a>
-          </div>
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="text-label mb-1 block text-muted-foreground">Arc</label>
-              <input type="text" value={onePaceArc} onChange={(e) => setOnePaceArc(e.target.value)}
-                placeholder="e.g. Water 7"
-                className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
-            </div>
-            <div className="flex-1">
-              <label className="text-label mb-1 block text-muted-foreground">Episode</label>
-              <input type="text" value={onePaceEp} onChange={(e) => setOnePaceEp(e.target.value)}
-                placeholder="e.g. 3"
-                className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      <Button onClick={handleSave} disabled={saving} size="lg" className="w-full">
-        {saving ? 'Saving...' : 'Save Run'}
-      </Button>
-
+    <>
+      <SessionShell
+        sessionType="running"
+        counter={counter}
+        moment={moment}
+        onExit={onExit}
+        footer={footer}
+      >
+        {body}
+      </SessionShell>
       <ToastContainer />
-    </div>
+    </>
   )
 }

@@ -198,3 +198,11 @@ Append one entry per session. Keep under 5 lines each.
 -->
 
 <!-- First entry goes here when Step 1 runs. -->
+
+### Out-of-plan (2026-04-18) · Mobility refactor
+- Did: Renamed session type `posture_corrective` -> `mobility` across DB/routes/UI/AI; added Daily Mobility session every AM (7/wk, ~10min) via weeklyTemplate; split old 19-ex posture block into DAILY_MOBILITY_TEMPLATE (7) + FR_COOLDOWN_TEMPLATE (8) with zero overlap; Foundation Run estMin 45 -> 35.
+- Migration: `drizzle/0016_mobility_rename.sql` applied local; prod pending user confirmation.
+- AI prompts updated: blockZero/weeklyPlanAI know daily mobility runs every AM across all three phases; skipResponseAI and sessionReviewAI use new session label.
+- Recovery ring target: 2 -> 9 (7 daily mobility + 2 active_recovery).
+- Driver: user directive to make mobility visible every AM and respect Block Zero phases, kept short to avoid bailing.
+- Next: apply migration to prod D1 after smoke test, verify preview.

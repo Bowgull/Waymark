@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
 import { kgToLbsDisplay } from '@/lib/chartTheme'
+import { logger } from '@/lib/logger'
 import { PageHeader } from '@/components/PageHeader'
 import { Sparkline } from '../history/Sparkline'
 
@@ -32,7 +33,10 @@ export function BodyMetricsPage() {
   function loadEntries() {
     apiFetch<{ entries: BodyMetricEntry[] }>('/api/body-metrics')
       .then(r => setEntries(r.entries))
-      .catch(() => {})
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : String(e)
+        logger.warn('system', 'body-metrics load failed', { message })
+      })
   }
 
   useEffect(() => { loadEntries() }, [])

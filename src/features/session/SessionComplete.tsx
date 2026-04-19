@@ -5,6 +5,7 @@ import { ScrollDrum } from '@/components/ui/ScrollDrum'
 import { SlidingGauge } from '@/components/ui/SlidingGauge'
 import { getMarkAsset } from '@/lib/markAssets'
 import { completeHaptic } from '@/lib/haptics'
+import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 
 const DRIVE_EXPLAINER_KEY = 'waymark.drive_explainer_seen'
 
@@ -30,22 +31,14 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
   const mark = getMarkAsset(sessionType)
 
   useEffect(() => {
-    try {
-      if (!localStorage.getItem(DRIVE_EXPLAINER_KEY)) {
-        setShowDriveExplainer(true)
-      }
-    } catch {
-      // storage blocked, skip
+    if (!storageGet(DRIVE_EXPLAINER_KEY)) {
+      setShowDriveExplainer(true)
     }
   }, [])
 
   function dismissDriveExplainer() {
     setShowDriveExplainer(false)
-    try {
-      localStorage.setItem(DRIVE_EXPLAINER_KEY, '1')
-    } catch {
-      // storage blocked, skip
-    }
+    storageSet(DRIVE_EXPLAINER_KEY, '1')
   }
 
   function handleFinish() {
@@ -110,8 +103,14 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !submitting) {
+              e.preventDefault()
+              handleFinish()
+            }
+          }}
           rows={3}
-          placeholder="How did it feel? Anything to remember?"
+          placeholder="How did it feel? Anything to remember? (Cmd+Enter to close)"
           className="w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-sm text-foreground italic placeholder-muted-foreground/50 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-teal/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(74,202,170,0.15)] focus:outline-none"
         />
       </div>
