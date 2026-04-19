@@ -1,5 +1,5 @@
 interface WeekStats {
-  volume: number
+  durationMin: number
   sessions: number
   avgRpe: number | null
   avgSleep: number | null
@@ -87,7 +87,7 @@ export function MomentumGrid({ thisWeek, lastWeek, period }: MomentumGridProps) 
   const periodLabel = period === 7 ? { current: 'This Week', prior: 'vs last week' }
     : period === 30 ? { current: 'Last 30 Days', prior: 'vs prior 30' }
     : { current: 'Last 90 Days', prior: 'vs prior 90' }
-  const vol = getDelta(thisWeek.volume, lastWeek.volume)
+  const vol = getDelta(thisWeek.durationMin, lastWeek.durationMin)
   const sess = getDelta(thisWeek.sessions, lastWeek.sessions)
   const effort = getDelta(thisWeek.avgRpe, lastWeek.avgRpe, true) // lower RPE = better
   const sleep = getDelta(thisWeek.avgSleep, lastWeek.avgSleep)
@@ -103,9 +103,9 @@ export function MomentumGrid({ thisWeek, lastWeek, period }: MomentumGridProps) 
       <p className="text-label text-muted-foreground mb-2">{periodLabel.current} <span className="text-muted-foreground/60">· {periodLabel.prior}</span></p>
       <div className="grid grid-cols-2 gap-3">
       <MomentumCard
-        label="Volume"
-        value={thisWeek.volume > 0 ? `${Math.round(thisWeek.volume).toLocaleString()}` : '0'}
-        unit="lb"
+        label="Time Training"
+        value={thisWeek.durationMin > 0 ? String(thisWeek.durationMin) : '0'}
+        unit="min"
         delta={vol.delta}
         improved={vol.direction}
       />

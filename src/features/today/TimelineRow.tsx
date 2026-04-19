@@ -3,6 +3,7 @@ import { getEstimatedMin } from '@/lib/weeklyTemplate'
 import { getSessionIntent, getSessionTargetHr } from '@/lib/sessionIntent'
 import { Button } from '@/components/ui/button'
 import { tapHaptic, mediumHaptic } from '@/lib/haptics'
+import type { KeyboardEvent } from 'react'
 
 export interface RunSessionSummary {
   id: string
@@ -102,21 +103,31 @@ export function TimelineRow({
   const displayLabel = isOrphan ? 'Unplanned Run' : label
   const targetHr = getSessionTargetHr(session.type, session.notes, maxHr ?? null)
 
+  function handleToggleKey(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      tapHaptic()
+      onToggle()
+    }
+  }
+
   return (
     <div className={`rounded-lg ${statusBg(session.status, isAutoPending)} transition-colors`}>
       {/* Collapsed row — always visible */}
-      <button
-        type="button"
-        className="flex w-full items-center gap-3 px-3 py-3 text-left active:bg-surface/20"
+      <div
+        role="button"
+        tabIndex={0}
+        className="flex w-full items-center gap-3 px-3 py-3 text-left active:bg-surface/20 cursor-pointer select-none"
         onClick={() => {
           tapHaptic()
           onToggle()
         }}
+        onKeyDown={handleToggleKey}
       >
         <img
           src={mark.png}
           alt=""
-          className={`h-4 w-4 object-contain ${markStyle(session.status)}`}
+          className={`h-4 w-4 shrink-0 object-contain ${markStyle(session.status)}`}
         />
         <div className="flex-1 min-w-0">
           <span className={`text-sm font-semibold ${isSkipped ? 'text-muted-foreground/50 line-through' : isCompleted ? 'text-foreground/80' : 'text-foreground'}`}>
@@ -133,7 +144,7 @@ export function TimelineRow({
             </span>
           )}
         </div>
-        <span className={`text-xs tabular-nums ${isCompleted ? 'text-gold/70' : 'text-muted-foreground'}`}>
+        <span className={`shrink-0 text-xs tabular-nums ${isCompleted ? 'text-gold/70' : 'text-muted-foreground'}`}>
           {(isCompleted || isOrphan) && (run?.durationSec ?? session.durationSec)
             ? formatDuration(run?.durationSec ?? session.durationSec!)
             : isSkipped
@@ -141,7 +152,7 @@ export function TimelineRow({
             : `~${estMin}min`}
         </span>
         <svg
-          className={`h-3.5 w-3.5 text-muted-foreground/50 transition-transform ${expanded ? 'rotate-90' : ''}`}
+          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform ${expanded ? 'rotate-90' : ''}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -149,7 +160,7 @@ export function TimelineRow({
         >
           <path d="M9 18l6-6-6-6" />
         </svg>
-      </button>
+      </div>
 
       {/* Expanded details */}
       {expanded && (
@@ -206,14 +217,14 @@ export function TimelineRow({
                   <>
                     <button
                       type="button"
-                      className="min-h-[36px] rounded-full border border-border/50 px-3 py-1.5 text-xs uppercase tracking-wider text-muted-foreground/80 active:bg-surface/30 active:text-foreground"
+                      className="inline-flex min-h-[44px] items-center rounded-full border border-border/50 px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground/80 active:bg-surface/30 active:text-foreground"
                       onClick={() => onReplace(session.id)}
                     >
                       Replace
                     </button>
                     <button
                       type="button"
-                      className="min-h-[36px] rounded-full border border-border/30 px-3 py-1.5 text-xs uppercase tracking-wider text-muted-foreground/60 active:bg-surface/30 active:text-foreground"
+                      className="inline-flex min-h-[44px] items-center rounded-full border border-border/30 px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground/60 active:bg-surface/30 active:text-foreground"
                       onClick={() => onSkip(session.id)}
                     >
                       Skip
@@ -280,14 +291,14 @@ function ActivityConfirmBody({
         <Button size="sm" onClick={onConfirm}>Confirm</Button>
         <button
           type="button"
-          className="min-h-[36px] rounded-full border border-border/50 px-3 py-1.5 text-xs uppercase tracking-wider text-muted-foreground/80 active:bg-surface/30 active:text-foreground"
+          className="inline-flex min-h-[44px] items-center rounded-full border border-border/50 px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground/80 active:bg-surface/30 active:text-foreground"
           onClick={onReassign}
         >
           Change
         </button>
         <button
           type="button"
-          className="ml-auto text-[11px] uppercase tracking-wider text-muted-foreground/50 active:text-foreground"
+          className="ml-auto inline-flex min-h-[44px] items-center px-2 text-[11px] uppercase tracking-wider text-muted-foreground/50 active:text-foreground"
           onClick={onDismiss}
         >
           Not training
@@ -317,14 +328,14 @@ function OrphanRunBody({
       <div className="flex items-center gap-2">
         <button
           type="button"
-          className="min-h-[36px] rounded-full border border-gold/20 px-3 py-1.5 text-xs uppercase tracking-wider text-gold/80 active:bg-gold/10 active:text-gold"
+          className="inline-flex min-h-[44px] items-center rounded-full border border-gold/20 px-4 py-2 text-xs uppercase tracking-wider text-gold/80 active:bg-gold/10 active:text-gold"
           onClick={onReassign}
         >
           Assign
         </button>
         <button
           type="button"
-          className="ml-auto text-[11px] uppercase tracking-wider text-muted-foreground/50 active:text-foreground"
+          className="ml-auto inline-flex min-h-[44px] items-center px-2 text-[11px] uppercase tracking-wider text-muted-foreground/50 active:text-foreground"
           onClick={onDismiss}
         >
           Not training

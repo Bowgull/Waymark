@@ -12,6 +12,7 @@ import {
 import { SessionShell } from './SessionShell'
 import { resolveSkipRopeMoment } from './skipRopeMicrocopy'
 import { useRestTimer } from './useRestTimer'
+import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
 interface SkipSession {
   id: string
@@ -65,6 +66,52 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
   if (skipPhase === 'skipping' && roundTimer.secondsRemaining <= 0 && roundTimer.isRunning) {
     endRound()
   }
+
+  // Live Activity for skip rope timer.
+  const skipActivityConfig: LiveActivityConfig | null =
+    skipPhase === 'skipping' && roundTimer.isRunning
+      ? {
+          sessionType: 'skip_rope',
+          sessionLabel: 'Skip Rope',
+          state: {
+            phase: 'active',
+            label: `Round ${currentRound} of ${totalRounds}`,
+            startedAt: roundTimer.startedAtMs,
+            endsAt: roundTimer.endsAtMs,
+            isPaused: roundTimer.isPaused,
+            pausedRemaining: roundTimer.isPaused
+              ? roundTimer.secondsRemaining
+              : undefined,
+          },
+        }
+      : skipPhase === 'rest' && restTimer.isRunning
+        ? {
+            sessionType: 'skip_rope',
+            sessionLabel: 'Skip Rope',
+            state: {
+              phase: 'rest',
+              label: 'Rest',
+              detail: `Next: Round ${currentRound + 1}`,
+              startedAt: restTimer.startedAtMs,
+              endsAt: restTimer.endsAtMs,
+              isPaused: restTimer.isPaused,
+              pausedRemaining: restTimer.isPaused
+                ? restTimer.secondsRemaining
+                : undefined,
+            },
+          }
+        : null
+
+  useSessionLiveActivity(skipActivityConfig, {
+    onPause: () => {
+      if (skipPhase === 'skipping') roundTimer.pause()
+      else if (skipPhase === 'rest') restTimer.pause()
+    },
+    onResume: (newEndsAtMs) => {
+      if (skipPhase === 'skipping') roundTimer.resume(newEndsAtMs)
+      else if (skipPhase === 'rest') restTimer.resume(newEndsAtMs)
+    },
+  })
 
   const moment = resolveSkipRopeMoment({
     phase:

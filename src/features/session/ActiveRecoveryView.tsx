@@ -13,6 +13,7 @@ import { logger } from '@/lib/logger'
 
 import { resolveActiveRecoveryMoment } from './activeRecoveryMicrocopy'
 import { SessionShell } from './SessionShell'
+import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
 interface RecoverySession {
   id: string
@@ -114,6 +115,7 @@ export function ActiveRecoveryView({
   const [hipSecondsLeft, setHipSecondsLeft] = useState(
     hipSteps[0]?.movement.holdSec ?? 0,
   )
+  const [hipStartedAtMs, setHipStartedAtMs] = useState(0)
   const hipIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const currentHipStep = hipSteps[hipIdx]
@@ -137,7 +139,11 @@ export function ActiveRecoveryView({
 
   // Tick hip timer
   useEffect(() => {
-    if (!hipRunning) return
+    if (!hipRunning) {
+      setHipStartedAtMs(0)
+      return
+    }
+    setHipStartedAtMs(Date.now())
     hipIntervalRef.current = setInterval(() => {
       setHipSecondsLeft((s) => {
         if (s <= 1) {
@@ -173,15 +179,18 @@ export function ActiveRecoveryView({
 
   // Reset roll timer when step changes — render-phase reset
   const [prevRollIdx, setPrevRollIdx] = useState(rollIdx)
+  const [rollAnchorMs, setRollAnchorMs] = useState(0)
   if (prevRollIdx !== rollIdx) {
     setPrevRollIdx(rollIdx)
     setRollSecondsLeft(currentRollStep?.area.sec ?? 0)
+    setRollAnchorMs(Date.now())
   }
 
   // Tick roll timer — only while in 'roll' phase
   useEffect(() => {
     if (phase !== 'roll') return
     if (rollPaused || !currentRollStep) return
+    if (rollAnchorMs === 0) setRollAnchorMs(Date.now())
     rollIntervalRef.current = setInterval(() => {
       setRollSecondsLeft((s) => {
         if (s <= 1) {
@@ -271,6 +280,62 @@ export function ActiveRecoveryView({
           : 1,
     total: 2,
   }
+
+  // Live Activity for recovery timers.
+  const hipLiveConfig: LiveActivityConfig | null =
+    phase === 'hip' && hipRunning && currentHipStep && hipStartedAtMs > 0
+      ? {
+          sessionType: 'recovery',
+          sessionLabel: 'Recovery',
+          state: {
+            phase: 'hold',
+            label: currentHipStep.movement.name,
+            detail: currentHipStep.side
+              ? currentHipStep.side === 'left' ? 'Left side' : 'Right side'
+              : undefined,
+            startedAt: hipStartedAtMs,
+            endsAt: hipStartedAtMs + (currentHipStep.movement.holdSec ?? 0) * 1000,
+            isPaused: false,
+          },
+        }
+      : null
+
+  const rollLiveConfig: LiveActivityConfig | null =
+    phase === 'roll' && currentRollStep && rollAnchorMs > 0
+      ? {
+          sessionType: 'recovery',
+          sessionLabel: 'Recovery',
+          state: {
+            phase: 'active',
+            label: currentRollStep.area.name,
+            detail: currentRollStep.side
+              ? currentRollStep.side === 'left' ? 'Left side' : 'Right side'
+              : undefined,
+            startedAt: rollAnchorMs,
+            endsAt: rollPaused
+              ? Date.now() + rollSecondsLeft * 1000
+              : rollAnchorMs + currentRollStep.area.sec * 1000,
+            isPaused: rollPaused,
+            pausedRemaining: rollPaused ? rollSecondsLeft : undefined,
+          },
+        }
+      : null
+
+  useSessionLiveActivity(hipLiveConfig ?? rollLiveConfig, {
+    onPause: () => {
+      if (phase === 'roll') setRollPaused(true)
+    },
+    onResume: (newEndsAtMs) => {
+      if (phase === 'roll') {
+        setRollPaused(false)
+        if (newEndsAtMs) {
+          const remaining = Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
+          setRollSecondsLeft(remaining)
+          setRollAnchorMs(Date.now())
+        }
+      }
+    },
+  })
 
   // Counter
   let counter: string | undefined

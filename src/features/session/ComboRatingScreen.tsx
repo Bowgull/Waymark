@@ -102,7 +102,7 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
                   <button
                     key={opt.value}
                     onClick={() => setRating(c.comboId, opt.value)}
-                    className={`flex-1 rounded-md border py-2 text-xs font-medium transition-colors ${
+                    className={`flex min-h-[44px] flex-1 items-center justify-center rounded-md border px-2 text-xs font-medium transition-colors ${
                       currentRating === opt.value
                         ? opt.color + ' bg-surface'
                         : 'border-border text-muted-foreground'
@@ -124,7 +124,7 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
       {saveError && (
         <button
           onClick={handleContinueUnrated}
-          className="mt-1 w-full text-center text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/70 active:text-muted-foreground"
+          className="mt-1 inline-flex min-h-[44px] w-full items-center justify-center px-3 text-center text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/70 active:text-muted-foreground"
         >
           Continue Without Saving
         </button>

@@ -59,7 +59,7 @@ export function WeeklyJournalCard({ onSubmit, existingReflection }: WeeklyJourna
             }}
             rows={5}
             placeholder="Reflect on your week... (Cmd+Enter to save)"
-            className="mb-3 w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 font-[Cinzel] text-sm italic text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none"
+            className="mb-3 w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 font-[Cinzel] text-base italic text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none"
           />
           <div className="flex gap-2">
             <Button

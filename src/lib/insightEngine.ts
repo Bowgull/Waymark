@@ -9,8 +9,8 @@ interface InsightData {
     prsThisMonth: number
     completionRate: number
     topLift: { name: string; weightLbs: number } | null
-    thisWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null }
-    lastWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null }
+    thisWeek: { durationMin: number; sessions: number; avgRpe: number | null; avgSleep: number | null }
+    lastWeek: { durationMin: number; sessions: number; avgRpe: number | null; avgSleep: number | null }
   } | null
   consistency: {
     currentStreak: number
@@ -84,20 +84,20 @@ export function generateInsights(data: InsightData): string[] {
     }
   }
 
-  // Volume comparison
+  // Training time comparison
   if (dashboard) {
-    const thisVol = dashboard.thisWeek.volume
-    const lastVol = dashboard.lastWeek.volume
+    const thisVol = dashboard.thisWeek.durationMin
+    const lastVol = dashboard.lastWeek.durationMin
     if (lastVol > 0 && thisVol > 0) {
       const pctChange = Math.round(((thisVol - lastVol) / lastVol) * 100)
       if (pctChange >= 15) {
         insights.push({
-          text: `Volume up ${pctChange}% this week. Solid momentum.`,
+          text: `Training time up ${pctChange}% this week. Solid momentum.`,
           priority: 6,
         })
       } else if (pctChange <= -20) {
         insights.push({
-          text: `Lighter volume this week. Good time to recover or push next week.`,
+          text: `Lighter week on time. Good chance to recover or push next week.`,
           priority: 4,
         })
       }

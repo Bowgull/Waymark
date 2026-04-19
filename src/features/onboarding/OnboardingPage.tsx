@@ -126,7 +126,7 @@ export function OnboardingPage() {
               onChange={e => setPhysical(e.target.value)}
               placeholder="Lower back stiffness. Right shoulder occasionally."
               rows={4}
-              className="w-full resize-none rounded-md border border-border bg-secondary/50 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
+              className="w-full resize-none rounded-md border border-border bg-secondary/50 px-4 py-3 text-base text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
             />
             <div className="flex gap-3">
               <Button variant="ghost" onClick={() => setStep(3)} className="flex-1">

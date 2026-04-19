@@ -393,7 +393,7 @@ export function SettingsPage() {
                 value={onePaceEp}
                 onChange={(e) => setOnePaceEp(e.target.value)}
                 placeholder="0"
-                className="min-h-[44px] w-full min-w-0 flex-1 rounded-md border border-border bg-border px-1 py-2 text-center text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
+                className="min-h-[44px] w-full min-w-0 flex-1 rounded-md border border-border bg-border px-1 py-2 text-center text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
               />
               <button
                 type="button"

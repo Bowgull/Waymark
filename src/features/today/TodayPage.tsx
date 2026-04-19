@@ -16,7 +16,6 @@ import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 
 import { DateHeader } from './DateHeader'
-import { DaySummary } from './DaySummary'
 import { DayTimeline } from './DayTimeline'
 import { GeneratePlanButton } from './GeneratePlanButton'
 import { JournalCard } from './JournalCard'
@@ -409,11 +408,6 @@ export function TodayPage() {
     return <TodaySkeleton />
   }
 
-  const allDone = sessions.length > 0 && sessions.every(s => {
-    const pending = s.runSession?.attachmentStatus === 'auto_pending' || s.runSession?.attachmentStatus === 'orphan'
-    return !pending && (s.status === 'completed' || s.status === 'skipped')
-  })
-
   return (
     <div className="relative flex flex-col gap-5 pb-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       <TodayTexture />
@@ -438,10 +432,6 @@ export function TodayPage() {
               .catch(() => setPickerSuggestions(null))
           }}
         />
-      ) : allDone ? (
-        <div className="flex flex-1 items-center justify-center" style={{ minHeight: 'calc(100vh - 220px)' }}>
-          <DaySummary sessions={sessions} todayDate={todayDate} />
-        </div>
       ) : (
         <>
           <DayTimeline

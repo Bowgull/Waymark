@@ -18,12 +18,19 @@
 import { writeFileSync } from 'fs'
 
 const nowSec = Math.floor(Date.now() / 1000)
-const todayEpochDay = Math.floor(nowSec / 86400)
 
-// Monday of current week in UTC terms
-const todayDate = new Date(todayEpochDay * 86400 * 1000)
-const utcDow = todayDate.getUTCDay() // 0=Sun..6=Sat
-const dowFromMon = (utcDow + 6) % 7 // Mon=0..Sun=6
+// Use LOCAL date (matches getTodayISO / getEpochDay in src/lib/dates.ts) so
+// today's sessions align with what the user sees. UTC-based math marks today
+// as completed when the seed runs past local midnight in negative-offset zones.
+const localNow = new Date()
+const y = localNow.getFullYear()
+const m = String(localNow.getMonth() + 1).padStart(2, '0')
+const d = String(localNow.getDate()).padStart(2, '0')
+const todayEpochDay = Math.floor(new Date(`${y}-${m}-${d}T00:00:00Z`).getTime() / 1000 / 86400)
+
+const todayDate = localNow
+const localDow = todayDate.getDay() // 0=Sun..6=Sat
+const dowFromMon = (localDow + 6) % 7 // Mon=0..Sun=6
 const thisMonday = todayEpochDay - dowFromMon
 const blockStartDay = thisMonday - 21 // 3 Mondays ago → currently in week 4
 const blockStartSec = blockStartDay * 86400
@@ -102,7 +109,12 @@ for (let w = 1; w <= 4; w++) {
     const completed = !isFuture && !isToday
 
     let rpe: number | undefined
-    let durationSec = tpl.baseDur
+
+    // Duration scales up week-over-week, matching the volume progression story.
+    // Week 1: 85% (easing back in), Week 2: 95% (building), Week 3: 110% (PR week, longer sessions),
+    // Week 4: 105% (maintaining peak). Mobility stays fixed at 10 min regardless.
+    const durScale = tpl.type === 'mobility' ? 1 : [0.85, 0.95, 1.1, 1.05][w - 1]
+    let durationSec = Math.round(tpl.baseDur * durScale)
 
     if (completed) {
       // RPE story per week

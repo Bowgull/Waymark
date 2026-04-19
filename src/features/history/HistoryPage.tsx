@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
-import { kgToLbsDisplay, paceToMinSec } from '@/lib/chartTheme'
+import { paceToMinSec } from '@/lib/chartTheme'
 import { generateInsights } from '@/lib/insightEngine'
 import { PageHeader } from '@/components/PageHeader'
 import { HistorySkeleton } from '@/components/ui/Skeleton'
@@ -24,8 +24,8 @@ interface DashboardData {
   completionRate: number
   topLift: { name: string; weightLbs: number } | null
   totalRuns: number
-  thisWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null; distanceKm: number }
-  lastWeek: { volume: number; sessions: number; avgRpe: number | null; avgSleep: number | null; distanceKm: number }
+  thisWeek: { durationMin: number; sessions: number; avgRpe: number | null; avgSleep: number | null; distanceKm: number }
+  lastWeek: { durationMin: number; sessions: number; avgRpe: number | null; avgSleep: number | null; distanceKm: number }
 }
 
 interface CorrelationDataPoint {
@@ -70,8 +70,7 @@ interface ConsistencyData {
 
 interface VolumePoint {
   date: string
-  totalSets: number
-  totalVolume: number
+  totalDurationMin: number
   sessionCount: number
 }
 
@@ -194,7 +193,7 @@ export function HistoryPage() {
     ? consistency.weeks.map(w => w.sessionsCompleted)
     : []
 
-  const volumeSparkline = volumeData.map(v => kgToLbsDisplay(v.totalVolume))
+  const volumeSparkline = volumeData.map(v => v.totalDurationMin)
 
   const runSparkline = runData.map(r => r.paceSecKm)
 
@@ -207,8 +206,11 @@ export function HistoryPage() {
     ? `${consistency.currentStreak}d streak`
     : undefined
 
-  const volumeHeadline = dashboard && dashboard.thisWeek.volume > 0
-    ? `${Math.round(dashboard.thisWeek.volume).toLocaleString()} lb`
+  const volumeHeadline = dashboard && dashboard.thisWeek.durationMin > 0
+    ? (() => {
+        const min = dashboard.thisWeek.durationMin
+        return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`
+      })()
     : undefined
 
   const runHeadline = runSummary?.avgPaceSecKm
@@ -292,7 +294,7 @@ export function HistoryPage() {
 
         {volumeData.length > 0 && (
           <ChartCard
-            title="Volume"
+            title="Time Training"
             headline={volumeHeadline}
             sparklineData={volumeSparkline}
             sparklineColor="#1E8A68"

@@ -9,6 +9,7 @@ import { onePaceSvg } from '@/lib/markAssets'
 
 import { SessionShell } from './SessionShell'
 import { resolveRunMoment, type RunType } from './runMicrocopy'
+import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
 const STRAVA_APP_STORE_URL = 'https://apps.apple.com/app/strava/id426826309'
 
@@ -211,6 +212,25 @@ export function RunSessionView({
   const runType = (prescription?.runType ?? undefined) as RunType | undefined
   const remaining = Math.max(0, timerEstimate - elapsed)
 
+  // Live Activity for run.
+  const runLiveConfig: LiveActivityConfig | null =
+    phase === 'running' && startedAtRef.current > 0
+      ? {
+          sessionType: 'run',
+          sessionLabel: 'Run',
+          state: {
+            phase: 'active',
+            label: runTypeLabel,
+            detail: isIndoor ? 'Indoor' : 'Outdoor',
+            startedAt: startedAtRef.current,
+            endsAt: startedAtRef.current + timerEstimate * 1000,
+            isPaused: false,
+          },
+        }
+      : null
+
+  useSessionLiveActivity(runLiveConfig)
+
   const moment = resolveRunMoment({
     phase,
     runType,
@@ -357,13 +377,13 @@ export function RunSessionView({
                 <label className="text-label mb-1 block text-muted-foreground">Arc</label>
                 <input type="text" value={onePaceArc} onChange={(e) => setOnePaceArc(e.target.value)}
                   placeholder="e.g. Water 7"
-                  className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+                  className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
               </div>
               <div className="flex-1">
                 <label className="text-label mb-1 block text-muted-foreground">Episode</label>
                 <input type="text" value={onePaceEp} onChange={(e) => setOnePaceEp(e.target.value)}
                   placeholder="e.g. 3"
-                  className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
+                  className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
               </div>
             </div>
           </div>

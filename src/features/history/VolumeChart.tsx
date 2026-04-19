@@ -2,15 +2,14 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 
 import { CHART_COLORS, AXIS_STYLE, TOOLTIP_STYLE } from '@/lib/chartTheme'
 
-interface VolumePoint {
+interface TrainingTimePoint {
   date: string
-  totalSets: number
-  totalVolume: number
+  totalDurationMin: number
   sessionCount: number
 }
 
 interface VolumeChartProps {
-  data: VolumePoint[]
+  data: TrainingTimePoint[]
 }
 
 export function VolumeChart({ data }: VolumeChartProps) {
@@ -18,7 +17,7 @@ export function VolumeChart({ data }: VolumeChartProps) {
 
   const chartData = data.map(d => ({
     date: d.date.slice(5),
-    volume: Math.round(d.totalVolume * 2.20462), // kg→lb
+    minutes: d.totalDurationMin,
   }))
 
   return (
@@ -33,15 +32,15 @@ export function VolumeChart({ data }: VolumeChartProps) {
               </linearGradient>
             </defs>
             <XAxis dataKey="date" {...AXIS_STYLE} minTickGap={32} interval="preserveStartEnd" />
-            <YAxis {...AXIS_STYLE} unit=" lb" />
+            <YAxis {...AXIS_STYLE} unit="m" />
             <Tooltip {...TOOLTIP_STYLE} />
             <Area
               type="monotone"
-              dataKey="volume"
+              dataKey="minutes"
               stroke={CHART_COLORS.tealDark}
               fill="url(#volumeGradient)"
               strokeWidth={2}
-              name="Total Volume (lb)"
+              name="Training Time (min)"
             />
           </AreaChart>
         </ResponsiveContainer>

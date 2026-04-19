@@ -6,6 +6,7 @@ import { SlidingGauge } from '@/components/ui/SlidingGauge'
 import { getMarkAsset } from '@/lib/markAssets'
 import { completeHaptic } from '@/lib/haptics'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
+import { endLiveActivity } from '@/lib/liveActivity'
 
 const DRIVE_EXPLAINER_KEY = 'waymark.drive_explainer_seen'
 
@@ -34,6 +35,23 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
     if (!storageGet(DRIVE_EXPLAINER_KEY)) {
       setShowDriveExplainer(true)
     }
+  }, [])
+
+  // Send a "Session complete" final state to the Live Activity and schedule
+  // auto-dismiss after 10s. Tapping the widget deep-links into this screen.
+  useEffect(() => {
+    const now = Date.now()
+    void endLiveActivity(
+      {
+        phase: 'complete',
+        label: 'Session complete',
+        startedAt: now,
+        endsAt: now,
+        isPaused: false,
+        completeMessage: 'Tap to rate',
+      },
+      10_000,
+    )
   }, [])
 
   function dismissDriveExplainer() {
@@ -111,7 +129,7 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
           }}
           rows={3}
           placeholder="How did it feel? Anything to remember? (Cmd+Enter to close)"
-          className="w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-sm text-foreground italic placeholder-muted-foreground/50 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-teal/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(74,202,170,0.15)] focus:outline-none"
+          className="w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-base text-foreground italic placeholder-muted-foreground/50 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-teal/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(74,202,170,0.15)] focus:outline-none"
         />
       </div>
 
