@@ -1,5 +1,18 @@
-// Web Audio API sound engine for Waymark training sessions
-// All sounds generated programmatically — no audio files needed
+// Waymark in-session timer sounds.
+//
+// On iOS (Capacitor native) we delegate to the WaymarkAudio plugin, which
+// plays pre-rendered .caf files through an AVAudioSession configured with
+// `.playback + [.mixWithOthers, .duckOthers]`. That makes Spotify / other
+// apps' audio duck briefly for each cue and restore on its own.
+//
+// On web (and any non-iOS runtime) we fall back to the original Web Audio
+// synthesis so development in the browser is still audible.
+//
+// The baked .caf files are produced by `scripts/bakeTimerSounds.mjs` from the
+// same parameters used in the Web Audio fallback below — rerun that script
+// if you tweak any of the Web Audio constants so the two stay in sync.
+
+import { isSessionAudioNative, playSessionSound } from './sessionAudio'
 
 let audioCtx: AudioContext | null = null
 
@@ -47,18 +60,30 @@ function playBell(frequency: number, decaySec: number, gainPeak: number = 0.7) {
 // Round start / rest over — GO signal
 // High and sharp, cuts through headphone music
 export function soundRoundStart() {
+  if (isSessionAudioNative()) {
+    void playSessionSound('round_start')
+    return
+  }
   playBell(880, 2.5, 0.75) // A5 — bright and hard
 }
 
 // Round end / rest start — STOP signal
 // Same bell family, lower pitch so you know it's different
 export function soundRoundEnd() {
+  if (isSessionAudioNative()) {
+    void playSessionSound('round_end')
+    return
+  }
   playBell(587, 3.0, 0.75) // D5 — lower, slightly warmer, more sustained
 }
 
 // Last 10 seconds of round — three rapid urgent pulses
 // Square wave for harshness — you need to hear this clearly
 export function soundFinishWarning() {
+  if (isSessionAudioNative()) {
+    void playSessionSound('finish_warning')
+    return
+  }
   const ctx = getCtx()
   const now = ctx.currentTime
 
@@ -85,6 +110,10 @@ export function soundFinishWarning() {
 // 10 seconds left in rest — two soft low tones
 // Gentle heads-up, not a jolt — you're resting, not being attacked
 export function soundRestWarning() {
+  if (isSessionAudioNative()) {
+    void playSessionSound('rest_warning')
+    return
+  }
   const ctx = getCtx()
   const now = ctx.currentTime
 
