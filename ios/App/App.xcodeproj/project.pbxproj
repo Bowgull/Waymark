@@ -23,6 +23,7 @@
 		9B7BEE6562554C185ADCAAC3 /* WaymarkAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A001A001A001A001A001A002 /* WaymarkAttributes.swift */; };
 		A001A001A001A001A001A001 /* WaymarkAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A001A001A001A001A001A002 /* WaymarkAttributes.swift */; };
 		A001A001A001A001A001A003 /* WaymarkLiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A001A001A001A001A001A004 /* WaymarkLiveActivityPlugin.swift */; };
+		A001A001A001A001A001A005 /* AppViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A001A001A001A001A001A006 /* AppViewController.swift */; };
 		C5F1A0011FEDC1A000F3C39B /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = C5F1A0001FEDC1A000F3C39B /* Sounds */; };
 		D4F1BEAF0CEBE11F563A006F /* WaymarkActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 289A30B9437C5545319E3224 /* WaymarkActivityBundle.swift */; };
 		FBA47CC8269A22B426E98FF8 /* WaymarkActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96329F31B785AB55EB30C35D /* WaymarkActivityWidget.swift */; };
@@ -72,6 +73,7 @@
 		96329F31B785AB55EB30C35D /* WaymarkActivityWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaymarkActivityWidget.swift; sourceTree = "<group>"; };
 		A001A001A001A001A001A002 /* WaymarkAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaymarkAttributes.swift; sourceTree = "<group>"; };
 		A001A001A001A001A001A004 /* WaymarkLiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaymarkLiveActivityPlugin.swift; sourceTree = "<group>"; };
+		A001A001A001A001A001A006 /* AppViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewController.swift; sourceTree = "<group>"; };
 		C5F1A0001FEDC1A000F3C39B /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Sounds; sourceTree = "<group>"; };
 		C5F1A0021FEDC1A000F3C39B /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -121,6 +123,7 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				A001A001A001A001A001A006 /* AppViewController.swift */,
 				A001A001A001A001A001A002 /* WaymarkAttributes.swift */,
 				A001A001A001A001A001A004 /* WaymarkLiveActivityPlugin.swift */,
 				C5F1A0021FEDC1A000F3C39B /* App.entitlements */,
@@ -275,6 +278,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				A001A001A001A001A001A005 /* AppViewController.swift in Sources */,
 				A001A001A001A001A001A001 /* WaymarkAttributes.swift in Sources */,
 				A001A001A001A001A001A003 /* WaymarkLiveActivityPlugin.swift in Sources */,
 				85FF411E0D918057C42B66C4 /* TimerIntents.swift in Sources */,

@@ -2,6 +2,9 @@ import Foundation
 import UIKit
 import Capacitor
 import ActivityKit
+import os
+
+private let log = Logger(subsystem: "com.waymark.app", category: "LiveActivity")
 
 @objc(WaymarkLiveActivityPlugin)
 public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -20,6 +23,7 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     override public func load() {
         super.load()
+        log.info("WaymarkLiveActivity plugin loaded")
         registerNotificationObservers()
     }
 
@@ -51,11 +55,14 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func isSupported(_ call: CAPPluginCall) {
         if #available(iOS 16.2, *) {
+            let enabled = ActivityAuthorizationInfo().areActivitiesEnabled
+            log.info("isSupported iOS=\(UIDevice.current.systemVersion, privacy: .public) enabled=\(enabled, privacy: .public)")
             call.resolve([
-                "supported": ActivityAuthorizationInfo().areActivitiesEnabled,
+                "supported": enabled,
                 "iosVersion": UIDevice.current.systemVersion,
             ])
         } else {
+            log.info("isSupported iOS=\(UIDevice.current.systemVersion, privacy: .public) below 16.2")
             call.resolve([
                 "supported": false,
                 "iosVersion": UIDevice.current.systemVersion,
@@ -65,6 +72,7 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func start(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else {
+            log.error("start rejected: iOS < 16.2")
             call.reject("Live Activities require iOS 16.2+")
             return
         }
@@ -74,9 +82,13 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
               let stateDict = call.getObject("state"),
               let contentState = parseContentState(stateDict)
         else {
+            log.error("start rejected: missing/invalid sessionType, sessionLabel, or state")
             call.reject("Missing or invalid sessionType, sessionLabel, or state")
             return
         }
+
+        let authEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
+        log.info("start request sessionType=\(sessionType, privacy: .public) label=\(sessionLabel, privacy: .public) authEnabled=\(authEnabled, privacy: .public)")
 
         let attributes = WaymarkActivityAttributes(
             sessionType: sessionType,
@@ -90,8 +102,10 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 content: content
             )
             currentActivityId = activity.id
+            log.info("start succeeded id=\(activity.id, privacy: .public)")
             call.resolve(["activityId": activity.id])
         } catch {
+            log.error("start failed: \(error.localizedDescription, privacy: .public)")
             call.reject("Failed to start Live Activity: \(error.localizedDescription)")
         }
     }
@@ -119,8 +133,10 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             if let activity = Activity<WaymarkActivityAttributes>.activities.first(where: { $0.id == id }) {
                 let content = ActivityContent(state: contentState, staleDate: nil)
                 await activity.update(content)
+                log.debug("update id=\(id, privacy: .public) phase=\(contentState.phase, privacy: .public)")
                 call.resolve()
             } else {
+                log.error("update failed: activity id=\(id, privacy: .public) not found")
                 call.reject("Activity \(id) not found")
             }
         }
@@ -165,6 +181,7 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 await activity.end(nil, dismissalPolicy: dismissalPolicy)
             }
 
+            log.info("end id=\(id, privacy: .public) dismissAfterMs=\(dismissAfterMs, privacy: .public)")
             if currentActivityId == id { currentActivityId = nil }
             call.resolve()
         }

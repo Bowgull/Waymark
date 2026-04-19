@@ -146,7 +146,7 @@ export function ScrollDrum({
               className="flex cursor-pointer items-center justify-center select-none"
               style={{
                 height: ITEM_HEIGHT,
-                scrollSnapAlign: 'start',
+                scrollSnapAlign: 'center',
                 opacity,
                 transform: `scale(${scale})`,
                 transition: 'opacity 0.15s, transform 0.15s',
@@ -290,7 +290,7 @@ export function ScrollDrumList({
               className="flex cursor-pointer items-center justify-center select-none px-2"
               style={{
                 height: ITEM_HEIGHT,
-                scrollSnapAlign: 'start',
+                scrollSnapAlign: 'center',
                 opacity,
                 transform: `scale(${scale})`,
                 transition: 'opacity 0.15s, transform 0.15s',

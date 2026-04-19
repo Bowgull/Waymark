@@ -102,14 +102,37 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
           }
         : null
 
+  function pauseRound() {
+    cancelRoundActiveCues()
+    roundTimer.pause()
+  }
+  function resumeRound(newEndsAtMs?: number) {
+    roundTimer.resume(newEndsAtMs)
+    const remaining = newEndsAtMs
+      ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
+      : roundTimer.secondsRemaining
+    if (remaining > 0) scheduleRoundActiveCues(remaining)
+  }
+  function pauseRest() {
+    cancelRestCues()
+    restTimer.pause()
+  }
+  function resumeRest(newEndsAtMs?: number) {
+    restTimer.resume(newEndsAtMs)
+    const remaining = newEndsAtMs
+      ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
+      : restTimer.secondsRemaining
+    if (remaining > 0) scheduleRestCues(remaining)
+  }
+
   useSessionLiveActivity(skipActivityConfig, {
     onPause: () => {
-      if (skipPhase === 'skipping') roundTimer.pause()
-      else if (skipPhase === 'rest') restTimer.pause()
+      if (skipPhase === 'skipping') pauseRound()
+      else if (skipPhase === 'rest') pauseRest()
     },
     onResume: (newEndsAtMs) => {
-      if (skipPhase === 'skipping') roundTimer.resume(newEndsAtMs)
-      else if (skipPhase === 'rest') restTimer.resume(newEndsAtMs)
+      if (skipPhase === 'skipping') resumeRound(newEndsAtMs)
+      else if (skipPhase === 'rest') resumeRest(newEndsAtMs)
     },
   })
 
@@ -179,6 +202,8 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
             isOvertime={restTimer.isOvertime}
             label={restTimer.isOvertime ? 'Over' : 'Rest'}
             accentColor={accent}
+            isPaused={restTimer.isPaused}
+            onTogglePause={() => (restTimer.isPaused ? resumeRest() : pauseRest())}
           />
         </div>
       </div>
@@ -210,6 +235,12 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
                 skipPhase === 'skipping' && roundTimer.secondsRemaining <= 10
                   ? '#C45A3C'
                   : accent
+              }
+              isPaused={skipPhase === 'skipping' && roundTimer.isPaused}
+              onTogglePause={
+                skipPhase === 'skipping'
+                  ? () => (roundTimer.isPaused ? resumeRound() : pauseRound())
+                  : undefined
               }
             />
           </div>
