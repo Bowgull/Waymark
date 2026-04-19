@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
+		3B43D41FCEEB1922DF31D173 /* WaymarkActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 86162085BAEEB079C2ED35DC /* WaymarkActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
@@ -15,10 +16,46 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		5C204F0A8BF6F441F14E09D4 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1CECF790B714596CF4B3869E /* Foundation.framework */; };
+		6148A4055E8AADF584DE8C22 /* TimerIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761AE1BC12425987DF1F3455 /* TimerIntents.swift */; };
+		6B28B937F1ABDF17AF6B654B /* WaymarkAudioPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CEBEC6EC546360300EEEE36 /* WaymarkAudioPlugin.swift */; };
+		85FF411E0D918057C42B66C4 /* TimerIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761AE1BC12425987DF1F3455 /* TimerIntents.swift */; };
+		9B7BEE6562554C185ADCAAC3 /* WaymarkAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A001A001A001A001A001A002 /* WaymarkAttributes.swift */; };
+		A001A001A001A001A001A001 /* WaymarkAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A001A001A001A001A001A002 /* WaymarkAttributes.swift */; };
+		A001A001A001A001A001A003 /* WaymarkLiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A001A001A001A001A001A004 /* WaymarkLiveActivityPlugin.swift */; };
 		C5F1A0011FEDC1A000F3C39B /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = C5F1A0001FEDC1A000F3C39B /* Sounds */; };
+		D4F1BEAF0CEBE11F563A006F /* WaymarkActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 289A30B9437C5545319E3224 /* WaymarkActivityBundle.swift */; };
+		FBA47CC8269A22B426E98FF8 /* WaymarkActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96329F31B785AB55EB30C35D /* WaymarkActivityWidget.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		DF8E1DC684FD917D778A360C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 23FE15804808223A382E5A1D;
+			remoteInfo = WaymarkActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4CBB0DEA5BF8E59F0BBEE437 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3B43D41FCEEB1922DF31D173 /* WaymarkActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		1CEBEC6EC546360300EEEE36 /* WaymarkAudioPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaymarkAudioPlugin.swift; sourceTree = "<group>"; };
+		1CECF790B714596CF4B3869E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		289A30B9437C5545319E3224 /* WaymarkActivityBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaymarkActivityBundle.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -28,7 +65,13 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		63154C59D1180C43A7A0CA1F /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		761AE1BC12425987DF1F3455 /* TimerIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TimerIntents.swift; sourceTree = "<group>"; };
+		86162085BAEEB079C2ED35DC /* WaymarkActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WaymarkActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		96329F31B785AB55EB30C35D /* WaymarkActivityWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaymarkActivityWidget.swift; sourceTree = "<group>"; };
+		A001A001A001A001A001A002 /* WaymarkAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaymarkAttributes.swift; sourceTree = "<group>"; };
+		A001A001A001A001A001A004 /* WaymarkLiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaymarkLiveActivityPlugin.swift; sourceTree = "<group>"; };
 		C5F1A0001FEDC1A000F3C39B /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Sounds; sourceTree = "<group>"; };
 		C5F1A0021FEDC1A000F3C39B /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -42,6 +85,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D053D5E988DD950977B51C5B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5C204F0A8BF6F441F14E09D4 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -51,6 +102,8 @@
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
+				D63AF77C8C51DD6227982E3B /* Frameworks */,
+				A36592789D4AD5EEAF088E59 /* WaymarkActivity */,
 			);
 			sourceTree = "<group>";
 		};
@@ -58,6 +111,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				86162085BAEEB079C2ED35DC /* WaymarkActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -67,6 +121,8 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				A001A001A001A001A001A002 /* WaymarkAttributes.swift */,
+				A001A001A001A001A001A004 /* WaymarkLiveActivityPlugin.swift */,
 				C5F1A0021FEDC1A000F3C39B /* App.entitlements */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -75,13 +131,59 @@
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 				C5F1A0001FEDC1A000F3C39B /* Sounds */,
+				761AE1BC12425987DF1F3455 /* TimerIntents.swift */,
+				1CEBEC6EC546360300EEEE36 /* WaymarkAudioPlugin.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		99C872A0B3CF6EA3F4E3CFAF /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				1CECF790B714596CF4B3869E /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		A36592789D4AD5EEAF088E59 /* WaymarkActivity */ = {
+			isa = PBXGroup;
+			children = (
+				289A30B9437C5545319E3224 /* WaymarkActivityBundle.swift */,
+				96329F31B785AB55EB30C35D /* WaymarkActivityWidget.swift */,
+				63154C59D1180C43A7A0CA1F /* Info.plist */,
+			);
+			name = WaymarkActivity;
+			path = WaymarkActivity;
+			sourceTree = "<group>";
+		};
+		D63AF77C8C51DD6227982E3B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				99C872A0B3CF6EA3F4E3CFAF /* iOS */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		23FE15804808223A382E5A1D /* WaymarkActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6009E44BAAF629766567F87F /* Build configuration list for PBXNativeTarget "WaymarkActivity" */;
+			buildPhases = (
+				ECFD0CE6C891D07F9F9B0570 /* Sources */,
+				D053D5E988DD950977B51C5B /* Frameworks */,
+				1D4CF44C6783192F694DD28D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WaymarkActivity;
+			productName = WaymarkActivity;
+			productReference = 86162085BAEEB079C2ED35DC /* WaymarkActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		504EC3031FED79650016851F /* App */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */;
@@ -89,10 +191,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				4CBB0DEA5BF8E59F0BBEE437 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				EC7627E9D1175DCE58A73180 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -136,11 +240,19 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				23FE15804808223A382E5A1D /* WaymarkActivity */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		1D4CF44C6783192F694DD28D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3021FED79650016851F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -163,10 +275,34 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				A001A001A001A001A001A001 /* WaymarkAttributes.swift in Sources */,
+				A001A001A001A001A001A003 /* WaymarkLiveActivityPlugin.swift in Sources */,
+				85FF411E0D918057C42B66C4 /* TimerIntents.swift in Sources */,
+				6B28B937F1ABDF17AF6B654B /* WaymarkAudioPlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ECFD0CE6C891D07F9F9B0570 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D4F1BEAF0CEBE11F563A006F /* WaymarkActivityBundle.swift in Sources */,
+				FBA47CC8269A22B426E98FF8 /* WaymarkActivityWidget.swift in Sources */,
+				9B7BEE6562554C185ADCAAC3 /* WaymarkAttributes.swift in Sources */,
+				6148A4055E8AADF584DE8C22 /* TimerIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EC7627E9D1175DCE58A73180 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = WaymarkActivity;
+			target = 23FE15804808223A382E5A1D /* WaymarkActivity */;
+			targetProxy = DF8E1DC684FD917D778A360C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -188,6 +324,33 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		3EFE13E1F02E9EE1A4669292 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7S9KJT9T6R;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WaymarkActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joshbocas.app.WaymarkActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		504EC3141FED79650016851F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
@@ -241,7 +404,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -296,7 +459,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -315,7 +478,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7S9KJT9T6R;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -339,7 +502,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7S9KJT9T6R;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -350,6 +513,34 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		BAD6967914388393A431A7F8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7S9KJT9T6R;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WaymarkActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joshbocas.app.WaymarkActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -370,6 +561,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6009E44BAAF629766567F87F /* Build configuration list for PBXNativeTarget "WaymarkActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BAD6967914388393A431A7F8 /* Release */,
+				3EFE13E1F02E9EE1A4669292 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
