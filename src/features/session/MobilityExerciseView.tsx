@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { FormVideoLink } from '@/components/FormVideoLink'
 import { RingTimer } from '@/components/RingTimer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,7 @@ import {
 import { SessionShell } from './SessionShell'
 import { resolveMobilityMoment } from './mobilityMicrocopy'
 import { useHoldTimer, type HoldTimerState, type HoldTimerActions } from './useHoldTimer'
+import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
 interface MobilityExercise {
   id: string
@@ -102,6 +104,9 @@ export function MobilityExerciseBody({
 
       <h2 className="text-display-lg leading-[1.1] text-foreground">
         {exercise.exercise?.name ?? 'Exercise'}
+        {exercise.exercise?.formVideoUrl && (
+          <FormVideoLink url={exercise.exercise.formVideoUrl} variant="icon" />
+        )}
       </h2>
 
       <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
@@ -145,35 +150,6 @@ export function MobilityExerciseBody({
             </p>
           )}
         </div>
-      )}
-
-      {exercise.exercise?.formVideoUrl && (
-        <a
-          href={exercise.exercise.formVideoUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-teal active:text-teal/70"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-            />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          Watch form
-        </a>
       )}
 
       {/* Ring or rep card */}
@@ -264,6 +240,28 @@ export function MobilityExerciseView({
     isHold: isHoldExercise,
     holdSecRemaining: holdTimer.running ? holdTimer.secondsRemaining : undefined,
   })
+
+  // Live Activity for mobility holds — no pause (holds are brief + manual).
+  const mobilityActivityConfig: LiveActivityConfig | null =
+    !inline && isHoldExercise && holdTimer.running && !holdTimer.reachedTarget
+      ? {
+          sessionType: 'mobility',
+          sessionLabel: 'Mobility',
+          state: {
+            phase: 'hold',
+            label: exercise.exercise?.name ?? 'Hold',
+            detail:
+              (exercise.sets ?? 1) > 1
+                ? `Set ${currentSet} of ${exercise.sets}`
+                : undefined,
+            startedAt: holdTimer.startedAtMs,
+            endsAt: holdTimer.endsAtMs,
+            isPaused: false,
+          },
+        }
+      : null
+
+  useSessionLiveActivity(mobilityActivityConfig)
 
   const footerAction = (() => {
     if (isHoldExercise) {
