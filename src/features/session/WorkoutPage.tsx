@@ -27,6 +27,7 @@ import { SkipRopeView } from './SkipRopeView'
 import { StrengthExerciseView } from './StrengthExerciseView'
 import type { StrengthSection } from './strengthMicrocopy'
 import { useRestTimer } from './useRestTimer'
+import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
 // ─── Shared types ──────────────────────────────────────────────
 
@@ -300,6 +301,42 @@ export function WorkoutPage() {
 
   const restTimer = useRestTimer()
 
+  // Live Activity for strength rest — other session types drive it themselves.
+  const isStrengthRest =
+    sessionType != null &&
+    sessionType !== 'bag_work' &&
+    sessionType !== 'mobility' &&
+    sessionType !== 'skip_rope' &&
+    sessionType !== 'running' &&
+    sessionType !== 'active_recovery' &&
+    sessionType !== 'mt_class' &&
+    sessionType !== 'foundation_run'
+  const strengthRestExercise = strengthData?.exercises[exerciseIdx]
+  const strengthRestName = strengthRestExercise?.exercise?.name
+  const strengthActivityConfig: LiveActivityConfig | null =
+    isStrengthRest && phase === 'rest' && restTimer.isRunning && strengthRestName
+      ? {
+          sessionType: 'strength',
+          sessionLabel: 'Strength',
+          state: {
+            phase: 'rest',
+            label: 'Rest',
+            detail: strengthRestName,
+            startedAt: restTimer.startedAtMs,
+            endsAt: restTimer.endsAtMs,
+            isPaused: restTimer.isPaused,
+            pausedRemaining: restTimer.isPaused
+              ? restTimer.secondsRemaining
+              : undefined,
+          },
+        }
+      : null
+
+  useSessionLiveActivity(strengthActivityConfig, {
+    onPause: () => restTimer.pause(),
+    onResume: (newEndsAtMs) => restTimer.resume(newEndsAtMs),
+  })
+
   useEffect(() => {
     if (id) logger.setSessionId(id)
     return () => logger.setSessionId(undefined)
@@ -490,8 +527,14 @@ export function WorkoutPage() {
 
   function SessionHeader({ counter }: { counter?: string }) {
     return (
-      <header className="flex shrink-0 items-center justify-between px-4 py-3">
-        <button onClick={() => navigate('/today')} className="text-sm font-medium text-muted-foreground active:text-teal">
+      <header
+        className="flex shrink-0 items-center justify-between px-4 pb-2"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}
+      >
+        <button
+          onClick={() => navigate('/today')}
+          className="-ml-2 inline-flex min-h-[44px] min-w-[44px] items-center px-3 text-sm font-medium text-muted-foreground active:text-teal"
+        >
           Back
         </button>
         {counter && (
@@ -1057,7 +1100,7 @@ export function WorkoutPage() {
       weightLbs,
       tmLbs,
       setsReps: rx.setsReps,
-      plateMath: isBarbell && weightLbs ? calculatePlates(weightLbs).plates : null,
+      plateCounts: isBarbell && weightLbs ? calculatePlates(weightLbs).plateCounts : null,
       wavePercentage: rx.wavePercentage,
     }
   })()

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { kgToLbs, lbsToKg } from '@/lib/units'
 import { mediumHaptic } from '@/lib/haptics'
+import { calculatePlates } from '@/lib/plateMath'
 
 interface SetTrackerProps {
   setNumber: number
@@ -10,9 +11,14 @@ interface SetTrackerProps {
   isWarmup: boolean
   suggestedWeightKg: number | null
   targetReps: number
+  equipment?: string | null
   lastSessionData?: { weightLbs: number; reps: number }
   suggestion?: { weightLbs: number; message: string }
   onComplete: (weightKg: number | null, reps: number) => void
+}
+
+function formatPlate(weight: number): string {
+  return weight === Math.floor(weight) ? String(weight) : weight.toFixed(1)
 }
 
 export function SetTracker({
@@ -21,6 +27,7 @@ export function SetTracker({
   isWarmup,
   suggestedWeightKg,
   targetReps,
+  equipment,
   lastSessionData,
   suggestion,
   onComplete,
@@ -28,6 +35,18 @@ export function SetTracker({
   const suggestedLbs = suggestedWeightKg != null ? kgToLbs(suggestedWeightKg) : ''
   const [weight, setWeight] = useState(String(suggestedLbs))
   const [reps, setReps] = useState(targetReps > 0 ? String(targetReps) : '')
+
+  const isBarbell = equipment?.toLowerCase().includes('barbell') ?? false
+  const liveLoading = useMemo(() => {
+    if (!isBarbell) return null
+    const lbs = parseFloat(weight)
+    if (!Number.isFinite(lbs) || lbs <= 0) return null
+    const result = calculatePlates(lbs)
+    if (result.plateCounts.length === 0) return 'Bar only'
+    return result.plateCounts
+      .map(p => `${p.count}× ${formatPlate(p.weight)}`)
+      .join('  ·  ')
+  }, [weight, isBarbell])
 
   function handleDone() {
     const actualReps = parseInt(reps) || 0
@@ -102,6 +121,12 @@ export function SetTracker({
           Done
         </Button>
       </div>
+
+      {liveLoading && (
+        <p className="mt-2.5 font-cinzel text-xs tracking-wider text-teal/70">
+          {liveLoading}
+        </p>
+      )}
     </div>
   )
 }

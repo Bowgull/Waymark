@@ -1,9 +1,11 @@
 import { useState } from 'react'
 
+import { FormVideoLink } from '@/components/FormVideoLink'
 import { RingTimer } from '@/components/RingTimer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { GoldDivider } from '@/components/ui/GoldDivider'
+import type { PlateCount } from '@/lib/plateMath'
 
 import { SessionShell } from './SessionShell'
 import { SetTracker } from './SetTracker'
@@ -28,7 +30,7 @@ export interface StrengthPrescriptionDisplay {
   weightLbs: number | null
   tmLbs: number | null
   setsReps: string
-  plateMath: string | null
+  plateCounts: PlateCount[] | null
   wavePercentage: number | null
 }
 
@@ -107,7 +109,6 @@ export function StrengthExerciseView({
   currentSet,
   setIdx,
   isLastSetOfSession,
-  prescription,
   history,
   lastSessionData,
   suggestion,
@@ -163,7 +164,6 @@ export function StrengthExerciseView({
         formVideoUrl={formVideoUrl}
         section={section}
         showSectionHeader={showSectionHeader}
-        prescription={prescription}
         history={history}
         currentSet={currentSet}
         lastSessionData={lastSessionData}
@@ -254,7 +254,6 @@ interface ExerciseBodyProps {
   formVideoUrl?: string | null
   section: StrengthSection | null
   showSectionHeader: boolean
-  prescription?: StrengthPrescriptionDisplay
   history?: StrengthHistoryDisplay
   currentSet?: StrengthSetInput
   lastSessionData?: { weightLbs: number; reps: number }
@@ -281,7 +280,6 @@ function ExerciseBody({
   formVideoUrl,
   section,
   showSectionHeader,
-  prescription,
   history,
   currentSet,
   lastSessionData,
@@ -298,10 +296,10 @@ function ExerciseBody({
   const breakdown =
     formCues && !textsEffectivelyMatch(formCues, notes) ? formCues : null
 
-  // Only show the prescription card when we actually have prescribed data.
+  // Only show the history card for accessory/core — main lifts surface the PR
+  // inline next to the title and show plate math live inside the SetTracker.
   const hasPrescription =
-    (section === 'main' && prescription?.weightLbs) ||
-    ((section === 'accessory' || section === 'core') && history)
+    (section === 'accessory' || section === 'core') && !!history
 
   return (
     <div className="mx-auto max-w-md animate-fade-in">
@@ -325,10 +323,16 @@ function ExerciseBody({
 
       <h2 className="text-display-lg leading-[1.1] text-foreground">
         {exerciseName}
+        {formVideoUrl && <FormVideoLink url={formVideoUrl} variant="icon" />}
       </h2>
 
-      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {equipment && <Badge variant="muted">{equipment}</Badge>}
+        {section === 'main' && history?.prWeightLbs && history.prReps && (
+          <Badge variant="inscription-gold">
+            PR {history.prWeightLbs} × {history.prReps}
+          </Badge>
+        )}
       </div>
 
       {notes && (
@@ -337,37 +341,9 @@ function ExerciseBody({
         </p>
       )}
 
-      {/* Prescription / History card */}
+      {/* History card — accessory + core only */}
       {hasPrescription && (
         <div className="mt-4 rounded border border-gold/15 bg-gradient-to-b from-[#1A1A10]/60 to-[#12170E]/40 p-5 shadow-[0_0_12px_rgba(0,0,0,0.3)]">
-          {section === 'main' && prescription?.weightLbs && (
-            <div>
-              <p className="mb-1 font-cinzel text-[13px] uppercase tracking-widest text-gold/40">
-                Prescribed
-              </p>
-              <p className="font-cinzel text-lg font-semibold text-gold">
-                {prescription.setsReps} @ {prescription.weightLbs}lb
-              </p>
-              {prescription.plateMath && (
-                <p className="text-xs text-muted-foreground">
-                  {prescription.plateMath}
-                </p>
-              )}
-              {prescription.wavePercentage && prescription.tmLbs && (
-                <p className="text-xs text-muted-foreground">
-                  {Math.round(prescription.wavePercentage * 100)}% of TM (
-                  {prescription.tmLbs}lb)
-                </p>
-              )}
-              {history?.prWeightLbs && history.prDate && (
-                <p className="mt-1 text-xs text-gold/60">
-                  PR: {history.prWeightLbs}lb × {history.prReps} (
-                  {formatShortDate(history.prDate)})
-                </p>
-              )}
-            </div>
-          )}
-
           {section === 'accessory' && history && (
             <div>
               <p className="mb-1 font-cinzel text-[13px] uppercase tracking-widest text-gold/40">
@@ -420,70 +396,38 @@ function ExerciseBody({
           isWarmup={currentSet.isWarmup}
           suggestedWeightKg={currentSet.suggestedWeightKg}
           targetReps={currentSet.targetReps}
+          equipment={equipment}
           lastSessionData={lastSessionData}
           suggestion={suggestion}
           onComplete={onSetComplete}
         />
       )}
 
-      {/* Form breakdown + video toggle */}
-      {(breakdown || formVideoUrl) && (
+      {/* Form breakdown toggle */}
+      {breakdown && (
         <div className="mt-6 rounded border border-gold/15 bg-gradient-to-b from-[#1C1A12]/70 to-[#14120C]/50 p-4 shadow-inner">
-          {breakdown && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setBreakdownOpen(o => !o)}
-                className="flex items-center gap-1.5 font-cinzel text-xs font-medium tracking-wider text-teal active:text-teal/70"
-              >
-                <span>
-                  {breakdownOpen ? 'Hide form cues' : 'Show form cues'}
-                </span>
-                <svg
-                  className={`h-3 w-3 transition-transform ${breakdownOpen ? 'rotate-180' : ''}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {breakdownOpen && (
-                <p className="mt-2 font-cinzel text-xs leading-relaxed text-teal/80">
-                  {breakdown}
-                </p>
-              )}
-            </div>
-          )}
-
-          {formVideoUrl && (
-            <a
-              href={formVideoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`inline-flex items-center gap-1.5 font-cinzel text-xs font-medium tracking-wider text-teal active:text-teal/70 ${breakdown ? 'mt-2' : ''}`}
+          <button
+            type="button"
+            onClick={() => setBreakdownOpen(o => !o)}
+            className="flex items-center gap-1.5 font-cinzel text-xs font-medium tracking-wider text-teal active:text-teal/70"
+          >
+            <span>
+              {breakdownOpen ? 'Hide form cues' : 'Show form cues'}
+            </span>
+            <svg
+              className={`h-3 w-3 transition-transform ${breakdownOpen ? 'rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
             >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              Watch Form
-            </a>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {breakdownOpen && (
+            <p className="mt-2 font-cinzel text-xs leading-relaxed text-teal/80">
+              {breakdown}
+            </p>
           )}
         </div>
       )}

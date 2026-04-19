@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '@/lib/api'
 import { getCategoryMark, waybookPng } from '@/lib/markAssets'
 import bagworkPng from '@/assets/brand/Bagwork.png'
+import { FormVideoLink } from '@/components/FormVideoLink'
 import { PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/components/ui/badge'
 import { ForgeIcon, LockIcon } from '@/components/icons/SessionIcons'
@@ -17,6 +18,7 @@ interface Exercise {
   muscleGroups: string | null
   equipment: string | null
   formCues: string | null
+  formVideoUrl: string | null
 }
 
 interface ComboData {
@@ -271,7 +273,7 @@ export function LibraryPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search exercises, combos, journal..."
-          className="w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2.5 text-sm text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none focus:ring-1 focus:ring-gold/20"
+          className="w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2.5 text-base text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none focus:ring-1 focus:ring-gold/20"
         />
       </div>
 
@@ -350,11 +352,18 @@ export function LibraryPage() {
                         </div>
                       )}
 
-                      {isExpanded && ex.formCues && (
+                      {isExpanded && (ex.formCues || ex.formVideoUrl) && (
                         <div className="mt-3 border-l-2 border-gold/30 pl-3">
-                          <p className="text-sm italic leading-relaxed text-muted-foreground">
-                            {ex.formCues}
-                          </p>
+                          {ex.formCues && (
+                            <p className="text-sm italic leading-relaxed text-muted-foreground">
+                              {ex.formCues}
+                            </p>
+                          )}
+                          {ex.formVideoUrl && (
+                            <div className={ex.formCues ? 'mt-3' : ''}>
+                              <FormVideoLink url={ex.formVideoUrl} variant="pill" />
+                            </div>
+                          )}
                         </div>
                       )}
                     </button>

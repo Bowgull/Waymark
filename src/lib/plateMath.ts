@@ -7,22 +7,31 @@
 const BAR_LBS = 45
 const PLATES = [45, 35, 25, 10, 5, 2.5]
 
+export interface PlateCount {
+  /** Plate weight (e.g. 25, 10, 5) */
+  weight: number
+  /** Total plates needed across both sides */
+  count: number
+}
+
 export interface PlateResult {
-  /** Human-readable plate loading string */
+  /** Human-readable plate loading string (per-side format) */
   plates: string
+  /** Grouped plate counts, total across both sides (what you grab from the rack) */
+  plateCounts: PlateCount[]
   /** Actual achievable weight after rounding */
   achievedLbs: number
 }
 
 export function calculatePlates(targetLbs: number): PlateResult {
   if (targetLbs <= BAR_LBS) {
-    return { plates: 'Bar only', achievedLbs: BAR_LBS }
+    return { plates: 'Bar only', plateCounts: [], achievedLbs: BAR_LBS }
   }
 
   // Per-side load, rounded to nearest 2.5
   const perSide = Math.round((targetLbs - BAR_LBS) / 2 / 2.5) * 2.5
   if (perSide <= 0) {
-    return { plates: 'Bar only', achievedLbs: BAR_LBS }
+    return { plates: 'Bar only', plateCounts: [], achievedLbs: BAR_LBS }
   }
 
   const usedPlates: number[] = []
@@ -40,8 +49,18 @@ export function calculatePlates(targetLbs: number): PlateResult {
     .map(p => (p === Math.floor(p) ? String(p) : p.toFixed(1)))
     .join(' + ')
 
+  // Group per-side counts, then double for total across both sides.
+  const counts = new Map<number, number>()
+  for (const p of usedPlates) {
+    counts.set(p, (counts.get(p) ?? 0) + 1)
+  }
+  const plateCounts: PlateCount[] = [...counts.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([weight, perSideCount]) => ({ weight, count: perSideCount * 2 }))
+
   return {
     plates: `Bar + ${plateStr} each side`,
+    plateCounts,
     achievedLbs,
   }
 }
