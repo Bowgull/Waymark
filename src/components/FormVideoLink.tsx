@@ -2,7 +2,8 @@ import type { MouseEvent } from 'react'
 
 interface FormVideoLinkProps {
   url: string
-  variant: 'icon' | 'pill'
+  /** Icon-only affordance — used inside active session views. */
+  compact?: boolean
 }
 
 function PlayTriangle({ className }: { className?: string }) {
@@ -22,12 +23,12 @@ function PlayTriangle({ className }: { className?: string }) {
   )
 }
 
-export function FormVideoLink({ url, variant }: FormVideoLinkProps) {
+export function FormVideoLink({ url, compact = false }: FormVideoLinkProps) {
   function stopBubble(e: MouseEvent) {
     e.stopPropagation()
   }
 
-  if (variant === 'icon') {
+  if (compact) {
     return (
       <a
         href={url}
@@ -35,9 +36,9 @@ export function FormVideoLink({ url, variant }: FormVideoLinkProps) {
         rel="noopener noreferrer"
         onClick={stopBubble}
         aria-label="Watch form video on YouTube"
-        className="ml-3 inline-block p-1.5 align-middle text-teal/70 active:text-teal"
+        className="inline-flex min-h-[32px] min-w-[32px] items-center justify-center text-teal/80 active:text-teal"
       >
-        <PlayTriangle className="h-3.5 w-3.5" />
+        <PlayTriangle className="h-4 w-4" />
       </a>
     )
   }
@@ -49,10 +50,10 @@ export function FormVideoLink({ url, variant }: FormVideoLinkProps) {
       rel="noopener noreferrer"
       onClick={stopBubble}
       aria-label="Watch form video on YouTube"
-      className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-teal/30 bg-teal/10 px-4 font-cinzel text-[11px] font-medium uppercase tracking-[0.2em] text-teal/90 active:bg-teal/20"
+      className="inline-flex items-center gap-1.5 font-cinzel text-xs font-medium tracking-wider text-teal active:text-teal/70"
     >
-      <PlayTriangle className="h-3 w-3" />
-      Watch
+      <PlayTriangle className="h-3.5 w-3.5" />
+      Watch form ›
     </a>
   )
 }

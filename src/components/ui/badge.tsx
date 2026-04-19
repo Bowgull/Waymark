@@ -2,7 +2,7 @@ import { type HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
-  variant?: 'default' | 'gold' | 'teal' | 'clay' | 'forest' | 'muted' | 'inscription-gold' | 'inscription-teal'
+  variant?: 'default' | 'gold' | 'teal' | 'clay' | 'forest' | 'muted' | 'inscription-gold' | 'inscription-teal' | 'inscription-forest' | 'inscription-muted'
 }
 
 const variants = {
@@ -14,6 +14,8 @@ const variants = {
   muted: 'bg-secondary text-muted-foreground',
   'inscription-gold': 'border border-gold/25 text-gold/80 bg-transparent',
   'inscription-teal': 'border border-teal/25 text-teal/80 bg-transparent',
+  'inscription-forest': 'border border-forest/40 text-forest-light/80 bg-transparent',
+  'inscription-muted': 'border border-muted-foreground/25 text-muted-foreground bg-transparent',
 }
 
 export function Badge({ className, variant = 'default', ...props }: BadgeProps) {

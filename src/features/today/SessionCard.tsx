@@ -50,13 +50,13 @@ export function SessionCard({ session, onStart, onSkip, index }: SessionCardProp
           </Badge>
         )}
         {isInProgress && (
-          <Badge variant="teal" className="gap-1">
+          <Badge variant="inscription-teal" className="gap-1">
             <span className="inline-block h-1.5 w-1.5 animate-pulse-glow rounded-full bg-teal" />
             In Progress
           </Badge>
         )}
-        {isCompleted && <Badge variant="forest">Done</Badge>}
-        {isSkipped && <Badge variant="muted">Skipped</Badge>}
+        {isCompleted && <Badge variant="inscription-forest">Done</Badge>}
+        {isSkipped && <Badge variant="inscription-muted">Skipped</Badge>}
       </div>
 
       {/* Session name with icon */}

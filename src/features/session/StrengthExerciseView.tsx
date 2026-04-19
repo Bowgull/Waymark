@@ -323,7 +323,6 @@ function ExerciseBody({
 
       <h2 className="text-display-lg leading-[1.1] text-foreground">
         {exerciseName}
-        {formVideoUrl && <FormVideoLink url={formVideoUrl} variant="icon" />}
       </h2>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -403,31 +402,40 @@ function ExerciseBody({
         />
       )}
 
-      {/* Form breakdown toggle */}
-      {breakdown && (
+      {/* Form breakdown toggle + watch form link */}
+      {(breakdown || formVideoUrl) && (
         <div className="mt-6 rounded border border-gold/15 bg-gradient-to-b from-[#1C1A12]/70 to-[#14120C]/50 p-4 shadow-inner">
-          <button
-            type="button"
-            onClick={() => setBreakdownOpen(o => !o)}
-            className="flex items-center gap-1.5 font-cinzel text-xs font-medium tracking-wider text-teal active:text-teal/70"
-          >
-            <span>
-              {breakdownOpen ? 'Hide form cues' : 'Show form cues'}
-            </span>
-            <svg
-              className={`h-3 w-3 transition-transform ${breakdownOpen ? 'rotate-180' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {breakdownOpen && (
-            <p className="mt-2 font-cinzel text-xs leading-relaxed text-teal/80">
-              {breakdown}
-            </p>
+          {breakdown && (
+            <>
+              <button
+                type="button"
+                onClick={() => setBreakdownOpen(o => !o)}
+                className="flex items-center gap-1.5 font-cinzel text-xs font-medium tracking-wider text-teal active:text-teal/70"
+              >
+                <span>
+                  {breakdownOpen ? 'Hide form cues' : 'Show form cues'}
+                </span>
+                <svg
+                  className={`h-3 w-3 transition-transform ${breakdownOpen ? 'rotate-180' : ''}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {breakdownOpen && (
+                <p className="mt-2 font-cinzel text-xs leading-relaxed text-teal/80">
+                  {breakdown}
+                </p>
+              )}
+            </>
+          )}
+          {formVideoUrl && (
+            <div className={breakdown ? 'mt-2' : ''}>
+              <FormVideoLink url={formVideoUrl} compact />
+            </div>
           )}
         </div>
       )}
