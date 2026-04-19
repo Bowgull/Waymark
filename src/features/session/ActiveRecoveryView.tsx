@@ -112,6 +112,7 @@ export function ActiveRecoveryView({
   const hipSteps = useMemo(() => buildHipSteps(), [])
   const [hipIdx, setHipIdx] = useState(0)
   const [hipRunning, setHipRunning] = useState(false)
+  const [hipPaused, setHipPaused] = useState(false)
   const [hipSecondsLeft, setHipSecondsLeft] = useState(
     hipSteps[0]?.movement.holdSec ?? 0,
   )
@@ -127,6 +128,7 @@ export function ActiveRecoveryView({
   if (prevHipIdx !== hipIdx) {
     setPrevHipIdx(hipIdx)
     setHipRunning(false)
+    setHipPaused(false)
     setHipSecondsLeft(currentHipStep?.movement.holdSec ?? 0)
   }
 
@@ -143,6 +145,7 @@ export function ActiveRecoveryView({
       setHipStartedAtMs(0)
       return
     }
+    if (hipPaused) return
     setHipStartedAtMs(Date.now())
     hipIntervalRef.current = setInterval(() => {
       setHipSecondsLeft((s) => {
@@ -157,7 +160,7 @@ export function ActiveRecoveryView({
     return () => {
       if (hipIntervalRef.current) clearInterval(hipIntervalRef.current)
     }
-  }, [hipRunning])
+  }, [hipRunning, hipPaused])
 
   const hipReachedTarget =
     currentHipStep?.movement.mode === 'hold'
@@ -294,8 +297,11 @@ export function ActiveRecoveryView({
               ? currentHipStep.side === 'left' ? 'Left side' : 'Right side'
               : undefined,
             startedAt: hipStartedAtMs,
-            endsAt: hipStartedAtMs + (currentHipStep.movement.holdSec ?? 0) * 1000,
-            isPaused: false,
+            endsAt: hipPaused
+              ? Date.now() + hipSecondsLeft * 1000
+              : hipStartedAtMs + (currentHipStep.movement.holdSec ?? 0) * 1000,
+            isPaused: hipPaused,
+            pausedRemaining: hipPaused ? hipSecondsLeft : undefined,
           },
         }
       : null
@@ -324,6 +330,7 @@ export function ActiveRecoveryView({
   useSessionLiveActivity(hipLiveConfig ?? rollLiveConfig, {
     onPause: () => {
       if (phase === 'roll') setRollPaused(true)
+      else if (phase === 'hip') setHipPaused(true)
     },
     onResume: (newEndsAtMs) => {
       if (phase === 'roll') {
@@ -333,6 +340,8 @@ export function ActiveRecoveryView({
           setRollSecondsLeft(remaining)
           setRollAnchorMs(Date.now())
         }
+      } else if (phase === 'hip') {
+        setHipPaused(false)
       }
     },
   })
@@ -431,6 +440,12 @@ export function ActiveRecoveryView({
                 }
                 accentColor={ACCENT}
                 isComplete={hipReachedTarget}
+                isPaused={hipPaused}
+                onTogglePause={
+                  hipRunning && !hipReachedTarget
+                    ? () => setHipPaused((p) => !p)
+                    : undefined
+                }
               />
             </div>
           ) : (
@@ -555,9 +570,13 @@ export function ActiveRecoveryView({
           <RingTimer
             totalSeconds={currentRollStep.area.sec}
             secondsRemaining={rollSecondsLeft}
-            label={rollPaused ? 'Paused' : 'Rolling'}
+            label={rollPaused ? undefined : 'Rolling'}
             accentColor={ACCENT}
             isComplete={rollReachedTarget}
+            isPaused={rollPaused}
+            onTogglePause={
+              rollReachedTarget ? undefined : () => setRollPaused((p) => !p)
+            }
           />
         </div>
       </div>

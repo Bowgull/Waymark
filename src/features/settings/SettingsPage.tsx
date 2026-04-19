@@ -11,6 +11,14 @@ import { useToast } from '@/components/ui/Toast'
 import { PageHeader } from '@/components/PageHeader'
 import { SettingsSkeleton } from '@/components/ui/Skeleton'
 
+function formatAlarmTime(d: Date): string {
+  let h = d.getHours()
+  const m = d.getMinutes()
+  const ap = h >= 12 ? 'PM' : 'AM'
+  h = h % 12 || 12
+  return `${h}:${String(m).padStart(2, '0')} ${ap}`
+}
+
 interface Settings {
   mtClassDays: string | null
   amReminder: string | null
@@ -167,8 +175,14 @@ export function SettingsPage() {
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
 
-      // Re-schedule alarms with updated values
-      scheduleAlarms(amReminder, pmSessionTime, pmLeadMin)
+      // Re-schedule alarms with updated values; toast confirms iOS accepted the schedule
+      scheduleAlarms(amReminder, pmSessionTime, pmLeadMin).then((result) => {
+        if (result.scheduled && result.baseAt) {
+          showToast(`Alarm set for ${formatAlarmTime(result.baseAt)}`, 'info')
+        }
+      }).catch(() => {
+        // silent — save itself succeeded; alarm scheduling is best-effort on web
+      })
 
       // Show cascade feedback if MT days changed
       if (updated.cascade) {

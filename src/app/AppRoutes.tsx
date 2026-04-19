@@ -84,14 +84,22 @@ export function AppRoutes() {
       }
     }
 
-    // Option C: app coming to foreground within 30 min of alarm = you're up, kill the sequence
+    // Option C: app coming to foreground within 30 min of alarm = you're up, kill the sequence.
+    // Also re-sync the alarm sequence so tomorrow's fire is always queued — without
+    // this, daily recurrence depends on the user cold-starting the app each morning.
     async function onVisibilityChange() {
       if (document.visibilityState !== 'visible') return
       try {
-        const settings = await apiFetch<{ amReminder: string | null } | null>('/api/settings')
-        if (settings?.amReminder) {
-          handleForegroundAlarmCheck(settings.amReminder)
+        const settings = await apiFetch<{
+          amReminder: string | null
+          pmSessionTime: string | null
+          pmLeadMin: number | null
+        } | null>('/api/settings')
+        if (!settings) return
+        if (settings.amReminder) {
+          await handleForegroundAlarmCheck(settings.amReminder)
         }
+        await syncAlarmsFromSettings(settings)
       } catch {
         // settings unavailable, skip
       }

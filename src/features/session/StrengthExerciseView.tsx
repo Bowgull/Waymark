@@ -83,6 +83,8 @@ interface StrengthExerciseViewProps {
     totalSeconds: number
     secondsRemaining: number
     isOvertime: boolean
+    isPaused?: boolean
+    onTogglePause?: () => void
   }
   onSetComplete: (weightKg: number | null, reps: number) => void
   onNextSet: () => void
@@ -153,6 +155,8 @@ export function StrengthExerciseView({
         totalSeconds={restState.totalSeconds}
         secondsRemaining={restState.secondsRemaining}
         isOvertime={restState.isOvertime}
+        isPaused={restState.isPaused}
+        onTogglePause={restState.onTogglePause}
         accentColor={accentColor}
       />
     ) : (
@@ -215,6 +219,8 @@ interface RestBodyProps {
   secondsRemaining: number
   isOvertime: boolean
   accentColor: string
+  isPaused?: boolean
+  onTogglePause?: () => void
 }
 
 function RestBody({
@@ -223,6 +229,8 @@ function RestBody({
   secondsRemaining,
   isOvertime,
   accentColor,
+  isPaused,
+  onTogglePause,
 }: RestBodyProps) {
   return (
     <div className="mx-auto flex max-w-md flex-col items-center pt-6 animate-fade-in">
@@ -238,6 +246,8 @@ function RestBody({
           isOvertime={isOvertime}
           label={isOvertime ? 'Over' : 'Rest'}
           accentColor={accentColor}
+          isPaused={isPaused}
+          onTogglePause={onTogglePause}
         />
       </div>
     </div>

@@ -112,14 +112,20 @@ export async function cancelAllAlarms(): Promise<void> {
   })
 }
 
+export interface ScheduleAlarmsResult {
+  scheduled: boolean
+  baseAt?: Date  // when the morning alarm will next fire
+  reason?: 'not-native' | 'no-permission'
+}
+
 export async function scheduleAlarms(
   amReminder: string,
   pmSessionTime: string,
   pmLeadMin: number,
-): Promise<void> {
-  if (!isNative) return
+): Promise<ScheduleAlarmsResult> {
+  if (!isNative) return { scheduled: false, reason: 'not-native' }
   const permitted = await requestNotificationPermission()
-  if (!permitted) return
+  if (!permitted) return { scheduled: false, reason: 'no-permission' }
 
   await cancelAllAlarms()
   await LocalNotifications.cancel({ notifications: [{ id: LEAVE_BY_ID }] })
@@ -209,6 +215,18 @@ export async function scheduleAlarms(
       ],
     })
   }
+
+  // Verify iOS actually queued the morning alarm before we tell the user it's set.
+  // If getPending doesn't list ALARM_BASE_ID, something rejected the schedule.
+  try {
+    const pending = await LocalNotifications.getPending()
+    const armed = pending.notifications.some((n) => Number(n.id) === ALARM_BASE_ID)
+    if (!armed) return { scheduled: false, reason: 'no-permission' }
+  } catch {
+    // getPending unsupported or failed — best-effort, treat as scheduled
+  }
+
+  return { scheduled: true, baseAt: base }
 }
 
 // Boot-time sync: rehydrate scheduled alarms from the user's saved settings.

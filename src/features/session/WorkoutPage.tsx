@@ -260,6 +260,10 @@ function SkipWarmupTimer({ durationSec, onComplete, description }: {
           isOvertime={timer.isOvertime}
           label={started ? (timer.secondsRemaining <= 10 ? 'Finish' : 'Skip') : 'Warm Up'}
           accentColor={started && timer.secondsRemaining <= 10 ? '#C45A3C' : '#E8C860'}
+          isPaused={started && timer.isPaused}
+          onTogglePause={
+            started ? () => (timer.isPaused ? timer.resume() : timer.pause()) : undefined
+          }
         />
       </div>
       {!started ? (
@@ -333,8 +337,17 @@ export function WorkoutPage() {
       : null
 
   useSessionLiveActivity(strengthActivityConfig, {
-    onPause: () => restTimer.pause(),
-    onResume: (newEndsAtMs) => restTimer.resume(newEndsAtMs),
+    onPause: () => {
+      cancelStrengthRestEnd()
+      restTimer.pause()
+    },
+    onResume: (newEndsAtMs) => {
+      restTimer.resume(newEndsAtMs)
+      const remaining = newEndsAtMs
+        ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
+        : restTimer.secondsRemaining
+      if (remaining > 0) scheduleStrengthRestEnd(remaining)
+    },
   })
 
   useEffect(() => {
@@ -1177,6 +1190,17 @@ export function WorkoutPage() {
           totalSeconds: currentSet?.restSec ?? 60,
           secondsRemaining: restTimer.secondsRemaining,
           isOvertime: restTimer.isOvertime,
+          isPaused: restTimer.isPaused,
+          onTogglePause: () => {
+            if (restTimer.isPaused) {
+              const remaining = restTimer.secondsRemaining
+              restTimer.resume()
+              if (remaining > 0) scheduleStrengthRestEnd(remaining)
+            } else {
+              cancelStrengthRestEnd()
+              restTimer.pause()
+            }
+          },
         } : undefined}
         onSetComplete={handleSetComplete}
         onNextSet={handleNextSet}
