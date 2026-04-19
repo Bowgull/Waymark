@@ -90,8 +90,10 @@ export function RunSessionView({
   const [phase, setPhase] = useState<RunPhase>('ready')
   const [isIndoor, setIsIndoor] = useState(runSession.isIndoor === 1)
   const [elapsed, setElapsed] = useState(0)
+  const [runPaused, setRunPaused] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startedAtRef = useRef<number>(0)
+  const pausedElapsedRef = useRef<number>(0)
 
   const [distance, setDistance] = useState('')
   const [duration, setDuration] = useState('')
@@ -122,6 +124,8 @@ export function RunSessionView({
 
   const startRun = useCallback(() => {
     startedAtRef.current = Date.now()
+    pausedElapsedRef.current = 0
+    setRunPaused(false)
     setPhase('running')
     intervalRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
@@ -212,6 +216,25 @@ export function RunSessionView({
   const runType = (prescription?.runType ?? undefined) as RunType | undefined
   const remaining = Math.max(0, timerEstimate - elapsed)
 
+  const toggleRunPause = useCallback(() => {
+    if (phase !== 'running') return
+    if (runPaused) {
+      startedAtRef.current = Date.now() - pausedElapsedRef.current * 1000
+      setRunPaused(false)
+      if (intervalRef.current) clearInterval(intervalRef.current)
+      intervalRef.current = setInterval(() => {
+        setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
+      }, 500)
+    } else {
+      pausedElapsedRef.current = Math.floor((Date.now() - startedAtRef.current) / 1000)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      setRunPaused(true)
+    }
+  }, [phase, runPaused])
+
   // Live Activity for run.
   const runLiveConfig: LiveActivityConfig | null =
     phase === 'running' && startedAtRef.current > 0
@@ -223,13 +246,23 @@ export function RunSessionView({
             label: runTypeLabel,
             detail: isIndoor ? 'Indoor' : 'Outdoor',
             startedAt: startedAtRef.current,
-            endsAt: startedAtRef.current + timerEstimate * 1000,
-            isPaused: false,
+            endsAt: runPaused
+              ? Date.now() + remaining * 1000
+              : startedAtRef.current + timerEstimate * 1000,
+            isPaused: runPaused,
+            pausedRemaining: runPaused ? remaining : undefined,
           },
         }
       : null
 
-  useSessionLiveActivity(runLiveConfig)
+  useSessionLiveActivity(runLiveConfig, {
+    onPause: () => {
+      if (phase === 'running' && !runPaused) toggleRunPause()
+    },
+    onResume: () => {
+      if (phase === 'running' && runPaused) toggleRunPause()
+    },
+  })
 
   const moment = resolveRunMoment({
     phase,
@@ -321,6 +354,8 @@ export function RunSessionView({
             label="Running"
             accentColor="#1E8A68"
             size={240}
+            isPaused={runPaused}
+            onTogglePause={toggleRunPause}
           />
         </div>
       </div>

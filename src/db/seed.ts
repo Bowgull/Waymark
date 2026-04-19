@@ -79,7 +79,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'back,glutes,hamstrings',
     equipment: 'barbell,blocks',
     formCues: 'Same as conventional deadlift but bar starts elevated. This lets you practice pulling mechanics with less range. Ribs down, push the floor away. Build to full range.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=uJvkMESLihk',
+    formVideoUrl: 'https://www.youtube.com/watch?v=ZR5t8K487dQ',
   },
   {
     id: 'ex-deadlift',
@@ -182,7 +182,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'back,biceps,core',
     equipment: 'pull-up bar,band',
     formCues: 'Full dead hang at bottom, chin clears bar at top. The band assists the hardest part. Pull with your lats, not just arms. Progress to thinner bands over time.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=Y3ntNsIS2Q4',
+    formVideoUrl: 'https://www.youtube.com/watch?v=4yE-XGDWJPg',
   },
   {
     id: 'ex-pullup-negative',
@@ -191,7 +191,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'back,biceps,core',
     equipment: 'pull-up bar',
     formCues: 'Jump to top, lower yourself as slowly as possible. Aim for 5 seconds down. This builds the strength for real pull-ups faster than bands alone.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=Y3ntNsIS2Q4',
+    formVideoUrl: 'https://www.youtube.com/watch?v=4yE-XGDWJPg',
   },
   {
     id: 'ex-pullup',
@@ -238,7 +238,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'obliques,glutes',
     equipment: 'bodyweight',
     formCues: 'Side plank on elbow, drop hip to floor and lift. This builds the lateral stability that powers kicks and resists sweeps. Each side independently.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=weFBMmMh0dQ',
+    formVideoUrl: 'https://www.youtube.com/watch?v=UhgQi_cz5zA',
   },
 
   // ── Core Circuit B (Rotational + Anti-Lateral) ──────────────
@@ -249,7 +249,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'abs,shoulders',
     equipment: 'sliders,towel',
     formCues: 'Forearm plank with feet on sliders, rock backward and forward. The further back, the harder. Keep ribs down and hips locked. One of the highest-demand plank variations.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=jfLWUlNMeQE',
+    formVideoUrl: 'https://www.youtube.com/watch?v=R9HJnAdJAUs',
   },
   {
     id: 'ex-cable-woodchop',
@@ -276,7 +276,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'obliques,grip,traps',
     equipment: 'dumbbell,kettlebell',
     formCues: 'Heavy weight in one hand, walk tall without leaning. This builds the anti-lateral flexion strength that keeps you upright in the clinch. Switch sides each set.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=BgHjgKzCTuc',
+    formVideoUrl: 'https://www.youtube.com/watch?v=iq5D5SU2Oq4',
   },
 
   // ── Foundation: Upper Body (UCS Corrective) ─────────────────
@@ -287,7 +287,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'chest',
     equipment: 'lacrosse ball,wall',
     formCues: 'Ball against wall, lean into chest. Find the tight spots and breathe into them. This releases the chest tightness that pulls your shoulders forward from desk work.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=MJB1Ij0EXqo',
+    formVideoUrl: 'https://www.youtube.com/watch?v=a8KjvtbkM8E',
   },
   {
     id: 'ex-foam-roll-traps',
@@ -296,7 +296,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'traps,neck',
     equipment: 'lacrosse ball,wall',
     formCues: 'Ball between wall and upper traps, lean in and roll slowly. These muscles get rock-hard from stress and desk posture. Release them to drop your shoulders away from your ears.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=_lNFjJLGEEk',
+    formVideoUrl: 'https://www.youtube.com/watch?v=RcwfX-YKnIw',
   },
   {
     id: 'ex-foam-roll-hip-flexors',
@@ -305,7 +305,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'hip_flexors,quads',
     equipment: 'foam roller',
     formCues: 'Face down, roller on front of hip. Roll slowly from hip crease to mid-thigh. These muscles shorten from sitting all day and pull your pelvis into tilt. Release before stretching.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=B07t5xJ1Ry8',
+    formVideoUrl: 'https://www.youtube.com/watch?v=z4JbDQHJ_2M',
   },
   {
     id: 'ex-doorway-pec-stretch',
@@ -314,7 +314,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'chest,front_delts',
     equipment: 'doorway',
     formCues: 'Forearm on doorframe at 90 degrees, step through gently. This opens the chest that desk posture closes down. Hold 30s each side. Breathe into the stretch.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=XCr3VHjrJIM',
+    formVideoUrl: 'https://www.youtube.com/watch?v=Dmm8_S23I74',
   },
   {
     id: 'ex-hip-flexor-stretch',
@@ -370,7 +370,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'abs,hip_flexors,core',
     equipment: 'bodyweight',
     formCues: 'Lower back pressed into the floor. Opposite arm and leg extend out. If your back arches, you went too far. This teaches your core to stabilize your spine during movement.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=I5xbsA71v0A',
+    formVideoUrl: 'https://www.youtube.com/watch?v=o4GKiEoYClI',
   },
   {
     id: 'ex-bird-dogs',
@@ -397,7 +397,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'glutes,hip_flexors',
     equipment: 'bodyweight',
     formCues: 'Front leg bent, back leg extended. Sink hips down and breathe. This opens the deep hip rotators that get locked from sitting. Hold 45s each side. Don\'t force it.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=_bPKs2yMOSo',
+    formVideoUrl: 'https://www.youtube.com/watch?v=2vwIdJbOqx4',
   },
   {
     id: 'ex-cossack-squats',
@@ -415,7 +415,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'hips,glutes',
     equipment: 'bodyweight',
     formCues: 'Both legs at 90 degrees, rotate knees to switch sides, smooth and controlled. This opens both internal and external hip rotation, which most desk workers have lost.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=GjMOkv6c3sA',
+    formVideoUrl: 'https://www.youtube.com/watch?v=qq_Z7sAmVrA',
   },
   {
     id: 'ex-psoas-stretch',
@@ -424,7 +424,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'psoas,hip_flexors',
     equipment: 'bodyweight',
     formCues: 'Supine, band around feet. Slow marching motion with core braced. The psoas is the deepest hip flexor and the main driver of pelvic tilt from sitting. This lengthens and activates it.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=Y-IS04Ia7Rg',
+    formVideoUrl: 'https://www.youtube.com/watch?v=vHIJgPO3p9Q',
   },
   {
     id: 'ex-wall-hip-cars',
@@ -433,7 +433,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'hips',
     equipment: 'wall',
     formCues: 'Hands on wall for balance. Lift knee high and rotate outward in the largest circle you can control, then reverse. This builds the usable hip range that translates to kicks.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=yJ5FsYDgOJA',
+    formVideoUrl: 'https://www.youtube.com/watch?v=5kM-o61Z14I',
   },
   {
     id: 'ex-sciatic-nerve-glide',
@@ -442,7 +442,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'sciatic_nerve,hamstrings',
     equipment: 'bodyweight',
     formCues: 'Seated, extend one leg while flexing foot. Gently rock between pointed and flexed toe. This mobilizes the sciatic nerve that gets compressed from sitting. Never push into pain.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=YOKVKq5IZXA',
+    formVideoUrl: 'https://www.youtube.com/watch?v=OMbKv94Bu_U',
   },
 
   // ── Daily Mobility (added in mobility refactor) ─────────────
@@ -471,7 +471,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'posterior_chain,lower_traps,rear_delts',
     equipment: 'bodyweight',
     formCues: 'Lie face down, lift chest and arms, thumbs up. Hold 3s. Activates the entire posterior chain the desk switches off.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=PsVWuEIphd0',
+    formVideoUrl: 'https://www.youtube.com/watch?v=LWDUyq4TRMU',
   },
   {
     id: 'ex-band-external-rotation',

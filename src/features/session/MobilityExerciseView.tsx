@@ -173,6 +173,12 @@ export function MobilityExerciseBody({
               }
               accentColor="#4ACAAA"
               isComplete={holdTimer.reachedTarget}
+              isPaused={holdTimer.isPaused}
+              onTogglePause={
+                holdTimer.running && !holdTimer.reachedTarget
+                  ? () => (holdTimer.isPaused ? holdTimer.resume() : holdTimer.pause())
+                  : undefined
+              }
             />
           </div>
         ) : (

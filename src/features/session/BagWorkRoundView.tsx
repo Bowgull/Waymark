@@ -205,14 +205,37 @@ export function BagWorkRoundView({
           }
         : null
 
+  function pauseRound() {
+    cancelRoundActiveCues()
+    roundTimer.pause()
+  }
+  function resumeRound(newEndsAtMs?: number) {
+    roundTimer.resume(newEndsAtMs)
+    const remaining = newEndsAtMs
+      ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
+      : roundTimer.secondsRemaining
+    if (remaining > 0) scheduleRoundActiveCues(remaining)
+  }
+  function pauseRest() {
+    cancelRestCues()
+    restTimer.pause()
+  }
+  function resumeRest(newEndsAtMs?: number) {
+    restTimer.resume(newEndsAtMs)
+    const remaining = newEndsAtMs
+      ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
+      : restTimer.secondsRemaining
+    if (remaining > 0) scheduleRestCues(remaining)
+  }
+
   useSessionLiveActivity(activityConfig, {
     onPause: () => {
-      if (phase === 'fighting') roundTimer.pause()
-      else if (phase === 'rest') restTimer.pause()
+      if (phase === 'fighting') pauseRound()
+      else if (phase === 'rest') pauseRest()
     },
     onResume: (newEndsAtMs) => {
-      if (phase === 'fighting') roundTimer.resume(newEndsAtMs)
-      else if (phase === 'rest') restTimer.resume(newEndsAtMs)
+      if (phase === 'fighting') resumeRound(newEndsAtMs)
+      else if (phase === 'rest') resumeRest(newEndsAtMs)
     },
   })
 
@@ -293,6 +316,8 @@ export function BagWorkRoundView({
             isOvertime={restTimer.isOvertime}
             label={restTimer.isOvertime ? 'Over' : 'Rest'}
             accentColor="#E8C860"
+            isPaused={restTimer.isPaused}
+            onTogglePause={() => (restTimer.isPaused ? resumeRest() : pauseRest())}
           />
         </div>
       </div>
@@ -377,6 +402,12 @@ export function BagWorkRoundView({
                 phase === 'fighting' && roundTimer.secondsRemaining <= 10
                   ? '#C45A3C'
                   : '#E8C860'
+              }
+              isPaused={phase === 'fighting' && roundTimer.isPaused}
+              onTogglePause={
+                phase === 'fighting'
+                  ? () => (roundTimer.isPaused ? resumeRound() : pauseRound())
+                  : undefined
               }
             />
           </div>

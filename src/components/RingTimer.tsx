@@ -6,6 +6,8 @@ interface RingTimerProps {
   accentColor?: string
   size?: number
   isComplete?: boolean
+  isPaused?: boolean
+  onTogglePause?: () => void
 }
 
 function formatTime(sec: number): string {
@@ -23,6 +25,8 @@ export function RingTimer({
   accentColor = '#E8C860',
   size = 240,
   isComplete = false,
+  isPaused = false,
+  onTogglePause,
 }: RingTimerProps) {
   const strokeWidth = 10
   const radius = (size - strokeWidth) / 2
@@ -44,16 +48,21 @@ export function RingTimer({
   const labelFontSize = size * 0.055
   const timeFontSize = size * 0.22
 
-  // Split time into individual characters for fixed-width digit rendering
   const timeStr = (isOvertime ? '+' : '') + formatTime(secondsRemaining)
+  const interactive = Boolean(onTogglePause)
+  const displayLabel = isPaused ? 'Paused' : label
 
-  return (
-    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+  const content = (
+    <>
       <svg
         width={size}
         height={size}
         viewBox={`0 0 ${size} ${size}`}
-        style={{ filter: glowFilter, transition: 'filter 0.6s ease' }}
+        style={{
+          filter: glowFilter,
+          transition: 'filter 0.6s ease, opacity 0.3s ease',
+          opacity: isPaused ? 0.55 : 1,
+        }}
       >
         {/* Background track */}
         <circle
@@ -98,13 +107,20 @@ export function RingTimer({
       </svg>
 
       {/* Center text */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        {label && (
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        {displayLabel && (
           <p
             className="text-display-sm"
-            style={{ fontSize: labelFontSize, color: arcColor, transition: 'color 0.3s ease' }}
+            style={{
+              fontSize: labelFontSize,
+              color: isPaused ? '#F0EDE4' : arcColor,
+              transition: 'color 0.3s ease',
+              letterSpacing: isPaused ? '0.3em' : undefined,
+              textTransform: isPaused ? 'uppercase' : undefined,
+              opacity: isPaused ? 0.75 : 1,
+            }}
           >
-            {label}
+            {displayLabel}
           </p>
         )}
         <p
@@ -112,13 +128,36 @@ export function RingTimer({
           style={{
             fontSize: timeFontSize,
             color: timeColor,
-            transition: 'color 0.3s ease',
+            transition: 'color 0.3s ease, opacity 0.3s ease',
             fontVariantNumeric: 'tabular-nums',
+            opacity: isPaused ? 0.6 : 1,
           }}
         >
           {timeStr}
         </p>
       </div>
-    </div>
+    </>
+  )
+
+  const baseStyle = { width: size, height: size }
+
+  if (!interactive) {
+    return (
+      <div className="relative flex items-center justify-center" style={baseStyle}>
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onTogglePause}
+      aria-label={isPaused ? 'Resume timer' : 'Pause timer'}
+      className="relative flex items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 active:scale-[0.98] transition-transform"
+      style={{ ...baseStyle, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+    >
+      {content}
+    </button>
   )
 }
