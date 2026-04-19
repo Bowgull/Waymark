@@ -254,6 +254,9 @@ export function SettingsPage() {
       {/* Reminders */}
       <section>
         <p className="mb-2 text-sm font-medium text-foreground">Reminders</p>
+        <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
+          Silent switch on? Alarms and cues go silent. Flip to ring on training mornings, or keep Vibrate on Silent on in iOS Sounds &amp; Haptics so the lock-screen buzz still lands.
+        </p>
         <div className="space-y-3">
           {/* Morning Alarm */}
           <div>

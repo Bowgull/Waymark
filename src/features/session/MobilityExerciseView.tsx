@@ -104,9 +104,6 @@ export function MobilityExerciseBody({
 
       <h2 className="text-display-lg leading-[1.1] text-foreground">
         {exercise.exercise?.name ?? 'Exercise'}
-        {exercise.exercise?.formVideoUrl && (
-          <FormVideoLink url={exercise.exercise.formVideoUrl} variant="icon" />
-        )}
       </h2>
 
       <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
@@ -149,6 +146,12 @@ export function MobilityExerciseBody({
               {breakdown}
             </p>
           )}
+        </div>
+      )}
+
+      {exercise.exercise?.formVideoUrl && (
+        <div className="mt-4">
+          <FormVideoLink url={exercise.exercise.formVideoUrl} compact />
         </div>
       )}
 

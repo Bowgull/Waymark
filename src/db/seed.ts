@@ -453,7 +453,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'diaphragm,ribcage',
     equipment: 'bodyweight',
     formCues: 'Face down, forehead on hands. Breathe into your lower back and ribs, not your chest. Resets the diaphragm that shallow chest breathing has parked.',
-    formVideoUrl: null,
+    formVideoUrl: 'https://www.youtube.com/watch?v=2ibSb6jQ3Ec',
   },
   {
     id: 'ex-foam-roll-thoracic',
@@ -462,7 +462,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'thoracic_spine,upper_back',
     equipment: 'foam roller',
     formCues: 'Roller under mid-back, hands behind head. Let the spine extend backwards. This is the single best move against desk kyphosis.',
-    formVideoUrl: null,
+    formVideoUrl: 'https://www.youtube.com/watch?v=WTwJNj1IjXI',
   },
   {
     id: 'ex-prone-cobra',
@@ -471,7 +471,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'posterior_chain,lower_traps,rear_delts',
     equipment: 'bodyweight',
     formCues: 'Lie face down, lift chest and arms, thumbs up. Hold 3s. Activates the entire posterior chain the desk switches off.',
-    formVideoUrl: null,
+    formVideoUrl: 'https://www.youtube.com/watch?v=PsVWuEIphd0',
   },
   {
     id: 'ex-band-external-rotation',
@@ -480,7 +480,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'rear_delts,rotator_cuff',
     equipment: 'band',
     formCues: 'Elbow tucked to side, rotate forearm outward against band. 10 each arm. Rear delt and rotator cuff, the muscles that pull shoulders back.',
-    formVideoUrl: null,
+    formVideoUrl: 'https://www.youtube.com/watch?v=lw5jkvrLwVw',
   },
   {
     id: 'ex-couch-stretch',
@@ -489,7 +489,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'hip_flexors,quads',
     equipment: 'bodyweight,couch',
     formCues: 'Back foot on couch, front knee forward, tuck tailbone and squeeze back glute. 30s each side. Deep hip flexor lengthening that a standing stretch can not reach.',
-    formVideoUrl: null,
+    formVideoUrl: 'https://www.youtube.com/shorts/TML8Vqy-ACQ',
   },
   {
     id: 'ex-worlds-greatest-stretch',
@@ -498,7 +498,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'hips,groin,thoracic_spine',
     equipment: 'bodyweight',
     formCues: 'Lunge, hand inside front foot, rotate top arm to ceiling. 30s each side. Opens hip, groin, and thoracic spine in one move.',
-    formVideoUrl: null,
+    formVideoUrl: 'https://www.youtube.com/watch?v=-CiWQ2IvY34',
   },
   {
     id: 'ex-ankle-cars',
@@ -507,7 +507,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'ankles',
     equipment: 'bodyweight',
     formCues: 'Controlled articular rotations. Slow full circles, both directions, each ankle. Dorsiflexion quality drives squat depth and kick mechanics.',
-    formVideoUrl: null,
+    formVideoUrl: 'https://www.youtube.com/watch?v=6iht_ecV1Go',
   },
 
   // ── Removed: ex-foam-roller-thoracic (merged into foam roll series) ──

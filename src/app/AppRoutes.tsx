@@ -17,6 +17,7 @@ import {
   requestNotificationPermission,
   scheduleRedeployReminders,
   cancelRedeployReminders,
+  syncAlarmsFromSettings,
 } from '../lib/notifications'
 import { apiFetch } from '../lib/api'
 import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
@@ -42,12 +43,25 @@ export function AppRoutes() {
   useEffect(() => {
     initNotificationListeners()
 
-    // Ask once, at boot. Patched plugin bundles .criticalAlert into
-    // the same authorization prompt so silent mode gets bypassed later.
+    // Ask once, at boot, then rehydrate scheduled alarms from saved settings.
+    // Without the rehydrate step, alarms only existed after the user opened
+    // Settings and tapped Save — fresh installs and 7-day sideload reinstalls
+    // would have no OS-level alarms until then.
     if (Capacitor.isNativePlatform()) {
-      requestNotificationPermission().catch(() => {
-        // If the prompt fails or is denied, scheduleAlarms will re-request later.
-      })
+      ;(async () => {
+        const granted = await requestNotificationPermission().catch(() => false)
+        if (!granted) return
+        try {
+          const settings = await apiFetch<{
+            amReminder: string | null
+            pmSessionTime: string | null
+            pmLeadMin: number | null
+          } | null>('/api/settings')
+          if (settings) await syncAlarmsFromSettings(settings)
+        } catch {
+          // settings unavailable at boot — Settings save will reschedule later
+        }
+      })()
     }
 
     // Redeploy countdown: if the bundle is fresher than last boot,
