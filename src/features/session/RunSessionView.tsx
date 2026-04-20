@@ -357,16 +357,21 @@ export function RunSessionView({
     }
   }, [phase, runPaused])
 
-  // Live Activity for run.
+  // Live Activity for run. Indoor surfaces the One Piece arc/episode so a
+  // glance at the Dynamic Island shows what's playing, not "Zone 2 · Indoor".
   const runLiveConfig: LiveActivityConfig | null =
     phase === 'running' && startedAtRef.current > 0
       ? {
           sessionType: 'run',
-          sessionLabel: 'Run',
+          sessionLabel: isIndoor ? 'One Piece' : 'Run',
           state: {
             phase: 'active',
-            label: runTypeLabel,
-            detail: isIndoor ? 'Indoor' : 'Outdoor',
+            label: isIndoor
+              ? (onePaceArc || 'One Piece')
+              : runTypeLabel,
+            detail: isIndoor
+              ? (onePaceEp ? `Ep ${onePaceEp}` : undefined)
+              : 'Outdoor',
             startedAt: startedAtRef.current,
             endsAt: runPaused
               ? Date.now() + remaining * 1000
@@ -578,25 +583,14 @@ export function RunSessionView({
 
   const footer =
     phase === 'ready' ? (
-      isIndoor ? (
-        <Button
-          onClick={() => setPhase('logging')}
-          size="lg"
-          className="w-full"
-          style={{ backgroundColor: '#1E8A68', color: '#020A08' }}
-        >
-          Log Run
-        </Button>
-      ) : (
-        <Button
-          onClick={startRun}
-          size="lg"
-          className="w-full"
-          style={{ backgroundColor: '#1E8A68', color: '#020A08' }}
-        >
-          Start Run
-        </Button>
-      )
+      <Button
+        onClick={startRun}
+        size="lg"
+        className="w-full"
+        style={{ backgroundColor: '#1E8A68', color: '#020A08' }}
+      >
+        Start Run
+      </Button>
     ) : phase === 'running' ? (
       <Button onClick={finishRun} size="lg" className="w-full">
         Finish Run
