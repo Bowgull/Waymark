@@ -9,6 +9,7 @@ import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/sy
 import { getLatestBodyweightKg } from '../../lib/bodyMetrics'
 import { TOOL_BLOCK_TRANSITION, type BlockTransitionOutput } from '../../lib/prompts/tools'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt, type AdherenceSnapshot, type AdherenceGuidance } from '../../lib/adherence'
+import { computeHrSnapshot, loadRecentRunsForHr, serializeHrForPrompt } from '../../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../../lib/sessionRollover'
 import { getEpochDay } from '../../lib/dates'
 import type { createDB } from '../../db/client'
@@ -235,6 +236,7 @@ async function gatherTransitionData(db: DB, blockId: string): Promise<{
   mainLifts: Array<{ id: string; name: string; currentMaxKg: number | null }>
   adherence: AdherenceSnapshot
   guidance: AdherenceGuidance
+  hrBlock: string | null
 }> {
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
   const blockStartSec = block?.startedAt ?? 0
@@ -298,12 +300,17 @@ async function gatherTransitionData(db: DB, blockId: string): Promise<{
   const adherence = await computeBlockAdherence(db, blockId, todayEpochDay)
   const guidance = deriveGuidance(adherence)
 
+  const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
+  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay)
+  const hrBlock = serializeHrForPrompt(hrSnapshot)
+
   return {
     block: { startedAt: block?.startedAt ?? null, totalWeeks: block?.totalWeeks ?? 6 },
     weeks,
     mainLifts,
     adherence,
     guidance,
+    hrBlock,
   }
 }
 
@@ -337,6 +344,12 @@ function buildTransitionPrompt(
 
   lines.push('')
   lines.push(serializeAdherenceForPrompt(data.adherence, data.guidance))
+
+  if (data.hrBlock) {
+    lines.push('')
+    lines.push(data.hrBlock)
+    lines.push('HR signal is a tiebreaker. Over-paced zone-2 runs across Block Zero means the aerobic base work got skipped in favor of conditioning — lean toward hold and prescribe stricter HR ceilings next block.')
+  }
 
   lines.push('')
   lines.push('Decide: proceed (advance to Fighter Block 1), hold (extend Block Zero by one week), or adjust (advance with modified starting loads).')
