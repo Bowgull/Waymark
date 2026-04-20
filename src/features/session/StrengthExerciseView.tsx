@@ -87,6 +87,7 @@ interface StrengthExerciseViewProps {
     onTogglePause?: () => void
   }
   onSetComplete: (weightKg: number | null, reps: number) => void
+  onLiveValuesChange?: (weightKg: number | null, reps: number) => void
   onNextSet: () => void
   onSkip?: () => void
   onExit?: () => void
@@ -116,6 +117,7 @@ export function StrengthExerciseView({
   suggestion,
   restState,
   onSetComplete,
+  onLiveValuesChange,
   onNextSet,
   onSkip,
   onExit,
@@ -173,6 +175,7 @@ export function StrengthExerciseView({
         lastSessionData={lastSessionData}
         suggestion={suggestion}
         onSetComplete={onSetComplete}
+        onLiveValuesChange={onLiveValuesChange}
       />
     )
 
@@ -269,6 +272,7 @@ interface ExerciseBodyProps {
   lastSessionData?: { weightLbs: number; reps: number }
   suggestion?: { weightLbs: number; message: string }
   onSetComplete: (weightKg: number | null, reps: number) => void
+  onLiveValuesChange?: (weightKg: number | null, reps: number) => void
 }
 
 function formatShortDate(dateStr: string): string {
@@ -295,6 +299,7 @@ function ExerciseBody({
   lastSessionData,
   suggestion,
   onSetComplete,
+  onLiveValuesChange,
 }: ExerciseBodyProps) {
   const [breakdownOpen, setBreakdownOpen] = useState(false)
 
@@ -409,6 +414,7 @@ function ExerciseBody({
           lastSessionData={lastSessionData}
           suggestion={suggestion}
           onComplete={onSetComplete}
+          onLiveValuesChange={onLiveValuesChange}
         />
       )}
 
