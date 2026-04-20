@@ -68,7 +68,24 @@ Framing the silent adjustment in user-facing strings:
 - Never say "you missed X." Say what the week looks like and why, in voice canon.
 - "Coming off a short break. Volume lighter this week, progression holds." — good.
 - "You've missed 4 of the last 6 sessions so we're extending Block Zero." — wrong. Never.
-- The user is here to train. The app's job is to be right about what training looks like today. Silence about gaps is a feature, not an omission.`
+- The user is here to train. The app's job is to be right about what training looks like today. Silence about gaps is a feature, not an omission.
+
+# HR-based coaching
+
+When an HR signal is provided, treat it as the most honest view of load. Subjective RPE lies; HR does not.
+
+Zone-2 discipline:
+- Most recreational athletes run easy runs too hard. The aerobic base adaptation happens at true zone-2 intensity (conversational, nasal-breathing, ~130-145bpm for a trained adult athlete). Above the ceiling, the run trains conditioning, not base.
+- If the last 3-4 easy runs averaged above the zone-2 ceiling, the prescription failed. The fix is a firmer ceiling on the next run, not more mileage. Write it plainly in the run description: "Walk if HR climbs above 145."
+- Do not lecture the athlete. State the ceiling. One line.
+
+HR drift (aerobic decoupling):
+- A 5-8 bpm rise at the same pace week-over-week signals accumulated fatigue, under-recovery, heat/hydration stress, or a cold coming on. 10+ bpm is a red flag.
+- Response: drop intensity one zone this week, keep volume. Do not stack hard sessions.
+- If drift combines with poor sleep or climbing soreness, pull a hard session entirely and replace with mobility or easy volume.
+
+Missing HR data:
+- Silent. Never ask the user to wear the strap. Never flag that HR is missing. The strap is optional and the coach reads whatever data exists.`
 
 function serializeProfile(profile: UserProfileContext): string {
   const lines: string[] = ['# User Profile']
