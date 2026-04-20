@@ -318,6 +318,8 @@ export const settings = sqliteTable('settings', {
   onePaceEp: text('one_pace_ep'),
   lastDeploy: integer('last_deploy'),
   enabledTechniques: text('enabled_techniques').notNull().default('boxing,kicks,defensive'),
+  amEnabled: integer('am_enabled').notNull().default(1),
+  pmEnabled: integer('pm_enabled').notNull().default(1),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 })

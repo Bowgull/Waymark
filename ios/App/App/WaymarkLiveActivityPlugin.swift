@@ -16,6 +16,7 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "endAll", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getCurrent", returnType: CAPPluginReturnPromise),
     ]
 
     private var currentActivityId: String?
@@ -25,6 +26,69 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         super.load()
         log.info("WaymarkLiveActivity plugin loaded")
         registerNotificationObservers()
+        if #available(iOS 16.2, *) {
+            adoptExistingActivities()
+            observeNewActivities()
+        }
+    }
+
+    @available(iOS 16.2, *)
+    private func adoptExistingActivities() {
+        // Morph-only invariant: at most one waymark LA across the app.
+        // On cold launch (user force-closed during a session and reopened),
+        // pick up any pre-existing LA so subsequent update() calls morph
+        // in place rather than failing and spawning a duplicate.
+        let existing = Activity<WaymarkActivityAttributes>.activities
+        if let first = existing.first {
+            currentActivityId = first.id
+            log.info("adopted pre-existing LA id=\(first.id, privacy: .public)")
+        }
+        for activity in existing {
+            observeActivityState(activity)
+        }
+    }
+
+    @available(iOS 16.2, *)
+    private func observeNewActivities() {
+        // Long-lived task that watches for activities created after launch
+        // so we can observe their end state too.
+        Task {
+            for await activity in Activity<WaymarkActivityAttributes>.activityUpdates {
+                observeActivityState(activity)
+            }
+        }
+    }
+
+    @available(iOS 16.2, *)
+    private func observeActivityState(_ activity: Activity<WaymarkActivityAttributes>) {
+        Task { [weak self] in
+            for await state in activity.activityStateUpdates {
+                if state == .ended || state == .dismissed {
+                    // Dedupe: start() + observeNewActivities both register
+                    // observers on the same activity, so two tasks race here
+                    // on end. finalize() ensures only the first caller fires
+                    // the downstream events (activityEnded, and optionally
+                    // endRequested if the end was not app-initiated).
+                    let result = WaymarkInternalEndTracker.shared.finalize(activity.id)
+                    guard result.isFirst else { return }
+                    await MainActor.run {
+                        if self?.currentActivityId == activity.id {
+                            self?.currentActivityId = nil
+                        }
+                        self?.notifyListeners("activityEnded", data: ["activityId": activity.id])
+                        // If the id wasn't marked internal before .end() fired,
+                        // the user swiped the LA off the lock screen. Surface
+                        // that as an end request so JS can tear down the
+                        // session (navigate back to Today).
+                        if !result.wasInternal {
+                            log.info("LA dismissed externally id=\(activity.id, privacy: .public) — forwarding as endRequested")
+                            self?.notifyListeners("endRequested", data: [:])
+                        }
+                    }
+                    return
+                }
+            }
+        }
     }
 
     private func registerNotificationObservers() {
@@ -50,6 +114,46 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 data["endsAtMs"] = endsAtMs
             }
             self?.notifyListeners("resumeRequested", data: data)
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .waymarkTimerRestartRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.notifyListeners("restartRequested", data: [:])
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .waymarkSessionEndRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.notifyListeners("endRequested", data: [:])
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .waymarkCompleteSetRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.notifyListeners("completeSetRequested", data: [:])
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .waymarkStartHoldRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.notifyListeners("startHoldRequested", data: [:])
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .waymarkAdvanceRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.notifyListeners("advanceRequested", data: [:])
         }
     }
 
@@ -102,6 +206,7 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 content: content
             )
             currentActivityId = activity.id
+            observeActivityState(activity)
             log.info("start succeeded id=\(activity.id, privacy: .public)")
             call.resolve(["activityId": activity.id])
         } catch {
@@ -173,6 +278,10 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 dismissalPolicy = .immediate
             }
 
+            // Mark before ending so observeActivityState can tell this apart
+            // from a user-initiated lock-screen dismissal.
+            WaymarkInternalEndTracker.shared.mark(activity.id)
+
             if let finalStateDict = finalStateDict,
                let finalState = parseContentState(finalStateDict) {
                 let content = ActivityContent(state: finalState, staleDate: nil)
@@ -187,6 +296,36 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func getCurrent(_ call: CAPPluginCall) {
+        guard #available(iOS 16.2, *) else {
+            call.resolve([:])
+            return
+        }
+        // Prefer the cached id (set on load or on start). Fall back to the
+        // first live activity — covers the case where our cache was cleared
+        // but the OS still has the LA, or where the plugin loaded before
+        // ActivityKit had enumerated existing activities.
+        if let id = currentActivityId,
+           let activity = Activity<WaymarkActivityAttributes>.activities.first(where: { $0.id == id }) {
+            call.resolve([
+                "activityId": id,
+                "sessionType": activity.attributes.sessionType,
+                "sessionLabel": activity.attributes.sessionLabel,
+            ])
+            return
+        }
+        if let activity = Activity<WaymarkActivityAttributes>.activities.first {
+            currentActivityId = activity.id
+            call.resolve([
+                "activityId": activity.id,
+                "sessionType": activity.attributes.sessionType,
+                "sessionLabel": activity.attributes.sessionLabel,
+            ])
+            return
+        }
+        call.resolve([:])
+    }
+
     @objc func endAll(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else {
             call.resolve()
@@ -195,6 +334,7 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
         Task {
             for activity in Activity<WaymarkActivityAttributes>.activities {
+                WaymarkInternalEndTracker.shared.mark(activity.id)
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
             currentActivityId = nil
@@ -219,7 +359,9 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             startedAt: Date(timeIntervalSince1970: startedAtMs / 1000.0),
             isPaused: isPaused,
             pausedRemaining: dict["pausedRemaining"] as? TimeInterval,
-            completeMessage: dict["completeMessage"] as? String
+            completeMessage: dict["completeMessage"] as? String,
+            endPending: dict["endPending"] as? Bool ?? false,
+            exerciseName: dict["exerciseName"] as? String
         )
     }
 }

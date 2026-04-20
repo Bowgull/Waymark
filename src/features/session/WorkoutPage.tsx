@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
@@ -28,6 +28,7 @@ import { StrengthExerciseView } from './StrengthExerciseView'
 import type { StrengthSection } from './strengthMicrocopy'
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
+import { endLiveActivity } from '@/lib/liveActivity'
 
 // ─── Shared types ──────────────────────────────────────────────
 
@@ -133,12 +134,15 @@ interface BagWorkoutData {
 
 interface RunSessionData {
   id: string
+  sessionId?: string
   runType: string | null
   distanceKm: number | null
   durationSec: number | null
   isIndoor: number
   onePaceArc: string | null
   onePaceEp: string | null
+  stravaActivityId?: number | null
+  attachmentStatus?: string | null
 }
 
 interface RunPrescription {
@@ -305,8 +309,9 @@ export function WorkoutPage() {
 
   const restTimer = useRestTimer()
 
-  // Live Activity for strength rest — other session types drive it themselves.
-  const isStrengthRest =
+  // Live Activity for strength — persists across both rest and exercise
+  // phases so the lock screen always shows where the user is.
+  const isStrengthSession =
     sessionType != null &&
     sessionType !== 'bag_work' &&
     sessionType !== 'mobility' &&
@@ -315,26 +320,57 @@ export function WorkoutPage() {
     sessionType !== 'active_recovery' &&
     sessionType !== 'mt_class' &&
     sessionType !== 'foundation_run'
-  const strengthRestExercise = strengthData?.exercises[exerciseIdx]
-  const strengthRestName = strengthRestExercise?.exercise?.name
-  const strengthActivityConfig: LiveActivityConfig | null =
-    isStrengthRest && phase === 'rest' && restTimer.isRunning && strengthRestName
-      ? {
-          sessionType: 'strength',
-          sessionLabel: 'Strength',
-          state: {
-            phase: 'rest',
-            label: 'Rest',
-            detail: strengthRestName,
-            startedAt: restTimer.startedAtMs,
-            endsAt: restTimer.endsAtMs,
-            isPaused: restTimer.isPaused,
-            pausedRemaining: restTimer.isPaused
-              ? restTimer.secondsRemaining
-              : undefined,
-          },
-        }
-      : null
+  const strengthActiveExercise = strengthData?.exercises[exerciseIdx]
+  const strengthActiveName = strengthActiveExercise?.exercise?.name
+  const strengthActiveTotalSets = strengthActiveExercise?.sets.length ?? 0
+
+  // Pending weight/reps from the SetTracker inputs — pushed live so a
+  // lock-screen "Complete Set" tap logs the same values the user sees.
+  const pendingSetValuesRef = useRef<{ weightKg: number | null; reps: number }>({
+    weightKg: null,
+    reps: 0,
+  })
+  const handleLiveValuesChange = useCallback((weightKg: number | null, reps: number) => {
+    pendingSetValuesRef.current = { weightKg, reps }
+  }, [])
+
+  let strengthActivityConfig: LiveActivityConfig | null = null
+  if (isStrengthSession && strengthActiveName) {
+    if (phase === 'rest' && restTimer.isRunning) {
+      strengthActivityConfig = {
+        sessionType: 'strength',
+        sessionLabel: 'Strength',
+        state: {
+          phase: 'rest',
+          label: 'Rest',
+          detail: strengthActiveName,
+          startedAt: restTimer.startedAtMs,
+          endsAt: restTimer.endsAtMs,
+          isPaused: restTimer.isPaused,
+          pausedRemaining: restTimer.isPaused
+            ? restTimer.secondsRemaining
+            : undefined,
+        },
+      }
+    } else if (phase === 'exercise' && strengthActiveTotalSets > 0) {
+      const now = Date.now()
+      strengthActivityConfig = {
+        sessionType: 'strength',
+        sessionLabel: 'Strength',
+        state: {
+          phase: 'exercise',
+          label: `Set ${setIdx + 1} of ${strengthActiveTotalSets}`,
+          detail: strengthActiveName,
+          exerciseName: strengthActiveName,
+          // Timer fields ignored by the widget in exercise phase, but the
+          // payload shape requires them.
+          startedAt: now,
+          endsAt: now,
+          isPaused: false,
+        },
+      }
+    }
+  }
 
   useSessionLiveActivity(strengthActivityConfig, {
     onPause: () => {
@@ -342,11 +378,38 @@ export function WorkoutPage() {
       restTimer.pause()
     },
     onResume: (newEndsAtMs) => {
-      restTimer.resume(newEndsAtMs)
-      const remaining = newEndsAtMs
-        ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
-        : restTimer.secondsRemaining
-      if (remaining > 0) scheduleStrengthRestEnd(remaining)
+      const endsAt = restTimer.resume(newEndsAtMs)
+      if (endsAt > Date.now()) void scheduleStrengthRestEnd(endsAt)
+    },
+    onRestart: () => {
+      if (!isStrengthSession || phase !== 'rest') return
+      const currentSet = strengthData?.exercises[exerciseIdx]?.sets[setIdx]
+      const restSec = currentSet?.restSec ?? 60
+      cancelStrengthRestEnd()
+      restTimer.start(restSec)
+      void scheduleStrengthRestEnd(Date.now() + restSec * 1000)
+    },
+    onEnd: () => {
+      cancelStrengthRestEnd()
+      restTimer.stop()
+      navigate('/today')
+    },
+    onCompleteSet: () => {
+      if (phase !== 'exercise') return
+      const prescribed = strengthData?.exercises[exerciseIdx]?.sets[setIdx]
+      const { weightKg, reps } = pendingSetValuesRef.current
+      const finalReps = reps > 0 ? reps : prescribed?.reps ?? 0
+      if (finalReps <= 0) return
+      const finalWeightKg =
+        weightKg != null ? weightKg : prescribed?.weightKg ?? null
+      handleSetComplete(finalWeightKg, finalReps)
+    },
+    onAdvance: () => {
+      // "Skip →" during rest — cut the rest short and move on.
+      if (phase === 'rest') {
+        cancelStrengthRestEnd()
+        handleNextSet()
+      }
     },
   })
 
@@ -460,6 +523,20 @@ export function WorkoutPage() {
       })
       logger.sessionEvent('session finish ok', { sessionId: id })
       clearWorkoutRecovery()
+      // Let the Live Activity show a ✓ completion frame for 4s before it
+      // dismisses itself from the lock screen.
+      const now = Date.now()
+      void endLiveActivity(
+        {
+          phase: 'complete',
+          label: 'Session Complete',
+          startedAt: now,
+          endsAt: now,
+          isPaused: false,
+          completeMessage: 'Session complete',
+        },
+        4000,
+      )
       navigate('/today', { replace: true })
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
@@ -1059,7 +1136,7 @@ export function WorkoutPage() {
 
     const restSec = currentSet.restSec ?? 60
     restTimer.start(restSec)
-    scheduleStrengthRestEnd(restSec)
+    void scheduleStrengthRestEnd(Date.now() + restSec * 1000)
     setPhase('rest')
   }
 
@@ -1081,6 +1158,12 @@ export function WorkoutPage() {
       setPhase('exercise')
     }
   }
+
+  useEffect(() => {
+    if (phase === 'rest' && restTimer.isRunning && restTimer.secondsRemaining <= 0) {
+      handleNextSet()
+    }
+  }, [phase, restTimer.isRunning, restTimer.secondsRemaining])
 
   // Session-wide last-set flag: fires only on the final set of the final exercise.
   const isLastSetOfSession =
@@ -1193,9 +1276,8 @@ export function WorkoutPage() {
           isPaused: restTimer.isPaused,
           onTogglePause: () => {
             if (restTimer.isPaused) {
-              const remaining = restTimer.secondsRemaining
-              restTimer.resume()
-              if (remaining > 0) scheduleStrengthRestEnd(remaining)
+              const endsAt = restTimer.resume()
+              if (endsAt > Date.now()) void scheduleStrengthRestEnd(endsAt)
             } else {
               cancelStrengthRestEnd()
               restTimer.pause()
@@ -1203,6 +1285,7 @@ export function WorkoutPage() {
           },
         } : undefined}
         onSetComplete={handleSetComplete}
+        onLiveValuesChange={handleLiveValuesChange}
         onNextSet={handleNextSet}
         accentColor={accent}
       />

@@ -125,6 +125,18 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
     if (remaining > 0) scheduleRestCues(remaining)
   }
 
+  function restartCurrentPhase() {
+    if (skipPhase === 'skipping') {
+      cancelRoundActiveCues()
+      roundTimer.start(skipSession.roundDurSec)
+      scheduleRoundActiveCues(skipSession.roundDurSec)
+    } else if (skipPhase === 'rest') {
+      cancelRestCues()
+      restTimer.start(60)
+      scheduleRestCues(60)
+    }
+  }
+
   useSessionLiveActivity(skipActivityConfig, {
     onPause: () => {
       if (skipPhase === 'skipping') pauseRound()
@@ -133,6 +145,20 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
     onResume: (newEndsAtMs) => {
       if (skipPhase === 'skipping') resumeRound(newEndsAtMs)
       else if (skipPhase === 'rest') resumeRest(newEndsAtMs)
+    },
+    onRestart: restartCurrentPhase,
+    onEnd: () => {
+      cancelRoundActiveCues()
+      cancelRestCues()
+      roundTimer.stop()
+      restTimer.stop()
+      onExit?.()
+    },
+    // "Next →" from the lock screen: skipping → end round early, rest →
+    // start next round.
+    onAdvance: () => {
+      if (skipPhase === 'skipping') endRound()
+      else if (skipPhase === 'rest') nextRound()
     },
   })
 

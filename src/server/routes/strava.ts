@@ -52,13 +52,13 @@ strava.get('/authorize', (c) => {
 strava.get('/callback', async (c) => {
   const code = c.req.query('code')
   const error = c.req.query('error')
-  if (error) return c.redirect(`/settings?strava=denied`)
-  if (!code) return c.redirect(`/settings?strava=missing_code`)
+  if (error) return c.redirect(`/api/strava/error?reason=denied`)
+  if (!code) return c.redirect(`/api/strava/error?reason=missing_code`)
 
   const clientId = c.env.STRAVA_CLIENT_ID
   const clientSecret = c.env.STRAVA_CLIENT_SECRET
   if (!clientId || !clientSecret) {
-    return c.json({ error: 'Strava secrets not configured' }, 500)
+    return c.redirect(`/api/strava/error?reason=not_configured`)
   }
 
   const body = new URLSearchParams({
@@ -72,7 +72,7 @@ strava.get('/callback', async (c) => {
   if (!res.ok) {
     const text = await res.text()
     console.error('[strava] token exchange failed', res.status, text)
-    return c.redirect(`/settings?strava=token_exchange_failed`)
+    return c.redirect(`/api/strava/error?reason=token_exchange_failed`)
   }
 
   const data = await res.json() as {
@@ -103,7 +103,29 @@ strava.get('/callback', async (c) => {
     updatedAt: now,
   })
 
-  return c.redirect(`/settings?strava=connected`)
+  const displayName = athleteName ?? 'athlete'
+  return c.redirect(`/api/strava/success?name=${encodeURIComponent(displayName)}`)
+})
+
+strava.get('/success', (c) => {
+  const name = c.req.query('name') ?? 'athlete'
+  return c.html(renderStravaPage({
+    title: 'Strava Connected',
+    heading: 'Connected',
+    body: `Welcome, ${escapeHtml(name)}. Your runs will log themselves.`,
+    hint: 'You can close this tab and return to Waymark.',
+  }))
+})
+
+strava.get('/error', (c) => {
+  const reason = c.req.query('reason') ?? 'unknown'
+  const detail = STRAVA_ERROR_COPY[reason] ?? 'Something went sideways. Try again from Settings.'
+  return c.html(renderStravaPage({
+    title: 'Strava Connection Failed',
+    heading: 'Not connected',
+    body: detail,
+    hint: 'Close this tab and try again from Waymark.',
+  }))
 })
 
 strava.get('/status', async (c) => {
@@ -280,6 +302,56 @@ strava.post('/disconnect', async (c) => {
 
 export { strava }
 
+// ─── Success / error pages ─────────────────────────────────────
+
+const STRAVA_ERROR_COPY: Record<string, string> = {
+  denied: 'You cancelled the Strava authorization.',
+  missing_code: 'Strava did not return an authorization code.',
+  token_exchange_failed: 'Strava would not exchange the code for a token.',
+  not_configured: 'Waymark is missing its Strava client secrets. Check Worker config.',
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function renderStravaPage(opts: { title: string; heading: string; body: string; hint: string }): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>${escapeHtml(opts.title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Geist:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; min-height: 100dvh; background: #0a0a0a; color: #e8e6e1; font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; padding: 24px; }
+  main { max-width: 420px; text-align: center; }
+  h1 { font-family: 'Cinzel', serif; font-weight: 500; font-size: 28px; letter-spacing: 0.02em; margin: 0 0 16px; color: #d4af37; }
+  p { font-size: 15px; line-height: 1.55; margin: 0 0 12px; color: #cfcac0; }
+  p.hint { font-size: 13px; color: #8a857c; margin-top: 24px; }
+  .mark { display: inline-block; width: 44px; height: 2px; background: #d4af37; opacity: 0.6; margin: 0 auto 20px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mark"></div>
+  <h1>${escapeHtml(opts.heading)}</h1>
+  <p>${opts.body}</p>
+  <p class="hint">${escapeHtml(opts.hint)}</p>
+</main>
+</body>
+</html>`
+}
+
 // ─── Token refresh helper ──────────────────────────────────────
 
 // Called by ingestion code. Refreshes the access token on demand.
@@ -391,14 +463,19 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   const nowSec = Math.floor(Date.now() / 1000)
 
   // Find a planned running session on this date with no existing strava link.
+  // A session is considered "already claimed" only if it has a run_sessions row
+  // with stravaActivityId set — a locally-started run (via Start Run button)
+  // creates a row WITHOUT stravaActivityId, which we'll upgrade in place.
   const planned = await db.select().from(sessions)
     .where(and(eq(sessions.type, 'running'), eq(sessions.scheduledDate, epochDay)))
-  const linked = await db.select().from(runSessions)
-  const linkedSessionIds = new Set(linked.map(r => r.sessionId))
+  const allRuns = await db.select().from(runSessions)
+  const stravaLinkedSessionIds = new Set(
+    allRuns.filter(r => r.stravaActivityId != null).map(r => r.sessionId),
+  )
   const candidate = planned.find(s =>
     s.status !== 'skipped' &&
     s.status !== 'completed' &&
-    !linkedSessionIds.has(s.id),
+    !stravaLinkedSessionIds.has(s.id),
   )
 
   let parentSessionId: string
@@ -421,6 +498,11 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     })
     attachmentStatus = 'orphan'
   }
+
+  // If a locally-started run_sessions row already exists for this parent
+  // session (user tapped Start Run before Strava webhook arrived), upgrade
+  // that row in place. The unique index on session_id blocks a second insert.
+  const existingForParent = allRuns.find(r => r.sessionId === parentSessionId)
 
   // Seed max_hr from Tanaka (208 - 0.7 × age) if profile has DOB but no
   // max_hr yet. Observed max from real runs will overwrite this. Without the
@@ -445,29 +527,47 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     }
   }
 
-  const runSessionId = crypto.randomUUID()
   const distanceKm = act.distance ? act.distance / 1000 : null
   const paceSecKm = distanceKm && act.moving_time
     ? Math.round(act.moving_time / distanceKm)
     : null
 
-  await db.insert(runSessions).values({
-    id: runSessionId,
-    sessionId: parentSessionId,
-    planWeek: null,
-    runType: null,
-    distanceKm,
-    durationSec: act.moving_time,
-    paceSecKm,
-    isIndoor: act.trainer ? 1 : 0,
-    avgHr: act.average_heartrate != null ? Math.round(act.average_heartrate) : null,
-    maxHr: act.max_heartrate != null ? Math.round(act.max_heartrate) : null,
-    zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
-    elevationGainM: act.total_elevation_gain != null ? Math.round(act.total_elevation_gain) : null,
-    source: 'strava',
-    stravaActivityId: activityId,
-    attachmentStatus,
-  })
+  let runSessionId: string
+  if (existingForParent) {
+    runSessionId = existingForParent.id
+    await db.update(runSessions).set({
+      distanceKm,
+      durationSec: act.moving_time,
+      paceSecKm,
+      isIndoor: act.trainer ? 1 : (existingForParent.isIndoor ?? 0),
+      avgHr: act.average_heartrate != null ? Math.round(act.average_heartrate) : null,
+      maxHr: act.max_heartrate != null ? Math.round(act.max_heartrate) : null,
+      zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
+      elevationGainM: act.total_elevation_gain != null ? Math.round(act.total_elevation_gain) : null,
+      source: 'strava',
+      stravaActivityId: activityId,
+      attachmentStatus,
+    }).where(eq(runSessions.id, runSessionId))
+  } else {
+    runSessionId = crypto.randomUUID()
+    await db.insert(runSessions).values({
+      id: runSessionId,
+      sessionId: parentSessionId,
+      planWeek: null,
+      runType: null,
+      distanceKm,
+      durationSec: act.moving_time,
+      paceSecKm,
+      isIndoor: act.trainer ? 1 : 0,
+      avgHr: act.average_heartrate != null ? Math.round(act.average_heartrate) : null,
+      maxHr: act.max_heartrate != null ? Math.round(act.max_heartrate) : null,
+      zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
+      elevationGainM: act.total_elevation_gain != null ? Math.round(act.total_elevation_gain) : null,
+      source: 'strava',
+      stravaActivityId: activityId,
+      attachmentStatus,
+    })
+  }
 
   if (act.splits_metric && act.splits_metric.length > 0) {
     for (const sp of act.splits_metric) {

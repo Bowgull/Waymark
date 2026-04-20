@@ -122,10 +122,14 @@ export async function scheduleAlarms(
   amReminder: string,
   pmSessionTime: string,
   pmLeadMin: number,
+  options: { amEnabled?: boolean; pmEnabled?: boolean } = {},
 ): Promise<ScheduleAlarmsResult> {
   if (!isNative) return { scheduled: false, reason: 'not-native' }
   const permitted = await requestNotificationPermission()
   if (!permitted) return { scheduled: false, reason: 'no-permission' }
+
+  const amEnabled = options.amEnabled !== false
+  const pmEnabled = options.pmEnabled !== false
 
   await cancelAllAlarms()
   await LocalNotifications.cancel({ notifications: [{ id: LEAVE_BY_ID }] })
@@ -134,90 +138,92 @@ export async function scheduleAlarms(
   const { hour: amH, minute: amM } = parseTime(amReminder)
   const base = nextOccurrence(amH, amM)
 
-  const snooze1 = addMinutes(base, 9)
-  const snooze2 = addMinutes(base, 18)
-  const snooze3 = addMinutes(base, 27)
-  // Nuclear starts at +36 min, fires every 15 seconds for 5 minutes.
-  // Silent switch will mute the sound on a sideloaded build (no critical-alerts
-  // entitlement). User-facing guidance: ring mode on training mornings.
-  const nuclearDates = NUCLEAR_IDS.map(
-    (_, i) => new Date(addMinutes(base, 36).getTime() + i * 15_000),
-  )
+  if (amEnabled) {
+    const snooze1 = addMinutes(base, 9)
+    const snooze2 = addMinutes(base, 18)
+    const snooze3 = addMinutes(base, 27)
+    const nuclearDates = NUCLEAR_IDS.map(
+      (_, i) => new Date(addMinutes(base, 36).getTime() + i * 15_000),
+    )
+    const morningSound = { sound: 'morning.caf', interruptionLevel: 'timeSensitive' as const }
+    const nuclearSound = { sound: 'nuclear.caf', interruptionLevel: 'timeSensitive' as const }
 
-  const morningSound = { sound: 'morning.caf', interruptionLevel: 'timeSensitive' as const }
-  const nuclearSound = { sound: 'nuclear.caf', interruptionLevel: 'timeSensitive' as const }
-
-  await LocalNotifications.schedule({
-    notifications: [
-      {
-        id: ALARM_BASE_ID,
-        title: 'Waymark',
-        body: `It's ${formatTime12(base)}. You said you wanted this.`,
-        schedule: { at: base },
-        actionTypeId: 'alarm',
-        extra: { type: 'alarm' },
-        ...morningSound,
-      },
-      {
-        id: ALARM_SNOOZE_1_ID,
-        title: 'Waymark',
-        body: 'Still in bed. Interesting choice.',
-        schedule: { at: snooze1 },
-        actionTypeId: 'alarm',
-        extra: { type: 'alarm' },
-        ...morningSound,
-      },
-      {
-        id: ALARM_SNOOZE_2_ID,
-        title: 'Waymark',
-        body: "You're going to skip. Just say it.",
-        schedule: { at: snooze2 },
-        actionTypeId: 'alarm',
-        extra: { type: 'alarm' },
-        ...morningSound,
-      },
-      {
-        id: ALARM_SNOOZE_3_ID,
-        title: 'Waymark',
-        body: 'Last one. After this I get mean.',
-        schedule: { at: snooze3 },
-        actionTypeId: 'alarmNuclear',
-        extra: { type: 'alarm' },
-        ...morningSound,
-      },
-      ...NUCLEAR_IDS.map((id, i) => ({
-        id,
-        title: 'Waymark',
-        body: NUCLEAR_COPY[i],
-        schedule: { at: nuclearDates[i] },
-        actionTypeId: 'alarmNuclear',
-        extra: { type: 'alarmNuclear' },
-        ...nuclearSound,
-      })),
-    ],
-  })
-
-  // ── PM leave-by reminder ──────────────────────────────────────────────────
-  const { hour: pmH, minute: pmM } = parseTime(pmSessionTime)
-  const pmBase = nextOccurrence(pmH, pmM)
-  const leaveAt = addMinutes(pmBase, -pmLeadMin)
-
-  if (leaveAt > new Date()) {
     await LocalNotifications.schedule({
       notifications: [
         {
-          id: LEAVE_BY_ID,
+          id: ALARM_BASE_ID,
           title: 'Waymark',
-          body: `Leave by ${formatTime12(leaveAt)} or you're that guy who walks in late.`,
-          schedule: { at: leaveAt },
-          extra: { type: 'leaveBy' },
+          body: `It's ${formatTime12(base)}. You said you wanted this.`,
+          schedule: { at: base },
+          actionTypeId: 'alarm',
+          extra: { type: 'alarm' },
+          ...morningSound,
         },
+        {
+          id: ALARM_SNOOZE_1_ID,
+          title: 'Waymark',
+          body: 'Still in bed. Interesting choice.',
+          schedule: { at: snooze1 },
+          actionTypeId: 'alarm',
+          extra: { type: 'alarm' },
+          ...morningSound,
+        },
+        {
+          id: ALARM_SNOOZE_2_ID,
+          title: 'Waymark',
+          body: "You're going to skip. Just say it.",
+          schedule: { at: snooze2 },
+          actionTypeId: 'alarm',
+          extra: { type: 'alarm' },
+          ...morningSound,
+        },
+        {
+          id: ALARM_SNOOZE_3_ID,
+          title: 'Waymark',
+          body: 'Last one. After this I get mean.',
+          schedule: { at: snooze3 },
+          actionTypeId: 'alarmNuclear',
+          extra: { type: 'alarm' },
+          ...morningSound,
+        },
+        ...NUCLEAR_IDS.map((id, i) => ({
+          id,
+          title: 'Waymark',
+          body: NUCLEAR_COPY[i],
+          schedule: { at: nuclearDates[i] },
+          actionTypeId: 'alarmNuclear',
+          extra: { type: 'alarmNuclear' },
+          ...nuclearSound,
+        })),
       ],
     })
   }
 
+  // ── PM leave-by reminder ──────────────────────────────────────────────────
+  if (pmEnabled) {
+    const { hour: pmH, minute: pmM } = parseTime(pmSessionTime)
+    const pmBase = nextOccurrence(pmH, pmM)
+    const leaveAt = addMinutes(pmBase, -pmLeadMin)
+
+    if (leaveAt > new Date()) {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: LEAVE_BY_ID,
+            title: 'Waymark',
+            body: `Leave by ${formatTime12(leaveAt)} or you're that guy who walks in late.`,
+            schedule: { at: leaveAt },
+            extra: { type: 'leaveBy' },
+          },
+        ],
+      })
+    }
+  }
+
+  // If AM is disabled we can't verify via ALARM_BASE_ID — treat as scheduled.
+  if (!amEnabled) return { scheduled: true, baseAt: base }
+
   // Verify iOS actually queued the morning alarm before we tell the user it's set.
-  // If getPending doesn't list ALARM_BASE_ID, something rejected the schedule.
   try {
     const pending = await LocalNotifications.getPending()
     const armed = pending.notifications.some((n) => Number(n.id) === ALARM_BASE_ID)
@@ -237,11 +243,16 @@ export async function syncAlarmsFromSettings(settings: {
   amReminder?: string | null
   pmSessionTime?: string | null
   pmLeadMin?: number | null
+  amEnabled?: number | null
+  pmEnabled?: number | null
 }): Promise<void> {
   if (!isNative) return
   const { amReminder, pmSessionTime, pmLeadMin } = settings
   if (!amReminder || !pmSessionTime || pmLeadMin == null) return
-  await scheduleAlarms(amReminder, pmSessionTime, pmLeadMin)
+  await scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, {
+    amEnabled: settings.amEnabled !== 0,
+    pmEnabled: settings.pmEnabled !== 0,
+  })
 }
 
 // Called when app comes to foreground — Option C kill switch
@@ -400,16 +411,15 @@ export async function cancelRestCues(): Promise<void> {
   })
 }
 
-// Single cue for strength set rest — fires when rest is over.
-export async function scheduleStrengthRestEnd(restSec: number): Promise<void> {
+// Single cue for strength set rest — fires at the precise wall-clock ms when rest ends.
+export async function scheduleStrengthRestEnd(endsAtMs: number): Promise<void> {
   if (!isNative) return
-  const at = addSeconds(new Date(), restSec)
   await LocalNotifications.schedule({
     notifications: [{
       id: CUE_STRENGTH_REST_END,
       title: 'Waymark',
       body: 'Next set.',
-      schedule: { at },
+      schedule: { at: new Date(endsAtMs) },
       sound: 'round_start.caf',
       interruptionLevel: 'timeSensitive' as const,
     }],

@@ -10,8 +10,9 @@ interface RestTimerState {
   start: (durationSec: number) => void
   stop: () => void
   pause: () => void
-  /** Resume with remaining time from pause (or an explicit new endsAt from Live Activity). */
-  resume: (newEndsAtMs?: number) => void
+  /** Resume with remaining time from pause (or an explicit new endsAt from Live Activity).
+   *  Returns the wall-clock ms when the timer will expire, for precise notification scheduling. */
+  resume: (newEndsAtMs?: number) => number
 }
 
 // Timestamp-based timer — survives screen lock.
@@ -78,8 +79,8 @@ export function useRestTimer(): RestTimerState {
     setSecondsRemaining(Math.round(remainingMs / 1000))
   }, [isRunning, isPaused])
 
-  const resume = useCallback((newEndsAtMs?: number) => {
-    if (!isRunning) return
+  const resume = useCallback((newEndsAtMs?: number): number => {
+    if (!isRunning) return 0
     const now = Date.now()
     const endsAt = newEndsAtMs ?? now + pausedRemainingRef.current
     endsAtRef.current = endsAt
@@ -88,6 +89,7 @@ export function useRestTimer(): RestTimerState {
     setIsPaused(false)
     setSecondsRemaining(Math.round((endsAt - now) / 1000))
     startTicking()
+    return endsAt
   }, [isRunning, startTicking])
 
   return {

@@ -2242,6 +2242,8 @@ app.patch('/api/settings', async (c) => {
     onePaceEp?: string
     lastDeploy?: number
     enabledTechniques?: string
+    amEnabled?: boolean
+    pmEnabled?: boolean
   }>()
 
   const db = createDB(c.env)
@@ -2260,6 +2262,8 @@ app.patch('/api/settings', async (c) => {
   if (body.onePaceEp !== undefined) updates.onePaceEp = body.onePaceEp
   if (body.lastDeploy !== undefined) updates.lastDeploy = body.lastDeploy
   if (body.enabledTechniques !== undefined) updates.enabledTechniques = body.enabledTechniques
+  if (body.amEnabled !== undefined) updates.amEnabled = body.amEnabled ? 1 : 0
+  if (body.pmEnabled !== undefined) updates.pmEnabled = body.pmEnabled ? 1 : 0
 
   await db.update(settings).set(updates).where(eq(settings.id, 'default'))
   const [row] = await db.select().from(settings).where(eq(settings.id, 'default'))

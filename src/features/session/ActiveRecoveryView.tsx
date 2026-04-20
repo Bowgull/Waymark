@@ -344,6 +344,36 @@ export function ActiveRecoveryView({
         setHipPaused(false)
       }
     },
+    onRestart: () => {
+      if (phase === 'hip' && currentHipStep) {
+        const holdSec = currentHipStep.movement.holdSec ?? 0
+        setHipStartedAtMs(Date.now())
+        setHipSecondsLeft(holdSec)
+        setHipPaused(false)
+      } else if (phase === 'roll' && currentRollStep) {
+        setRollAnchorMs(Date.now())
+        setRollSecondsLeft(currentRollStep.area.sec)
+        setRollPaused(false)
+      }
+    },
+    onEnd: () => {
+      onExit?.()
+    },
+    // "Next →" / "Skip →" from the lock screen.
+    // hip → advance to next hip step (or roll-intro);
+    // roll → skip zone, or finish on last.
+    onAdvance: () => {
+      if (phase === 'hip') {
+        advanceHip()
+      } else if (phase === 'roll') {
+        if (rollIntervalRef.current) clearInterval(rollIntervalRef.current)
+        if (isLastRollStep) {
+          finishFoam()
+        } else {
+          setRollIdx((i) => Math.min(i + 1, rollSteps.length - 1))
+        }
+      }
+    },
   })
 
   // Counter
