@@ -70,6 +70,12 @@ export function useHoldTimer(targetSec: number): HoldTimerState & HoldTimerActio
       clearInterval(intervalRef.current)
       intervalRef.current = null
     }
+    setRunning(false)
+    setElapsed(0)
+    setIsPaused(false)
+    setStartedAtMs(0)
+    startedAtRef.current = 0
+    pausedElapsedRef.current = 0
   }, [])
 
   const pause = useCallback(() => {

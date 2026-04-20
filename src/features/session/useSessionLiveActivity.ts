@@ -4,9 +4,13 @@ import type { PluginListenerHandle } from '@capacitor/core'
 import {
   startLiveActivity,
   updateLiveActivity,
-  endLiveActivity,
   onPauseRequested,
   onResumeRequested,
+  onRestartRequested,
+  onEndRequested,
+  onCompleteSetRequested,
+  onStartHoldRequested,
+  onAdvanceRequested,
   type ActivityState,
   type SessionType,
 } from '@/lib/liveActivity'
@@ -20,17 +24,41 @@ export interface LiveActivityConfig {
 interface Handlers {
   onPause?: () => void
   onResume?: (newEndsAtMs: number | undefined) => void
+  /** Fired when the user taps Restart on the Live Activity. Restart the
+   *  current phase (round, rest, hold, interval) from full duration. */
+  onRestart?: () => void
+  /** Fired when the user confirms End on the Live Activity. Tear down
+   *  the session (typically calling the view's onExit). */
+  onEnd?: () => void
+  /** Fired when the user taps Complete Set on an exercise-phase
+   *  Live Activity. Handler reads current weight/reps from its UI state
+   *  and runs the normal set-complete flow. */
+  onCompleteSet?: () => void
+  /** Fired when the user taps Start Hold on a mobility "ready" Live
+   *  Activity. Handler begins the next hold timer. */
+  onStartHold?: () => void
+  /** Fired when the user taps the universal "Next →" / "Done →" /
+   *  "Skip →" button on any timer phase (hold, rest, active). Handler
+   *  advances the session to the next natural step. */
+  onAdvance?: () => void
 }
 
 /**
  * Declarative Live Activity driver.
  *
- * Pass a config to start/update the activity; pass null to end it.
+ * Morph-only invariant: engines start or update via this hook; they never
+ * end on unmount. A workout has exactly one Live Activity from first engine
+ * mount through session completion. Cross-engine transitions (mobility →
+ * run → mobility in Foundation Run, round ↔ rest in bag work, exercise ↔
+ * rest in strength) morph the existing LA via update() rather than tearing
+ * it down and spawning a new one.
+ *
+ * Pass a config to start/update. Passing null stops pushing updates but
+ * does NOT end the LA — only WorkoutPage (the session controller) ends
+ * the LA explicitly at session completion.
+ *
  * Pause/resume handlers are registered once and fire when the user
  * taps the widget buttons (Live Activity → NotificationCenter → JS).
- *
- * State is diffed shallowly, so passing the same values on every render
- * won't spam the native side.
  */
 export function useSessionLiveActivity(
   config: LiveActivityConfig | null,
@@ -41,16 +69,9 @@ export function useSessionLiveActivity(
   const handlersRef = useRef(handlers)
   handlersRef.current = handlers
 
-  // Start / update / end — react to config changes.
+  // Start / update — react to config changes. Null config is a no-op.
   useEffect(() => {
-    if (!config) {
-      if (startedRef.current) {
-        startedRef.current = false
-        lastStateKey.current = ''
-        void endLiveActivity()
-      }
-      return
-    }
+    if (!config) return
 
     const key = stateKey(config.state)
 
@@ -67,20 +88,15 @@ export function useSessionLiveActivity(
     }
   }, [config])
 
-  // Clean up on unmount.
-  useEffect(() => {
-    return () => {
-      if (startedRef.current) {
-        startedRef.current = false
-        void endLiveActivity()
-      }
-    }
-  }, [])
-
-  // Register pause/resume listeners once per mount.
+  // Register pause/resume/restart/end listeners once per mount.
   useEffect(() => {
     let pauseHandle: PluginListenerHandle | null = null
     let resumeHandle: PluginListenerHandle | null = null
+    let restartHandle: PluginListenerHandle | null = null
+    let endHandle: PluginListenerHandle | null = null
+    let completeSetHandle: PluginListenerHandle | null = null
+    let startHoldHandle: PluginListenerHandle | null = null
+    let advanceHandle: PluginListenerHandle | null = null
 
     void onPauseRequested(() => {
       handlersRef.current.onPause?.()
@@ -90,9 +106,34 @@ export function useSessionLiveActivity(
       handlersRef.current.onResume?.(endsAtMs)
     }).then(h => { resumeHandle = h })
 
+    void onRestartRequested(() => {
+      handlersRef.current.onRestart?.()
+    }).then(h => { restartHandle = h })
+
+    void onEndRequested(() => {
+      handlersRef.current.onEnd?.()
+    }).then(h => { endHandle = h })
+
+    void onCompleteSetRequested(() => {
+      handlersRef.current.onCompleteSet?.()
+    }).then(h => { completeSetHandle = h })
+
+    void onStartHoldRequested(() => {
+      handlersRef.current.onStartHold?.()
+    }).then(h => { startHoldHandle = h })
+
+    void onAdvanceRequested(() => {
+      handlersRef.current.onAdvance?.()
+    }).then(h => { advanceHandle = h })
+
     return () => {
       void pauseHandle?.remove()
       void resumeHandle?.remove()
+      void restartHandle?.remove()
+      void endHandle?.remove()
+      void completeSetHandle?.remove()
+      void startHoldHandle?.remove()
+      void advanceHandle?.remove()
     }
   }, [])
 }
@@ -107,5 +148,6 @@ function stateKey(s: ActivityState): string {
     s.isPaused ? '1' : '0',
     s.pausedRemaining != null ? Math.round(s.pausedRemaining) : '',
     s.completeMessage ?? '',
+    s.exerciseName ?? '',
   ].join('|')
 }

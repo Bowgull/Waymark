@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { App as CapacitorApp } from '@capacitor/app'
+import { Browser } from '@capacitor/browser'
+import { Capacitor } from '@capacitor/core'
 
 import { apiFetch } from '@/lib/api'
+import { getApiBaseUrl } from '@/lib/apiBase'
 import { scheduleAlarms } from '@/lib/notifications'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
 import { Button } from '@/components/ui/button'
@@ -28,6 +32,8 @@ interface Settings {
   onePaceEp: string | null
   lastDeploy: number | null
   enabledTechniques: string | null
+  amEnabled: number | null
+  pmEnabled: number | null
   cascade?: { removed: number; freedDays?: string[] } | null
 }
 
@@ -58,6 +64,37 @@ const DAY_LABELS = [
   { key: '0', label: 'Sun' },
 ]
 
+function formatTime12(hhmm: string): string {
+  const [hh, mm] = hhmm.split(':').map(Number)
+  const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
+  return `${is12}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}`
+}
+
+interface NotificationToggleProps {
+  label: string
+  enabled: boolean
+  onToggle: () => void
+}
+
+function NotificationToggle({ label, enabled, onToggle }: NotificationToggleProps) {
+  return (
+    <div className="flex items-center justify-between">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`rounded-md px-3 py-1.5 text-xs font-medium uppercase tracking-[0.14em] transition-colors ${
+          enabled
+            ? 'bg-gold/15 text-gold ring-1 ring-gold/40'
+            : 'bg-border text-muted-foreground'
+        }`}
+      >
+        {enabled ? 'On' : 'Off'}
+      </button>
+    </div>
+  )
+}
+
 export function SettingsPage() {
   const navigate = useNavigate()
   const [, setSettings] = useState<Settings | null>(null)
@@ -69,9 +106,11 @@ export function SettingsPage() {
 
   // Form state
   const [mtDays, setMtDays] = useState<Set<string>>(new Set())
-  const [amReminder, setAmReminder] = useState('')
+  const [amReminder, setAmReminder] = useState('06:30')
+  const [amEnabled, setAmEnabled] = useState(true)
   const [pmLeadMin, setPmLeadMin] = useState(60)
   const [pmSessionTime, setPmSessionTime] = useState('18:00')
+  const [pmEnabled, setPmEnabled] = useState(true)
   const [onePaceArc, setOnePaceArc] = useState('')
   const [onePaceEp, setOnePaceEp] = useState('')
   const [enabledTechniques, setEnabledTechniques] = useState<Set<string>>(new Set(['boxing', 'kicks', 'defensive']))
@@ -92,6 +131,7 @@ export function SettingsPage() {
   // Strava
   const [strava, setStrava] = useState<StravaStatus | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [connecting, setConnecting] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -101,8 +141,10 @@ export function SettingsPage() {
           setSettings(s)
           setMtDays(new Set((s.mtClassDays ?? '').split(',').filter(Boolean)))
           setAmReminder(s.amReminder ?? '06:30')
+          setAmEnabled(s.amEnabled !== 0)
           setPmLeadMin(s.pmLeadMin ?? 60)
           setPmSessionTime(s.pmSessionTime ?? '18:00')
+          setPmEnabled(s.pmEnabled !== 0)
           setOnePaceArc(s.onePaceArc ?? '')
           setOnePaceEp(s.onePaceEp ?? '')
           setEnabledTechniques(new Set((s.enabledTechniques ?? 'boxing,kicks,defensive').split(',').filter(Boolean)))
@@ -117,17 +159,19 @@ export function SettingsPage() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
     async function loadStrava() {
       try {
         const s = await apiFetch<StravaStatus>('/api/strava/status')
-        setStrava(s)
+        if (!cancelled) setStrava(s)
       } catch (e) {
         console.error('Failed to load Strava status:', e)
-        setStrava({ connected: false })
+        if (!cancelled) setStrava({ connected: false })
       }
     }
     loadStrava()
 
+    // Legacy query-param handling (old callback flow may still leave these).
     const params = new URLSearchParams(window.location.search)
     const result = params.get('strava')
     if (result === 'connected') {
@@ -140,7 +184,45 @@ export function SettingsPage() {
       showToast('Strava connection failed, try again', 'info')
       window.history.replaceState({}, '', window.location.pathname)
     }
+
+    // Re-check status when the app comes back to the foreground (e.g. after
+    // returning from SFSafariViewController OAuth, or from Mac Safari auth).
+    let removeResume: (() => void) | null = null
+    if (Capacitor.isNativePlatform()) {
+      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) loadStrava()
+      }).then((handle) => { removeResume = () => handle.remove() })
+    } else {
+      const onVis = () => { if (document.visibilityState === 'visible') loadStrava() }
+      document.addEventListener('visibilitychange', onVis)
+      removeResume = () => document.removeEventListener('visibilitychange', onVis)
+    }
+    return () => {
+      cancelled = true
+      if (removeResume) removeResume()
+    }
   }, [showToast])
+
+  async function handleConnectStrava() {
+    if (connecting) return
+    setConnecting(true)
+    const url = `${getApiBaseUrl()}/api/strava/authorize`
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Opens SFSafariViewController on iOS — app state is preserved.
+        // On dismissal, appStateChange listener above will re-fetch status.
+        await Browser.open({ url, presentationStyle: 'popover' })
+      } else {
+        // Web: full navigation. Callback lands on Worker's success page.
+        window.location.href = url
+      }
+    } catch (e) {
+      console.error('Failed to open Strava authorize:', e)
+      showToast('Could not open Strava. Try again.', 'warning')
+    } finally {
+      setConnecting(false)
+    }
+  }
 
   async function handleDisconnectStrava() {
     setDisconnecting(true)
@@ -169,14 +251,15 @@ export function SettingsPage() {
           onePaceArc: onePaceArc || null,
           onePaceEp: onePaceEp || null,
           enabledTechniques: Array.from(enabledTechniques).join(','),
+          amEnabled,
+          pmEnabled,
         }),
       })
       setSettings(updated)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
 
-      // Re-schedule alarms with updated values; toast confirms iOS accepted the schedule
-      scheduleAlarms(amReminder, pmSessionTime, pmLeadMin).then((result) => {
+      scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, { amEnabled, pmEnabled }).then((result) => {
         if (result.scheduled && result.baseAt) {
           showToast(`Alarm set for ${formatAlarmTime(result.baseAt)}`, 'info')
         }
@@ -184,7 +267,6 @@ export function SettingsPage() {
         // silent — save itself succeeded; alarm scheduling is best-effort on web
       })
 
-      // Show cascade feedback if MT days changed
       if (updated.cascade) {
         if (updated.cascade.removed > 0) {
           const days = updated.cascade.freedDays?.join(', ') ?? ''
@@ -248,12 +330,12 @@ export function SettingsPage() {
       {/* MT Class Schedule */}
       <section>
         <p className="mb-2 text-sm font-medium text-foreground">MT Class Days</p>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           {DAY_LABELS.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => toggleDay(key)}
-              className={`flex-1 rounded-md py-2 text-xs font-medium transition-colors ${
+              className={`min-h-[44px] flex-1 rounded-md py-2 text-xs font-medium transition-colors ${
                 mtDays.has(key)
                   ? 'bg-teal/20 text-teal ring-1 ring-teal/40'
                   : 'bg-border text-muted-foreground active:bg-muted'
@@ -266,16 +348,21 @@ export function SettingsPage() {
       </section>
 
       {/* Reminders */}
-      <section>
-        <p className="mb-2 text-sm font-medium text-foreground">Reminders</p>
-        <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
-          Silent switch on? Alarms and cues go silent. Flip to ring on training mornings, or keep Vibrate on Silent on in iOS Sounds &amp; Haptics so the lock-screen buzz still lands.
+      <section className="space-y-4">
+        <p className="text-sm font-medium text-foreground">Reminders</p>
+        <p className="-mt-2 text-xs leading-relaxed text-muted-foreground">
+          Silent switch on? Alarms go silent. Flip to ring on training mornings, or keep Vibrate on Silent on in iOS Sounds &amp; Haptics.
         </p>
-        <div className="space-y-3">
-          {/* Morning Alarm */}
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Morning Alarm</label>
-            {activeDrum === 'am' ? (() => {
+
+        {/* Morning Alarm */}
+        <div className="space-y-2">
+          <NotificationToggle
+            label="Morning Alarm"
+            enabled={amEnabled}
+            onToggle={() => setAmEnabled(e => !e)}
+          />
+          {amEnabled && (
+            activeDrum === 'am' ? (() => {
               const [hh, mm] = amReminder.split(':').map(Number)
               const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
               const isPm = hh >= 12
@@ -303,61 +390,65 @@ export function SettingsPage() {
               )
             })() : (
               <button onClick={() => setActiveDrum('am')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
-                {(() => { const [hh, mm] = amReminder.split(':').map(Number); const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh; return `${is12}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}` })()}
+                {formatTime12(amReminder)}
               </button>
-            )}
-          </div>
+            )
+          )}
+        </div>
 
-          {/* Evening Session Time */}
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Evening Session Time</label>
-            {activeDrum === 'pmTime' ? (() => {
-              const [hh, mm] = pmSessionTime.split(':').map(Number)
-              const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
-              const isPm = hh >= 12
-              return (
-                <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
-                        const h24 = isPm ? (v === 12 ? 12 : v + 12) : (v === 12 ? 0 : v)
-                        setPmSessionTime(`${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
-                      }} />
+        {/* Evening Session */}
+        <div className="space-y-2">
+          <NotificationToggle
+            label="Evening Session"
+            enabled={pmEnabled}
+            onToggle={() => setPmEnabled(e => !e)}
+          />
+          {pmEnabled && (
+            <div className="space-y-2">
+              {activeDrum === 'pmTime' ? (() => {
+                const [hh, mm] = pmSessionTime.split(':').map(Number)
+                const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
+                const isPm = hh >= 12
+                return (
+                  <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
+                    <div className="flex gap-3">
+                      <div className="flex-1">
+                        <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
+                          const h24 = isPm ? (v === 12 ? 12 : v + 12) : (v === 12 ? 0 : v)
+                          setPmSessionTime(`${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
+                        }} />
+                      </div>
+                      <div className="flex-1">
+                        <ScrollDrum min={0} max={59} step={1} value={mm} pad={2} onChange={(v) => {
+                          setPmSessionTime(`${String(hh).padStart(2, '0')}:${String(v).padStart(2, '0')}`)
+                        }} />
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <ScrollDrum min={0} max={59} step={1} value={mm} pad={2} onChange={(v) => {
-                        setPmSessionTime(`${String(hh).padStart(2, '0')}:${String(v).padStart(2, '0')}`)
-                      }} />
+                    <div className="mt-2 flex gap-1">
+                      <button onClick={() => { if (isPm) { const h24 = hh - 12; setPmSessionTime(`${String(h24 < 0 ? h24 + 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${!isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>AM</button>
+                      <button onClick={() => { if (!isPm) { const h24 = hh + 12; setPmSessionTime(`${String(h24 >= 24 ? h24 - 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>PM</button>
                     </div>
+                    <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
                   </div>
-                  <div className="mt-2 flex gap-1">
-                    <button onClick={() => { if (isPm) { const h24 = hh - 12; setPmSessionTime(`${String(h24 < 0 ? h24 + 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${!isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>AM</button>
-                    <button onClick={() => { if (!isPm) { const h24 = hh + 12; setPmSessionTime(`${String(h24 >= 24 ? h24 - 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>PM</button>
-                  </div>
-                  <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
+                )
+              })() : (
+                <button onClick={() => setActiveDrum('pmTime')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
+                  {formatTime12(pmSessionTime)}
+                </button>
+              )}
+
+              {activeDrum === 'pmLead' ? (
+                <div data-drum-body="true" className="rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
+                  <ScrollDrum min={15} max={120} step={15} value={pmLeadMin} onChange={setPmLeadMin} suffix="min" />
+                  <button onClick={() => setActiveDrum(null)} className="min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
                 </div>
-              )
-            })() : (
-              <button onClick={() => setActiveDrum('pmTime')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
-                {(() => { const [hh, mm] = pmSessionTime.split(':').map(Number); const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh; return `${is12}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}` })()}
-              </button>
-            )}
-          </div>
-
-          {/* Leave-By Reminder */}
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Leave-By Reminder</label>
-            {activeDrum === 'pmLead' ? (
-              <div data-drum-body="true" className="rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
-                <ScrollDrum min={15} max={120} step={15} value={pmLeadMin} onChange={setPmLeadMin} suffix="min" />
-                <button onClick={() => setActiveDrum(null)} className="min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
-              </div>
-            ) : (
-              <button onClick={() => setActiveDrum('pmLead')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
-                {pmLeadMin} min before evening session
-              </button>
-            )}
-          </div>
+              ) : (
+                <button onClick={() => setActiveDrum('pmLead')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
+                  {pmLeadMin} min leave-by reminder
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
@@ -436,7 +527,7 @@ export function SettingsPage() {
             <button
               key={key}
               onClick={() => toggleTechnique(key)}
-              className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+              className={`min-h-[44px] rounded-md px-3 py-2 text-xs font-medium transition-colors ${
                 enabledTechniques.has(key)
                   ? 'bg-gold/15 text-gold ring-1 ring-gold/40'
                   : 'bg-border text-muted-foreground active:bg-muted'
@@ -473,7 +564,7 @@ export function SettingsPage() {
           <div className="rounded-md border border-border bg-border/30 px-3 py-2.5">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm text-foreground truncate">
+                <p className="truncate text-sm text-foreground">
                   {strava.athleteName ?? `Athlete ${strava.athleteId}`}
                 </p>
                 <p className="text-xs text-muted-foreground">Runs log themselves.</p>
@@ -488,12 +579,14 @@ export function SettingsPage() {
             </div>
           </div>
         ) : (
-          <a
-            href="/api/strava/authorize"
-            className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-gold/15 px-3 py-2 text-sm font-medium text-gold ring-1 ring-gold/40 active:bg-gold/25"
+          <button
+            type="button"
+            onClick={handleConnectStrava}
+            disabled={connecting}
+            className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-gold/15 px-3 py-2 text-sm font-medium text-gold ring-1 ring-gold/40 active:bg-gold/25 disabled:opacity-50"
           >
-            Connect Strava
-          </a>
+            {connecting ? 'Opening Strava…' : 'Connect Strava'}
+          </button>
         )}
       </section>
 

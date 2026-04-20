@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { kgToLbs, lbsToKg } from '@/lib/units'
@@ -15,6 +15,10 @@ interface SetTrackerProps {
   lastSessionData?: { weightLbs: number; reps: number }
   suggestion?: { weightLbs: number; message: string }
   onComplete: (weightKg: number | null, reps: number) => void
+  /** Emits the current input values (kg + reps) whenever they change.
+   *  WorkoutPage uses this to push live values into the Live Activity
+   *  so a lock-screen "Complete Set" tap logs what the user sees. */
+  onLiveValuesChange?: (weightKg: number | null, reps: number) => void
 }
 
 function formatPlate(weight: number): string {
@@ -31,10 +35,18 @@ export function SetTracker({
   lastSessionData,
   suggestion,
   onComplete,
+  onLiveValuesChange,
 }: SetTrackerProps) {
   const suggestedLbs = suggestedWeightKg != null ? kgToLbs(suggestedWeightKg) : ''
   const [weight, setWeight] = useState(String(suggestedLbs))
   const [reps, setReps] = useState(targetReps > 0 ? String(targetReps) : '')
+
+  useEffect(() => {
+    const w = weight ? parseFloat(weight) : NaN
+    const r = parseInt(reps)
+    const kg = Number.isFinite(w) ? lbsToKg(w) : null
+    onLiveValuesChange?.(kg, Number.isFinite(r) ? r : 0)
+  }, [weight, reps, onLiveValuesChange])
 
   const isBarbell = equipment?.toLowerCase().includes('barbell') ?? false
   const liveLoading = useMemo(() => {

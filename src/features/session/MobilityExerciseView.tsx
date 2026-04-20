@@ -92,71 +92,74 @@ export function MobilityExerciseBody({
       : null
 
   return (
-    <div className="mx-auto max-w-md animate-fade-in">
-      {showSectionHeader && sectionLabel && (
-        <div className="mb-5">
-          <h3 className="font-cinzel text-xs font-semibold uppercase tracking-[0.3em] text-gold/70">
-            {sectionLabel}
-          </h3>
-          <GoldDivider className="mt-2" />
-        </div>
-      )}
-
-      <h2 className="text-display-lg leading-[1.1] text-foreground">
-        {exercise.exercise?.name ?? 'Exercise'}
-      </h2>
-
-      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-        {exercise.exercise?.equipment && (
-          <Badge variant="muted">{exercise.exercise.equipment}</Badge>
+    <div className="flex min-h-full flex-col animate-fade-in">
+      {/* Top block — stays compact, doesn't grow */}
+      <div className="shrink-0">
+        {showSectionHeader && sectionLabel && (
+          <div className="mb-3">
+            <h3 className="font-cinzel text-xs font-semibold uppercase tracking-[0.3em] text-gold/70">
+              {sectionLabel}
+            </h3>
+            <GoldDivider className="mt-1.5" />
+          </div>
         )}
-        {totalSets > 1 && (
-          <span className="font-cinzel uppercase tracking-[0.18em] text-gold/50">
-            Set {currentSet} of {totalSets}
-          </span>
+
+        <h2 className="text-display-lg leading-[1.1] text-foreground">
+          {exercise.exercise?.name ?? 'Exercise'}
+        </h2>
+
+        <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+          {exercise.exercise?.equipment && (
+            <Badge variant="muted">{exercise.exercise.equipment}</Badge>
+          )}
+          {totalSets > 1 && (
+            <span className="font-cinzel uppercase tracking-[0.18em] text-gold/50">
+              Set {currentSet} of {totalSets}
+            </span>
+          )}
+        </div>
+
+        {exercise.notes && (
+          <p className="mt-2.5 line-clamp-2 text-sm leading-snug text-foreground/85">
+            {exercise.notes}
+          </p>
+        )}
+
+        {breakdown && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setBreakdownOpen(o => !o)}
+              className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.18em] text-gold/60 active:text-gold"
+            >
+              <span>{breakdownOpen ? 'Hide breakdown' : 'Show breakdown'}</span>
+              <svg
+                className={`h-3 w-3 transition-transform ${breakdownOpen ? 'rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {breakdownOpen && (
+              <p className="mt-1.5 line-clamp-3 text-sm leading-snug text-muted-foreground">
+                {breakdown}
+              </p>
+            )}
+          </div>
+        )}
+
+        {exercise.exercise?.formVideoUrl && (
+          <div className="mt-2">
+            <FormVideoLink url={exercise.exercise.formVideoUrl} compact />
+          </div>
         )}
       </div>
 
-      {exercise.notes && (
-        <p className="mt-4 text-sm leading-relaxed text-foreground/85">
-          {exercise.notes}
-        </p>
-      )}
-
-      {breakdown && (
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => setBreakdownOpen(o => !o)}
-            className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.18em] text-gold/60 active:text-gold"
-          >
-            <span>{breakdownOpen ? 'Hide breakdown' : 'Show breakdown'}</span>
-            <svg
-              className={`h-3 w-3 transition-transform ${breakdownOpen ? 'rotate-180' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {breakdownOpen && (
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {breakdown}
-            </p>
-          )}
-        </div>
-      )}
-
-      {exercise.exercise?.formVideoUrl && (
-        <div className="mt-4">
-          <FormVideoLink url={exercise.exercise.formVideoUrl} compact />
-        </div>
-      )}
-
-      {/* Ring or rep card */}
-      <div className="mt-8 flex justify-center">
+      {/* Ring or rep card — fills remaining vertical space, centered */}
+      <div className="flex flex-1 items-center justify-center py-6">
         {isHoldExercise && exercise.holdSec ? (
           <div className="rounded-2xl border border-teal/20 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(74,202,170,0.08)]">
             <RingTimer
@@ -250,27 +253,115 @@ export function MobilityExerciseView({
     holdSecRemaining: holdTimer.running ? holdTimer.secondsRemaining : undefined,
   })
 
-  // Live Activity for mobility holds — no pause (holds are brief + manual).
-  const mobilityActivityConfig: LiveActivityConfig | null =
-    !inline && isHoldExercise && holdTimer.running && !holdTimer.reachedTarget
-      ? {
-          sessionType: 'mobility',
-          sessionLabel: 'Mobility',
-          state: {
-            phase: 'hold',
-            label: exercise.exercise?.name ?? 'Hold',
-            detail:
-              (exercise.sets ?? 1) > 1
-                ? `Set ${currentSet} of ${exercise.sets}`
-                : undefined,
-            startedAt: holdTimer.startedAtMs,
-            endsAt: holdTimer.endsAtMs,
-            isPaused: false,
-          },
-        }
-      : null
+  // Live Activity for mobility holds. Phases:
+  //   hold     — hold is running (possibly paused)
+  //   complete — brief ✓ frame when the target is reached, before auto-advance
+  //   ready    — between holds, waiting for Start Hold tap on the widget
+  const mobilityActivityConfig: LiveActivityConfig | null = (() => {
+    if (inline || !isHoldExercise) return null
+    const exerciseName = exercise.exercise?.name ?? 'Hold'
+    const detail =
+      (exercise.sets ?? 1) > 1
+        ? `Set ${currentSet} of ${exercise.sets}`
+        : undefined
+    if (holdTimer.running && !holdTimer.reachedTarget) {
+      return {
+        sessionType: 'mobility',
+        sessionLabel: 'Mobility',
+        state: {
+          phase: 'hold',
+          label: exerciseName,
+          detail,
+          startedAt: holdTimer.startedAtMs,
+          endsAt: holdTimer.endsAtMs,
+          isPaused: holdTimer.isPaused,
+          pausedRemaining: holdTimer.isPaused
+            ? holdTimer.secondsRemaining
+            : undefined,
+        },
+      }
+    }
+    if (holdTimer.running && holdTimer.reachedTarget) {
+      const now = Date.now()
+      return {
+        sessionType: 'mobility',
+        sessionLabel: 'Mobility',
+        state: {
+          phase: 'complete',
+          label: exerciseName,
+          detail,
+          exerciseName,
+          startedAt: now,
+          endsAt: now,
+          isPaused: false,
+          completeMessage: 'Hold complete',
+        },
+      }
+    }
+    if (!holdTimer.running) {
+      const now = Date.now()
+      return {
+        sessionType: 'mobility',
+        sessionLabel: 'Mobility',
+        state: {
+          phase: 'ready',
+          label: detail ?? 'Next Hold',
+          detail: exerciseName,
+          exerciseName,
+          startedAt: now,
+          endsAt: now,
+          isPaused: false,
+        },
+      }
+    }
+    return null
+  })()
 
-  useSessionLiveActivity(mobilityActivityConfig)
+  useSessionLiveActivity(mobilityActivityConfig, {
+    onPause: () => {
+      if (holdTimer.running && !holdTimer.isPaused) holdTimer.pause()
+    },
+    onResume: () => {
+      if (holdTimer.running && holdTimer.isPaused) holdTimer.resume()
+    },
+    onRestart: () => {
+      if (isHoldExercise) {
+        holdTimer.stop()
+        holdTimer.start()
+      }
+    },
+    onEnd: () => {
+      holdTimer.stop()
+      onExit?.()
+    },
+    onStartHold: () => {
+      if (isHoldExercise && !holdTimer.running) {
+        holdTimer.start()
+      }
+    },
+    // "Done →" from the lock screen — end the current hold immediately and
+    // advance. This is the manual escape hatch when JS is frozen and the
+    // auto-advance on reachedTarget can't fire.
+    onAdvance: () => {
+      if (isHoldExercise && holdTimer.running) {
+        holdTimer.stop()
+        onSetDone()
+      }
+    },
+  })
+
+  // Auto-advance when the hold target is reached — mirrors the strength
+  // rest-timer auto-advance flow. Brief delay so the "Hold Complete" state
+  // registers visually before we flip to the next exercise's ready state.
+  useEffect(() => {
+    if (!isHoldExercise) return
+    if (!holdTimer.reachedTarget || !holdTimer.running) return
+    const handle = setTimeout(() => {
+      holdTimer.stop()
+      onSetDone()
+    }, 600)
+    return () => clearTimeout(handle)
+  }, [isHoldExercise, holdTimer.reachedTarget, holdTimer.running, holdTimer.stop, onSetDone])
 
   const footerAction = (() => {
     if (isHoldExercise) {

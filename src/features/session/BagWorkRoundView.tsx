@@ -228,6 +228,18 @@ export function BagWorkRoundView({
     if (remaining > 0) scheduleRestCues(remaining)
   }
 
+  function restartCurrentPhase() {
+    if (phase === 'fighting') {
+      cancelRoundActiveCues()
+      roundTimer.start(round.durationSec)
+      scheduleRoundActiveCues(round.durationSec)
+    } else if (phase === 'rest') {
+      cancelRestCues()
+      restTimer.start(round.restSec)
+      scheduleRestCues(round.restSec)
+    }
+  }
+
   useSessionLiveActivity(activityConfig, {
     onPause: () => {
       if (phase === 'fighting') pauseRound()
@@ -236,6 +248,20 @@ export function BagWorkRoundView({
     onResume: (newEndsAtMs) => {
       if (phase === 'fighting') resumeRound(newEndsAtMs)
       else if (phase === 'rest') resumeRest(newEndsAtMs)
+    },
+    onRestart: restartCurrentPhase,
+    onEnd: () => {
+      cancelRoundActiveCues()
+      cancelRestCues()
+      roundTimer.stop()
+      restTimer.stop()
+      onExit?.()
+    },
+    // "Next →" from the lock screen: fighting → end round early, rest →
+    // jump to next round. Mirrors the in-app footer actions.
+    onAdvance: () => {
+      if (phase === 'fighting') handleRoundEnd()
+      else if (phase === 'rest') handleRestDone()
     },
   })
 
