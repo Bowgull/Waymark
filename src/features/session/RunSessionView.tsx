@@ -72,6 +72,8 @@ interface RunSession {
   isIndoor: number
   onePaceArc: string | null
   onePaceEp: string | null
+  avgHr?: number | null
+  maxHr?: number | null
   stravaActivityId?: number | null
   attachmentStatus?: string | null
 }
@@ -124,6 +126,8 @@ export function RunSessionView({
 
   const [distance, setDistance] = useState('')
   const [duration, setDuration] = useState('')
+  const [avgHr, setAvgHr] = useState('')
+  const [maxHr, setMaxHr] = useState('')
   const [onePaceArc, setOnePaceArc] = useState(runSession.onePaceArc ?? '')
   const [onePaceEp, setOnePaceEp] = useState(runSession.onePaceEp ?? '')
   const [saving, setSaving] = useState(false)
@@ -174,6 +178,8 @@ export function RunSessionView({
           stravaActivityId: number | null
           attachmentStatus: string | null
           isIndoor: number
+          avgHr: number | null
+          maxHr: number | null
         } | null
       }>(`/api/sessions/${runSession.sessionId}/run-workout`)
       const r = data?.runSession
@@ -188,6 +194,8 @@ export function RunSessionView({
         const secs = r.durationSec % 60
         setDuration(secs > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : String(mins))
       }
+      if (r.avgHr != null) setAvgHr(String(r.avgHr))
+      if (r.maxHr != null) setMaxHr(String(r.maxHr))
       setStravaActivityId(r.stravaActivityId)
       setFromStrava(true)
       if (phaseRef.current === 'running') {
@@ -271,6 +279,8 @@ export function RunSessionView({
     }
     const distanceKm = distance ? parseFloat(distance) : undefined
     const paceSecKm = distanceKm && durationSec ? Math.round(durationSec / distanceKm) : undefined
+    const avgHrNum = avgHr ? parseInt(avgHr, 10) : undefined
+    const maxHrNum = maxHr ? parseInt(maxHr, 10) : undefined
 
     try {
       await apiFetch(`/api/run-sessions/${runSession.id}`, {
@@ -280,6 +290,8 @@ export function RunSessionView({
           isIndoor: isIndoor ? 1 : 0,
           onePaceArc: isIndoor && onePaceArc ? onePaceArc : undefined,
           onePaceEp: isIndoor && onePaceEp ? onePaceEp : undefined,
+          avgHr: Number.isFinite(avgHrNum) ? avgHrNum : undefined,
+          maxHr: Number.isFinite(maxHrNum) ? maxHrNum : undefined,
         }),
       })
 
@@ -542,6 +554,31 @@ export function RunSessionView({
               value={duration}
               onChange={(e) => setDuration(e.target.value)}
               placeholder="25:00"
+              className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="text-label mb-1 block text-muted-foreground">Avg HR (bpm)</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={avgHr}
+              onChange={(e) => setAvgHr(e.target.value)}
+              placeholder="138"
+              className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-label mb-1 block text-muted-foreground">Max HR (bpm)</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={maxHr}
+              onChange={(e) => setMaxHr(e.target.value)}
+              placeholder="162"
               className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
             />
           </div>
