@@ -358,7 +358,14 @@ export function RunSessionView({
   }, [phase, runPaused])
 
   // Live Activity for run. Indoor surfaces the One Piece arc/episode so a
-  // glance at the Dynamic Island shows what's playing, not "Zone 2 · Indoor".
+  // glance at the Dynamic Island shows what's playing. Arc + Ep must live
+  // together in `detail` — the Dynamic Island expanded view only renders
+  // detail, not label, so "Ep 3" alone would be meaningless without the arc.
+  const indoorDetail = isIndoor
+    ? (onePaceArc && onePaceEp
+        ? `${onePaceArc} · Ep ${onePaceEp}`
+        : onePaceArc || (onePaceEp ? `Ep ${onePaceEp}` : undefined))
+    : 'Outdoor'
   const runLiveConfig: LiveActivityConfig | null =
     phase === 'running' && startedAtRef.current > 0
       ? {
@@ -366,12 +373,8 @@ export function RunSessionView({
           sessionLabel: isIndoor ? 'One Piece' : 'Run',
           state: {
             phase: 'active',
-            label: isIndoor
-              ? (onePaceArc || 'One Piece')
-              : runTypeLabel,
-            detail: isIndoor
-              ? (onePaceEp ? `Ep ${onePaceEp}` : undefined)
-              : 'Outdoor',
+            label: isIndoor ? 'One Piece' : runTypeLabel,
+            detail: indoorDetail,
             startedAt: startedAtRef.current,
             endsAt: runPaused
               ? Date.now() + remaining * 1000
