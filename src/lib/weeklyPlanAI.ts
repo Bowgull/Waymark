@@ -9,6 +9,7 @@ import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_WEEK_PLAN, type BodyIssueDetection, type WeekPlanOutput } from './prompts/tools'
 import { getWeekSummaries } from './prompts/summarizer'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
+import { computeHrSnapshot, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { rolloverStaleSessions } from './sessionRollover'
 import { getEpochDay } from './dates'
 import type { createDB } from '../db/client'
@@ -151,6 +152,7 @@ function buildPrompt(
   prevJournal: string[],
   trackedIssues: TrackedIssue[],
   adherenceBlock: string,
+  hrBlock: string | null,
 ): string {
   const lines: string[] = [
     `Generate week plan for week ${params.weekNumber} (block week ${params.blockWeek}).`,
@@ -222,6 +224,11 @@ function buildPrompt(
   if (adherenceBlock) {
     lines.push('', adherenceBlock)
     lines.push('Shape this week around the adherence signal above. If a deload is called for, reflect it in session counts, intensities, and the narrative. Never mention missed sessions or adherence directly to the user.')
+  }
+
+  if (hrBlock) {
+    lines.push('', hrBlock)
+    lines.push('Factor the HR signal into run prescriptions. Over-paced easy runs mean the next easy prescription needs a firm HR ceiling. HR drift at same pace means reduce intensity this week, not volume.')
   }
 
   if (prevMtLogs.length > 0) {
@@ -322,8 +329,13 @@ export async function generateWeekPlan(
   const guidance = deriveGuidance(adherence)
   const adherenceBlock = serializeAdherenceForPrompt(adherence, guidance)
 
+  // HR signal (zone-2 compliance + drift). Silent omission if no HR recorded.
+  const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
+  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay)
+  const hrBlock = serializeHrForPrompt(hrSnapshot)
+
   const systemBlocks = buildSystemPrompt(profile, null)
-  const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues, adherenceBlock)
+  const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues, adherenceBlock, hrBlock)
 
   const result = await anthropicCall(apiKey, {
     model: 'claude-haiku-4-5-20251001',

@@ -1419,6 +1419,8 @@ app.patch('/api/run-sessions/:id', async (c) => {
     isIndoor?: number
     onePaceArc?: string
     onePaceEp?: string
+    avgHr?: number
+    maxHr?: number
   }>()
 
   const db = createDB(c.env)
@@ -1431,6 +1433,8 @@ app.patch('/api/run-sessions/:id', async (c) => {
   if (body.isIndoor !== undefined) updates.isIndoor = body.isIndoor
   if (body.onePaceArc !== undefined) updates.onePaceArc = body.onePaceArc
   if (body.onePaceEp !== undefined) updates.onePaceEp = body.onePaceEp
+  if (body.avgHr !== undefined) updates.avgHr = body.avgHr
+  if (body.maxHr !== undefined) updates.maxHr = body.maxHr
 
   await db.update(runSessions).set(updates).where(eq(runSessions.id, runId))
 
