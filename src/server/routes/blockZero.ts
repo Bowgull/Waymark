@@ -8,6 +8,9 @@ import { anthropicCall, getToolInput, type Tool } from '../../lib/anthropic'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
 import { getLatestBodyweightKg } from '../../lib/bodyMetrics'
 import { TOOL_BLOCK_TRANSITION, type BlockTransitionOutput } from '../../lib/prompts/tools'
+import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt, type AdherenceSnapshot, type AdherenceGuidance } from '../../lib/adherence'
+import { rolloverStaleSessions } from '../../lib/sessionRollover'
+import { getEpochDay } from '../../lib/dates'
 import type { createDB } from '../../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -230,6 +233,8 @@ async function gatherTransitionData(db: DB, blockId: string): Promise<{
   block: { startedAt: number | null; totalWeeks: number }
   weeks: WeekSummary[]
   mainLifts: Array<{ id: string; name: string; currentMaxKg: number | null }>
+  adherence: AdherenceSnapshot
+  guidance: AdherenceGuidance
 }> {
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
   const blockStartSec = block?.startedAt ?? 0
@@ -286,10 +291,19 @@ async function gatherTransitionData(db: DB, blockId: string): Promise<{
     .filter(e => MAIN_LIFT_NAMES.includes(e.name))
     .map(e => ({ id: e.id, name: e.name, currentMaxKg: tmMap.get(e.id) ?? null }))
 
+  // Adherence snapshot — feeds silent progression decisions. Roll stale
+  // planned sessions to 'missed' first so the math reflects reality.
+  const todayEpochDay = getEpochDay(new Date())
+  await rolloverStaleSessions(db, todayEpochDay)
+  const adherence = await computeBlockAdherence(db, blockId, todayEpochDay)
+  const guidance = deriveGuidance(adherence)
+
   return {
     block: { startedAt: block?.startedAt ?? null, totalWeeks: block?.totalWeeks ?? 6 },
     weeks,
     mainLifts,
+    adherence,
+    guidance,
   }
 }
 
@@ -322,8 +336,13 @@ function buildTransitionPrompt(
   }
 
   lines.push('')
-  lines.push('Decide: proceed (advance to Fighter Block 1), hold (extend Block Zero one more week), or adjust (advance with modified starting loads).')
-  lines.push('Set calibrationTargets with updated training max estimates based on observed Block Zero performance. Use the exact exercise IDs from above.')
+  lines.push(serializeAdherenceForPrompt(data.adherence, data.guidance))
+
+  lines.push('')
+  lines.push('Decide: proceed (advance to Fighter Block 1), hold (extend Block Zero by one week), or adjust (advance with modified starting loads).')
+  lines.push('Adherence floor: if block completion is below 70% or there is a recent gap of 7+ days, lean toward hold or adjust. Block Zero builds base through exposure, not calendar time. A block where half the sessions never happened has not built the base, no matter how many weeks passed.')
+  lines.push('The athlete never sees this decision. They will just experience the next week. Do not ask for input. Do not soften with praise. State the decision and move.')
+  lines.push('Set calibrationTargets with updated training max estimates based on observed Block Zero performance. Use the exact exercise IDs from above. If adherence was poor, keep estimates conservative (low confidence).')
   lines.push('Voice canon applies to rationale and nextBlockNotes: short sentences, no exclamation marks, no congratulations.')
   lines.push('')
   lines.push('Call blockTransition.')
@@ -397,6 +416,21 @@ export async function runBlockZeroTransition(
     cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
     createdAt: Math.floor(Date.now() / 1000),
   })
+
+  // Silent block extension: if the coach held, bump totalWeeks so the
+  // calendar-driven week advancement doesn't outrun the decision. The athlete
+  // never sees this happen — next week's plan just looks like another base
+  // week, and the transition check will fire again at the new end boundary.
+  if (output.decision === 'hold') {
+    const [currentBlock] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
+    if (currentBlock) {
+      await db
+        .update(trainingBlocks)
+        .set({ totalWeeks: currentBlock.totalWeeks + 1 })
+        .where(eq(trainingBlocks.id, blockId))
+      console.log(`[blockZero] hold: extended block ${blockId} to ${currentBlock.totalWeeks + 1} weeks`)
+    }
+  }
 
   // Apply calibration targets to training maxes regardless of decision
   for (const target of output.calibrationTargets) {

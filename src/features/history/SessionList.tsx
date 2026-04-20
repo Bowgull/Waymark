@@ -45,11 +45,11 @@ export function SessionList({ sessions }: SessionListProps) {
           <div
             key={s.id}
             className={`flex items-center justify-between rounded-md border border-border bg-card p-3 ${
-              s.status === 'skipped' ? 'opacity-50' : ''
+              s.status === 'skipped' || s.status === 'missed' ? 'opacity-50' : ''
             }`}
           >
             <div>
-              <p className={`text-sm font-medium ${s.status === 'skipped' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+              <p className={`text-sm font-medium ${s.status === 'skipped' || s.status === 'missed' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
                 {getSessionLabel(s.type)}
               </p>
               <p className="text-xs text-muted-foreground">
@@ -59,7 +59,7 @@ export function SessionList({ sessions }: SessionListProps) {
             </div>
             <div className="flex items-center gap-2">
               {s.rpe != null && <RpeBadge rpe={s.rpe} />}
-              {s.status === 'skipped' && (
+              {(s.status === 'skipped' || s.status === 'missed') && (
                 <span className="bg-secondary px-2 py-0.5 text-[13px] text-muted-foreground">Passed</span>
               )}
             </div>

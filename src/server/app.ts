@@ -17,6 +17,7 @@ import { WEEKLY_TEMPLATE, getBlockZeroTemplate } from '../lib/weeklyTemplate'
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek, proposeReschedule } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
+import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { runSkipResponse } from '../lib/skipResponseAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
@@ -242,6 +243,9 @@ app.get('/api/sessions/today', async (c) => {
 
   const epochDay = isoToEpochDay(date)
   const db = createDB(c.env)
+  // Silent rollover: any planned session dated before today becomes 'missed'.
+  // Runs before the read so the client sees the rolled-over state.
+  await rolloverStaleSessions(db, epochDay)
   const rows = await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay))
 
   // Attach run_sessions (Strava ingestion results) per session so Today can
@@ -289,6 +293,7 @@ app.get('/api/sessions/week-runs', async (c) => {
   const sundayEpoch = mondayEpoch + 6
 
   const db = createDB(c.env)
+  await rolloverStaleSessions(db, epochDay)
   const rows = await db.select().from(sessions)
     .where(and(
       eq(sessions.type, 'running'),
@@ -401,6 +406,7 @@ app.get('/api/sessions/suggestions', async (c) => {
 
   const targetEpochDay = isoToEpochDay(date)
   const db = createDB(c.env)
+  await rolloverStaleSessions(db, targetEpochDay)
 
   // Today's wellness
   const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, targetEpochDay))
