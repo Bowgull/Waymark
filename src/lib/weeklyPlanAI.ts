@@ -8,6 +8,9 @@ import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_WEEK_PLAN, type BodyIssueDetection, type WeekPlanOutput } from './prompts/tools'
 import { getWeekSummaries } from './prompts/summarizer'
+import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
+import { rolloverStaleSessions } from './sessionRollover'
+import { getEpochDay } from './dates'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -147,6 +150,7 @@ function buildPrompt(
   prevMtLogs: MtLogRecord[],
   prevJournal: string[],
   trackedIssues: TrackedIssue[],
+  adherenceBlock: string,
 ): string {
   const lines: string[] = [
     `Generate week plan for week ${params.weekNumber} (block week ${params.blockWeek}).`,
@@ -214,6 +218,11 @@ function buildPrompt(
     'Only populate bodyIssuesDetected when an athlete explicitly surfaces a body signal. Do not invent or infer.',
     'If nothing relevant surfaced, omit bodyIssuesDetected entirely.',
   )
+
+  if (adherenceBlock) {
+    lines.push('', adherenceBlock)
+    lines.push('Shape this week around the adherence signal above. If a deload is called for, reflect it in session counts, intensities, and the narrative. Never mention missed sessions or adherence directly to the user.')
+  }
 
   if (prevMtLogs.length > 0) {
     lines.push('', 'MT class logs (recent sessions):')
@@ -305,8 +314,16 @@ export async function generateWeekPlan(
 
   const trackedIssues = rollupTrackedIssues(priorBodyIssueRows, params.weekNumber)
 
+  // Adherence: roll stale sessions, then read block-wide signal so the coach
+  // can deload-on-return, extend base work, or rescale volume silently.
+  const todayEpochDay = getEpochDay(new Date())
+  await rolloverStaleSessions(db, todayEpochDay)
+  const adherence = await computeBlockAdherence(db, params.blockId, todayEpochDay)
+  const guidance = deriveGuidance(adherence)
+  const adherenceBlock = serializeAdherenceForPrompt(adherence, guidance)
+
   const systemBlocks = buildSystemPrompt(profile, null)
-  const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues)
+  const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues, adherenceBlock)
 
   const result = await anthropicCall(apiKey, {
     model: 'claude-haiku-4-5-20251001',

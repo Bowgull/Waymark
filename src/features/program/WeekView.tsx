@@ -243,9 +243,10 @@ function SessionRow({
   const label = getSessionLabel(session.type, dayOfWeek)
   const mark = getMarkAsset(session.type)
   const isSkippable = session.status === 'planned' || session.status === 'in_progress'
+  const isPassed = session.status === 'skipped' || session.status === 'missed'
   const blockWeek = session.blockWeek ?? 1
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
-  const overview = showOverview && session.status !== 'skipped'
+  const overview = showOverview && !isPassed
     ? getRoutineOverview(session.type, dayOfWeek, blockWeek, weekNumber, blockType)
     : null
 
@@ -298,10 +299,10 @@ function SessionRow({
             src={mark.png}
             alt=""
             className={`h-5 w-5 shrink-0 object-contain ${
-              session.status === 'skipped' ? 'opacity-20 saturate-0' : 'opacity-70'
+              isPassed ? 'opacity-20 saturate-0' : 'opacity-70'
             }`}
           />
-          <span className={`text-sm ${session.status === 'skipped' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+          <span className={`text-sm ${isPassed ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
             {label}
           </span>
           {session.adjustmentId && (

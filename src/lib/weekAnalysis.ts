@@ -10,7 +10,7 @@ import { WEEKLY_TEMPLATE } from './weeklyTemplate'
 
 export interface WeekSessionRecord {
   type: string
-  status: string       // planned | in_progress | completed | skipped
+  status: string       // planned | in_progress | completed | skipped | missed
   scheduledDate: number
   timeSlot: string
   rpe: number | null
@@ -140,7 +140,11 @@ function computeVolume(sessions: WeekSessionRecord[]): Record<string, VolumeEntr
 
     if (session.status === 'completed') {
       result[key].completed++
-    } else if (session.status === 'skipped') {
+    } else if (session.status === 'skipped' || session.status === 'missed') {
+      // Both count as un-completed for volume deficits. 'missed' is the silent
+      // rollover flip (day passed untouched); 'skipped' is the user's explicit
+      // action. Adherence math treats them identically; the distinction lives
+      // in coaching voice.
       result[key].skipped++
     }
   }
@@ -225,7 +229,11 @@ function trajectory(
 
 function computePerformance(sessions: WeekSessionRecord[]): PerformanceSignals {
   const completed = sessions.filter(s => s.status === 'completed')
-  const total = sessions.filter(s => s.status !== 'planned') // exclude future planned
+  // Exclude future planned (haven't happened yet) and in_progress (still live).
+  // Completed/skipped/missed all count toward "this session had a chance to happen".
+  const total = sessions.filter(s =>
+    s.status === 'completed' || s.status === 'skipped' || s.status === 'missed'
+  )
   const rpeVals = completed.map(s => s.rpe).filter(nonNull)
   const diffVals = completed.map(s => s.difficulty).filter(nonNull)
 
