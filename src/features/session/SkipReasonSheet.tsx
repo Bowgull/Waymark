@@ -3,40 +3,74 @@ import { Button } from '@/components/ui/button'
 import { BottomSheet } from '@/components/ui/BottomSheet'
 import { mediumHaptic, selectHaptic } from '@/lib/haptics'
 
-const REASONS = [
-  { value: 'too_sore', label: 'Too sore' },
-  { value: 'low_sleep', label: 'Low on sleep' },
-  { value: 'schedule', label: 'Schedule conflict' },
-  { value: 'low_drive', label: 'Not feeling it' },
-  { value: 'illness', label: 'Sick or injured' },
+export type SkipReasonValue =
+  | 'too_sore'
+  | 'tired'
+  | 'injury'
+  | 'schedule'
+  | 'sick'
+  | 'low_drive'
+  | 'other'
+
+const REASONS: Array<{ value: SkipReasonValue; label: string }> = [
+  { value: 'too_sore', label: 'Sore' },
+  { value: 'tired', label: 'Tired' },
+  { value: 'injury', label: 'Injury / pain' },
+  { value: 'schedule', label: 'Time' },
+  { value: 'sick', label: 'Sick' },
+  { value: 'low_drive', label: 'Low motivation' },
   { value: 'other', label: 'Other' },
 ]
 
-const REASON_LABELS: Record<string, string> = Object.fromEntries(
-  REASONS.map(r => [r.value, r.label]),
-)
+const BODY_PARTS = ['Lower back', 'Knee', 'Hip', 'Shoulder', 'Ankle', 'Neck', 'Other']
+
+export interface SkipReasonCommit {
+  reason: SkipReasonValue
+  detail: string | null
+}
 
 interface SkipReasonSheetProps {
-  onCommit: (reason: string) => void
+  onCommit: (commit: SkipReasonCommit) => void
   onClose: () => void
 }
 
 export function SkipReasonSheet({ onCommit, onClose }: SkipReasonSheetProps) {
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<SkipReasonValue | null>(null)
+  const [bodyPart, setBodyPart] = useState<string | null>(null)
   const [detail, setDetail] = useState('')
 
-  function handleSelect(value: string) {
+  function handleSelect(value: SkipReasonValue) {
     selectHaptic()
     setSelected(value)
+    setBodyPart(null)
+    setDetail('')
+  }
+
+  function handleBodyPart(part: string) {
+    selectHaptic()
+    setBodyPart(part)
   }
 
   function handleCommit() {
     if (!selected) return
-    const label = REASON_LABELS[selected] ?? selected
-    const reason = detail.trim() ? `${label}. ${detail.trim()}` : label
     mediumHaptic()
-    onCommit(reason)
+    let finalDetail: string | null = null
+    if (selected === 'injury') {
+      if (!bodyPart) return
+      finalDetail = bodyPart === 'Other' ? (detail.trim() || 'Other') : bodyPart
+    } else if (selected === 'other') {
+      finalDetail = detail.trim() || null
+    }
+    onCommit({ reason: selected, detail: finalDetail })
   }
+
+  const needsBodyPart = selected === 'injury'
+  const needsOtherText = selected === 'other' || (selected === 'injury' && bodyPart === 'Other')
+  const canCommit =
+    !!selected &&
+    (selected !== 'injury' || !!bodyPart) &&
+    (selected !== 'other' || !!detail.trim()) &&
+    (!(selected === 'injury' && bodyPart === 'Other') || !!detail.trim())
 
   return (
     <BottomSheet open onClose={onClose} ariaLabel="Why skip">
@@ -63,12 +97,33 @@ export function SkipReasonSheet({ onCommit, onClose }: SkipReasonSheetProps) {
         ))}
       </div>
 
-      {selected === 'other' && (
+      {needsBodyPart && (
+        <div className="mb-3">
+          <p className="mb-2 font-cinzel text-[11px] uppercase tracking-[0.2em] text-gold/50">Where</p>
+          <div className="grid grid-cols-3 gap-2">
+            {BODY_PARTS.map(part => (
+              <button
+                key={part}
+                onClick={() => handleBodyPart(part)}
+                className={`min-h-[40px] rounded-md border px-2 py-2 text-xs transition-colors ${
+                  bodyPart === part
+                    ? 'border-gold/60 bg-secondary text-foreground'
+                    : 'border-border bg-secondary/50 text-muted-foreground'
+                }`}
+              >
+                {part}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {needsOtherText && (
         <textarea
           value={detail}
           onChange={e => setDetail(e.target.value)}
           rows={2}
-          placeholder="What happened."
+          placeholder={selected === 'injury' ? 'Where.' : 'What happened.'}
           className="mb-3 w-full resize-none rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 focus:border-gold/40 focus:outline-none"
           autoFocus
         />
@@ -77,7 +132,7 @@ export function SkipReasonSheet({ onCommit, onClose }: SkipReasonSheetProps) {
       <div className="flex gap-2">
         <Button
           onClick={handleCommit}
-          disabled={!selected || (selected === 'other' && !detail.trim())}
+          disabled={!canCommit}
           className="flex-1"
         >
           Commit

@@ -11,8 +11,9 @@ import { SettingsIcon } from '@/components/icons/NavIcons'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { TodaySkeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
-import { SkipReasonSheet } from '@/features/session/SkipReasonSheet'
+import { SkipReasonSheet, type SkipReasonCommit } from '@/features/session/SkipReasonSheet'
 import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
+import type { ReplaceSuggestion, ReplaceSuggestionsOutput } from '@/lib/prompts/tools'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 
 import { DateHeader } from './DateHeader'
@@ -59,31 +60,12 @@ export function TodayPage() {
   const [generating, setGenerating] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
-  const [reschedulePrompt, setReschedulePrompt] = useState<{
-    adjustmentId: string | null
-    line: string
-    action: 'hold' | 'move' | 'swap' | 'recover'
-    weekImpact: string | null
-    targetDayOfWeek: number | null
-    targetTimeSlot: 'am' | 'pm' | null
-    swapToLabel: string | null
-  } | null>(null)
   const [skipReasonFor, setSkipReasonFor] = useState<string | null>(null)
-  const [skipAlternative, setSkipAlternative] = useState<
-    | { sessionId: string; loading: true }
-    | {
-        sessionId: string
-        loading: false
-        coachLine: string | null
-        alternativeType: string | null
-        alternativeLabel: string | null
-        timeSlot: 'am' | 'pm' | null
-      }
-    | null
-  >(null)
   const [reactiveNotes, setReactiveNotes] = useState<Array<{ id: string; note: string; createdAt: number }>>([])
   const [replaceState, setReplaceState] = useState<
     | { sessionId: string; stage: 'reason' }
+    | { sessionId: string; stage: 'loading'; reason: string }
+    | { sessionId: string; stage: 'coach'; reason: string; coachLine: string; suggestions: ReplaceSuggestion[] }
     | { sessionId: string; stage: 'picker'; reason: string }
     | null
   >(null)
@@ -250,46 +232,84 @@ export function TodayPage() {
   }
 
   function handleSkip(id: string) {
-    setSkipAlternative({ sessionId: id, loading: true })
-    apiFetch<{ alternative: { coachLine: string; alternativeType: string; alternativeLabel: string; timeSlot: 'am' | 'pm' } | null }>(
-      `/api/sessions/${id}/skip-alternative`,
-      { method: 'POST' },
-    )
-      .then(res => {
-        setSkipAlternative(prev => {
-          if (!prev || prev.sessionId !== id) return prev
-          return {
-            sessionId: id,
-            loading: false,
-            coachLine: res.alternative?.coachLine ?? null,
-            alternativeType: res.alternative?.alternativeType ?? null,
-            alternativeLabel: res.alternative?.alternativeLabel ?? null,
-            timeSlot: res.alternative?.timeSlot ?? null,
-          }
-        })
-      })
-      .catch(() => {
-        setSkipAlternative(prev => {
-          if (!prev || prev.sessionId !== id) return prev
-          return { sessionId: id, loading: false, coachLine: null, alternativeType: null, alternativeLabel: null, timeSlot: null }
-        })
-      })
+    setSkipReasonFor(id)
   }
 
-  async function handleAcceptAlternative() {
-    if (!skipAlternative || skipAlternative.loading) return
-    if (!skipAlternative.alternativeType || !skipAlternative.timeSlot) return
-    const sessionId = skipAlternative.sessionId
-    const alt = skipAlternative
-    setSkipAlternative(null)
+  async function commitSkip(id: string, commit: SkipReasonCommit) {
+    setSkipReasonFor(null)
+    setSessions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, status: 'skipped' } : s))
+    )
+    try {
+      await apiFetch(`/api/sessions/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: 'skipped',
+          skipReason: commit.reason,
+          skipReasonDetail: commit.detail,
+        }),
+      })
+    } catch (e) {
+      console.error('Failed to skip session:', e)
+    }
+  }
+
+  function handleReplaceStart(id: string) {
+    setReplaceState({ sessionId: id, stage: 'reason' })
+  }
+
+  async function handleReplaceReasonCommit(reason: string) {
+    if (!replaceState) return
+    const sessionId = replaceState.sessionId
+    setReplaceState({ sessionId, stage: 'loading', reason })
+    try {
+      const result = await apiFetch<ReplaceSuggestionsOutput>(
+        `/api/sessions/${sessionId}/replace-suggestions`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ reason }),
+        }
+      )
+      if (result.suggestions && result.suggestions.length > 0) {
+        setReplaceState({
+          sessionId,
+          stage: 'coach',
+          reason,
+          coachLine: result.coachLine ?? '',
+          suggestions: result.suggestions,
+        })
+      } else {
+        await loadPickerFallback(sessionId, reason)
+      }
+    } catch (e) {
+      console.warn('replace-suggestions failed, falling back to picker', e)
+      await loadPickerFallback(sessionId, reason)
+    }
+  }
+
+  async function loadPickerFallback(sessionId: string, reason: string) {
+    setReplaceState({ sessionId, stage: 'picker', reason })
+    try {
+      const s = await apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
+      setPickerSuggestions(s)
+    } catch {
+      setPickerSuggestions(null)
+    }
+  }
+
+  async function handleReplaceAcceptSuggestion(suggestion: ReplaceSuggestion) {
+    if (!replaceState || replaceState.stage !== 'coach') return
+    const sessionId = replaceState.sessionId
+    const reason = replaceState.reason
+    setReplaceState(null)
     try {
       const result = await apiFetch<{ original: Session; replacement: Session }>(`/api/sessions/${sessionId}/replace`, {
         method: 'POST',
         body: JSON.stringify({
-          reason: alt.coachLine ?? 'Coach shift',
-          type: alt.alternativeType,
-          label: alt.alternativeLabel,
-          timeSlot: alt.timeSlot,
+          reason,
+          type: suggestion.type,
+          label: suggestion.label,
+          timeSlot: suggestion.timeSlot,
         }),
       })
       setSessions(prev => {
@@ -300,107 +320,14 @@ export function TodayPage() {
           || ((a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1))
         )
       })
-      refreshReactive()
     } catch (e) {
-      console.error('Failed to accept alternative:', e)
+      console.error('Failed to replace session:', e)
     }
   }
 
-  async function handleSkipAnyway() {
-    if (!skipAlternative) return
-    const id = skipAlternative.sessionId
-    setSkipAlternative(null)
-    setSessions(prev => prev.map(s => (s.id === id ? { ...s, status: 'skipped' } : s)))
-    try {
-      await apiFetch<{ session?: Session; coach?: unknown }>(`/api/sessions/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'skipped', skipReason: 'Skipped, no reason given' }),
-      })
-      refreshReactive()
-    } catch (e) {
-      console.error('Failed to skip session:', e)
-    }
-  }
-
-  async function commitSkip(id: string, reason: string) {
-    setSkipReasonFor(null)
-    setSessions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status: 'skipped' } : s))
-    )
-    try {
-      type CoachResp = {
-        line: string
-        action: 'hold' | 'move' | 'swap' | 'recover'
-        weekImpact: string | null
-        targetDayOfWeek: number | null
-        targetTimeSlot: 'am' | 'pm' | null
-        swapToType: string | null
-        swapToLabel: string | null
-        adjustmentId: string | null
-      }
-      const result = await apiFetch<{ session?: Session; coach?: CoachResp | null }>(`/api/sessions/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'skipped', skipReason: reason }),
-      })
-      if (result.coach) {
-        setReschedulePrompt({
-          adjustmentId: result.coach.adjustmentId,
-          line: result.coach.line,
-          action: result.coach.action,
-          weekImpact: result.coach.weekImpact,
-          targetDayOfWeek: result.coach.targetDayOfWeek,
-          targetTimeSlot: result.coach.targetTimeSlot,
-          swapToLabel: result.coach.swapToLabel,
-        })
-      }
-    } catch (e) {
-      console.error('Failed to skip session:', e)
-    }
-  }
-
-  async function handleAcceptReschedule() {
-    if (!reschedulePrompt?.adjustmentId) {
-      setReschedulePrompt(null)
-      return
-    }
-    try {
-      const r = await apiFetch<{ session?: Session }>(`/api/adjustments/${reschedulePrompt.adjustmentId}/accept`, { method: 'POST' })
-      if (r.session) {
-        setSessions(prev => {
-          const next = [...prev, r.session!]
-          return next.sort((a, b) => (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0) || ((a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)))
-        })
-      }
-    } catch (e) {
-      console.error('Failed to accept reschedule:', e)
-    }
-    setReschedulePrompt(null)
-  }
-
-  function handleDismissReschedule() {
-    if (!reschedulePrompt) return
-    if (reschedulePrompt.adjustmentId) {
-      apiFetch(`/api/adjustments/${reschedulePrompt.adjustmentId}/reject`, { method: 'POST' }).catch((e) => {
-        const message = e instanceof Error ? e.message : String(e)
-        logger.warn('system', 'reschedule reject persist failed', { adjustmentId: reschedulePrompt.adjustmentId, message })
-      })
-    }
-    setReschedulePrompt(null)
-  }
-
-  function handleReplaceStart(id: string) {
-    setReplaceState({ sessionId: id, stage: 'reason' })
-  }
-
-  async function handleReplaceReasonCommit(reason: string) {
-    if (!replaceState) return
-    setReplaceState({ sessionId: replaceState.sessionId, stage: 'picker', reason })
-    try {
-      const s = await apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
-      setPickerSuggestions(s)
-    } catch {
-      setPickerSuggestions(null)
-    }
+  async function handleReplaceShowMore() {
+    if (!replaceState || replaceState.stage !== 'coach') return
+    await loadPickerFallback(replaceState.sessionId, replaceState.reason)
   }
 
   async function handleReplaceSelect(option: SessionOption) {
@@ -593,18 +520,9 @@ export function TodayPage() {
         />
       )}
 
-      {skipAlternative && (
-        <SkipAlternativeCoachCard
-          state={skipAlternative}
-          onAccept={handleAcceptAlternative}
-          onSkipAnyway={handleSkipAnyway}
-          onClose={() => setSkipAlternative(null)}
-        />
-      )}
-
       {skipReasonFor && (
         <SkipReasonSheet
-          onCommit={(reason) => commitSkip(skipReasonFor, reason)}
+          onCommit={(commit) => commitSkip(skipReasonFor, commit)}
           onClose={() => setSkipReasonFor(null)}
         />
       )}
@@ -616,6 +534,23 @@ export function TodayPage() {
         />
       )}
 
+      {replaceState?.stage === 'loading' && (
+        <ReplaceCoachCard
+          loading
+          onClose={() => setReplaceState(null)}
+        />
+      )}
+
+      {replaceState?.stage === 'coach' && (
+        <ReplaceCoachCard
+          coachLine={replaceState.coachLine}
+          suggestions={replaceState.suggestions}
+          onAccept={handleReplaceAcceptSuggestion}
+          onShowMore={handleReplaceShowMore}
+          onClose={() => setReplaceState(null)}
+        />
+      )}
+
       {replaceState?.stage === 'picker' && (
         <SessionPicker
           onSelect={handleReplaceSelect}
@@ -623,14 +558,6 @@ export function TodayPage() {
           suggestions={pickerSuggestions}
           title="Replace"
           subtitle={replaceState.reason ? `Reason: ${replaceState.reason}` : undefined}
-        />
-      )}
-
-      {reschedulePrompt && (
-        <RescheduleCoachCard
-          prompt={reschedulePrompt}
-          onAccept={handleAcceptReschedule}
-          onDismiss={handleDismissReschedule}
         />
       )}
 
@@ -646,132 +573,57 @@ export function TodayPage() {
   )
 }
 
-const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-function RescheduleCoachCard({ prompt, onAccept, onDismiss }: {
-  prompt: {
-    adjustmentId: string | null
-    line: string
-    action: 'hold' | 'move' | 'swap' | 'recover'
-    weekImpact: string | null
-    targetDayOfWeek: number | null
-    targetTimeSlot: 'am' | 'pm' | null
-    swapToLabel: string | null
-  }
-  onAccept: () => void
-  onDismiss: () => void
-}) {
-  const hasAction = prompt.adjustmentId != null && (prompt.action === 'move' || prompt.action === 'swap')
-
-  let primaryLabel = 'OK'
-  if (prompt.action === 'move' && prompt.targetDayOfWeek != null && prompt.targetTimeSlot) {
-    primaryLabel = `Move to ${DAY_SHORT[prompt.targetDayOfWeek]} ${prompt.targetTimeSlot.toUpperCase()}`
-  } else if (prompt.action === 'swap' && prompt.swapToLabel && prompt.targetTimeSlot) {
-    primaryLabel = `Swap for ${prompt.swapToLabel}`
-  }
-
-  return (
-    <div className="fixed inset-x-0 z-40 flex justify-center px-4 animate-fade-in-up" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
-      <div className="w-full max-w-md rounded-lg border border-gold/10 bg-surface p-4 shadow-lg">
-        <p className="mb-1 font-cinzel text-[11px] uppercase tracking-[0.2em] text-gold/50">Coach</p>
-        <p className="mb-2 text-sm text-foreground">{prompt.line}</p>
-        {prompt.weekImpact && (
-          <p className="mb-3 text-xs text-muted-foreground/60">{prompt.weekImpact}</p>
-        )}
-        <div className="flex gap-2">
-          {hasAction ? (
-            <>
-              <button
-                onClick={onAccept}
-                className="flex-1 rounded-md bg-gold/15 px-3 py-2 text-sm text-gold active:bg-gold/25"
-              >
-                {primaryLabel}
-              </button>
-              <button
-                onClick={onDismiss}
-                className="rounded-md px-3 py-2 text-sm text-muted-foreground/60 active:text-foreground"
-              >
-                Not now
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={onDismiss}
-              className="flex-1 rounded-md bg-secondary px-3 py-2 text-sm text-foreground active:bg-secondary/70"
-            >
-              Got it
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-type SkipAltState =
-  | { sessionId: string; loading: true }
+type ReplaceCoachCardProps =
+  | { loading: true; onClose: () => void }
   | {
-      sessionId: string
-      loading: false
-      coachLine: string | null
-      alternativeType: string | null
-      alternativeLabel: string | null
-      timeSlot: 'am' | 'pm' | null
+      loading?: false
+      coachLine: string
+      suggestions: ReplaceSuggestion[]
+      onAccept: (suggestion: ReplaceSuggestion) => void
+      onShowMore: () => void
+      onClose: () => void
     }
 
-function SkipAlternativeCoachCard({ state, onAccept, onSkipAnyway, onClose }: {
-  state: SkipAltState
-  onAccept: () => void
-  onSkipAnyway: () => void
-  onClose: () => void
-}) {
+function ReplaceCoachCard(props: ReplaceCoachCardProps) {
   return (
     <div className="fixed inset-x-0 z-40 flex justify-center px-4 animate-fade-in-up" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
       <div className="w-full max-w-md rounded-lg border border-gold/10 bg-surface p-4 shadow-lg">
         <p className="mb-1 font-cinzel text-[11px] uppercase tracking-[0.2em] text-gold/50">Coach</p>
-        {state.loading ? (
-          <p className="mb-3 text-sm text-muted-foreground/70">Reading the signal.</p>
-        ) : state.coachLine ? (
-          <>
-            <p className="mb-3 text-sm text-foreground">{state.coachLine}</p>
-            <div className="flex gap-2">
-              {state.alternativeType && state.alternativeLabel && state.timeSlot ? (
-                <>
-                  <button
-                    onClick={onAccept}
-                    className="flex-1 rounded-md bg-gold/15 px-3 py-2 text-sm text-gold active:bg-gold/25"
-                  >
-                    {state.alternativeLabel}
-                  </button>
-                  <button
-                    onClick={onSkipAnyway}
-                    className="rounded-md px-3 py-2 text-sm text-muted-foreground/60 active:text-foreground"
-                  >
-                    Skip anyway
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={onSkipAnyway}
-                  className="flex-1 rounded-md bg-secondary px-3 py-2 text-sm text-foreground active:bg-secondary/70"
-                >
-                  Skip
-                </button>
-              )}
-            </div>
-          </>
+        {props.loading ? (
+          <p className="mb-1 text-sm text-muted-foreground/70">Reading the signal.</p>
         ) : (
           <>
-            <p className="mb-3 text-sm text-foreground">Coach's offline. Skip stands.</p>
+            {props.coachLine && (
+              <p className="mb-3 text-sm text-foreground">{props.coachLine}</p>
+            )}
+            <ul className="mb-3 space-y-1.5">
+              {props.suggestions.map((s, idx) => (
+                <li key={`${s.type}-${s.timeSlot}-${idx}`}>
+                  <button
+                    onClick={() => props.onAccept(s)}
+                    className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                      idx === 0
+                        ? 'border-gold/20 bg-gold/10 text-gold active:bg-gold/20'
+                        : 'border-gold/10 bg-card/40 text-foreground active:bg-card/70'
+                    }`}
+                  >
+                    <span className="font-medium">{s.label}</span>
+                    <span className="font-cinzel text-[10px] uppercase tracking-[0.2em] text-gold/40">
+                      {s.timeSlot}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
             <div className="flex gap-2">
               <button
-                onClick={onSkipAnyway}
+                onClick={props.onShowMore}
                 className="flex-1 rounded-md bg-secondary px-3 py-2 text-sm text-foreground active:bg-secondary/70"
               >
-                Skip
+                More options
               </button>
               <button
-                onClick={onClose}
+                onClick={props.onClose}
                 className="rounded-md px-3 py-2 text-sm text-muted-foreground/60 active:text-foreground"
               >
                 Close

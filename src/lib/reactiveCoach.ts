@@ -21,7 +21,7 @@ import { coachingOutputs, dailyLogs, exercises, sessions, trainingMaxes, userPro
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
-import { TOOL_REACTIVE_REPLAN, TOOL_SKIP_ALTERNATIVE, type ReactiveReplanOutput, type SkipAlternativeOutput } from './prompts/tools'
+import { TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type ReactiveReplanOutput, type ReplaceSuggestionsOutput } from './prompts/tools'
 import { computeHrSnapshot, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
 import type { createDB } from '../db/client'
@@ -400,14 +400,15 @@ export async function runReactiveReplan(
   return { adjustmentId, note: cleanNote }
 }
 
-// ─── Skip-alternative blocking call ─────────────────────────────
+// ─── Replace-suggestions blocking call ──────────────────────────
 
-export async function runSkipAlternative(
+export async function runReplaceSuggestions(
   db: DB,
   apiKey: string,
   sessionId: string,
   todayEpochDay: number,
-): Promise<SkipAlternativeOutput | null> {
+  reason: string | null,
+): Promise<ReplaceSuggestionsOutput | null> {
   const [sess] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!sess) return null
 
@@ -436,8 +437,9 @@ export async function runSkipAlternative(
   }
 
   const lines: string[] = [
-    `About-to-skip: ${SESSION_LABEL[sess.type] ?? sess.type} (${(sess.timeSlot ?? 'am').toUpperCase()}) today (${DAY_NAMES[todayDow]}).`,
-    'No reason given. Propose the best alternative session for today based on current state.',
+    `Replacing: ${SESSION_LABEL[sess.type] ?? sess.type} (${(sess.timeSlot ?? 'am').toUpperCase()}) today (${DAY_NAMES[todayDow]}).`,
+    reason ? `Athlete reason: ${reason}.` : 'No reason given.',
+    'Rank three alternatives for right now. Best pick first. Respect MT cap and posture constraints from the profile.',
   ]
   if (todayLog) {
     const w: string[] = []
@@ -458,34 +460,34 @@ export async function runSkipAlternative(
   }
   if (adherenceBlock) lines.push('', adherenceBlock)
   if (hrBlock) lines.push('', hrBlock)
-  lines.push('', 'Call skipAlternative. One line, voice canon, observation before conclusion. Propose the alternative the athlete is most likely to actually do given the signal.')
+  lines.push('', 'Call replaceSuggestions with exactly three options ranked best to worst. coachLine explains only the top pick. Voice canon.')
 
   const profile = await loadProfile(db)
   const systemBlocks = buildSystemPrompt(profile, null)
 
   const result = await anthropicCall(apiKey, {
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 384,
+    max_tokens: 512,
     system: systemBlocks,
     messages: [{ role: 'user', content: lines.join('\n') }],
-    tools: [TOOL_SKIP_ALTERNATIVE],
-    tool_choice: { type: 'tool', name: 'skipAlternative' },
+    tools: [TOOL_REPLACE_SUGGESTIONS],
+    tool_choice: { type: 'tool', name: 'replaceSuggestions' },
   })
 
   if (result.offline) {
-    console.warn('[skipAlternative] offline')
+    console.warn('[replaceSuggestions] offline')
     return null
   }
 
-  const output = getToolInput<SkipAlternativeOutput>(result, 'skipAlternative')
+  const output = getToolInput<ReplaceSuggestionsOutput>(result, 'replaceSuggestions')
   if (!output) {
-    console.warn('[skipAlternative] no tool output')
+    console.warn('[replaceSuggestions] no tool output')
     return null
   }
 
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
-    kind: 'skip_alternative',
+    kind: 'replace_suggestions',
     model: 'claude-haiku-4-5-20251001',
     scopeWeekPlanId: weekPlanId,
     scopeSessionId: sessionId,
