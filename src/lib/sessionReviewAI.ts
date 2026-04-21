@@ -23,15 +23,15 @@ const SESSION_LABEL: Record<string, string> = {
 }
 
 function buildPrompt(
-  session: { type: string; rpe: number | null; difficulty: number | null; notes: string | null; durationSec: number | null },
-  recent: Array<{ type: string; rpe: number | null; difficulty: number | null }>,
+  session: { type: string; rpe: number | null; notes: string | null; durationSec: number | null },
+  recent: Array<{ type: string; rpe: number | null }>,
 ): string {
   const label = SESSION_LABEL[session.type] ?? session.type
   const dur = session.durationSec ? `${Math.round(session.durationSec / 60)} min` : 'duration not recorded'
   const lines: string[] = [
     `Session completed: ${label}.`,
     `Duration: ${dur}.`,
-    `RPE: ${session.rpe ?? 'not recorded'}/10. Difficulty: ${session.difficulty ?? 'not recorded'}/5.`,
+    `Effort: ${session.rpe ?? 'not recorded'}/10.`,
   ]
   if (session.notes) lines.push(`Athlete notes: ${session.notes}`)
 
@@ -40,7 +40,7 @@ function buildPrompt(
     lines.push('Recent sessions for context:')
     for (const s of recent) {
       const l = SESSION_LABEL[s.type] ?? s.type
-      lines.push(`  ${l} - RPE ${s.rpe ?? '?'}, difficulty ${s.difficulty ?? '?'}`)
+      lines.push(`  ${l} - Effort ${s.rpe ?? '?'}/10`)
     }
   }
 
@@ -55,12 +55,12 @@ function buildPrompt(
 export async function runSessionReview(
   db: DB,
   apiKey: string,
-  session: { id: string; type: string; rpe: number | null; difficulty: number | null; notes: string | null; durationSec: number | null },
+  session: { id: string; type: string; rpe: number | null; notes: string | null; durationSec: number | null },
 ): Promise<SessionReviewOutput | null> {
   const [profileRow, recent, tmRows] = await Promise.all([
     db.select().from(userProfile).limit(1).then(rows => rows[0] ?? null),
     db
-      .select({ id: sessions.id, type: sessions.type, rpe: sessions.rpe, difficulty: sessions.difficulty })
+      .select({ id: sessions.id, type: sessions.type, rpe: sessions.rpe })
       .from(sessions)
       .where(eq(sessions.status, 'completed'))
       .orderBy(desc(sessions.completedAt))

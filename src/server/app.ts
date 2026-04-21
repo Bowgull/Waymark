@@ -865,7 +865,6 @@ app.post('/api/sessions/:id/complete', async (c) => {
     id: sessionId,
     type: session.type,
     rpe: body.rpe ?? null,
-    difficulty: body.difficulty ?? null,
     notes: body.notes ?? null,
     durationSec,
   })
