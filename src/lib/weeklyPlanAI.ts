@@ -5,6 +5,7 @@ import { and, desc, eq, gte, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, journalEntries, mtClassLogs, sessions, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
+import { computeStarterStatus, serializeStarterStatus } from './starterStatus'
 import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_WEEK_PLAN, type BodyIssueDetection, type WeekPlanOutput } from './prompts/tools'
 import { getWeekSummaries } from './prompts/summarizer'
@@ -145,7 +146,7 @@ function rankSeverity(s: BodyIssueDetection['severity']): number {
 
 function buildPrompt(
   params: WeekPlanParams,
-  prevSessions: Array<{ type: string; status: string; rpe: number | null; difficulty: number | null; notes: string | null }>,
+  prevSessions: Array<{ type: string; status: string; rpe: number | null; notes: string | null }>,
   prevLogs: Array<{ sleepHours: number | null; soreness: number | null; notes: string | null }>,
   compressedNote: string,
   prevMtLogs: MtLogRecord[],
@@ -177,8 +178,7 @@ function buildPrompt(
   if (prevSessions.length > 0) {
     for (const s of prevSessions) {
       const parts = [`  ${s.type} | ${s.status}`]
-      if (s.rpe != null) parts.push(`RPE ${s.rpe}`)
-      if (s.difficulty != null) parts.push(`difficulty ${s.difficulty}/5`)
+      if (s.rpe != null) parts.push(`Effort ${s.rpe}/10`)
       if (s.notes && s.notes !== s.type) parts.push(s.notes)
       lines.push(parts.join(' | '))
     }
@@ -286,7 +286,7 @@ export async function generateWeekPlan(
 
   const [prevSessions, prevLogs, prevMtLogs, prevJournalRows, priorBodyIssueRows] = await Promise.all([
     db
-      .select({ type: sessions.type, status: sessions.status, rpe: sessions.rpe, difficulty: sessions.difficulty, notes: sessions.notes })
+      .select({ type: sessions.type, status: sessions.status, rpe: sessions.rpe, notes: sessions.notes })
       .from(sessions)
       .where(and(gte(sessions.scheduledDate, params.prevWeekStart), lte(sessions.scheduledDate, params.prevWeekEnd))),
     db
@@ -334,7 +334,9 @@ export async function generateWeekPlan(
   const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay)
   const hrBlock = serializeHrForPrompt(hrSnapshot)
 
-  const systemBlocks = buildSystemPrompt(profile, null)
+  const starter = await computeStarterStatus(db, todayEpochDay, profile.trainingHistory, profile.constraints)
+  const starterBlock = serializeStarterStatus(starter)
+  const systemBlocks = buildSystemPrompt(profile, null, starterBlock || null)
   const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues, adherenceBlock, hrBlock)
 
   const result = await anthropicCall(apiKey, {

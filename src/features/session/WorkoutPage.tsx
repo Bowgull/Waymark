@@ -512,14 +512,14 @@ export function WorkoutPage() {
     setPhase('complete')
   }, [])
 
-  async function handleFinish(rpe: number, difficulty: number, notes: string) {
+  async function handleFinish(rpe: number, notes: string) {
     if (!id) return
     setSubmitting(true)
-    logger.sessionEvent('session finish attempt', { sessionId: id, rpe, difficulty, hasNotes: notes.length > 0 })
+    logger.sessionEvent('session finish attempt', { sessionId: id, rpe, hasNotes: notes.length > 0 })
     try {
       await apiFetch(`/api/sessions/${id}/complete`, {
         method: 'POST',
-        body: JSON.stringify({ rpe, difficulty, notes }),
+        body: JSON.stringify({ rpe, notes }),
       })
       logger.sessionEvent('session finish ok', { sessionId: id })
       clearWorkoutRecovery()

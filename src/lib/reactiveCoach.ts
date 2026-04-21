@@ -8,7 +8,10 @@
 //  - session_skipped: the athlete skipped. Reshape the rest of the week.
 //  - session_replaced: replacement just landed. Redistribute the cascade.
 //  - wellness_logged: sleep/soreness crossed an overreach threshold.
-//  - rollover: two or more consecutive planned days flipped to missed.
+//  - rollover: nightly pass. Fires when two or more recent days flipped to
+//    missed, OR when ad-hoc bonus sessions created a conflict with the rest
+//    of the week (MT cap breach, intensity stacked adjacent to a prescribed
+//    hard day, or weekly training days exceeded the target).
 //
 // Cost safety:
 //  - One Haiku call per trigger, never Sonnet.
@@ -24,12 +27,14 @@ import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type ReactiveReplanOutput, type ReplaceSuggestionsOutput } from './prompts/tools'
 import { computeHrSnapshot, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
+import { computeStarterStatus, serializeStarterStatus } from './starterStatus'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
 
 const DEBOUNCE_SEC = 2 * 60 * 60
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const HIGH_INTENSITY_TYPES = new Set(['mt_class', 'bag_work'])
 
 export type ReactiveTrigger =
   | 'session_completed'
@@ -60,6 +65,13 @@ interface TriggerGateResult {
   rationale: string
 }
 
+interface AdHocConflict {
+  adds: Array<{ type: string; scheduledDate: number; timeSlot: string | null; status: string }>
+  mtOverCap: { cap: number; count: number } | null
+  stackedIntensity: Array<{ addedDay: number; addedType: string; adjacentDay: number; adjacentType: string }>
+  volumeSpike: { target: number; trainingDays: number } | null
+}
+
 interface SignalBundle {
   trigger: ReactiveTrigger
   sessionId?: string
@@ -67,13 +79,74 @@ interface SignalBundle {
   todayDow: number
   weekStart: number
   weekEnd: number
-  justCompleted: { id: string; type: string; divergedFrom: string | null; hrDrift: string | null; z2: string | null } | null
+  justCompleted: { id: string; type: string; divergedFrom: string | null; hrDrift: string | null; z2: string | null; rpe: number | null; notes: string | null } | null
   recentMissed: Array<{ type: string; scheduledDate: number }>
+  recentCompleted: Array<{ type: string; scheduledDate: number; rpe: number | null; notes: string | null }>
   wellnessToday: { sleepHours: number | null; soreness: number | null; alcoholScale: number | null } | null
   wellnessOverreach: boolean
+  adHocConflict: AdHocConflict | null
 }
 
 // ─── Gates (cheap pre-filter before Haiku) ──────────────────────
+
+// Ad-hoc bonus sessions carry blockWeek = null (see POST /api/sessions/insert-ad-hoc).
+// A conflict arises when bonus volume pushes the week past a real ceiling:
+// MT cap, adjacent-day hard session stacking, or weekly day target.
+async function detectAdHocConflicts(
+  db: DB,
+  weekStart: number,
+  weekEnd: number,
+  mtCap: number | null,
+  weeklyDayTarget: number | null,
+): Promise<AdHocConflict | null> {
+  const weekRows = await db
+    .select({
+      type: sessions.type,
+      scheduledDate: sessions.scheduledDate,
+      timeSlot: sessions.timeSlot,
+      status: sessions.status,
+      blockWeek: sessions.blockWeek,
+    })
+    .from(sessions)
+    .where(and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd)))
+
+  const active = weekRows.filter(s => s.status !== 'skipped' && s.scheduledDate != null)
+  const adHoc = active
+    .filter(s => s.blockWeek == null)
+    .map(s => ({ type: s.type, scheduledDate: s.scheduledDate as number, timeSlot: s.timeSlot, status: s.status }))
+  if (adHoc.length === 0) return null
+
+  let mtOverCap: AdHocConflict['mtOverCap'] = null
+  if (mtCap != null) {
+    const mtCount = active.filter(s => s.type === 'mt_class').length
+    if (mtCount > mtCap) mtOverCap = { cap: mtCap, count: mtCount }
+  }
+
+  const prescribedHardByDay = new Map<number, string>()
+  for (const s of active) {
+    if (s.blockWeek != null && HIGH_INTENSITY_TYPES.has(s.type)) {
+      prescribedHardByDay.set(s.scheduledDate as number, s.type)
+    }
+  }
+  const stackedIntensity: AdHocConflict['stackedIntensity'] = []
+  for (const s of adHoc) {
+    if (!HIGH_INTENSITY_TYPES.has(s.type)) continue
+    const prev = prescribedHardByDay.get(s.scheduledDate - 1)
+    const next = prescribedHardByDay.get(s.scheduledDate + 1)
+    if (prev) stackedIntensity.push({ addedDay: s.scheduledDate, addedType: s.type, adjacentDay: s.scheduledDate - 1, adjacentType: prev })
+    if (next) stackedIntensity.push({ addedDay: s.scheduledDate, addedType: s.type, adjacentDay: s.scheduledDate + 1, adjacentType: next })
+  }
+
+  let volumeSpike: AdHocConflict['volumeSpike'] = null
+  if (weeklyDayTarget != null) {
+    const days = new Set<number>()
+    for (const s of active) days.add(s.scheduledDate as number)
+    if (days.size > weeklyDayTarget + 1) volumeSpike = { target: weeklyDayTarget, trainingDays: days.size }
+  }
+
+  if (!mtOverCap && stackedIntensity.length === 0 && !volumeSpike) return null
+  return { adds: adHoc, mtOverCap, stackedIntensity, volumeSpike }
+}
 
 async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundle> {
   const todayDow = new Date(ctx.todayEpochDay * 86400000).getUTCDay()
@@ -114,7 +187,7 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
         }
       }
 
-      justCompleted = { id: sess.id, type: sess.type, divergedFrom, hrDrift, z2 }
+      justCompleted = { id: sess.id, type: sess.type, divergedFrom, hrDrift, z2, rpe: sess.rpe ?? null, notes: sess.notes ?? null }
     }
   }
 
@@ -131,6 +204,20 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
     .filter(r => r.scheduledDate != null)
     .map(r => ({ type: r.type, scheduledDate: r.scheduledDate as number }))
 
+  // Recent completed with quality signal: Effort (rpe) and notes are the
+  // single biggest underused signal the mid-week coach used to ignore.
+  const recentCompletedRows = await db
+    .select({ type: sessions.type, scheduledDate: sessions.scheduledDate, rpe: sessions.rpe, notes: sessions.notes })
+    .from(sessions)
+    .where(and(
+      eq(sessions.status, 'completed'),
+      gte(sessions.scheduledDate, ctx.todayEpochDay - 7),
+      lte(sessions.scheduledDate, ctx.todayEpochDay),
+    ))
+  const recentCompleted = recentCompletedRows
+    .filter(r => r.scheduledDate != null)
+    .map(r => ({ type: r.type, scheduledDate: r.scheduledDate as number, rpe: r.rpe ?? null, notes: r.notes ?? null }))
+
   // Wellness today
   const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, ctx.todayEpochDay))
   const wellnessToday = todayLog
@@ -142,6 +229,24 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
       (wellnessToday.soreness != null && wellnessToday.soreness >= 4)),
   )
 
+  // Ad-hoc conflict detection only matters for the nightly rollover sweep.
+  // Other triggers already have their own specific signal and don't need
+  // the extra query cost.
+  let adHocConflict: AdHocConflict | null = null
+  if (ctx.trigger === 'rollover') {
+    const [profileRow] = await db
+      .select({ mtCapPerWeek: userProfile.mtCapPerWeek, weeklyDayTarget: userProfile.weeklyDayTarget })
+      .from(userProfile)
+      .limit(1)
+    adHocConflict = await detectAdHocConflicts(
+      db,
+      weekStart,
+      weekEnd,
+      profileRow?.mtCapPerWeek ?? null,
+      profileRow?.weeklyDayTarget ?? null,
+    )
+  }
+
   return {
     trigger: ctx.trigger,
     sessionId: ctx.sessionId,
@@ -151,8 +256,10 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
     weekEnd,
     justCompleted,
     recentMissed,
+    recentCompleted,
     wellnessToday,
     wellnessOverreach,
+    adHocConflict,
   }
 }
 
@@ -177,11 +284,20 @@ function gate(bundle: SignalBundle): TriggerGateResult {
       }
       return { allow: false, rationale: 'Wellness within tolerance.' }
 
-    case 'rollover':
+    case 'rollover': {
       if (bundle.recentMissed.length >= 2) {
         return { allow: true, rationale: `${bundle.recentMissed.length} planned days missed in the last 3.` }
       }
-      return { allow: false, rationale: 'Fewer than two recent missed days.' }
+      const conflict = bundle.adHocConflict
+      if (conflict) {
+        const reasons: string[] = []
+        if (conflict.mtOverCap) reasons.push(`MT count ${conflict.mtOverCap.count} over cap ${conflict.mtOverCap.cap}`)
+        if (conflict.stackedIntensity.length > 0) reasons.push(`bonus hard session stacked with prescribed hard day`)
+        if (conflict.volumeSpike) reasons.push(`week at ${conflict.volumeSpike.trainingDays} days vs target ${conflict.volumeSpike.target}`)
+        if (reasons.length > 0) return { allow: true, rationale: `Ad-hoc adds created a conflict: ${reasons.join('; ')}.` }
+      }
+      return { allow: false, rationale: 'Fewer than two recent missed days and no ad-hoc conflict.' }
+    }
   }
 }
 
@@ -206,14 +322,54 @@ function buildPrompt(bundle: SignalBundle, rationale: string, adherenceBlock: st
 
   if (bundle.justCompleted) {
     const parts: string[] = [`Just ${bundle.trigger === 'session_completed' ? 'completed' : bundle.trigger.replace('session_', '')}: ${SESSION_LABEL[bundle.justCompleted.type] ?? bundle.justCompleted.type}.`]
+    if (bundle.justCompleted.rpe != null) parts.push(`Effort ${bundle.justCompleted.rpe}/10.`)
     if (bundle.justCompleted.hrDrift) parts.push(`HR drift: ${bundle.justCompleted.hrDrift}.`)
     if (bundle.justCompleted.z2) parts.push(`Zone-2 compliance: ${bundle.justCompleted.z2}.`)
     if (bundle.justCompleted.divergedFrom) parts.push(`Prescribed slot was ${SESSION_LABEL[bundle.justCompleted.divergedFrom] ?? bundle.justCompleted.divergedFrom}.`)
     lines.push(parts.join(' '))
+    if (bundle.justCompleted.notes) {
+      lines.push(`Athlete note on that session: "${bundle.justCompleted.notes}"`)
+    }
   }
 
   if (bundle.recentMissed.length > 0) {
     lines.push(`Recently missed: ${bundle.recentMissed.map(m => SESSION_LABEL[m.type] ?? m.type).join(', ')}.`)
+  }
+
+  if (bundle.recentCompleted.length > 0) {
+    const qualitySignal = bundle.recentCompleted
+      .filter(s => s.rpe != null || (s.notes && s.notes.trim().length > 0))
+      .map(s => {
+        const dow = DAY_NAMES[new Date(s.scheduledDate * 86400000).getUTCDay()]
+        const bits: string[] = [`${dow} ${SESSION_LABEL[s.type] ?? s.type}`]
+        if (s.rpe != null) bits.push(`Effort ${s.rpe}/10`)
+        if (s.notes && s.notes.trim().length > 0) bits.push(`note: "${s.notes.trim()}"`)
+        return bits.join(' · ')
+      })
+    if (qualitySignal.length > 0) {
+      lines.push('Recent completed sessions (quality signal):')
+      for (const q of qualitySignal) lines.push(`  ${q}`)
+      lines.push('Weight the Effort scores heavily. High effort (8-10) on what should have been moderate sessions means under-recovered. Low effort (3-5) on hard sessions means either cruising (push harder) or avoiding (dig into notes). Scan notes for pain, soreness, stiffness, hip/shoulder/back mentions, or mood.')
+    }
+  }
+
+  if (bundle.adHocConflict) {
+    const c = bundle.adHocConflict
+    const addLabels = c.adds.map(a => {
+      const dow = DAY_NAMES[new Date(a.scheduledDate * 86400000).getUTCDay()]
+      return `${dow} ${(a.timeSlot ?? 'am').toUpperCase()} ${SESSION_LABEL[a.type] ?? a.type}`
+    })
+    lines.push(`Ad-hoc bonus sessions this week: ${addLabels.join(', ')}.`)
+    if (c.mtOverCap) lines.push(`MT count ${c.mtOverCap.count} exceeds cap ${c.mtOverCap.cap}.`)
+    if (c.stackedIntensity.length > 0) {
+      const stacks = c.stackedIntensity.map(s => {
+        const addDow = DAY_NAMES[new Date(s.addedDay * 86400000).getUTCDay()]
+        const adjDow = DAY_NAMES[new Date(s.adjacentDay * 86400000).getUTCDay()]
+        return `${addDow} ${SESSION_LABEL[s.addedType] ?? s.addedType} next to ${adjDow} ${SESSION_LABEL[s.adjacentType] ?? s.adjacentType}`
+      })
+      lines.push(`Intensity stacked: ${stacks.join('; ')}.`)
+    }
+    if (c.volumeSpike) lines.push(`Training days this week: ${c.volumeSpike.trainingDays} (target ${c.volumeSpike.target}).`)
   }
 
   if (bundle.wellnessToday) {
@@ -331,11 +487,13 @@ export async function runReactiveReplan(
     .where(and(gte(sessions.scheduledDate, bundle.weekStart), lte(sessions.scheduledDate, bundle.weekEnd)))
 
   const profile = await loadProfile(db)
-  const systemBlocks = buildSystemPrompt(profile, null)
+  const starter = await computeStarterStatus(db, ctx.todayEpochDay, profile.trainingHistory, profile.constraints)
+  const starterBlock = serializeStarterStatus(starter)
+  const systemBlocks = buildSystemPrompt(profile, null, starterBlock || null)
   const prompt = buildPrompt(bundle, g.rationale, adherenceBlock, hrBlock, weekSessions)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-sonnet-4-6',
     max_tokens: 512,
     system: systemBlocks,
     messages: [{ role: 'user', content: prompt }],
@@ -360,7 +518,7 @@ export async function runReactiveReplan(
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'reactive_replan',
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-sonnet-4-6',
     scopeWeekPlanId: weekPlanId,
     scopeSessionId: ctx.sessionId ?? null,
     inputHash: null,
@@ -463,10 +621,12 @@ export async function runReplaceSuggestions(
   lines.push('', 'Call replaceSuggestions with exactly three options ranked best to worst. coachLine explains only the top pick. Voice canon.')
 
   const profile = await loadProfile(db)
-  const systemBlocks = buildSystemPrompt(profile, null)
+  const starter = await computeStarterStatus(db, todayEpochDay, profile.trainingHistory, profile.constraints)
+  const starterBlock = serializeStarterStatus(starter)
+  const systemBlocks = buildSystemPrompt(profile, null, starterBlock || null)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-sonnet-4-6',
     max_tokens: 512,
     system: systemBlocks,
     messages: [{ role: 'user', content: lines.join('\n') }],
@@ -488,7 +648,7 @@ export async function runReplaceSuggestions(
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'replace_suggestions',
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-sonnet-4-6',
     scopeWeekPlanId: weekPlanId,
     scopeSessionId: sessionId,
     inputHash: null,
