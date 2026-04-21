@@ -192,7 +192,7 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
             }
           }}
           rows={2}
-          placeholder="How does the body feel... (Cmd+Enter to log)"
+          placeholder="How does the body feel..."
           className="mt-4 mb-3 w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-base text-foreground placeholder-muted-foreground/50 focus:border-gold/40 focus:outline-none animate-fade-in"
           autoFocus
         />
