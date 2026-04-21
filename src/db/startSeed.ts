@@ -20,8 +20,6 @@
 
 import { writeFileSync } from 'fs'
 
-const nowSec = Math.floor(Date.now() / 1000)
-
 // Day 1 = tomorrow in the local timezone. Match the local-date convention
 // used everywhere else (getTodayISO / getEpochDay in src/lib/dates.ts).
 const tomorrow = new Date()
