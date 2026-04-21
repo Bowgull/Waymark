@@ -104,6 +104,31 @@ export interface SkipResponseOutput {
   weekImpact?: string
 }
 
+export type ReactiveShiftAction =
+  | 'hold'
+  | 'swap'
+  | 'reduce_intensity'
+  | 'add_recovery'
+  | 'move'
+
+export interface ReactiveReplanOutput {
+  note: string
+  shiftAction: ReactiveShiftAction
+  shiftReason: string
+  targetSessionType: SessionType
+  targetLabel: string
+  targetDay: number
+  targetTimeSlot: TimeSlot
+  originalSessionId?: string
+}
+
+export interface SkipAlternativeOutput {
+  coachLine: string
+  alternativeType: SessionType
+  alternativeLabel: string
+  timeSlot: TimeSlot
+}
+
 // ─── Tool definitions ─────────────────────────────────────────────
 
 const SESSION_TYPE_ENUM = [
@@ -430,6 +455,70 @@ export const TOOL_BAG_PRESCRIPTION: Tool = {
   },
 }
 
+export const TOOL_REACTIVE_REPLAN: Tool = {
+  name: 'reactiveReplan',
+  description:
+    'Mid-week silent adjustment. Triggered when a meaningful signal changes (HR drift, repeated missed days, sleep or soreness overreach, MT class diverging from prescribed type). Produces one adjustment at a time. Never address the user directly. Voice canon: observation before conclusion, no hype, no decision prompts.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      note: {
+        type: 'string',
+        description: 'One-line silent summary of what shifted. Under 140 chars. Voice canon. Observation before conclusion. No second person, no decision prompts.',
+      },
+      shiftAction: {
+        type: 'string',
+        enum: ['hold', 'swap', 'reduce_intensity', 'add_recovery', 'move'],
+        description: 'hold: accept the signal, no change. swap: replace an upcoming session type. reduce_intensity: keep type, soften prescription. add_recovery: insert a recovery block. move: push an upcoming session to a different day.',
+      },
+      shiftReason: {
+        type: 'string',
+        description: 'One sentence explaining why this shift. Voice canon. Used in weekAdjustments.reason.',
+      },
+      targetSessionType: {
+        type: 'string',
+        enum: SESSION_TYPE_ENUM,
+      },
+      targetLabel: {
+        type: 'string',
+        description: 'Short human label for the target session (e.g. "Reset", "Foundation Run", "Mobility").',
+      },
+      targetDay: { type: 'integer', description: '0=Sun..6=Sat. Today or later this week.' },
+      targetTimeSlot: { type: 'string', enum: ['am', 'pm'] },
+      originalSessionId: {
+        type: 'string',
+        description: 'Optional. The planned session this adjustment replaces or moves. Omit if adding a new session.',
+      },
+    },
+    required: ['note', 'shiftAction', 'shiftReason', 'targetSessionType', 'targetLabel', 'targetDay', 'targetTimeSlot'],
+  },
+}
+
+export const TOOL_SKIP_ALTERNATIVE: Tool = {
+  name: 'skipAlternative',
+  description:
+    'Offered before the user confirms a skip. Reads HR, soreness, sleep, and remaining week to propose the single best alternative session for today. Voice canon: one line, observation before conclusion, no decision prompts.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      coachLine: {
+        type: 'string',
+        description: 'One sentence, under 140 chars. Frame the shift in voice canon. No exclamation marks, no second person scolding.',
+      },
+      alternativeType: {
+        type: 'string',
+        enum: SESSION_TYPE_ENUM,
+      },
+      alternativeLabel: {
+        type: 'string',
+        description: 'Short label for the alternative (e.g. "Reset", "Foundation Run", "Mobility").',
+      },
+      timeSlot: { type: 'string', enum: ['am', 'pm'] },
+    },
+    required: ['coachLine', 'alternativeType', 'alternativeLabel', 'timeSlot'],
+  },
+}
+
 export const ALL_TOOLS: Tool[] = [
   TOOL_WEEK_PLAN,
   TOOL_WEEK_REVIEW,
@@ -438,6 +527,8 @@ export const ALL_TOOLS: Tool[] = [
   TOOL_INSIGHT,
   TOOL_SKIP_RESPONSE,
   TOOL_BAG_PRESCRIPTION,
+  TOOL_REACTIVE_REPLAN,
+  TOOL_SKIP_ALTERNATIVE,
 ]
 
 export const TOOL_BY_NAME: Record<string, Tool> = Object.fromEntries(

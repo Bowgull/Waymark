@@ -22,6 +22,7 @@ import { runSessionReview } from '../lib/sessionReviewAI'
 import { runSkipResponse } from '../lib/skipResponseAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
+import { runReactiveReplan, runSkipAlternative, type ReactiveTrigger } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { logs } from './routes/logs'
 
@@ -50,6 +51,29 @@ app.onError((err, c) => {
 })
 
 type DrizzleDB = ReturnType<typeof createDB>
+
+// Fire-and-forget reactive replan. Callers pass the trigger; the coach decides
+// whether a shift is warranted (debounced, gated, cost-safe). Errors swallowed
+// so the triggering mutation always succeeds.
+function fireReactive(
+  c: { env: Bindings; executionCtx: { waitUntil: (p: Promise<unknown>) => void } },
+  db: DrizzleDB,
+  trigger: ReactiveTrigger,
+  todayEpochDay: number,
+  sessionId?: string,
+): void {
+  try {
+    c.executionCtx.waitUntil(
+      runReactiveReplan(db, c.env.ANTHROPIC_API_KEY, { trigger, sessionId, todayEpochDay })
+        .catch(err => console.warn('[reactiveCoach] fire-and-forget failed', err)),
+    )
+  } catch (err) {
+    // Preview / test harness may not expose executionCtx. Run inline.
+    console.log('[reactiveCoach] no executionCtx; running inline', err)
+    runReactiveReplan(db, c.env.ANTHROPIC_API_KEY, { trigger, sessionId, todayEpochDay })
+      .catch(e => console.warn('[reactiveCoach] inline failed', e))
+  }
+}
 
 async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
@@ -245,7 +269,10 @@ app.get('/api/sessions/today', async (c) => {
   const db = createDB(c.env)
   // Silent rollover: any planned session dated before today becomes 'missed'.
   // Runs before the read so the client sees the rolled-over state.
-  await rolloverStaleSessions(db, epochDay)
+  const rolled = await rolloverStaleSessions(db, epochDay)
+  if (rolled >= 2) {
+    fireReactive(c, db, 'rollover', epochDay)
+  }
   const rows = await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay))
 
   // Attach run_sessions (Strava ingestion results) per session so Today can
@@ -584,6 +611,8 @@ app.post('/api/sessions/:id/replace', async (c) => {
 
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
   const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
+  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
+  fireReactive(c, db, 'session_replaced', todayEpochDay, newId)
   return c.json({ original: replaced, replacement: created })
 })
 
@@ -630,6 +659,11 @@ app.patch('/api/sessions/:id', async (c) => {
     const todayDow = new Date(todayEpochDay * 86400000).getUTCDay()
     const weekStart = todayEpochDay - todayDow
     const weekEnd = weekStart + 6
+
+    // Fire reactive replan in parallel with the skip-response so the coach
+    // reshapes the rest of the week silently while the user sees the
+    // existing hold/move/swap card.
+    fireReactive(c, db, 'session_skipped', todayEpochDay, id)
 
     const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, todayEpochDay))
     const weekSessions = await db.select().from(sessions).where(
@@ -969,7 +1003,46 @@ app.post('/api/sessions/:id/complete', async (c) => {
   }
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
+  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
+  fireReactive(c, db, 'session_completed', todayEpochDay, sessionId)
   return c.json(updated)
+})
+
+// Skip-alternative: the coach offers a better-fit alternative for today
+// before the user confirms the skip. Read-only — does not change state.
+app.post('/api/sessions/:id/skip-alternative', async (c) => {
+  const sessionId = c.req.param('id')
+  const db = createDB(c.env)
+  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
+  try {
+    const out = await runSkipAlternative(db, c.env.ANTHROPIC_API_KEY, sessionId, todayEpochDay)
+    if (!out) return c.json({ alternative: null })
+    return c.json({ alternative: out })
+  } catch (err) {
+    console.warn('[skipAlternative] route failed', err)
+    return c.json({ alternative: null })
+  }
+})
+
+// Active reactive adjustments for the current week. Used by Today to surface
+// silent week shifts the coach made since the last read.
+app.get('/api/reactive/active', async (c) => {
+  const date = c.req.query('date')
+  if (!date) return c.json({ error: 'date query param required' }, 400)
+  const todayEpochDay = isoToEpochDay(date)
+  const db = createDB(c.env)
+  const todayDow = new Date(todayEpochDay * 86400000).getUTCDay()
+  const weekStart = todayEpochDay - todayDow
+  const weekEnd = weekStart + 6
+  const rows = await db.select().from(weekAdjustments).where(
+    and(
+      eq(weekAdjustments.adjustmentType, 'reactive'),
+      eq(weekAdjustments.status, 'accepted'),
+      gte(weekAdjustments.createdAt, weekStart * 86400),
+      lte(weekAdjustments.createdAt, (weekEnd + 1) * 86400),
+    ),
+  )
+  return c.json(rows)
 })
 
 app.post('/api/sessions/:id/abandon', async (c) => {
@@ -1613,6 +1686,7 @@ app.post('/api/daily-logs', async (c) => {
       notes: hasKey('notes') ? body.notes ?? null : prev.notes,
     }).where(eq(dailyLogs.id, prev.id))
     const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, prev.id))
+    fireReactive(c, db, 'wellness_logged', epochDay)
     return c.json(row)
   }
 
@@ -1629,6 +1703,7 @@ app.post('/api/daily-logs', async (c) => {
   })
 
   const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, id))
+  fireReactive(c, db, 'wellness_logged', epochDay)
   return c.json(row)
 })
 
