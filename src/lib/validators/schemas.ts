@@ -2,7 +2,10 @@ import { z } from 'zod'
 
 export const completeSessionSchema = z.object({
   rpe: z.number().min(1).max(10),
-  difficulty: z.number().min(1).max(5),
+  // Difficulty is deprecated (redundant with rpe/Effort). Kept optional so
+  // legacy clients don't break; new clients omit it. DB column preserved for
+  // historical data.
+  difficulty: z.number().min(1).max(5).optional(),
   notes: z.string().max(1000).default(''),
 })
 
