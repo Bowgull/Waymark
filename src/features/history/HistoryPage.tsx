@@ -94,7 +94,7 @@ interface CategoryCompletion {
 type Period = 7 | 30 | 90
 
 export function HistoryPage() {
-  const [period, setPeriod] = useState<Period>(30)
+  const [period, setPeriod] = useState<Period>(7)
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
   const [correlations, setCorrelations] = useState<CorrelationDataPoint[]>([])
   const [runData, setRunData] = useState<RunDataPoint[]>([])
