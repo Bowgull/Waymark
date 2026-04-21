@@ -52,14 +52,16 @@ lines.push(
 )
 
 // Mon=0..Sun=6
+// Block Zero Phase 1 (weeks 1-2): no MT class. Foundation runs, strength,
+// bag work, daily mobility only. Mirrors getBlockZeroTemplate() in weeklyTemplate.ts.
 const WEEK_TEMPLATE: Array<{ dowFromMon: number; type: string; timeSlot: 'am' | 'pm'; hour: number }> = [
-  { dowFromMon: 0, type: 'strength',        timeSlot: 'pm', hour: 18 },
-  { dowFromMon: 1, type: 'mt_class',        timeSlot: 'pm', hour: 19 },
+  { dowFromMon: 0, type: 'foundation_run',  timeSlot: 'am', hour: 7 },
+  { dowFromMon: 1, type: 'strength',        timeSlot: 'am', hour: 7 },
   { dowFromMon: 2, type: 'foundation_run',  timeSlot: 'am', hour: 7 },
-  { dowFromMon: 3, type: 'strength',        timeSlot: 'pm', hour: 18 },
-  { dowFromMon: 4, type: 'mt_class',        timeSlot: 'pm', hour: 19 },
+  { dowFromMon: 3, type: 'strength',        timeSlot: 'am', hour: 7 },
+  { dowFromMon: 4, type: 'foundation_run',  timeSlot: 'am', hour: 7 },
   { dowFromMon: 5, type: 'bag_work',        timeSlot: 'am', hour: 10 },
-  { dowFromMon: 6, type: 'active_recovery', timeSlot: 'am', hour: 9 },
+  { dowFromMon: 5, type: 'active_recovery', timeSlot: 'pm', hour: 18 },
 ]
 
 function pushSession(sid: string, type: string, wpId: string, scheduledEd: number, timeSlot: 'am' | 'pm', weekNum: number): void {
