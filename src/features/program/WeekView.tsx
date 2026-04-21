@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
-import { SkipReasonSheet } from '@/features/session/SkipReasonSheet'
+import { SkipReasonSheet, type SkipReasonCommit } from '@/features/session/SkipReasonSheet'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import type { WeekAnalysis } from '@/lib/weekAnalysis'
 import { getSessionLabel } from '@/lib/weeklyTemplate'
@@ -462,13 +462,13 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
     setSkipReasonFor({ id: session.id, replace: true })
   }
 
-  async function commitSkip(reason: string) {
+  async function commitSkip(commit: SkipReasonCommit) {
     if (!skipReasonFor) return
     const { id, replace } = skipReasonFor
     setSkipReasonFor(null)
 
     if (replace) {
-      setReplaceReason(reason)
+      setReplaceReason(commit.reason)
       const target = sessions.find(s => s.id === id)
       openPicker(target?.scheduledDate ?? 0)
       return
@@ -477,7 +477,11 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
     try {
       await apiFetch(`/api/sessions/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: 'skipped', skipReason: reason }),
+        body: JSON.stringify({
+          status: 'skipped',
+          skipReason: commit.reason,
+          skipReasonDetail: commit.detail,
+        }),
       })
       onSessionUpdate?.(id, 'skipped')
     } catch (e) {
