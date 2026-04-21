@@ -15,14 +15,13 @@ import type { TemplateSession } from '../lib/weeklyTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { WEEKLY_TEMPLATE, getBlockZeroTemplate } from '../lib/weeklyTemplate'
 import { computeSuggestions } from '../lib/sessionSuggestions'
-import { analyzeWeek, proposeReschedule } from '../lib/weekAnalysis'
+import { analyzeWeek } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
 import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
-import { runSkipResponse } from '../lib/skipResponseAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
-import { runReactiveReplan, runSkipAlternative, type ReactiveTrigger } from '../lib/reactiveCoach'
+import { runReplaceSuggestions } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { logs } from './routes/logs'
 
@@ -52,28 +51,6 @@ app.onError((err, c) => {
 
 type DrizzleDB = ReturnType<typeof createDB>
 
-// Fire-and-forget reactive replan. Callers pass the trigger; the coach decides
-// whether a shift is warranted (debounced, gated, cost-safe). Errors swallowed
-// so the triggering mutation always succeeds.
-function fireReactive(
-  c: { env: Bindings; executionCtx: { waitUntil: (p: Promise<unknown>) => void } },
-  db: DrizzleDB,
-  trigger: ReactiveTrigger,
-  todayEpochDay: number,
-  sessionId?: string,
-): void {
-  try {
-    c.executionCtx.waitUntil(
-      runReactiveReplan(db, c.env.ANTHROPIC_API_KEY, { trigger, sessionId, todayEpochDay })
-        .catch(err => console.warn('[reactiveCoach] fire-and-forget failed', err)),
-    )
-  } catch (err) {
-    // Preview / test harness may not expose executionCtx. Run inline.
-    console.log('[reactiveCoach] no executionCtx; running inline', err)
-    runReactiveReplan(db, c.env.ANTHROPIC_API_KEY, { trigger, sessionId, todayEpochDay })
-      .catch(e => console.warn('[reactiveCoach] inline failed', e))
-  }
-}
 
 async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
@@ -269,10 +246,7 @@ app.get('/api/sessions/today', async (c) => {
   const db = createDB(c.env)
   // Silent rollover: any planned session dated before today becomes 'missed'.
   // Runs before the read so the client sees the rolled-over state.
-  const rolled = await rolloverStaleSessions(db, epochDay)
-  if (rolled >= 2) {
-    fireReactive(c, db, 'rollover', epochDay)
-  }
+  await rolloverStaleSessions(db, epochDay)
   const rows = await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay))
 
   // Attach run_sessions (Strava ingestion results) per session so Today can
@@ -543,6 +517,24 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   return c.json(row)
 })
 
+// Coach-ranked replacement suggestions. Reads wellness, HR, adherence, the
+// rest of the week and returns the top 3 alternatives with a one-line
+// rationale on the top pick. Falls through to manual picker on offline.
+app.post('/api/sessions/:id/replace-suggestions', async (c) => {
+  const sessionId = c.req.param('id')
+  const body = await c.req.json<{ reason?: string | null }>().catch(() => ({} as { reason?: string | null }))
+  const db = createDB(c.env)
+  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
+  try {
+    const out = await runReplaceSuggestions(db, c.env.ANTHROPIC_API_KEY, sessionId, todayEpochDay, body.reason ?? null)
+    if (!out) return c.json({ suggestions: null })
+    return c.json({ suggestions: out })
+  } catch (err) {
+    console.warn('[replaceSuggestions] route failed', err)
+    return c.json({ suggestions: null })
+  }
+})
+
 // ─── Replace a session with a different one ──────────────────
 
 app.post('/api/sessions/:id/replace', async (c) => {
@@ -611,8 +603,6 @@ app.post('/api/sessions/:id/replace', async (c) => {
 
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
   const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
-  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
-  fireReactive(c, db, 'session_replaced', todayEpochDay, newId)
   return c.json({ original: replaced, replacement: created })
 })
 
@@ -627,10 +617,10 @@ app.patch('/api/sessions/:id', async (c) => {
     difficulty?: number
     notes?: string
     skipReason?: string
+    skipReasonDetail?: string | null
   }>()
 
   const db = createDB(c.env)
-  const [existing] = await db.select().from(sessions).where(eq(sessions.id, id))
   const updates: Record<string, unknown> = {}
 
   if (body.status !== undefined) updates.status = body.status
@@ -641,133 +631,18 @@ app.patch('/api/sessions/:id', async (c) => {
   if (body.difficulty !== undefined) updates.difficulty = body.difficulty
   if (body.notes !== undefined) updates.notes = body.notes
 
-  // Capture user-provided skip reason on the session notes.
-  const trimmedSkipReason = body.skipReason?.trim()
-  if (body.status === 'skipped' && trimmedSkipReason) {
-    const skipLine = `Skipped: ${trimmedSkipReason}`
-    const priorNotes = (body.notes ?? existing?.notes ?? '').trim()
-    updates.notes = priorNotes ? `${skipLine}\n${priorNotes}` : skipLine
+  if (body.status === 'skipped') {
+    if (body.skipReason !== undefined) updates.skipReason = body.skipReason || null
+    if (body.skipReasonDetail !== undefined) updates.skipReasonDetail = body.skipReasonDetail || null
   }
 
   await db.update(sessions).set(updates).where(eq(sessions.id, id))
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
 
-  // ─── Skip response: AI coach line + action ─────────────────
+  // Skip commits silently. Reactive replan runs nightly and will read the
+  // saved skip_reason columns when it reshapes the week.
   if (body.status === 'skipped' && row) {
-    const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
-    const todayDow = new Date(todayEpochDay * 86400000).getUTCDay()
-    const weekStart = todayEpochDay - todayDow
-    const weekEnd = weekStart + 6
-
-    // Fire reactive replan in parallel with the skip-response so the coach
-    // reshapes the rest of the week silently while the user sees the
-    // existing hold/move/swap card.
-    fireReactive(c, db, 'session_skipped', todayEpochDay, id)
-
-    const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, todayEpochDay))
-    const weekSessions = await db.select().from(sessions).where(
-      and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd))
-    )
-
-    let aiOutput: Awaited<ReturnType<typeof runSkipResponse>> = null
-    try {
-      aiOutput = await runSkipResponse(db, c.env.ANTHROPIC_API_KEY, {
-        sessionId: id,
-        sessionType: row.type,
-        scheduledDate: row.scheduledDate,
-        timeSlot: (row.timeSlot as 'am' | 'pm' | null) ?? null,
-        skipReason: trimmedSkipReason ?? 'Not provided',
-        todayEpochDay,
-        todayDow,
-      })
-    } catch (e) {
-      console.warn('[skipResponse] failed, falling back to deterministic', e)
-    }
-
-    if (aiOutput) {
-      let adjustmentId: string | null = null
-      if (aiOutput.action === 'move' || aiOutput.action === 'swap') {
-        adjustmentId = crypto.randomUUID()
-        await db.insert(weekAdjustments).values({
-          id: adjustmentId,
-          weekPlanId: row.weekPlanId ?? '',
-          adjustmentType: 'skip_reschedule',
-          sessionType: aiOutput.swapToType ?? row.type,
-          action: aiOutput.action === 'swap' ? 'swap' : 'add',
-          reason: aiOutput.coachLine,
-          targetDay: aiOutput.targetDayOfWeek ?? null,
-          targetTimeSlot: aiOutput.targetTimeSlot ?? null,
-          sourceData: JSON.stringify({
-            wellness: todayLog ? { sleepHours: todayLog.sleepHours, soreness: todayLog.soreness, alcoholScale: todayLog.alcoholScale } : null,
-            userSkipReason: trimmedSkipReason ?? null,
-            originalDate: row.scheduledDate,
-            originalType: row.type,
-            swapToLabel: aiOutput.swapToLabel ?? null,
-            weekImpact: aiOutput.weekImpact ?? null,
-          }),
-          status: 'proposed',
-          createdAt: Math.floor(Date.now() / 1000),
-        })
-      }
-
-      return c.json({
-        session: row,
-        coach: {
-          line: aiOutput.coachLine,
-          action: aiOutput.action,
-          weekImpact: aiOutput.weekImpact ?? null,
-          targetDayOfWeek: aiOutput.targetDayOfWeek ?? null,
-          targetTimeSlot: aiOutput.targetTimeSlot ?? null,
-          swapToType: aiOutput.swapToType ?? null,
-          swapToLabel: aiOutput.swapToLabel ?? null,
-          adjustmentId,
-        },
-      })
-    }
-
-    // AI offline: deterministic fallback (move only)
-    const proposal = proposeReschedule(
-      { type: row.type, scheduledDate: row.scheduledDate ?? todayEpochDay, timeSlot: row.timeSlot ?? 'am', notes: row.notes },
-      weekSessions.map(s => ({ type: s.type, scheduledDate: s.scheduledDate ?? 0, timeSlot: s.timeSlot ?? 'am', status: s.status })),
-      todayEpochDay,
-    )
-
-    if (proposal) {
-      const adjustmentId = crypto.randomUUID()
-      await db.insert(weekAdjustments).values({
-        id: adjustmentId,
-        weekPlanId: row.weekPlanId ?? '',
-        adjustmentType: 'skip_reschedule',
-        sessionType: row.type,
-        action: 'add',
-        reason: proposal.reason,
-        targetDay: proposal.suggestedDay,
-        targetTimeSlot: proposal.suggestedTimeSlot,
-        sourceData: JSON.stringify({
-          wellness: todayLog ? { sleepHours: todayLog.sleepHours, soreness: todayLog.soreness, alcoholScale: todayLog.alcoholScale } : null,
-          userSkipReason: trimmedSkipReason ?? null,
-          originalDate: row.scheduledDate,
-        }),
-        status: 'proposed',
-        createdAt: Math.floor(Date.now() / 1000),
-      })
-
-      return c.json({
-        session: row,
-        coach: {
-          line: proposal.reason,
-          action: 'move',
-          weekImpact: null,
-          targetDayOfWeek: proposal.suggestedDay,
-          targetTimeSlot: proposal.suggestedTimeSlot,
-          swapToType: null,
-          swapToLabel: null,
-          adjustmentId,
-        },
-      })
-    }
-
     return c.json({ session: row, coach: null })
   }
 
@@ -1003,25 +878,7 @@ app.post('/api/sessions/:id/complete', async (c) => {
   }
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
-  fireReactive(c, db, 'session_completed', todayEpochDay, sessionId)
   return c.json(updated)
-})
-
-// Skip-alternative: the coach offers a better-fit alternative for today
-// before the user confirms the skip. Read-only — does not change state.
-app.post('/api/sessions/:id/skip-alternative', async (c) => {
-  const sessionId = c.req.param('id')
-  const db = createDB(c.env)
-  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
-  try {
-    const out = await runSkipAlternative(db, c.env.ANTHROPIC_API_KEY, sessionId, todayEpochDay)
-    if (!out) return c.json({ alternative: null })
-    return c.json({ alternative: out })
-  } catch (err) {
-    console.warn('[skipAlternative] route failed', err)
-    return c.json({ alternative: null })
-  }
 })
 
 // Active reactive adjustments for the current week. Used by Today to surface
@@ -1686,7 +1543,6 @@ app.post('/api/daily-logs', async (c) => {
       notes: hasKey('notes') ? body.notes ?? null : prev.notes,
     }).where(eq(dailyLogs.id, prev.id))
     const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, prev.id))
-    fireReactive(c, db, 'wellness_logged', epochDay)
     return c.json(row)
   }
 
@@ -1703,7 +1559,6 @@ app.post('/api/daily-logs', async (c) => {
   })
 
   const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, id))
-  fireReactive(c, db, 'wellness_logged', epochDay)
   return c.json(row)
 })
 

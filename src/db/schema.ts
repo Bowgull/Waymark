@@ -60,6 +60,8 @@ export const sessions = sqliteTable('sessions', {
   review: text('review'),
   reviewFlag: text('review_flag'),
   adjustmentId: text('adjustment_id'),
+  skipReason: text('skip_reason'),
+  skipReasonDetail: text('skip_reason_detail'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_sessions_date').on(t.scheduledDate),
