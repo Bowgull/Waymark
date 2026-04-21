@@ -1966,9 +1966,11 @@ app.post('/api/weeks/auto-generate', async (c) => {
       date.setUTCDate(date.getUTCDate() + dayOffset)
       const epochDay = Math.floor(date.getTime() / 1000 / 86400)
 
-      const validSessions = day.sessions.filter(s =>
-        s.type !== 'mt_class' || mtClassDays.has(day.dayOfWeek)
-      )
+      const validSessions = day.sessions.filter(s => {
+        if (s.type !== 'mt_class') return true
+        if (isBlockZero && blockWeek <= 2) return false
+        return mtClassDays.has(day.dayOfWeek)
+      })
 
       for (const entry of validSessions) {
         const sessionId = crypto.randomUUID()
