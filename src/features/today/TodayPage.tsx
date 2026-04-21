@@ -69,6 +69,19 @@ export function TodayPage() {
     swapToLabel: string | null
   } | null>(null)
   const [skipReasonFor, setSkipReasonFor] = useState<string | null>(null)
+  const [skipAlternative, setSkipAlternative] = useState<
+    | { sessionId: string; loading: true }
+    | {
+        sessionId: string
+        loading: false
+        coachLine: string | null
+        alternativeType: string | null
+        alternativeLabel: string | null
+        timeSlot: 'am' | 'pm' | null
+      }
+    | null
+  >(null)
+  const [reactiveNotes, setReactiveNotes] = useState<Array<{ id: string; note: string; createdAt: number }>>([])
   const [replaceState, setReplaceState] = useState<
     | { sessionId: string; stage: 'reason' }
     | { sessionId: string; stage: 'picker'; reason: string }
@@ -89,6 +102,25 @@ export function TodayPage() {
     }
   }, [today])
 
+  const refreshReactive = useCallback(async () => {
+    try {
+      const rows = await apiFetch<Array<{ id: string; sourceData: string | null; createdAt: number }>>(`/api/reactive/active?date=${today}`)
+      const notes = rows
+        .map(r => {
+          try {
+            const parsed = JSON.parse(r.sourceData ?? '{}') as { note?: string }
+            return parsed.note ? { id: r.id, note: parsed.note, createdAt: r.createdAt } : null
+          } catch {
+            return null
+          }
+        })
+        .filter((n): n is { id: string; note: string; createdAt: number } => n !== null)
+      setReactiveNotes(notes.sort((a, b) => b.createdAt - a.createdAt))
+    } catch (e) {
+      console.warn('Reactive adjustments fetch failed:', e)
+    }
+  }, [today])
+
   useEffect(() => {
     async function load() {
       try {
@@ -100,6 +132,7 @@ export function TodayPage() {
         setSessions(sessionsData)
         setDailyLog(logData)
         setMaxHr(profile?.maxHr ?? null)
+        refreshReactive()
       } catch (e) {
         console.error('Failed to load today data:', e)
         setDailyLog(null)
@@ -108,7 +141,7 @@ export function TodayPage() {
       }
     }
     load()
-  }, [today])
+  }, [today, refreshReactive])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
@@ -217,7 +250,76 @@ export function TodayPage() {
   }
 
   function handleSkip(id: string) {
-    setSkipReasonFor(id)
+    setSkipAlternative({ sessionId: id, loading: true })
+    apiFetch<{ alternative: { coachLine: string; alternativeType: string; alternativeLabel: string; timeSlot: 'am' | 'pm' } | null }>(
+      `/api/sessions/${id}/skip-alternative`,
+      { method: 'POST' },
+    )
+      .then(res => {
+        setSkipAlternative(prev => {
+          if (!prev || prev.sessionId !== id) return prev
+          return {
+            sessionId: id,
+            loading: false,
+            coachLine: res.alternative?.coachLine ?? null,
+            alternativeType: res.alternative?.alternativeType ?? null,
+            alternativeLabel: res.alternative?.alternativeLabel ?? null,
+            timeSlot: res.alternative?.timeSlot ?? null,
+          }
+        })
+      })
+      .catch(() => {
+        setSkipAlternative(prev => {
+          if (!prev || prev.sessionId !== id) return prev
+          return { sessionId: id, loading: false, coachLine: null, alternativeType: null, alternativeLabel: null, timeSlot: null }
+        })
+      })
+  }
+
+  async function handleAcceptAlternative() {
+    if (!skipAlternative || skipAlternative.loading) return
+    if (!skipAlternative.alternativeType || !skipAlternative.timeSlot) return
+    const sessionId = skipAlternative.sessionId
+    const alt = skipAlternative
+    setSkipAlternative(null)
+    try {
+      const result = await apiFetch<{ original: Session; replacement: Session }>(`/api/sessions/${sessionId}/replace`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reason: alt.coachLine ?? 'Coach shift',
+          type: alt.alternativeType,
+          label: alt.alternativeLabel,
+          timeSlot: alt.timeSlot,
+        }),
+      })
+      setSessions(prev => {
+        const withOriginal = prev.map(s => (s.id === result.original.id ? result.original : s))
+        const next = [...withOriginal, result.replacement]
+        return next.sort((a, b) =>
+          (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0)
+          || ((a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1))
+        )
+      })
+      refreshReactive()
+    } catch (e) {
+      console.error('Failed to accept alternative:', e)
+    }
+  }
+
+  async function handleSkipAnyway() {
+    if (!skipAlternative) return
+    const id = skipAlternative.sessionId
+    setSkipAlternative(null)
+    setSessions(prev => prev.map(s => (s.id === id ? { ...s, status: 'skipped' } : s)))
+    try {
+      await apiFetch<{ session?: Session; coach?: unknown }>(`/api/sessions/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'skipped', skipReason: 'Skipped, no reason given' }),
+      })
+      refreshReactive()
+    } catch (e) {
+      console.error('Failed to skip session:', e)
+    }
   }
 
   async function commitSkip(id: string, reason: string) {
@@ -413,6 +515,19 @@ export function TodayPage() {
       <TodayTexture />
       <DateHeader date={todayDate} />
 
+      {reactiveNotes.length > 0 && (
+        <div className="rounded-md border border-gold/10 bg-card/40 p-3">
+          <p className="mb-1 font-cinzel text-[10px] uppercase tracking-[0.25em] text-gold/40">Coach</p>
+          <ul className="space-y-1">
+            {reactiveNotes.slice(0, 2).map(n => (
+              <li key={n.id} className="text-[13px] leading-relaxed text-foreground/80">
+                {n.note}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <WellnessPromptCard
         onSubmit={handleWellnessSubmit}
         isLogged={dailyLog !== null && dailyLog !== undefined}
@@ -475,6 +590,15 @@ export function TodayPage() {
           onSelect={handleAddSession}
           onClose={() => { setShowPicker(false); setPickerSuggestions(null) }}
           suggestions={pickerSuggestions}
+        />
+      )}
+
+      {skipAlternative && (
+        <SkipAlternativeCoachCard
+          state={skipAlternative}
+          onAccept={handleAcceptAlternative}
+          onSkipAnyway={handleSkipAnyway}
+          onClose={() => setSkipAlternative(null)}
         />
       )}
 
@@ -579,6 +703,82 @@ function RescheduleCoachCard({ prompt, onAccept, onDismiss }: {
             </button>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+type SkipAltState =
+  | { sessionId: string; loading: true }
+  | {
+      sessionId: string
+      loading: false
+      coachLine: string | null
+      alternativeType: string | null
+      alternativeLabel: string | null
+      timeSlot: 'am' | 'pm' | null
+    }
+
+function SkipAlternativeCoachCard({ state, onAccept, onSkipAnyway, onClose }: {
+  state: SkipAltState
+  onAccept: () => void
+  onSkipAnyway: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-x-0 z-40 flex justify-center px-4 animate-fade-in-up" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
+      <div className="w-full max-w-md rounded-lg border border-gold/10 bg-surface p-4 shadow-lg">
+        <p className="mb-1 font-cinzel text-[11px] uppercase tracking-[0.2em] text-gold/50">Coach</p>
+        {state.loading ? (
+          <p className="mb-3 text-sm text-muted-foreground/70">Reading the signal.</p>
+        ) : state.coachLine ? (
+          <>
+            <p className="mb-3 text-sm text-foreground">{state.coachLine}</p>
+            <div className="flex gap-2">
+              {state.alternativeType && state.alternativeLabel && state.timeSlot ? (
+                <>
+                  <button
+                    onClick={onAccept}
+                    className="flex-1 rounded-md bg-gold/15 px-3 py-2 text-sm text-gold active:bg-gold/25"
+                  >
+                    {state.alternativeLabel}
+                  </button>
+                  <button
+                    onClick={onSkipAnyway}
+                    className="rounded-md px-3 py-2 text-sm text-muted-foreground/60 active:text-foreground"
+                  >
+                    Skip anyway
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={onSkipAnyway}
+                  className="flex-1 rounded-md bg-secondary px-3 py-2 text-sm text-foreground active:bg-secondary/70"
+                >
+                  Skip
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mb-3 text-sm text-foreground">Coach's offline. Skip stands.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={onSkipAnyway}
+                className="flex-1 rounded-md bg-secondary px-3 py-2 text-sm text-foreground active:bg-secondary/70"
+              >
+                Skip
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-md px-3 py-2 text-sm text-muted-foreground/60 active:text-foreground"
+              >
+                Close
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
