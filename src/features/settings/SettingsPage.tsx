@@ -278,6 +278,7 @@ export function SettingsPage() {
       }
     } catch (e) {
       console.error('Failed to save settings:', e)
+      showToast('Save didn\'t land. Try again.', 'warning')
     } finally {
       setSaving(false)
     }
