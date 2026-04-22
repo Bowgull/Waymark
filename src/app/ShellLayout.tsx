@@ -1,5 +1,4 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { ApiHealthDevBadge } from '../components/dev/ApiHealthDevBadge'
 import { OfflineBanner } from '../components/ui/OfflineBanner'
 import { HistoryIcon, LibraryIcon, ProgramIcon, TodayIcon } from '../components/icons/NavIcons'
 
@@ -34,7 +33,7 @@ export function ShellLayout() {
       <main className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         <Outlet />
       </main>
-      <ApiHealthDevBadge />
+      {/* <ApiHealthDevBadge /> */}
       <nav
         className="sticky bottom-0 z-30 flex shrink-0 border-t border-gold/10 bg-nav/90 backdrop-blur-md"
         aria-label="Main"

@@ -33,7 +33,7 @@ const TOKEN_URL = 'https://www.strava.com/oauth/token'
 const DEAUTH_URL = 'https://www.strava.com/oauth/deauthorize'
 const ACTIVITIES_URL = 'https://www.strava.com/api/v3/athlete/activities'
 const ACTIVITY_URL = 'https://www.strava.com/api/v3/activities'
-const POLL_WINDOW_SEC = 48 * 60 * 60 // 48h
+const POLL_WINDOW_SEC = 14 * 24 * 60 * 60 // 14 days — webhook is the real-time path, poll is the backfill for missed days
 
 const strava = new Hono<{ Bindings: Bindings }>()
 
@@ -283,6 +283,42 @@ strava.post('/activity/:activityId/dismiss', async (c) => {
   return c.json({ ok: true })
 })
 
+// Admin: manage the Strava push subscription. Strava only allows one
+// subscription per application, so these endpoints are idempotent. The
+// verify_token, callback_url, and client credentials must match the Worker
+// env. Called manually (once per environment) to wire up real-time webhook
+// delivery. Without this, we fall back to /poll-recent, which is fine but
+// slower.
+const WEBHOOK_CALLBACK_URL = 'https://waymark.bocas-joshua.workers.dev/api/strava/webhook'
+const SUBSCRIPTIONS_URL = 'https://www.strava.com/api/v3/push_subscriptions'
+
+strava.get('/subscription', async (c) => {
+  const url = `${SUBSCRIPTIONS_URL}?client_id=${c.env.STRAVA_CLIENT_ID}&client_secret=${c.env.STRAVA_CLIENT_SECRET}`
+  const res = await fetch(url)
+  const text = await res.text()
+  return c.json({ status: res.status, body: safeParseJson(text) })
+})
+
+strava.post('/subscription', async (c) => {
+  const body = new URLSearchParams({
+    client_id: c.env.STRAVA_CLIENT_ID,
+    client_secret: c.env.STRAVA_CLIENT_SECRET,
+    callback_url: WEBHOOK_CALLBACK_URL,
+    verify_token: c.env.STRAVA_WEBHOOK_VERIFY_TOKEN,
+  })
+  const res = await fetch(SUBSCRIPTIONS_URL, { method: 'POST', body })
+  const text = await res.text()
+  return c.json({ status: res.status, body: safeParseJson(text) })
+})
+
+strava.delete('/subscription/:id', async (c) => {
+  const id = c.req.param('id')
+  const url = `${SUBSCRIPTIONS_URL}/${id}?client_id=${c.env.STRAVA_CLIENT_ID}&client_secret=${c.env.STRAVA_CLIENT_SECRET}`
+  const res = await fetch(url, { method: 'DELETE' })
+  const text = await res.text().catch(() => '')
+  return c.json({ status: res.status, body: text ? safeParseJson(text) : null })
+})
+
 strava.post('/disconnect', async (c) => {
   const db = createDB(c.env)
   const [row] = await db.select().from(stravaTokens).where(eq(stravaTokens.id, 'default'))
@@ -309,6 +345,10 @@ const STRAVA_ERROR_COPY: Record<string, string> = {
   missing_code: 'Strava did not return an authorization code.',
   token_exchange_failed: 'Strava would not exchange the code for a token.',
   not_configured: 'Waymark is missing its Strava client secrets. Check Worker config.',
+}
+
+function safeParseJson(text: string): unknown {
+  try { return JSON.parse(text) } catch { return text }
 }
 
 function escapeHtml(s: string): string {

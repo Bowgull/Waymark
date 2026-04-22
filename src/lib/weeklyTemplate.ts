@@ -18,7 +18,7 @@ const DAILY_MOBILITY: TemplateSession = {
  *
  * Daily AM Mobility runs every day (7 exercises, ~8-10 min). This is the
  * micro-dose that actually remodels posture. Then on top of that:
- * - M/W/F AM: Foundation Run (Zone 2 + trimmed 8-exercise cooldown block)
+ * - M/W/F AM: Zone 2 (5-move dynamic warmup + easy Zone 2 run)
  * - T/Th AM: Strength (Mobility runs first, acts as pre-lift activation)
  * - Sat AM: Bag Work + progression run
  * - PM evenings: MT Class (M/W/F), Reset (Th/Sat)
@@ -30,7 +30,7 @@ export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
   ],
   1: [ // Monday
     DAILY_MOBILITY,
-    { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 35 },
+    { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
   ],
   2: [ // Tuesday
@@ -39,7 +39,7 @@ export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
   ],
   3: [ // Wednesday
     DAILY_MOBILITY,
-    { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 35 },
+    { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
   ],
   4: [ // Thursday
@@ -49,7 +49,7 @@ export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
   ],
   5: [ // Friday
     DAILY_MOBILITY,
-    { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 35 },
+    { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
   ],
   6: [ // Saturday
@@ -77,11 +77,11 @@ export function getBlockZeroTemplate(blockZeroWeek: number): Record<number, Temp
   if (blockZeroWeek <= 2) {
     return {
       0: [DAILY_MOBILITY],
-      1: [DAILY_MOBILITY, { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 35 }],
+      1: [DAILY_MOBILITY, { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 }],
       2: [DAILY_MOBILITY, { timeSlot: 'am', type: 'strength', label: 'Strength: Push', estimatedMin: 60 }],
-      3: [DAILY_MOBILITY, { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 35 }],
+      3: [DAILY_MOBILITY, { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 }],
       4: [DAILY_MOBILITY, { timeSlot: 'am', type: 'strength', label: 'Strength: Pull', estimatedMin: 60 }],
-      5: [DAILY_MOBILITY, { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 35 }],
+      5: [DAILY_MOBILITY, { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 }],
       6: [
         DAILY_MOBILITY,
         { timeSlot: 'am', type: 'bag_work', label: 'Bag Work', estimatedMin: 25 },
@@ -95,19 +95,19 @@ export function getBlockZeroTemplate(blockZeroWeek: number): Record<number, Temp
       0: [DAILY_MOBILITY],
       1: [
         DAILY_MOBILITY,
-        { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 35 },
+        { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
         { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
       ],
       2: [DAILY_MOBILITY, { timeSlot: 'am', type: 'strength', label: 'Strength: Push', estimatedMin: 65 }],
       3: [
         DAILY_MOBILITY,
-        { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 35 },
+        { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
         { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
       ],
       4: [DAILY_MOBILITY, { timeSlot: 'am', type: 'strength', label: 'Strength: Pull', estimatedMin: 65 }],
       5: [
         DAILY_MOBILITY,
-        { timeSlot: 'am', type: 'foundation_run', label: 'Foundation Run', estimatedMin: 35 },
+        { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
         { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
       ],
       6: [
