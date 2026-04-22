@@ -210,25 +210,8 @@ interface MtClassWorkoutData {
 
 // ─── Phases ────────────────────────────────────────────────────
 
-type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-run' | 'fr-transition' | 'fr-mobility'
+type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-warmup' | 'fr-run'
 type RoundPhase = 'ready' | 'fighting' | 'rest'
-
-function FrTransition({ onComplete }: { onComplete: () => void }) {
-  useEffect(() => {
-    const timer = setTimeout(onComplete, 5000)
-    return () => clearTimeout(timer)
-  }, [onComplete])
-
-  return (
-    <div className="flex flex-col items-center justify-center py-16 animate-fade-in">
-      <p className="text-display text-gold mb-2">Run Complete</p>
-      <p className="text-sm text-muted-foreground mb-8">Shifting to Foundation work...</p>
-      <div className="h-1 w-48 rounded bg-surface overflow-hidden">
-        <div className="h-full bg-teal animate-pulse" style={{ width: '100%' }} />
-      </div>
-    </div>
-  )
-}
 
 function SkipWarmupTimer({ durationSec, onComplete, description }: {
   durationSec: number
@@ -437,7 +420,7 @@ export function WorkoutPage() {
             setRoundIdx(recovery.roundIdx)
             setPhase(recovery.phase as Phase)
           } else {
-            setPhase(session.type === 'foundation_run' ? 'fr-run' : 'exercise')
+            setPhase(session.type === 'foundation_run' ? 'fr-warmup' : 'exercise')
           }
         }
 
@@ -649,7 +632,7 @@ export function WorkoutPage() {
     )
   }
 
-  // ─── Foundation Run (combined zone 2 + posture) ─────────────
+  // ─── Zone 2 (dynamic warmup → easy run) ────────────────────
 
   if (sessionType === 'foundation_run' && foundationRunData) {
     const frExercises = foundationRunData.postureExercises
@@ -660,51 +643,56 @@ export function WorkoutPage() {
     const frPrevExercise = exerciseIdx > 0 ? frExercises[exerciseIdx - 1] : null
     const frShowSectionHeader = !frPrevExercise || frPrevExercise.section !== frCurrentExercise?.section
 
-    function handleFrPostureSetDone() {
+    function handleFrWarmupSetDone() {
       if (!frCurrentExercise) return
       apiFetch(`/api/mobility-exercises/${frCurrentExercise.id}`, {
         method: 'PATCH', body: JSON.stringify({ completed: 1 }),
       }).catch((e) => {
         const message = e instanceof Error ? e.message : String(e)
-        logger.warn('session', 'FR mobility complete flag persist failed', { exerciseId: frCurrentExercise.id, message })
+        logger.warn('session', 'Zone 2 warmup complete flag persist failed', { exerciseId: frCurrentExercise.id, message })
       })
 
       const isLastSet = (setIdx + 1) >= frTotalSets
       const isLastExercise = exerciseIdx >= frTotalExercises - 1
 
       if (isLastSet && isLastExercise) {
-        setPhase('mark-earned')
+        // Warmup done → start the run
+        setExerciseIdx(0)
+        setSetIdx(0)
+        setPhase('fr-run')
       } else if (isLastSet) {
         setPhase('breathe')
         setSetIdx(0)
         setTimeout(() => {
           setExerciseIdx(prev => prev + 1)
-          setPhase('fr-mobility')
+          setPhase('fr-warmup')
         }, 3000)
       } else {
         setSetIdx(prev => prev + 1)
       }
     }
 
-    // Calculate progress across both phases
+    // Progress: warmup 0-65%, run 65-100%
     let frProgress = 0
-    if (phase === 'fr-run') frProgress = 10
-    else if (phase === 'fr-transition') frProgress = 25
-    else if (phase === 'fr-mobility') {
-      frProgress = 25 + ((exerciseIdx / frTotalExercises) * 65)
-    } else if (phase === 'mark-earned' || phase === 'complete') frProgress = 100
+    if (phase === 'fr-warmup') {
+      frProgress = (exerciseIdx / frTotalExercises) * 65
+    } else if (phase === 'fr-run') {
+      frProgress = 75
+    } else if (phase === 'mark-earned' || phase === 'complete') {
+      frProgress = 100
+    }
 
     return (
       <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
         <SessionAtmosphere />
         <SessionHeader counter={
-          phase === 'fr-mobility'
+          phase === 'fr-warmup'
             ? `${exerciseIdx + 1} / ${frTotalExercises}`
             : phase === 'fr-run' ? 'Run' : undefined
         } />
         <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
           {phase === 'entrance' && (
-            <RitualEntrance sessionType="foundation_run" onComplete={() => setPhase('fr-run')} />
+            <RitualEntrance sessionType="foundation_run" onComplete={() => setPhase('fr-warmup')} />
           )}
           {phase === 'mark-earned' && (
             <MarkEarnedOverlay sessionType="foundation_run" onComplete={() => setPhase('complete')} />
@@ -712,18 +700,7 @@ export function WorkoutPage() {
           {phase === 'complete' && (
             <><SessionComplete sessionType="foundation_run" onFinish={handleFinish} submitting={submitting} /><ToastContainer /></>
           )}
-          {phase === 'fr-run' && foundationRunData.runSession && (
-            <RunSessionView
-              inline
-              runSession={foundationRunData.runSession}
-              prescription={foundationRunData.prescription}
-              onComplete={() => setPhase('fr-transition')}
-            />
-          )}
-          {phase === 'fr-transition' && (
-            <FrTransition onComplete={() => setPhase('fr-mobility')} />
-          )}
-          {phase === 'fr-mobility' && frCurrentExercise && (
+          {phase === 'fr-warmup' && frCurrentExercise && (
             <MobilityExerciseView
               inline
               exercise={frCurrentExercise}
@@ -731,7 +708,15 @@ export function WorkoutPage() {
               totalExercises={frTotalExercises}
               currentSet={setIdx}
               showSectionHeader={frShowSectionHeader}
-              onSetDone={handleFrPostureSetDone}
+              onSetDone={handleFrWarmupSetDone}
+            />
+          )}
+          {phase === 'fr-run' && foundationRunData.runSession && (
+            <RunSessionView
+              inline
+              runSession={foundationRunData.runSession}
+              prescription={foundationRunData.prescription}
+              onComplete={() => setPhase('mark-earned')}
             />
           )}
         </main>

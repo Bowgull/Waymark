@@ -21,8 +21,8 @@ export interface MobilityExerciseTemplate {
  * - World's greatest stretch is a compound hip + thoracic opener.
  * - Ankle CARs maintain dorsiflexion (squat depth, kick mechanics, gait).
  *
- * Zero overlap with FR_COOLDOWN_TEMPLATE so daily + Foundation Run on same
- * morning don't double up.
+ * Zero overlap with FR_WARMUP_TEMPLATE so daily + Zone 2 on same morning
+ * don't double up.
  */
 export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
   {
@@ -91,12 +91,76 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
 ]
 
 /**
- * Foundation Run cooldown block. Runs M/W/F AM after the Zone 2 run.
+ * Zone 2 warmup block. Runs M/W/F AM before the Zone 2 run.
  *
- * Trimmed from 19 exercises to 8. Science: stretch tolerance is highest when
- * warm, so post-run is the right moment for longer deeper holds. The daily
- * mobility block covers activation + breathing already, so this focuses on
- * lengthening and loaded hip range.
+ * RAMP protocol (Raise / Activate / Mobilize / Potentiate), tuned for a
+ * sedentary user with APT and sore low back. All standing/dynamic — no floor
+ * rehab work. Moves are running-coach staples:
+ * - Walking knee hugs: dynamic hip flexor open (counters APT tightness).
+ * - Walking quad pulls: rectus femoris lengthening on the move.
+ * - Spiderman + T-spine rotation: world's greatest stretch compound — hip,
+ *   hamstring, adductor, and thoracic rotation for arm swing (UCS).
+ * - Lateral lunges: adductor + glute medius, the frontal plane runners skip.
+ * - A-skips: primes stride mechanics and elastic tissue without taxing HR.
+ *
+ * Zero floor work, zero static stretching (pre-run static stretching reduces
+ * power output per current sports-med consensus). ~4 min total.
+ *
+ * Zero overlap with DAILY_MOBILITY_TEMPLATE so both on the same morning don't
+ * double up.
+ */
+export const FR_WARMUP_TEMPLATE: MobilityExerciseTemplate[] = [
+  {
+    exerciseId: 'ex-walking-knee-hugs',
+    label: 'Walking Knee Hugs',
+    section: 'lower',
+    sets: 1,
+    holdSec: null,
+    reps: 12,
+    notes: 'Step forward, pull opposite knee to chest for a beat, release and walk through. 6 per side. Dynamic hip flexor open — counters APT tightness from sitting.',
+  },
+  {
+    exerciseId: 'ex-walking-quad-pulls',
+    label: 'Walking Quad Pulls',
+    section: 'lower',
+    sets: 1,
+    holdSec: null,
+    reps: 12,
+    notes: 'Step, grab same-side ankle behind you, squeeze glute for a beat, walk through. 6 per side. Lengthens rectus femoris on the move, the other half of APT.',
+  },
+  {
+    exerciseId: 'ex-spiderman-tspine',
+    label: 'Spiderman + T-Spine Rotation',
+    section: 'lower',
+    sets: 1,
+    holdSec: null,
+    reps: 10,
+    notes: 'Low lunge, hand inside front foot, rotate top arm to ceiling and follow with your eyes. 5 per side. Hip, adductor, hamstring, and thoracic rotation in one move.',
+  },
+  {
+    exerciseId: 'ex-lateral-lunges',
+    label: 'Lateral Lunges',
+    section: 'lower',
+    sets: 1,
+    holdSec: null,
+    reps: 12,
+    notes: 'Step wide, sit into one hip, other leg stays straight. 6 per side. Adductor and glute medius — the frontal plane runners neglect.',
+  },
+  {
+    exerciseId: 'ex-a-skips',
+    label: 'A-Skips',
+    section: 'lower',
+    sets: 1,
+    holdSec: 30,
+    reps: null,
+    notes: 'Light skip, drive lead knee to 90 degrees, opposite arm swings. 30s easy. Primes stride mechanics and elastic tissue. Stay bouncy, not hard.',
+  },
+]
+
+/**
+ * Legacy Foundation Run cooldown block. Kept as a named export for any
+ * historical references; the active Zone 2 flow now uses FR_WARMUP_TEMPLATE
+ * before the run and skips post-run mobility (Daily Mobility covers it).
  */
 export const FR_COOLDOWN_TEMPLATE: MobilityExerciseTemplate[] = [
   {

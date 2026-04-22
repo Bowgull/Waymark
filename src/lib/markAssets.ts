@@ -15,7 +15,7 @@ export interface MarkAsset {
 }
 
 const SESSION_MARK_MAP: Record<string, MarkAsset> = {
-  foundation_run: { png: mobilityPng, label: 'Foundation Run' },
+  foundation_run: { png: cardioPng, label: 'Zone 2' },
   mobility: { png: mobilityPng, label: 'Mobility' },
   strength: { png: strengthPng, label: 'Strength' },
   mt_class: { png: muayThaiPng, label: 'Muay Thai' },
@@ -41,11 +41,11 @@ export function getSessionAccent(sessionType: string): string {
     case 'strength':
     case 'bag_work':
       return '#E8C860'
-    case 'foundation_run':
     case 'mobility':
     case 'active_recovery':
     case 'mt_class':
       return '#4ACAAA'
+    case 'foundation_run':
     case 'running':
     case 'skip_rope':
       return '#1E8A68'

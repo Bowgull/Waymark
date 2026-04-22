@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/Toast'
 import { apiFetch } from '@/lib/api'
 import { logger } from '@/lib/logger'
 import { onePaceSvg } from '@/lib/markAssets'
+import { soundRoundEnd } from '@/lib/sounds'
 
 import { SessionShell } from './SessionShell'
 import { resolveRunMoment, type RunType } from './runMicrocopy'
@@ -218,6 +219,29 @@ export function RunSessionView({
     }
   }, [runSession.sessionId, runSession.id, checkingStrava, showToast])
 
+  // Auto-retry on the Log screen: Strava takes a moment to finalize an
+  // activity after the run ends, so poll every 10s for up to 2 min until we
+  // link it or the user navigates away. Manual button stays as a fallback.
+  useEffect(() => {
+    if (phase !== 'logging') return
+    if (isIndoor) return
+    if (fromStrava) return
+    if (!runSession.sessionId) return
+    let handle: number | null = null
+    let attempts = 0
+    const MAX_ATTEMPTS = 12
+    const tick = async () => {
+      attempts += 1
+      const found = await checkForStravaActivity({ silent: true })
+      if (found || attempts >= MAX_ATTEMPTS) return
+      handle = window.setTimeout(tick, 10_000)
+    }
+    handle = window.setTimeout(tick, 2_000)
+    return () => {
+      if (handle != null) window.clearTimeout(handle)
+    }
+  }, [phase, isIndoor, fromStrava, runSession.sessionId, checkForStravaActivity])
+
   // On app resume during an outdoor run, auto-check for the Strava activity.
   useEffect(() => {
     if (isIndoor) return
@@ -350,6 +374,16 @@ export function RunSessionView({
   const runType = (prescription?.runType ?? undefined) as RunType | undefined
   const remaining = Math.max(0, timerEstimate - elapsed)
 
+  // Ring a bell once when the target duration is hit. Same bell family as bag
+  // round-end so the sound vocabulary is consistent across engines.
+  const targetHitRef = useRef(false)
+  useEffect(() => {
+    if (phase === 'running' && remaining === 0 && elapsed > 0 && !targetHitRef.current) {
+      targetHitRef.current = true
+      soundRoundEnd()
+    }
+  }, [phase, remaining, elapsed])
+
   const toggleRunPause = useCallback(() => {
     if (phase !== 'running') return
     if (runPaused) {
@@ -395,7 +429,21 @@ export function RunSessionView({
             pausedRemaining: runPaused ? remaining : undefined,
           },
         }
-      : null
+      : phase === 'logging' && startedAtRef.current > 0
+        ? {
+            sessionType: 'run',
+            sessionLabel: isIndoor ? 'One Piece' : 'Run',
+            state: {
+              phase: 'complete',
+              label: runTypeLabel,
+              detail: indoorDetail,
+              startedAt: startedAtRef.current,
+              endsAt: Date.now(),
+              isPaused: false,
+              completeMessage: 'Log your run',
+            },
+          }
+        : null
 
   useSessionLiveActivity(runLiveConfig, {
     onPause: () => {
@@ -533,6 +581,17 @@ export function RunSessionView({
             </p>
           )}
         </div>
+
+        {!isIndoor && runSession.sessionId && !fromStrava && (
+          <button
+            type="button"
+            onClick={() => checkForStravaActivity()}
+            disabled={checkingStrava}
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-gold/25 bg-near-black/40 px-4 py-2 text-sm font-medium text-gold/80 active:bg-near-black/70 disabled:opacity-50"
+          >
+            {checkingStrava ? 'Checking Strava…' : 'Pull run from Strava'}
+          </button>
+        )}
 
         <div className="flex gap-4">
           <div className="flex-1">

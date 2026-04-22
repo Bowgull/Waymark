@@ -9,7 +9,7 @@ import { createDB } from '../db/client'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, bodyMetrics, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
 import { adHocSessionSchema, completeSessionSchema, dailyLogSchema } from '../lib/validators/schemas'
-import { DAILY_MOBILITY_TEMPLATE, FR_COOLDOWN_TEMPLATE } from '../lib/mobilityTemplate'
+import { DAILY_MOBILITY_TEMPLATE, FR_COOLDOWN_TEMPLATE, FR_WARMUP_TEMPLATE } from '../lib/mobilityTemplate'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import type { TemplateSession } from '../lib/weeklyTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
@@ -119,9 +119,10 @@ async function buildMobilityWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const exMap = new Map(exRows.map(e => [e.id, e]))
 
   // Template notes/sections/reps come from whichever template this exercise lives in.
-  // Daily Mobility and FR Cooldown use disjoint exerciseIds, so one lookup covers both.
+  // Daily Mobility, FR Warmup, and legacy FR Cooldown use disjoint exerciseIds,
+  // so one merged lookup covers them all.
   const templateMap = new Map(
-    [...DAILY_MOBILITY_TEMPLATE, ...FR_COOLDOWN_TEMPLATE].map(t => [t.exerciseId, { notes: t.notes ?? null, section: t.section, reps: t.reps ?? null }]),
+    [...DAILY_MOBILITY_TEMPLATE, ...FR_WARMUP_TEMPLATE, ...FR_COOLDOWN_TEMPLATE].map(t => [t.exerciseId, { notes: t.notes ?? null, section: t.section, reps: t.reps ?? null }]),
   )
 
   const result = pExercises
@@ -914,7 +915,7 @@ app.post('/api/sessions/:id/abandon', async (c) => {
   return c.json({ ok: true })
 })
 
-// ─── Foundation Run (Zone 2 + cooldown mobility block) ────────
+// ─── Zone 2 (dynamic warmup + easy run) ──────────────────────
 
 app.post('/api/sessions/:id/start-foundation-run', async (c) => {
   const sessionId = c.req.param('id')
@@ -944,9 +945,9 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
     isIndoor: 0,
   })
 
-  // Create FR cooldown exercises (trimmed, post-run deep stretches)
-  for (let i = 0; i < FR_COOLDOWN_TEMPLATE.length; i++) {
-    const tmpl = FR_COOLDOWN_TEMPLATE[i]
+  // Create Zone 2 warmup exercises (standing dynamic, runs before the run)
+  for (let i = 0; i < FR_WARMUP_TEMPLATE.length; i++) {
+    const tmpl = FR_WARMUP_TEMPLATE[i]
     await db.insert(postureSessionExercises).values({
       id: crypto.randomUUID(),
       sessionId,

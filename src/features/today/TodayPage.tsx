@@ -131,15 +131,19 @@ export function TodayPage() {
   useEffect(() => {
     async function poll() {
       try {
-        const result = await apiFetch<{ ingested: number; connected: boolean }>('/api/strava/poll-recent', { method: 'POST' })
+        const result = await apiFetch<{ ingested: number; connected: boolean; error?: string }>('/api/strava/poll-recent', { method: 'POST' })
         if (result.connected && result.ingested > 0) {
           await refreshSessions()
         }
         if (result.connected) {
           await checkMaxHrBump()
         }
-      } catch {
-        // Strava disconnected or offline; silent.
+        if (result.connected && result.error) {
+          logger.warn('system', 'strava poll returned error', { error: result.error })
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        logger.warn('system', 'strava poll threw', { message })
       }
     }
     async function checkMaxHrBump() {

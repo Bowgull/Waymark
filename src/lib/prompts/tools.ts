@@ -386,7 +386,7 @@ export const TOOL_SKIP_RESPONSE: Tool = {
       },
       swapToLabel: {
         type: 'string',
-        description: 'Required when action is "swap". Short human label for the substitute (e.g. "Reset", "Foundation Run").',
+        description: 'Required when action is "swap". Short human label for the substitute (e.g. "Reset", "Zone 2").',
       },
       weekImpact: {
         type: 'string',
@@ -487,7 +487,7 @@ export const TOOL_REACTIVE_REPLAN: Tool = {
       },
       targetLabel: {
         type: 'string',
-        description: 'Short human label for the target session (e.g. "Reset", "Foundation Run", "Mobility").',
+        description: 'Short human label for the target session (e.g. "Reset", "Zone 2", "Mobility").',
       },
       targetDay: { type: 'integer', description: '0=Sun..6=Sat. Today or later this week.' },
       targetTimeSlot: { type: 'string', enum: ['am', 'pm'] },
@@ -522,7 +522,7 @@ export const TOOL_REPLACE_SUGGESTIONS: Tool = {
             type: { type: 'string', enum: SESSION_TYPE_ENUM },
             label: {
               type: 'string',
-              description: 'Short human label (e.g. "Reset", "Foundation Run", "Mobility").',
+              description: 'Short human label (e.g. "Reset", "Zone 2", "Mobility").',
             },
             timeSlot: { type: 'string', enum: ['am', 'pm'] },
             estimatedMin: { type: 'integer' },
