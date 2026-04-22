@@ -514,6 +514,53 @@ const exercises: Exercise[] = [
   // ── Removed: ex-wall-slides (replaced by wall angels) ──
   // ── Removed: ex-prone-y-raises (replaced by YTW raises) ──
   // ── Removed: ex-v-ups, ex-russian-twists, ex-landmine-press (replaced by research-backed selections) ──
+
+  // ── Zone 2 warmup (standing dynamic, pre-run) ──────────────────
+  {
+    id: 'ex-walking-knee-hugs',
+    name: 'Walking Knee Hugs',
+    category: 'mobility',
+    muscleGroups: 'hip_flexors,glutes',
+    equipment: 'bodyweight',
+    formCues: 'Step forward, pull opposite knee to chest for a beat, release and walk through. 6 per side. Dynamic hip flexor open, counters sitting-driven APT.',
+    formVideoUrl: 'https://www.youtube.com/watch?v=8v0U-gIouhI',
+  },
+  {
+    id: 'ex-walking-quad-pulls',
+    name: 'Walking Quad Pulls',
+    category: 'mobility',
+    muscleGroups: 'quads,hip_flexors',
+    equipment: 'bodyweight',
+    formCues: 'Step, grab same-side ankle behind you, squeeze glute for a beat, walk through. 6 per side. Lengthens rectus femoris on the move.',
+    formVideoUrl: 'https://www.youtube.com/watch?v=0u4lPXZyOOI',
+  },
+  {
+    id: 'ex-spiderman-tspine',
+    name: 'Spiderman + T-Spine Rotation',
+    category: 'mobility',
+    muscleGroups: 'hips,adductors,thoracic_spine',
+    equipment: 'bodyweight',
+    formCues: 'Low lunge, hand inside front foot, rotate top arm to ceiling and follow with your eyes. 5 per side. Hip, hamstring, and thoracic rotation in one.',
+    formVideoUrl: 'https://www.youtube.com/watch?v=uCcsokYVl2M',
+  },
+  {
+    id: 'ex-lateral-lunges',
+    name: 'Lateral Lunges',
+    category: 'mobility',
+    muscleGroups: 'adductors,glutes,quads',
+    equipment: 'bodyweight',
+    formCues: 'Step wide, sit into one hip, other leg stays straight. 6 per side. Adductor and glute medius — frontal plane prep runners skip.',
+    formVideoUrl: 'https://www.youtube.com/watch?v=fP5_zrFJoLM',
+  },
+  {
+    id: 'ex-a-skips',
+    name: 'A-Skips',
+    category: 'mobility',
+    muscleGroups: 'calves,hip_flexors,glutes',
+    equipment: 'bodyweight',
+    formCues: 'Light skip, drive lead knee to 90, opposite arm swings. 30s easy. Primes stride mechanics. Stay bouncy, not hard.',
+    formVideoUrl: 'https://www.youtube.com/watch?v=m5x8O4vzy2c',
+  },
 ]
 
 // ─── Training Maxes ───────────────────────────────────────────
