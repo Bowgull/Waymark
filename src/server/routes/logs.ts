@@ -56,8 +56,10 @@ logs.post('/', async (c) => {
       createdAt: nowSec,
     }))
 
-  if (rows.length > 0) {
-    await db.insert(appLogs).values(rows)
+  // D1 caps bind params at 100 per statement. With 9 columns, 10 rows/chunk stays safe.
+  const CHUNK = 10
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    await db.insert(appLogs).values(rows.slice(i, i + CHUNK))
   }
 
   // Opportunistic prune: only run ~5% of the time to avoid hot path cost
