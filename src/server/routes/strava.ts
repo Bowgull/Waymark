@@ -13,7 +13,7 @@
 // attachment_status='orphan'. Confirm/reassign/dismiss routes finalize the state.
 
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 
 import { createDB } from '../../db/client'
 import { runSessions, runSplits, sessions, stravaTokens, userProfile } from '../../db/schema'
@@ -503,17 +503,22 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   const nowSec = Math.floor(Date.now() / 1000)
 
   // Find a planned running session on this date with no existing strava link.
+  // Matches both 'running' and 'foundation_run' (Zone 2) session types.
   // A session is considered "already claimed" only if it has a run_sessions row
   // with stravaActivityId set — a locally-started run (via Start Run button)
   // creates a row WITHOUT stravaActivityId, which we'll upgrade in place.
+  // Skipped sessions are eligible: if Strava proves the run happened, override
+  // the skip — the user ran, the rollover was wrong.
   const planned = await db.select().from(sessions)
-    .where(and(eq(sessions.type, 'running'), eq(sessions.scheduledDate, epochDay)))
+    .where(and(
+      inArray(sessions.type, ['running', 'foundation_run']),
+      eq(sessions.scheduledDate, epochDay),
+    ))
   const allRuns = await db.select().from(runSessions)
   const stravaLinkedSessionIds = new Set(
     allRuns.filter(r => r.stravaActivityId != null).map(r => r.sessionId),
   )
   const candidate = planned.find(s =>
-    s.status !== 'skipped' &&
     s.status !== 'completed' &&
     !stravaLinkedSessionIds.has(s.id),
   )
@@ -523,6 +528,13 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   if (candidate) {
     parentSessionId = candidate.id
     attachmentStatus = 'auto_pending'
+    // If nightly rollover had marked this skipped, Strava proving the run
+    // happened overrides that — restore to planned so the user sees the match.
+    if (candidate.status === 'skipped') {
+      await db.update(sessions)
+        .set({ status: 'planned' })
+        .where(eq(sessions.id, candidate.id))
+    }
   } else {
     parentSessionId = crypto.randomUUID()
     await db.insert(sessions).values({
