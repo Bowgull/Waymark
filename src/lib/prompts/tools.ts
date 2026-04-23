@@ -479,7 +479,7 @@ export const TOOL_REACTIVE_REPLAN: Tool = {
       },
       shiftReason: {
         type: 'string',
-        description: 'One sentence explaining why this shift. Voice canon. Used in weekAdjustments.reason.',
+        description: 'Exactly one sentence. Under 140 chars. Reads as a standalone coach note — the session/day context is rendered separately, so the sentence must stand on its own without relying on a prefix. Name the observation AND the shift in that single sentence. Voice canon: observation before conclusion, no hype, no exclamation, no em dashes. Do NOT include multiple sentences or a lead-in observation as its own sentence. Used verbatim as weekAdjustments.reason. Example: "Effort has been moderate-to-low and completion sits at 50%, so Thursday strength holds its slot but pulls intensity back one notch."',
       },
       targetSessionType: {
         type: 'string',

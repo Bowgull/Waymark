@@ -561,6 +561,44 @@ const exercises: Exercise[] = [
     formCues: 'Light skip, drive lead knee to 90, opposite arm swings. 30s easy. Primes stride mechanics. Stay bouncy, not hard.',
     formVideoUrl: 'https://www.youtube.com/watch?v=m5x8O4vzy2c',
   },
+
+  // ── Zone 2 static pre-run stretches (replaces the dynamic set above) ──
+  {
+    id: 'ex-toe-touch-forward-fold',
+    name: 'Toe-Touch Forward Fold',
+    category: 'posture',
+    muscleGroups: 'hamstrings,calves,low_back',
+    equipment: 'bodyweight',
+    formCues: 'Feet hip-width, fold from the hips, let the head hang. Soft knees if the hamstrings grip. 45s. Full posterior chain opens in one move.',
+    formVideoUrl: 'https://www.youtube.com/watch?v=gcH5FWyOiaw',
+  },
+  {
+    id: 'ex-butterfly-stretch',
+    name: 'Butterfly Stretch',
+    category: 'posture',
+    muscleGroups: 'adductors,hips',
+    equipment: 'bodyweight',
+    formCues: 'Soles together, knees fall open, fold forward from the hips. 60s. Adductor and inner-hip length sitting closes off.',
+    formVideoUrl: 'https://www.youtube.com/watch?v=LpMLUH1CM1k',
+  },
+  {
+    id: 'ex-standing-quad-stretch',
+    name: 'Standing Quad Stretch',
+    category: 'posture',
+    muscleGroups: 'quads,hip_flexors',
+    equipment: 'bodyweight',
+    formCues: 'Stand, grab the ankle behind you, knees together, squeeze the back glute. 30s each side. Rectus femoris and hip flexor, direct counter to APT.',
+    formVideoUrl: 'https://www.youtube.com/watch?v=UGEpQ1BRx-4',
+  },
+  {
+    id: 'ex-standing-calf-stretch',
+    name: 'Standing Calf Stretch',
+    category: 'posture',
+    muscleGroups: 'calves,achilles',
+    equipment: 'bodyweight',
+    formCues: 'Hands on wall, back leg straight, press the heel down. 30s each side. Gastrocnemius and Achilles, the chain that takes every step of impact.',
+    formVideoUrl: 'https://www.youtube.com/watch?v=Kz162ij1s7I',
+  },
 ]
 
 // ─── Training Maxes ───────────────────────────────────────────

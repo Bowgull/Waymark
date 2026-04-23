@@ -91,69 +91,64 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
 ]
 
 /**
- * Zone 2 warmup block. Runs M/W/F AM before the Zone 2 run.
+ * Zone 2 pre-run stretch block. Runs M/W/F AM before the Zone 2 run.
  *
- * RAMP protocol (Raise / Activate / Mobilize / Potentiate), tuned for a
- * sedentary user with APT and sore low back. All standing/dynamic — no floor
- * rehab work. Moves are running-coach staples:
- * - Walking knee hugs: dynamic hip flexor open (counters APT tightness).
- * - Walking quad pulls: rectus femoris lengthening on the move.
- * - Spiderman + T-spine rotation: world's greatest stretch compound — hip,
- *   hamstring, adductor, and thoracic rotation for arm swing (UCS).
- * - Lateral lunges: adductor + glute medius, the frontal plane runners skip.
- * - A-skips: primes stride mechanics and elastic tissue without taxing HR.
- *
- * Zero floor work, zero static stretching (pre-run static stretching reduces
- * power output per current sports-med consensus). ~4 min total.
+ * Static holds. The sports-med consensus is that pre-run static stretching
+ * drops power output a few percent on the session that follows — a real
+ * trade-off, and the honest framing. We take it because: a warmup the athlete
+ * actually does beats an optimal warmup they skip, warm-to-cold static holds
+ * don't carry the injury risk cold ones do, and this athlete's APT and
+ * desk-tight posterior chain get more out of length than from drills at Z2
+ * intensity. ~4 min total.
  *
  * Zero overlap with DAILY_MOBILITY_TEMPLATE so both on the same morning don't
  * double up.
  */
 export const FR_WARMUP_TEMPLATE: MobilityExerciseTemplate[] = [
   {
-    exerciseId: 'ex-walking-knee-hugs',
-    label: 'Walking Knee Hugs',
+    exerciseId: 'ex-toe-touch-forward-fold',
+    label: 'Toe-Touch Forward Fold',
     section: 'lower',
     sets: 1,
-    holdSec: null,
-    reps: 12,
-    notes: 'Step forward, pull opposite knee to chest for a beat, release and walk through. 6 per side. Dynamic hip flexor open — counters APT tightness from sitting.',
+    holdSec: 45,
+    reps: null,
+    notes: 'Feet hip-width, fold from the hips, let the head hang. Soft knees if the hamstrings grip. 45s. Full posterior chain opens in one move.',
   },
   {
-    exerciseId: 'ex-walking-quad-pulls',
-    label: 'Walking Quad Pulls',
+    exerciseId: 'ex-butterfly-stretch',
+    label: 'Butterfly Stretch',
     section: 'lower',
     sets: 1,
-    holdSec: null,
-    reps: 12,
-    notes: 'Step, grab same-side ankle behind you, squeeze glute for a beat, walk through. 6 per side. Lengthens rectus femoris on the move, the other half of APT.',
+    holdSec: 60,
+    reps: null,
+    notes: 'Soles together, knees fall open, fold forward from the hips. 60s. Adductor and inner-hip length sitting closes off.',
   },
   {
-    exerciseId: 'ex-spiderman-tspine',
-    label: 'Spiderman + T-Spine Rotation',
+    exerciseId: 'ex-pigeon-stretch',
+    label: 'Pigeon Stretch',
     section: 'lower',
     sets: 1,
-    holdSec: null,
-    reps: 10,
-    notes: 'Low lunge, hand inside front foot, rotate top arm to ceiling and follow with your eyes. 5 per side. Hip, adductor, hamstring, and thoracic rotation in one move.',
+    holdSec: 45,
+    reps: null,
+    notes: 'Front shin across, back leg extended, fold over. 45s each side. Deep glute and external rotator, the lengths runners lose.',
   },
   {
-    exerciseId: 'ex-lateral-lunges',
-    label: 'Lateral Lunges',
-    section: 'lower',
-    sets: 1,
-    holdSec: null,
-    reps: 12,
-    notes: 'Step wide, sit into one hip, other leg stays straight. 6 per side. Adductor and glute medius — the frontal plane runners neglect.',
-  },
-  {
-    exerciseId: 'ex-a-skips',
-    label: 'A-Skips',
+    exerciseId: 'ex-standing-quad-stretch',
+    label: 'Standing Quad Stretch',
     section: 'lower',
     sets: 1,
     holdSec: 30,
     reps: null,
-    notes: 'Light skip, drive lead knee to 90 degrees, opposite arm swings. 30s easy. Primes stride mechanics and elastic tissue. Stay bouncy, not hard.',
+    notes: 'Stand, grab the ankle behind you, knees together, squeeze the back glute. 30s each side. Rectus femoris and hip flexor, direct counter to APT.',
+  },
+  {
+    exerciseId: 'ex-standing-calf-stretch',
+    label: 'Standing Calf Stretch',
+    section: 'lower',
+    sets: 1,
+    holdSec: 30,
+    reps: null,
+    notes: 'Hands on wall, back leg straight, press the heel down. 30s each side. Gastrocnemius and Achilles, the chain that takes every step of impact.',
   },
 ]
 

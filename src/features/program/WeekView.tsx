@@ -30,6 +30,7 @@ interface WeekAdjustment {
   targetDay: number | null
   targetTimeSlot: string | null
   status: string
+  createdAt: number
 }
 
 interface WeekViewProps {
@@ -374,6 +375,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
   const [replacingSession, setReplacingSession] = useState<SessionSummary | null>(null)
   const [replaceReason, setReplaceReason] = useState<string | null>(null)
   const [skipReasonFor, setSkipReasonFor] = useState<{ id: string; replace: boolean } | null>(null)
+  const [showAllChanges, setShowAllChanges] = useState(false)
 
   // Parse analysis from JSON
   const analysis: WeekAnalysis | null = analysisJson ? (() => {
@@ -607,32 +609,63 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
         </div>
       )}
 
-      {/* Week Changes — persistent log of accepted adjustments */}
-      {acceptedAdj.length > 0 && (
-        <div className="mb-4 rounded-md border border-border/60 bg-card/50 p-3">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
-            Week Changes · {acceptedAdj.length}
-          </p>
-          <ul className="space-y-1.5">
-            {acceptedAdj.map(adj => {
-              const verb = actionVerb(adj.action)
-              const day = adj.targetDay != null ? DAY_NAMES[adj.targetDay] : null
-              const slot = adj.targetTimeSlot ? adj.targetTimeSlot.toUpperCase() : null
-              const when = [day, slot].filter(Boolean).join(' ')
-              return (
-                <li key={adj.id} className="flex items-start gap-2 text-[13px] text-muted-foreground/80">
-                  <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/40" />
-                  <span className="flex-1">
-                    <span className="text-foreground/80">{verb}</span>
-                    {when && <span className="text-muted-foreground/60"> · {when}</span>}
-                    <span className="text-muted-foreground/60"> · {adj.reason}</span>
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
+      {/* Week Changes — latest accepted adjustment by default; tap the count chip to see earlier ones */}
+      {acceptedAdj.length > 0 && (() => {
+        const sorted = [...acceptedAdj].sort((a, b) => a.createdAt - b.createdAt)
+        const latest = sorted[sorted.length - 1]
+        const earlier = sorted.slice(0, -1)
+        const hasEarlier = earlier.length > 0
+        const latestWhen = [
+          latest.targetDay != null ? DAY_NAMES[latest.targetDay] : null,
+          latest.targetTimeSlot ? latest.targetTimeSlot.toUpperCase() : null,
+        ].filter(Boolean).join(' ')
+
+        return (
+          <div className="mb-4 rounded-md border border-border/60 bg-card/50 p-3">
+            <div className="mb-2 flex items-baseline gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+              <span>Week Changes</span>
+              {hasEarlier ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAllChanges(v => !v)}
+                  className="text-muted-foreground/40 hover:text-muted-foreground/80 transition-colors"
+                  aria-label={showAllChanges ? 'Hide earlier changes' : 'Show earlier changes'}
+                >
+                  · {acceptedAdj.length}
+                </button>
+              ) : (
+                <span className="text-muted-foreground/40">· {acceptedAdj.length}</span>
+              )}
+            </div>
+            {/* Latest: voice-clean, no prefix */}
+            <p className="text-[13px] leading-relaxed text-foreground/80">{latest.reason}</p>
+            {latestWhen && (
+              <p className="mt-1 text-[11px] uppercase tracking-wider text-muted-foreground/40">{latestWhen}</p>
+            )}
+            {/* Earlier: full prefix format for chronological context */}
+            {showAllChanges && hasEarlier && (
+              <ul className="mt-3 space-y-1.5 border-t border-border/40 pt-3">
+                {earlier.slice().reverse().map(adj => {
+                  const verb = actionVerb(adj.action)
+                  const day = adj.targetDay != null ? DAY_NAMES[adj.targetDay] : null
+                  const slot = adj.targetTimeSlot ? adj.targetTimeSlot.toUpperCase() : null
+                  const when = [day, slot].filter(Boolean).join(' ')
+                  return (
+                    <li key={adj.id} className="flex items-start gap-2 text-[12px] text-muted-foreground/70">
+                      <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/30" />
+                      <span className="flex-1">
+                        <span className="text-foreground/70">{verb}</span>
+                        {when && <span className="text-muted-foreground/50"> · {when}</span>}
+                        <span className="text-muted-foreground/50"> · {adj.reason}</span>
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Day-by-day schedule */}
       <div className="space-y-2">
