@@ -52,6 +52,26 @@ app.onError((err, c) => {
 type DrizzleDB = ReturnType<typeof createDB>
 
 
+// Shared strength-weight math. One source of truth for start-strength,
+// buildWorkoutResponse, and strength-preview so prescription never drifts
+// between what's previewed on Today and what's written at session start.
+function computeWorkingWeightKg(
+  trainingMaxKg: number | null,
+  section: string | null,
+  wavePct: number,
+): number | null {
+  if (trainingMaxKg == null) return null
+  if (section === 'main') {
+    return Math.round(trainingMaxKg * wavePct * 100) / 100
+  }
+  return trainingMaxKg
+}
+
+function computeWarmupWeightKg(trainingMaxKg: number | null): number | null {
+  if (trainingMaxKg == null) return null
+  return Math.round(trainingMaxKg * 0.5 * 100) / 100
+}
+
 async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const sexes = await db.select().from(strengthSessionExercises)
@@ -80,15 +100,7 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
     const workingSets = sets.filter(s => s.isWarmup === 0)
     const setsCount = workingSets.length
     const targetReps = workingSets[0]?.reps ?? 0
-    let prescribedWeightKg: number | null = null
-
-    if (tmKg != null) {
-      if (se.section === 'main') {
-        prescribedWeightKg = Math.round(tmKg * wavePct * 100) / 100
-      } else {
-        prescribedWeightKg = tmKg
-      }
-    }
+    const prescribedWeightKg = computeWorkingWeightKg(tmKg, se.section, wavePct)
 
     result.push({
       id: se.id,
@@ -108,6 +120,50 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   }
 
   return { session, exercises: result }
+}
+
+async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
+  if (!session) return null
+
+  // Same template lookup logic as start-strength — keep in sync
+  const epochDay = session.scheduledDate ?? 0
+  const dateMs = epochDay * 86400 * 1000
+  const dayOfWeek = new Date(dateMs).getUTCDay()
+  const blockWeek = session.blockWeek ?? 1
+  const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
+  const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType)
+  const wavePct = getWeekPercentage(blockWeek, blockType)
+
+  const exRows = await db.select().from(exercises)
+  const exMap = new Map(exRows.map(e => [e.id, e]))
+  const maxRows = await db.select().from(trainingMaxes)
+  const tmMap = new Map(maxRows.map(m => [m.exerciseId, m.weightKg]))
+
+  const previewExercises = template.exercises.map((tex, orderIndex) => {
+    const ex = exMap.get(tex.exerciseId)
+    const tmKg = tmMap.get(tex.exerciseId) ?? null
+    const workingSets = tex.sets.filter(s => !s.isWarmup)
+    const setsCount = workingSets.length
+    const targetReps = workingSets[0]?.targetReps ?? 0
+    const prescribedWeightKg = computeWorkingWeightKg(tmKg, tex.section, wavePct)
+
+    return {
+      exerciseId: tex.exerciseId,
+      name: ex?.name ?? tex.label,
+      label: tex.label,
+      section: tex.section,
+      orderIndex,
+      prescription: {
+        trainingMaxKg: tmKg,
+        wavePercentage: tex.section === 'main' ? wavePct : null,
+        prescribedWeightKg,
+        setsReps: targetReps > 0 ? `${setsCount}×${targetReps}` : `${setsCount} sets`,
+      },
+    }
+  })
+
+  return { session, templateLabel: template.label, exercises: previewExercises }
 }
 
 async function buildMobilityWorkoutResponse(db: DrizzleDB, sessionId: string) {
@@ -772,18 +828,9 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
 
     for (let setIdx = 0; setIdx < tex.sets.length; setIdx++) {
       const ts = tex.sets[setIdx]
-      let suggestedWeight: number | null = null
-      if (trainingMax != null) {
-        if (ts.isWarmup) {
-          suggestedWeight = Math.round(trainingMax * 0.5 * 100) / 100
-        } else if (tex.section === 'main') {
-          // Wave loading: main lifts use block week percentage
-          suggestedWeight = Math.round(trainingMax * weekPct * 100) / 100
-        } else {
-          // Accessories and core: use full TM
-          suggestedWeight = trainingMax
-        }
-      }
+      const suggestedWeight = ts.isWarmup
+        ? computeWarmupWeightKg(trainingMax)
+        : computeWorkingWeightKg(trainingMax, tex.section, weekPct)
 
       await db.insert(strengthSets).values({
         id: crypto.randomUUID(),
@@ -812,6 +859,31 @@ app.get('/api/sessions/:id/workout', async (c) => {
   if (!session) return c.json({ error: 'session not found' }, 404)
 
   return c.json(await buildWorkoutResponse(db, sessionId))
+})
+
+// Strength preview for the Today page. Computes prescription from the
+// template without writing rows, so a planned session's top lifts can be
+// surfaced before the user taps Enter. Uses the same helpers as
+// start-strength — preview and actual workout stay in lockstep.
+app.get('/api/sessions/:id/strength-preview', async (c) => {
+  const sessionId = c.req.param('id')
+  const db = createDB(c.env)
+
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
+  if (!session) return c.json({ error: 'session not found' }, 404)
+  if (session.type !== 'strength') return c.json({ error: 'not a strength session' }, 400)
+
+  // If the session has already been started, read from the DB so any manual
+  // set-weight edits are reflected.
+  const existing = await db.select().from(strengthSessionExercises)
+    .where(eq(strengthSessionExercises.sessionId, sessionId))
+  if (existing.length > 0) {
+    return c.json(await buildWorkoutResponse(db, sessionId))
+  }
+
+  const preview = await buildStrengthPreview(db, sessionId)
+  if (!preview) return c.json({ error: 'session not found' }, 404)
+  return c.json(preview)
 })
 
 app.patch('/api/strength-sets/:id', async (c) => {
@@ -1351,6 +1423,7 @@ app.patch('/api/run-sessions/:id', async (c) => {
     onePaceEp?: string
     avgHr?: number
     maxHr?: number
+    elevationGainM?: number
   }>()
 
   const db = createDB(c.env)
@@ -1365,6 +1438,7 @@ app.patch('/api/run-sessions/:id', async (c) => {
   if (body.onePaceEp !== undefined) updates.onePaceEp = body.onePaceEp
   if (body.avgHr !== undefined) updates.avgHr = body.avgHr
   if (body.maxHr !== undefined) updates.maxHr = body.maxHr
+  if (body.elevationGainM !== undefined) updates.elevationGainM = body.elevationGainM
 
   await db.update(runSessions).set(updates).where(eq(runSessions.id, runId))
 

@@ -3,7 +3,8 @@ import { getEstimatedMin } from '@/lib/weeklyTemplate'
 import { getSessionIntent, getSessionTargetHr } from '@/lib/sessionIntent'
 import { Button } from '@/components/ui/button'
 import { tapHaptic, mediumHaptic } from '@/lib/haptics'
-import type { KeyboardEvent } from 'react'
+import { apiFetch } from '@/lib/api'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 
 export interface RunSessionSummary {
   id: string
@@ -206,6 +207,9 @@ export function TimelineRow({
                   {targetHr}
                 </p>
               )}
+              {session.type === 'strength' && (
+                <StrengthLiftPreview sessionId={session.id} />
+              )}
               <div className="flex items-center gap-2 pt-1">
                 <Button
                   size="sm"
@@ -248,6 +252,110 @@ export function TimelineRow({
             <p className="pt-1 text-xs text-muted-foreground/50">Skipped</p>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Strength Lift Preview ──────────────────────────────────────
+// Shown in the expanded Today row for strength sessions so the athlete
+// can see the top lifts before tapping Enter. Lazy-fetches on mount
+// (mount only happens when the row is expanded).
+
+interface PreviewExercise {
+  exerciseId: string
+  name: string
+  label: string
+  section: 'warmup' | 'main' | 'accessory' | 'core'
+  orderIndex: number
+  prescription: {
+    trainingMaxKg: number | null
+    wavePercentage: number | null
+    prescribedWeightKg: number | null
+    setsReps: string
+  }
+}
+
+function stripLiftSuffix(label: string): string {
+  return label.replace(/\s+Press$/i, '').replace(/\s+Progression$/i, '').trim()
+}
+
+function shortLiftSummary(ex: PreviewExercise): string {
+  const name = stripLiftSuffix(ex.label || ex.name)
+  const weight = ex.prescription.prescribedWeightKg
+  const setsMatch = ex.prescription.setsReps.match(/^(\d+)×/)
+  const sets = setsMatch ? setsMatch[1] : null
+  if (weight == null || sets == null) return name
+  return `${name} ${sets}×${weight}kg`
+}
+
+function StrengthLiftPreview({ sessionId }: { sessionId: string }) {
+  const [exercises, setExercises] = useState<PreviewExercise[] | null>(null)
+  const [error, setError] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<{ exercises?: PreviewExercise[] }>(`/api/sessions/${sessionId}/strength-preview`)
+      .then(res => {
+        if (cancelled) return
+        setExercises(res.exercises ?? [])
+      })
+      .catch(() => {
+        if (cancelled) return
+        setError(true)
+      })
+    return () => { cancelled = true }
+  }, [sessionId])
+
+  if (error || (exercises != null && exercises.length === 0)) return null
+  if (exercises == null) {
+    return (
+      <p className="pb-2 text-[12px] text-muted-foreground/40">Loading lifts...</p>
+    )
+  }
+
+  const mainLifts = exercises.filter(e => e.section === 'main').slice(0, 3)
+  const rest = exercises.filter(e => e.section !== 'main')
+  if (mainLifts.length === 0) return null
+
+  const summary = mainLifts.map(shortLiftSummary).join(' · ')
+
+  return (
+    <div className="pb-2">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); tapHaptic(); setExpanded(v => !v) }}
+        className="flex w-full items-center gap-1 text-left text-[13px] text-foreground/80 tabular-nums"
+        aria-label={expanded ? 'Hide full lift list' : 'Show full lift list'}
+      >
+        <span className="flex-1">{summary}</span>
+        <svg
+          className={`h-3 w-3 shrink-0 text-muted-foreground/40 transition-transform ${expanded ? 'rotate-90' : ''}`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M9 18l6-6-6-6" />
+        </svg>
+      </button>
+      {expanded && (
+        <ul className="mt-2 space-y-1 text-[12px] text-muted-foreground/80 tabular-nums">
+          {mainLifts.map(ex => (
+            <li key={ex.exerciseId} className="flex justify-between gap-3">
+              <span>{stripLiftSuffix(ex.label || ex.name)}</span>
+              <span className="text-foreground/70">
+                {ex.prescription.setsReps}{ex.prescription.prescribedWeightKg != null ? ` · ${ex.prescription.prescribedWeightKg}kg` : ''}
+              </span>
+            </li>
+          ))}
+          {rest.length > 0 && (
+            <li className="pt-1 text-[11px] uppercase tracking-wider text-muted-foreground/40">
+              + {rest.length} accessory / core
+            </li>
+          )}
+        </ul>
       )}
     </div>
   )
