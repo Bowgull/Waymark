@@ -11,6 +11,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "npx wrangler d1 execute waymark-db --local --file=./drizzle/0001_open_supernaut.sql",
     "db:migrate:remote": "npx wrangler d1 execute waymark-db --remote --file=./drizzle/0001_open_supernaut.sql",
+    "db:migrate:0019:local": "npx wrangler d1 execute waymark-db --local --file=./drizzle/0019_static_stretch_warmup.sql",
+    "db:migrate:0019:remote": "npx wrangler d1 execute waymark-db --remote --file=./drizzle/0019_static_stretch_warmup.sql",
     "db:seed:generate": "tsx src/db/seed.ts",
     "db:seed:local": "npx wrangler d1 execute waymark-db --local --file=./src/db/seed.sql",
     "db:seed:remote": "npx wrangler d1 execute waymark-db --remote --file=./src/db/seed.sql",

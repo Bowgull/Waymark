@@ -18,7 +18,7 @@ const DAILY_MOBILITY: TemplateSession = {
  *
  * Daily AM Mobility runs every day (7 exercises, ~8-10 min). This is the
  * micro-dose that actually remodels posture. Then on top of that:
- * - M/W/F AM: Zone 2 (5-move dynamic warmup + easy Zone 2 run)
+ * - M/W/F AM: Zone 2 (5-move pre-run stretch + easy Zone 2 run)
  * - T/Th AM: Strength (Mobility runs first, acts as pre-lift activation)
  * - Sat AM: Bag Work + progression run
  * - PM evenings: MT Class (M/W/F), Reset (Th/Sat)
