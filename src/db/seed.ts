@@ -61,7 +61,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'back,biceps,rear_delts',
     equipment: 'barbell',
     formCues: 'Hinge at hips, flat back. Pull to lower chest and squeeze shoulder blades together at the top. This directly fights the forward-shoulder posture from desk work.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=FWJR5Ve8bnQ',
+    formVideoUrl: 'https://www.youtube.com/watch?v=G8l_8chR5BE',
   },
   {
     id: 'ex-rdl',
@@ -88,7 +88,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'back,glutes,hamstrings,quads',
     equipment: 'barbell',
     formCues: 'Push the floor away. Don\'t think "pull the bar up." Ribs down, belt buckle to chin at lockout. Squeeze glutes at the top. You earned this progression.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=op9kVnSso6Q',
+    formVideoUrl: 'https://www.youtube.com/watch?v=wYREQkVtvEc',
   },
 
   // ── Strength: Accessories ───────────────────────────────────
@@ -276,7 +276,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'obliques,grip,traps',
     equipment: 'dumbbell,kettlebell',
     formCues: 'Heavy weight in one hand, walk tall without leaning. This builds the anti-lateral flexion strength that keeps you upright in the clinch. Switch sides each set.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=iq5D5SU2Oq4',
+    formVideoUrl: 'https://www.youtube.com/watch?v=tNHdx7pmrGI',
   },
 
   // ── Foundation: Upper Body (UCS Corrective) ─────────────────
@@ -314,7 +314,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'chest,front_delts',
     equipment: 'doorway',
     formCues: 'Forearm on doorframe at 90 degrees, step through gently. This opens the chest that desk posture closes down. Hold 30s each side. Breathe into the stretch.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=Dmm8_S23I74',
+    formVideoUrl: 'https://www.youtube.com/watch?v=wwKWBwj-05U',
   },
   {
     id: 'ex-hip-flexor-stretch',
@@ -361,7 +361,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'glutes,core',
     equipment: 'bodyweight',
     formCues: 'Squeeze glutes at the top, don\'t push through your lower back. This activates the glutes that "turn off" from sitting all day. Tuck tailbone slightly. Hold 2 seconds at top.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=OUgsJ8-Vi0E',
+    formVideoUrl: 'https://www.youtube.com/watch?v=tl6xvm4-Qk0',
   },
   {
     id: 'ex-dead-bugs',
@@ -370,7 +370,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'abs,hip_flexors,core',
     equipment: 'bodyweight',
     formCues: 'Lower back pressed into the floor. Opposite arm and leg extend out. If your back arches, you went too far. This teaches your core to stabilize your spine during movement.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=o4GKiEoYClI',
+    formVideoUrl: 'https://www.youtube.com/watch?v=0XVbn86Btj0',
   },
   {
     id: 'ex-bird-dogs',
@@ -379,7 +379,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'core,glutes,lower_back',
     equipment: 'bodyweight',
     formCues: 'On all fours, extend opposite arm and leg. Keep your hips level, don\'t rotate. This builds the cross-body stability that protects your spine and powers rotational movement.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=wiFNA3sqjCA',
+    formVideoUrl: 'https://www.youtube.com/watch?v=wGh2fZU20-M',
   },
   {
     id: 'ex-cat-cow',
@@ -388,7 +388,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'spine,core',
     equipment: 'bodyweight',
     formCues: 'Arch up (cat), then drop belly and look up (cow). Move slowly with your breath. This warms up your entire spine and teaches segmental movement through each vertebra.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=kqnua4rHVVA',
+    formVideoUrl: 'https://www.youtube.com/watch?v=y39PrKY_4JM',
   },
   {
     id: 'ex-pigeon-stretch',
@@ -397,7 +397,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'glutes,hip_flexors',
     equipment: 'bodyweight',
     formCues: 'Front leg bent, back leg extended. Sink hips down and breathe. This opens the deep hip rotators that get locked from sitting. Hold 45s each side. Don\'t force it.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=2vwIdJbOqx4',
+    formVideoUrl: 'https://www.youtube.com/watch?v=Ms6VMXPq2uU',
   },
   {
     id: 'ex-cossack-squats',
@@ -523,7 +523,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'hip_flexors,glutes',
     equipment: 'bodyweight',
     formCues: 'Step forward, pull opposite knee to chest for a beat, release and walk through. 6 per side. Dynamic hip flexor open, counters sitting-driven APT.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=8v0U-gIouhI',
+    formVideoUrl: 'https://www.youtube.com/watch?v=GVU4paANHoE',
   },
   {
     id: 'ex-walking-quad-pulls',
@@ -532,7 +532,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'quads,hip_flexors',
     equipment: 'bodyweight',
     formCues: 'Step, grab same-side ankle behind you, squeeze glute for a beat, walk through. 6 per side. Lengthens rectus femoris on the move.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=0u4lPXZyOOI',
+    formVideoUrl: 'https://www.youtube.com/watch?v=yGN2Z6XkWNQ',
   },
   {
     id: 'ex-spiderman-tspine',
@@ -541,7 +541,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'hips,adductors,thoracic_spine',
     equipment: 'bodyweight',
     formCues: 'Low lunge, hand inside front foot, rotate top arm to ceiling and follow with your eyes. 5 per side. Hip, hamstring, and thoracic rotation in one.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=uCcsokYVl2M',
+    formVideoUrl: 'https://www.youtube.com/watch?v=nOqMAsvRJ90',
   },
   {
     id: 'ex-lateral-lunges',
@@ -550,7 +550,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'adductors,glutes,quads',
     equipment: 'bodyweight',
     formCues: 'Step wide, sit into one hip, other leg stays straight. 6 per side. Adductor and glute medius — frontal plane prep runners skip.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=fP5_zrFJoLM',
+    formVideoUrl: 'https://www.youtube.com/watch?v=4NlJdSzHeUg',
   },
   {
     id: 'ex-a-skips',
@@ -559,7 +559,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'calves,hip_flexors,glutes',
     equipment: 'bodyweight',
     formCues: 'Light skip, drive lead knee to 90, opposite arm swings. 30s easy. Primes stride mechanics. Stay bouncy, not hard.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=m5x8O4vzy2c',
+    formVideoUrl: 'https://www.youtube.com/watch?v=GQg9L28bi1g',
   },
 
   // ── Zone 2 static pre-run stretches (replaces the dynamic set above) ──
@@ -570,7 +570,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'hamstrings,calves,low_back',
     equipment: 'bodyweight',
     formCues: 'Feet hip-width, fold from the hips, let the head hang. Soft knees if the hamstrings grip. 45s. Full posterior chain opens in one move.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=gcH5FWyOiaw',
+    formVideoUrl: 'https://www.youtube.com/watch?v=tlVT41u7bUQ',
   },
   {
     id: 'ex-butterfly-stretch',
@@ -579,7 +579,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'adductors,hips',
     equipment: 'bodyweight',
     formCues: 'Soles together, knees fall open, fold forward from the hips. 60s. Adductor and inner-hip length sitting closes off.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=LpMLUH1CM1k',
+    formVideoUrl: 'https://www.youtube.com/watch?v=b2DBNGlZfpo',
   },
   {
     id: 'ex-standing-quad-stretch',
@@ -597,7 +597,7 @@ const exercises: Exercise[] = [
     muscleGroups: 'calves,achilles',
     equipment: 'bodyweight',
     formCues: 'Hands on wall, back leg straight, press the heel down. 30s each side. Gastrocnemius and Achilles, the chain that takes every step of impact.',
-    formVideoUrl: 'https://www.youtube.com/watch?v=Kz162ij1s7I',
+    formVideoUrl: 'https://www.youtube.com/watch?v=f1HzSAuB-Vw',
   },
 ]
 
