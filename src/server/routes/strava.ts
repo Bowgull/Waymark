@@ -83,17 +83,34 @@ strava.get('/callback', async (c) => {
     athlete?: { id: number; firstname?: string; lastname?: string }
   }
 
+  // Strava always returns athlete on authorization_code exchange. If it's
+  // missing, something is deeply wrong. Fail loudly rather than storing a
+  // bogus athleteId=0 that would collide with real user 0 and break ingest.
+  if (!data.athlete || typeof data.athlete.id !== 'number') {
+    console.error('[strava] token exchange missing athlete', data)
+    return c.redirect(`/api/strava/error?reason=token_exchange_failed`)
+  }
+
+  // Required scopes for ingestion. If the user deselected activity:read_all
+  // in Strava's consent screen, we can store the token but ingest will 401.
+  // Log loudly so we can diagnose later; the error page lives in Settings flow.
+  const scope = data.scope ?? SCOPES
+  const required = ['read', 'activity:read_all']
+  const granted = new Set(scope.split(','))
+  const missing = required.filter(s => !granted.has(s))
+  if (missing.length > 0) {
+    console.warn('[strava] granted scope missing required permissions', { scope, missing })
+  }
+
   const db = createDB(c.env)
   const now = Date.now()
-  const athleteName = data.athlete
-    ? [data.athlete.firstname, data.athlete.lastname].filter(Boolean).join(' ') || null
-    : null
-  const scope = data.scope ?? SCOPES
+  const athleteName =
+    [data.athlete.firstname, data.athlete.lastname].filter(Boolean).join(' ') || null
 
   await db.delete(stravaTokens).where(eq(stravaTokens.id, 'default'))
   await db.insert(stravaTokens).values({
     id: 'default',
-    athleteId: data.athlete?.id ?? 0,
+    athleteId: data.athlete.id,
     athleteName,
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
@@ -182,8 +199,18 @@ strava.post('/webhook', async (c) => {
 // Safety net. Called silently on Today mount. Ingests any recent activity
 // not yet linked in run_sessions. Bounded to last 48h.
 strava.post('/poll-recent', async (c) => {
+  // Distinguish "no token row" from "refresh failed" so a transient network
+  // blip during refresh doesn't make the app show "not connected" when the
+  // user really is connected.
+  const db = createDB(c.env)
+  const [row] = await db.select().from(stravaTokens).where(eq(stravaTokens.id, 'default'))
+  if (!row) return c.json({ ingested: 0, connected: false })
+
   const token = await getStravaAccessToken(c.env)
-  if (!token) return c.json({ ingested: 0, connected: false })
+  if (!token) {
+    console.error('[strava-poll] token refresh failed for connected athlete', row.athleteId)
+    return c.json({ ingested: 0, connected: true, error: 'refresh_failed' })
+  }
 
   const after = Math.floor(Date.now() / 1000) - POLL_WINDOW_SEC
   const url = `${ACTIVITIES_URL}?after=${after}&per_page=30`
@@ -199,6 +226,9 @@ strava.post('/poll-recent', async (c) => {
   for (const act of runs) {
     const result = await ingestStravaActivity(act.id, c.env)
     if (result.status === 'ingested') ingested += 1
+    else if (result.status === 'fetch_failed' || result.status === 'no_token') {
+      console.error('[strava-poll] ingest non-ok', { activityId: act.id, result })
+    }
   }
   return c.json({ ingested, connected: true })
 })
@@ -507,19 +537,28 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   // A session is considered "already claimed" only if it has a run_sessions row
   // with stravaActivityId set — a locally-started run (via Start Run button)
   // creates a row WITHOUT stravaActivityId, which we'll upgrade in place.
-  // Skipped sessions are eligible: if Strava proves the run happened, override
-  // the skip — the user ran, the rollover was wrong.
+  // Skipped sessions are NOT auto-matched: if the user marked a day skipped
+  // (sick, rest) and Strava picks up a light activity, we create an orphan
+  // instead so the user explicitly reassigns it. Silent un-skipping violated
+  // the coach-silently-but-don't-decide-for-the-user principle.
   const planned = await db.select().from(sessions)
     .where(and(
       inArray(sessions.type, ['running', 'foundation_run']),
       eq(sessions.scheduledDate, epochDay),
     ))
-  const allRuns = await db.select().from(runSessions)
+  // Only pull run_sessions for today's planned sessions — the old global scan
+  // grew O(all-time-runs) per ingest and was the hot-path bottleneck during
+  // /poll-recent bursts.
+  const plannedIds = planned.map(s => s.id)
+  const runsForPlanned = plannedIds.length > 0
+    ? await db.select().from(runSessions).where(inArray(runSessions.sessionId, plannedIds))
+    : []
   const stravaLinkedSessionIds = new Set(
-    allRuns.filter(r => r.stravaActivityId != null).map(r => r.sessionId),
+    runsForPlanned.filter(r => r.stravaActivityId != null).map(r => r.sessionId),
   )
   const candidate = planned.find(s =>
     s.status !== 'completed' &&
+    s.status !== 'skipped' &&
     !stravaLinkedSessionIds.has(s.id),
   )
 
@@ -528,13 +567,6 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   if (candidate) {
     parentSessionId = candidate.id
     attachmentStatus = 'auto_pending'
-    // If nightly rollover had marked this skipped, Strava proving the run
-    // happened overrides that — restore to planned so the user sees the match.
-    if (candidate.status === 'skipped') {
-      await db.update(sessions)
-        .set({ status: 'planned' })
-        .where(eq(sessions.id, candidate.id))
-    }
   } else {
     parentSessionId = crypto.randomUUID()
     await db.insert(sessions).values({
@@ -554,7 +586,8 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   // If a locally-started run_sessions row already exists for this parent
   // session (user tapped Start Run before Strava webhook arrived), upgrade
   // that row in place. The unique index on session_id blocks a second insert.
-  const existingForParent = allRuns.find(r => r.sessionId === parentSessionId)
+  const [existingForParent] = await db.select().from(runSessions)
+    .where(eq(runSessions.sessionId, parentSessionId))
 
   // Seed max_hr from Tanaka (208 - 0.7 × age) if profile has DOB but no
   // max_hr yet. Observed max from real runs will overwrite this. Without the
@@ -622,15 +655,21 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   }
 
   if (act.splits_metric && act.splits_metric.length > 0) {
-    for (const sp of act.splits_metric) {
-      await db.insert(runSplits).values({
-        id: crypto.randomUUID(),
-        runSessionId,
-        kmIndex: sp.split,
-        durationSec: sp.moving_time,
-        avgHr: sp.average_heartrate != null ? Math.round(sp.average_heartrate) : null,
-        elevationGainM: sp.elevation_difference != null ? Math.round(sp.elevation_difference) : null,
-      })
+    // Batch insert so a marathon with 42 splits doesn't fire 42 serial writes
+    // and can't leave half the splits behind on mid-loop failure. D1 has a
+    // 100-param cap per statement; each split binds 6 columns so we chunk at
+    // 15 rows (90 params) to stay comfortably under.
+    const rows = act.splits_metric.map(sp => ({
+      id: crypto.randomUUID(),
+      runSessionId,
+      kmIndex: sp.split,
+      durationSec: sp.moving_time,
+      avgHr: sp.average_heartrate != null ? Math.round(sp.average_heartrate) : null,
+      elevationGainM: sp.elevation_difference != null ? Math.round(sp.elevation_difference) : null,
+    }))
+    const CHUNK = 15
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      await db.insert(runSplits).values(rows.slice(i, i + CHUNK))
     }
   }
 
