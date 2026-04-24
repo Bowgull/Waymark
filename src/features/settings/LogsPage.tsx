@@ -272,7 +272,3 @@ function countByLevel(entries: LogEntry[]) {
   return c
 }
 
-function formatLine(e: LogEntry): string {
-  const ctx = e.context ? ' ' + JSON.stringify(e.context) : ''
-  return `${formatDate(e.ts)} ${formatTime(e.ts)} ${e.level.toUpperCase().padEnd(5)} [${e.category}] ${e.screen ?? '-'} ${e.sessionId ? `(s:${e.sessionId}) ` : ''}${e.message}${ctx}`
-}
