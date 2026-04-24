@@ -8,10 +8,11 @@
 //  - session_skipped: the athlete skipped. Reshape the rest of the week.
 //  - session_replaced: replacement just landed. Redistribute the cascade.
 //  - wellness_logged: sleep/soreness crossed an overreach threshold.
-//  - rollover: nightly pass. Fires when two or more recent days flipped to
-//    missed, OR when ad-hoc bonus sessions created a conflict with the rest
-//    of the week (MT cap breach, intensity stacked adjacent to a prescribed
-//    hard day, or weekly training days exceeded the target).
+//  - rollover: nightly pass. Fires when two or more recent days went untouched
+//    (auto-missed) or were explicitly skipped, OR when ad-hoc bonus sessions
+//    created a conflict with the rest of the week (MT cap breach, intensity
+//    stacked adjacent to a prescribed hard day, or weekly training days
+//    exceeded the target).
 //
 // Cost safety:
 //  - One Haiku call per trigger, never Sonnet.
@@ -19,7 +20,7 @@
 //  - Pre-filter gates: if no rule fires, we skip the AI call entirely.
 //  - Fails closed: Haiku offline -> no adjustment, the weekly plan still stands.
 
-import { and, desc, eq, gte, lte } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, sessions, trainingMaxes, userProfile, weekAdjustments, weekPlans } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
@@ -191,12 +192,14 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
     }
   }
 
-  // Recent missed: planned sessions flipped to missed in last 3 days.
+  // Recent absent: planned sessions that didn't get done in last 3 days —
+  // either system-rolled-over ('missed') or athlete-tapped-skip ('skipped').
+  // Both count toward the pattern the coach reshapes against.
   const recentMissedRows = await db
     .select({ type: sessions.type, scheduledDate: sessions.scheduledDate })
     .from(sessions)
     .where(and(
-      eq(sessions.status, 'missed'),
+      inArray(sessions.status, ['missed', 'skipped']),
       gte(sessions.scheduledDate, ctx.todayEpochDay - 3),
       lte(sessions.scheduledDate, ctx.todayEpochDay - 1),
     ))
@@ -286,7 +289,7 @@ function gate(bundle: SignalBundle): TriggerGateResult {
 
     case 'rollover': {
       if (bundle.recentMissed.length >= 2) {
-        return { allow: true, rationale: `${bundle.recentMissed.length} planned days missed in the last 3.` }
+        return { allow: true, rationale: `${bundle.recentMissed.length} planned days missed or skipped in the last 3.` }
       }
       const conflict = bundle.adHocConflict
       if (conflict) {

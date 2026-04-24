@@ -21,7 +21,7 @@ import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
-import { runReplaceSuggestions } from '../lib/reactiveCoach'
+import { runReactiveReplan, runReplaceSuggestions, type ReactiveTrigger } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { logs } from './routes/logs'
 
@@ -51,6 +51,29 @@ app.onError((err, c) => {
 
 type DrizzleDB = ReturnType<typeof createDB>
 
+// Fire-and-forget reactive coach. Every meaningful athlete action pings the
+// coach with a trigger; the coach's gate + 2h debounce decide whether an AI
+// call is actually worth it. Strong signals (injury skip, overreach wellness,
+// HR drift on a completed run) produce immediate silent week adjustments;
+// weak signals wait for the nightly rollover pass. Errors swallowed so the
+// triggering mutation always succeeds.
+function fireReactive(
+  c: { env: Bindings; executionCtx: { waitUntil: (p: Promise<unknown>) => void } },
+  db: DrizzleDB,
+  trigger: ReactiveTrigger,
+  todayEpochDay: number,
+  sessionId?: string,
+): void {
+  const run = runReactiveReplan(db, c.env.ANTHROPIC_API_KEY, { trigger, sessionId, todayEpochDay })
+    .catch(err => console.warn('[reactiveCoach] fire-and-forget failed', err))
+  try {
+    c.executionCtx.waitUntil(run)
+  } catch (err) {
+    // Preview / test harness may not expose executionCtx. Run inline.
+    console.log('[reactiveCoach] no executionCtx; running inline', err)
+    void run
+  }
+}
 
 // Shared strength-weight math. One source of truth for start-strength,
 // buildWorkoutResponse, and strength-preview so prescription never drifts
@@ -660,6 +683,13 @@ app.post('/api/sessions/:id/replace', async (c) => {
 
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
   const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
+
+  // Ping the reactive coach so it can consider ripple effects on the rest of
+  // the week (intensity stacking, volume target, MT cap). Gate + debounce
+  // decide whether an adjustment is actually warranted.
+  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
+  fireReactive(c, db, 'session_replaced', todayEpochDay, newId)
+
   return c.json({ original: replaced, replacement: created })
 })
 
@@ -697,9 +727,12 @@ app.patch('/api/sessions/:id', async (c) => {
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
 
-  // Skip commits silently. Reactive replan runs nightly and will read the
-  // saved skip_reason columns when it reshapes the week.
+  // Skip writes the reason columns, then pings the reactive coach. The coach's
+  // gate + 2h debounce decide whether it's worth a Sonnet call — the skip is
+  // still saved regardless.
   if (body.status === 'skipped' && row) {
+    const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
+    fireReactive(c, createDB(c.env), 'session_skipped', todayEpochDay, id)
     return c.json({ session: row, coach: null })
   }
 
@@ -948,6 +981,12 @@ app.post('/api/sessions/:id/complete', async (c) => {
       reviewFlag: reviewOutput.flag,
     }).where(eq(sessions.id, sessionId))
   }
+
+  // Ping the reactive coach. The gate only allows through when HR drift reads
+  // clear_fatigue, zone-2 was over-paced, or the completed type diverged from
+  // the prescribed slot. Clean completions are no-op past the gate.
+  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
+  fireReactive(c, db, 'session_completed', todayEpochDay, sessionId)
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   return c.json(updated)
@@ -1606,6 +1645,8 @@ app.post('/api/daily-logs', async (c) => {
   const rawObj = raw as Record<string, unknown>
   const hasKey = (k: string) => Object.prototype.hasOwnProperty.call(rawObj, k)
 
+  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
+
   const existing = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, epochDay))
   if (existing.length > 0) {
     const prev = existing[0]
@@ -1617,6 +1658,9 @@ app.post('/api/daily-logs', async (c) => {
       notes: hasKey('notes') ? body.notes ?? null : prev.notes,
     }).where(eq(dailyLogs.id, prev.id))
     const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, prev.id))
+    if (epochDay === todayEpochDay) {
+      fireReactive(c, db, 'wellness_logged', todayEpochDay)
+    }
     return c.json(row)
   }
 
@@ -1633,6 +1677,9 @@ app.post('/api/daily-logs', async (c) => {
   })
 
   const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, id))
+  if (epochDay === todayEpochDay) {
+    fireReactive(c, db, 'wellness_logged', todayEpochDay)
+  }
   return c.json(row)
 })
 
