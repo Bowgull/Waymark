@@ -4,21 +4,22 @@
 
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { Capacitor } from '@capacitor/core'
+import { heavyHaptic } from './haptics'
 
 const isNative = Capacitor.isNativePlatform()
 
 // ─── Notification IDs ────────────────────────────────────────────────────────
 // Reserved ID ranges (keep allocation visible):
-//   1000-1012  morning alarm base + snoozes
-//   2000-2047  nuclear follow-ups
+//   1000-1059  morning alarm escalating sequence (4 phases, up to 60 pulses)
 //   3000       PM leave-by
 //   4000-4099  round timer cues
 //   5000-5001  redeploy reminders (6-day warn + day-of)
 const ALARM_BASE_ID = 1000
-const ALARM_SNOOZE_1_ID = 1001
-const ALARM_SNOOZE_2_ID = 1002
-const ALARM_SNOOZE_3_ID = 1003
-const NUCLEAR_IDS = Array.from({ length: 20 }, (_, i) => 2000 + i)
+const ALARM_MAX_ID = 1059
+const ALARM_ALL_IDS = Array.from(
+  { length: ALARM_MAX_ID - ALARM_BASE_ID + 1 },
+  (_, i) => ALARM_BASE_ID + i,
+)
 const LEAVE_BY_ID = 3000
 
 // Round timer audio cues — fire as notifications when screen is locked
@@ -32,16 +33,61 @@ const CUE_STRENGTH_REST_END = 4005 // strength set rest over
 const REDEPLOY_WARN_ID = 5000
 const REDEPLOY_DAY_ID = 5001
 
-const ALL_ALARM_IDS = [
-  ALARM_BASE_ID,
-  ALARM_SNOOZE_1_ID,
-  ALARM_SNOOZE_2_ID,
-  ALARM_SNOOZE_3_ID,
-  ...NUCLEAR_IDS,
+// ─── Morning alarm sequence ──────────────────────────────────────────────────
+// Silent-mode = haptic-only, so a single buzz disappears. Cadence tightens as
+// you stay down; copy escalates in parallel. iOS caps pending notifications
+// at 64 — keep the full sequence under 60 to leave room for cues + leave-by.
+
+type AlarmPhase = 'alarm' | 'alarmNuclear'
+
+const GENTLE_COPY = [
+  (timeStr: string) => `It's ${timeStr}. You said you wanted this.`,
+  () => 'Up.',
+  () => 'Eyes open.',
+  () => 'Now.',
+  () => 'Move.',
 ]
 
-// ─── Copy ─────────────────────────────────────────────────────────────────────
-// Voice: you talking to yourself. Dark. Direct. No fluff.
+const POINTED_COPY = [
+  'Still in bed. Interesting choice.',
+  "You're going to skip. Just say it.",
+  'I see you.',
+  'Phone in hand yet?',
+  'This is the part where you decide.',
+  "Still pretending you can't hear me.",
+  'Who is this for, exactly?',
+  'The bag is waiting.',
+  'Your future self is watching this.',
+  'Stop negotiating.',
+  'Move a foot.',
+  'Sit up. Start there.',
+]
+
+const URGENT_COPY = [
+  'Last one. After this I get mean.',
+  'Up.',
+  'No.',
+  'Get up.',
+  'Now.',
+  'Enough.',
+  'Move.',
+  'Stop.',
+  'Out.',
+  'Soft.',
+  'Sit up.',
+  'Feet down.',
+  'Water first.',
+  "You know what you're doing.",
+  "I'm not stopping.",
+  'Count of three.',
+  'Three.',
+  'Two.',
+  'One.',
+  'Up.',
+  'I said up.',
+  'Still here.',
+  'Go.',
+]
 
 const NUCLEAR_COPY = [
   'Get up.',
@@ -50,21 +96,65 @@ const NUCLEAR_COPY = [
   "The bag isn't going anywhere. Neither am I.",
   'This is embarrassing.',
   "I've got nowhere else to be.",
-  "You'll feel better when you're done. You won't feel better lying there.",
+  "You'll feel better when you're done.",
   'Still here.',
   'Get. Up.',
   'Every minute you stay in bed is a minute someone else is training.',
   'Get up.',
   'Still here.',
-  'You know what you are right now? Soft.',
-  "The bag isn't going anywhere. Neither am I.",
+  'Soft.',
   'This is embarrassing.',
-  "I've got nowhere else to be.",
-  "You'll feel better when you're done. You won't feel better lying there.",
-  'Still here.',
   'Get. Up.',
-  'Every minute you stay in bed is a minute someone else is training.',
 ]
+
+interface AlarmPulse {
+  offsetSec: number
+  body: string
+  actionTypeId: AlarmPhase
+}
+
+function buildMorningSequence(baseTimeStr: string): AlarmPulse[] {
+  const pulses: AlarmPulse[] = []
+
+  // Phase 1 — gentle (0–60s, every 15s, 5 pulses)
+  for (let i = 0; i < 5; i++) {
+    const copy = GENTLE_COPY[i]
+    pulses.push({
+      offsetSec: i * 15,
+      body: copy(baseTimeStr),
+      actionTypeId: 'alarm',
+    })
+  }
+
+  // Phase 2 — pointed (75–185s, every 10s, 12 pulses)
+  for (let i = 0; i < POINTED_COPY.length; i++) {
+    pulses.push({
+      offsetSec: 75 + i * 10,
+      body: POINTED_COPY[i],
+      actionTypeId: 'alarm',
+    })
+  }
+
+  // Phase 3 — urgent (195–349s, every 7s, 23 pulses)
+  for (let i = 0; i < URGENT_COPY.length; i++) {
+    pulses.push({
+      offsetSec: 195 + i * 7,
+      body: URGENT_COPY[i],
+      actionTypeId: 'alarmNuclear',
+    })
+  }
+
+  // Phase 4 — nuclear (365–575s, every 15s, 15 pulses)
+  for (let i = 0; i < NUCLEAR_COPY.length; i++) {
+    pulses.push({
+      offsetSec: 365 + i * 15,
+      body: NUCLEAR_COPY[i],
+      actionTypeId: 'alarmNuclear',
+    })
+  }
+
+  return pulses
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -105,10 +195,15 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return result === 'granted'
 }
 
+// Legacy IDs from pre-2026-04-23 nuclear range (2000-2019). Kept here so a
+// one-time cleanup can cancel any orphaned pulses still pending from the old
+// schedule after upgrade. Remove once this build has been in prod a few weeks.
+const LEGACY_NUCLEAR_IDS = Array.from({ length: 20 }, (_, i) => 2000 + i)
+
 export async function cancelAllAlarms(): Promise<void> {
   if (!isNative) return
   await LocalNotifications.cancel({
-    notifications: ALL_ALARM_IDS.map((id) => ({ id })),
+    notifications: [...ALARM_ALL_IDS, ...LEGACY_NUCLEAR_IDS].map((id) => ({ id })),
   })
 }
 
@@ -139,63 +234,25 @@ export async function scheduleAlarms(
   const base = nextOccurrence(amH, amM)
 
   if (amEnabled) {
-    const snooze1 = addMinutes(base, 9)
-    const snooze2 = addMinutes(base, 18)
-    const snooze3 = addMinutes(base, 27)
-    const nuclearDates = NUCLEAR_IDS.map(
-      (_, i) => new Date(addMinutes(base, 36).getTime() + i * 15_000),
-    )
+    const pulses = buildMorningSequence(formatTime12(base))
+    if (pulses.length > ALARM_ALL_IDS.length) {
+      throw new Error(
+        `Morning alarm sequence has ${pulses.length} pulses but only ${ALARM_ALL_IDS.length} ID slots reserved`,
+      )
+    }
     const morningSound = { sound: 'morning.caf', interruptionLevel: 'timeSensitive' as const }
     const nuclearSound = { sound: 'nuclear.caf', interruptionLevel: 'timeSensitive' as const }
 
     await LocalNotifications.schedule({
-      notifications: [
-        {
-          id: ALARM_BASE_ID,
-          title: 'Waymark',
-          body: `It's ${formatTime12(base)}. You said you wanted this.`,
-          schedule: { at: base },
-          actionTypeId: 'alarm',
-          extra: { type: 'alarm' },
-          ...morningSound,
-        },
-        {
-          id: ALARM_SNOOZE_1_ID,
-          title: 'Waymark',
-          body: 'Still in bed. Interesting choice.',
-          schedule: { at: snooze1 },
-          actionTypeId: 'alarm',
-          extra: { type: 'alarm' },
-          ...morningSound,
-        },
-        {
-          id: ALARM_SNOOZE_2_ID,
-          title: 'Waymark',
-          body: "You're going to skip. Just say it.",
-          schedule: { at: snooze2 },
-          actionTypeId: 'alarm',
-          extra: { type: 'alarm' },
-          ...morningSound,
-        },
-        {
-          id: ALARM_SNOOZE_3_ID,
-          title: 'Waymark',
-          body: 'Last one. After this I get mean.',
-          schedule: { at: snooze3 },
-          actionTypeId: 'alarmNuclear',
-          extra: { type: 'alarm' },
-          ...morningSound,
-        },
-        ...NUCLEAR_IDS.map((id, i) => ({
-          id,
-          title: 'Waymark',
-          body: NUCLEAR_COPY[i],
-          schedule: { at: nuclearDates[i] },
-          actionTypeId: 'alarmNuclear',
-          extra: { type: 'alarmNuclear' },
-          ...nuclearSound,
-        })),
-      ],
+      notifications: pulses.map((pulse, i) => ({
+        id: ALARM_BASE_ID + i,
+        title: 'Waymark',
+        body: pulse.body,
+        schedule: { at: new Date(base.getTime() + pulse.offsetSec * 1000) },
+        actionTypeId: pulse.actionTypeId,
+        extra: { type: pulse.actionTypeId },
+        ...(pulse.actionTypeId === 'alarmNuclear' ? nuclearSound : morningSound),
+      })),
     })
   }
 
@@ -452,6 +509,10 @@ export async function initNotificationListeners(): Promise<void> {
         ],
       },
     ],
+  })
+
+  LocalNotifications.addListener('localNotificationReceived', () => {
+    heavyHaptic()
   })
 
   LocalNotifications.addListener('localNotificationActionPerformed', async (event) => {
