@@ -22,6 +22,7 @@ import { runSessionReview } from '../lib/sessionReviewAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 import { runReactiveReplan, runReplaceSuggestions, type ReactiveTrigger } from '../lib/reactiveCoach'
+import { STRONG_SKIP_REASONS, GRACE_SEC, schedulePendingFire, cancelPendingFires, processPendingFires } from '../lib/pendingReactive'
 import { strava } from './routes/strava'
 import { logs } from './routes/logs'
 
@@ -327,6 +328,14 @@ app.get('/api/sessions/today', async (c) => {
   // Silent rollover: any planned session dated before today becomes 'missed'.
   // Runs before the read so the client sees the rolled-over state.
   await rolloverStaleSessions(db, epochDay)
+
+  // Any strong-reason skip whose 4h grace has elapsed and wasn't canceled by
+  // a replacement now pings the reactive coach. Fire-and-forget — this read
+  // returns whatever was in the DB and the coach's silent week adjustment
+  // lands by the next poll.
+  const nowSec = Math.floor(Date.now() / 1000)
+  await processPendingFires(db, c.env.ANTHROPIC_API_KEY, nowSec, epochDay, p => c.executionCtx.waitUntil(p))
+
   const rows = await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay))
 
   // Attach run_sessions (Strava ingestion results) per session so Today can
@@ -684,11 +693,11 @@ app.post('/api/sessions/:id/replace', async (c) => {
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
   const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
 
-  // Ping the reactive coach so it can consider ripple effects on the rest of
-  // the week (intensity stacking, volume target, MT cap). Gate + debounce
-  // decide whether an adjustment is actually warranted.
-  const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
-  fireReactive(c, db, 'session_replaced', todayEpochDay, newId)
+  // Athlete decided for themselves — cancel any pending reactive fire for
+  // the original session (e.g. injury skip 20 min ago, now swapped for
+  // mobility). Nightly pass still sees the week and will reshape if the
+  // new pattern warrants it.
+  await cancelPendingFires(db, id)
 
   return c.json({ original: replaced, replacement: created })
 })
@@ -727,12 +736,18 @@ app.patch('/api/sessions/:id', async (c) => {
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
 
-  // Skip writes the reason columns, then pings the reactive coach. The coach's
-  // gate + 2h debounce decide whether it's worth a Sonnet call — the skip is
-  // still saved regardless.
+  // Skip writes the reason columns, then schedules a deferred coach fire
+  // IF the reason is strong (injury / too_sore / sick). Weak-reason skips
+  // (tired / schedule / low_drive / other) wait for the nightly pass so
+  // casual rearrangements don't trigger an AI reshape. Strong skips get a
+  // 4-hour grace window; if the athlete replaces the session before then,
+  // the pending fire is canceled.
   if (body.status === 'skipped' && row) {
-    const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
-    fireReactive(c, createDB(c.env), 'session_skipped', todayEpochDay, id)
+    const reason = body.skipReason ?? null
+    if (reason && STRONG_SKIP_REASONS.has(reason)) {
+      const nowSec = Math.floor(Date.now() / 1000)
+      await schedulePendingFire(db, 'session_skipped', id, nowSec + GRACE_SEC)
+    }
     return c.json({ session: row, coach: null })
   }
 
