@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { LockIcon } from '@/components/icons/SessionIcons'
+import { isGateEnabled, isUnlocked, requireUnlock, subscribe } from '@/lib/waybookGate'
 
 interface WeeklyJournalCardProps {
   onSubmit: (reflection: string) => void
@@ -25,6 +27,21 @@ export function WeeklyJournalCard({ onSubmit, existingReflection }: WeeklyJourna
   const [saved, setSaved] = useState(!!existingReflection)
   const [editing, setEditing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [unlocked, setUnlocked] = useState(() => isUnlocked())
+  const [unlocking, setUnlocking] = useState(false)
+
+  useEffect(() => subscribe((u) => setUnlocked(u)), [])
+
+  async function handleUnlock() {
+    if (unlocking) return
+    setUnlocking(true)
+    try {
+      const ok = await requireUnlock('Unlock Weekly Debrief')
+      if (ok) setUnlocked(true)
+    } finally {
+      setUnlocking(false)
+    }
+  }
 
   function handleSubmit() {
     if (!reflection.trim()) return
@@ -82,6 +99,16 @@ export function WeeklyJournalCard({ onSubmit, existingReflection }: WeeklyJourna
             )}
           </div>
         </>
+      ) : isGateEnabled() && !unlocked ? (
+        <div className="flex flex-col items-start gap-3 py-2">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <LockIcon size={16} />
+            <span className="text-sm">Debrief is locked.</span>
+          </div>
+          <Button onClick={handleUnlock} disabled={unlocking} variant="ghost" className="h-9 px-3 text-xs">
+            {unlocking ? 'Unlocking...' : 'Unlock to view'}
+          </Button>
+        </div>
       ) : (
         <>
           <JournalLines content={reflection} />

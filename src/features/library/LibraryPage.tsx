@@ -10,6 +10,8 @@ import { ForgeIcon, LockIcon } from '@/components/icons/SessionIcons'
 import { GoldDivider } from '@/components/ui/GoldDivider'
 import { LibrarySkeleton } from '@/components/ui/Skeleton'
 import { JournalEntry } from '@/features/today/JournalCard'
+import { WaybookGate } from '@/features/library/WaybookGate'
+import { isGateEnabled, isUnlocked, requireUnlock, subscribe } from '@/lib/waybookGate'
 
 interface Exercise {
   id: string
@@ -99,14 +101,17 @@ export function LibraryPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [data, journalData, comboData] = await Promise.all([
+        const gateLocked = isGateEnabled() && !isUnlocked()
+        const [data, comboData, journalData] = await Promise.all([
           apiFetch<Exercise[]>('/api/exercises'),
-          apiFetch<JournalEntry[]>('/api/journal/history?days=90'),
           apiFetch<ComboData[]>('/api/combos'),
+          gateLocked
+            ? Promise.resolve<JournalEntry[]>([])
+            : apiFetch<JournalEntry[]>('/api/journal/history?days=90'),
         ])
         setExercises(data)
-        setJournalEntries(journalData)
         setComboList(comboData)
+        setJournalEntries(journalData)
       } catch (e) {
         console.error('Failed to load library:', e)
       } finally {
@@ -114,9 +119,26 @@ export function LibraryPage() {
       }
     }
     load()
+    // If the user unlocks Waybook elsewhere, fetch journal entries so search works.
+    const off = subscribe(async (unlocked) => {
+      if (unlocked && journalEntries.length === 0) {
+        try {
+          const rows = await apiFetch<JournalEntry[]>('/api/journal/history?days=90')
+          setJournalEntries(rows)
+        } catch (e) {
+          console.error('Failed to load journal after unlock:', e)
+        }
+      }
+    })
+    return off
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function loadJournal() {
+    if (isGateEnabled() && !isUnlocked()) {
+      const ok = await requireUnlock('Unlock Waybook')
+      if (!ok) return
+    }
     if (journalEntries.length > 0) {
       setJournalOpen(!journalOpen)
       return
@@ -536,6 +558,7 @@ export function LibraryPage() {
 
       {/* Waybook search results */}
       {isSearching && filteredJournal.length > 0 && (
+        <WaybookGate reason="Unlock Waybook to search entries">
         <div className="mb-4">
           <div className="flex items-center gap-3 px-1 py-2">
             <img src={waybookPng} alt="" className="h-8 w-8 object-contain opacity-50" style={{ mixBlendMode: 'screen' }} />
@@ -566,6 +589,7 @@ export function LibraryPage() {
             ))}
           </div>
         </div>
+        </WaybookGate>
       )}
 
       {/* Journal section */}
