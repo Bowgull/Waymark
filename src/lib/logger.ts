@@ -17,6 +17,7 @@ export interface LogEntry {
   level: LogLevel
   category: LogCategory
   message: string
+  userMessage?: string // plain-technical summary shown prominently in the viewer
   context?: Record<string, unknown>
   screen?: string
   sessionId?: string
@@ -95,13 +96,14 @@ class Logger {
     safeSetItem(STORAGE_KEY, JSON.stringify(this.buffer))
   }
 
-  private make(level: LogLevel, category: LogCategory, message: string, context?: Record<string, unknown>): LogEntry {
+  private make(level: LogLevel, category: LogCategory, message: string, context?: Record<string, unknown>, userMessage?: string): LogEntry {
     return {
       id: genId(),
       ts: Date.now(),
       level,
       category,
       message,
+      userMessage,
       context,
       screen: currentScreen(),
       sessionId: this.sessionId,
@@ -114,20 +116,21 @@ class Logger {
   info(category: LogCategory, message: string, context?: Record<string, unknown>) {
     this.push(this.make('info', category, message, context))
   }
-  warn(category: LogCategory, message: string, context?: Record<string, unknown>) {
-    this.push(this.make('warn', category, message, context))
+  warn(category: LogCategory, message: string, context?: Record<string, unknown>, userMessage?: string) {
+    this.push(this.make('warn', category, message, context, userMessage))
   }
-  error(category: LogCategory, message: string, context?: Record<string, unknown>) {
-    this.push(this.make('error', category, message, context))
+  error(category: LogCategory, message: string, context?: Record<string, unknown>, userMessage?: string) {
+    this.push(this.make('error', category, message, context, userMessage))
   }
 
   // Convenience — semantic helpers so callers don't pick categories inconsistently
   apiCall(info: { url: string; method: string; status: number; durationMs: number; ok: boolean; error?: string }) {
     this.push(this.make(
-      info.ok ? 'info' : 'error',
+      info.ok ? 'debug' : 'error',
       'api',
       `${info.method} ${info.url} -> ${info.status}`,
       info,
+      info.ok ? undefined : `${info.method} ${info.url} returned ${info.status}. ${info.error ?? 'No body.'}`,
     ))
   }
   sessionEvent(event: string, context?: Record<string, unknown>) {

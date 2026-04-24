@@ -157,7 +157,7 @@ export function RunSessionView({
       })
       .catch((e) => {
         const message = e instanceof Error ? e.message : String(e)
-        logger.warn('system', 'settings autofill load failed', { message })
+        logger.warn('system', 'settings autofill load failed', { message }, 'GET /settings failed. Run form not prefilled from last run.')
       })
   }, [])
 
@@ -211,7 +211,7 @@ export function RunSessionView({
       return true
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      logger.warn('session', 'strava poll failed', { message })
+      logger.warn('session', 'strava poll failed', { message }, 'Strava activity poll failed. Run not auto-linked.')
       if (!opts?.silent) showToast('Could not reach Strava. Try again.', 'warning')
       return false
     } finally {
@@ -275,7 +275,7 @@ export function RunSessionView({
     if (!isIndoor) {
       logger.sessionEvent('strava launch attempt', { runSessionId: runSession.id })
       tryOpenStrava(() => {
-        logger.warn('session', 'strava not installed', { runSessionId: runSession.id })
+        logger.warn('session', 'strava not installed', { runSessionId: runSession.id }, 'Strava app not installed on device. Deep link canceled.')
         showToast('Strava not installed. Tap to get it from the App Store.', 'warning', {
           actionLabel: 'App Store',
           onAction: () => window.open(STRAVA_APP_STORE_URL, '_blank'),
@@ -327,7 +327,7 @@ export function RunSessionView({
         }).catch((err) => {
           logger.warn('session', 'strava confirm failed', {
             message: err instanceof Error ? err.message : String(err),
-          })
+          }, 'POST /strava/activity/:id/confirm failed. Activity saved but not locked.')
         })
       }
 

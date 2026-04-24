@@ -24,6 +24,7 @@ interface IncomingEntry {
   level?: string
   category?: string
   message?: string
+  userMessage?: string
   context?: unknown
   screen?: string
   sessionId?: string
@@ -50,14 +51,15 @@ logs.post('/', async (c) => {
       level: VALID_LEVELS.has(String(e.level)) ? String(e.level) : 'info',
       category: VALID_CATEGORIES.has(String(e.category)) ? String(e.category) : 'system',
       message: String(e.message).slice(0, 2000),
+      userMessage: typeof e.userMessage === 'string' ? e.userMessage.slice(0, 500) : null,
       contextJson: e.context != null ? JSON.stringify(e.context).slice(0, 8000) : null,
       screen: typeof e.screen === 'string' ? e.screen.slice(0, 200) : null,
       sessionId: typeof e.sessionId === 'string' ? e.sessionId.slice(0, 200) : null,
       createdAt: nowSec,
     }))
 
-  // D1 caps bind params at 100 per statement. With 9 columns, 10 rows/chunk stays safe.
-  const CHUNK = 10
+  // D1 caps bind params at 100 per statement. With 10 columns, 9 rows/chunk stays safe.
+  const CHUNK = 9
   for (let i = 0; i < rows.length; i += CHUNK) {
     await db.insert(appLogs).values(rows.slice(i, i + CHUNK))
   }

@@ -28,7 +28,7 @@ export class ErrorBoundary extends Component<Props, State> {
       name: error.name,
       stack: error.stack,
       componentStack: info.componentStack,
-    })
+    }, `React render crash at ${level} boundary. Component tree unmounted.`)
   }
 
   handleReload = () => {
@@ -43,7 +43,7 @@ export class ErrorBoundary extends Component<Props, State> {
     const match = typeof window !== 'undefined' ? window.location.pathname.match(/\/session\/([^/]+)/) : null
     const sessionId = match?.[1]
     if (sessionId) {
-      logger.warn('session', 'session abandoned via error boundary', { sessionId })
+      logger.warn('session', 'session abandoned via error boundary', { sessionId }, 'Session abandoned via error-boundary Back button. POST /abandon fired.')
       apiFetch(`/api/sessions/${sessionId}/abandon`, { method: 'POST' }).catch(() => {})
     }
     window.location.href = '/today'
