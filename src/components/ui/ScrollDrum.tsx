@@ -44,14 +44,15 @@ export function ScrollDrum({
     values.push(v)
   }
 
-  const selectedIndex = values.indexOf(value)
+  const rawIndex = values.indexOf(value)
+  const selectedIndex = rawIndex >= 0 ? rawIndex : 0
   const centerOffset = Math.floor(VISIBLE_ITEMS / 2)
 
-  // Scroll to selected value on mount (instant) and when value changes externally (smooth)
   useEffect(() => {
     const el = containerRef.current
     if (!el || isScrollingRef.current) return
     const targetScroll = selectedIndex * ITEM_HEIGHT
+    if (Math.abs(el.scrollTop - targetScroll) < 1) return
     if (!mountedRef.current) {
       el.scrollTop = targetScroll
       mountedRef.current = true
@@ -67,21 +68,13 @@ export function ScrollDrum({
     scrollTimeoutRef.current = setTimeout(() => {
       const el = containerRef.current
       if (!el) return
-      const scrollTop = el.scrollTop
-      const index = Math.round(scrollTop / ITEM_HEIGHT)
+      const index = Math.round(el.scrollTop / ITEM_HEIGHT)
       const clampedIndex = Math.max(0, Math.min(values.length - 1, index))
-
-      // Snap to nearest
-      el.scrollTo({ top: clampedIndex * ITEM_HEIGHT, behavior: 'smooth' })
-
+      isScrollingRef.current = false
       if (values[clampedIndex] !== value) {
         onChange(values[clampedIndex])
       }
-
-      setTimeout(() => {
-        isScrollingRef.current = false
-      }, 100)
-    }, 80)
+    }, 150)
   }, [values, value, onChange])
 
   // Clean up timeout on unmount
@@ -147,6 +140,7 @@ export function ScrollDrum({
               style={{
                 height: ITEM_HEIGHT,
                 scrollSnapAlign: 'center',
+                scrollSnapStop: 'always',
                 opacity,
                 transform: `scale(${scale})`,
                 transition: 'opacity 0.15s, transform 0.15s',
@@ -203,6 +197,7 @@ export function ScrollDrumList({
     const el = containerRef.current
     if (!el || isScrollingRef.current) return
     const targetScroll = selectedIndex * ITEM_HEIGHT
+    if (Math.abs(el.scrollTop - targetScroll) < 1) return
     if (!mountedRef.current) {
       el.scrollTop = targetScroll
       mountedRef.current = true
@@ -218,20 +213,13 @@ export function ScrollDrumList({
     scrollTimeoutRef.current = setTimeout(() => {
       const el = containerRef.current
       if (!el) return
-      const scrollTop = el.scrollTop
-      const index = Math.round(scrollTop / ITEM_HEIGHT)
+      const index = Math.round(el.scrollTop / ITEM_HEIGHT)
       const clampedIndex = Math.max(0, Math.min(items.length - 1, index))
-
-      el.scrollTo({ top: clampedIndex * ITEM_HEIGHT, behavior: 'smooth' })
-
+      isScrollingRef.current = false
       if (items[clampedIndex] !== value) {
         onChange(items[clampedIndex])
       }
-
-      setTimeout(() => {
-        isScrollingRef.current = false
-      }, 100)
-    }, 80)
+    }, 150)
   }, [items, value, onChange])
 
   useEffect(() => {
@@ -291,6 +279,7 @@ export function ScrollDrumList({
               style={{
                 height: ITEM_HEIGHT,
                 scrollSnapAlign: 'center',
+                scrollSnapStop: 'always',
                 opacity,
                 transform: `scale(${scale})`,
                 transition: 'opacity 0.15s, transform 0.15s',
