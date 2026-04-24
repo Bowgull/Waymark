@@ -94,7 +94,7 @@ export function WeightProgressionChart({ exercises, days }: WeightProgressionCha
       setExerciseName(res.exerciseName)
     }).catch((e) => {
       const message = e instanceof Error ? e.message : String(e)
-      logger.warn('system', 'weight-progression load failed', { exerciseId: selectedExercise, days, message })
+      logger.warn('system', 'weight-progression load failed', { exerciseId: selectedExercise, days, message }, 'GET /weight-progression failed. Chart shows no data.')
     })
   }, [selectedExercise, days])
 

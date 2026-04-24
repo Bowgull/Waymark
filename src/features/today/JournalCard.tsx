@@ -94,7 +94,7 @@ export function JournalCard() {
       })
       .catch((e) => {
         const message = e instanceof Error ? e.message : String(e)
-        logger.warn('system', 'journal load failed', { date: today, entryType, message })
+        logger.warn('system', 'journal load failed', { date: today, entryType, message }, 'GET /journal failed. Entry may exist server-side.')
       })
       .finally(() => setLoaded(true))
   }, [today, entryType])

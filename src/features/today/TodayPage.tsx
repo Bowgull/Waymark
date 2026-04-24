@@ -139,11 +139,11 @@ export function TodayPage() {
           await checkMaxHrBump()
         }
         if (result.connected && result.error) {
-          logger.warn('system', 'strava poll returned error', { error: result.error })
+          logger.warn('system', 'strava poll returned error', { error: result.error }, 'Strava poll returned error. Activity match skipped this tick.')
         }
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
-        logger.warn('system', 'strava poll threw', { message })
+        logger.warn('system', 'strava poll threw', { message }, 'Strava poll threw. Network or auth issue.')
       }
     }
     async function checkMaxHrBump() {
@@ -183,7 +183,7 @@ export function TodayPage() {
   async function handleStart(id: string) {
     const session = sessions.find((s) => s.id === id)
     if (!session) {
-      logger.warn('session', 'Enter pressed for unknown session', { id })
+      logger.warn('session', 'Enter pressed for unknown session', { id }, 'Enter tapped but session id not in today list. Stale UI state.')
       showToast("Session not found. Refresh and try again.", 'warning')
       return
     }
@@ -209,7 +209,7 @@ export function TodayPage() {
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         console.error('Failed to start session:', e)
-        logger.error('session', 'start-session failed', { sessionId: id, type: session.type, message })
+        logger.error('session', 'start-session failed', { sessionId: id, type: session.type, message }, 'POST /sessions/:id/start failed. Session not entered.')
         showToast("Couldn't start. Check logs in Settings.", 'warning')
       }
       return
@@ -230,7 +230,7 @@ export function TodayPage() {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to start session:', e)
-      logger.error('session', 'patch start-session failed', { sessionId: id, message })
+      logger.error('session', 'patch start-session failed', { sessionId: id, message }, 'PATCH /sessions/:id status=in_progress failed. Session state inconsistent.')
       showToast("Couldn't start. Check logs in Settings.", 'warning')
     }
   }

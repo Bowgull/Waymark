@@ -11,6 +11,7 @@ interface ServerLogRow {
   level: string
   category: string
   message: string
+  userMessage: string | null
   contextJson: string | null
   screen: string | null
   sessionId: string | null
@@ -39,6 +40,18 @@ function formatTime(ts: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`
 }
 
+function timeAgo(ts: number): string {
+  const diff = Date.now() - ts
+  const sec = Math.floor(diff / 1000)
+  if (sec < 60) return `${sec}s ago`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  return `${day}d ago`
+}
+
 function formatDate(ts: number): string {
   const d = new Date(ts)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -64,6 +77,7 @@ export function LogsPage() {
         level: (r.level as LogLevel) ?? 'info',
         category: (r.category as LogEntry['category']) ?? 'system',
         message: r.message,
+        userMessage: r.userMessage ?? undefined,
         context: r.contextJson ? tryParse(r.contextJson) : undefined,
         screen: r.screen ?? undefined,
         sessionId: r.sessionId ?? undefined,
@@ -113,6 +127,11 @@ export function LogsPage() {
   }
 
   const counts = useMemo(() => countByLevel(entries), [entries])
+  const recentProblems = useMemo(() => {
+    return entries
+      .filter(e => e.level === 'error' || e.level === 'warn')
+      .slice(0, 3)
+  }, [entries])
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -147,6 +166,25 @@ export function LogsPage() {
         </div>
       </header>
 
+      {!loading && recentProblems.length > 0 && (
+        <section className="border-b border-border bg-border/10 px-4 py-3">
+          <h2 className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">Recent problems</h2>
+          <ul className="space-y-1.5">
+            {recentProblems.map(e => (
+              <li key={`rp-${e.id}`} className="flex items-start gap-2">
+                <span className={`mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${LEVEL_DOT[e.level]}`} />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm ${e.level === 'error' ? 'text-destructive' : 'text-gold'}`}>
+                    {e.userMessage ?? e.message}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">{timeAgo(e.ts)} · {e.category}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="flex flex-1 flex-col px-2 pb-20">
         {loading ? (
           <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
@@ -160,11 +198,20 @@ export function LogsPage() {
                   onClick={() => setExpandedId(prev => prev === entry.id ? null : entry.id)}
                   className="w-full px-2 py-2 text-left active:bg-border/30"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${LEVEL_DOT[entry.level]}`} />
-                    <span className="font-mono text-[10px] text-muted-foreground">{formatTime(entry.ts)}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{entry.category}</span>
-                    <span className={`flex-1 truncate text-xs ${LEVEL_COLOR[entry.level]}`}>{entry.message}</span>
+                  <div className="flex items-start gap-2">
+                    <span className={`mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${LEVEL_DOT[entry.level]}`} />
+                    <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{formatTime(entry.ts)}</span>
+                    <span className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{entry.category}</span>
+                    <div className="flex-1 min-w-0">
+                      {entry.userMessage ? (
+                        <>
+                          <div className={`truncate text-sm ${LEVEL_COLOR[entry.level]}`}>{entry.userMessage}</div>
+                          <div className="truncate font-mono text-[10px] text-muted-foreground">{entry.message}</div>
+                        </>
+                      ) : (
+                        <div className={`truncate text-xs ${LEVEL_COLOR[entry.level]}`}>{entry.message}</div>
+                      )}
+                    </div>
                   </div>
                   {expandedId === entry.id && (
                     <div className="mt-1.5 space-y-1 pl-4 font-mono text-[10px] text-muted-foreground">

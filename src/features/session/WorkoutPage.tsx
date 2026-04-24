@@ -465,7 +465,7 @@ export function WorkoutPage() {
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         console.error('Failed to load workout:', e)
-        logger.error('session', 'workout load failed', { sessionId: id, message })
+        logger.error('session', 'workout load failed', { sessionId: id, message }, 'GET /sessions/:id failed or 404. Workout screen has no data.')
         showToast("Couldn't load workout. Check logs in Settings.", 'warning')
       } finally {
         setLoading(false)
@@ -524,7 +524,7 @@ export function WorkoutPage() {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to complete session:', e)
-      logger.error('session', 'session finish failed', { sessionId: id, message })
+      logger.error('session', 'session finish failed', { sessionId: id, message }, 'POST /sessions/:id/complete failed. Session state stuck in-progress.')
       showToast("Couldn't save. Check connection and try again.", 'warning')
       setSubmitting(false)
     }
@@ -649,7 +649,7 @@ export function WorkoutPage() {
         method: 'PATCH', body: JSON.stringify({ completed: 1 }),
       }).catch((e) => {
         const message = e instanceof Error ? e.message : String(e)
-        logger.warn('session', 'Zone 2 warmup complete flag persist failed', { exerciseId: frCurrentExercise.id, message })
+        logger.warn('session', 'Zone 2 warmup complete flag persist failed', { exerciseId: frCurrentExercise.id, message }, 'Zone 2 warmup flag did not persist. UI advanced anyway.')
       })
 
       const isLastSet = (setIdx + 1) >= frTotalSets
@@ -744,7 +744,7 @@ export function WorkoutPage() {
           body: JSON.stringify({ completed: 1 }),
         }).catch((e) => {
           const message = e instanceof Error ? e.message : String(e)
-          logger.warn('session', 'mobility complete flag persist failed', { exerciseId: currentExercise.id, message })
+          logger.warn('session', 'mobility complete flag persist failed', { exerciseId: currentExercise.id, message }, 'Mobility complete flag did not persist. UI advanced anyway.')
         })
       }
 
@@ -941,7 +941,7 @@ export function WorkoutPage() {
         }
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
-        logger.warn('session', 'suggest-unlocks failed', { sessionId: id, message })
+        logger.warn('session', 'suggest-unlocks failed', { sessionId: id, message }, 'POST /suggest-unlocks failed. Non-blocking, session continues.')
       }
       setPhase('mark-earned')
     }
@@ -1115,7 +1115,7 @@ export function WorkoutPage() {
       }),
     }).catch((e) => {
       const message = e instanceof Error ? e.message : String(e)
-      logger.error('session', 'strength set persist failed', { setId: currentSet.id, message })
+      logger.error('session', 'strength set persist failed', { setId: currentSet.id, message }, 'PATCH /sets/:id failed. Set cached locally, not synced.')
       showToast("Set didn't save. Keep training — we'll retry at finish.", 'warning')
     })
 

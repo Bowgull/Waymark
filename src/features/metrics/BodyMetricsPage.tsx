@@ -35,7 +35,7 @@ export function BodyMetricsPage() {
       .then(r => setEntries(r.entries))
       .catch((e) => {
         const message = e instanceof Error ? e.message : String(e)
-        logger.warn('system', 'body-metrics load failed', { message })
+        logger.warn('system', 'body-metrics load failed', { message }, 'GET /body-metrics failed. Network or 5xx.')
       })
   }
 
