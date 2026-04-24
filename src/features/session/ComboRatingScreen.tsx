@@ -58,7 +58,7 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to rate combos:', e)
-      logger.error('session', 'combo ratings save failed', { sessionId, message })
+      logger.error('session', 'combo ratings save failed', { sessionId, message }, 'POST /rate-combos failed. Ratings lost on reload.')
       setSaveError(message)
       showToast("Couldn't save ratings. Tap Retry or continue unrated.", 'warning')
       setSubmitting(false)
@@ -66,7 +66,7 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
   }
 
   function handleContinueUnrated() {
-    logger.warn('session', 'combo ratings skipped after failure', { sessionId })
+    logger.warn('session', 'combo ratings skipped after failure', { sessionId }, 'Combo ratings skipped after save failure. Session finished without them.')
     onComplete([])
   }
 

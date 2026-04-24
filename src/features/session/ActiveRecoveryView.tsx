@@ -44,7 +44,7 @@ async function persistBlockComplete(
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
-    logger.warn('session', `recovery ${field} persist failed`, { message })
+    logger.warn('session', `recovery ${field} persist failed`, { message }, `PATCH recovery session ${field} field failed. UI advanced anyway.`)
   }
 }
 

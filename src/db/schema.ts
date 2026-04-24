@@ -386,6 +386,7 @@ export const appLogs = sqliteTable('app_logs', {
   level: text('level').notNull(), // 'debug' | 'info' | 'warn' | 'error'
   category: text('category').notNull(), // 'api' | 'session' | 'nav' | 'error' | 'system'
   message: text('message').notNull(),
+  userMessage: text('user_message'),
   contextJson: text('context_json'),
   screen: text('screen'),
   sessionId: text('session_id'),
