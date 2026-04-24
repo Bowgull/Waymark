@@ -4,6 +4,7 @@ import { getSessionIntent, getSessionTargetHr } from '@/lib/sessionIntent'
 import { Button } from '@/components/ui/button'
 import { tapHaptic, mediumHaptic } from '@/lib/haptics'
 import { apiFetch } from '@/lib/api'
+import { kgToLbs } from '@/lib/units'
 import { useEffect, useState, type KeyboardEvent } from 'react'
 
 export interface RunSessionSummary {
@@ -282,11 +283,11 @@ function stripLiftSuffix(label: string): string {
 
 function shortLiftSummary(ex: PreviewExercise): string {
   const name = stripLiftSuffix(ex.label || ex.name)
-  const weight = ex.prescription.prescribedWeightKg
+  const weightKg = ex.prescription.prescribedWeightKg
   const setsMatch = ex.prescription.setsReps.match(/^(\d+)×/)
   const sets = setsMatch ? setsMatch[1] : null
-  if (weight == null || sets == null) return name
-  return `${name} ${sets}×${weight}kg`
+  if (weightKg == null || sets == null) return name
+  return `${name} ${sets}×${kgToLbs(weightKg)}lbs`
 }
 
 function StrengthLiftPreview({ sessionId }: { sessionId: string }) {
@@ -346,7 +347,7 @@ function StrengthLiftPreview({ sessionId }: { sessionId: string }) {
             <li key={ex.exerciseId} className="flex justify-between gap-3">
               <span>{stripLiftSuffix(ex.label || ex.name)}</span>
               <span className="text-foreground/70">
-                {ex.prescription.setsReps}{ex.prescription.prescribedWeightKg != null ? ` · ${ex.prescription.prescribedWeightKg}kg` : ''}
+                {ex.prescription.setsReps}{ex.prescription.prescribedWeightKg != null ? ` · ${kgToLbs(ex.prescription.prescribedWeightKg)}lbs` : ''}
               </span>
             </li>
           ))}
