@@ -13,7 +13,7 @@ import { TodaySkeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
 import { SkipReasonSheet, type SkipReasonCommit } from '@/features/session/SkipReasonSheet'
 import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
-import type { ReplaceSuggestion, ReplaceSuggestionsOutput } from '@/lib/prompts/tools'
+import type { AddSuggestion, AddSuggestionsOutput, ReplaceSuggestion, ReplaceSuggestionsOutput } from '@/lib/prompts/tools'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 
 import { DateHeader } from './DateHeader'
@@ -60,6 +60,11 @@ export function TodayPage() {
   const [generating, setGenerating] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
+  const [addState, setAddState] = useState<
+    | { stage: 'loading' }
+    | { stage: 'coach'; suggestions: AddSuggestion[] }
+    | null
+  >(null)
   const [skipReasonFor, setSkipReasonFor] = useState<string | null>(null)
   const [reactiveNotes, setReactiveNotes] = useState<Array<{ id: string; note: string; createdAt: number }>>([])
   const [replaceState, setReplaceState] = useState<
@@ -366,6 +371,7 @@ export function TodayPage() {
 
   async function handleAddSession(option: SessionOption) {
     setShowPicker(false)
+    setAddState(null)
     try {
       const created = await apiFetch<Session>('/api/sessions/insert-ad-hoc', {
         method: 'POST',
@@ -382,6 +388,53 @@ export function TodayPage() {
     } catch (e) {
       console.error('Failed to add session:', e)
     }
+  }
+
+  // Pre-load the rule-based picker suggestions (fast, local) concurrently with
+  // the coach's AI picks so "More options" opens instantly if the athlete
+  // bypasses the top-3.
+  function preloadPickerSuggestions() {
+    apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
+      .then(setPickerSuggestions)
+      .catch(() => setPickerSuggestions(null))
+  }
+
+  async function startAddFlow() {
+    setAddState({ stage: 'loading' })
+    preloadPickerSuggestions()
+    // Default to the PM slot for the AI call — the add button lives on Today
+    // and most ad-hoc additions land after work. Athlete can still tap AM on
+    // the fallback picker.
+    try {
+      const result = await apiFetch<{ suggestions: AddSuggestionsOutput | null }>('/api/sessions/add-suggestions', {
+        method: 'POST',
+        body: JSON.stringify({ date: today, timeSlot: 'pm' }),
+      })
+      if (result.suggestions && result.suggestions.suggestions.length > 0) {
+        setAddState({ stage: 'coach', suggestions: result.suggestions.suggestions })
+      } else {
+        setAddState(null)
+        setShowPicker(true)
+      }
+    } catch (e) {
+      console.warn('add-suggestions failed, falling back to picker', e)
+      setAddState(null)
+      setShowPicker(true)
+    }
+  }
+
+  function handleAddShowMore() {
+    setAddState(null)
+    setShowPicker(true)
+  }
+
+  async function handleAddAcceptSuggestion(suggestion: AddSuggestion) {
+    await handleAddSession({
+      type: suggestion.type,
+      label: suggestion.label,
+      timeSlot: suggestion.timeSlot,
+      runCategory: suggestion.runCategory,
+    })
   }
 
   async function handleConfirmMatch(activityId: number) {
@@ -471,12 +524,7 @@ export function TodayPage() {
         <GeneratePlanButton
           onGenerate={handleGenerate}
           loading={generating}
-          onAddSession={() => {
-            setShowPicker(true)
-            apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
-              .then(setPickerSuggestions)
-              .catch(() => setPickerSuggestions(null))
-          }}
+          onAddSession={startAddFlow}
         />
       ) : (
         <>
@@ -491,12 +539,7 @@ export function TodayPage() {
             onDismissMatch={handleDismissMatch}
           />
           <button
-            onClick={() => {
-              setShowPicker(true)
-              apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
-                .then(setPickerSuggestions)
-                .catch(() => setPickerSuggestions(null))
-            }}
+            onClick={startAddFlow}
             aria-label="Add session"
             className="mx-auto mt-4 flex min-h-[44px] items-center gap-2 font-cinzel text-[13px] uppercase tracking-widest text-gold/40 active:text-gold/70 transition-colors"
           >
@@ -515,6 +558,19 @@ export function TodayPage() {
         <span className="size-3.5"><SettingsIcon /></span>
         Settings
       </button>
+
+      {addState?.stage === 'loading' && (
+        <AddCoachCard loading onClose={() => setAddState(null)} />
+      )}
+
+      {addState?.stage === 'coach' && (
+        <AddCoachCard
+          suggestions={addState.suggestions}
+          onAccept={handleAddAcceptSuggestion}
+          onShowMore={handleAddShowMore}
+          onClose={() => setAddState(null)}
+        />
+      )}
 
       {showPicker && (
         <SessionPicker
@@ -615,6 +671,72 @@ function ReplaceCoachCard(props: ReplaceCoachCardProps) {
                     <span className="font-cinzel text-[10px] uppercase tracking-[0.2em] text-gold/40">
                       {s.timeSlot}
                     </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-2">
+              <button
+                onClick={props.onShowMore}
+                className="flex-1 rounded-md bg-secondary px-3 py-2 text-sm text-foreground active:bg-secondary/70"
+              >
+                More options
+              </button>
+              <button
+                onClick={props.onClose}
+                className="rounded-md px-3 py-2 text-sm text-muted-foreground/60 active:text-foreground"
+              >
+                Close
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+type AddCoachCardProps =
+  | { loading: true; onClose: () => void }
+  | {
+      loading?: false
+      suggestions: AddSuggestion[]
+      onAccept: (suggestion: AddSuggestion) => void
+      onShowMore: () => void
+      onClose: () => void
+    }
+
+function AddCoachCard(props: AddCoachCardProps) {
+  return (
+    <div className="fixed inset-x-0 z-40 flex justify-center px-4 animate-fade-in-up" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
+      <div className="w-full max-w-md rounded-lg border border-gold/10 bg-surface p-4 shadow-lg">
+        <p className="mb-1 font-cinzel text-[11px] uppercase tracking-[0.2em] text-gold/50">Coach Picks</p>
+        {props.loading ? (
+          <p className="mb-1 text-sm text-muted-foreground/70">Reading the signal.</p>
+        ) : (
+          <>
+            <ul className="mb-3 space-y-1.5">
+              {props.suggestions.map((s, idx) => (
+                <li key={`${s.type}-${s.timeSlot}-${idx}`}>
+                  <button
+                    onClick={() => props.onAccept(s)}
+                    className={`flex w-full flex-col items-start gap-0.5 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                      idx === 0
+                        ? 'border-gold/20 bg-gold/10 text-gold active:bg-gold/20'
+                        : 'border-gold/10 bg-card/40 text-foreground active:bg-card/70'
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <span className="font-medium">{s.label}</span>
+                      <span className="font-cinzel text-[10px] uppercase tracking-[0.2em] text-gold/40">
+                        {s.timeSlot}
+                      </span>
+                    </div>
+                    {s.rationale && (
+                      <span className={`text-[13px] leading-tight ${idx === 0 ? 'text-gold/70' : 'text-muted-foreground/60'}`}>
+                        {s.rationale}
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}

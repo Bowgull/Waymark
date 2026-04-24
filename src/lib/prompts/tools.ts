@@ -135,6 +135,19 @@ export interface ReplaceSuggestionsOutput {
   suggestions: ReplaceSuggestion[]
 }
 
+export interface AddSuggestion {
+  type: SessionType
+  label: string
+  timeSlot: TimeSlot
+  estimatedMin: number
+  runCategory?: RunCategory
+  rationale: string
+}
+
+export interface AddSuggestionsOutput {
+  suggestions: AddSuggestion[]
+}
+
 // ─── Tool definitions ─────────────────────────────────────────────
 
 const SESSION_TYPE_ENUM = [
@@ -536,6 +549,42 @@ export const TOOL_REPLACE_SUGGESTIONS: Tool = {
   },
 }
 
+export const TOOL_ADD_SUGGESTIONS: Tool = {
+  name: 'addSuggestions',
+  description:
+    'Triggered when the athlete opens the Add Session picker on Today. Rank the three best-fit additions for right now, using wellness (sleep, soreness, alcohol), recent HR, adherence so far, what is already done and left in the week, and the block goal. Each pick carries a short rationale. Voice canon: plain, observation before conclusion, no hype.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      suggestions: {
+        type: 'array',
+        minItems: 3,
+        maxItems: 3,
+        description: 'Exactly three additions, ordered best to worst for right now.',
+        items: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: SESSION_TYPE_ENUM },
+            label: {
+              type: 'string',
+              description: 'Short human label (e.g. "Zone 2", "Strength", "Mobility").',
+            },
+            timeSlot: { type: 'string', enum: ['am', 'pm'] },
+            estimatedMin: { type: 'integer' },
+            runCategory: { type: 'string', enum: ['zone2', 'progression'] },
+            rationale: {
+              type: 'string',
+              description: 'One sentence, under 100 chars, plain reason this pick fits right now. Voice canon.',
+            },
+          },
+          required: ['type', 'label', 'timeSlot', 'estimatedMin', 'rationale'],
+        },
+      },
+    },
+    required: ['suggestions'],
+  },
+}
+
 export const ALL_TOOLS: Tool[] = [
   TOOL_WEEK_PLAN,
   TOOL_WEEK_REVIEW,
@@ -546,6 +595,7 @@ export const ALL_TOOLS: Tool[] = [
   TOOL_BAG_PRESCRIPTION,
   TOOL_REACTIVE_REPLAN,
   TOOL_REPLACE_SUGGESTIONS,
+  TOOL_ADD_SUGGESTIONS,
 ]
 
 export const TOOL_BY_NAME: Record<string, Tool> = Object.fromEntries(

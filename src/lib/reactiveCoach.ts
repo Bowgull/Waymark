@@ -25,7 +25,7 @@ import { coachingOutputs, dailyLogs, exercises, sessions, trainingMaxes, userPro
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
-import { TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type ReactiveReplanOutput, type ReplaceSuggestionsOutput } from './prompts/tools'
+import { TOOL_ADD_SUGGESTIONS, TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type AddSuggestionsOutput, type ReactiveReplanOutput, type ReplaceSuggestionsOutput } from './prompts/tools'
 import { computeHrSnapshot, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
 import { computeStarterStatus, serializeStarterStatus } from './starterStatus'
@@ -663,6 +663,150 @@ export async function runReplaceSuggestions(
   })
 
   return { ...output, coachLine: sanitizeVoice(output.coachLine) }
+}
+
+// \u2500\u2500\u2500 Add-suggestions blocking call \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+// Haiku 4.5 is sufficient here. Add is "fill a slot" \u2014 concrete signals
+// (what's missing, recovery state, block phase) drive a rigid 3-item output.
+// Replace uses Sonnet because that's a higher-stakes decision (changing a
+// commitment). Different models for different decision weights.
+const ADD_CACHE_SEC = 30 * 60
+
+export async function runAddSuggestions(
+  db: DB,
+  apiKey: string,
+  targetEpochDay: number,
+  timeSlot: 'am' | 'pm',
+): Promise<AddSuggestionsOutput | null> {
+  // Cache key: (targetEpochDay, timeSlot). The picker can open repeatedly in
+  // a short window (athlete playing with it) \u2014 reuse the last result.
+  const cacheHash = `${targetEpochDay}:${timeSlot}`
+  const nowSec = Math.floor(Date.now() / 1000)
+  const [cached] = await db
+    .select()
+    .from(coachingOutputs)
+    .where(and(
+      eq(coachingOutputs.kind, 'add_suggestions'),
+      eq(coachingOutputs.inputHash, cacheHash),
+      gte(coachingOutputs.createdAt, nowSec - ADD_CACHE_SEC),
+    ))
+    .orderBy(desc(coachingOutputs.createdAt))
+    .limit(1)
+  if (cached) {
+    try {
+      return JSON.parse(cached.outputJson) as AddSuggestionsOutput
+    } catch {
+      // Malformed cache row, fall through and regenerate.
+    }
+  }
+
+  const todayDow = new Date(targetEpochDay * 86400000).getUTCDay()
+  const weekStart = targetEpochDay - todayDow
+  const weekEnd = weekStart + 6
+
+  const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, targetEpochDay))
+  const weekSessions = await db
+    .select({ type: sessions.type, scheduledDate: sessions.scheduledDate, timeSlot: sessions.timeSlot, status: sessions.status, blockWeek: sessions.blockWeek })
+    .from(sessions)
+    .where(and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd)))
+
+  const recentRuns = await loadRecentRunsForHr(db, targetEpochDay)
+  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, targetEpochDay))
+
+  const weekPlanId = await currentWeekPlanId(db, weekStart, weekEnd)
+  let adherenceBlock = ''
+  if (weekPlanId) {
+    const [wp] = await db.select({ blockId: weekPlans.blockId }).from(weekPlans).where(eq(weekPlans.id, weekPlanId))
+    if (wp) {
+      const adherence = await computeBlockAdherence(db, wp.blockId, targetEpochDay)
+      const guidance = deriveGuidance(adherence)
+      adherenceBlock = serializeAdherenceForPrompt(adherence, guidance)
+    }
+  }
+
+  const lines: string[] = [
+    `Athlete opened the Add Session picker on ${DAY_NAMES[todayDow]} (${timeSlot.toUpperCase()} slot).`,
+    'Rank three best additions for right now. First suggestion is the top pick. Respect MT cap and posture constraints from the profile.',
+  ]
+  if (todayLog) {
+    const w: string[] = []
+    if (todayLog.sleepHours != null) w.push(`sleep ${todayLog.sleepHours}h`)
+    if (todayLog.soreness != null) w.push(`soreness ${todayLog.soreness}/5`)
+    if (todayLog.alcoholScale != null) w.push(`alcohol ${todayLog.alcoholScale}/5`)
+    if (w.length > 0) lines.push(`Wellness today: ${w.join(', ')}.`)
+  }
+  const doneOrSkipped = weekSessions.filter(s => s.status === 'completed' || s.status === 'skipped' || s.status === 'missed')
+  const completedLabels = doneOrSkipped
+    .filter(s => s.status === 'completed')
+    .map(s => SESSION_LABEL[s.type] ?? s.type)
+  lines.push(`Completed so far this week: ${completedLabels.length > 0 ? completedLabels.join(', ') : 'none'}.`)
+  const skippedOrMissed = doneOrSkipped.filter(s => s.status !== 'completed')
+  if (skippedOrMissed.length > 0) {
+    const gaps = skippedOrMissed.map(s => `${SESSION_LABEL[s.type] ?? s.type} (${s.status})`).join(', ')
+    lines.push(`Skipped or missed this week: ${gaps}.`)
+  }
+  const alreadyTodayRows = weekSessions.filter(s => s.scheduledDate === targetEpochDay)
+  if (alreadyTodayRows.length > 0) {
+    const already = alreadyTodayRows.map(s => `${(s.timeSlot ?? 'am').toUpperCase()} ${SESSION_LABEL[s.type] ?? s.type} (${s.status})`).join(', ')
+    lines.push(`Already on today: ${already}.`)
+  }
+  const remaining = weekSessions.filter(s => s.scheduledDate != null && s.scheduledDate > targetEpochDay && s.status !== 'skipped' && s.status !== 'completed')
+  if (remaining.length > 0) {
+    lines.push('Remaining this week:')
+    for (const s of remaining) {
+      const dow = new Date((s.scheduledDate ?? 0) * 86400000).getUTCDay()
+      lines.push(`  ${DAY_NAMES[dow]} ${(s.timeSlot ?? 'am').toUpperCase()}: ${SESSION_LABEL[s.type] ?? s.type}`)
+    }
+  }
+  if (adherenceBlock) lines.push('', adherenceBlock)
+  if (hrBlock) lines.push('', hrBlock)
+  lines.push('', 'Call addSuggestions with exactly three options ranked best to worst. Each rationale is one short sentence explaining why that pick fits right now for this athlete. Voice canon.')
+
+  const profile = await loadProfile(db)
+  const starter = await computeStarterStatus(db, targetEpochDay, profile.trainingHistory, profile.constraints)
+  const starterBlock = serializeStarterStatus(starter)
+  const systemBlocks = buildSystemPrompt(profile, null, starterBlock || null)
+
+  const result = await anthropicCall(apiKey, {
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 512,
+    system: systemBlocks,
+    messages: [{ role: 'user', content: lines.join('\n') }],
+    tools: [TOOL_ADD_SUGGESTIONS],
+    tool_choice: { type: 'tool', name: 'addSuggestions' },
+  })
+
+  if (result.offline) {
+    console.warn('[addSuggestions] offline')
+    return null
+  }
+
+  const output = getToolInput<AddSuggestionsOutput>(result, 'addSuggestions')
+  if (!output) {
+    console.warn('[addSuggestions] no tool output')
+    return null
+  }
+
+  const cleaned: AddSuggestionsOutput = {
+    suggestions: output.suggestions.map(s => ({ ...s, rationale: sanitizeVoice(s.rationale) })),
+  }
+
+  await db.insert(coachingOutputs).values({
+    id: crypto.randomUUID(),
+    kind: 'add_suggestions',
+    model: 'claude-haiku-4-5-20251001',
+    scopeWeekPlanId: weekPlanId,
+    scopeSessionId: null,
+    inputHash: cacheHash,
+    outputJson: JSON.stringify(cleaned),
+    tokensIn: result.usage.input_tokens,
+    tokensOut: result.usage.output_tokens,
+    cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
+    createdAt: nowSec,
+  })
+
+  return cleaned
 }
 
 // Voice canon: strip em dashes in case Haiku slips. Cheap insurance.

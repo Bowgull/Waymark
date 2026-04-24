@@ -21,7 +21,7 @@ import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
-import { runReactiveReplan, runReplaceSuggestions, type ReactiveTrigger } from '../lib/reactiveCoach'
+import { runAddSuggestions, runReactiveReplan, runReplaceSuggestions, type ReactiveTrigger } from '../lib/reactiveCoach'
 import { STRONG_SKIP_REASONS, GRACE_SEC, schedulePendingFire, cancelPendingFires, processPendingFires } from '../lib/pendingReactive'
 import { strava } from './routes/strava'
 import { logs } from './routes/logs'
@@ -604,6 +604,29 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
   return c.json(row)
+})
+
+// Coach-ranked ADD suggestions. Called when the athlete opens the Add
+// Session picker on Today. Returns top 3 additions (ranked best to worst)
+// with a rationale on each, powered by Haiku against wellness / HR /
+// adherence / week shape / block phase. Cached 30 min per (date, slot) so
+// a playful open-and-close doesn't re-call. Falls through to rule-based
+// picker on offline.
+app.post('/api/sessions/add-suggestions', async (c) => {
+  const body = await c.req.json<{ date?: string; timeSlot?: 'am' | 'pm' }>().catch(() => ({} as { date?: string; timeSlot?: 'am' | 'pm' }))
+  if (!body.date || (body.timeSlot !== 'am' && body.timeSlot !== 'pm')) {
+    return c.json({ error: 'date and timeSlot required' }, 400)
+  }
+  const targetEpochDay = isoToEpochDay(body.date)
+  const db = createDB(c.env)
+  try {
+    const out = await runAddSuggestions(db, c.env.ANTHROPIC_API_KEY, targetEpochDay, body.timeSlot)
+    if (!out) return c.json({ suggestions: null })
+    return c.json({ suggestions: out })
+  } catch (err) {
+    console.warn('[addSuggestions] route failed', err)
+    return c.json({ suggestions: null })
+  }
 })
 
 // Coach-ranked replacement suggestions. Reads wellness, HR, adherence, the
