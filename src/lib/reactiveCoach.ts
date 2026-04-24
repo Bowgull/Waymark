@@ -21,7 +21,7 @@
 //  - Fails closed: Haiku offline -> no adjustment, the weekly plan still stands.
 
 import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
-import { coachingOutputs, dailyLogs, exercises, sessions, trainingMaxes, userProfile, weekAdjustments, weekPlans } from '../db/schema'
+import { coachingOutputs, dailyLogs, exercises, sessions, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
@@ -73,6 +73,32 @@ interface AdHocConflict {
   volumeSpike: { target: number; trainingDays: number } | null
 }
 
+interface BlockContext {
+  name: string
+  blockType: string
+  weekNumber: number
+  totalWeeks: number
+  phase: 'foundation' | 'build' | 'peak' | 'taper'
+}
+
+interface AdHocAdd {
+  type: string
+  scheduledDate: number
+  timeSlot: string | null
+  status: string
+}
+
+// Heuristic phase banding. Kept light because the coach also sees raw
+// weekNumber / totalWeeks and can override the label in its reasoning.
+function derivePhase(weekNumber: number, totalWeeks: number): BlockContext['phase'] {
+  if (totalWeeks <= 0) return 'foundation'
+  const ratio = weekNumber / totalWeeks
+  if (weekNumber >= totalWeeks) return 'taper'
+  if (ratio <= 0.25) return 'foundation'
+  if (ratio <= 0.7) return 'build'
+  return 'peak'
+}
+
 interface SignalBundle {
   trigger: ReactiveTrigger
   sessionId?: string
@@ -86,6 +112,8 @@ interface SignalBundle {
   wellnessToday: { sleepHours: number | null; soreness: number | null; alcoholScale: number | null } | null
   wellnessOverreach: boolean
   adHocConflict: AdHocConflict | null
+  blockContext: BlockContext | null
+  weekAdHocAdds: AdHocAdd[]
 }
 
 // ─── Gates (cheap pre-filter before Haiku) ──────────────────────
@@ -232,10 +260,12 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
       (wellnessToday.soreness != null && wellnessToday.soreness >= 4)),
   )
 
-  // Ad-hoc conflict detection only matters for the nightly rollover sweep.
-  // Other triggers already have their own specific signal and don't need
-  // the extra query cost.
+  // Ad-hoc conflict detection and block context only matter for the nightly
+  // rollover sweep. Other triggers already have their own specific signal
+  // and don't need the extra query cost.
   let adHocConflict: AdHocConflict | null = null
+  let blockContext: BlockContext | null = null
+  let weekAdHocAdds: AdHocAdd[] = []
   if (ctx.trigger === 'rollover') {
     const [profileRow] = await db
       .select({ mtCapPerWeek: userProfile.mtCapPerWeek, weeklyDayTarget: userProfile.weeklyDayTarget })
@@ -248,6 +278,40 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
       profileRow?.mtCapPerWeek ?? null,
       profileRow?.weeklyDayTarget ?? null,
     )
+
+    // All ad-hoc adds this week, regardless of whether they tripped a rule.
+    // The coach needs to see accumulation against the block goal, not just
+    // rule breaches.
+    const addRows = await db
+      .select({ type: sessions.type, scheduledDate: sessions.scheduledDate, timeSlot: sessions.timeSlot, status: sessions.status, blockWeek: sessions.blockWeek })
+      .from(sessions)
+      .where(and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd)))
+    weekAdHocAdds = addRows
+      .filter(r => r.blockWeek == null && r.scheduledDate != null && r.status !== 'skipped')
+      .map(r => ({ type: r.type, scheduledDate: r.scheduledDate as number, timeSlot: r.timeSlot, status: r.status }))
+
+    // Current block context — block type, week progress, derived phase.
+    // Powers "this add pulls toward/away from the block goal" reasoning.
+    const [activeBlock] = await db
+      .select()
+      .from(trainingBlocks)
+      .where(eq(trainingBlocks.status, 'active'))
+      .limit(1)
+    if (activeBlock) {
+      const weekPlanId = await currentWeekPlanId(db, weekStart, weekEnd)
+      let weekNumber = 1
+      if (weekPlanId) {
+        const [wp] = await db.select({ weekNumber: weekPlans.weekNumber }).from(weekPlans).where(eq(weekPlans.id, weekPlanId))
+        if (wp) weekNumber = wp.weekNumber
+      }
+      blockContext = {
+        name: activeBlock.name,
+        blockType: activeBlock.blockType,
+        weekNumber,
+        totalWeeks: activeBlock.totalWeeks,
+        phase: derivePhase(weekNumber, activeBlock.totalWeeks),
+      }
+    }
   }
 
   return {
@@ -263,6 +327,8 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
     wellnessToday,
     wellnessOverreach,
     adHocConflict,
+    blockContext,
+    weekAdHocAdds,
   }
 }
 
@@ -323,6 +389,11 @@ function buildPrompt(bundle: SignalBundle, rationale: string, adherenceBlock: st
     `Today: ${DAY_NAMES[bundle.todayDow]} (dow=${bundle.todayDow}). Week runs Sun (dow 0) to Sat (dow 6).`,
   ]
 
+  if (bundle.blockContext) {
+    const b = bundle.blockContext
+    lines.push(`Block goal: ${b.name} (${b.blockType}), week ${b.weekNumber} of ${b.totalWeeks} — ${b.phase} phase. Weigh every proposed shift against where this block is heading.`)
+  }
+
   if (bundle.justCompleted) {
     const parts: string[] = [`Just ${bundle.trigger === 'session_completed' ? 'completed' : bundle.trigger.replace('session_', '')}: ${SESSION_LABEL[bundle.justCompleted.type] ?? bundle.justCompleted.type}.`]
     if (bundle.justCompleted.rpe != null) parts.push(`Effort ${bundle.justCompleted.rpe}/10.`)
@@ -373,6 +444,15 @@ function buildPrompt(bundle: SignalBundle, rationale: string, adherenceBlock: st
       lines.push(`Intensity stacked: ${stacks.join('; ')}.`)
     }
     if (c.volumeSpike) lines.push(`Training days this week: ${c.volumeSpike.trainingDays} (target ${c.volumeSpike.target}).`)
+  } else if (bundle.weekAdHocAdds.length > 0) {
+    // No rule-based conflict, but the athlete added bonus sessions. Surface
+    // them so the coach can evaluate direction vs. the block goal even
+    // when nothing has tripped a hard rule yet.
+    const addLabels = bundle.weekAdHocAdds.map(a => {
+      const dow = DAY_NAMES[new Date(a.scheduledDate * 86400000).getUTCDay()]
+      return `${dow} ${(a.timeSlot ?? 'am').toUpperCase()} ${SESSION_LABEL[a.type] ?? a.type} (${a.status})`
+    })
+    lines.push(`Ad-hoc bonus sessions this week (no rule conflict): ${addLabels.join(', ')}. Consider whether these pull the week toward or away from the block goal.`)
   }
 
   if (bundle.wellnessToday) {
