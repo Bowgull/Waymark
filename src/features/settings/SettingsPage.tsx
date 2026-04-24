@@ -91,12 +91,9 @@ export function SettingsPage() {
   const navigate = useNavigate()
   const [, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
   const { show: showToast, ToastContainer } = useToast()
   const [showReplacementPicker, setShowReplacementPicker] = useState(false)
   const hydratedRef = useRef(false)
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Form state
   const [mtDays, setMtDays] = useState<Set<string>>(new Set())
@@ -255,7 +252,6 @@ export function SettingsPage() {
     if (!hydratedRef.current) return
     const controller = new AbortController()
     const t = setTimeout(async () => {
-      setSaving(true)
       try {
         const updated = await apiFetch<Settings>('/api/settings', {
           method: 'PATCH',
@@ -274,25 +270,20 @@ export function SettingsPage() {
         })
         if (controller.signal.aborted) return
         setSettings(updated)
-        setSaved(true)
-        if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
-        savedTimerRef.current = setTimeout(() => setSaved(false), 1500)
 
         scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, { amEnabled, pmEnabled }).catch(() => {})
 
-        if (updated.cascade) {
-          if (updated.cascade.removed > 0) {
-            const days = updated.cascade.freedDays?.join(', ') ?? ''
-            showToast(`${days} PM slot${updated.cascade.removed > 1 ? 's' : ''} freed up`, 'info')
-            setShowReplacementPicker(true)
-          }
+        if (updated.cascade && updated.cascade.removed > 0) {
+          const days = updated.cascade.freedDays?.join(', ') ?? ''
+          showToast(`${days} PM slot${updated.cascade.removed > 1 ? 's' : ''} freed up`, 'info')
+          setShowReplacementPicker(true)
+        } else {
+          showToast('Saved', 'success')
         }
       } catch (e: unknown) {
         if (e instanceof Error && e.name === 'AbortError') return
         console.error('Failed to save settings:', e)
         showToast('Save didn\'t land. Try again.', 'warning')
-      } finally {
-        if (!controller.signal.aborted) setSaving(false)
       }
     }, 800)
     return () => {
@@ -582,15 +573,14 @@ export function SettingsPage() {
         <button
           type="button"
           onClick={handleWaybookAuthToggle}
-          disabled={!biometryAvailable}
-          className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-md border border-border bg-border/30 px-3 py-2.5 disabled:opacity-50"
+          className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-md border border-border bg-border/30 px-3 py-2.5"
         >
           <div className="min-w-0 text-left">
             <p className="text-sm text-foreground">Require Face ID to open Waybook</p>
             <p className="text-xs text-muted-foreground">
               {biometryAvailable
                 ? 'Face ID or passcode. Re-locks after 3 minutes in background.'
-                : 'Face ID / passcode not available on this device.'}
+                : 'Web preview: no biometry, but the gate still toggles for testing.'}
             </p>
           </div>
           <span
@@ -641,14 +631,6 @@ export function SettingsPage() {
         )}
       </section>
 
-      {/* Auto-save indicator */}
-      <div className="flex h-5 items-center justify-center text-xs text-muted-foreground" aria-live="polite">
-        <span
-          className={`transition-opacity duration-300 ${saving || saved ? 'opacity-100' : 'opacity-0'}`}
-        >
-          {saving ? 'Saving…' : saved ? 'Saved ✓' : ''}
-        </span>
-      </div>
 
       <ToastContainer />
 
