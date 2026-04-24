@@ -276,8 +276,6 @@ export function SettingsPage() {
           const days = updated.cascade.freedDays?.join(', ') ?? ''
           showToast(`${days} PM slot${updated.cascade.removed > 1 ? 's' : ''} freed up`, 'info')
           setShowReplacementPicker(true)
-        } else {
-          showToast('Saved', 'success')
         }
       } catch (e: unknown) {
         if (e instanceof Error && e.name === 'AbortError') return
