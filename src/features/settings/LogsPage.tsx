@@ -105,16 +105,6 @@ export function LogsPage() {
     return rows
   }, [entries, filter, currentSessionOnly])
 
-  async function handleCopy() {
-    const text = filtered.map(e => formatLine(e)).join('\n')
-    try {
-      await navigator.clipboard.writeText(text)
-      showToast('Copied to clipboard', 'success')
-    } catch {
-      showToast('Copy failed', 'warning')
-    }
-  }
-
   async function handleClear() {
     if (!confirm('Clear all logs? This cannot be undone.')) return
     try {
@@ -234,12 +224,6 @@ export function LogsPage() {
 
       <footer className="sticky bottom-0 border-t border-border bg-background/90 px-4 py-3 backdrop-blur-md" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}>
         <div className="flex gap-2">
-          <button
-            onClick={handleCopy}
-            className="min-h-[44px] flex-1 rounded-md border border-border bg-border/30 text-sm text-foreground active:bg-border/60"
-          >
-            Copy to clipboard
-          </button>
           <button
             onClick={handleClear}
             className="min-h-[44px] rounded-md border border-border px-4 text-sm text-muted-foreground active:text-foreground"

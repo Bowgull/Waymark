@@ -130,7 +130,7 @@ export function JournalCard() {
   if (!loaded) return null
 
   return (
-    <div className="border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
+    <div className="rounded-xl border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
       <div className="mb-3 flex items-baseline gap-0">
         <BrandW className="relative" style={{ top: '2px' }} />
         <span className="text-display text-gold">aybook</span>
@@ -141,12 +141,9 @@ export function JournalCard() {
           <p className="text-xs text-gold/50 italic">Saved To Waybook</p>
           <button
             onClick={() => setJustSaved(false)}
-            className="flex items-center gap-1.5 rounded-full border border-gold/20 px-3 py-1.5 text-xs text-gold/60 active:bg-gold/10"
+            className="font-cinzel min-h-[44px] px-1 text-[11px] uppercase tracking-[0.2em] text-gold/60 active:text-gold"
           >
-            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 2C15 2 11 6 9 10L7.5 14.5L3 22L10.5 17.5L15 16C19 14 22 9.5 22 4.5C22 3.5 21 2 20 2Z" />
-            </svg>
-            Add More
+            + Add More
           </button>
         </div>
       ) : (
