@@ -447,7 +447,7 @@ export function TodayPage() {
       <DateHeader date={todayDate} />
 
       {reactiveNotes.length > 0 && (
-        <div className="rounded-md border border-gold/10 bg-card/40 p-3">
+        <div className="rounded-xl border border-gold/10 bg-card/40 p-3">
           <p className="mb-1 font-cinzel text-[10px] uppercase tracking-[0.25em] text-gold/40">Coach</p>
           <ul className="space-y-1">
             {reactiveNotes.slice(0, 2).map(n => (

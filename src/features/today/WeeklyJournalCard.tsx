@@ -38,7 +38,7 @@ export function WeeklyJournalCard({ onSubmit, existingReflection }: WeeklyJourna
   const showEditor = !saved || editing
 
   return (
-    <div className="border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
+    <div className="rounded-xl border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
       <p className="text-display mb-1 text-gold">Weekly Debrief</p>
 
       {showEditor ? (
