@@ -139,7 +139,6 @@ export function SettingsPage() {
     const next = !waybookAuth
     setWaybookAuth(next)
     setGateEnabled(next)
-    showToast(next ? 'Waybook locked with Face ID' : 'Waybook unlocked', 'success')
   }
 
   useEffect(() => {
