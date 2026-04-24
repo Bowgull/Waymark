@@ -86,17 +86,14 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
 
   if (collapsed) {
     return (
-      <div className="rounded-md border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
+      <div className="rounded-xl border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
         <div className="flex items-center justify-between">
           <p className="text-display text-gold">Morning Report</p>
           <button
             onClick={() => { setCollapsed(false); setShowNotes(true) }}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-gold/20 px-3 py-1.5 text-xs text-gold/60 active:bg-gold/10"
+            className="font-cinzel min-h-[44px] px-1 text-[11px] uppercase tracking-[0.2em] text-gold/60 active:text-gold"
           >
-            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            Add Note
+            + Add Note
           </button>
         </div>
         <p className="mt-1 text-xs text-gold/50 italic">Logged</p>
@@ -105,7 +102,7 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
   }
 
   return (
-    <div ref={cardRef} className="rounded-md border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
+    <div ref={cardRef} className="rounded-xl border border-gold/10 border-t-gold/20 bg-near-black/50 p-4">
       <p className="text-display mb-5 text-gold">
         Morning Report
       </p>
@@ -199,12 +196,9 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
       ) : (
         <button
           onClick={() => setShowNotes(true)}
-          className="mt-3 mb-1 flex min-h-[44px] items-center gap-1.5 rounded-full border border-gold/15 px-3 py-1.5 text-[13px] text-gold/40 active:bg-gold/10 transition-colors"
+          className="font-cinzel mt-3 mb-1 min-h-[44px] px-1 text-left text-[11px] uppercase tracking-[0.2em] text-gold/40 active:text-gold transition-colors"
         >
-          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Add Note
+          + Add Note
         </button>
       )}
 
