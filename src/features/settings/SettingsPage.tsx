@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
@@ -8,20 +8,12 @@ import { apiFetch } from '@/lib/api'
 import { getApiBaseUrl } from '@/lib/apiBase'
 import { scheduleAlarms } from '@/lib/notifications'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
-import { Button } from '@/components/ui/button'
 import { ScrollDrum, ScrollDrumList } from '@/components/ui/ScrollDrum'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { useToast } from '@/components/ui/Toast'
 import { PageHeader } from '@/components/PageHeader'
 import { SettingsSkeleton } from '@/components/ui/Skeleton'
-
-function formatAlarmTime(d: Date): string {
-  let h = d.getHours()
-  const m = d.getMinutes()
-  const ap = h >= 12 ? 'PM' : 'AM'
-  h = h % 12 || 12
-  return `${h}:${String(m).padStart(2, '0')} ${ap}`
-}
+import { isBiometryAvailable, isGateEnabled, setGateEnabled } from '@/lib/waybookGate'
 
 interface Settings {
   mtClassDays: string | null
@@ -103,6 +95,8 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const { show: showToast, ToastContainer } = useToast()
   const [showReplacementPicker, setShowReplacementPicker] = useState(false)
+  const hydratedRef = useRef(false)
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Form state
   const [mtDays, setMtDays] = useState<Set<string>>(new Set())
@@ -133,6 +127,24 @@ export function SettingsPage() {
   const [disconnecting, setDisconnecting] = useState(false)
   const [connecting, setConnecting] = useState(false)
 
+  const [waybookAuth, setWaybookAuth] = useState<boolean>(() => isGateEnabled())
+  const [biometryAvailable, setBiometryAvailable] = useState<boolean>(true)
+
+  useEffect(() => {
+    let cancelled = false
+    isBiometryAvailable().then((avail) => {
+      if (!cancelled) setBiometryAvailable(avail)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  function handleWaybookAuthToggle() {
+    const next = !waybookAuth
+    setWaybookAuth(next)
+    setGateEnabled(next)
+    showToast(next ? 'Waybook locked with Face ID' : 'Waybook unlocked', 'success')
+  }
+
   useEffect(() => {
     async function load() {
       try {
@@ -153,6 +165,8 @@ export function SettingsPage() {
         console.error('Failed to load settings:', e)
       } finally {
         setLoading(false)
+        // Defer hydration flag so the form-state effect's first run (post-load) is skipped
+        requestAnimationFrame(() => { hydratedRef.current = true })
       }
     }
     load()
@@ -237,52 +251,56 @@ export function SettingsPage() {
     }
   }
 
-  async function handleSave() {
-    setSaving(true)
-    setSaved(false)
-    try {
-      const updated = await apiFetch<Settings>('/api/settings', {
-        method: 'PATCH',
-        body: JSON.stringify({
-          mtClassDays: Array.from(mtDays).join(','),
-          amReminder,
-          pmLeadMin,
-          pmSessionTime,
-          onePaceArc: onePaceArc || null,
-          onePaceEp: onePaceEp || null,
-          enabledTechniques: Array.from(enabledTechniques).join(','),
-          amEnabled,
-          pmEnabled,
-        }),
-      })
-      setSettings(updated)
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+  useEffect(() => {
+    if (!hydratedRef.current) return
+    const controller = new AbortController()
+    const t = setTimeout(async () => {
+      setSaving(true)
+      try {
+        const updated = await apiFetch<Settings>('/api/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            mtClassDays: Array.from(mtDays).join(','),
+            amReminder,
+            pmLeadMin,
+            pmSessionTime,
+            onePaceArc: onePaceArc || null,
+            onePaceEp: onePaceEp || null,
+            enabledTechniques: Array.from(enabledTechniques).join(','),
+            amEnabled,
+            pmEnabled,
+          }),
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted) return
+        setSettings(updated)
+        setSaved(true)
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
+        savedTimerRef.current = setTimeout(() => setSaved(false), 1500)
 
-      scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, { amEnabled, pmEnabled }).then((result) => {
-        if (result.scheduled && result.baseAt) {
-          showToast(`Alarm set for ${formatAlarmTime(result.baseAt)}`, 'info')
-        }
-      }).catch(() => {
-        // silent — save itself succeeded; alarm scheduling is best-effort on web
-      })
+        scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, { amEnabled, pmEnabled }).catch(() => {})
 
-      if (updated.cascade) {
-        if (updated.cascade.removed > 0) {
-          const days = updated.cascade.freedDays?.join(', ') ?? ''
-          showToast(`${days} PM slot${updated.cascade.removed > 1 ? 's' : ''} freed up`, 'info')
-          setShowReplacementPicker(true)
-        } else {
-          showToast('MT schedule updated', 'success')
+        if (updated.cascade) {
+          if (updated.cascade.removed > 0) {
+            const days = updated.cascade.freedDays?.join(', ') ?? ''
+            showToast(`${days} PM slot${updated.cascade.removed > 1 ? 's' : ''} freed up`, 'info')
+            setShowReplacementPicker(true)
+          }
         }
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === 'AbortError') return
+        console.error('Failed to save settings:', e)
+        showToast('Save didn\'t land. Try again.', 'warning')
+      } finally {
+        if (!controller.signal.aborted) setSaving(false)
       }
-    } catch (e) {
-      console.error('Failed to save settings:', e)
-      showToast('Save didn\'t land. Try again.', 'warning')
-    } finally {
-      setSaving(false)
+    }, 800)
+    return () => {
+      controller.abort()
+      clearTimeout(t)
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mtDays, amReminder, amEnabled, pmLeadMin, pmSessionTime, pmEnabled, onePaceArc, onePaceEp, enabledTechniques])
 
   function toggleDay(day: string) {
     const next = new Set(mtDays)
@@ -558,6 +576,38 @@ export function SettingsPage() {
         </button>
       </section>
 
+      {/* Waybook privacy */}
+      <section>
+        <p className="mb-2 text-sm font-medium text-foreground">Waybook</p>
+        <button
+          type="button"
+          onClick={handleWaybookAuthToggle}
+          disabled={!biometryAvailable}
+          className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-md border border-border bg-border/30 px-3 py-2.5 disabled:opacity-50"
+        >
+          <div className="min-w-0 text-left">
+            <p className="text-sm text-foreground">Require Face ID to open Waybook</p>
+            <p className="text-xs text-muted-foreground">
+              {biometryAvailable
+                ? 'Face ID or passcode. Re-locks after 3 minutes in background.'
+                : 'Face ID / passcode not available on this device.'}
+            </p>
+          </div>
+          <span
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+              waybookAuth ? 'bg-gold' : 'bg-border'
+            }`}
+            aria-hidden
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-background transition-transform ${
+                waybookAuth ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </span>
+        </button>
+      </section>
+
       {/* Strava */}
       <section>
         <p className="mb-2 text-sm font-medium text-foreground">Strava</p>
@@ -591,10 +641,14 @@ export function SettingsPage() {
         )}
       </section>
 
-      {/* Save */}
-      <Button onClick={handleSave} disabled={saving} className="w-full">
-        {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Settings'}
-      </Button>
+      {/* Auto-save indicator */}
+      <div className="flex h-5 items-center justify-center text-xs text-muted-foreground" aria-live="polite">
+        <span
+          className={`transition-opacity duration-300 ${saving || saved ? 'opacity-100' : 'opacity-0'}`}
+        >
+          {saving ? 'Saving…' : saved ? 'Saved ✓' : ''}
+        </span>
+      </div>
 
       <ToastContainer />
 
