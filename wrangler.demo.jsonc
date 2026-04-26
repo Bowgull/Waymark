@@ -1,0 +1,14 @@
+{
+  "name": "waymark-demo",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "waymark-demo-db",
+      "database_id": "6ed03a73-6293-478a-90cb-efa6f37e087e"
+    }
+  ],
+  "vars": { "DEMO_MODE": "true" }
+  // No cron triggers — demo is read-only
+}
