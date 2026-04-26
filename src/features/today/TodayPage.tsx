@@ -239,6 +239,35 @@ export function TodayPage() {
     setSkipReasonFor(id)
   }
 
+  async function handleEndEarly(id: string, action: 'completed' | 'reset') {
+    const nowSec = Math.floor(Date.now() / 1000)
+    if (action === 'completed') {
+      setSessions((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, status: 'completed', completedAt: nowSec } : s)),
+      )
+      try {
+        await apiFetch(`/api/sessions/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'completed', completedAt: nowSec }),
+        })
+      } catch (e) {
+        console.error('Failed to end session early (completed):', e)
+      }
+    } else {
+      setSessions((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, status: 'planned', startedAt: null, completedAt: null } : s)),
+      )
+      try {
+        await apiFetch(`/api/sessions/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'planned', startedAt: null, completedAt: null }),
+        })
+      } catch (e) {
+        console.error('Failed to end session early (reset):', e)
+      }
+    }
+  }
+
   async function commitSkip(id: string, commit: SkipReasonCommit) {
     setSkipReasonFor(null)
     setSessions((prev) =>
@@ -459,11 +488,13 @@ export function TodayPage() {
         </div>
       )}
 
-      <WellnessPromptCard
-        onSubmit={handleWellnessSubmit}
-        isLogged={dailyLog !== null && dailyLog !== undefined}
-        existing={dailyLog ?? null}
-      />
+      <div data-tour="wellness-card">
+        <WellnessPromptCard
+          onSubmit={handleWellnessSubmit}
+          isLogged={dailyLog !== null && dailyLog !== undefined}
+          existing={dailyLog ?? null}
+        />
+      </div>
 
       <JournalCard />
 
@@ -486,6 +517,7 @@ export function TodayPage() {
             onStart={handleStart}
             onSkip={handleSkip}
             onReplace={handleReplaceStart}
+            onEndEarly={handleEndEarly}
             onConfirmMatch={handleConfirmMatch}
             onReassignMatch={handleReassignStart}
             onDismissMatch={handleDismissMatch}

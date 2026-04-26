@@ -9,6 +9,8 @@
       "database_id": "6ed03a73-6293-478a-90cb-efa6f37e087e"
     }
   ],
-  "vars": { "DEMO_MODE": "true" }
-  // No cron triggers — demo is read-only
+  "vars": { "DEMO_MODE": "true" },
+  "triggers": {
+    "crons": ["0 8 * * *"]
+  }
 }

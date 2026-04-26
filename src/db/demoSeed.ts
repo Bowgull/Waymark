@@ -15,8 +15,7 @@
  *   npm run db:demo:seed:remote     # applies demoSeed.sql to remote D1
  */
 
-import { writeFileSync } from 'fs'
-
+export function generateDemoSql(): string[] {
 const nowSec = Math.floor(Date.now() / 1000)
 
 // Use LOCAL date (matches getTodayISO / getEpochDay in src/lib/dates.ts) so
@@ -430,10 +429,53 @@ lines.push(`UPDATE combos SET is_favourite = 1, mastery_score = 3, times_sharp =
 lines.push(`UPDATE combos SET is_favourite = 1, mastery_score = 2, times_sharp = 3 WHERE id = 'combo-f06';`)
 lines.push(`UPDATE combos SET mastery_score = 2, times_sharp = 2 WHERE id = 'combo-f01';`)
 
-// ─── Emit ────────────────────────────────────────────────────
-const sql = lines.join('\n') + '\n'
-writeFileSync('src/db/demoSeed.sql', sql)
-console.log(`Wrote ${lines.length} statements to src/db/demoSeed.sql`)
-console.log(`  todayEpochDay=${todayEpochDay}  blockStartDay=${blockStartDay}  todayDayIdx=${todayDayIdx}`)
-console.log(`  Sessions: ${sessions.length}  (completed: ${sessions.filter(s => s.completed).length}  planned: ${sessions.filter(s => !s.completed && !s.payload?.skipped).length}  skipped: ${sessions.filter(s => s.payload?.skipped).length})`)
-console.log(`  Daily logs: ${DAILY_LOGS.length}  Weekly journals: ${JOURNALS.length}`)
+  return lines
+}
+
+export const DEMO_WIPE_STATEMENTS: string[] = [
+  'PRAGMA defer_foreign_keys = ON',
+  'DELETE FROM strength_sets',
+  'DELETE FROM combo_performance',
+  'DELETE FROM bag_work_round_combos',
+  'DELETE FROM bag_work_rounds',
+  'DELETE FROM strength_session_exercises',
+  'DELETE FROM run_splits',
+  'DELETE FROM run_sessions',
+  'DELETE FROM posture_session_exercises',
+  'DELETE FROM skip_rope_sessions',
+  'DELETE FROM active_recovery_sessions',
+  'DELETE FROM mt_class_logs',
+  'DELETE FROM coaching_outputs',
+  'DELETE FROM week_adjustments',
+  'DELETE FROM sessions',
+  'DELETE FROM running_plan_weeks',
+  'DELETE FROM week_plans',
+  'DELETE FROM training_blocks',
+  'DELETE FROM daily_logs',
+  'DELETE FROM weekly_journals',
+  'DELETE FROM journal_entries',
+  'DELETE FROM body_metrics',
+  'UPDATE combos SET is_favourite = 0, mastery_score = 0, times_sharp = 0',
+]
+
+const proc = (globalThis as { process?: { argv?: string[] } }).process
+const isMainModule = (() => {
+  try {
+    const argv1 = proc?.argv?.[1]
+    if (!argv1) return false
+    const url = new URL(import.meta.url)
+    return url.pathname === argv1 || url.pathname.endsWith(argv1.replace(/^.*\//, ''))
+  } catch {
+    return false
+  }
+})()
+
+if (isMainModule) {
+  void (async () => {
+    const fs = (await import(/* @vite-ignore */ 'node:' + 'fs')) as { writeFileSync: (p: string, d: string) => void }
+    const lines = generateDemoSql()
+    const sql = lines.join('\n') + '\n'
+    fs.writeFileSync('src/db/demoSeed.sql', sql)
+    console.log(`Wrote ${lines.length} statements to src/db/demoSeed.sql`)
+  })()
+}

@@ -357,6 +357,7 @@ export function LibraryPage() {
                   return (
                     <button
                       key={ex.id}
+                      data-tour="exercise-card"
                       onClick={() => setExpandedId(isExpanded ? null : ex.id)}
                       className="w-full rounded-md border border-border bg-card p-3 text-left"
                     >
@@ -593,7 +594,7 @@ export function LibraryPage() {
       )}
 
       {/* Journal section */}
-      {!isSearching && <div className="mb-4 mt-2">
+      {!isSearching && <div data-tour="waybook" className="mb-4 mt-2">
         <button
           onClick={loadJournal}
           className="flex w-full items-center gap-3 px-1 py-2"

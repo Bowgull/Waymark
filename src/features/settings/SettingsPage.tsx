@@ -362,7 +362,7 @@ export function SettingsPage() {
         </p>
 
         {/* Morning Alarm */}
-        <div className="space-y-2">
+        <div data-tour="alarm-section" className="space-y-2">
           <NotificationToggle
             label="Morning Alarm"
             enabled={amEnabled}
