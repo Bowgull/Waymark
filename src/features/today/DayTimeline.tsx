@@ -21,6 +21,7 @@ interface DayTimelineProps {
   onStart: (id: string) => void
   onSkip: (id: string) => void
   onReplace: (id: string) => void
+  onEndEarly?: (id: string, action: 'completed' | 'reset') => void
   onConfirmMatch?: (activityId: number) => void
   onReassignMatch?: (activityId: number) => void
   onDismissMatch?: (activityId: number) => void
@@ -32,6 +33,7 @@ export function DayTimeline({
   onStart,
   onSkip,
   onReplace,
+  onEndEarly,
   onConfirmMatch,
   onReassignMatch,
   onDismissMatch,
@@ -60,6 +62,7 @@ export function DayTimeline({
                 onStart={onStart}
                 onSkip={onSkip}
                 onReplace={onReplace}
+                onEndEarly={onEndEarly}
                 onConfirmMatch={onConfirmMatch}
                 onReassignMatch={onReassignMatch}
                 onDismissMatch={onDismissMatch}

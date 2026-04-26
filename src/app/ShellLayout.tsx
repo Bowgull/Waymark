@@ -1,6 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { OfflineBanner } from '../components/ui/OfflineBanner'
 import { HistoryIcon, LibraryIcon, ProgramIcon, TodayIcon } from '../components/icons/NavIcons'
+import { TourProvider } from '../components/tour/TourProvider'
+import { TourButton } from '../components/tour/TourButton'
 
 function NavTab({ to, label, icon, end }: { to: string; label: string; icon: React.ReactNode; end?: boolean }) {
   return (
@@ -28,8 +30,10 @@ function NavTab({ to, label, icon, end }: { to: string; label: string; icon: Rea
 
 export function ShellLayout() {
   return (
+    <TourProvider>
     <div className="flex h-dvh flex-col bg-background text-foreground">
       <OfflineBanner />
+      <TourButton />
       <main className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         <Outlet />
       </main>
@@ -44,5 +48,6 @@ export function ShellLayout() {
         <NavTab to="/history" label="Ledger" icon={<HistoryIcon />} />
       </nav>
     </div>
+    </TourProvider>
   )
 }

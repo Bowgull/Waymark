@@ -39,6 +39,7 @@ interface TimelineRowProps {
   onStart: (id: string) => void
   onSkip: (id: string) => void
   onReplace: (id: string) => void
+  onEndEarly?: (id: string, action: 'completed' | 'reset') => void
   onConfirmMatch?: (activityId: number) => void
   onReassignMatch?: (activityId: number) => void
   onDismissMatch?: (activityId: number) => void
@@ -86,6 +87,7 @@ export function TimelineRow({
   onStart,
   onSkip,
   onReplace,
+  onEndEarly,
   onConfirmMatch,
   onReassignMatch,
   onDismissMatch,
@@ -93,6 +95,7 @@ export function TimelineRow({
   onToggle,
   label,
 }: TimelineRowProps) {
+  const [endSheetOpen, setEndSheetOpen] = useState(false)
   const mark = getMarkAsset(session.type)
   const estMin = getEstimatedMin(session.type)
   const run = session.runSession ?? null
@@ -114,7 +117,7 @@ export function TimelineRow({
   }
 
   return (
-    <div className={`rounded-lg ${statusBg(session.status, isAutoPending)} transition-colors`}>
+    <div data-tour="session-row" className={`rounded-lg ${statusBg(session.status, isAutoPending)} transition-colors`}>
       {/* Collapsed row — always visible */}
       <div
         role="button"
@@ -222,6 +225,7 @@ export function TimelineRow({
                   <>
                     <button
                       type="button"
+                      data-tour="replace-button"
                       className="inline-flex min-h-[44px] items-center rounded-full border border-border/50 px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground/80 active:bg-surface/30 active:text-foreground"
                       onClick={() => onReplace(session.id)}
                     >
@@ -229,12 +233,23 @@ export function TimelineRow({
                     </button>
                     <button
                       type="button"
+                      data-tour="skip-button"
                       className="inline-flex min-h-[44px] items-center rounded-full border border-border/30 px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground/60 active:bg-surface/30 active:text-foreground"
                       onClick={() => onSkip(session.id)}
                     >
                       Skip
                     </button>
                   </>
+                )}
+                {session.status === 'in_progress' && onEndEarly && (
+                  <button
+                    type="button"
+                    aria-label="End early"
+                    className="ml-auto inline-flex h-[44px] w-[44px] items-center justify-center rounded-full border border-border/40 text-muted-foreground/80 active:bg-surface/30 active:text-foreground"
+                    onClick={() => setEndSheetOpen(true)}
+                  >
+                    <span className="text-base leading-none">×</span>
+                  </button>
                 )}
               </div>
             </>
@@ -252,6 +267,54 @@ export function TimelineRow({
           {isSkipped && (
             <p className="pt-1 text-xs text-muted-foreground/50">Skipped</p>
           )}
+        </div>
+      )}
+      {endSheetOpen && onEndEarly && (
+        <div
+          className="fixed inset-0 z-[150] flex items-end justify-center"
+          style={{ background: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setEndSheetOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-t-2xl border-t border-gold/15 bg-card p-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-medium text-foreground">End early.</p>
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              Mark this session done or wipe the start and put it back to planned.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                className="w-full rounded-full border border-gold/40 bg-gold/10 px-4 py-3 text-sm font-semibold text-gold active:bg-gold/15"
+                onClick={() => {
+                  mediumHaptic()
+                  setEndSheetOpen(false)
+                  onEndEarly(session.id, 'completed')
+                }}
+              >
+                Mark Completed
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-full border border-border/50 px-4 py-3 text-sm font-medium text-muted-foreground active:text-foreground"
+                onClick={() => {
+                  tapHaptic()
+                  setEndSheetOpen(false)
+                  onEndEarly(session.id, 'reset')
+                }}
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                className="mt-1 w-full text-center text-[12px] text-muted-foreground active:text-foreground"
+                onClick={() => setEndSheetOpen(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
