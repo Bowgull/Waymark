@@ -13,7 +13,7 @@
 // attachment_status='orphan'. Confirm/reassign/dismiss routes finalize the state.
 
 import { Hono } from 'hono'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 
 import { createDB } from '../../db/client'
 import { runSessions, runSplits, sessions, stravaTokens, userProfile } from '../../db/schema'
@@ -347,6 +347,80 @@ strava.delete('/subscription/:id', async (c) => {
   const res = await fetch(url, { method: 'DELETE' })
   const text = await res.text().catch(() => '')
   return c.json({ status: res.status, body: text ? safeParseJson(text) : null })
+})
+
+/**
+ * Demo-mode Strava connect.
+ *
+ * No OAuth, no real Strava call. Marks the user as connected with a fake
+ * athlete and seeds two recent run_sessions matched to the most recent
+ * planned running sessions, so the Today and History views show "Strava
+ * runs" without ever hitting Strava.
+ *
+ * Only enabled when env.DEMO_MODE === 'true'. Returns 404 otherwise so
+ * the route is invisible in production.
+ */
+strava.post('/demo-connect', async (c) => {
+  if (c.env.DEMO_MODE !== 'true') {
+    return c.json({ error: 'not_found' }, 404)
+  }
+
+  const db = createDB(c.env)
+  const now = Date.now()
+
+  await db.delete(stravaTokens).where(eq(stravaTokens.id, 'default'))
+  await db.insert(stravaTokens).values({
+    id: 'default',
+    athleteId: 999000001,
+    athleteName: 'Demo Athlete',
+    accessToken: 'demo_access_token',
+    refreshToken: 'demo_refresh_token',
+    expiresAt: Math.floor(now / 1000) + 60 * 60 * 24 * 30,
+    scope: 'read,activity:read_all,profile:read_all',
+    connectedAt: now,
+    updatedAt: now,
+  })
+
+  // Attach fake Strava runs to up to two recent running sessions.
+  const recentRunSessions = await db
+    .select({ id: sessions.id, completedAt: sessions.completedAt })
+    .from(sessions)
+    .where(eq(sessions.type, 'run_outdoor'))
+    .orderBy(desc(sessions.completedAt))
+    .limit(2)
+
+  for (let i = 0; i < recentRunSessions.length; i++) {
+    const s = recentRunSessions[i]
+    const fakeStravaId = 9_000_000_000 + Math.floor(Math.random() * 1_000_000)
+    const distanceKm = i === 0 ? 6.2 : 8.1
+    const durationSec = i === 0 ? 32 * 60 + 14 : 44 * 60 + 50
+    const paceSecKm = Math.round(durationSec / distanceKm)
+
+    await db.delete(runSessions).where(eq(runSessions.sessionId, s.id))
+    await db.insert(runSessions).values({
+      id: `run_demo_${s.id}`,
+      sessionId: s.id,
+      runType: 'easy',
+      distanceKm,
+      durationSec,
+      paceSecKm,
+      isIndoor: 0,
+      avgHr: i === 0 ? 148 : 152,
+      maxHr: i === 0 ? 168 : 174,
+      zoneSeconds: JSON.stringify({ z1: 240, z2: durationSec - 600, z3: 360, z4: 0, z5: 0 }),
+      elevationGainM: i === 0 ? 32 : 88,
+      source: 'strava',
+      stravaActivityId: fakeStravaId,
+      attachmentStatus: 'auto_confirmed',
+    })
+  }
+
+  return c.json({
+    ok: true,
+    demo: true,
+    athleteName: 'Demo Athlete',
+    runsAttached: recentRunSessions.length,
+  })
 })
 
 strava.post('/disconnect', async (c) => {

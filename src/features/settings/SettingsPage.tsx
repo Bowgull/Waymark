@@ -216,14 +216,23 @@ export function SettingsPage() {
   async function handleConnectStrava() {
     if (connecting) return
     setConnecting(true)
-    const url = `${getApiBaseUrl()}/api/strava/authorize`
+    const isDemo = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env.VITE_DEMO_MODE === 'true'
     try {
+      if (isDemo) {
+        // Demo mode: skip Strava OAuth entirely. Server stamps a fake
+        // connected athlete and pre-attaches matched runs to recent sessions.
+        const res = await apiFetch('/api/strava/demo-connect', { method: 'POST' })
+        if (!res.ok) throw new Error('demo connect failed')
+        const data = await res.json() as { athleteName?: string }
+        setStrava({ connected: true, athleteName: data.athleteName ?? 'Demo Athlete', athleteId: 999000001 } as StravaStatus)
+        showToast('Strava connected (demo). Recent runs attached.', 'success')
+        return
+      }
+
+      const url = `${getApiBaseUrl()}/api/strava/authorize`
       if (Capacitor.isNativePlatform()) {
-        // Opens SFSafariViewController on iOS — app state is preserved.
-        // On dismissal, appStateChange listener above will re-fetch status.
         await Browser.open({ url, presentationStyle: 'popover' })
       } else {
-        // Web: full navigation. Callback lands on Worker's success page.
         window.location.href = url
       }
     } catch (e) {
