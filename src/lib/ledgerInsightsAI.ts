@@ -31,6 +31,18 @@ export interface LedgerInsightData {
   prs: { exerciseName: string; maxWeightKg: number; date: string; previousMaxKg: number | null }[]
   correlations: { sleepHours: number | null; avgRpe: number | null; sessionCount: number }[]
   runSummary: { totalRuns: number; totalDistanceKm: number; avgPaceSecKm: number | null; bestPaceSecKm: number | null } | null
+  recentRunEvidence?: Array<{
+    date: string
+    runType: string | null
+    source: string | null
+    distanceKm: number | null
+    paceSecKm: number | null
+    avgHr: number | null
+    maxHr: number | null
+    elevationGainM: number | null
+    zoneSeconds: string | null
+    reviewFlag: string | null
+  }> | null
   roadBootcampMetrics?: RoadBootcampMetrics | null
   categoryCompletion: Record<string, { completed: number; target: number }> | null
 }
@@ -83,6 +95,22 @@ function formatRunSummary(r: LedgerInsightData['runSummary']): string {
   return `Running: ${r.totalRuns} runs, ${r.totalDistanceKm.toFixed(1)} km total. Avg pace ${avg}/km, best ${best}/km.`
 }
 
+function formatRecentRunEvidence(runs: LedgerInsightData['recentRunEvidence']): string {
+  if (!runs || runs.length === 0) return 'Recent run evidence: none.'
+  const lines = runs.slice(0, 5).map(run => {
+    const source = run.source === 'strava' ? 'Strava' : run.source ?? 'manual'
+    const distance = run.distanceKm != null ? `${run.distanceKm.toFixed(2)} km` : 'distance not recorded'
+    const pace = run.paceSecKm != null ? `${paceToMinSec(run.paceSecKm)}/km` : 'pace not recorded'
+    const avgHr = run.avgHr != null ? `avg HR ${run.avgHr}` : 'avg HR not recorded'
+    const maxHr = run.maxHr != null ? `max ${run.maxHr}` : 'max not recorded'
+    const elevation = run.elevationGainM != null ? `elevation ${run.elevationGainM} m` : 'elevation not recorded'
+    const zones = run.zoneSeconds ? `zones ${run.zoneSeconds}` : 'zones not recorded'
+    const flag = run.reviewFlag ? `flag ${run.reviewFlag}` : 'flag none'
+    return `  ${run.date} ${run.runType ?? 'run'} from ${source}: ${distance}, ${pace}, ${avgHr}, ${maxHr}, ${elevation}, ${zones}, ${flag}.`
+  })
+  return `Recent run evidence:\n${lines.join('\n')}`
+}
+
 function formatDistribution(values: Record<string, number>): string {
   const entries = Object.entries(values)
   if (entries.length === 0) return 'none'
@@ -105,19 +133,21 @@ function formatCategoryCompletion(cc: LedgerInsightData['categoryCompletion']): 
   return `Category rings: ${entries.join(', ')}.`
 }
 
-function buildPrompt(data: LedgerInsightData): string {
+export function buildLedgerInsightPrompt(data: LedgerInsightData): string {
   const lines: string[] = [
     formatDashboard(data.dashboard),
     formatConsistency(data.consistency),
     formatPRs(data.prs),
     formatCorrelations(data.correlations),
     formatRunSummary(data.runSummary),
+    formatRecentRunEvidence(data.recentRunEvidence),
     formatRoadBootcamp(data.roadBootcampMetrics),
     formatCategoryCompletion(data.categoryCompletion),
     '',
     'Write 2 to 4 ledger insights using the insight tool. One tool call per insight.',
     'Voice canon: observation before instruction, numbers stated plainly, never congratulate, no exclamation marks, no emoji.',
     'Only surface what the data supports. If nothing is notable, return one insight noting that.',
+    'Use recent run evidence only for bounded patterns. Do not overfit one run.',
     'Priority 1 = surface first. Keep each text short, one sentence, no em dashes.',
   ]
   return lines.join('\n')
@@ -152,7 +182,7 @@ export async function runLedgerInsights(
   }
 
   const systemBlocks = buildSystemPrompt(profile, null)
-  const prompt = buildPrompt(data)
+  const prompt = buildLedgerInsightPrompt(data)
 
   const result = await anthropicCall(apiKey, {
     model: 'claude-haiku-4-5-20251001',
