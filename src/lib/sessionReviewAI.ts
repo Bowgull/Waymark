@@ -144,6 +144,60 @@ function formatStrengthContext(strength: StrengthReviewContext): string[] {
   return lines
 }
 
+function parseTargetHighBpm(targetHrLine: string | null): number | null {
+  if (!targetHrLine) return null
+  const match = targetHrLine.match(/to (\d+) bpm/)
+  return match ? Number(match[1]) : null
+}
+
+function readableRoadEquipment(value: string | null | undefined): string {
+  if (value === 'no_gym') return 'No gym'
+  if (value === 'hotel_gym') return 'Hotel gym'
+  if (value === 'full_gym') return 'Full gym'
+  return 'Equipment not recorded'
+}
+
+export function buildLocalSessionReview(
+  session: { type: string; rpe: number | null; durationSec: number | null },
+  context: SessionReviewContext,
+): SessionReviewOutput {
+  if (context.run) {
+    const high = parseTargetHighBpm(context.run.targetHrLine)
+    if (context.run.targetHrLine?.startsWith('Zone 2.') && high != null && context.run.avgHr != null && context.run.avgHr > high) {
+      return {
+        line: 'Prescribed easy. Heart said hard. Easier next time.',
+        flag: 'intensity_mismatch',
+      }
+    }
+
+    if (context.run.distanceKm != null && context.run.paceSecKm != null) {
+      const hr = context.run.avgHr != null ? ` Avg HR ${context.run.avgHr}.` : ''
+      return {
+        line: `${context.run.distanceKm.toFixed(2)} km at ${paceToMinSec(context.run.paceSecKm)}/km.${hr}`,
+        flag: 'none',
+      }
+    }
+  }
+
+  if (context.strength) {
+    const road = context.strength.roadBootcamp
+    if (road) {
+      const time = road.prescribedTime ?? road.timeAvailable ?? 'time not recorded'
+      const timeLabel = time === '45_plus' ? '45+ minutes' : `${time} minutes`
+      return {
+        line: `${timeLabel}. ${readableRoadEquipment(road.equipment)}. ${context.strength.exercises.length} movements logged.`,
+        flag: 'none',
+      }
+    }
+  }
+
+  const label = SESSION_LABEL[session.type] ?? 'Session'
+  return {
+    line: `${label[0].toUpperCase()}${label.slice(1)} logged. Effort ${session.rpe ?? 'not recorded'}/10.`,
+    flag: 'none',
+  }
+}
+
 async function loadSessionReviewContext(
   db: DB,
   session: { id: string; type: string; notes: string | null; contextJson?: string | null },
@@ -313,8 +367,8 @@ export async function runSessionReview(
   })
 
   if (result.offline) {
-    console.warn('[sessionReview] offline, skipping review')
-    return null
+    console.info('[sessionReview] offline. Using local fallback.')
+    return buildLocalSessionReview(session, reviewContext)
   }
 
   const output = getToolInput<SessionReviewOutput>(result, 'sessionReview')
