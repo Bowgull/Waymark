@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:27 EDT
+Updated: 2026-05-16 18:33 EDT
 
 ## Current State
 
@@ -104,6 +104,13 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - Completion notes can replace `sessions.notes`.
   - Run review context now uses `run_sessions.run_type` unless `sessions.notes` is still an approved run category.
   - The coach keeps the prescribed run target available after the user logs completion notes.
+- Investigated the local `start-foundation-run` failure:
+  - Root cause was missing local D1 exercise seed rows from `drizzle/0019_static_stretch_warmup.sql`.
+  - Local D1 had `ex-pigeon-stretch` but was missing the four newer warmup exercises.
+  - Added an API guard so foundation-run start returns `409` with missing exercise IDs and the exact migration recovery command instead of a generic 500.
+  - Added `npm run smoke:foundation-run`.
+  - Applied `npm run db:migrate:0019:local` to the local D1 database.
+  - Verified foundation-run start creates a Zone 2 run, 5 warmup exercises with videos, and idempotent repeat start.
 
 ## Verification
 
@@ -149,13 +156,23 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `npm run lint` passes.
   - `npm run build` passes.
   - `git diff --check` passes.
+- Foundation-run smoke:
+  - Before local migration, `npm run smoke:foundation-run` returned `409` with missing IDs:
+    `ex-toe-touch-forward-fold`, `ex-butterfly-stretch`, `ex-standing-quad-stretch`, `ex-standing-calf-stretch`.
+  - `npm run db:migrate:0019:local` applied successfully.
+  - After migration, `npm run smoke:foundation-run` passes with `runType: "zone2"` and `warmupCount: 5`.
+  - `npm run smoke:offline-review` passes.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
 
 ## Known Warnings
 
 - Vite build still reports the existing large chunk warning.
 - Local wrangler still warns that `node:fs` needs `nodejs_compat` because `src/db/demoSeed.ts` imports Node fs. That is local dev surface, not app runtime behavior tested here.
 - Favicon was fixed after the last browser smoke. Static build proof passes. A live browser resmoke has not been run since that tiny fix.
-- The first offline-review smoke used `start-foundation-run` and hit a local D1 posture warmup insert failure. The schema and initial migration include `posture_session_exercises.completed`; this looks like local D1 state or the foundation warmup path. The committed smoke uses `start-run` because the goal is completion-route review persistence.
+- The first offline-review smoke used `start-foundation-run` and hit a local D1 posture warmup insert failure. The actual root cause was missing local warmup exercise seed rows from migration `0019`, not the `posture_session_exercises.completed` column.
 
 ## Open Product Gaps
 
@@ -171,6 +188,6 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 
 ## Next Slice
 
-1. Investigate the local `start-foundation-run` posture warmup insert failure if foundation-run QA becomes the next target.
-2. Consider one focused live-AI session review smoke when an API key is present and spend is acceptable.
-3. Continue targeted polish only where a real Road Bootcamp flow still feels unclear.
+1. Consider one focused live-AI session review smoke when an API key is present and spend is acceptable.
+2. Continue targeted polish only where a real Road Bootcamp flow still feels unclear.
+3. If remote D1 has not had migration `0019` applied, run `npm run db:migrate:0019:remote` before testing remote foundation runs.
