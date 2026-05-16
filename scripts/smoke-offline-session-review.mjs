@@ -87,6 +87,9 @@ try {
 
   if (!completed.review) throw new Error('completed session did not persist a review')
   if (!completed.reviewFlag) throw new Error('completed session did not persist a review flag')
+  if (completed.reviewSource !== 'local') {
+    throw new Error(`expected local review source, got ${completed.reviewSource}`)
+  }
 
   if (z2High != null) {
     if (completed.reviewFlag !== 'intensity_mismatch') {
@@ -111,6 +114,7 @@ try {
     maxHr,
     review: completed.review,
     reviewFlag: completed.reviewFlag,
+    reviewSource: completed.reviewSource,
   }, null, 2))
 } finally {
   await cleanup(sessionId)
