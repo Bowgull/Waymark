@@ -9,7 +9,7 @@ import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/sy
 import { getLatestBodyweightKg } from '../../lib/bodyMetrics'
 import { TOOL_BLOCK_TRANSITION, type BlockTransitionOutput } from '../../lib/prompts/tools'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt, type AdherenceSnapshot, type AdherenceGuidance } from '../../lib/adherence'
-import { computeHrSnapshot, loadRecentRunsForHr, serializeHrForPrompt } from '../../lib/hrAnalysis'
+import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from '../../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../../lib/sessionRollover'
 import { getEpochDay } from '../../lib/dates'
 import type { createDB } from '../../db/client'
@@ -301,7 +301,8 @@ async function gatherTransitionData(db: DB, blockId: string): Promise<{
   const guidance = deriveGuidance(adherence)
 
   const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
-  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay)
+  const maxHr = await loadProfileMaxHrForHr(db)
+  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr })
   const hrBlock = serializeHrForPrompt(hrSnapshot)
 
   return {

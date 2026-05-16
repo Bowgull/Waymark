@@ -25,7 +25,7 @@ import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type ReactiveReplanOutput, type ReplaceSuggestionsOutput } from './prompts/tools'
-import { computeHrSnapshot, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
+import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
 import { computeStarterStatus, serializeStarterStatus } from './starterStatus'
 import type { createDB } from '../db/client'
@@ -178,7 +178,8 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
       let z2: string | null = null
       if (ctx.trigger === 'session_completed') {
         const runs = await loadRecentRunsForHr(db, ctx.todayEpochDay)
-        const snap = computeHrSnapshot(runs, ctx.todayEpochDay)
+        const maxHr = await loadProfileMaxHrForHr(db)
+        const snap = computeHrSnapshot(runs, ctx.todayEpochDay, { maxHr })
         if (snap.driftAssessment === 'clear_fatigue' || snap.driftAssessment === 'mild_fatigue') {
           hrDrift = snap.driftAssessment
         }
@@ -479,7 +480,8 @@ export async function runReactiveReplan(
   }
 
   const recentRuns = await loadRecentRunsForHr(db, ctx.todayEpochDay)
-  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, ctx.todayEpochDay))
+  const maxHr = await loadProfileMaxHrForHr(db)
+  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, ctx.todayEpochDay, { maxHr }))
 
   const weekSessions = await db
     .select({ type: sessions.type, scheduledDate: sessions.scheduledDate, timeSlot: sessions.timeSlot, status: sessions.status })
@@ -581,7 +583,8 @@ export async function runReplaceSuggestions(
     .where(and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd)))
 
   const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
-  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, todayEpochDay))
+  const maxHr = await loadProfileMaxHrForHr(db)
+  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, todayEpochDay, { maxHr }))
 
   const weekPlanId = await currentWeekPlanId(db, weekStart, weekEnd)
   let adherenceBlock = ''

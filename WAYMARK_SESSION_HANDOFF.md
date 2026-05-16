@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:54 EDT
+Updated: 2026-05-16 18:59 EDT
 
 ## Current State
 
@@ -153,6 +153,14 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - Added Vite manual chunks for React, native/Capacitor code, charts, icons, tour, and shared vendor code.
   - Main app chunk dropped to 330.38 kB before gzip.
   - Build now completes without the prior 500 kB chunk warning.
+- Made HR analysis use the athlete profile max HR:
+  - `computeHrSnapshot` now accepts `maxHr` and derives the Zone 2 ceiling from 70% of that value.
+  - The old 145 bpm ceiling remains as fallback when profile max HR is missing.
+  - Weekly planning, Road Bootcamp run prescription, Road Bootcamp strength fatigue logic, reactive coaching, replace suggestions, and Block Zero transition context now pass the stored profile max HR into HR analysis.
+  - Added `src/lib/hrAnalysis.test.ts` to prove the profile-based ceiling changes over-paced detection and prompt text.
+- Checked remote D1 for the static warmup rows from migration `0019`.
+  - Remote already has `ex-toe-touch-forward-fold`, `ex-butterfly-stretch`, `ex-standing-quad-stretch`, and `ex-standing-calf-stretch`.
+  - No remote migration was run.
 
 ## Verification
 
@@ -267,6 +275,18 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `git diff --check` passes.
+- Profile-based HR analysis:
+  - `npx tsx src/lib/hrAnalysis.test.ts` first failed against the old fixed 145 bpm ceiling.
+  - `npm run test:lib` passes and now includes `hrAnalysis tests passed`.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
+  - `npm run smoke:road-week` initially failed with 36 sessions because local D1 already had extra QA sessions. Root cause was stale local QA state, not this change.
+  - `npm run smoke:road-reset` then passed.
+  - `npm run smoke:road-week` passed after reset with 14 Road Bootcamp sessions.
+  - `npm run smoke:foundation-run` passes.
+  - `npm run smoke:offline-review` passes.
+  - Remote D1 read-only check confirmed the four `0019` warmup exercise rows exist.
 
 ## Known Warnings
 
@@ -280,6 +300,7 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 - Session review AI now sees bounded Strava/run and strength evidence, with prompt-level test coverage. It has not been live-AI smoke tested to avoid unnecessary model spend.
 - Local no-key coaching now stores deterministic reviews for completed sessions.
 - Session review AI now sees prescribed HR target versus actual HR evidence for runs.
+- Weekly planning and reactive coaching now use the same profile-based Zone 2 ceiling as visible run targets.
 - Ledger AI now sees Road Bootcamp summary metrics, not raw run or strength detail.
 - Local QA currently falls back when `ANTHROPIC_API_KEY` is missing. That is expected and keeps spend at zero for this pass.
 - Live session-review QA now has an opt-in smoke, but it has not been run live because local Wrangler does not expose `ANTHROPIC_API_KEY`.
@@ -294,4 +315,4 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 
 1. If live AI QA is approved and `ANTHROPIC_API_KEY` is available to Wrangler, run `WAYMARK_LIVE_AI_SMOKE=1 npm run smoke:live-review`.
 2. Continue targeted polish only where a real Road Bootcamp flow still feels unclear.
-3. If remote D1 has not had migration `0019` applied, run `npm run db:migrate:0019:remote` before testing remote foundation runs.
+3. Remote D1 has the migration `0019` warmup rows. No action needed there unless a future remote smoke exposes a separate issue.

@@ -14,7 +14,7 @@
 //   treadmill or Strava-pulled outdoor). Missing HR = no signal, not an error.
 
 import { and, desc, eq, gte, isNotNull } from 'drizzle-orm'
-import { runSessions, sessions } from '../db/schema'
+import { runSessions, sessions, userProfile } from '../db/schema'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -23,6 +23,7 @@ type DB = ReturnType<typeof createDB>
 // MT athlete, ~30s). Can move to userProfile later if we start supporting
 // multiple users. Zone-2 is "conversational, nasal-breathing sustainable."
 const DEFAULT_Z2_CEILING_BPM = 145
+const Z2_CEILING_PCT = 0.7
 
 // Types of runs where zone-2 compliance matters.
 const EASY_RUN_TYPES = new Set(['zone2', 'easy', 'easy_strides'])
@@ -39,6 +40,8 @@ export interface RunHrLite {
 }
 
 export interface HrSnapshot {
+  z2CeilingBpm: number
+
   // Zone-2 compliance across last N easy runs
   z2RunsWithHr: number
   z2RunsAboveCeiling: number
@@ -61,9 +64,24 @@ export interface HrSnapshot {
   runsWithHr: number
 }
 
+export interface HrSnapshotOptions {
+  maxHr?: number | null
+}
+
 // ─── Public API ─────────────────────────────────────────────────
 
-export function computeHrSnapshot(runs: RunHrLite[], todayEpochDay: number): HrSnapshot {
+export function zone2CeilingBpm(maxHr: number | null | undefined): number {
+  if (maxHr == null || maxHr <= 0) return DEFAULT_Z2_CEILING_BPM
+  return Math.round(maxHr * Z2_CEILING_PCT)
+}
+
+export async function loadProfileMaxHrForHr(db: DB): Promise<number | null> {
+  const [profile] = await db.select({ maxHr: userProfile.maxHr }).from(userProfile).where(eq(userProfile.id, 'default'))
+  return profile?.maxHr ?? null
+}
+
+export function computeHrSnapshot(runs: RunHrLite[], todayEpochDay: number, options: HrSnapshotOptions = {}): HrSnapshot {
+  const z2Ceiling = zone2CeilingBpm(options.maxHr)
   const runsInWindow = runs.length
   const withHr = runs.filter(r => r.avgHr != null && r.avgHr > 0)
   const runsWithHr = withHr.length
@@ -72,7 +90,7 @@ export function computeHrSnapshot(runs: RunHrLite[], todayEpochDay: number): HrS
   const easyWithHr = withHr.filter(r => r.runType && EASY_RUN_TYPES.has(r.runType))
   const easyLast4 = easyWithHr.slice(0, 4)
   const z2RunsWithHr = easyLast4.length
-  const z2RunsAboveCeiling = easyLast4.filter(r => (r.avgHr ?? 0) > DEFAULT_Z2_CEILING_BPM).length
+  const z2RunsAboveCeiling = easyLast4.filter(r => (r.avgHr ?? 0) > z2Ceiling).length
   const z2AvgHrLast4 = easyLast4.length > 0
     ? Math.round(easyLast4.reduce((sum, r) => sum + (r.avgHr ?? 0), 0) / easyLast4.length)
     : null
@@ -80,8 +98,8 @@ export function computeHrSnapshot(runs: RunHrLite[], todayEpochDay: number): HrS
 
   let z2Compliance: HrSnapshot['z2Compliance'] = 'insufficient_data'
   if (easyLast4.length >= 2 && z2AvgHrLast4 != null) {
-    if (z2AvgHrLast4 <= DEFAULT_Z2_CEILING_BPM) z2Compliance = 'on_target'
-    else if (z2AvgHrLast4 <= DEFAULT_Z2_CEILING_BPM + 8) z2Compliance = 'slightly_high'
+    if (z2AvgHrLast4 <= z2Ceiling) z2Compliance = 'on_target'
+    else if (z2AvgHrLast4 <= z2Ceiling + 8) z2Compliance = 'slightly_high'
     else z2Compliance = 'over_paced'
   }
 
@@ -112,6 +130,7 @@ export function computeHrSnapshot(runs: RunHrLite[], todayEpochDay: number): HrS
   const lastRunDaysAgo = latest?.scheduledDate != null ? todayEpochDay - latest.scheduledDate : null
 
   return {
+    z2CeilingBpm: z2Ceiling,
     z2RunsWithHr,
     z2RunsAboveCeiling,
     z2AvgHrLast4,
@@ -140,9 +159,9 @@ export function serializeHrForPrompt(s: HrSnapshot): string | null {
   if (s.z2Compliance === 'insufficient_data') {
     lines.push(`Zone-2 compliance: not enough easy runs with HR yet (have ${s.z2RunsWithHr}).`)
   } else {
-    lines.push(`Zone-2 compliance (last ${s.z2RunsWithHr} easy runs): avg ${s.z2AvgHrLast4} bpm, target ≤${DEFAULT_Z2_CEILING_BPM}. ${s.z2RunsAboveCeiling} of ${s.z2RunsWithHr} ran over the ceiling. Status: ${s.z2Compliance}.`)
+    lines.push(`Zone-2 compliance (last ${s.z2RunsWithHr} easy runs): avg ${s.z2AvgHrLast4} bpm, target <=${s.z2CeilingBpm}. ${s.z2RunsAboveCeiling} of ${s.z2RunsWithHr} ran over the ceiling. Status: ${s.z2Compliance}.`)
     if (s.z2Compliance === 'over_paced') {
-      lines.push(`Over-paced easy runs are doing conditioning work, not aerobic base work. Prescribe a hard ceiling (walk if HR climbs above ${DEFAULT_Z2_CEILING_BPM}) on the next easy run.`)
+      lines.push(`Over-paced easy runs are doing conditioning work, not aerobic base work. Prescribe a hard ceiling (walk if HR climbs above ${s.z2CeilingBpm}) on the next easy run.`)
     } else if (s.z2Compliance === 'slightly_high') {
       lines.push(`Easy pace is drifting above zone-2. Remind the athlete to run by HR, not feel, on the next zone-2 session.`)
     }
