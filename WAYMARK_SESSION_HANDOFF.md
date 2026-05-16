@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:37 EDT
+Updated: 2026-05-16 18:51 EDT
 
 ## Current State
 
@@ -8,7 +8,7 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 82 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 83 percent of the Road Bootcamp slice.
 
 ## What Changed This Pass
 
@@ -79,6 +79,11 @@ The current build is functional but not finished. Estimate: roughly 82 percent o
   - The coach uses the same profile `maxHr` source that Today uses for visible target zones.
   - `sessionReview` now supports an `intensity_mismatch` flag for cases where prescribed run intensity does not match heart-rate evidence.
   - Prompt test coverage now checks prescribed target HR and intensity mismatch instruction text.
+- Surfaced stored coach reviews in Ledger Recent Sessions:
+  - `review` and `reviewFlag` now render in the Recent Sessions list.
+  - `intensity_mismatch` shows as the quiet label `Heart ran high`.
+  - Other stored flags render as small labels only.
+  - The empty state now reads `No completed sessions yet.`
 
 ## Verification
 
@@ -100,6 +105,10 @@ The current build is functional but not finished. Estimate: roughly 82 percent o
 - API re-entry proof: repeat `start-strength` returned the same exercise and set counts.
 - Latest browser QA used headless Playwright only. No visible external browser.
 - No browser run was needed for the 18:37 follow-up because it changed coach prompt evidence and tool schema only.
+- Local route smoke for the Ledger follow-up:
+  - `curl -s 'http://127.0.0.1:8787/api/history/sessions?limit=5'` returned session rows with `review` and `reviewFlag` fields.
+  - `curl -s -I http://127.0.0.1:5173/history` returned 200.
+  - Local app/API servers were stopped after the check.
 
 ## Known Warnings
 
@@ -121,5 +130,5 @@ The current build is functional but not finished. Estimate: roughly 82 percent o
 ## Next Slice
 
 1. Run a live local API smoke for one completed Strava-backed run review only if an API key is present and spend is acceptable.
-2. Review whether Ledger should surface `intensity_mismatch` distinctly or just retain it as stored coach metadata.
-3. Continue targeted polish on Road Bootcamp Ledger density. No visual-system rewrite.
+2. Continue targeted polish on Road Bootcamp Ledger density. No visual-system rewrite.
+3. Consider one focused live-AI session review smoke when an API key is present and spend is acceptable.
