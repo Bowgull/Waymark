@@ -1,4 +1,4 @@
-import { buildSessionReviewPrompt } from './sessionReviewAI'
+import { buildLocalSessionReview, buildSessionReviewPrompt } from './sessionReviewAI'
 
 function assertMatch(value: string, pattern: RegExp): void {
   if (!pattern.test(value)) {
@@ -90,5 +90,56 @@ assertMatch(strengthPrompt, /Road Bootcamp context: time 30, equipment hotel_gym
 assertMatch(strengthPrompt, /Adaptation: 30 minutes\. Hotel gym\. Main work stays, accessories drop\./)
 assertMatch(strengthPrompt, /DB Romanian Deadlift \(main\): 3 working sets, 1 warmup, 24 reps, top 53 lb\./)
 assertMatch(strengthPrompt, /Dead Bug \(core\): 2 working sets, 0 warmups, 20 reps, top bodyweight or unloaded\./)
+
+const mismatchReview = buildLocalSessionReview(
+  { type: 'foundation_run', rpe: 7, durationSec: 1086 },
+  {
+    run: {
+      runType: 'zone2',
+      targetHrLine: 'Zone 2. 114 to 133 bpm.',
+      distanceKm: 2.66,
+      durationSec: 1086,
+      paceSecKm: 408,
+      avgHr: 143,
+      maxHr: 160,
+      zoneSeconds: '{"z2":900,"z3":120}',
+      elevationGainM: 6,
+      source: 'strava',
+      stravaActivityId: 123456,
+      splits: [],
+    },
+    strength: null,
+  },
+)
+
+if (mismatchReview.flag !== 'intensity_mismatch') {
+  throw new Error(`Expected intensity_mismatch, got ${mismatchReview.flag}`)
+}
+if (mismatchReview.line !== 'Prescribed easy. Heart said hard. Easier next time.') {
+  throw new Error(`Unexpected local mismatch line: ${mismatchReview.line}`)
+}
+
+const roadStrengthReview = buildLocalSessionReview(
+  { type: 'strength', rpe: 8, durationSec: 1800 },
+  {
+    run: null,
+    strength: {
+      roadBootcamp: {
+        timeAvailable: '45_plus',
+        prescribedTime: '30',
+        equipment: 'no_gym',
+        adaptationLine: 'HR drift is high. Main work stays, accessories drop.',
+      },
+      exercises: [
+        { name: 'Split Squat', section: 'main', workingSets: 3, warmupSets: 1, topWeightKg: null, totalReps: 24 },
+        { name: 'Push-Up', section: 'main', workingSets: 3, warmupSets: 0, topWeightKg: null, totalReps: 24 },
+      ],
+    },
+  },
+)
+
+if (roadStrengthReview.line !== '30 minutes. No gym. 2 movements logged.') {
+  throw new Error(`Unexpected local strength line: ${roadStrengthReview.line}`)
+}
 
 console.info('sessionReviewAI tests passed')

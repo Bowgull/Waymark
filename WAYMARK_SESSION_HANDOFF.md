@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 19:01 EDT
+Updated: 2026-05-16 19:15 EDT
 
 ## Current State
 
@@ -8,7 +8,7 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 84 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 85 percent of the Road Bootcamp slice.
 
 ## What Changed This Pass
 
@@ -89,6 +89,11 @@ The current build is functional but not finished. Estimate: roughly 84 percent o
   - Added a single completion rail.
   - Converted the metrics into divided rows for running, strength, equipment, rope, and readiness.
   - Capped right-side metric text so mobile rows do not sprawl.
+- Added zero-spend session review fallback:
+  - When Anthropic is offline or no API key exists, completed sessions now get a deterministic local review instead of no review.
+  - Zone 2 HR mismatches return `Prescribed easy. Heart said hard. Easier next time.` with `intensity_mismatch`.
+  - Road Bootcamp strength sessions get a short time/equipment/movement-count review.
+  - Local fallback behavior is covered in `sessionReviewAI.test.ts`.
 
 ## Verification
 
@@ -120,6 +125,12 @@ The current build is functional but not finished. Estimate: roughly 84 percent o
   - `npm run build` passes.
   - `git diff --check` passes.
   - Browser proof was not run because no callable in-app browser tool was exposed in this turn and visible Chrome was avoided.
+- Zero-spend session review fallback:
+  - `npx tsx src/lib/sessionReviewAI.test.ts` passes.
+  - `npm run lint` passes.
+  - `npm run test:lib` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
 
 ## Known Warnings
 
@@ -130,6 +141,7 @@ The current build is functional but not finished. Estimate: roughly 84 percent o
 ## Open Product Gaps
 
 - Session review AI now sees bounded Strava/run and strength evidence, with prompt-level test coverage. It has not been live-AI smoke tested to avoid unnecessary model spend.
+- Local no-key coaching now stores deterministic reviews for completed sessions.
 - Session review AI now sees prescribed HR target versus actual HR evidence for runs.
 - Ledger AI now sees Road Bootcamp summary metrics, not raw run or strength detail.
 - Local QA currently falls back when `ANTHROPIC_API_KEY` is missing. That is expected and keeps spend at zero for this pass.
@@ -140,6 +152,6 @@ The current build is functional but not finished. Estimate: roughly 84 percent o
 
 ## Next Slice
 
-1. Run a live local API smoke for one completed Strava-backed run review only if an API key is present and spend is acceptable.
-2. Continue targeted polish on Road Bootcamp Ledger density. No visual-system rewrite.
-3. Consider one focused live-AI session review smoke when an API key is present and spend is acceptable.
+1. Add a route-level smoke or unit harness for `/api/sessions/:id/complete` proving offline fallback reviews are persisted.
+2. Consider one focused live-AI session review smoke when an API key is present and spend is acceptable.
+3. Continue targeted polish only where a real Road Bootcamp flow still feels unclear.
