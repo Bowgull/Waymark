@@ -30,6 +30,7 @@ interface Session {
   durationSec: number | null
   rpe: number | null
   notes: string | null
+  blockType?: string | null
   runSession?: RunSessionSummary | null
 }
 
@@ -355,14 +356,16 @@ function shortLiftSummary(ex: PreviewExercise): string {
 
 function StrengthLiftPreview({ sessionId }: { sessionId: string }) {
   const [exercises, setExercises] = useState<PreviewExercise[] | null>(null)
+  const [roadBootcampReady, setRoadBootcampReady] = useState(false)
   const [error, setError] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    apiFetch<{ exercises?: PreviewExercise[] }>(`/api/sessions/${sessionId}/strength-preview`)
+    apiFetch<{ exercises?: PreviewExercise[]; roadBootcampReady?: boolean }>(`/api/sessions/${sessionId}/strength-preview`)
       .then(res => {
         if (cancelled) return
+        setRoadBootcampReady(Boolean(res.roadBootcampReady))
         setExercises(res.exercises ?? [])
       })
       .catch(() => {
@@ -372,6 +375,13 @@ function StrengthLiftPreview({ sessionId }: { sessionId: string }) {
     return () => { cancelled = true }
   }, [sessionId])
 
+  if (roadBootcampReady) {
+    return (
+      <p className="pb-2 text-[12px] text-muted-foreground/70">
+        Pick time and equipment when you start.
+      </p>
+    )
+  }
   if (error || (exercises != null && exercises.length === 0)) return null
   if (exercises == null) {
     return (

@@ -16,7 +16,7 @@ import { Hono } from 'hono'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 
 import { createDB } from '../../db/client'
-import { runSessions, runSplits, sessions, stravaTokens, userProfile } from '../../db/schema'
+import { runSessions, runSplits, sessions, stravaTokens, trainingBlocks, userProfile } from '../../db/schema'
 import { isoToEpochDay } from '../../lib/dates'
 
 type Bindings = {
@@ -24,9 +24,9 @@ type Bindings = {
   STRAVA_CLIENT_ID: string
   STRAVA_CLIENT_SECRET: string
   STRAVA_WEBHOOK_VERIFY_TOKEN: string
+  DEMO_MODE?: string
 }
 
-const REDIRECT_URI = 'https://waymark.bocas-joshua.workers.dev/api/strava/callback'
 const SCOPES = 'read,activity:read_all'
 const AUTH_URL = 'https://www.strava.com/oauth/authorize'
 const TOKEN_URL = 'https://www.strava.com/oauth/token'
@@ -42,7 +42,7 @@ strava.get('/authorize', (c) => {
   if (!clientId) return c.json({ error: 'STRAVA_CLIENT_ID not configured' }, 500)
   const url = new URL(AUTH_URL)
   url.searchParams.set('client_id', clientId)
-  url.searchParams.set('redirect_uri', REDIRECT_URI)
+  url.searchParams.set('redirect_uri', getRedirectUri(c.req.url))
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('approval_prompt', 'auto')
   url.searchParams.set('scope', SCOPES)
@@ -96,7 +96,7 @@ strava.get('/callback', async (c) => {
   // Log loudly so we can diagnose later; the error page lives in Settings flow.
   const scope = data.scope ?? SCOPES
   const required = ['read', 'activity:read_all']
-  const granted = new Set(scope.split(','))
+  const granted = new Set(parseScopes(scope))
   const missing = required.filter(s => !granted.has(s))
   if (missing.length > 0) {
     console.warn('[strava] granted scope missing required permissions', { scope, missing })
@@ -149,6 +149,8 @@ strava.get('/status', async (c) => {
   const db = createDB(c.env)
   const [row] = await db.select().from(stravaTokens).where(eq(stravaTokens.id, 'default'))
   if (!row) return c.json({ connected: false })
+  const token = await getStravaAccessToken(c.env)
+  const missingScopes = ['read', 'activity:read_all'].filter(s => !parseScopes(row.scope).includes(s))
   return c.json({
     connected: true,
     athleteId: row.athleteId,
@@ -156,6 +158,10 @@ strava.get('/status', async (c) => {
     scope: row.scope,
     connectedAt: row.connectedAt,
     expiresAt: row.expiresAt,
+    clientConfigured: Boolean(c.env.STRAVA_CLIENT_ID && c.env.STRAVA_CLIENT_SECRET),
+    requiredScopesGranted: missingScopes.length === 0,
+    missingScopes,
+    syncStatus: token ? 'ready' : 'refresh_failed',
   })
 })
 
@@ -239,6 +245,7 @@ strava.post('/activity/:activityId/confirm', async (c) => {
   const activityId = Number(c.req.param('activityId'))
   if (!Number.isFinite(activityId)) return c.json({ error: 'bad_activity_id' }, 400)
   const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
   const [run] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
   if (!run) return c.json({ error: 'not_found' }, 404)
 
@@ -249,7 +256,7 @@ strava.post('/activity/:activityId/confirm', async (c) => {
   await db.update(sessions)
     .set({
       status: 'completed',
-      completedAt: Date.now(),
+      completedAt: nowSec,
       durationSec: run.durationSec,
     })
     .where(eq(sessions.id, run.sessionId))
@@ -265,6 +272,7 @@ strava.post('/activity/:activityId/reassign', async (c) => {
   if (!newSessionId) return c.json({ error: 'newSessionId required' }, 400)
 
   const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
   const [run] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
   if (!run) return c.json({ error: 'not_found' }, 404)
   const [target] = await db.select().from(sessions).where(eq(sessions.id, newSessionId))
@@ -278,7 +286,7 @@ strava.post('/activity/:activityId/reassign', async (c) => {
   await db.update(sessions)
     .set({
       status: 'completed',
-      completedAt: Date.now(),
+      completedAt: nowSec,
       durationSec: run.durationSec,
     })
     .where(eq(sessions.id, newSessionId))
@@ -385,7 +393,7 @@ strava.post('/demo-connect', async (c) => {
   const recentRunSessions = await db
     .select({ id: sessions.id, completedAt: sessions.completedAt })
     .from(sessions)
-    .where(eq(sessions.type, 'run_outdoor'))
+    .where(inArray(sessions.type, ['foundation_run', 'running']))
     .orderBy(desc(sessions.completedAt))
     .limit(2)
 
@@ -455,6 +463,18 @@ function safeParseJson(text: string): unknown {
   try { return JSON.parse(text) } catch { return text }
 }
 
+function getRedirectUri(requestUrl: string): string {
+  const origin = new URL(requestUrl).origin
+  return `${origin}/api/strava/callback`
+}
+
+function parseScopes(scope: string | null | undefined): string[] {
+  return (scope ?? '')
+    .split(/[,\s]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -500,6 +520,11 @@ function renderStravaPage(opts: { title: string; heading: string; body: string; 
 
 // Called by ingestion code. Refreshes the access token on demand.
 export async function getStravaAccessToken(env: Bindings): Promise<string | null> {
+  if (!env.STRAVA_CLIENT_ID || !env.STRAVA_CLIENT_SECRET) {
+    console.error('[strava] refresh skipped: client credentials missing')
+    return null
+  }
+
   const db = createDB(env)
   const [row] = await db.select().from(stravaTokens).where(eq(stravaTokens.id, 'default'))
   if (!row) return null
@@ -642,15 +667,21 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     parentSessionId = candidate.id
     attachmentStatus = 'auto_pending'
   } else {
+    const [activeBlock] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
+    const blockStartedAt = activeBlock?.startedAt ?? nowSec
+    const blockWeek = activeBlock
+      ? Math.min(Math.max(Math.floor((nowSec - blockStartedAt) / (7 * 86400)) + 1, 1), activeBlock.totalWeeks)
+      : null
     parentSessionId = crypto.randomUUID()
     await db.insert(sessions).values({
       id: parentSessionId,
       type: 'running',
       scheduledDate: epochDay,
       timeSlot: null,
-      blockType: 'fighter',
+      blockType: activeBlock?.blockType ?? 'fighter',
+      blockWeek,
       status: 'completed',
-      completedAt: new Date(act.start_date).getTime(),
+      completedAt: Math.floor(new Date(act.start_date).getTime() / 1000),
       durationSec: act.moving_time,
       createdAt: nowSec,
     })
@@ -672,7 +703,7 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     const tanaka = tanakaMaxHrFromDob(profile.dob)
     if (tanaka != null) {
       await db.update(userProfile)
-        .set({ maxHr: tanaka, updatedAt: Date.now() })
+        .set({ maxHr: tanaka, updatedAt: nowSec })
         .where(eq(userProfile.id, 'default'))
       effectiveMaxHr = tanaka
     }

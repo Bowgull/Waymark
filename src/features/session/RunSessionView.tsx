@@ -159,7 +159,7 @@ export function RunSessionView({
         const message = e instanceof Error ? e.message : String(e)
         logger.warn('system', 'settings autofill load failed', { message }, 'GET /settings failed. Run form not prefilled from last run.')
       })
-  }, [])
+  }, [runSession.onePaceArc, runSession.onePaceEp])
 
   // Poll Strava and re-read our own run_sessions row. If Strava has finished
   // and our row has been upgraded with stravaActivityId, morph to logging

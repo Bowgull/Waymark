@@ -195,7 +195,7 @@ export function BodyMetricsPage() {
       )}
 
       {entries.length === 0 && (
-        <p className="text-sm text-muted-foreground/60">No marks yet. Show up a few more times and they start showing up.</p>
+        <p className="text-sm text-muted-foreground/60">No body metrics logged.</p>
       )}
     </div>
   )

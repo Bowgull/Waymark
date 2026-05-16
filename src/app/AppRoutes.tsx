@@ -38,7 +38,7 @@ export function AppRoutes() {
       .catch(() => {
         // API unavailable, skip redirect
       })
-  }, [])
+  }, [location.pathname, navigate])
 
   useEffect(() => {
     initNotificationListeners()

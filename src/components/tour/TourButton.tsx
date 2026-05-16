@@ -1,4 +1,4 @@
-import { useTour } from "./TourProvider";
+import { useTour } from "./tourContext";
 
 export function TourButton() {
   const { openPrompt, enabled } = useTour();

@@ -27,13 +27,6 @@ export function BottomSheet({
   const startRef = useRef({ y: 0, t: 0, lastY: 0, lastT: 0 })
 
   useEffect(() => {
-    if (open) {
-      setMounted(true)
-      setDragY(0)
-    }
-  }, [open])
-
-  useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -89,6 +82,10 @@ export function BottomSheet({
     if (!open && dragY === 0) setMounted(false)
   }
 
+  function handleSheetAnimationStart() {
+    if (open && dragY !== 0) setDragY(0)
+  }
+
   if (!mounted && !open) return null
 
   const translate = open ? dragY : 9999
@@ -120,6 +117,7 @@ export function BottomSheet({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onTransitionEnd={handleTransitionEnd}
+        onAnimationStart={handleSheetAnimationStart}
       >
         <div
           data-sheet-handle

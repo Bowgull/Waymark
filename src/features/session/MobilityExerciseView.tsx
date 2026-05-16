@@ -228,6 +228,7 @@ export function MobilityExerciseView({
   const totalSets = exercise.sets ?? 1
   const isHoldExercise = exercise.holdSec != null && exercise.holdSec > 0
   const holdTimer = useHoldTimer(exercise.holdSec ?? 0)
+  const [activityReadyAtMs] = useState(() => Date.now())
 
   // Tap-Enter/Space for rep-based exercises
   useEffect(() => {
@@ -282,7 +283,7 @@ export function MobilityExerciseView({
       }
     }
     if (holdTimer.running && holdTimer.reachedTarget) {
-      const now = Date.now()
+      const now = holdTimer.endsAtMs || activityReadyAtMs
       return {
         sessionType: 'mobility',
         sessionLabel: 'Mobility',
@@ -299,7 +300,7 @@ export function MobilityExerciseView({
       }
     }
     if (!holdTimer.running) {
-      const now = Date.now()
+      const now = activityReadyAtMs
       return {
         sessionType: 'mobility',
         sessionLabel: 'Mobility',
@@ -353,15 +354,18 @@ export function MobilityExerciseView({
   // Auto-advance when the hold target is reached — mirrors the strength
   // rest-timer auto-advance flow. Brief delay so the "Hold Complete" state
   // registers visually before we flip to the next exercise's ready state.
+  const holdReachedTarget = holdTimer.reachedTarget
+  const holdRunning = holdTimer.running
+  const stopHoldTimer = holdTimer.stop
   useEffect(() => {
     if (!isHoldExercise) return
-    if (!holdTimer.reachedTarget || !holdTimer.running) return
+    if (!holdReachedTarget || !holdRunning) return
     const handle = setTimeout(() => {
-      holdTimer.stop()
+      stopHoldTimer()
       onSetDone()
     }, 600)
     return () => clearTimeout(handle)
-  }, [isHoldExercise, holdTimer.reachedTarget, holdTimer.running, holdTimer.stop, onSetDone])
+  }, [holdReachedTarget, holdRunning, isHoldExercise, onSetDone, stopHoldTimer])
 
   const footerAction = (() => {
     if (isHoldExercise) {

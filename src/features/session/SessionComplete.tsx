@@ -24,14 +24,8 @@ const EFFORT_LABELS: Record<number, string> = {
 export function SessionComplete({ sessionType, onFinish, submitting }: SessionCompleteProps) {
   const [rpe, setRpe] = useState(7)
   const [notes, setNotes] = useState('')
-  const [showExplainer, setShowExplainer] = useState(false)
+  const [showExplainer, setShowExplainer] = useState(() => !storageGet(EFFORT_EXPLAINER_KEY))
   const mark = getMarkAsset(sessionType)
-
-  useEffect(() => {
-    if (!storageGet(EFFORT_EXPLAINER_KEY)) {
-      setShowExplainer(true)
-    }
-  }, [])
 
   useEffect(() => {
     const now = Date.now()

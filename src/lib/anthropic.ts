@@ -2,6 +2,7 @@ const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_VERSION = '2023-06-01'
 const RETRY_DELAY_MS = 1_000
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504, 529])
+let missingKeyLogged = false
 
 export type AnthropicModel = 'claude-haiku-4-5-20251001' | 'claude-sonnet-4-6'
 
@@ -112,6 +113,14 @@ export async function anthropicCall(
   apiKey: string,
   req: AnthropicRequest
 ): Promise<AnthropicResult> {
+  if (!apiKey) {
+    if (!missingKeyLogged) {
+      console.info('[anthropic] api key missing. Using offline fallback.')
+      missingKeyLogged = true
+    }
+    return { offline: true, content: null }
+  }
+
   const headers = buildHeaders(req.model, apiKey)
   const body = JSON.stringify(req)
 
@@ -131,6 +140,11 @@ export async function anthropicCall(
 
       const errBody = await res.text().catch(() => '')
       console.error(`[anthropic] ${res.status} ${errBody}`)
+
+      if (res.status === 401 || res.status === 403) {
+        console.error('[anthropic] auth failed, returning offline fallback')
+        return { offline: true, content: null }
+      }
 
       if (RETRYABLE_STATUSES.has(res.status) && attempt === 0) {
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS))

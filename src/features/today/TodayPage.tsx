@@ -35,6 +35,7 @@ interface Session {
   rpe: number | null
   scheduledDate?: number | null
   notes: string | null
+  blockType?: string | null
   runSession?: RunSessionSummary | null
 }
 
@@ -193,6 +194,10 @@ export function TodayPage() {
     // Sessions with dedicated workout engines
     if (WORKOUT_SESSION_TYPES.includes(session.type)) {
       try {
+        if (session.type === 'strength' && session.blockType === 'road_bootcamp') {
+          navigate(`/session/${id}`)
+          return
+        }
         const typeEndpoints: Record<string, string> = {
           foundation_run: `/api/sessions/${id}/start-foundation-run`,
           mobility: `/api/sessions/${id}/start-mobility`,

@@ -117,6 +117,7 @@ export function ActiveRecoveryView({
     hipSteps[0]?.movement.holdSec ?? 0,
   )
   const [hipStartedAtMs, setHipStartedAtMs] = useState(0)
+  const [hipPausedAtMs, setHipPausedAtMs] = useState(0)
   const hipIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const currentHipStep = hipSteps[hipIdx]
@@ -141,12 +142,8 @@ export function ActiveRecoveryView({
 
   // Tick hip timer
   useEffect(() => {
-    if (!hipRunning) {
-      setHipStartedAtMs(0)
-      return
-    }
+    if (!hipRunning) return
     if (hipPaused) return
-    setHipStartedAtMs(Date.now())
     hipIntervalRef.current = setInterval(() => {
       setHipSecondsLeft((s) => {
         if (s <= 1) {
@@ -183,17 +180,17 @@ export function ActiveRecoveryView({
   // Reset roll timer when step changes — render-phase reset
   const [prevRollIdx, setPrevRollIdx] = useState(rollIdx)
   const [rollAnchorMs, setRollAnchorMs] = useState(0)
+  const [rollPausedAtMs, setRollPausedAtMs] = useState(0)
   if (prevRollIdx !== rollIdx) {
     setPrevRollIdx(rollIdx)
     setRollSecondsLeft(currentRollStep?.area.sec ?? 0)
-    setRollAnchorMs(Date.now())
+    setRollAnchorMs(0)
   }
 
   // Tick roll timer — only while in 'roll' phase
   useEffect(() => {
     if (phase !== 'roll') return
-    if (rollPaused || !currentRollStep) return
-    if (rollAnchorMs === 0) setRollAnchorMs(Date.now())
+    if (rollPaused || !currentRollStep || rollAnchorMs === 0) return
     rollIntervalRef.current = setInterval(() => {
       setRollSecondsLeft((s) => {
         if (s <= 1) {
@@ -207,7 +204,7 @@ export function ActiveRecoveryView({
     return () => {
       if (rollIntervalRef.current) clearInterval(rollIntervalRef.current)
     }
-  }, [phase, rollPaused, rollIdx, currentRollStep, rollSteps.length])
+  }, [phase, rollPaused, rollIdx, currentRollStep, rollSteps.length, rollAnchorMs])
 
   const isLastRollStep = rollIdx >= rollSteps.length - 1
   const rollReachedTarget = rollSecondsLeft === 0 && isLastRollStep
@@ -298,7 +295,7 @@ export function ActiveRecoveryView({
               : undefined,
             startedAt: hipStartedAtMs,
             endsAt: hipPaused
-              ? Date.now() + hipSecondsLeft * 1000
+              ? hipPausedAtMs + hipSecondsLeft * 1000
               : hipStartedAtMs + (currentHipStep.movement.holdSec ?? 0) * 1000,
             isPaused: hipPaused,
             pausedRemaining: hipPaused ? hipSecondsLeft : undefined,
@@ -319,7 +316,7 @@ export function ActiveRecoveryView({
               : undefined,
             startedAt: rollAnchorMs,
             endsAt: rollPaused
-              ? Date.now() + rollSecondsLeft * 1000
+              ? rollPausedAtMs + rollSecondsLeft * 1000
               : rollAnchorMs + currentRollStep.area.sec * 1000,
             isPaused: rollPaused,
             pausedRemaining: rollPaused ? rollSecondsLeft : undefined,
@@ -329,8 +326,13 @@ export function ActiveRecoveryView({
 
   useSessionLiveActivity(hipLiveConfig ?? rollLiveConfig, {
     onPause: () => {
-      if (phase === 'roll') setRollPaused(true)
-      else if (phase === 'hip') setHipPaused(true)
+      if (phase === 'roll') {
+        setRollPausedAtMs(Date.now())
+        setRollPaused(true)
+      } else if (phase === 'hip') {
+        setHipPausedAtMs(Date.now())
+        setHipPaused(true)
+      }
     },
     onResume: (newEndsAtMs) => {
       if (phase === 'roll') {
@@ -430,7 +432,10 @@ export function ActiveRecoveryView({
     )
     footer = (
       <Button
-        onClick={startHipBlock}
+        onClick={() => {
+          setHipStartedAtMs(0)
+          startHipBlock()
+        }}
         size="lg"
         className="w-full"
         style={{ backgroundColor: ACCENT, color: '#020A08' }}
@@ -503,7 +508,10 @@ export function ActiveRecoveryView({
       if (!hipRunning && hipSecondsLeft === holdSec) {
         footer = (
           <Button
-            onClick={() => setHipRunning(true)}
+            onClick={() => {
+              setHipStartedAtMs(Date.now())
+              setHipRunning(true)
+            }}
             size="lg"
             className="w-full"
             style={{
@@ -569,7 +577,10 @@ export function ActiveRecoveryView({
     )
     footer = (
       <Button
-        onClick={() => setPhase('roll')}
+        onClick={() => {
+          setRollAnchorMs(Date.now())
+          setPhase('roll')
+        }}
         size="lg"
         className="w-full"
         style={{ backgroundColor: ACCENT, color: '#020A08' }}

@@ -21,9 +21,6 @@ export function InsightCallout({ insights }: InsightCalloutProps) {
             }`}
             style={{ fontFamily: i === 0 ? "'Cinzel Variable', serif" : undefined }}
           >
-            {i === 0 && (
-              <span className="text-gold/60 mr-2" aria-hidden>~</span>
-            )}
             {text}
           </p>
         ))}

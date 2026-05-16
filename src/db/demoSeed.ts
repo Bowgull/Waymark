@@ -82,7 +82,7 @@ interface SessionPlan {
   completed: boolean      // false = leave as "planned"
   rpe?: number
   durationSec?: number
-  payload?: any
+  payload?: Record<string, unknown>
 }
 
 const sessions: SessionPlan[] = []
@@ -113,7 +113,7 @@ for (let w = 1; w <= 4; w++) {
     // Week 1: 85% (easing back in), Week 2: 95% (building), Week 3: 110% (PR week, longer sessions),
     // Week 4: 105% (maintaining peak). Mobility stays fixed at 10 min regardless.
     const durScale = tpl.type === 'mobility' ? 1 : [0.85, 0.95, 1.1, 1.05][w - 1]
-    let durationSec = Math.round(tpl.baseDur * durScale)
+    const durationSec = Math.round(tpl.baseDur * durScale)
 
     if (completed) {
       // RPE story per week

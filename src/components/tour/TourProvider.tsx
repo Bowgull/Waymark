@@ -1,22 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TourPrompt } from "./TourPrompt";
 import { WAYMARK_TOUR } from "../../lib/tour/tours";
+import { TourCtx } from "./tourContext";
 
 const SESSION_KEY = "wm_tour_seen";
 
 const isDemo = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env.VITE_DEMO_MODE === "true";
-
-type Ctx = {
-  openPrompt: () => void;
-  enabled: boolean;
-};
-
-const TourCtx = createContext<Ctx>({ openPrompt: () => {}, enabled: false });
-
-export function useTour() {
-  return useContext(TourCtx);
-}
 
 export function TourProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();

@@ -10,6 +10,7 @@ import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_INSIGHT, type InsightOutput } from './prompts/tools'
 import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
 import type { createDB } from '../db/client'
+import type { RoadBootcampMetrics } from './roadBootcampMetrics'
 
 type DB = ReturnType<typeof createDB>
 
@@ -30,15 +31,16 @@ export interface LedgerInsightData {
   prs: { exerciseName: string; maxWeightKg: number; date: string; previousMaxKg: number | null }[]
   correlations: { sleepHours: number | null; avgRpe: number | null; sessionCount: number }[]
   runSummary: { totalRuns: number; totalDistanceKm: number; avgPaceSecKm: number | null; bestPaceSecKm: number | null } | null
+  roadBootcampMetrics?: RoadBootcampMetrics | null
   categoryCompletion: Record<string, { completed: number; target: number }> | null
 }
 
 function formatDashboard(d: LedgerInsightData['dashboard']): string {
-  if (!d) return 'Dashboard: no data.'
+  if (!d) return 'Ledger summary: no data.'
   const tw = d.thisWeek
   const lw = d.lastWeek
   return [
-    `Dashboard: ${d.currentStreak}-day streak. Completion ${d.completionRate}%. PRs this month: ${d.prsThisMonth}.`,
+    `Ledger summary: ${d.currentStreak}-day streak. Completion ${d.completionRate}%. PRs this month: ${d.prsThisMonth}.`,
     `This week: ${tw.sessions} sessions, volume ${Math.round(tw.volume)} lb, RPE ${tw.avgRpe ?? '?'}, sleep ${tw.avgSleep ?? '?'}h.`,
     `Last week: ${lw.sessions} sessions, volume ${Math.round(lw.volume)} lb, RPE ${lw.avgRpe ?? '?'}, sleep ${lw.avgSleep ?? '?'}h.`,
     d.topLift ? `Top lift: ${d.topLift.name} ${d.topLift.weightLbs} lb.` : 'Top lift: none recorded.',
@@ -81,6 +83,22 @@ function formatRunSummary(r: LedgerInsightData['runSummary']): string {
   return `Running: ${r.totalRuns} runs, ${r.totalDistanceKm.toFixed(1)} km total. Avg pace ${avg}/km, best ${best}/km.`
 }
 
+function formatDistribution(values: Record<string, number>): string {
+  const entries = Object.entries(values)
+  if (entries.length === 0) return 'none'
+  return entries.map(([key, count]) => `${key}: ${count}`).join(', ')
+}
+
+function formatRoadBootcamp(r: LedgerInsightData['roadBootcampMetrics']): string {
+  if (!r) return 'Road Bootcamp: no active road data.'
+  return [
+    `Road Bootcamp: completion ${r.completionRate}%.`,
+    `Running minutes: ${r.runMinutes}. Easy ${r.easyRunMinutes}. Quality ${r.qualityRunMinutes}.`,
+    `Strength sessions: ${r.strengthCompleted}. Time choices: ${formatDistribution(r.strengthTimeDistribution)}. Equipment: ${formatDistribution(r.equipmentDistribution)}.`,
+    `Rope sessions: ${r.ropeCompleted}. Sleep ${r.avgSleep ?? '?'}h. Soreness ${r.avgSoreness ?? '?'}.`,
+  ].join('\n')
+}
+
 function formatCategoryCompletion(cc: LedgerInsightData['categoryCompletion']): string {
   if (!cc) return 'Category rings: no data.'
   const entries = Object.entries(cc).map(([k, v]) => `${k}: ${v.completed}/${v.target}`)
@@ -94,6 +112,7 @@ function buildPrompt(data: LedgerInsightData): string {
     formatPRs(data.prs),
     formatCorrelations(data.correlations),
     formatRunSummary(data.runSummary),
+    formatRoadBootcamp(data.roadBootcampMetrics),
     formatCategoryCompletion(data.categoryCompletion),
     '',
     'Write 2 to 4 ledger insights using the insight tool. One tool call per insight.',
@@ -145,7 +164,7 @@ export async function runLedgerInsights(
   })
 
   if (result.offline) {
-    console.warn('[ledgerInsights] offline, caller should use local fallback')
+    console.info('[ledgerInsights] offline. Using local fallback.')
     return null
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Link } from 'react-router-dom'
 import { apiFetch } from '@/lib/api'
@@ -7,6 +7,7 @@ import { GoldDivider } from '@/components/ui/GoldDivider'
 import { PageBackground } from '@/components/backgrounds/PageBackground'
 import { ProgramSkeleton } from '@/components/ui/Skeleton'
 import { getWeekLabel } from '@/lib/strengthTemplates'
+import { getRoadBootcampWeekLabel } from '@/lib/roadBootcampTemplate'
 import logoPng from '@/assets/brand/Logo.png'
 
 import { WeekView } from './WeekView'
@@ -101,18 +102,19 @@ export function ProgramPage() {
   const [assessmentLoading, setAssessmentLoading] = useState(false)
   const [transitionResult, setTransitionResult] = useState<TransitionResult | null>(null)
   const [checkingTransition, setCheckingTransition] = useState(false)
+  const [confirmRoadBootcamp, setConfirmRoadBootcamp] = useState(false)
 
-  function getCurrentWeekNumber(b: Block): number {
+  const getCurrentWeekNumber = useCallback((b: Block): number => {
     if (!b.startedAt) return 1
     const weeksSinceStart = Math.floor((Date.now() / 1000 - b.startedAt) / (7 * 86400))
     return Math.min(Math.max(weeksSinceStart + 1, 1), b.totalWeeks)
-  }
+  }, [])
 
   function getBlockWeek(wn: number): number {
     return ((wn - 1) % 6) + 1
   }
 
-  async function loadWeek(b: Block, wn: number) {
+  const loadWeek = useCallback(async (b: Block, wn: number) => {
     let wd = await apiFetch<WeekData | null>(`/api/weeks/current?blockId=${b.id}&weekNumber=${wn}`)
 
     // Auto-generate current/next week if no plan exists
@@ -128,7 +130,7 @@ export function ProgramPage() {
 
     setWeekData(wd)
     setWeekNumber(wn)
-  }
+  }, [getCurrentWeekNumber])
 
   useEffect(() => {
     async function load() {
@@ -199,7 +201,7 @@ export function ProgramPage() {
       }
     }
     load()
-  }, [])
+  }, [getCurrentWeekNumber, loadWeek])
 
   async function handleStartBlockZero() {
     setStartingBlockZero(true)
@@ -458,9 +460,34 @@ export function ProgramPage() {
   const currentWeek = getCurrentWeekNumber(block)
   const blockWeek = getBlockWeek(weekNumber)
   const blockType = block.blockType === 'block_zero' ? 'block_zero' : 'fighter'
-  const weekInfo = getWeekLabel(blockWeek, blockType)
+  const isRoadBootcamp = block.blockType === 'road_bootcamp'
+  const weekInfo = isRoadBootcamp ? getRoadBootcampWeekLabel(weekNumber) : getWeekLabel(blockWeek, blockType)
   const isCurrentWeek = weekNumber === currentWeek
   const isBlockZero = block.blockType === 'block_zero'
+
+  async function handleStartRoadBootcamp() {
+    if (!confirmRoadBootcamp) {
+      setConfirmRoadBootcamp(true)
+      return
+    }
+    setGenerating(true)
+    try {
+      const newBlock = await apiFetch<Block>('/api/blocks/road-bootcamp', { method: 'POST' })
+      setBlock(newBlock)
+      const monday = getMonday(0)
+      const wd = await apiFetch<WeekData>('/api/weeks/generate', {
+        method: 'POST',
+        body: JSON.stringify({ blockId: newBlock.id, weekNumber: 1, startDate: monday }),
+      })
+      setWeekData(wd)
+      setWeekNumber(1)
+      setConfirmRoadBootcamp(false)
+    } catch (e) {
+      console.error('Failed to start Road Bootcamp:', e)
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   return (
     <div data-tour="program-page" className="space-y-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
@@ -477,6 +504,15 @@ export function ProgramPage() {
           <p className="text-label text-teal">BLOCK ZERO</p>
           <p className="text-sm text-foreground leading-relaxed">
             {getBlockZeroNarrative(blockWeek)}
+          </p>
+        </div>
+      )}
+
+      {isRoadBootcamp && (
+        <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2.5 space-y-1">
+          <p className="text-label text-teal">ROAD BOOTCAMP</p>
+          <p className="text-sm text-foreground leading-relaxed">
+            Runs first. Strength stays adaptable. Bands and rope travel with you.
           </p>
         </div>
       )}
@@ -498,7 +534,7 @@ export function ProgramPage() {
             </h2>
             <p className="mt-0.5 text-sm text-gold">{weekInfo}</p>
             <p className="text-xs text-muted-foreground">
-              {isBlockZero ? `Block Zero week ${blockWeek} of 6` : `Block week ${blockWeek} of 6`}
+              {isRoadBootcamp ? `Road week ${weekNumber} of 8` : isBlockZero ? `Block Zero week ${blockWeek} of 6` : `Block week ${blockWeek} of 6`}
             </p>
           </div>
           <button
@@ -513,7 +549,7 @@ export function ProgramPage() {
         {/* Block progress bar */}
         <div className="mt-3 h-1.5 rounded-full bg-border">
           <div
-            className={`h-full rounded-full transition-all ${isBlockZero ? 'bg-teal' : 'bg-gold'}`}
+            className={`h-full rounded-full transition-all ${isBlockZero || isRoadBootcamp ? 'bg-teal' : 'bg-gold'}`}
             style={{ width: `${(weekNumber / block.totalWeeks) * 100}%` }}
           />
         </div>
@@ -598,17 +634,26 @@ export function ProgramPage() {
         </div>
       )}
 
-      {/* Manual Block Zero reset — always available */}
-      {!isBlockZero && (
-        <div className="pt-2 pb-4">
+      {/* Manual block starts */}
+      <div className="space-y-2 pt-2 pb-4">
+        {!isRoadBootcamp && (
+          <button
+            onClick={handleStartRoadBootcamp}
+            disabled={generating}
+            className="w-full py-2 text-xs text-teal/80 active:text-teal disabled:opacity-40"
+          >
+            {generating ? 'Starting Road Bootcamp...' : confirmRoadBootcamp ? 'Tap again to clear history and start' : 'Start Road Bootcamp fresh'}
+          </button>
+        )}
+        {!isBlockZero && (
           <button
             onClick={() => setBlockZeroPrompt('return_from_break')}
             className="w-full py-2 text-xs text-muted-foreground/60 active:text-muted-foreground"
           >
             Reset with Block Zero
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

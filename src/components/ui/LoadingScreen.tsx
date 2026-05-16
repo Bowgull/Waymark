@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 interface LoadingScreenProps {
   onReady?: () => void
@@ -73,11 +73,11 @@ export function LoadingScreen({ onReady, minDisplayMs = 2000 }: LoadingScreenPro
   const [fading, setFading] = useState(false)
   const [breathe, setBreathe] = useState(false)
 
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     if (fading) return
     setFading(true)
     setTimeout(() => onReady?.(), 500)
-  }
+  }, [fading, onReady])
 
   useEffect(() => {
     const breatheTimer = setTimeout(() => setBreathe(true), 2900)
@@ -87,7 +87,7 @@ export function LoadingScreen({ onReady, minDisplayMs = 2000 }: LoadingScreenPro
       clearTimeout(breatheTimer)
       clearTimeout(dismissTimer)
     }
-  }, [minDisplayMs, onReady])
+  }, [dismiss, minDisplayMs])
 
   return (
     <div

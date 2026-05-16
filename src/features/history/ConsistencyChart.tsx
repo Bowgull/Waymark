@@ -13,14 +13,14 @@ interface ConsistencyChartProps {
   weeks: WeekData[]
   currentStreak: number
   longestStreak: number
-  period: 7 | 30 | 90
+  period?: 7 | 30 | 90
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const MISSED_FILL = 'rgba(232, 200, 96, 0.18)'
 
-export function ConsistencyChart({ weeks, currentStreak, longestStreak, period: _period }: ConsistencyChartProps) {
+export function ConsistencyChart({ weeks, currentStreak, longestStreak }: ConsistencyChartProps) {
   const chartData = weeks.map((w, i) => {
     const date = new Date(w.weekStart + 'T00:00:00')
     const month = date.getMonth()
