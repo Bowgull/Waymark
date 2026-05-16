@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
 import { getCategoryMark, waybookPng } from '@/lib/markAssets'
@@ -257,7 +257,7 @@ export function LibraryPage() {
   const reflections = useMemo(() => journalEntries.filter(e => e.type !== 'wellness'), [journalEntries])
   const bodyLog = useMemo(() => journalEntries.filter(e => e.type === 'wellness'), [journalEntries])
 
-  function groupByMonth(entries: typeof journalEntries) {
+  const groupByMonth = useCallback((entries: typeof journalEntries) => {
     const groups: { key: string; entries: typeof journalEntries }[] = []
     const map = new Map<string, typeof journalEntries>()
     for (const entry of entries) {
@@ -269,10 +269,10 @@ export function LibraryPage() {
       map.get(key)!.push(entry)
     }
     return groups
-  }
+  }, [])
 
-  const reflectionsByMonth = useMemo(() => groupByMonth(reflections), [reflections])
-  const bodyLogByMonth = useMemo(() => groupByMonth(bodyLog), [bodyLog])
+  const reflectionsByMonth = useMemo(() => groupByMonth(reflections), [groupByMonth, reflections])
+  const bodyLogByMonth = useMemo(() => groupByMonth(bodyLog), [bodyLog, groupByMonth])
 
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
   const [reflectionsOpen, setReflectionsOpen] = useState(false)

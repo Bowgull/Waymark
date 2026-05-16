@@ -89,6 +89,36 @@
     position: relative;
     isolation: isolate;
   }
+  .waymark-preview-root {
+    overflow: hidden;
+  }
+  .waymark-mobile-shell {
+    position: relative;
+    isolation: isolate;
+  }
+  .waymark-scroll {
+    scrollbar-width: none;
+  }
+  .waymark-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  @media (min-width: 640px) {
+    .waymark-preview-root {
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+    .waymark-mobile-shell {
+      height: min(calc(100dvh - 32px), 860px) !important;
+      max-height: 860px;
+      overflow: hidden;
+      border: 1px solid rgba(232, 200, 96, 0.16);
+      border-radius: 28px;
+      box-shadow:
+        0 28px 80px rgba(0, 0, 0, 0.48),
+        0 0 0 1px rgba(74, 202, 170, 0.04) inset;
+    }
+  }
   /* Film grain texture overlay */
   #root::before {
     content: '';

@@ -62,6 +62,7 @@ export const sessions = sqliteTable('sessions', {
   adjustmentId: text('adjustment_id'),
   skipReason: text('skip_reason'),
   skipReasonDetail: text('skip_reason_detail'),
+  contextJson: text('context_json'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_sessions_date').on(t.scheduledDate),

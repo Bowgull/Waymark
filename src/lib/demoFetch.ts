@@ -5,7 +5,6 @@
 const DEMO_BLOCKED_HOSTS = ['api.anthropic.com'];
 
 type TextStub = { kind: 'text'; match: (body: string) => boolean; text: string };
-type ToolStub = { kind: 'tool'; toolName: string; input: unknown };
 
 const TEXT_STUBS: TextStub[] = [
   {

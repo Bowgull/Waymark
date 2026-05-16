@@ -2,11 +2,22 @@
 // Falls back to null on AI offline so the caller can skip the update.
 
 import { desc, eq } from 'drizzle-orm'
-import { coachingOutputs, exercises, sessions, trainingMaxes, userProfile } from '../db/schema'
+import {
+  coachingOutputs,
+  exercises,
+  runSessions,
+  runSplits,
+  sessions,
+  strengthSessionExercises,
+  strengthSets,
+  trainingMaxes,
+  userProfile,
+} from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_SESSION_REVIEW, type SessionReviewOutput } from './prompts/tools'
+import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -22,9 +33,196 @@ const SESSION_LABEL: Record<string, string> = {
   mobility: 'mobility',
 }
 
-function buildPrompt(
+interface RunReviewContext {
+  runType: string | null
+  distanceKm: number | null
+  durationSec: number | null
+  paceSecKm: number | null
+  avgHr: number | null
+  maxHr: number | null
+  zoneSeconds: string | null
+  elevationGainM: number | null
+  source: string
+  stravaActivityId: number | null
+  splits: Array<{ kmIndex: number; durationSec: number; avgHr: number | null; elevationGainM: number | null }>
+}
+
+interface StrengthReviewContext {
+  roadBootcamp: {
+    timeAvailable?: string | null
+    prescribedTime?: string | null
+    equipment?: string | null
+    adaptationLine?: string | null
+  } | null
+  exercises: Array<{
+    name: string
+    section: string | null
+    workingSets: number
+    warmupSets: number
+    topWeightKg: number | null
+    totalReps: number
+  }>
+}
+
+interface SessionReviewContext {
+  run: RunReviewContext | null
+  strength: StrengthReviewContext | null
+}
+
+function parseRoadContext(value: string | null): StrengthReviewContext['roadBootcamp'] {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as {
+      roadBootcamp?: StrengthReviewContext['roadBootcamp']
+    }
+    return parsed.roadBootcamp ?? null
+  } catch {
+    return null
+  }
+}
+
+function formatRunContext(run: RunReviewContext): string[] {
+  const duration = run.durationSec ? `${Math.round(run.durationSec / 60)} min` : 'duration not recorded'
+  const distance = run.distanceKm != null ? `${run.distanceKm.toFixed(2)} km` : 'distance not recorded'
+  const pace = run.paceSecKm != null ? `${paceToMinSec(run.paceSecKm)}/km` : 'pace not recorded'
+  const hr = run.avgHr != null
+    ? `avg HR ${run.avgHr} bpm${run.maxHr != null ? `, max ${run.maxHr}` : ''}`
+    : 'HR not recorded'
+
+  const lines = [
+    '',
+    'Run evidence:',
+    `  Type: ${run.runType ?? 'not tagged'}. Source: ${run.source}${run.stravaActivityId ? ' (Strava)' : ''}.`,
+    `  Output: ${distance}, ${duration}, ${pace}, ${hr}.`,
+  ]
+
+  if (run.elevationGainM != null) lines.push(`  Elevation: ${run.elevationGainM} m.`)
+  if (run.zoneSeconds) lines.push(`  HR zones: ${run.zoneSeconds}.`)
+  if (run.splits.length > 0) {
+    const splits = run.splits
+      .slice()
+      .sort((a, b) => a.kmIndex - b.kmIndex)
+      .slice(0, 6)
+      .map(s => {
+        const splitPace = paceToMinSec(s.durationSec)
+        const splitHr = s.avgHr != null ? `, HR ${s.avgHr}` : ''
+        return `km ${s.kmIndex}: ${splitPace}${splitHr}`
+      })
+      .join('; ')
+    lines.push(`  Splits: ${splits}.`)
+  }
+
+  return lines
+}
+
+function formatStrengthContext(strength: StrengthReviewContext): string[] {
+  const lines = ['', 'Strength evidence:']
+  if (strength.roadBootcamp) {
+    const ctx = strength.roadBootcamp
+    const time = ctx.prescribedTime ?? ctx.timeAvailable ?? 'not recorded'
+    const equipment = ctx.equipment ?? 'not recorded'
+    lines.push(`  Road Bootcamp context: time ${time}, equipment ${equipment}.`)
+    if (ctx.adaptationLine) lines.push(`  Adaptation: ${ctx.adaptationLine}`)
+  }
+
+  if (strength.exercises.length === 0) {
+    lines.push('  No strength sets recorded.')
+    return lines
+  }
+
+  for (const ex of strength.exercises.slice(0, 8)) {
+    const top = ex.topWeightKg != null ? `${kgToLbsDisplay(ex.topWeightKg)} lb` : 'bodyweight or unloaded'
+    const section = ex.section ? ` (${ex.section})` : ''
+    const workingSets = `${ex.workingSets} ${ex.workingSets === 1 ? 'working set' : 'working sets'}`
+    const warmupSets = `${ex.warmupSets} ${ex.warmupSets === 1 ? 'warmup' : 'warmups'}`
+    lines.push(`  ${ex.name}${section}: ${workingSets}, ${warmupSets}, ${ex.totalReps} reps, top ${top}.`)
+  }
+
+  return lines
+}
+
+async function loadSessionReviewContext(
+  db: DB,
+  session: { id: string; type: string; contextJson?: string | null },
+): Promise<SessionReviewContext> {
+  let run: RunReviewContext | null = null
+  let strength: StrengthReviewContext | null = null
+
+  if (session.type === 'running' || session.type === 'foundation_run') {
+    const [runRow] = await db.select().from(runSessions).where(eq(runSessions.sessionId, session.id))
+    if (runRow) {
+      const splits = await db.select().from(runSplits).where(eq(runSplits.runSessionId, runRow.id))
+      run = {
+        runType: runRow.runType,
+        distanceKm: runRow.distanceKm,
+        durationSec: runRow.durationSec,
+        paceSecKm: runRow.paceSecKm,
+        avgHr: runRow.avgHr,
+        maxHr: runRow.maxHr,
+        zoneSeconds: runRow.zoneSeconds,
+        elevationGainM: runRow.elevationGainM,
+        source: runRow.source,
+        stravaActivityId: runRow.stravaActivityId,
+        splits: splits.map(s => ({
+          kmIndex: s.kmIndex,
+          durationSec: s.durationSec,
+          avgHr: s.avgHr,
+          elevationGainM: s.elevationGainM,
+        })),
+      }
+    }
+  }
+
+  if (session.type === 'strength') {
+    const sessionExercises = await db
+      .select({
+        id: strengthSessionExercises.id,
+        section: strengthSessionExercises.section,
+        orderIndex: strengthSessionExercises.orderIndex,
+        exerciseName: exercises.name,
+      })
+      .from(strengthSessionExercises)
+      .innerJoin(exercises, eq(strengthSessionExercises.exerciseId, exercises.id))
+      .where(eq(strengthSessionExercises.sessionId, session.id))
+
+    const rows = []
+    for (const ex of sessionExercises) {
+      const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, ex.id))
+      const workingSets = sets.filter(s => s.isWarmup === 0)
+      rows.push({
+        name: ex.exerciseName,
+        section: ex.section,
+        orderIndex: ex.orderIndex,
+        workingSets: workingSets.length,
+        warmupSets: sets.length - workingSets.length,
+        topWeightKg: workingSets.reduce<number | null>((max, s) => {
+          if (s.weightKg == null) return max
+          return max == null ? s.weightKg : Math.max(max, s.weightKg)
+        }, null),
+        totalReps: workingSets.reduce((sum, s) => sum + s.reps, 0),
+      })
+    }
+
+    strength = {
+      roadBootcamp: parseRoadContext(session.contextJson ?? null),
+      exercises: rows.sort((a, b) => a.orderIndex - b.orderIndex).map(row => ({
+        name: row.name,
+        section: row.section,
+        workingSets: row.workingSets,
+        warmupSets: row.warmupSets,
+        topWeightKg: row.topWeightKg,
+        totalReps: row.totalReps,
+      })),
+    }
+  }
+
+  return { run, strength }
+}
+
+export function buildSessionReviewPrompt(
   session: { type: string; rpe: number | null; notes: string | null; durationSec: number | null },
   recent: Array<{ type: string; rpe: number | null }>,
+  context: SessionReviewContext,
 ): string {
   const label = SESSION_LABEL[session.type] ?? session.type
   const dur = session.durationSec ? `${Math.round(session.durationSec / 60)} min` : 'duration not recorded'
@@ -34,6 +232,8 @@ function buildPrompt(
     `Effort: ${session.rpe ?? 'not recorded'}/10.`,
   ]
   if (session.notes) lines.push(`Athlete notes: ${session.notes}`)
+  if (context.run) lines.push(...formatRunContext(context.run))
+  if (context.strength) lines.push(...formatStrengthContext(context.strength))
 
   if (recent.length > 0) {
     lines.push('')
@@ -46,7 +246,7 @@ function buildPrompt(
 
   lines.push('')
   lines.push(
-    'Write a one-line session review using the sessionReview tool. Voice canon: acknowledge what happened, state numbers plainly, never congratulate. Set flag appropriately.',
+    'Write a one-line session review using the sessionReview tool. Voice canon: acknowledge what happened, state numbers plainly, never congratulate. Use the evidence above before generic training advice. Set flag appropriately.',
   )
 
   return lines.join('\n')
@@ -87,9 +287,15 @@ export async function runSessionReview(
   }
 
   const recentOther = recent.filter(r => r.id !== session.id).slice(0, 3)
+  const [sessionRow] = await db.select().from(sessions).where(eq(sessions.id, session.id))
+  const reviewContext = await loadSessionReviewContext(db, {
+    id: session.id,
+    type: session.type,
+    contextJson: sessionRow?.contextJson ?? null,
+  })
 
   const systemBlocks = buildSystemPrompt(profile, null)
-  const prompt = buildPrompt(session, recentOther)
+  const prompt = buildSessionReviewPrompt(session, recentOther, reviewContext)
 
   const result = await anthropicCall(apiKey, {
     model: 'claude-haiku-4-5-20251001',

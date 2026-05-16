@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test:lib": "tsx src/lib/sessionReviewAI.test.ts && tsx src/lib/roadBootcampTemplate.test.ts && tsx src/lib/roadBootcampStrengthTemplates.test.ts && tsx src/lib/roadBootcampMetrics.test.ts",
     "deploy": "npx wrangler deploy",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -16,6 +17,8 @@
     "db:migrate:0019:remote": "npx wrangler d1 execute waymark-db --remote --file=./drizzle/0019_static_stretch_warmup.sql",
     "db:migrate:0020:local": "npx wrangler d1 execute waymark-db --local --file=./drizzle/0020_manual_apr22_run.sql",
     "db:migrate:0020:remote": "npx wrangler d1 execute waymark-db --remote --file=./drizzle/0020_manual_apr22_run.sql",
+    "db:migrate:0022:local": "npx wrangler d1 execute waymark-db --local --file=./drizzle/0022_road_bootcamp.sql",
+    "db:migrate:0022:remote": "npx wrangler d1 execute waymark-db --remote --file=./drizzle/0022_road_bootcamp.sql",
     "db:seed:generate": "tsx src/db/seed.ts",
     "db:seed:local": "npx wrangler d1 execute waymark-db --local --file=./src/db/seed.sql",
     "db:seed:remote": "npx wrangler d1 execute waymark-db --remote --file=./src/db/seed.sql",

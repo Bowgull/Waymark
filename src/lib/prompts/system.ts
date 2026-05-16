@@ -34,7 +34,7 @@ Approved copy examples:
 - Noted. We'll make it up Saturday if the body cooperates.
 - Sleep slipping, soreness climbing. Volume drops this week. The body's honest.
 - Deadlift 145. That was your ceiling last month. It's your floor now.
-- No marks yet. Show up a few more times and they start showing up.
+- No body metrics logged.
 - Four weeks. Corrective work, light loading, habit building. Skip this block and the next one breaks you.
 - Cleared. The groundwork held. Next block expects more.
 

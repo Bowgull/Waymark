@@ -13,6 +13,7 @@ import { InsightCallout } from './InsightCallout'
 import { LifestyleCorrelations } from './LifestyleCorrelations'
 import { MomentumGrid } from './MomentumGrid'
 import { PRList } from './PRList'
+import { RoadBootcampSummary } from './RoadBootcampSummary'
 import { RunningProgressChart } from './RunningProgressChart'
 import { SessionList } from './SessionList'
 import { VolumeChart } from './VolumeChart'
@@ -50,6 +51,19 @@ interface RunSummary {
   totalDistanceKm: number
   avgPaceSecKm: number | null
   bestPaceSecKm: number | null
+}
+
+interface RoadBootcampMetrics {
+  runMinutes: number
+  easyRunMinutes: number
+  qualityRunMinutes: number
+  strengthCompleted: number
+  strengthTimeDistribution: Record<string, number>
+  equipmentDistribution: Record<string, number>
+  ropeCompleted: number
+  avgSleep: number | null
+  avgSoreness: number | null
+  completionRate: number
 }
 
 interface Session {
@@ -99,6 +113,7 @@ export function HistoryPage() {
   const [correlations, setCorrelations] = useState<CorrelationDataPoint[]>([])
   const [runData, setRunData] = useState<RunDataPoint[]>([])
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null)
+  const [roadBootcampMetrics, setRoadBootcampMetrics] = useState<RoadBootcampMetrics | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [consistency, setConsistency] = useState<ConsistencyData | null>(null)
   const [volumeData, setVolumeData] = useState<VolumePoint[]>([])
@@ -117,6 +132,7 @@ export function HistoryPage() {
           dashboardData,
           correlationData,
           runProgressData,
+          roadData,
           sessionsData,
           consistencyData,
           volumeRes,
@@ -127,6 +143,7 @@ export function HistoryPage() {
           apiFetch<DashboardData>(`/api/history/dashboard?days=${period}`),
           apiFetch<{ dataPoints: CorrelationDataPoint[] }>(`/api/history/correlations?days=${period}`),
           apiFetch<{ dataPoints: RunDataPoint[]; summary: RunSummary }>(`/api/history/running-progress?days=${period}`),
+          apiFetch<RoadBootcampMetrics>(`/api/history/road-bootcamp?days=${period}`),
           apiFetch<Session[]>('/api/history/sessions?limit=30'),
           apiFetch<ConsistencyData>(`/api/history/consistency?weeks=${weeks}`),
           apiFetch<{ dataPoints: VolumePoint[] }>(`/api/history/volume-trends?days=${period}`),
@@ -138,6 +155,7 @@ export function HistoryPage() {
         setCorrelations(correlationData.dataPoints)
         setRunData(runProgressData.dataPoints)
         setRunSummary(runProgressData.summary)
+        setRoadBootcampMetrics(roadData)
         setSessions(sessionsData)
         setConsistency(consistencyData)
         setVolumeData(volumeRes.dataPoints)
@@ -170,7 +188,7 @@ export function HistoryPage() {
   useEffect(() => {
     if (!dashboard) return
     let cancelled = false
-    const payload = { dashboard, consistency, prs, correlations, runSummary, categoryCompletion }
+    const payload = { dashboard, consistency, prs, correlations, runSummary, roadBootcampMetrics, categoryCompletion }
     apiFetch<{ insights: string[] | null }>('/api/ai/ledger-insights', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -184,7 +202,7 @@ export function HistoryPage() {
         if (!cancelled) setAiInsights(null)
       })
     return () => { cancelled = true }
-  }, [dashboard, consistency, prs, correlations, runSummary, categoryCompletion])
+  }, [dashboard, consistency, prs, correlations, runSummary, roadBootcampMetrics, categoryCompletion])
 
   const insights = aiInsights ?? localInsights
 
@@ -314,11 +332,13 @@ export function HistoryPage() {
           </ChartCard>
         )}
 
-        <ChartCard
-          title="Body & Mind"
-          headline={lifestyleHeadline}
-          sparklineColor="#4ABA8A"
-        >
+        {roadBootcampMetrics && (
+          <ChartCard title="Road Bootcamp" headline={`${roadBootcampMetrics.completionRate}% complete`}>
+            <RoadBootcampSummary metrics={roadBootcampMetrics} />
+          </ChartCard>
+        )}
+
+        <ChartCard title="Readiness" headline={lifestyleHeadline} sparklineColor="#4ABA8A">
           <LifestyleCorrelations data={correlations} />
         </ChartCard>
 

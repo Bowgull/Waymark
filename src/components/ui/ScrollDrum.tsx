@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 
 interface ScrollDrumProps {
@@ -38,11 +38,13 @@ export function ScrollDrum({
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const mountedRef = useRef(false)
 
-  // Build values array
-  const values: number[] = []
-  for (let v = min; v <= max; v = Math.round((v + step) * 1000) / 1000) {
-    values.push(v)
-  }
+  const values = useMemo(() => {
+    const result: number[] = []
+    for (let v = min; v <= max; v = Math.round((v + step) * 1000) / 1000) {
+      result.push(v)
+    }
+    return result
+  }, [max, min, step])
 
   const rawIndex = values.indexOf(value)
   const selectedIndex = rawIndex >= 0 ? rawIndex : 0

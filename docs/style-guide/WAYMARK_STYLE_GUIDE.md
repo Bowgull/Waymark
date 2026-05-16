@@ -54,11 +54,12 @@ Dark-first palette with three accent colors.
 
 ## Navigation
 
-5 tabs: **Today** | **Program** | **Library** | **History** | **Settings**
+4 bottom tabs: **Today** | **Program** | **Library** | **Ledger**
 
 - Active tab: gold text `#E8C860` with gold underline indicator
 - Inactive tab: `text-zinc-500`
 - Icon + label per tab (icon 20px, label 10px)
+- Settings lives behind the top-right gear. It is a utility destination, not a primary training tab.
 
 ## Components
 
@@ -69,7 +70,7 @@ Dark-first palette with three accent colors.
 | RestTimer | `src/features/session/RestTimer.tsx` | Between-set rest countdown |
 | BagWorkRoundView | `src/features/session/BagWorkRoundView.tsx` | Bag work combo cards + round timer |
 | HoldTimer | `src/features/session/HoldTimer.tsx` | Posture hold count-up timer |
-| WellnessPromptCard | `src/features/today/WellnessPromptCard.tsx` | Daily wellness logging |
+| MorningReportCard | `src/features/today/TodayPage.tsx` | Daily readiness logging |
 | SessionComplete | `src/features/session/SessionComplete.tsx` | Post-session RPE/difficulty/notes |
 
 ## Symbol System

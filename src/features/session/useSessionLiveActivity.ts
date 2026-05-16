@@ -67,7 +67,10 @@ export function useSessionLiveActivity(
   const startedRef = useRef(false)
   const lastStateKey = useRef<string>('')
   const handlersRef = useRef(handlers)
-  handlersRef.current = handlers
+
+  useEffect(() => {
+    handlersRef.current = handlers
+  }, [handlers])
 
   // Start / update — react to config changes. Null config is a no-op.
   useEffect(() => {

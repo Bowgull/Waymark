@@ -9,6 +9,7 @@ import { getSessionLabel } from '@/lib/weeklyTemplate'
 import { getMarkAsset } from '@/lib/markAssets'
 import { getStrengthTemplate, getWeekLabel, getDeadliftExerciseId } from '@/lib/strengthTemplates'
 import { getRunPlanForWeek } from '@/lib/runningPlanTemplate'
+import { getRoadBootcampWeekLabel } from '@/lib/roadBootcampTemplate'
 
 interface SessionSummary {
   id: string
@@ -65,9 +66,16 @@ interface RoutineOverview {
   progressIcon?: 'up' | 'new-variant'
 }
 
-function getRoutineOverview(type: string, dayOfWeek: number, blockWeek: number, weekNumber: number, blockType: 'fighter' | 'block_zero' = 'fighter'): RoutineOverview | null {
+function getRoutineOverview(type: string, dayOfWeek: number, blockWeek: number, weekNumber: number, blockType: 'fighter' | 'block_zero' | 'road_bootcamp' = 'fighter'): RoutineOverview | null {
   switch (type) {
     case 'strength': {
+      if (blockType === 'road_bootcamp') {
+        return {
+          headline: dayOfWeek === 2 ? 'Squat · push · row' : 'Hinge · press · pull',
+          detail: 'Pick time and equipment when you start.',
+          intensityBadge: getRoadBootcampWeekLabel(weekNumber),
+        }
+      }
       const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType)
       const mainLifts = template.exercises
         .filter(e => e.section === 'main')
@@ -241,12 +249,17 @@ function SessionRow({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const date = new Date(epochDay * 86400 * 1000)
   const dayOfWeek = date.getUTCDay()
-  const label = getSessionLabel(session.type, dayOfWeek)
+  const isRoadBootcamp = session.blockType === 'road_bootcamp'
+  const label = isRoadBootcamp && session.type === 'strength'
+    ? dayOfWeek === 2 ? 'Road Strength A' : 'Road Strength B'
+    : isRoadBootcamp && session.type === 'foundation_run'
+      ? 'Easy Run'
+      : getSessionLabel(session.type, dayOfWeek)
   const mark = getMarkAsset(session.type)
   const isSkippable = session.status === 'planned' || session.status === 'in_progress'
   const isPassed = session.status === 'skipped' || session.status === 'missed'
   const blockWeek = session.blockWeek ?? 1
-  const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
+  const blockType = (session.blockType === 'block_zero' ? 'block_zero' : session.blockType === 'road_bootcamp' ? 'road_bootcamp' : 'fighter') as 'fighter' | 'block_zero' | 'road_bootcamp'
   const overview = showOverview && !isPassed
     ? getRoutineOverview(session.type, dayOfWeek, blockWeek, weekNumber, blockType)
     : null

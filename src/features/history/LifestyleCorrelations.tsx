@@ -55,7 +55,7 @@ function deriveInsights(data: CorrelationDataPoint[]): string[] {
       const goodRpe = good.reduce((s, d) => s + d.avgRpe!, 0) / good.length
       const poorRpe = poor.reduce((s, d) => s + d.avgRpe!, 0) / poor.length
       if (poorRpe - goodRpe > 0.5) {
-        notes.push('Your strongest sessions follow 7+ hours of sleep.')
+        notes.push('Strongest sessions follow 7+ hours of sleep.')
       }
     }
 
@@ -71,7 +71,7 @@ function deriveInsights(data: CorrelationDataPoint[]): string[] {
     if (highSore.length >= 3) {
       const highRpe = highSore.reduce((s, d) => s + d.avgRpe!, 0) / highSore.length
       if (highRpe > 7) {
-        notes.push('High soreness days tend to push effort higher. Listen when the body speaks.')
+        notes.push('High soreness days push effort higher. Cut volume first.')
       }
     }
   }

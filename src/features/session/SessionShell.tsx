@@ -188,7 +188,9 @@ export function SessionShell({
           className="relative z-10 shrink-0 border-t border-gold/10 bg-near-black/70 px-4 pt-3 backdrop-blur-sm"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.75rem)' }}
         >
-          {footer}
+          <div className="mx-auto w-full max-w-md">
+            {footer}
+          </div>
         </footer>
       )}
     </div>

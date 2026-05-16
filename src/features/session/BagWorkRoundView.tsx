@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
@@ -121,7 +121,7 @@ export function BagWorkRoundView({
     onPhaseChange('fighting')
   }
 
-  function handleRoundEnd() {
+  const handleRoundEnd = useCallback(() => {
     soundRoundEnd()
     roundTimer.stop()
     cancelRoundActiveCues()
@@ -132,20 +132,20 @@ export function BagWorkRoundView({
       scheduleRestCues(round.restSec)
       onPhaseChange('rest')
     }
-  }
+  }, [isLastRound, onComplete, onPhaseChange, restTimer, round.restSec, roundTimer])
 
-  function handleRestDone() {
+  const handleRestDone = useCallback(() => {
     restTimer.stop()
     cancelRestCues()
     onNextRound()
-  }
+  }, [onNextRound, restTimer])
 
   useEffect(() => {
     // Use <= 0 so a locked-screen jump past zero still fires
     if (phase === 'fighting' && roundTimer.secondsRemaining <= 0 && roundTimer.isRunning) {
       handleRoundEnd()
     }
-  }, [roundTimer.secondsRemaining, roundTimer.isRunning, phase])
+  }, [handleRoundEnd, roundTimer.secondsRemaining, roundTimer.isRunning, phase])
 
   // Last 10 seconds of round — finish warning (screen on only; notification handles locked)
   useEffect(() => {
@@ -159,7 +159,7 @@ export function BagWorkRoundView({
     if (phase === 'rest' && restTimer.secondsRemaining <= 0 && restTimer.isRunning) {
       handleRestDone()
     }
-  }, [restTimer.secondsRemaining, restTimer.isRunning, phase])
+  }, [handleRestDone, restTimer.secondsRemaining, restTimer.isRunning, phase])
 
   // 10 seconds left in rest — heads up (screen on only; notification handles locked)
   useEffect(() => {

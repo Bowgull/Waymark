@@ -6,7 +6,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
-import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, bodyMetrics, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
+import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runningPlanWeeks, runSessions, runSplits, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
 import { adHocSessionSchema, completeSessionSchema, dailyLogSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_COOLDOWN_TEMPLATE, FR_WARMUP_TEMPLATE } from '../lib/mobilityTemplate'
@@ -14,9 +14,19 @@ import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTem
 import type { TemplateSession } from '../lib/weeklyTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { WEEKLY_TEMPLATE, getBlockZeroTemplate } from '../lib/weeklyTemplate'
+import { getRoadBootcampRunPrescription, getRoadBootcampTemplate } from '../lib/roadBootcampTemplate'
+import { computeRoadBootcampMetrics } from '../lib/roadBootcampMetrics'
+import {
+  getRoadBootcampStrengthTemplate,
+  ROAD_BOOTCAMP_EQUIPMENT,
+  ROAD_BOOTCAMP_TIMES,
+  type RoadBootcampEquipment,
+  type RoadBootcampTime,
+} from '../lib/roadBootcampStrengthTemplates'
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
+import { computeHrSnapshot, loadRecentRunsForHr } from '../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
@@ -51,6 +61,9 @@ app.onError((err, c) => {
 
 type DrizzleDB = ReturnType<typeof createDB>
 
+function sessionCompletedOrCreatedAt(session: { completedAt: number | null; createdAt: number }): number {
+  return session.completedAt ?? session.createdAt
+}
 
 // Shared strength-weight math. One source of truth for start-strength,
 // buildWorkoutResponse, and strength-preview so prescription never drifts
@@ -122,6 +135,20 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   return { session, exercises: result }
 }
 
+function isRoadBootcampTime(value: unknown): value is RoadBootcampTime {
+  return typeof value === 'string' && ROAD_BOOTCAMP_TIMES.includes(value as RoadBootcampTime)
+}
+
+function isRoadBootcampEquipment(value: unknown): value is RoadBootcampEquipment {
+  return typeof value === 'string' && ROAD_BOOTCAMP_EQUIPMENT.includes(value as RoadBootcampEquipment)
+}
+
+function reduceRoadBootcampStrengthTime(time: RoadBootcampTime): RoadBootcampTime {
+  if (time === '45_plus') return '30'
+  if (time === '30') return '15'
+  return '15'
+}
+
 async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return null
@@ -131,6 +158,15 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
   const dateMs = epochDay * 86400 * 1000
   const dayOfWeek = new Date(dateMs).getUTCDay()
   const blockWeek = session.blockWeek ?? 1
+  if (session.blockType === 'road_bootcamp') {
+    const dayType = dayOfWeek === 2 ? 'strength_a' : 'strength_b'
+    return {
+      session,
+      templateLabel: dayType === 'strength_a' ? 'Road Strength A' : 'Road Strength B',
+      roadBootcampReady: true,
+      exercises: [],
+    }
+  }
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
   const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType)
   const wavePct = getWeekPercentage(blockWeek, blockType)
@@ -225,19 +261,7 @@ async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
 }
 
 // Helper: get running prescription for a session based on its block week and run category
-async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string | null; blockWeek: number | null; notes?: string | null }) {
-  // Check if this is a Zone 2 run (tagged during generation)
-  if (session.notes === 'zone2') {
-    return {
-      weekNumber: ZONE2_PRESCRIPTION.weekNumber,
-      runType: ZONE2_PRESCRIPTION.runType,
-      targetDesc: ZONE2_PRESCRIPTION.targetDesc,
-      targetDurSec: ZONE2_PRESCRIPTION.targetDurSec,
-      targetDistKm: ZONE2_PRESCRIPTION.targetDistKm,
-    }
-  }
-
-  // Progression run: determine week number from weekPlan or block
+async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string | null; blockWeek: number | null; notes?: string | null; blockType?: string | null }) {
   let weekNumber: number | null = null
 
   if (session.weekPlanId) {
@@ -258,6 +282,26 @@ async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string |
 
   if (weekNumber == null) return null
 
+  if (session.blockType === 'road_bootcamp') {
+    const todayEpochDay = Math.floor(Date.now() / 86400000)
+    const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
+    const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay)
+    const category = session.notes === 'zone2' ? 'zone2' : 'progression'
+    return getRoadBootcampRunPrescription(weekNumber, category, hrSnapshot)
+  }
+
+  // Check if this is a Zone 2 run (tagged during generation)
+  if (session.notes === 'zone2') {
+    return {
+      weekNumber: ZONE2_PRESCRIPTION.weekNumber,
+      runType: ZONE2_PRESCRIPTION.runType,
+      targetDesc: ZONE2_PRESCRIPTION.targetDesc,
+      targetDurSec: ZONE2_PRESCRIPTION.targetDurSec,
+      targetDistKm: ZONE2_PRESCRIPTION.targetDistKm,
+    }
+  }
+
+  // Progression run: determine week number from weekPlan or block
   const plan = RUNNING_PLAN_TEMPLATE.find(r => r.weekNumber === weekNumber)
   if (!plan) return null
 
@@ -387,19 +431,21 @@ app.post('/api/sessions/generate-today', async (c) => {
   const mtDaysSetting = settingsRows[0]?.mtClassDays ?? '1,3,5'
   const mtClassDays = new Set(mtDaysSetting.split(',').filter(Boolean).map(Number))
 
-  const template = getEffectiveTemplate(dayOfWeek, mtClassDays)
   const created = []
 
-  // Determine current block week for strength sessions
+  // Determine current block and week for session stamping.
   let blockWeek = 1
   let weekPlanId: string | null = null
+  let currentWeekNumber = 1
+  let activeBlockType = 'fighter'
   const blocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
   if (blocks.length > 0) {
     const block = blocks[0]
+    activeBlockType = block.blockType
     const startedAt = block.startedAt ?? nowSec
     const weeksSinceStart = Math.floor((nowSec - startedAt) / (7 * 86400))
     blockWeek = (weeksSinceStart % 6) + 1
-    const currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks)
+    currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks)
 
     // Auto-create week plan if none exists
     const existingWeeks = await db.select().from(weekPlans).where(eq(weekPlans.blockId, block.id))
@@ -419,6 +465,10 @@ app.post('/api/sessions/generate-today', async (c) => {
     }
   }
 
+  const template = activeBlockType === 'road_bootcamp'
+    ? getRoadBootcampTemplate(currentWeekNumber)[dayOfWeek] ?? []
+    : getEffectiveTemplate(dayOfWeek, mtClassDays)
+
   for (const entry of template) {
     const id = crypto.randomUUID()
     const isStrength = entry.type === 'strength'
@@ -431,6 +481,7 @@ app.post('/api/sessions/generate-today', async (c) => {
       scheduledDate: epochDay,
       timeSlot: entry.timeSlot,
       blockWeek: isStrength ? blockWeek : null,
+      blockType: activeBlockType,
       status: 'planned',
       notes: runTag,
       createdAt: nowSec,
@@ -442,6 +493,7 @@ app.post('/api/sessions/generate-today', async (c) => {
       scheduledDate: epochDay,
       timeSlot: entry.timeSlot,
       blockWeek: isStrength ? blockWeek : null,
+      blockType: activeBlockType,
       status: 'planned',
       startedAt: null,
       completedAt: null,
@@ -544,6 +596,8 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
 
   // Determine weekPlanId from active block
   let weekPlanId: string | null = null
+  let blockWeek: number | null = null
+  let blockType = 'fighter'
   const blocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
   if (blocks.length > 0) {
     const block = blocks[0]
@@ -553,6 +607,8 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
     const existingWeeks = await db.select().from(weekPlans).where(eq(weekPlans.blockId, block.id))
     const existingWeek = existingWeeks.find(w => w.weekNumber === currentWeekNumber)
     weekPlanId = existingWeek?.id ?? null
+    blockWeek = currentWeekNumber
+    blockType = block.blockType
   }
 
   const id = crypto.randomUUID()
@@ -564,7 +620,8 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
     weekPlanId,
     scheduledDate: epochDay,
     timeSlot: body.timeSlot,
-    blockWeek: null,
+    blockWeek,
+    blockType,
     status: 'planned',
     notes: runTag,
     createdAt: nowSec,
@@ -651,7 +708,8 @@ app.post('/api/sessions/:id/replace', async (c) => {
     weekPlanId: original.weekPlanId,
     scheduledDate,
     timeSlot: body.timeSlot,
-    blockWeek: null,
+    blockWeek: body.type === 'strength' ? original.blockWeek : null,
+    blockType: original.blockType,
     status: 'planned',
     notes: runTag,
     adjustmentId,
@@ -731,6 +789,16 @@ app.post('/api/adjustments/:id/accept', async (c) => {
     const runTag = adj.sessionType === 'running'
       ? (JSON.parse(adj.sourceData ?? '{}').runCategory ?? null)
       : null
+    let sessionBlockType = 'fighter'
+    let sessionBlockWeek: number | null = null
+    if (adj.weekPlanId) {
+      const [week] = await db.select().from(weekPlans).where(eq(weekPlans.id, adj.weekPlanId))
+      if (week) {
+        const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, week.blockId))
+        sessionBlockType = block?.blockType ?? 'fighter'
+        sessionBlockWeek = adj.sessionType === 'strength' ? ((week.weekNumber - 1) % 6) + 1 : null
+      }
+    }
 
     await db.insert(sessions).values({
       id: sessionId,
@@ -738,7 +806,8 @@ app.post('/api/adjustments/:id/accept', async (c) => {
       weekPlanId: adj.weekPlanId,
       scheduledDate: targetEpochDay,
       timeSlot: adj.targetTimeSlot ?? 'am',
-      blockWeek: null,
+      blockWeek: sessionBlockWeek,
+      blockType: sessionBlockType,
       status: 'planned',
       notes: runTag,
       adjustmentId,
@@ -783,6 +852,10 @@ app.get('/api/adjustments', async (c) => {
 
 app.post('/api/sessions/:id/start-strength', async (c) => {
   const sessionId = c.req.param('id')
+  const body = await c.req.json().catch(() => ({})) as {
+    timeAvailable?: unknown
+    equipment?: unknown
+  }
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
 
@@ -802,8 +875,33 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   const dateMs = epochDay * 86400 * 1000
   const dayOfWeek = new Date(dateMs).getUTCDay()
   const blockWeek = session.blockWeek ?? 1
+  const isRoadBootcamp = session.blockType === 'road_bootcamp'
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
-  const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType)
+
+  if (isRoadBootcamp && (!isRoadBootcampTime(body.timeAvailable) || !isRoadBootcampEquipment(body.equipment))) {
+    return c.json({ error: 'Road Bootcamp strength requires timeAvailable and equipment' }, 400)
+  }
+
+  let effectiveRoadTime = body.timeAvailable as RoadBootcampTime
+  let roadFatigueLine: string | null = null
+  if (isRoadBootcamp) {
+    const todayEpochDay = Math.floor(Date.now() / 86400000)
+    const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
+    const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay)
+    if (hrSnapshot.driftAssessment === 'clear_fatigue') {
+      effectiveRoadTime = reduceRoadBootcampStrengthTime(effectiveRoadTime)
+      roadFatigueLine = 'HR drift is high. Main work stays, accessories drop.'
+    }
+  }
+
+  const template = isRoadBootcamp
+    ? getRoadBootcampStrengthTemplate({
+      dayType: dayOfWeek === 2 ? 'strength_a' : 'strength_b',
+      timeAvailable: effectiveRoadTime,
+      equipment: body.equipment as RoadBootcampEquipment,
+      blockWeek,
+    })
+    : getStrengthTemplate(dayOfWeek, blockWeek, blockType)
   const weekPct = getWeekPercentage(blockWeek, blockType)
 
   // Get training maxes for weight suggestions
@@ -846,7 +944,18 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   }
 
   // Mark session as in_progress
-  await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
+  await db.update(sessions).set({
+    status: 'in_progress',
+    startedAt: nowSec,
+    contextJson: isRoadBootcamp ? JSON.stringify({
+      roadBootcamp: {
+        timeAvailable: body.timeAvailable,
+        prescribedTime: effectiveRoadTime,
+        equipment: body.equipment,
+        adaptationLine: roadFatigueLine ?? ('adaptationLine' in template ? template.adaptationLine : null),
+      },
+    }) : session.contextJson,
+  }).where(eq(sessions.id, sessionId))
 
   return c.json(await buildWorkoutResponse(db, sessionId))
 })
@@ -1648,13 +1757,64 @@ app.post('/api/blocks', async (c) => {
   const body = await c.req.json<{ name?: string; totalWeeks?: number; blockType?: string }>()
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
+  const blockType = body.blockType === 'block_zero'
+    ? 'block_zero'
+    : body.blockType === 'road_bootcamp'
+      ? 'road_bootcamp'
+      : 'fighter'
 
   const id = crypto.randomUUID()
   await db.insert(trainingBlocks).values({
     id,
     name: body.name ?? '12-Week Base Build',
-    blockType: body.blockType === 'block_zero' ? 'block_zero' : 'fighter',
+    blockType,
     totalWeeks: body.totalWeeks ?? 12,
+    startedAt: nowSec,
+    status: 'active',
+    createdAt: nowSec,
+  })
+
+  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, id))
+  return c.json(block)
+})
+
+async function clearCollectedTrainingData(db: DrizzleDB) {
+  await db.delete(strengthSets)
+  await db.delete(comboPerformance)
+  await db.delete(bagWorkRoundCombos)
+  await db.delete(bagWorkRounds)
+  await db.delete(strengthSessionExercises)
+  await db.delete(runSplits)
+  await db.delete(runSessions)
+  await db.delete(postureSessionExercises)
+  await db.delete(skipRopeSessions)
+  await db.delete(activeRecoverySessions)
+  await db.delete(mtClassLogs)
+  await db.delete(coachingOutputs)
+  await db.delete(weekAdjustments)
+  await db.delete(sessions)
+  await db.delete(weekPlans)
+  await db.delete(runningPlanWeeks)
+  await db.delete(trainingBlocks)
+  await db.delete(dailyLogs)
+  await db.delete(weeklyJournals)
+  await db.delete(journalEntries)
+  await db.delete(bodyMetrics)
+  await db.update(combos).set({ isFavourite: 0, masteryScore: 0, timesSharp: 0 })
+}
+
+app.post('/api/blocks/road-bootcamp', async (c) => {
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+
+  await clearCollectedTrainingData(db)
+
+  const id = crypto.randomUUID()
+  await db.insert(trainingBlocks).values({
+    id,
+    name: 'Road Bootcamp',
+    blockType: 'road_bootcamp',
+    totalWeeks: 8,
     startedAt: nowSec,
     status: 'active',
     createdAt: nowSec,
@@ -1739,20 +1899,21 @@ app.post('/api/weeks/generate', async (c) => {
   // Check if week already exists
   const existing = await db.select().from(weekPlans).where(eq(weekPlans.blockId, body.blockId))
   const existingWeek = existing.find(w => w.weekNumber === body.weekNumber)
+  const weekId = existingWeek?.id ?? crypto.randomUUID()
   if (existingWeek) {
     const weekSessions = await db.select().from(sessions).where(eq(sessions.weekPlanId, existingWeek.id))
-    return c.json({ week: existingWeek, sessions: weekSessions })
+    if (weekSessions.length > 0) return c.json({ week: existingWeek, sessions: weekSessions })
   }
 
-  // Create week plan
-  const weekId = crypto.randomUUID()
-  await db.insert(weekPlans).values({
-    id: weekId,
-    blockId: body.blockId,
-    weekNumber: body.weekNumber,
-    status: 'draft',
-    createdAt: nowSec,
-  })
+  if (!existingWeek) {
+    await db.insert(weekPlans).values({
+      id: weekId,
+      blockId: body.blockId,
+      weekNumber: body.weekNumber,
+      status: 'draft',
+      createdAt: nowSec,
+    })
+  }
 
   // Parse start date (Monday of the week)
   const startDate = new Date(`${body.startDate}T12:00:00Z`)
@@ -1760,7 +1921,11 @@ app.post('/api/weeks/generate', async (c) => {
 
   // Determine block type for template and session stamping
   const [blockRow] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, body.blockId))
-  const blockType = (blockRow?.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
+  const blockType = blockRow?.blockType === 'block_zero'
+    ? 'block_zero'
+    : blockRow?.blockType === 'road_bootcamp'
+      ? 'road_bootcamp'
+      : 'fighter'
 
   // Block week for strength sessions (use weekNumber modulo 6)
   const blockWeek = ((body.weekNumber - 1) % 6) + 1
@@ -1768,7 +1933,9 @@ app.post('/api/weeks/generate', async (c) => {
   // Pick the correct weekly template
   const weeklyTemplate = blockType === 'block_zero'
     ? getBlockZeroTemplate(body.weekNumber)
-    : WEEKLY_TEMPLATE
+    : blockType === 'road_bootcamp'
+      ? getRoadBootcampTemplate(body.weekNumber)
+      : WEEKLY_TEMPLATE
 
   // Generate sessions for 7 days (Mon=0 through Sun=6)
   for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
@@ -1790,6 +1957,7 @@ app.post('/api/weeks/generate', async (c) => {
         blockWeek: isStrength ? blockWeek : null,
         blockType,
         status: 'planned',
+        notes: entry.runCategory ?? null,
         createdAt: nowSec,
       })
       createdSessions.push({
@@ -1806,7 +1974,7 @@ app.post('/api/weeks/generate', async (c) => {
         durationSec: null,
         rpe: null,
         difficulty: null,
-        notes: null,
+        notes: entry.runCategory ?? null,
         createdAt: nowSec,
       })
     }
@@ -1863,6 +2031,8 @@ app.post('/api/weeks/auto-generate', async (c) => {
 
   const blockWeek = ((currentWeekNumber - 1) % 6) + 1
   const isBlockZero = block.blockType === 'block_zero'
+  const isRoadBootcamp = block.blockType === 'road_bootcamp'
+  const sessionBlockType = isBlockZero ? 'block_zero' : isRoadBootcamp ? 'road_bootcamp' : 'fighter'
 
   const mondayEpochDay = Math.floor(startDate.getTime() / 1000 / 86400)
   const prevWeekStart = mondayEpochDay - 7
@@ -1875,7 +2045,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
   const createdSessions = []
 
   // ─── AI plan generation ────────────────────────────────────
-  const aiPlan = await generateWeekPlan(db, c.env.ANTHROPIC_API_KEY, {
+  const aiPlan = isRoadBootcamp ? null : await generateWeekPlan(db, c.env.ANTHROPIC_API_KEY, {
     blockId: body.blockId,
     weekId,
     weekNumber: currentWeekNumber,
@@ -1911,7 +2081,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
           scheduledDate: epochDay,
           timeSlot: entry.timeSlot,
           blockWeek: isStrength ? blockWeek : null,
-          blockType: isBlockZero ? 'block_zero' : 'fighter',
+          blockType: sessionBlockType,
           status: 'planned',
           notes: entry.runCategory ?? entry.notes ?? null,
           createdAt: nowSec,
@@ -1920,11 +2090,51 @@ app.post('/api/weeks/auto-generate', async (c) => {
           id: sessionId, type: entry.type, weekPlanId: weekId,
           scheduledDate: epochDay, timeSlot: entry.timeSlot,
           blockWeek: isStrength ? blockWeek : null,
-          blockType: isBlockZero ? 'block_zero' : 'fighter',
+          blockType: sessionBlockType,
           status: 'planned',
           startedAt: null, completedAt: null, durationSec: null,
           rpe: null, difficulty: null,
           notes: entry.runCategory ?? entry.notes ?? null,
+          adjustmentId: null, createdAt: nowSec,
+        })
+      }
+    }
+
+    const [week] = await db.select().from(weekPlans).where(eq(weekPlans.id, weekId))
+    return c.json({ week, sessions: createdSessions, analysis: null, adjustments: [] })
+  }
+
+  if (isRoadBootcamp) {
+    const template = getRoadBootcampTemplate(currentWeekNumber)
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+      const date = new Date(startDate)
+      date.setUTCDate(date.getUTCDate() + dayOffset)
+      const dayOfWeek = date.getUTCDay()
+      const epochDay = Math.floor(date.getTime() / 1000 / 86400)
+
+      for (const entry of template[dayOfWeek] ?? []) {
+        const sessionId = crypto.randomUUID()
+        const isStrength = entry.type === 'strength'
+        await db.insert(sessions).values({
+          id: sessionId,
+          type: entry.type,
+          weekPlanId: weekId,
+          scheduledDate: epochDay,
+          timeSlot: entry.timeSlot,
+          blockWeek: isStrength ? blockWeek : null,
+          blockType: sessionBlockType,
+          status: 'planned',
+          notes: entry.runCategory ?? null,
+          createdAt: nowSec,
+        })
+        createdSessions.push({
+          id: sessionId, type: entry.type, weekPlanId: weekId,
+          scheduledDate: epochDay, timeSlot: entry.timeSlot,
+          blockWeek: isStrength ? blockWeek : null,
+          blockType: sessionBlockType,
+          status: 'planned',
+          startedAt: null, completedAt: null, durationSec: null,
+          rpe: null, difficulty: null, notes: entry.runCategory ?? null,
           adjustmentId: null, createdAt: nowSec,
         })
       }
@@ -1989,7 +2199,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
         scheduledDate: epochDay,
         timeSlot: entry.timeSlot,
         blockWeek: isStrength ? blockWeek : null,
-        blockType: isBlockZero ? 'block_zero' : 'fighter',
+        blockType: sessionBlockType,
         status: 'planned',
         notes: entry.runCategory ?? null,
         createdAt: nowSec,
@@ -1998,7 +2208,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
         id: sessionId, type: entry.type, weekPlanId: weekId,
         scheduledDate: epochDay, timeSlot: entry.timeSlot,
         blockWeek: isStrength ? blockWeek : null,
-        blockType: isBlockZero ? 'block_zero' : 'fighter',
+        blockType: sessionBlockType,
         status: 'planned',
         startedAt: null, completedAt: null, durationSec: null,
         rpe: null, difficulty: null, notes: entry.runCategory ?? null,
@@ -2069,7 +2279,7 @@ app.get('/api/history/stats', async (c) => {
   const cutoff = nowSec - days * 86400
 
   const allSessions = await db.select().from(sessions)
-  const recent = allSessions.filter(s => s.createdAt >= cutoff)
+  const recent = allSessions.filter(s => sessionCompletedOrCreatedAt(s) >= cutoff)
 
   const completed = recent.filter(s => s.status === 'completed')
   const planned = recent.filter(s => s.status !== 'skipped')
@@ -2611,7 +2821,7 @@ app.get('/api/history/weight-progression', async (c) => {
 
   for (const se of sexes) {
     const session = sessionMap.get(se.sessionId)
-    if (!session || session.status !== 'completed' || session.createdAt < cutoff) continue
+    if (!session || session.status !== 'completed' || sessionCompletedOrCreatedAt(session) < cutoff) continue
 
     const sets = await db.select().from(strengthSets)
       .where(eq(strengthSets.sessionExerciseId, se.id))
@@ -2641,7 +2851,7 @@ app.get('/api/history/volume-trends', async (c) => {
   const cutoff = nowSec - days * 86400
 
   const allSessions = await db.select().from(sessions)
-  const completed = allSessions.filter(s => s.status === 'completed' && s.createdAt >= cutoff)
+  const completed = allSessions.filter(s => s.status === 'completed' && sessionCompletedOrCreatedAt(s) >= cutoff)
 
   const dailyData = new Map<string, { totalDurationMin: number; sessionCount: number }>()
 
@@ -2784,6 +2994,7 @@ app.get('/api/history/prs', async (c) => {
   for (const se of allSexes) {
     const session = sessionMap.get(se.sessionId)
     if (!session) continue
+    if (se.section === 'warmup') continue
 
     const sets = setsByExerciseId.get(se.id) ?? []
     const weights = sets.filter(s => s.weightKg != null && s.weightKg > 0 && s.isWarmup === 0).map(s => s.weightKg!)
@@ -2893,10 +3104,11 @@ app.get('/api/history/running-progress', async (c) => {
 
   for (const run of allRuns) {
     const session = sessionMap.get(run.sessionId)
-    if (!session || session.status !== 'completed' || session.createdAt < cutoff) continue
+    const completedAt = session?.completedAt ?? session?.createdAt ?? null
+    if (!session || session.status !== 'completed' || completedAt == null || completedAt < cutoff) continue
     if (run.distanceKm == null || run.paceSecKm == null) continue
 
-    const date = new Date((session.completedAt ?? session.createdAt) * 1000).toISOString().split('T')[0]
+    const date = new Date(completedAt * 1000).toISOString().split('T')[0]
     dataPoints.push({
       date,
       distanceKm: run.distanceKm,
@@ -2916,6 +3128,31 @@ app.get('/api/history/running-progress', async (c) => {
     dataPoints,
     summary: { totalRuns: dataPoints.length, totalDistanceKm, avgPaceSecKm, bestPaceSecKm },
   })
+})
+
+app.get('/api/history/road-bootcamp', async (c) => {
+  const days = parseInt(c.req.query('days') ?? '30')
+  const db = createDB(c.env)
+  const todayEpochDay = Math.floor(Date.now() / 86400000)
+  const cutoffEpochDay = todayEpochDay - Math.max(1, Math.min(days, 90))
+
+  const allSessions = await db.select().from(sessions)
+  const roadSessions = allSessions
+    .filter(s => s.blockType === 'road_bootcamp')
+    .filter(s => (s.scheduledDate ?? 0) >= cutoffEpochDay)
+
+  const roadIds = new Set(roadSessions.map(s => s.id))
+  const allRuns = await db.select().from(runSessions)
+  const roadRuns = allRuns.filter(r => roadIds.has(r.sessionId))
+
+  const logs = await db.select().from(dailyLogs)
+  const roadLogs = logs.filter(l => l.logDate >= cutoffEpochDay)
+
+  return c.json(computeRoadBootcampMetrics({
+    sessions: roadSessions,
+    runs: roadRuns,
+    logs: roadLogs,
+  }))
 })
 
 // ─── History: Dashboard Summary ──────────────────────────────
@@ -2942,7 +3179,7 @@ app.get('/api/history/dashboard', async (c) => {
 
   // Completion rate (last 30 days)
   const cutoff30 = nowSec - 30 * 86400
-  const recent30 = allSessions.filter(s => s.createdAt >= cutoff30)
+  const recent30 = allSessions.filter(s => sessionCompletedOrCreatedAt(s) >= cutoff30)
   const completed30 = recent30.filter(s => s.status === 'completed').length
   const total30 = recent30.filter(s => s.status !== 'planned').length // completed + skipped
   const completionRate = total30 > 0 ? Math.round(completed30 / total30 * 100) : 0
@@ -2977,6 +3214,7 @@ app.get('/api/history/dashboard', async (c) => {
   for (const se of allSexes) {
     const session = completedSessionMap.get(se.sessionId)
     if (!session) continue
+    if (se.section === 'warmup') continue
     const sets = setsByExerciseId.get(se.id) ?? []
     const weights = sets.filter(s => s.weightKg != null && s.weightKg > 0 && s.isWarmup === 0).map(s => s.weightKg!)
     if (weights.length === 0) continue
@@ -3013,7 +3251,7 @@ app.get('/api/history/dashboard', async (c) => {
 
   // Total runs (last 30 days)
   const runSessionIds = new Set(
-    allSessions.filter(s => s.status === 'completed' && s.createdAt >= cutoff30 &&
+    allSessions.filter(s => s.status === 'completed' && sessionCompletedOrCreatedAt(s) >= cutoff30 &&
       (s.type === 'foundation_run' || s.type === 'running')).map(s => s.id)
   )
   const totalRuns = runSessionIds.size
@@ -3200,7 +3438,7 @@ app.post('/api/ai/ledger-insights', async (c) => {
   const db = createDB(c.env)
   const data = await c.req.json<LedgerInsightData>()
   const insights = await runLedgerInsights(db, c.env.ANTHROPIC_API_KEY, data)
-  if (!insights) return c.json({ insights: null }, 503)
+  if (!insights) return c.json({ insights: null })
   return c.json({ insights })
 })
 
