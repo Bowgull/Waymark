@@ -10,7 +10,7 @@ import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_WEEK_PLAN, type BodyIssueDetection, type WeekPlanOutput } from './prompts/tools'
 import { getWeekSummaries } from './prompts/summarizer'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
-import { computeHrSnapshot, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
+import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { rolloverStaleSessions } from './sessionRollover'
 import { getEpochDay } from './dates'
 import type { createDB } from '../db/client'
@@ -331,7 +331,8 @@ export async function generateWeekPlan(
 
   // HR signal (zone-2 compliance + drift). Silent omission if no HR recorded.
   const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
-  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay)
+  const maxHr = await loadProfileMaxHrForHr(db)
+  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr })
   const hrBlock = serializeHrForPrompt(hrSnapshot)
 
   const starter = await computeStarterStatus(db, todayEpochDay, profile.trainingHistory, profile.constraints)

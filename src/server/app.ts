@@ -26,7 +26,7 @@ import {
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
-import { computeHrSnapshot, loadRecentRunsForHr } from '../lib/hrAnalysis'
+import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr } from '../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
@@ -291,7 +291,8 @@ async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string |
   if (session.blockType === 'road_bootcamp') {
     const todayEpochDay = Math.floor(Date.now() / 86400000)
     const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
-    const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay)
+    const maxHr = await loadProfileMaxHrForHr(db)
+    const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr })
     const category = session.notes === 'zone2' ? 'zone2' : 'progression'
     return getRoadBootcampRunPrescription(weekNumber, category, hrSnapshot)
   }
@@ -893,7 +894,8 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   if (isRoadBootcamp) {
     const todayEpochDay = Math.floor(Date.now() / 86400000)
     const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
-    const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay)
+    const maxHr = await loadProfileMaxHrForHr(db)
+    const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr })
     if (hrSnapshot.driftAssessment === 'clear_fatigue') {
       effectiveRoadTime = reduceRoadBootcampStrengthTime(effectiveRoadTime)
       roadFatigueLine = 'HR drift is high. Main work stays, accessories drop.'
