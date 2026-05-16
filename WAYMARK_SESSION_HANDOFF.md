@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:59 EDT
+Updated: 2026-05-16 19:08 EDT
 
 ## Current State
 
@@ -8,7 +8,7 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 85 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 89 percent of the Road Bootcamp slice.
 
 ## What Changed This Pass
 
@@ -161,6 +161,10 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 - Checked remote D1 for the static warmup rows from migration `0019`.
   - Remote already has `ex-toe-touch-forward-fold`, `ex-butterfly-stretch`, `ex-standing-quad-stretch`, and `ex-standing-calf-stretch`.
   - No remote migration was run.
+- Added a Strava ingest mapping contract:
+  - Extracted pure mapping helpers from the Strava route for activity summary fields, split fields, HR zone buckets, and Tanaka max HR fallback.
+  - `src/server/routes/strava.test.ts` proves Strava local date, distance, moving time, pace, indoor/outdoor flag, average HR, max HR, elevation, split HR/elevation, zone seconds, and DOB-derived max HR behavior.
+  - `npm run test:lib` now includes the Strava route mapping test.
 
 ## Verification
 
@@ -287,6 +291,16 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `npm run smoke:foundation-run` passes.
   - `npm run smoke:offline-review` passes.
   - Remote D1 read-only check confirmed the four `0019` warmup exercise rows exist.
+- Strava ingest mapping contract:
+  - `npx tsx src/server/routes/strava.test.ts` first failed because the mapping helpers were not exported.
+  - `npx tsx src/server/routes/strava.test.ts` now passes.
+  - `npm run test:lib` passes and now includes `strava route tests passed`.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
+  - `npx wrangler dev --local --port 8787` boots with only the expected local scheduled-worker notice.
+  - `npm run smoke:foundation-run` passes.
+  - `npm run smoke:offline-review` passes.
 
 ## Known Warnings
 
@@ -301,6 +315,7 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 - Local no-key coaching now stores deterministic reviews for completed sessions.
 - Session review AI now sees prescribed HR target versus actual HR evidence for runs.
 - Weekly planning and reactive coaching now use the same profile-based Zone 2 ceiling as visible run targets.
+- Strava ingest mapping for run evidence now has pure test coverage.
 - Ledger AI now sees Road Bootcamp summary metrics, not raw run or strength detail.
 - Local QA currently falls back when `ANTHROPIC_API_KEY` is missing. That is expected and keeps spend at zero for this pass.
 - Live session-review QA now has an opt-in smoke, but it has not been run live because local Wrangler does not expose `ANTHROPIC_API_KEY`.
