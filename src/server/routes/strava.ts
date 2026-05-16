@@ -571,7 +571,7 @@ type StravaWebhookEvent = {
   updates?: Record<string, string>
 }
 
-type StravaActivity = {
+export type StravaActivity = {
   id: number
   type: string
   sport_type?: string
@@ -595,6 +595,28 @@ type StravaActivity = {
 type StravaStreams = {
   heartrate?: { data: number[] }
   time?: { data: number[] }
+}
+
+type StravaSplit = NonNullable<StravaActivity['splits_metric']>[number]
+
+export type StravaRunData = {
+  localISO: string
+  epochDay: number
+  completedAt: number
+  distanceKm: number | null
+  durationSec: number
+  paceSecKm: number | null
+  isIndoor: 0 | 1
+  avgHr: number | null
+  maxHr: number | null
+  elevationGainM: number | null
+}
+
+export type StravaSplitData = {
+  kmIndex: number
+  durationSec: number
+  avgHr: number | null
+  elevationGainM: number | null
 }
 
 type IngestResult =
@@ -627,8 +649,8 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     return { status: 'non_run' }
   }
 
-  const localISO = act.start_date_local.slice(0, 10)
-  const epochDay = isoToEpochDay(localISO)
+  const runData = mapStravaActivityToRunData(act)
+  const epochDay = runData.epochDay
   const nowSec = Math.floor(Date.now() / 1000)
 
   // Find a planned running session on this date with no existing strava link.
@@ -681,8 +703,8 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
       blockType: activeBlock?.blockType ?? 'fighter',
       blockWeek,
       status: 'completed',
-      completedAt: Math.floor(new Date(act.start_date).getTime() / 1000),
-      durationSec: act.moving_time,
+      completedAt: runData.completedAt,
+      durationSec: runData.durationSec,
       createdAt: nowSec,
     })
     attachmentStatus = 'orphan'
@@ -717,23 +739,18 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     }
   }
 
-  const distanceKm = act.distance ? act.distance / 1000 : null
-  const paceSecKm = distanceKm && act.moving_time
-    ? Math.round(act.moving_time / distanceKm)
-    : null
-
   let runSessionId: string
   if (existingForParent) {
     runSessionId = existingForParent.id
     await db.update(runSessions).set({
-      distanceKm,
-      durationSec: act.moving_time,
-      paceSecKm,
-      isIndoor: act.trainer ? 1 : (existingForParent.isIndoor ?? 0),
-      avgHr: act.average_heartrate != null ? Math.round(act.average_heartrate) : null,
-      maxHr: act.max_heartrate != null ? Math.round(act.max_heartrate) : null,
+      distanceKm: runData.distanceKm,
+      durationSec: runData.durationSec,
+      paceSecKm: runData.paceSecKm,
+      isIndoor: act.trainer ? runData.isIndoor : (existingForParent.isIndoor ?? 0),
+      avgHr: runData.avgHr,
+      maxHr: runData.maxHr,
       zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
-      elevationGainM: act.total_elevation_gain != null ? Math.round(act.total_elevation_gain) : null,
+      elevationGainM: runData.elevationGainM,
       source: 'strava',
       stravaActivityId: activityId,
       attachmentStatus,
@@ -745,14 +762,14 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
       sessionId: parentSessionId,
       planWeek: null,
       runType: null,
-      distanceKm,
-      durationSec: act.moving_time,
-      paceSecKm,
-      isIndoor: act.trainer ? 1 : 0,
-      avgHr: act.average_heartrate != null ? Math.round(act.average_heartrate) : null,
-      maxHr: act.max_heartrate != null ? Math.round(act.max_heartrate) : null,
+      distanceKm: runData.distanceKm,
+      durationSec: runData.durationSec,
+      paceSecKm: runData.paceSecKm,
+      isIndoor: runData.isIndoor,
+      avgHr: runData.avgHr,
+      maxHr: runData.maxHr,
       zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
-      elevationGainM: act.total_elevation_gain != null ? Math.round(act.total_elevation_gain) : null,
+      elevationGainM: runData.elevationGainM,
       source: 'strava',
       stravaActivityId: activityId,
       attachmentStatus,
@@ -764,13 +781,13 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     // and can't leave half the splits behind on mid-loop failure. D1 has a
     // 100-param cap per statement; each split binds 6 columns so we chunk at
     // 15 rows (90 params) to stay comfortably under.
-    const rows = act.splits_metric.map(sp => ({
+    const rows = mapStravaSplits(act.splits_metric).map(sp => ({
       id: crypto.randomUUID(),
       runSessionId,
-      kmIndex: sp.split,
-      durationSec: sp.moving_time,
-      avgHr: sp.average_heartrate != null ? Math.round(sp.average_heartrate) : null,
-      elevationGainM: sp.elevation_difference != null ? Math.round(sp.elevation_difference) : null,
+      kmIndex: sp.kmIndex,
+      durationSec: sp.durationSec,
+      avgHr: sp.avgHr,
+      elevationGainM: sp.elevationGainM,
     }))
     const CHUNK = 15
     for (let i = 0; i < rows.length; i += CHUNK) {
@@ -807,7 +824,37 @@ async function fetchStreams(activityId: number, token: string): Promise<StravaSt
 // Tanaka formula for age-predicted max HR: 208 - 0.7 × age. More accurate
 // than the classic 220 - age for trained adults. Returns null if DOB is
 // unparseable or yields an implausible age.
-function tanakaMaxHrFromDob(dob: string): number | null {
+export function mapStravaActivityToRunData(act: StravaActivity): StravaRunData {
+  const localISO = act.start_date_local.slice(0, 10)
+  const distanceKm = act.distance ? act.distance / 1000 : null
+  const paceSecKm = distanceKm && act.moving_time
+    ? Math.round(act.moving_time / distanceKm)
+    : null
+
+  return {
+    localISO,
+    epochDay: isoToEpochDay(localISO),
+    completedAt: Math.floor(new Date(act.start_date).getTime() / 1000),
+    distanceKm,
+    durationSec: act.moving_time,
+    paceSecKm,
+    isIndoor: act.trainer ? 1 : 0,
+    avgHr: act.average_heartrate != null ? Math.round(act.average_heartrate) : null,
+    maxHr: act.max_heartrate != null ? Math.round(act.max_heartrate) : null,
+    elevationGainM: act.total_elevation_gain != null ? Math.round(act.total_elevation_gain) : null,
+  }
+}
+
+export function mapStravaSplits(splits: StravaSplit[]): StravaSplitData[] {
+  return splits.map(sp => ({
+    kmIndex: sp.split,
+    durationSec: sp.moving_time,
+    avgHr: sp.average_heartrate != null ? Math.round(sp.average_heartrate) : null,
+    elevationGainM: sp.elevation_difference != null ? Math.round(sp.elevation_difference) : null,
+  }))
+}
+
+export function tanakaMaxHrFromDob(dob: string): number | null {
   const birth = new Date(dob)
   if (isNaN(birth.getTime())) return null
   const now = new Date()
@@ -820,7 +867,7 @@ function tanakaMaxHrFromDob(dob: string): number | null {
 
 // Bucket HR samples into Z1-Z5 by % of max HR. Z1 <60, Z2 60-70, Z3 70-80,
 // Z4 80-90, Z5 >=90. Each sample's dwell is the gap to the next time point.
-function bucketZones(hr: number[], time: number[], maxHr: number): { z1: number; z2: number; z3: number; z4: number; z5: number } {
+export function bucketZones(hr: number[], time: number[], maxHr: number): { z1: number; z2: number; z3: number; z4: number; z5: number } {
   const zones = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 }
   const n = Math.min(hr.length, time.length)
   for (let i = 0; i < n; i++) {

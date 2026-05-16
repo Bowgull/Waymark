@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test:lib": "tsx src/lib/sessionReviewAI.test.ts && tsx src/lib/hrAnalysis.test.ts && tsx src/lib/roadBootcampTemplate.test.ts && tsx src/lib/roadBootcampStrengthTemplates.test.ts && tsx src/lib/roadBootcampMetrics.test.ts",
+    "test:lib": "tsx src/lib/sessionReviewAI.test.ts && tsx src/lib/hrAnalysis.test.ts && tsx src/server/routes/strava.test.ts && tsx src/lib/roadBootcampTemplate.test.ts && tsx src/lib/roadBootcampStrengthTemplates.test.ts && tsx src/lib/roadBootcampMetrics.test.ts",
     "smoke:offline-review": "node scripts/smoke-offline-session-review.mjs",
     "smoke:foundation-run": "node scripts/smoke-foundation-run.mjs",
     "smoke:live-review": "node scripts/smoke-live-session-review.mjs",
