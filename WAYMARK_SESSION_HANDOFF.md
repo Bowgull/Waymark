@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:20 EDT
+Updated: 2026-05-16 18:37 EDT
 
 ## Current State
 
@@ -8,7 +8,7 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 80 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 82 percent of the Road Bootcamp slice.
 
 ## What Changed This Pass
 
@@ -74,6 +74,11 @@ The current build is functional but not finished. Estimate: roughly 80 percent o
   - The test now reads `src/db/seed.sql` and `drizzle/0022_road_bootcamp.sql`.
   - Every exercise used by all 18 Road Bootcamp strength variants must have a seeded `http`/`https` form video URL.
 - Excluded `src/**/*.test.ts` from the app TypeScript build so local test files are not treated as shipped app code.
+- Tightened run coaching evidence:
+  - Session review prompts now include the prescribed HR target line beside actual Strava HR, pace, splits, and zone evidence.
+  - The coach uses the same profile `maxHr` source that Today uses for visible target zones.
+  - `sessionReview` now supports an `intensity_mismatch` flag for cases where prescribed run intensity does not match heart-rate evidence.
+  - Prompt test coverage now checks prescribed target HR and intensity mismatch instruction text.
 
 ## Verification
 
@@ -94,6 +99,7 @@ The current build is functional but not finished. Estimate: roughly 80 percent o
 - Browser QA started Road Bootcamp strength from ready state.
 - API re-entry proof: repeat `start-strength` returned the same exercise and set counts.
 - Latest browser QA used headless Playwright only. No visible external browser.
+- No browser run was needed for the 18:37 follow-up because it changed coach prompt evidence and tool schema only.
 
 ## Known Warnings
 
@@ -104,6 +110,7 @@ The current build is functional but not finished. Estimate: roughly 80 percent o
 ## Open Product Gaps
 
 - Session review AI now sees bounded Strava/run and strength evidence, with prompt-level test coverage. It has not been live-AI smoke tested to avoid unnecessary model spend.
+- Session review AI now sees prescribed HR target versus actual HR evidence for runs.
 - Ledger AI now sees Road Bootcamp summary metrics, not raw run or strength detail.
 - Local QA currently falls back when `ANTHROPIC_API_KEY` is missing. That is expected and keeps spend at zero for this pass.
 - Weekly Road Bootcamp generation intentionally bypasses AI and uses fixed templates.
@@ -113,5 +120,6 @@ The current build is functional but not finished. Estimate: roughly 80 percent o
 
 ## Next Slice
 
-1. Review the dirty diff by area and prepare a clean commit plan.
-2. Commit and push only after final diff review confirms no broad accidental visual drift.
+1. Run a live local API smoke for one completed Strava-backed run review only if an API key is present and spend is acceptable.
+2. Review whether Ledger should surface `intensity_mismatch` distinctly or just retain it as stored coach metadata.
+3. Continue targeted polish on Road Bootcamp Ledger density. No visual-system rewrite.

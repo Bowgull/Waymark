@@ -77,7 +77,7 @@ export interface BlockTransitionOutput {
   nextBlockNotes?: string
 }
 
-export type SessionFlag = 'none' | 'wellness_concern' | 'pr_hit' | 'form_note'
+export type SessionFlag = 'none' | 'wellness_concern' | 'pr_hit' | 'form_note' | 'intensity_mismatch'
 
 export interface SessionReviewOutput {
   line: string
@@ -320,8 +320,8 @@ export const TOOL_SESSION_REVIEW: Tool = {
       },
       flag: {
         type: 'string',
-        enum: ['none', 'wellness_concern', 'pr_hit', 'form_note'],
-        description: 'none: nothing to surface. pr_hit: new personal record. wellness_concern: body signal worth noting. form_note: technique observation.',
+        enum: ['none', 'wellness_concern', 'pr_hit', 'form_note', 'intensity_mismatch'],
+        description: 'none: nothing to surface. pr_hit: new personal record. wellness_concern: body signal worth noting. form_note: technique observation. intensity_mismatch: prescribed run intensity did not match heart-rate evidence.',
       },
     },
     required: ['line', 'flag'],

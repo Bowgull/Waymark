@@ -17,6 +17,7 @@ const runPrompt = buildSessionReviewPrompt(
   {
     run: {
       runType: 'zone2',
+      targetHrLine: 'Zone 2. 114 to 133 bpm.',
       distanceKm: 2.66,
       durationSec: 1086,
       paceSecKm: 408,
@@ -38,11 +39,12 @@ const runPrompt = buildSessionReviewPrompt(
 assertMatch(runPrompt, /Run evidence:/)
 assertMatch(runPrompt, /Source: strava \(Strava\)\./)
 assertMatch(runPrompt, /2\.66 km, 18 min, 6:48\/km, avg HR 143 bpm, max 160\./)
+assertMatch(runPrompt, /Prescribed: Zone 2\. 114 to 133 bpm\./)
 assertMatch(runPrompt, /Elevation: 6 m\./)
 assertMatch(runPrompt, /HR zones: \{"z2":900,"z3":120\}\./)
 assertMatch(runPrompt, /Splits: km 1: 6:45, HR 140; km 2: 6:53, HR 146\./)
 assertMatch(runPrompt, /Recent sessions for context:\n {2}strength - Effort 6\/10/)
-assertMatch(runPrompt, /Use the evidence above before generic training advice\./)
+assertMatch(runPrompt, /If prescribed easy but HR ran high, say that plainly and set intensity_mismatch\./)
 
 const strengthPrompt = buildSessionReviewPrompt(
   {
