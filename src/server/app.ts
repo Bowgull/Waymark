@@ -3134,14 +3134,41 @@ app.get('/api/history/running-progress', async (c) => {
   const sessionMap = new Map(allSessions.map(s => [s.id, s]))
 
   const dataPoints: { date: string; distanceKm: number; paceSecKm: number; type: string }[] = []
+  const recentRunEvidence: Array<{
+    date: string
+    runType: string | null
+    source: string | null
+    distanceKm: number | null
+    paceSecKm: number | null
+    avgHr: number | null
+    maxHr: number | null
+    elevationGainM: number | null
+    zoneSeconds: string | null
+    reviewFlag: string | null
+    completedAt: number
+  }> = []
 
   for (const run of allRuns) {
     const session = sessionMap.get(run.sessionId)
     const completedAt = session?.completedAt ?? session?.createdAt ?? null
     if (!session || session.status !== 'completed' || completedAt == null || completedAt < cutoff) continue
-    if (run.distanceKm == null || run.paceSecKm == null) continue
 
     const date = new Date(completedAt * 1000).toISOString().split('T')[0]
+    recentRunEvidence.push({
+      date,
+      runType: run.runType ?? session.type,
+      source: run.source,
+      distanceKm: run.distanceKm,
+      paceSecKm: run.paceSecKm,
+      avgHr: run.avgHr,
+      maxHr: run.maxHr,
+      elevationGainM: run.elevationGainM,
+      zoneSeconds: run.zoneSeconds,
+      reviewFlag: session.reviewFlag,
+      completedAt,
+    })
+
+    if (run.distanceKm == null || run.paceSecKm == null) continue
     dataPoints.push({
       date,
       distanceKm: run.distanceKm,
@@ -3151,6 +3178,7 @@ app.get('/api/history/running-progress', async (c) => {
   }
 
   dataPoints.sort((a, b) => a.date.localeCompare(b.date))
+  recentRunEvidence.sort((a, b) => b.completedAt - a.completedAt)
 
   const totalDistanceKm = Math.round(dataPoints.reduce((sum, d) => sum + d.distanceKm, 0) * 10) / 10
   const paces = dataPoints.map(d => d.paceSecKm)
@@ -3159,6 +3187,18 @@ app.get('/api/history/running-progress', async (c) => {
 
   return c.json({
     dataPoints,
+    recentRunEvidence: recentRunEvidence.slice(0, 5).map(run => ({
+      date: run.date,
+      runType: run.runType,
+      source: run.source,
+      distanceKm: run.distanceKm,
+      paceSecKm: run.paceSecKm,
+      avgHr: run.avgHr,
+      maxHr: run.maxHr,
+      elevationGainM: run.elevationGainM,
+      zoneSeconds: run.zoneSeconds,
+      reviewFlag: run.reviewFlag,
+    })),
     summary: { totalRuns: dataPoints.length, totalDistanceKm, avgPaceSecKm, bestPaceSecKm },
   })
 })

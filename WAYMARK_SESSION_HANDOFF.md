@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 19:08 EDT
+Updated: 2026-05-16 19:24 EDT
 
 ## Current State
 
@@ -8,7 +8,7 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 89 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 90 percent of the Road Bootcamp slice.
 
 ## What Changed This Pass
 
@@ -165,6 +165,12 @@ The current build is functional but not finished. Estimate: roughly 89 percent o
   - Extracted pure mapping helpers from the Strava route for activity summary fields, split fields, HR zone buckets, and Tanaka max HR fallback.
   - `src/server/routes/strava.test.ts` proves Strava local date, distance, moving time, pace, indoor/outdoor flag, average HR, max HR, elevation, split HR/elevation, zone seconds, and DOB-derived max HR behavior.
   - `npm run test:lib` now includes the Strava route mapping test.
+- Added bounded recent run evidence to Ledger AI:
+  - `/api/history/running-progress` now returns `recentRunEvidence` for the latest 5 completed runs inside the selected period.
+  - Evidence includes date, run type, source, distance, pace, average HR, max HR, elevation, zone seconds, and review flag.
+  - Ledger sends that compact evidence to `/api/ai/ledger-insights`.
+  - `buildLedgerInsightPrompt` now includes the recent run evidence block and tells the model not to overfit one run.
+  - Added `src/lib/ledgerInsightsAI.test.ts`.
 
 ## Verification
 
@@ -301,6 +307,14 @@ The current build is functional but not finished. Estimate: roughly 89 percent o
   - `npx wrangler dev --local --port 8787` boots with only the expected local scheduled-worker notice.
   - `npm run smoke:foundation-run` passes.
   - `npm run smoke:offline-review` passes.
+- Ledger recent run evidence:
+  - `npx tsx src/lib/ledgerInsightsAI.test.ts` first failed because the prompt builder was not exported.
+  - `npx tsx src/lib/ledgerInsightsAI.test.ts` now passes.
+  - `npm run test:lib` passes and now includes `ledgerInsightsAI tests passed`.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
+  - Local route smoke against `http://127.0.0.1:8787/api/history/running-progress?days=7` confirmed `recentRunEvidence` returns the completed run's HR, pace, elevation, source, run type, and review flag.
 
 ## Known Warnings
 
@@ -316,7 +330,7 @@ The current build is functional but not finished. Estimate: roughly 89 percent o
 - Session review AI now sees prescribed HR target versus actual HR evidence for runs.
 - Weekly planning and reactive coaching now use the same profile-based Zone 2 ceiling as visible run targets.
 - Strava ingest mapping for run evidence now has pure test coverage.
-- Ledger AI now sees Road Bootcamp summary metrics, not raw run or strength detail.
+- Ledger AI now sees Road Bootcamp summary metrics plus bounded recent run evidence.
 - Local QA currently falls back when `ANTHROPIC_API_KEY` is missing. That is expected and keeps spend at zero for this pass.
 - Live session-review QA now has an opt-in smoke, but it has not been run live because local Wrangler does not expose `ANTHROPIC_API_KEY`.
 - Weekly Road Bootcamp generation intentionally bypasses AI and uses fixed templates.

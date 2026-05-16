@@ -53,6 +53,19 @@ interface RunSummary {
   bestPaceSecKm: number | null
 }
 
+interface RecentRunEvidence {
+  date: string
+  runType: string | null
+  source: string | null
+  distanceKm: number | null
+  paceSecKm: number | null
+  avgHr: number | null
+  maxHr: number | null
+  elevationGainM: number | null
+  zoneSeconds: string | null
+  reviewFlag: string | null
+}
+
 interface RoadBootcampMetrics {
   runMinutes: number
   easyRunMinutes: number
@@ -115,6 +128,7 @@ export function HistoryPage() {
   const [correlations, setCorrelations] = useState<CorrelationDataPoint[]>([])
   const [runData, setRunData] = useState<RunDataPoint[]>([])
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null)
+  const [recentRunEvidence, setRecentRunEvidence] = useState<RecentRunEvidence[]>([])
   const [roadBootcampMetrics, setRoadBootcampMetrics] = useState<RoadBootcampMetrics | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [consistency, setConsistency] = useState<ConsistencyData | null>(null)
@@ -144,7 +158,7 @@ export function HistoryPage() {
         ] = await Promise.all([
           apiFetch<DashboardData>(`/api/history/dashboard?days=${period}`),
           apiFetch<{ dataPoints: CorrelationDataPoint[] }>(`/api/history/correlations?days=${period}`),
-          apiFetch<{ dataPoints: RunDataPoint[]; summary: RunSummary }>(`/api/history/running-progress?days=${period}`),
+          apiFetch<{ dataPoints: RunDataPoint[]; summary: RunSummary; recentRunEvidence?: RecentRunEvidence[] }>(`/api/history/running-progress?days=${period}`),
           apiFetch<RoadBootcampMetrics>(`/api/history/road-bootcamp?days=${period}`),
           apiFetch<Session[]>('/api/history/sessions?limit=30'),
           apiFetch<ConsistencyData>(`/api/history/consistency?weeks=${weeks}`),
@@ -157,6 +171,7 @@ export function HistoryPage() {
         setCorrelations(correlationData.dataPoints)
         setRunData(runProgressData.dataPoints)
         setRunSummary(runProgressData.summary)
+        setRecentRunEvidence(runProgressData.recentRunEvidence ?? [])
         setRoadBootcampMetrics(roadData)
         setSessions(sessionsData)
         setConsistency(consistencyData)
@@ -190,7 +205,7 @@ export function HistoryPage() {
   useEffect(() => {
     if (!dashboard) return
     let cancelled = false
-    const payload = { dashboard, consistency, prs, correlations, runSummary, roadBootcampMetrics, categoryCompletion }
+    const payload = { dashboard, consistency, prs, correlations, runSummary, recentRunEvidence, roadBootcampMetrics, categoryCompletion }
     apiFetch<{ insights: string[] | null }>('/api/ai/ledger-insights', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -204,7 +219,7 @@ export function HistoryPage() {
         if (!cancelled) setAiInsights(null)
       })
     return () => { cancelled = true }
-  }, [dashboard, consistency, prs, correlations, runSummary, roadBootcampMetrics, categoryCompletion])
+  }, [dashboard, consistency, prs, correlations, runSummary, recentRunEvidence, roadBootcampMetrics, categoryCompletion])
 
   const insights = aiInsights ?? localInsights
 
