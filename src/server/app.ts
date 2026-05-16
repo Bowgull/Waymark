@@ -234,6 +234,12 @@ async function buildMobilityWorkoutResponse(db: DrizzleDB, sessionId: string) {
   return { session, exercises: result }
 }
 
+async function missingExerciseIds(db: DrizzleDB, exerciseIds: string[]) {
+  const rows = await db.select().from(exercises)
+  const known = new Set(rows.map(row => row.id))
+  return exerciseIds.filter(id => !known.has(id))
+}
+
 async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const rounds = await db.select().from(bagWorkRounds).where(eq(bagWorkRounds.sessionId, sessionId))
@@ -1114,6 +1120,16 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
     const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' })
     const mobilityResponse = await buildMobilityWorkoutResponse(db, sessionId)
     return c.json({ session, runSession: existingRun[0], prescription, postureExercises: mobilityResponse.exercises })
+  }
+
+  // Validate the warmup library before creating run rows.
+  const missingWarmupIds = await missingExerciseIds(db, FR_WARMUP_TEMPLATE.map(t => t.exerciseId))
+  if (missingWarmupIds.length > 0) {
+    return c.json({
+      error: 'foundation run warmup exercises missing',
+      missingExerciseIds: missingWarmupIds,
+      recovery: 'Run npm run db:migrate:0019:local for local D1, or npm run db:migrate:0019:remote for remote D1.',
+    }, 409)
   }
 
   // Create run session (Zone 2)
