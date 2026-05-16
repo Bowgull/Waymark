@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:33 EDT
+Updated: 2026-05-16 18:37 EDT
 
 ## Current State
 
@@ -111,6 +111,14 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - Added `npm run smoke:foundation-run`.
   - Applied `npm run db:migrate:0019:local` to the local D1 database.
   - Verified foundation-run start creates a Zone 2 run, 5 warmup exercises with videos, and idempotent repeat start.
+- Added a live-review smoke harness without accidental spend:
+  - `/api/sessions/:id/complete` now returns `reviewSource`.
+  - `reviewSource` is `ai` only when a live `coaching_outputs(kind='session_review')` row is written.
+  - `reviewSource` is `local` when the deterministic fallback writes the session review.
+  - `npm run smoke:offline-review` now asserts `reviewSource: "local"`.
+  - Added `npm run smoke:live-review`, gated behind `WAYMARK_LIVE_AI_SMOKE=1`.
+  - The live smoke refuses to run unless explicitly enabled, then asserts `reviewSource: "ai"`, a stored review line, a valid flag, and no exclamation mark.
+  - Local Wrangler does not currently expose `ANTHROPIC_API_KEY`, so no live model call was made in this pass.
 
 ## Verification
 
@@ -166,6 +174,15 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `npm run lint` passes.
   - `npm run build` passes.
   - `git diff --check` passes.
+- Live-review guard:
+  - `npm run smoke:live-review` refuses to run without `WAYMARK_LIVE_AI_SMOKE=1`.
+  - The refusal message names the required opt-in and Anthropic key check.
+  - `npm run smoke:offline-review` passes and returns `reviewSource: "local"`.
+  - `npm run smoke:foundation-run` passes.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
 
 ## Known Warnings
 
@@ -181,6 +198,7 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 - Session review AI now sees prescribed HR target versus actual HR evidence for runs.
 - Ledger AI now sees Road Bootcamp summary metrics, not raw run or strength detail.
 - Local QA currently falls back when `ANTHROPIC_API_KEY` is missing. That is expected and keeps spend at zero for this pass.
+- Live session-review QA now has an opt-in smoke, but it has not been run live because local Wrangler does not expose `ANTHROPIC_API_KEY`.
 - Weekly Road Bootcamp generation intentionally bypasses AI and uses fixed templates.
 - Some Ledger surfaces still feel dense, but current copy and layout are aligned enough for this slice. Needs targeted polish, not a visual-system rewrite.
 - `/metrics` remains a separate manual logging route. Folding it into Ledger should wait until there is a real UX reason, not just cleanup pressure.
@@ -188,6 +206,6 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 
 ## Next Slice
 
-1. Consider one focused live-AI session review smoke when an API key is present and spend is acceptable.
+1. If live AI QA is approved and `ANTHROPIC_API_KEY` is available to Wrangler, run `WAYMARK_LIVE_AI_SMOKE=1 npm run smoke:live-review`.
 2. Continue targeted polish only where a real Road Bootcamp flow still feels unclear.
 3. If remote D1 has not had migration `0019` applied, run `npm run db:migrate:0019:remote` before testing remote foundation runs.

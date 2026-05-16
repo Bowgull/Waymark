@@ -9,6 +9,7 @@
     "test:lib": "tsx src/lib/sessionReviewAI.test.ts && tsx src/lib/roadBootcampTemplate.test.ts && tsx src/lib/roadBootcampStrengthTemplates.test.ts && tsx src/lib/roadBootcampMetrics.test.ts",
     "smoke:offline-review": "node scripts/smoke-offline-session-review.mjs",
     "smoke:foundation-run": "node scripts/smoke-foundation-run.mjs",
+    "smoke:live-review": "node scripts/smoke-live-session-review.mjs",
     "deploy": "npx wrangler deploy",
     "lint": "eslint .",
     "preview": "vite preview",

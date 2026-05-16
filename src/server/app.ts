@@ -1049,6 +1049,11 @@ app.post('/api/sessions/:id/complete', async (c) => {
   // TM progression is handled by POST /api/blocks/:id/progress-tm after 6-week blocks.
   // We track exercise-level weight history via the last-session endpoint instead of auto-updating TMs.
 
+  const reviewRowsBefore = await db
+    .select({ id: coachingOutputs.id })
+    .from(coachingOutputs)
+    .where(and(eq(coachingOutputs.kind, 'session_review'), eq(coachingOutputs.scopeSessionId, sessionId)))
+
   const reviewOutput = await runSessionReview(db, c.env.ANTHROPIC_API_KEY, {
     id: sessionId,
     type: session.type,
@@ -1064,8 +1069,18 @@ app.post('/api/sessions/:id/complete', async (c) => {
     }).where(eq(sessions.id, sessionId))
   }
 
+  const reviewRowsAfter = reviewOutput
+    ? await db
+      .select({ id: coachingOutputs.id })
+      .from(coachingOutputs)
+      .where(and(eq(coachingOutputs.kind, 'session_review'), eq(coachingOutputs.scopeSessionId, sessionId)))
+    : reviewRowsBefore
+  const reviewSource = reviewOutput
+    ? reviewRowsAfter.length > reviewRowsBefore.length ? 'ai' : 'local'
+    : 'none'
+
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-  return c.json(updated)
+  return c.json({ ...updated, reviewSource })
 })
 
 // Active reactive adjustments for the current week. Used by Today to surface

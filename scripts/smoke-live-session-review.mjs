@@ -1,4 +1,9 @@
 const API_BASE = process.env.WAYMARK_API_BASE ?? 'http://127.0.0.1:8787'
+const ENABLED = process.env.WAYMARK_LIVE_AI_SMOKE === '1'
+
+if (!ENABLED) {
+  throw new Error('Live AI smoke is opt-in. Set WAYMARK_LIVE_AI_SMOKE=1 after confirming ANTHROPIC_API_KEY is available to the local worker.')
+}
 
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -20,12 +25,6 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
 
-function pace(secondsPerKm) {
-  const min = Math.floor(secondsPerKm / 60)
-  const sec = String(Math.round(secondsPerKm % 60)).padStart(2, '0')
-  return `${min}:${sec}`
-}
-
 async function cleanup(sessionId) {
   if (!sessionId) return
   await api(`/api/sessions/${sessionId}`, {
@@ -36,20 +35,15 @@ async function cleanup(sessionId) {
       completedAt: null,
       durationSec: null,
       rpe: null,
-      notes: 'offline review smoke reset',
+      notes: 'live review smoke reset',
     }),
   }).catch(() => null)
 }
 
+const FLAGS = new Set(['none', 'wellness_concern', 'pr_hit', 'form_note', 'intensity_mismatch'])
 let sessionId = null
 
 try {
-  const profile = await api('/api/user-profile').catch(() => null)
-  const maxHr = typeof profile?.maxHr === 'number' ? profile.maxHr : null
-  const z2High = maxHr != null ? Math.round(maxHr * 0.7) : null
-  const avgHr = z2High != null ? z2High + 10 : 143
-  const maxObservedHr = avgHr + 17
-
   const session = await api('/api/sessions/insert-ad-hoc', {
     method: 'POST',
     body: JSON.stringify({
@@ -71,8 +65,8 @@ try {
       distanceKm: 2.66,
       durationSec: 1086,
       paceSecKm: 408,
-      avgHr,
-      maxHr: maxObservedHr,
+      avgHr: 143,
+      maxHr: 160,
       elevationGainM: 6,
     }),
   })
@@ -80,38 +74,27 @@ try {
   const completed = await api(`/api/sessions/${sessionId}/complete`, {
     method: 'POST',
     body: JSON.stringify({
-      rpe: 7,
-      notes: 'Offline fallback smoke.',
+      rpe: 6,
+      notes: 'Live AI smoke. Keep the review factual.',
     }),
   })
 
-  if (!completed.review) throw new Error('completed session did not persist a review')
-  if (!completed.reviewFlag) throw new Error('completed session did not persist a review flag')
-  if (completed.reviewSource !== 'local') {
-    throw new Error(`expected local review source, got ${completed.reviewSource}`)
+  if (completed.reviewSource !== 'ai') {
+    throw new Error(`expected ai review source, got ${completed.reviewSource}`)
   }
-
-  if (z2High != null) {
-    if (completed.reviewFlag !== 'intensity_mismatch') {
-      throw new Error(`expected intensity_mismatch, got ${completed.reviewFlag}`)
-    }
-    if (completed.review !== 'Prescribed easy. Heart said hard. Easier next time.') {
-      throw new Error(`unexpected mismatch review: ${completed.review}`)
-    }
-  } else {
-    const expected = `2.66 km at ${pace(408)}/km. Avg HR ${avgHr}.`
-    if (completed.review !== expected) {
-      throw new Error(`unexpected no-target review: ${completed.review}`)
-    }
-    if (completed.reviewFlag !== 'none') {
-      throw new Error(`expected none flag, got ${completed.reviewFlag}`)
-    }
+  if (!completed.review || typeof completed.review !== 'string') {
+    throw new Error('completed session did not persist a live review line')
+  }
+  if (!FLAGS.has(completed.reviewFlag)) {
+    throw new Error(`unexpected live review flag: ${completed.reviewFlag}`)
+  }
+  if (completed.review.includes('!')) {
+    throw new Error(`live review broke voice canon: ${completed.review}`)
   }
 
   console.log(JSON.stringify({
     ok: true,
     sessionId,
-    maxHr,
     review: completed.review,
     reviewFlag: completed.reviewFlag,
     reviewSource: completed.reviewSource,
