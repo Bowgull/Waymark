@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:51 EDT
+Updated: 2026-05-16 19:01 EDT
 
 ## Current State
 
@@ -8,7 +8,7 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 83 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 84 percent of the Road Bootcamp slice.
 
 ## What Changed This Pass
 
@@ -84,6 +84,11 @@ The current build is functional but not finished. Estimate: roughly 83 percent o
   - `intensity_mismatch` shows as the quiet label `Heart ran high`.
   - Other stored flags render as small labels only.
   - The empty state now reads `No completed sessions yet.`
+- Tightened Road Bootcamp Ledger density:
+  - Removed nested stat boxes inside the Road Bootcamp card.
+  - Added a single completion rail.
+  - Converted the metrics into divided rows for running, strength, equipment, rope, and readiness.
+  - Capped right-side metric text so mobile rows do not sprawl.
 
 ## Verification
 
@@ -109,6 +114,12 @@ The current build is functional but not finished. Estimate: roughly 83 percent o
   - `curl -s 'http://127.0.0.1:8787/api/history/sessions?limit=5'` returned session rows with `review` and `reviewFlag` fields.
   - `curl -s -I http://127.0.0.1:5173/history` returned 200.
   - Local app/API servers were stopped after the check.
+- Road Bootcamp Ledger density follow-up:
+  - `npm run lint` passes.
+  - `npm run test:lib` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
+  - Browser proof was not run because no callable in-app browser tool was exposed in this turn and visible Chrome was avoided.
 
 ## Known Warnings
 
