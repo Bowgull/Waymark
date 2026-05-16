@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:52 EDT
+Updated: 2026-05-16 18:54 EDT
 
 ## Current State
 
@@ -149,6 +149,10 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `src/db/demoSeed.ts` now stays Worker-safe and only exports seed generation.
   - CLI file writing moved to `scripts/write-demo-seed.ts`.
   - `npm run db:demo:seed:generate` now uses the script wrapper.
+- Removed the production build chunk warning:
+  - Added Vite manual chunks for React, native/Capacitor code, charts, icons, tour, and shared vendor code.
+  - Main app chunk dropped to 330.38 kB before gzip.
+  - Build now completes without the prior 500 kB chunk warning.
 
 ## Verification
 
@@ -257,10 +261,16 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `npm run lint` passes.
   - `npm run build` passes.
   - `git diff --check` passes.
+- Production chunk split:
+  - `npm run build` passes with no large chunk warning.
+  - Largest generated JavaScript chunk is `index` at 330.38 kB before gzip.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `git diff --check` passes.
 
 ## Known Warnings
 
-- Vite build still reports the existing large chunk warning.
+- Vite build no longer reports the prior large chunk warning.
 - Local wrangler no longer warns about `node:fs` on boot.
 - Favicon was fixed after the last browser smoke. Static build proof passes. A live browser resmoke has not been run since that tiny fix.
 - The first offline-review smoke used `start-foundation-run` and hit a local D1 posture warmup insert failure. The actual root cause was missing local warmup exercise seed rows from migration `0019`, not the `posture_session_exercises.completed` column.
