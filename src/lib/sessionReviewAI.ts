@@ -210,9 +210,12 @@ async function loadSessionReviewContext(
     const [runRow] = await db.select().from(runSessions).where(eq(runSessions.sessionId, session.id))
     if (runRow) {
       const splits = await db.select().from(runSplits).where(eq(runSplits.runSessionId, runRow.id))
+      const runCategory = session.notes === 'zone2' || session.notes === 'progression'
+        ? session.notes
+        : runRow.runType
       run = {
         runType: runRow.runType,
-        targetHrLine: getSessionTargetHr(session.type, session.notes ?? runRow.runType, maxHr),
+        targetHrLine: getSessionTargetHr(session.type, runCategory, maxHr),
         distanceKm: runRow.distanceKm,
         durationSec: runRow.durationSec,
         paceSecKm: runRow.paceSecKm,

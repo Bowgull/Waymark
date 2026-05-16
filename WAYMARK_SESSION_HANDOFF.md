@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 19:15 EDT
+Updated: 2026-05-16 18:27 EDT
 
 ## Current State
 
@@ -94,6 +94,16 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - Zone 2 HR mismatches return `Prescribed easy. Heart said hard. Easier next time.` with `intensity_mismatch`.
   - Road Bootcamp strength sessions get a short time/equipment/movement-count review.
   - Local fallback behavior is covered in `sessionReviewAI.test.ts`.
+- Added `npm run smoke:offline-review`:
+  - Creates an ad-hoc Zone 2 running session through the API.
+  - Starts the run, records distance, pace, HR, and elevation.
+  - Completes the session with no Anthropic key required.
+  - Asserts the stored session has a persisted coach review and `intensity_mismatch` flag.
+  - Resets the smoke session back to planned in local D1 cleanup.
+- Fixed the route-smoke gap it exposed:
+  - Completion notes can replace `sessions.notes`.
+  - Run review context now uses `run_sessions.run_type` unless `sessions.notes` is still an approved run category.
+  - The coach keeps the prescribed run target available after the user logs completion notes.
 
 ## Verification
 
@@ -131,12 +141,21 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `npm run test:lib` passes.
   - `npm run build` passes.
   - `git diff --check` passes.
+- Offline review route smoke:
+  - `npm run smoke:offline-review` passes against local wrangler on `127.0.0.1:8787`.
+  - Output confirmed `review: "Prescribed easy. Heart said hard. Easier next time."`.
+  - Output confirmed `reviewFlag: "intensity_mismatch"`.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
 
 ## Known Warnings
 
 - Vite build still reports the existing large chunk warning.
 - Local wrangler still warns that `node:fs` needs `nodejs_compat` because `src/db/demoSeed.ts` imports Node fs. That is local dev surface, not app runtime behavior tested here.
 - Favicon was fixed after the last browser smoke. Static build proof passes. A live browser resmoke has not been run since that tiny fix.
+- The first offline-review smoke used `start-foundation-run` and hit a local D1 posture warmup insert failure. The schema and initial migration include `posture_session_exercises.completed`; this looks like local D1 state or the foundation warmup path. The committed smoke uses `start-run` because the goal is completion-route review persistence.
 
 ## Open Product Gaps
 
@@ -152,6 +171,6 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 
 ## Next Slice
 
-1. Add a route-level smoke or unit harness for `/api/sessions/:id/complete` proving offline fallback reviews are persisted.
+1. Investigate the local `start-foundation-run` posture warmup insert failure if foundation-run QA becomes the next target.
 2. Consider one focused live-AI session review smoke when an API key is present and spend is acceptable.
 3. Continue targeted polish only where a real Road Bootcamp flow still feels unclear.
