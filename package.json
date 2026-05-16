@@ -11,6 +11,7 @@
     "smoke:foundation-run": "node scripts/smoke-foundation-run.mjs",
     "smoke:live-review": "node scripts/smoke-live-session-review.mjs",
     "smoke:road-reset": "node scripts/smoke-road-bootcamp-reset.mjs",
+    "smoke:road-week": "node scripts/smoke-road-week-generation.mjs",
     "deploy": "npx wrangler deploy",
     "lint": "eslint .",
     "preview": "vite preview",
