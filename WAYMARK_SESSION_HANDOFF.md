@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:49 EDT
+Updated: 2026-05-16 18:52 EDT
 
 ## Current State
 
@@ -145,6 +145,10 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - Verifies full-gym variants include full-gym equipment.
   - Verifies Road Bootcamp time/equipment context and adaptation line are stored.
   - Verifies repeat start remains idempotent and does not regenerate from changed input.
+- Removed the local Worker `node:fs` boot warning:
+  - `src/db/demoSeed.ts` now stays Worker-safe and only exports seed generation.
+  - CLI file writing moved to `scripts/write-demo-seed.ts`.
+  - `npm run db:demo:seed:generate` now uses the script wrapper.
 
 ## Verification
 
@@ -243,11 +247,21 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `npm run lint` passes.
   - `npm run build` passes.
   - `git diff --check` passes.
+- Worker boot cleanup:
+  - `npx wrangler dev --local --port 8787` boots with no `node:fs` warning.
+  - Only the expected local scheduled-worker notice remains.
+  - `npm run db:demo:seed:generate` writes 435 demo seed statements through the new CLI wrapper.
+  - `npm run smoke:foundation-run` passes against the cleaned local Worker.
+  - `npm run smoke:offline-review` passes against the cleaned local Worker.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
 
 ## Known Warnings
 
 - Vite build still reports the existing large chunk warning.
-- Local wrangler still warns that `node:fs` needs `nodejs_compat` because `src/db/demoSeed.ts` imports Node fs. That is local dev surface, not app runtime behavior tested here.
+- Local wrangler no longer warns about `node:fs` on boot.
 - Favicon was fixed after the last browser smoke. Static build proof passes. A live browser resmoke has not been run since that tiny fix.
 - The first offline-review smoke used `start-foundation-run` and hit a local D1 posture warmup insert failure. The actual root cause was missing local warmup exercise seed rows from migration `0019`, not the `posture_session_exercises.completed` column.
 

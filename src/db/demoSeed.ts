@@ -457,25 +457,3 @@ export const DEMO_WIPE_STATEMENTS: string[] = [
   'DELETE FROM body_metrics',
   'UPDATE combos SET is_favourite = 0, mastery_score = 0, times_sharp = 0',
 ]
-
-const proc = (globalThis as { process?: { argv?: string[] } }).process
-const isMainModule = (() => {
-  try {
-    const argv1 = proc?.argv?.[1]
-    if (!argv1) return false
-    const url = new URL(import.meta.url)
-    return url.pathname === argv1 || url.pathname.endsWith(argv1.replace(/^.*\//, ''))
-  } catch {
-    return false
-  }
-})()
-
-if (isMainModule) {
-  void (async () => {
-    const fs = (await import(/* @vite-ignore */ 'node:' + 'fs')) as { writeFileSync: (p: string, d: string) => void }
-    const lines = generateDemoSql()
-    const sql = lines.join('\n') + '\n'
-    fs.writeFileSync('src/db/demoSeed.sql', sql)
-    console.log(`Wrote ${lines.length} statements to src/db/demoSeed.sql`)
-  })()
-}
