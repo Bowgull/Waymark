@@ -26,26 +26,45 @@ function topEntry(record: Record<string, number>): string {
   return key ? `${labelKey(key)} x${value}` : 'None yet'
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function MetricLine({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <div className="rounded-md border border-border/70 bg-near-black/30 px-3 py-2">
-      <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-sm text-foreground">{value}</p>
+    <div className="flex items-start justify-between gap-4 py-2.5">
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+        {detail && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground/70">{detail}</p>}
+      </div>
+      <p className="max-w-[48%] shrink-0 text-right text-sm tabular-nums text-foreground">{value}</p>
     </div>
   )
 }
 
 export function RoadBootcampSummary({ metrics }: { metrics: RoadBootcampMetrics }) {
+  const completion = Math.max(0, Math.min(metrics.completionRate, 100))
+  const easyQuality = `${metrics.easyRunMinutes}m easy / ${metrics.qualityRunMinutes}m quality`
+  const readiness = [
+    metrics.avgSleep != null ? `${metrics.avgSleep}h sleep` : 'No sleep logs',
+    metrics.avgSoreness != null ? `soreness ${metrics.avgSoreness}` : null,
+  ].filter(Boolean).join(' · ')
+
   return (
-    <div className="grid grid-cols-2 gap-2">
-      <Stat label="Run time" value={`${metrics.runMinutes}m`} />
-      <Stat label="Easy / quality" value={`${metrics.easyRunMinutes}m / ${metrics.qualityRunMinutes}m`} />
-      <Stat label="Strength days" value={`${metrics.strengthCompleted}`} />
-      <Stat label="Rope primers" value={`${metrics.ropeCompleted}`} />
-      <Stat label="Time picked" value={topEntry(metrics.strengthTimeDistribution)} />
-      <Stat label="Equipment" value={topEntry(metrics.equipmentDistribution)} />
-      <Stat label="Sleep" value={metrics.avgSleep != null ? `${metrics.avgSleep}h` : 'No logs'} />
-      <Stat label="Completion" value={`${metrics.completionRate}%`} />
+    <div>
+      <div className="mb-3">
+        <div className="mb-2 flex items-end justify-between gap-4">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Completion</p>
+          <p className="text-sm tabular-nums text-foreground">{completion}%</p>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-border/70">
+          <div className="h-full rounded-full bg-teal" style={{ width: `${completion}%` }} />
+        </div>
+      </div>
+
+      <div className="divide-y divide-border/60">
+        <MetricLine label="Running" value={`${metrics.runMinutes}m`} detail={easyQuality} />
+        <MetricLine label="Strength" value={`${metrics.strengthCompleted}`} detail={`Time: ${topEntry(metrics.strengthTimeDistribution)}`} />
+        <MetricLine label="Equipment" value={topEntry(metrics.equipmentDistribution)} />
+        <MetricLine label="Rope" value={`${metrics.ropeCompleted}`} />
+        <MetricLine label="Readiness" value={readiness} />
+      </div>
     </div>
   )
 }
