@@ -74,6 +74,8 @@ interface Session {
   durationSec: number | null
   rpe: number | null
   scheduledDate: number | null
+  review: string | null
+  reviewFlag: string | null
 }
 
 interface ConsistencyData {
