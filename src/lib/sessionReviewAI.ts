@@ -18,6 +18,7 @@ import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_SESSION_REVIEW, type SessionReviewOutput } from './prompts/tools'
 import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
+import { getSessionTargetHr } from './sessionIntent'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -35,6 +36,7 @@ const SESSION_LABEL: Record<string, string> = {
 
 interface RunReviewContext {
   runType: string | null
+  targetHrLine: string | null
   distanceKm: number | null
   durationSec: number | null
   paceSecKm: number | null
@@ -96,6 +98,7 @@ function formatRunContext(run: RunReviewContext): string[] {
     `  Output: ${distance}, ${duration}, ${pace}, ${hr}.`,
   ]
 
+  if (run.targetHrLine) lines.push(`  Prescribed: ${run.targetHrLine}`)
   if (run.elevationGainM != null) lines.push(`  Elevation: ${run.elevationGainM} m.`)
   if (run.zoneSeconds) lines.push(`  HR zones: ${run.zoneSeconds}.`)
   if (run.splits.length > 0) {
@@ -143,7 +146,8 @@ function formatStrengthContext(strength: StrengthReviewContext): string[] {
 
 async function loadSessionReviewContext(
   db: DB,
-  session: { id: string; type: string; contextJson?: string | null },
+  session: { id: string; type: string; notes: string | null; contextJson?: string | null },
+  maxHr: number | null,
 ): Promise<SessionReviewContext> {
   let run: RunReviewContext | null = null
   let strength: StrengthReviewContext | null = null
@@ -154,6 +158,7 @@ async function loadSessionReviewContext(
       const splits = await db.select().from(runSplits).where(eq(runSplits.runSessionId, runRow.id))
       run = {
         runType: runRow.runType,
+        targetHrLine: getSessionTargetHr(session.type, session.notes ?? runRow.runType, maxHr),
         distanceKm: runRow.distanceKm,
         durationSec: runRow.durationSec,
         paceSecKm: runRow.paceSecKm,
@@ -246,7 +251,7 @@ export function buildSessionReviewPrompt(
 
   lines.push('')
   lines.push(
-    'Write a one-line session review using the sessionReview tool. Voice canon: acknowledge what happened, state numbers plainly, never congratulate. Use the evidence above before generic training advice. Set flag appropriately.',
+    'Write a one-line session review using the sessionReview tool. Voice canon: acknowledge what happened, state numbers plainly, never congratulate. Use the evidence above before generic training advice. If prescribed easy but HR ran high, say that plainly and set intensity_mismatch.',
   )
 
   return lines.join('\n')
@@ -291,8 +296,9 @@ export async function runSessionReview(
   const reviewContext = await loadSessionReviewContext(db, {
     id: session.id,
     type: session.type,
+    notes: sessionRow?.notes ?? session.notes,
     contextJson: sessionRow?.contextJson ?? null,
-  })
+  }, profileRow?.maxHr ?? null)
 
   const systemBlocks = buildSystemPrompt(profile, null)
   const prompt = buildSessionReviewPrompt(session, recentOther, reviewContext)
