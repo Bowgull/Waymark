@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:45 EDT
+Updated: 2026-05-16 18:49 EDT
 
 ## Current State
 
@@ -135,6 +135,16 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - Verifies strength sessions keep `blockWeek: 1`.
   - Verifies Road Bootcamp strength preview stays in ready state with no pre-generated exercises.
   - Verifies repeated Week 1 generation is idempotent.
+- Added a Road Bootcamp strength matrix route smoke:
+  - `npm run smoke:road-strength` starts all 18 variants through `/api/sessions/:id/start-strength`.
+  - Verifies every returned exercise has a form video URL.
+  - Verifies every variant includes pulling work.
+  - Verifies no variant includes suitcase carry.
+  - Verifies no-gym and hotel-gym variants avoid barbell equipment.
+  - Verifies no-gym variants include bands.
+  - Verifies full-gym variants include full-gym equipment.
+  - Verifies Road Bootcamp time/equipment context and adaptation line are stored.
+  - Verifies repeat start remains idempotent and does not regenerate from changed input.
 
 ## Verification
 
@@ -220,6 +230,19 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `npm run lint` passes.
   - `npm run build` passes.
   - `git diff --check` passes.
+- Road Bootcamp strength matrix route smoke:
+  - `npm run smoke:road-reset` passes before the route smoke chain.
+  - `npm run smoke:road-week` passes before the strength matrix smoke.
+  - `npm run smoke:road-strength` passes.
+  - Output confirmed 18 variants.
+  - Output confirmed exercise range: 4 to 13 exercises.
+  - Output confirmed set range: 10 to 37 sets.
+  - `npm run smoke:foundation-run` passes.
+  - `npm run smoke:offline-review` passes.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
 
 ## Known Warnings
 
@@ -238,6 +261,7 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 - Live session-review QA now has an opt-in smoke, but it has not been run live because local Wrangler does not expose `ANTHROPIC_API_KEY`.
 - Weekly Road Bootcamp generation intentionally bypasses AI and uses fixed templates.
 - Road Bootcamp Week 1 route generation now has API smoke coverage.
+- Road Bootcamp strength generation now has API smoke coverage across all 18 fixed variants.
 - Some Ledger surfaces still feel dense, but current copy and layout are aligned enough for this slice. Needs targeted polish, not a visual-system rewrite.
 - `/metrics` remains a separate manual logging route. Folding it into Ledger should wait until there is a real UX reason, not just cleanup pressure.
 - Local QA has reset local D1 into a fresh Road Bootcamp state. Profile/settings/Strava/static libraries remain; generated history was cleared by `npm run smoke:road-reset`.
