@@ -10,6 +10,7 @@
     "smoke:offline-review": "node scripts/smoke-offline-session-review.mjs",
     "smoke:foundation-run": "node scripts/smoke-foundation-run.mjs",
     "smoke:live-review": "node scripts/smoke-live-session-review.mjs",
+    "smoke:road-reset": "node scripts/smoke-road-bootcamp-reset.mjs",
     "deploy": "npx wrangler deploy",
     "lint": "eslint .",
     "preview": "vite preview",

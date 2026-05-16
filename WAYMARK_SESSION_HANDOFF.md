@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 18:37 EDT
+Updated: 2026-05-16 18:42 EDT
 
 ## Current State
 
@@ -119,6 +119,13 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - Added `npm run smoke:live-review`, gated behind `WAYMARK_LIVE_AI_SMOKE=1`.
   - The live smoke refuses to run unless explicitly enabled, then asserts `reviewSource: "ai"`, a stored review line, a valid flag, and no exclamation mark.
   - Local Wrangler does not currently expose `ANTHROPIC_API_KEY`, so no live model call was made in this pass.
+- Added a Road Bootcamp fresh-start smoke:
+  - `npm run smoke:road-reset` seeds disposable local profile, daily log, body metric, and running session data.
+  - Starts Road Bootcamp through `POST /api/blocks/road-bootcamp`.
+  - Verifies the new block is active, `road_bootcamp`, and 8 weeks.
+  - Verifies profile, settings, Strava connection state, exercise library, and seeded form videos are preserved.
+  - Verifies sessions, body metrics, and daily logs are cleared.
+  - This smoke is local-state destructive by design. Use it against local D1 only.
 
 ## Verification
 
@@ -183,6 +190,17 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
   - `npm run lint` passes.
   - `npm run build` passes.
   - `git diff --check` passes.
+- Road Bootcamp fresh reset:
+  - `npm run smoke:road-reset` passes.
+  - Output confirmed `blockType: "road_bootcamp"`.
+  - Output confirmed profile/settings preservation and `stravaConnectedPreserved: true`.
+  - Output confirmed `exerciseCount: 72` and `formVideoCount: 72`.
+  - `npm run smoke:foundation-run` passes after the reset.
+  - `npm run smoke:offline-review` passes after the reset.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+  - `git diff --check` passes.
 
 ## Known Warnings
 
@@ -202,7 +220,7 @@ The current build is functional but not finished. Estimate: roughly 85 percent o
 - Weekly Road Bootcamp generation intentionally bypasses AI and uses fixed templates.
 - Some Ledger surfaces still feel dense, but current copy and layout are aligned enough for this slice. Needs targeted polish, not a visual-system rewrite.
 - `/metrics` remains a separate manual logging route. Folding it into Ledger should wait until there is a real UX reason, not just cleanup pressure.
-- Local QA created one planned/in-progress Road Bootcamp strength session on 2026-05-18 in the local D1 dev database. It is test state only.
+- Local QA has reset local D1 into a fresh Road Bootcamp state. Profile/settings/Strava/static libraries remain; generated history was cleared by `npm run smoke:road-reset`.
 
 ## Next Slice
 
