@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 10:13 EDT
+Updated: 2026-05-17 10:15 EDT
 
 ## Current State
 
@@ -9,6 +9,36 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 98 percent of the Road Bootcamp slice.
+
+## 2026-05-17 10:15 EDT - iOS Command Scripts
+
+- Added repeatable package scripts for the phone build path:
+  - `npm run ios:sync`
+  - `npm run ios:devices`
+  - `npm run ios:build:generic`
+  - `npm run ios:open`
+- Updated the README iOS section to use those scripts.
+- `npm run ios:devices` still sees `Josh (2)` and `iPhone` as `unavailable`.
+- Ran `npm run ios:sync`.
+  - `npm run build` passed.
+  - `npx cap sync ios` passed.
+- Ran `npm run ios:build:generic`.
+  - Result: `** BUILD SUCCEEDED **`.
+- Ran `npm run lint`; it passed.
+- Ran `npm install --package-lock-only --ignore-scripts`; package lock stayed current.
+  - npm audit still reports 11 existing vulnerabilities: 8 moderate, 3 high.
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `package.json`
+- `README.md`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the iOS script slice. Physical phone install still waits on device availability in Xcode.
 
 ## 2026-05-17 10:13 EDT - README Replaced
 

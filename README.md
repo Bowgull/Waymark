@@ -55,20 +55,25 @@ Remote reset is guarded. Do not run a destructive production Road Bootcamp reset
 Build web assets and sync Capacitor:
 
 ```bash
-npm run build
-npx cap sync ios
+npm run ios:sync
 ```
 
 Open in Xcode:
 
 ```bash
-npx cap open ios
+npm run ios:open
+```
+
+List paired devices:
+
+```bash
+npm run ios:devices
 ```
 
 CLI native compile check:
 
 ```bash
-xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -skipPackageUpdates build
+npm run ios:build:generic
 ```
 
 The current native compile gate passes after installing the iOS 26.5 platform support. Physical sideload still depends on the phone being awake, trusted, available to Xcode, and signed with the configured Apple team.
