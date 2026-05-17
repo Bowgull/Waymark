@@ -59,6 +59,16 @@ npm run smoke:road-remote
 
 Remote reset is guarded. Do not run a destructive production Road Bootcamp reset unless that is the explicit task.
 
+Targeted D1 migrations:
+
+```bash
+npm run db:migrate:0011:remote
+npm run db:migrate:0019:remote
+npm run db:migrate:0022:remote
+```
+
+Use the targeted script for the migration you mean. Do not pass extra `--file` arguments through `npm run db:migrate:remote`.
+
 ## iOS
 
 Build web assets and sync Capacitor:

@@ -964,6 +964,13 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+- Targeted migration commands:
+  - Added `db:migrate:0011:local` and `db:migrate:0011:remote` so the skip-reason migration can be applied directly.
+  - Updated README to show targeted D1 migration commands and warn against passing extra `--file` arguments through the base `db:migrate:remote` script.
+  - `npm run smoke:road-remote` passes.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
 
 ## Known Warnings
 
