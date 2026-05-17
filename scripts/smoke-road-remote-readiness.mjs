@@ -52,8 +52,16 @@ assert(typeof roadMetrics.completionRate === 'number', 'Road Bootcamp history ro
 
 await expectStatus('/api/blocks/road-bootcamp', { method: 'POST' }, 400)
 
-const contextColumn = readRemoteD1("SELECT COUNT(*) AS count FROM pragma_table_info('sessions') WHERE name = 'context_json';")
-assert(contextColumn.count === 1, 'Remote sessions.context_json is missing.')
+const sessionColumns = readRemoteD1(`
+  SELECT
+    SUM(CASE WHEN name = 'context_json' THEN 1 ELSE 0 END) AS context_json,
+    SUM(CASE WHEN name = 'skip_reason' THEN 1 ELSE 0 END) AS skip_reason,
+    SUM(CASE WHEN name = 'skip_reason_detail' THEN 1 ELSE 0 END) AS skip_reason_detail
+  FROM pragma_table_info('sessions');
+`)
+assert(sessionColumns.context_json === 1, 'Remote sessions.context_json is missing.')
+assert(sessionColumns.skip_reason === 1, 'Remote sessions.skip_reason is missing.')
+assert(sessionColumns.skip_reason_detail === 1, 'Remote sessions.skip_reason_detail is missing.')
 
 const exerciseProof = readRemoteD1(`
   SELECT
@@ -88,6 +96,7 @@ console.log(JSON.stringify({
   apiOrigin: API_ORIGIN,
   completionRate: roadMetrics.completionRate,
   unconfirmedResetStatus: 400,
+  sessionColumns,
   roadExerciseCount: exerciseProof.road_exercise_count,
   videoCount: exerciseProof.video_count,
 }, null, 2))
