@@ -1030,6 +1030,14 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - Remote smoke returned `unconfirmedResetStatus: 400`.
   - Remote D1 still has required Road Bootcamp session columns, 16 travel-strength exercises, and 16 form videos.
   - No remote Road Bootcamp reset, live AI smoke, remote Strava poll, or Xcode sync was run.
+- Writable smoke remote guards:
+  - `npm run smoke:foundation-run` and `npm run smoke:offline-review` now refuse non-local API targets unless `WAYMARK_ALLOW_REMOTE_SMOKE=1` is set.
+  - Verified both scripts fail closed against `https://waymark.bocas-joshua.workers.dev` before any API call.
+  - Verified both scripts still pass against local Wrangler on `127.0.0.1:8787`.
+  - Updated README data rules with the writable-smoke guard.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
 
 ## Known Warnings
 

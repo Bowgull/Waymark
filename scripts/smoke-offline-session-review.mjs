@@ -1,5 +1,15 @@
 const API_BASE = process.env.WAYMARK_API_BASE ?? 'http://127.0.0.1:8787'
 
+function canWriteTarget() {
+  if (process.env.WAYMARK_ALLOW_REMOTE_SMOKE === '1') return true
+  const url = new URL(API_BASE)
+  return ['localhost', '127.0.0.1', '::1'].includes(url.hostname)
+}
+
+if (!canWriteTarget()) {
+  throw new Error('Offline review smoke writes ad-hoc sessions. Use a local API target or set WAYMARK_ALLOW_REMOTE_SMOKE=1.')
+}
+
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
