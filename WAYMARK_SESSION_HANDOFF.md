@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 09:35 EDT
+Updated: 2026-05-17 09:39 EDT
 
 ## Current State
 
@@ -9,6 +9,41 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 97 percent of the Road Bootcamp slice.
+
+## 2026-05-17 09:39 EDT - Starter HR Graduation
+
+- Closed a real coaching-intelligence gap in `src/lib/starterStatus.ts`.
+- Before this pass, the deconditioned-starter status could only graduate by time:
+  - 8 weeks since first completed session.
+  - The HR-based graduation rule was documented but deferred.
+- Starter status now joins completed run sessions to `run_sessions` and checks actual HR evidence.
+- Graduation now fires when the 3 most recent qualifying easy runs are all under 150 bpm average HR:
+  - `foundation_run` qualifies.
+  - `zone2`, `easy`, `foundation`, and `foundation_run` run tags qualify.
+  - Quality runs do not qualify.
+- Added `src/lib/starterStatus.test.ts`.
+- Added the starter-status test to `npm run test:lib`.
+- Ran:
+  - `npx tsx src/lib/starterStatus.test.ts`
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `npx cap sync ios`
+  - `git diff --check`
+- All passed.
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `package.json`
+- `src/lib/starterStatus.ts`
+- `src/lib/starterStatus.test.ts`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit, deploy Worker, run `npm run smoke:road-remote`, then continue only if a remaining Road Bootcamp flow has real risk.
 
 ## 2026-05-17 09:35 EDT - iOS/Xcode Sideload Gate
 

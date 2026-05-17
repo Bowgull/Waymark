@@ -12,13 +12,14 @@
 // extra cached block so every downstream coach call reads the same signal.
 
 import { and, desc, eq, gte } from 'drizzle-orm'
-import { sessions } from '../db/schema'
+import { runSessions, sessions } from '../db/schema'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
 
 const STARTER_WINDOW_DAYS = 8 * 7
 const HR_GRAD_STREAK = 3
+const HR_GRAD_CEILING = 150
 
 export interface StarterStatus {
   active: boolean
@@ -27,10 +28,32 @@ export interface StarterStatus {
 }
 
 const SEDENTARY_KEYWORDS = /sedentary|long layoff|returning|smoker|cooked lungs|years off|off training|deconditioned/i
+const ZONE_2_RUN_TYPES = new Set(['zone2', 'easy', 'foundation', 'foundation_run'])
+
+interface StarterRunEvidence {
+  scheduledDate: number | null
+  type: string
+  runType: string | null
+  avgHr: number | null
+}
 
 export function profileIndicatesStarter(trainingHistory: string | null, constraints: string | null): boolean {
   const blob = `${trainingHistory ?? ''}\n${constraints ?? ''}`
   return SEDENTARY_KEYWORDS.test(blob)
+}
+
+function isZone2StarterRun(run: StarterRunEvidence): boolean {
+  if (run.type === 'foundation_run') return true
+  return run.runType != null && ZONE_2_RUN_TYPES.has(run.runType)
+}
+
+export function hasStarterHrGraduation(runs: StarterRunEvidence[]): boolean {
+  const recentZone2 = runs
+    .filter(run => run.avgHr != null && isZone2StarterRun(run))
+    .sort((a, b) => (b.scheduledDate ?? 0) - (a.scheduledDate ?? 0))
+    .slice(0, HR_GRAD_STREAK)
+
+  return recentZone2.length >= HR_GRAD_STREAK && recentZone2.every(run => run.avgHr! < HR_GRAD_CEILING)
 }
 
 export async function computeStarterStatus(
@@ -64,25 +87,25 @@ export async function computeStarterStatus(
   }
 
   const recentRuns = await db
-    .select({ startedAt: sessions.startedAt, scheduledDate: sessions.scheduledDate, type: sessions.type })
+    .select({
+      scheduledDate: sessions.scheduledDate,
+      type: sessions.type,
+      runType: runSessions.runType,
+      avgHr: runSessions.avgHr,
+    })
     .from(sessions)
+    .innerJoin(runSessions, eq(runSessions.sessionId, sessions.id))
     .where(and(
       eq(sessions.status, 'completed'),
       gte(sessions.scheduledDate, todayEpochDay - 42),
     ))
 
-  const runTypes = new Set(['foundation_run', 'running'])
-  const runDays = recentRuns
-    .filter(r => runTypes.has(r.type))
-    .map(r => r.scheduledDate)
-    .filter((d): d is number => d != null)
-    .sort((a, b) => b - a)
-    .slice(0, HR_GRAD_STREAK)
-
-  if (runDays.length >= HR_GRAD_STREAK) {
-    // HR check deferred: the Strava-linked session table doesn't carry avg HR
-    // in the sessions row directly. A future pass can join strava_activities
-    // for an avg_hr read. Until then, we only graduate via the time window.
+  if (hasStarterHrGraduation(recentRuns)) {
+    return {
+      active: false,
+      daysIntoProgram: daysIn,
+      reason: `graduated: ${HR_GRAD_STREAK} recent zone-2 runs averaged under ${HR_GRAD_CEILING} bpm`,
+    }
   }
 
   return {
