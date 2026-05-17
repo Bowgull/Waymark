@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 12:20 EDT
+Updated: 2026-05-17 12:25 EDT
 
 ## Current State
 
@@ -8,12 +8,36 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional. Estimate: roughly 99 percent of the Road Bootcamp slice. Live AI, remote Strava poll, production Road Bootcamp fresh start, production Week 1 generation, remote readiness, iOS sync, and generic iOS build have all been proven. The remaining blocker is physical phone install because Xcode currently sees the available iPhones as unavailable for DDI/tunnel.
+The Road Bootcamp slice is complete. Estimate: 100 percent. Live AI, remote Strava poll, production Road Bootcamp fresh start, production Week 1 generation, remote readiness, iOS sync, device build, and physical iPhone install have all been proven.
 
 Current remaining gates:
-- Final Xcode phone install after an iPhone is awake, trusted, and available to Xcode.
+- None for the Road Bootcamp slice.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 12:25 EDT - Final iPhone Install Proof
+
+- Reran `npm run ios:doctor`.
+  - The custom doctor still reported DDI/tunnel unavailable.
+  - `xcrun devicectl list devices` reported `Josh (2)` as `available (paired)`.
+- Ran physical device build:
+  - Command: `WAYMARK_IOS_DEVICE_ID=4B88E4ED-6344-5EAE-BDB2-F63930384B26 npm run ios:build:device`.
+  - Result: `** BUILD SUCCEEDED **`.
+  - Signing identity: `Apple Development: bocass_123@hotmail.com (YUHQ9MF6NF)`.
+  - Bundle id: `com.joshbocas.app`.
+- Installed the built app to the iPhone:
+  - Command: `xcrun devicectl device install app --device 4B88E4ED-6344-5EAE-BDB2-F63930384B26 /Users/lindsaybell/Library/Developer/Xcode/DerivedData/App-abudzhqhhmeiepdhfpiodsxoimvs/Build/Products/Debug-iphoneos/App.app`.
+  - Result: app installed.
+  - installationURL: `file:///private/var/containers/Bundle/Application/27964689-F234-4E63-9EE6-6C9D4512121B/App.app/`.
+- No source-code change was needed beyond this handoff update.
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Open Waymark on the iPhone and do a human smoke pass on Today, Program, Road Bootcamp strength ready, Library, Ledger, and Settings.
 
 ## 2026-05-17 12:20 EDT - Live Proof Pass
 
