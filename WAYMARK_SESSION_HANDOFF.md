@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 10:11 EDT
+Updated: 2026-05-17 10:13 EDT
 
 ## Current State
 
@@ -9,6 +9,33 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 98 percent of the Road Bootcamp slice.
+
+## 2026-05-17 10:13 EDT - README Replaced
+
+- Replaced the root Vite template README with a Waymark-specific project README.
+- New README covers:
+  - current Road Bootcamp state.
+  - local Vite and Wrangler workflow.
+  - core checks.
+  - Road Bootcamp smoke scripts.
+  - Capacitor iOS sync and native compile command.
+  - deploy command.
+  - data safety rules for production reset, live AI, and remote Strava polling.
+- Used Waymark voice rules:
+  - short declaratives.
+  - no hype.
+  - no template SaaS language.
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `README.md`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Run checks, commit, and push the README handoff slice.
 
 ## 2026-05-17 10:11 EDT - iOS Platform Install And Native Build
 

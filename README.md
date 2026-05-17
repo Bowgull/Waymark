@@ -1,73 +1,104 @@
-# React + TypeScript + Vite
+# Waymark
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Mobile-first training app for one athlete.
 
-Currently, two official plugins are available:
+Waymark runs on React, Vite, Capacitor, Cloudflare Workers, D1, Drizzle, and Hono. The phone is the primary surface. The web preview is only a workbench.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Current Build
 
-## React Compiler
+- Road Bootcamp is the active build slice.
+- Road Bootcamp uses fixed 8-week rails.
+- Strength generation is bounded to 18 approved variants.
+- Strava run data is mapped into run evidence for coaching and Ledger context.
+- AI is bounded. It can summarize, adapt inside rails, and explain changes. It does not invent Road Bootcamp workouts.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Local Setup
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Vite runs at `http://localhost:5173`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+For Worker API development:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npx wrangler dev
 ```
+
+Wrangler runs at `http://localhost:8787`.
+
+## Core Commands
+
+```bash
+npm run test:lib
+npm run lint
+npm run build
+```
+
+Road Bootcamp smoke checks:
+
+```bash
+npm run smoke:road-reset
+npm run smoke:road-week
+npm run smoke:road-strength
+npm run smoke:road-strength-complete
+npm run smoke:road-run
+npm run smoke:road-remote
+```
+
+Remote reset is guarded. Do not run a destructive production Road Bootcamp reset unless that is the explicit task.
+
+## iOS
+
+Build web assets and sync Capacitor:
+
+```bash
+npm run build
+npx cap sync ios
+```
+
+Open in Xcode:
+
+```bash
+npx cap open ios
+```
+
+CLI native compile check:
+
+```bash
+xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -skipPackageUpdates build
+```
+
+The current native compile gate passes after installing the iOS 26.5 platform support. Physical sideload still depends on the phone being awake, trusted, available to Xcode, and signed with the configured Apple team.
+
+## Deploy
+
+```bash
+npm run deploy
+```
+
+Production Worker:
+
+```text
+https://waymark.bocas-joshua.workers.dev
+```
+
+Native Capacitor builds fall back to this API when the configured API origin is blank, `localhost`, or `127.0.0.1`.
+
+## Data Rules
+
+- Production Road Bootcamp fresh start requires `confirmReset: true`.
+- Local Road Bootcamp smoke scripts reset local D1 state by design.
+- Remote smoke scripts are non-destructive unless explicitly allowed.
+- No live AI smoke runs unless `WAYMARK_LIVE_AI_SMOKE=1` is set.
+- No remote Strava poll should be run casually. It can write real activities.
+
+## Project Notes
+
+- Handoff lives in `WAYMARK_SESSION_HANDOFF.md`.
+- Style guide lives in `docs/style-guide/WAYMARK_STYLE_GUIDE.md`.
+- Build plans live in `BUILD_PLAN.md`, `BUILD_PLAN_v1_DONE.md`, and `docs/IMPLEMENTATION_PLAN.md`.
+
+Read the handoff first. Then run the checks. The ledger is the truth.
