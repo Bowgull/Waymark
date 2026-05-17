@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 09:46 EDT
+Updated: 2026-05-17 10:11 EDT
 
 ## Current State
 
@@ -8,7 +8,35 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 97 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 98 percent of the Road Bootcamp slice.
+
+## 2026-05-17 10:11 EDT - iOS Platform Install And Native Build
+
+- Resolved the local Xcode platform gate that previously blocked native compilation.
+- Ran `xcodebuild -runFirstLaunch -checkForNewerComponents`; Xcode reported no newer updates for `17F42`.
+- Attempted `xcodebuild -prepareDeviceSupport -platform iOS -osVersion 26.5 -architecture arm64e`; it detected connected iPhone UDID `00008101-001C61812E8B001E` but did not complete cleanly.
+- Ran `xcodebuild -downloadPlatform iOS -buildVersion 26.5 -architectureVariant arm64`.
+  - Installed `iOS 26.5 Simulator (23F77) (arm64)`.
+- Ran `xcodebuild -showdestinations -project ios/App/App.xcodeproj -scheme App -skipPackageUpdates`.
+  - Xcode now lists generic iOS and iOS Simulator destinations.
+- Ran native generic build:
+  - `xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -skipPackageUpdates build`
+  - Result: `** BUILD SUCCEEDED **`.
+- Build artifact:
+  - `/Users/lindsaybell/Library/Developer/Xcode/DerivedData/App-abudzhqhhmeiepdhfpiodsxoimvs/Build/Products/Debug-iphoneos/App.app`
+- Ran `xcrun devicectl list devices`.
+  - `Josh (2)` and `iPhone` are visible but currently `unavailable`.
+  - Remaining sideload gate is physical device availability/signing, not a generic Waymark compile failure.
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push this handoff. Then rerun physical-device install once the iPhone is unlocked, trusted, and available to Xcode.
 
 ## 2026-05-17 09:46 EDT - Remote Reset Guard Smoke
 
