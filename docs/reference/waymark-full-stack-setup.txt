@@ -730,17 +730,18 @@ Most common mistakes:
 Basic recovery commands:
 TERMINAL
 git status
-git add .
+git diff
+git add <files-you-mean-to-keep>
 git commit -m "Checkpoint"
-git push
 
 
 If Cursor breaks the project and you have not committed the broken work:
 TERMINAL
-git reset --hard HEAD
+git status
+git diff
 
 
-Warning: git reset --hard HEAD deletes uncommitted changes. Only use it if you understand that.
+Do not use destructive cleanup by reflex. Inspect the diff, checkpoint useful work, or ask for a targeted cleanup.
 Useful sanity tests:
 TERMINAL
 npm run dev
@@ -2083,17 +2084,18 @@ Most common mistakes:
 Basic recovery commands:
 TERMINAL
 git status
-git add .
+git diff
+git add <files-you-mean-to-keep>
 git commit -m "Checkpoint"
-git push
 
 
 If Cursor breaks the project and you have not committed the broken work:
 TERMINAL
-git reset --hard HEAD
+git status
+git diff
 
 
-Warning: git reset --hard HEAD deletes uncommitted changes. Only use it if you understand that.
+Do not use destructive cleanup by reflex. Inspect the diff, checkpoint useful work, or ask for a targeted cleanup.
 Useful sanity tests:
 TERMINAL
 npm run dev
@@ -3455,17 +3457,18 @@ Most common mistakes:
 Basic recovery commands:
 TERMINAL
 git status
-git add .
+git diff
+git add <files-you-mean-to-keep>
 git commit -m "Checkpoint"
-git push
 
 
 If Cursor breaks the project and you have not committed the broken work:
 TERMINAL
-git reset --hard HEAD
+git status
+git diff
 
 
-Warning: git reset --hard HEAD deletes uncommitted changes. Only use it if you understand that.
+Do not use destructive cleanup by reflex. Inspect the diff, checkpoint useful work, or ask for a targeted cleanup.
 Useful sanity tests:
 TERMINAL
 npm run dev

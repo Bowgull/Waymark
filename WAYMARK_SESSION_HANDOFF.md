@@ -1053,6 +1053,10 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+- Recovery-doc safety cleanup:
+  - Updated `docs/TESTING.md` so recovery guidance no longer recommends staging everything or using destructive reset by reflex.
+  - Updated the copied setup reference in `docs/reference/waymark-full-stack-setup.txt` to match the same no-destructive-cleanup posture.
+  - `rg "git reset --hard|reset --hard" docs README.md BUILD_PLAN.md WAYMARK_SESSION_HANDOFF.md` now only finds the explicit warning in `docs/TESTING.md`.
 
 ## Known Warnings
 

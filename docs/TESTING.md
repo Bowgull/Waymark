@@ -35,9 +35,9 @@ npx wrangler d1 execute waymark-db --local --command "SELECT name FROM sqlite_ma
 
 ```bash
 git status
-git add .
+git diff
+git add <files-you-mean-to-keep>
 git commit -m "Checkpoint"
-git push
 ```
 
-If the working tree is broken and uncommitted: `git reset --hard HEAD` (destroys uncommitted work).
+If the working tree is broken and uncommitted, do not use `git reset --hard` as a reflex. First inspect `git status` and `git diff`, then either checkpoint the useful work or ask for a targeted cleanup.
