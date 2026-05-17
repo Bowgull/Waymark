@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 
 const API_ORIGIN = 'https://waymark.bocas-joshua.workers.dev'
+const D1_RETRY_ATTEMPTS = 3
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -44,21 +45,32 @@ function extractWranglerRows(output) {
   return rows
 }
 
+function runRemoteD1(command) {
+  let lastError = null
+  for (let attempt = 1; attempt <= D1_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return execFileSync(
+        'npx',
+        ['wrangler', 'd1', 'execute', 'waymark-db', '--remote', `--command=${command}`],
+        { encoding: 'utf8' },
+      )
+    } catch (error) {
+      lastError = error
+      if (attempt === D1_RETRY_ATTEMPTS) break
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`Remote D1 read failed on attempt ${attempt}. Retrying. ${message.slice(0, 180)}`)
+    }
+  }
+  throw lastError
+}
+
 function readRemoteD1(command) {
-  const output = execFileSync(
-    'npx',
-    ['wrangler', 'd1', 'execute', 'waymark-db', '--remote', `--command=${command}`],
-    { encoding: 'utf8' },
-  )
+  const output = runRemoteD1(command)
   return extractWranglerResults(output)
 }
 
 function readRemoteD1Rows(command) {
-  const output = execFileSync(
-    'npx',
-    ['wrangler', 'd1', 'execute', 'waymark-db', '--remote', `--command=${command}`],
-    { encoding: 'utf8' },
-  )
+  const output = runRemoteD1(command)
   return extractWranglerRows(output)
 }
 

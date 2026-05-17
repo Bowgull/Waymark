@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 11:44 EDT
+Updated: 2026-05-17 11:57 EDT
 
 ## Current State
 
@@ -17,6 +17,35 @@ Current remaining gates:
 - Final Xcode sync/install when the build is declared finished enough for phone proof.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 11:57 EDT - Remote Smoke Retry Hardening
+
+- Hardened `scripts/smoke-road-remote-readiness.mjs`.
+- Remote D1 reads now retry up to 3 times before failing.
+- Reason:
+  - The prior final verification pass hit a transient Cloudflare D1 API `7403`.
+  - Direct D1 proof and the rerun passed.
+  - The smoke should fail real schema/data issues, not a single remote read blip.
+- Ran:
+  - `npm run smoke:road-remote`
+  - `npm run test:lib`
+  - `npm run lint`
+  - `git diff --check`
+  - `npm run build`
+- All passed.
+- No production data was reset.
+- No live AI smoke was run.
+- No remote Strava poll was run.
+- No Xcode sync/install was run.
+
+### Current Dirty Files
+
+- `scripts/smoke-road-remote-readiness.mjs`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push this script hardening. Remaining gates are unchanged: live AI smoke, remote Strava poll, production Road Bootcamp fresh start, and final Xcode phone proof.
 
 ## 2026-05-17 11:44 EDT - Final Safe Verification Pass
 
