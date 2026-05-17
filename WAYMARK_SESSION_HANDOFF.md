@@ -958,6 +958,12 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - Removed two empty duplicate week plans created by failed generation attempts.
   - Headless Playwright verified `/today`, `/program`, `/library`, `/history`, and `/settings` load with Waymark logo/nav and no loading or failed state.
   - Screenshot evidence saved outside the repo at `/tmp/waymark-qa/waymark-history-qa.png`.
+- Remote readiness guard:
+  - Hardened `scripts/smoke-road-remote-readiness.mjs` so it checks `sessions.context_json`, `sessions.skip_reason`, and `sessions.skip_reason_detail`.
+  - `npm run smoke:road-remote` passes and now reports all 3 required session columns.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
 
 ## Known Warnings
 
@@ -988,6 +994,6 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
 ## Next Slice
 
 1. If live AI QA is approved and `ANTHROPIC_API_KEY` is available to Wrangler, run `WAYMARK_LIVE_AI_SMOKE=1 npm run smoke:live-review`.
-2. If remote Strava polling is approved, run the existing poll/read-only checks against production once.
+2. If remote Strava polling is approved, run the existing poll checks against production once.
 3. Continue targeted Road Bootcamp UI polish only where a real flow still feels unclear.
 4. Final Xcode sync/install waits until the full finished build gate.
