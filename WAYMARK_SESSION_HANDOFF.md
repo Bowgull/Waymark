@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 11:57 EDT
+Updated: 2026-05-17 12:08 EDT
 
 ## Current State
 
@@ -8,7 +8,7 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 98 percent of the Road Bootcamp slice.
+The current build is functional. Estimate: roughly 98 percent of the Road Bootcamp slice because the remaining items are approval-gated live proof, not ordinary code work.
 
 Current remaining gates:
 - Opt-in live AI smoke, only with explicit approval and usable `ANTHROPIC_API_KEY`.
@@ -17,6 +17,33 @@ Current remaining gates:
 - Final Xcode sync/install when the build is declared finished enough for phone proof.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 12:08 EDT - Gate Alignment Pass
+
+- Rechecked the repo for safe ungated work.
+- `git status` was clean at start.
+- `npm audit --json` still reports 4 moderate dev-tool findings through `drizzle-kit`.
+  - Latest `drizzle-kit` is still `0.31.10`.
+  - npm's suggested fix remains a breaking downgrade to `0.18.1`.
+  - No dependency change was made.
+- Updated `BUILD_PLAN.md` so the current gate list matches this handoff:
+  - live AI smoke.
+  - remote Strava poll.
+  - production Road Bootcamp fresh start.
+  - final Xcode phone proof.
+- No production data was reset.
+- No live AI smoke was run.
+- No remote Strava poll was run.
+- No Xcode sync/install was run.
+
+### Current Dirty Files
+
+- `BUILD_PLAN.md`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the gate alignment. After that, there is no known safe ungated build work left in the Road Bootcamp slice.
 
 ## 2026-05-17 11:57 EDT - Remote Smoke Retry Hardening
 
