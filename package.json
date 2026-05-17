@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:remote": "VITE_API_URL=https://waymark.bocas-joshua.workers.dev vite",
     "build": "tsc -b && vite build",
+    "build:remote": "VITE_API_URL=https://waymark.bocas-joshua.workers.dev npm run build",
     "test:lib": "tsx src/lib/apiBase.test.ts && tsx src/lib/sessionReviewAI.test.ts && tsx src/lib/hrAnalysis.test.ts && tsx src/lib/starterStatus.test.ts && tsx src/server/routes/strava.test.ts && tsx src/lib/ledgerInsightsAI.test.ts && tsx src/lib/roadBootcampTemplate.test.ts && tsx src/lib/roadBootcampStrengthTemplates.test.ts && tsx src/lib/roadBootcampMetrics.test.ts",
     "smoke:offline-review": "node scripts/smoke-offline-session-review.mjs",
     "smoke:foundation-run": "node scripts/smoke-foundation-run.mjs",
@@ -19,6 +21,7 @@
     "deploy": "npx wrangler deploy",
     "lint": "eslint .",
     "preview": "vite preview",
+    "preview:remote": "npm run build:remote && vite preview",
     "ios:sync": "npm run build && npx cap sync ios",
     "ios:devices": "xcrun devicectl list devices",
     "ios:doctor": "node scripts/ios-device-doctor.mjs",

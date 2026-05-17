@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 10:24 EDT
+Updated: 2026-05-17 10:27 EDT
 
 ## Current State
 
@@ -9,6 +9,41 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 98 percent of the Road Bootcamp slice.
+
+## 2026-05-17 10:27 EDT - Remote Preview Scripts
+
+- Verified production reference routes are healthy:
+  - `/api/exercises`: 72 rows.
+  - `/api/combos`: 55 rows.
+  - `/api/history/road-bootcamp?days=30`: 200.
+- Added explicit localhost browser-QA scripts that point the UI at the production Worker:
+  - `npm run dev:remote`
+  - `npm run build:remote`
+  - `npm run preview:remote`
+- Updated README with the remote-preview path.
+- Reason:
+  - Default web dev still points to `localhost:8787` through `.env.local`.
+  - That is correct for local Worker work.
+  - It causes empty or failed screens if Vite is running without Wrangler.
+  - Remote-preview scripts make quick UI QA explicit instead of silently depending on local D1.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build:remote`
+  - `npm run build`
+- All passed.
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `package.json`
+- `README.md`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the preview-script slice. Continue app-completion work without more Xcode sync until final phone proof.
 
 ## 2026-05-17 10:24 EDT - Dependency Audit Reduction
 
