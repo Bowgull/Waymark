@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 12:25 EDT
+Updated: 2026-05-17 12:30 EDT
 
 ## Current State
 
@@ -8,12 +8,30 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The Road Bootcamp slice is complete. Estimate: 100 percent. Live AI, remote Strava poll, production Road Bootcamp fresh start, production Week 1 generation, remote readiness, iOS sync, device build, and physical iPhone install have all been proven.
+The Road Bootcamp slice is complete. Estimate: 100 percent. Live AI, remote Strava poll, production Road Bootcamp fresh start, production Week 1 generation, remote readiness, iOS sync, device build, physical iPhone install, and physical iPhone launch have all been proven.
 
 Current remaining gates:
 - None for the Road Bootcamp slice.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 12:30 EDT - Final iPhone Launch Proof
+
+- First launch attempt failed because iOS had not trusted the developer profile yet.
+  - Error: unable to launch `com.joshbocas.app` because the profile had not been explicitly trusted by the user.
+- User trusted the developer profile on the iPhone.
+- Reran launch:
+  - Command: `xcrun devicectl device process launch --device 4B88E4ED-6344-5EAE-BDB2-F63930384B26 --terminate-existing com.joshbocas.app`.
+  - Result: launched application with `com.joshbocas.app` bundle identifier.
+- Physical iPhone proof is complete.
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Use Waymark on the phone. Any remaining work is product feedback from real use, not Road Bootcamp build completion.
 
 ## 2026-05-17 12:25 EDT - Final iPhone Install Proof
 
