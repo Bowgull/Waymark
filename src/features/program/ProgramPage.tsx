@@ -91,6 +91,23 @@ function getMonday(weekOffset = 0): string {
   return monday.toLocaleDateString('en-CA')
 }
 
+function getTomorrow(): string {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return tomorrow.toLocaleDateString('en-CA')
+}
+
+function getBlockStartDate(block: Block): string {
+  if (!block.startedAt) return getMonday(0)
+  return new Date(block.startedAt * 1000).toLocaleDateString('en-CA')
+}
+
+function getRoadBootcampWeekStart(block: Block, targetWeekNumber: number): string {
+  const date = new Date(getBlockStartDate(block))
+  date.setDate(date.getDate() + (targetWeekNumber - 1) * 7)
+  return date.toLocaleDateString('en-CA')
+}
+
 export function ProgramPage() {
   const [block, setBlock] = useState<Block | null | undefined>(undefined)
   const [weekData, setWeekData] = useState<WeekData | null>(null)
@@ -123,10 +140,12 @@ export function ProgramPage() {
     const currentWn = getCurrentWeekNumber(b)
     if (!wd && (wn === currentWn || wn === currentWn + 1)) {
       const weekOffset = wn - currentWn
-      const monday = getMonday(weekOffset)
+      const startDate = b.blockType === 'road_bootcamp'
+        ? getRoadBootcampWeekStart(b, wn)
+        : getMonday(weekOffset)
       wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: b.id, weekNumber: wn, startDate: monday }),
+        body: JSON.stringify({ blockId: b.id, weekNumber: wn, startDate }),
       })
     }
 
@@ -269,10 +288,12 @@ export function ProgramPage() {
     setGenerating(true)
     try {
       const weekOffset = weekNumber - getCurrentWeekNumber(block)
-      const monday = getMonday(weekOffset)
+      const startDate = block.blockType === 'road_bootcamp'
+        ? getRoadBootcampWeekStart(block, weekNumber)
+        : getMonday(weekOffset)
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: block.id, weekNumber, startDate: monday }),
+        body: JSON.stringify({ blockId: block.id, weekNumber, startDate }),
       })
       setWeekData(wd)
     } catch (e) {
@@ -479,15 +500,15 @@ export function ProgramPage() {
     }
     setGenerating(true)
     try {
+      const startDate = getTomorrow()
       const newBlock = await apiFetch<Block>('/api/blocks/road-bootcamp', {
         method: 'POST',
-        body: JSON.stringify({ confirmReset: true }),
+        body: JSON.stringify({ confirmReset: true, startDate }),
       })
       setBlock(newBlock)
-      const monday = getMonday(0)
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: newBlock.id, weekNumber: 1, startDate: monday }),
+        body: JSON.stringify({ blockId: newBlock.id, weekNumber: 1, startDate }),
       })
       setWeekData(wd)
       setWeekNumber(1)

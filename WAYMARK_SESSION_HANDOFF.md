@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 12:35 EDT
+Updated: 2026-05-17 12:40 EDT
 
 ## Current State
 
@@ -14,6 +14,55 @@ Current remaining gates:
 - None for the Road Bootcamp slice.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 12:40 EDT - Road Bootcamp Tomorrow Start Fix
+
+- Fixed Road Bootcamp Day 1 handling.
+- Problem:
+  - Production Road Bootcamp had been generated from the current week Monday, so Sunday 2026-05-17 looked like Day 7 instead of pre-start.
+- Backend:
+  - `POST /api/blocks/road-bootcamp` now accepts optional `startDate`.
+  - When supplied, `training_blocks.started_at` is stamped to that date instead of request time.
+- Frontend:
+  - Fresh Road Bootcamp start now sends tomorrow as `startDate`.
+  - Road Bootcamp week generation now derives week start dates from the block start date.
+  - Fighter and Block Zero week generation still use Monday-week behavior.
+- Deployed Worker:
+  - Version id: `445cb306-52cb-46e6-bd11-4fc930ac5067`.
+- Reset production Road Bootcamp with Day 1 as `2026-05-18`.
+  - New block id: `77278f9b-0a24-42ca-a131-8df4ee7e2872`.
+  - `startedAt`: `1779105600`.
+  - Week 1 generated from `2026-05-18`.
+  - Week 1 sessions: 14.
+  - Counts: 7 mobility, 2 easy runs, 1 quality run, 2 strength, 2 rope.
+- Production check:
+  - `GET /api/sessions/today?date=2026-05-17` returns `[]`.
+  - `GET /api/sessions/today?date=2026-05-18` returns Day 1 mobility and easy run.
+  - `npm run smoke:road-remote` passed with `roadStrengthPreview: "ready_state"`.
+- Browser QA:
+  - `/program` shows Week 1 starting Monday May 18.
+  - `/today` for Sunday May 17 shows no planned sessions.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+  - `npm run smoke:road-remote`
+  - `npm run ios:sync`
+  - `npm run ios:build:generic`
+- All passed except physical device build/install.
+  - `WAYMARK_IOS_DEVICE_ID=4B88E4ED-6344-5EAE-BDB2-F63930384B26 npm run ios:build:device` failed because Xcode reported the physical iPhone destination unavailable.
+  - `xcrun devicectl list devices` also reported both iPhones unavailable at that moment.
+
+### Current Dirty Files
+
+- `src/features/program/ProgramPage.tsx`
+- `src/server/app.ts`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push this start-date fix. Reinstall to phone once `Josh (2)` is available to Xcode again.
 
 ## 2026-05-17 12:35 EDT - Road Bootcamp Program Header Polish
 
