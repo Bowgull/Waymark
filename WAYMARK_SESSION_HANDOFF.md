@@ -950,6 +950,14 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+- Browser and production schema QA:
+  - In-app browser first exposed Program stuck in loading state against the production API.
+  - Root cause was remote D1 schema drift: `sessions.skip_reason` and `sessions.skip_reason_detail` were missing.
+  - Applied `drizzle/0011_skip_reason.sql` to remote D1. No history reset.
+  - Re-ran `/api/weeks/generate` for current Block Zero week 4. It now returns 200 and generated 18 planned sessions.
+  - Removed two empty duplicate week plans created by failed generation attempts.
+  - Headless Playwright verified `/today`, `/program`, `/library`, `/history`, and `/settings` load with Waymark logo/nav and no loading or failed state.
+  - Screenshot evidence saved outside the repo at `/tmp/waymark-qa/waymark-history-qa.png`.
 
 ## Known Warnings
 
@@ -975,11 +983,11 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
 - `/metrics` remains a separate manual logging route. Folding it into Ledger should wait until there is a real UX reason, not just cleanup pressure.
 - Local QA has reset local D1 into a fresh Road Bootcamp state. Profile/settings/Strava/static libraries remain; generated history was cleared by `npm run smoke:road-reset`.
 - v2 `BUILD_PLAN.md` has been corrected from stale TODO state to current DONE state for steps 1-7.
-- Ledger HR cards are built and tested, but not browser-screenshot verified in this pass.
+- Ledger page was screenshot-verified after the production schema fix.
 
 ## Next Slice
 
 1. If live AI QA is approved and `ANTHROPIC_API_KEY` is available to Wrangler, run `WAYMARK_LIVE_AI_SMOKE=1 npm run smoke:live-review`.
 2. If remote Strava polling is approved, run the existing poll/read-only checks against production once.
-3. Browser-check Ledger on mobile after the HR cards are deployed.
+3. Continue targeted Road Bootcamp UI polish only where a real flow still feels unclear.
 4. Final Xcode sync/install waits until the full finished build gate.
