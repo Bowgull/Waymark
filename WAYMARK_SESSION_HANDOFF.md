@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 05:32 EDT
+Updated: 2026-05-17 08:56 EDT
 
 ## Current State
 
@@ -9,6 +9,31 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 94 percent of the Road Bootcamp slice.
+
+## 2026-05-17 08:56 EDT - HAPBEAR Road Bands
+
+- User selected the Amazon.ca HAPBEAR long-loop pull-up assistance band set:
+  - URL: `https://www.amazon.ca/HAPBEAR-Pull-Assistance-Bands-Resistance/dp/B0CSF8P2P4`
+  - Constraint: Amazon Canada, under $50 CAD, same-day delivery if available.
+- Replaced the uncommitted SUNPOW-specific band guidance with HAPBEAR-specific guidance.
+- Road Bootcamp strength notes now call out HAPBEAR bands:
+  - Yellow for pull-aparts and light warmup work.
+  - Yellow or orange for clean movement/loading on unilateral work.
+  - Red or blue for rows, presses, and curls.
+  - Blue or purple for good mornings, tempo squats, and reverse-lunge loading.
+  - Purple only if position stays solid.
+- Added test coverage that Road Bootcamp band exercises include HAPBEAR guidance.
+- Ran `npm run test:lib`, `npm run smoke:road-strength`, `npm run lint`, `npm run build`, `npx cap sync ios`, `npm run deploy`, `npm run smoke:road-remote`, and `git diff --check`. All passed.
+- Deployed Worker version `c020d03e-04e2-4ba7-8396-52ca88504f12`.
+
+### Current Dirty Files
+
+- `src/lib/roadBootcampStrengthTemplates.ts`
+- `src/lib/roadBootcampStrengthTemplates.test.ts`
+
+### Next Immediate Step
+
+Commit and push the HAPBEAR band guidance.
 
 ## 2026-05-17 05:32 EDT - Ledger, Settings, Strength Ready QA
 

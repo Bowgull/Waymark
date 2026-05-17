@@ -153,11 +153,33 @@ function testEveryTemplateExerciseHasSeededVideo() {
   }
 }
 
+function testHapbearBandCues() {
+  const noGym = getRoadBootcampStrengthTemplate({
+    dayType: 'strength_b',
+    timeAvailable: '30',
+    equipment: 'no_gym',
+  })
+
+  const bandExercises = noGym.exercises.filter(exercise => exercise.exerciseId.includes('band'))
+  assert(bandExercises.length > 0, 'no-gym template should include band exercises')
+  for (const exercise of bandExercises) {
+    assert(exercise.notes?.includes('HAPBEAR'), `${exercise.exerciseId} is missing HAPBEAR band guidance`)
+  }
+
+  const hotelWarmup = getRoadBootcampStrengthTemplate({
+    dayType: 'strength_a',
+    timeAvailable: '15',
+    equipment: 'hotel_gym',
+  }).exercises.find(exercise => exercise.exerciseId === 'ex-band-pull-aparts')
+  assert(hotelWarmup?.notes?.includes('HAPBEAR yellow'), 'hotel warmup should carry light HAPBEAR guidance')
+}
+
 testAllEighteenVariants()
 testNoGymPullingWork()
 testHotelGymAvoidsBarbells()
 testWarmupsAreMarkedWarmupSets()
 testNewExercisesHaveVideosPlanned()
 testEveryTemplateExerciseHasSeededVideo()
+testHapbearBandCues()
 
 console.log('roadBootcampStrengthTemplates tests passed')
