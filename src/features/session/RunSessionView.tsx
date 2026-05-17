@@ -368,7 +368,7 @@ export function RunSessionView({
     targetSegments.push(`${prescription.targetDistKm} km`)
   }
   if (isZone2) {
-    targetSegments.push(prescription.z2CeilingBpm ? `HR <= ${prescription.z2CeilingBpm}` : 'HR 130-145')
+    targetSegments.push(prescription.z2CeilingBpm ? `HR <= ${prescription.z2CeilingBpm}` : 'talk test')
     targetSegments.push('nasal breathing')
   }
 

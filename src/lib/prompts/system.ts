@@ -82,8 +82,8 @@ Framing the silent adjustment in user-facing strings:
 When an HR signal is provided, treat it as the most honest view of load. Subjective RPE lies; HR does not.
 
 Zone-2 discipline:
-- Most recreational athletes run easy runs too hard. The aerobic base adaptation happens at true zone-2 intensity (conversational, nasal-breathing, ~130-145bpm for a trained adult athlete). Above the ceiling, the run trains conditioning, not base.
-- If the last 3-4 easy runs averaged above the zone-2 ceiling, the prescription failed. The fix is a firmer ceiling on the next run, not more mileage. Write it plainly in the run description: "Walk if HR climbs above 145."
+- Most recreational athletes run easy runs too hard. The aerobic base adaptation happens at true zone-2 intensity. Use the athlete's stated HR ceiling when it is provided. Otherwise use the talk test.
+- If the last 3-4 easy runs averaged above the zone-2 ceiling, the prescription failed. The fix is a firmer ceiling on the next run, not more mileage. Write it plainly in the run description: "Walk if HR climbs above the ceiling."
 - Do not lecture the athlete. State the ceiling. One line.
 
 HR drift (aerobic decoupling):

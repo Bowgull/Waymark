@@ -29,6 +29,7 @@ interface Session {
   scheduledDate: number | null
   blockWeek?: number | null
   completedAt?: number | null
+  notes?: string | null
 }
 
 interface WeekPlan {
@@ -103,6 +104,7 @@ export function ProgramPage() {
   const [transitionResult, setTransitionResult] = useState<TransitionResult | null>(null)
   const [checkingTransition, setCheckingTransition] = useState(false)
   const [confirmRoadBootcamp, setConfirmRoadBootcamp] = useState(false)
+  const [maxHr, setMaxHr] = useState<number | null>(null)
 
   const getCurrentWeekNumber = useCallback((b: Block): number => {
     if (!b.startedAt) return 1
@@ -135,7 +137,11 @@ export function ProgramPage() {
   useEffect(() => {
     async function load() {
       try {
-        const existingBlock = await apiFetch<Block | null>('/api/blocks/current')
+        const [existingBlock, profile] = await Promise.all([
+          apiFetch<Block | null>('/api/blocks/current'),
+          apiFetch<{ maxHr: number | null } | null>('/api/user-profile').catch(() => null),
+        ])
+        setMaxHr(profile?.maxHr ?? null)
 
         if (!existingBlock) {
           // First launch — no block has ever been created. Recommend Block Zero.
@@ -587,6 +593,7 @@ export function ProgramPage() {
               sessions: [...prev.sessions, session],
             } : null)
           }}
+          maxHr={maxHr}
         />
       )}
 

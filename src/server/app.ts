@@ -27,7 +27,7 @@ import {
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
-import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr } from '../lib/hrAnalysis'
+import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, zone2CeilingBpm } from '../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
@@ -300,12 +300,15 @@ async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string |
 
   // Check if this is a Zone 2 run (tagged during generation)
   if (session.notes === 'zone2') {
+    const maxHr = await loadProfileMaxHrForHr(db)
+    const z2Ceiling = zone2CeilingBpm(maxHr)
     return {
       weekNumber: ZONE2_PRESCRIPTION.weekNumber,
       runType: ZONE2_PRESCRIPTION.runType,
-      targetDesc: ZONE2_PRESCRIPTION.targetDesc,
+      targetDesc: `${ZONE2_PRESCRIPTION.targetDesc} Keep HR at or below ${z2Ceiling} bpm.`,
       targetDurSec: ZONE2_PRESCRIPTION.targetDurSec,
       targetDistKm: ZONE2_PRESCRIPTION.targetDistKm,
+      z2CeilingBpm: z2Ceiling,
     }
   }
 

@@ -10,6 +10,7 @@ import { getMarkAsset } from '@/lib/markAssets'
 import { getStrengthTemplate, getWeekLabel, getDeadliftExerciseId } from '@/lib/strengthTemplates'
 import { getRunPlanForWeek } from '@/lib/runningPlanTemplate'
 import { getRoadBootcampWeekLabel } from '@/lib/roadBootcampTemplate'
+import { getSessionTargetHr } from '@/lib/sessionIntent'
 
 interface SessionSummary {
   id: string
@@ -20,6 +21,7 @@ interface SessionSummary {
   adjustmentId?: string | null
   blockWeek?: number | null
   blockType?: string | null
+  notes?: string | null
 }
 
 interface WeekAdjustment {
@@ -43,6 +45,7 @@ interface WeekViewProps {
   onApprove: () => void
   onSessionUpdate?: (id: string, status: string) => void
   onSessionAdded?: (session: SessionSummary) => void
+  maxHr?: number | null
 }
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -66,7 +69,20 @@ interface RoutineOverview {
   progressIcon?: 'up' | 'new-variant'
 }
 
-function getRoutineOverview(type: string, dayOfWeek: number, blockWeek: number, weekNumber: number, blockType: 'fighter' | 'block_zero' | 'road_bootcamp' = 'fighter'): RoutineOverview | null {
+function compactTargetHr(targetHr: string | null): string | null {
+  if (!targetHr) return null
+  return targetHr.replace(/^Zone 2\. /, 'HR ').replace(/\.$/, '')
+}
+
+function getRoutineOverview(
+  type: string,
+  dayOfWeek: number,
+  blockWeek: number,
+  weekNumber: number,
+  blockType: 'fighter' | 'block_zero' | 'road_bootcamp' = 'fighter',
+  runCategory: string | null = null,
+  maxHr: number | null = null,
+): RoutineOverview | null {
   switch (type) {
     case 'strength': {
       if (blockType === 'road_bootcamp') {
@@ -102,9 +118,13 @@ function getRoutineOverview(type: string, dayOfWeek: number, blockWeek: number, 
     }
 
     case 'foundation_run': {
+      const duration = blockType === 'road_bootcamp'
+        ? weekNumber === 4 ? '25 min' : weekNumber >= 5 ? '40 min' : '35 min'
+        : '15-20 min'
+      const hr = compactTargetHr(getSessionTargetHr('foundation_run', runCategory, maxHr))
       return {
         headline: 'Zone 2 easy, conversational pace',
-        detail: '15-20 min · HR 130-145 · nasal breathing',
+        detail: `${duration} · ${hr ?? 'talk test'} · nasal breathing`,
       }
     }
 
@@ -235,6 +255,7 @@ function SessionRow({
   onLongPress,
   onSkip,
   onReplace,
+  maxHr,
 }: {
   session: SessionSummary
   epochDay: number
@@ -245,6 +266,7 @@ function SessionRow({
   onLongPress: () => void
   onSkip: () => void
   onReplace: () => void
+  maxHr?: number | null
 }) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const date = new Date(epochDay * 86400 * 1000)
@@ -261,7 +283,7 @@ function SessionRow({
   const blockWeek = session.blockWeek ?? 1
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : session.blockType === 'road_bootcamp' ? 'road_bootcamp' : 'fighter') as 'fighter' | 'block_zero' | 'road_bootcamp'
   const overview = showOverview && !isPassed
-    ? getRoutineOverview(session.type, dayOfWeek, blockWeek, weekNumber, blockType)
+    ? getRoutineOverview(session.type, dayOfWeek, blockWeek, weekNumber, blockType, session.notes ?? null, maxHr ?? null)
     : null
 
   function handleTouchStart() {
@@ -379,7 +401,7 @@ function SessionRow({
 
 // ─── WeekView ──────────────────────────────────────────────────
 
-export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekNumber = 1, onApprove, onSessionUpdate, onSessionAdded }: WeekViewProps) {
+export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekNumber = 1, onApprove, onSessionUpdate, onSessionAdded, maxHr }: WeekViewProps) {
   const [pickerDate, setPickerDate] = useState<string | null>(null)
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
   const [adjustments, setAdjustments] = useState<WeekAdjustment[]>([])
@@ -737,6 +759,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
                       onLongPress={() => setActionTraySessionId(s.id)}
                       onSkip={() => handleSkip(s.id)}
                       onReplace={() => handleReplace(s)}
+                      maxHr={maxHr}
                     />
                   ))}
                 </div>
