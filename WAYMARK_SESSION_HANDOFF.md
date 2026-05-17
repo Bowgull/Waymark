@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 12:30 EDT
+Updated: 2026-05-17 12:35 EDT
 
 ## Current State
 
@@ -14,6 +14,39 @@ Current remaining gates:
 - None for the Road Bootcamp slice.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 12:35 EDT - Road Bootcamp Program Header Polish
+
+- Reviewed the Road Bootcamp Program page in the in-app browser against the production Worker.
+- Replaced the generic teal bordered Road Bootcamp copy card with a tighter active-program header.
+- New header shows:
+  - Program identity.
+  - Week position.
+  - Current/selected state.
+  - Week intent.
+  - Fixed weekly rails: 3 runs, 2 strength, daily mobility.
+- Changed Road Bootcamp week navigation to a compact control row with progress, instead of repeating `Week 1` and `Road week 1 of 8` below the header.
+- Kept the existing WeekView list, bottom nav, colors, brand mark, and shell structure.
+- Visual QA:
+  - `/program` mobile-width in-app browser.
+  - Header reads as one instrument surface.
+  - No text overlap observed.
+  - CTA/nav remains reachable.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+- All passed.
+
+### Current Dirty Files
+
+- `src/features/program/ProgramPage.tsx`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the Road Bootcamp Program header polish. If accepted, sync and reinstall to phone with `npm run ios:sync`, device build, and `devicectl install`.
 
 ## 2026-05-17 12:30 EDT - Final iPhone Launch Proof
 
