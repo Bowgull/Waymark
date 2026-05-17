@@ -545,8 +545,8 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
       {/* Draft approval banner */}
       {weekStatus === 'draft' && (
         <div className="mb-4 rounded-md border border-gold/30 bg-gold/5 p-3">
-          <p className="mb-1 text-sm text-gold">Auto-generated. Review and approve</p>
-          <p className="mb-2 text-xs text-muted-foreground">Skip any sessions you want to remove, then approve.</p>
+          <p className="mb-1 text-sm text-gold">Prepared week. Review and approve.</p>
+          <p className="mb-2 text-xs text-muted-foreground">Remove anything that will not happen.</p>
           <Button size="sm" onClick={onApprove}>
             Approve Week
           </Button>

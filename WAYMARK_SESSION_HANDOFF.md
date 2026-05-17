@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 05:25 EDT
+Updated: 2026-05-17 05:29 EDT
 
 ## Current State
 
@@ -9,6 +9,36 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 93 percent of the Road Bootcamp slice.
+
+## 2026-05-17 05:29 EDT - Road Smoke Isolation And Program Copy
+
+- Program QA after Strava poll testing showed extra local Saturday runs.
+- Root cause was local QA state, not the Road Bootcamp weekly template.
+- Tightened the Road Bootcamp local smokes:
+  - `npm run smoke:road-week` now resets local Road Bootcamp state before asserting the 14-session template.
+  - `npm run smoke:road-strength` now resets local Road Bootcamp state before creating the 18 variants.
+  - Remote targets will not reset unless `WAYMARK_ALLOW_RESET=1` is set.
+- Re-ran `npm run smoke:road-week`; it passed with 14 sessions.
+- Re-ran `npm run smoke:road-strength`; it passed across 18 variants.
+- Replaced the Program draft copy:
+  - From `Auto-generated. Review and approve`
+  - To `Prepared week. Review and approve.`
+  - Supporting line now says `Remove anything that will not happen.`
+- Browser QA reloaded Program at mobile size:
+  - Correct 14-session week shown.
+  - Corrected copy rendered.
+  - Browser console reported 0 errors.
+- Ran `npm run lint`, `npm run test:lib`, `npm run build`, `npx cap sync ios`, and `git diff --check`. All passed.
+
+### Current Dirty Files
+
+- `scripts/smoke-road-week-generation.mjs`
+- `scripts/smoke-road-strength-matrix.mjs`
+- `src/features/program/WeekView.tsx`
+
+### Next Immediate Step
+
+Commit and push the smoke isolation and Program copy polish.
 
 ## 2026-05-17 05:25 EDT - Strava Poll Idempotency
 

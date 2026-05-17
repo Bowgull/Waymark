@@ -46,10 +46,25 @@ function equipmentText(exercises) {
   return exercises.map(row => row.exercise?.equipment?.toLowerCase() ?? '').join(',')
 }
 
-let block = await api('/api/blocks/current')
-if (block?.blockType !== 'road_bootcamp') {
-  block = await api('/api/blocks/road-bootcamp', { method: 'POST' })
+function canResetTarget() {
+  if (process.env.WAYMARK_ALLOW_RESET === '1') return true
+  const url = new URL(API_BASE)
+  return ['localhost', '127.0.0.1', '::1'].includes(url.hostname)
 }
+
+async function getRoadBootcampBlock() {
+  if (canResetTarget()) {
+    return await api('/api/blocks/road-bootcamp', { method: 'POST' })
+  }
+  const block = await api('/api/blocks/current')
+  expect(
+    block?.blockType === 'road_bootcamp',
+    'remote Road Bootcamp smoke will not reset data without WAYMARK_ALLOW_RESET=1',
+  )
+  return block
+}
+
+await getRoadBootcampBlock()
 
 const results = []
 for (const day of [
