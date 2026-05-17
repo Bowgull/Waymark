@@ -13,6 +13,7 @@
     "smoke:road-reset": "node scripts/smoke-road-bootcamp-reset.mjs",
     "smoke:road-week": "node scripts/smoke-road-week-generation.mjs",
     "smoke:road-strength": "node scripts/smoke-road-strength-matrix.mjs",
+    "smoke:road-remote": "node scripts/smoke-road-remote-readiness.mjs",
     "deploy": "npx wrangler deploy",
     "lint": "eslint .",
     "preview": "vite preview",
