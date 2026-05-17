@@ -6,6 +6,7 @@ import { generateInsights } from '@/lib/insightEngine'
 import { PageHeader } from '@/components/PageHeader'
 import { HistorySkeleton } from '@/components/ui/Skeleton'
 
+import { AerobicFitnessChart } from './AerobicFitnessChart'
 import { ChartCard } from './ChartCard'
 import { CompletionRings } from './CompletionRings'
 import { ConsistencyChart } from './ConsistencyChart'
@@ -18,6 +19,7 @@ import { RunningProgressChart } from './RunningProgressChart'
 import { SessionList } from './SessionList'
 import { VolumeChart } from './VolumeChart'
 import { WeightProgressionChart } from './WeightProgressionChart'
+import { WeeklyZonesChart } from './WeeklyZonesChart'
 
 interface DashboardData {
   currentStreak: number
@@ -79,6 +81,36 @@ interface RoadBootcampMetrics {
   completionRate: number
 }
 
+interface WeeklyZonePoint {
+  weekStart: string
+  z1: number
+  z2: number
+  z3: number
+  z4: number
+  z5: number
+  totalSec: number
+}
+
+interface AerobicFitnessPoint {
+  sessionId: string
+  date: string
+  distanceKm: number
+  paceSecKm: number
+  avgHr: number
+  runType: string | null
+}
+
+interface AerobicFitnessSummary {
+  sampleCount: number
+  avgPaceSecKm: number | null
+  bestPaceSecKm: number | null
+  avgHr: number | null
+}
+
+interface WeeklyZonesSummary {
+  sampleCount: number
+}
+
 interface Session {
   id: string
   type: string
@@ -129,6 +161,10 @@ export function HistoryPage() {
   const [runData, setRunData] = useState<RunDataPoint[]>([])
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null)
   const [recentRunEvidence, setRecentRunEvidence] = useState<RecentRunEvidence[]>([])
+  const [weeklyZones, setWeeklyZones] = useState<WeeklyZonePoint[]>([])
+  const [weeklyZonesSummary, setWeeklyZonesSummary] = useState<WeeklyZonesSummary | null>(null)
+  const [aerobicData, setAerobicData] = useState<AerobicFitnessPoint[]>([])
+  const [aerobicSummary, setAerobicSummary] = useState<AerobicFitnessSummary | null>(null)
   const [roadBootcampMetrics, setRoadBootcampMetrics] = useState<RoadBootcampMetrics | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [consistency, setConsistency] = useState<ConsistencyData | null>(null)
@@ -148,6 +184,8 @@ export function HistoryPage() {
           dashboardData,
           correlationData,
           runProgressData,
+          weeklyZonesData,
+          aerobicFitnessData,
           roadData,
           sessionsData,
           consistencyData,
@@ -159,6 +197,8 @@ export function HistoryPage() {
           apiFetch<DashboardData>(`/api/history/dashboard?days=${period}`),
           apiFetch<{ dataPoints: CorrelationDataPoint[] }>(`/api/history/correlations?days=${period}`),
           apiFetch<{ dataPoints: RunDataPoint[]; summary: RunSummary; recentRunEvidence?: RecentRunEvidence[] }>(`/api/history/running-progress?days=${period}`),
+          apiFetch<{ weeks: WeeklyZonePoint[]; summary: WeeklyZonesSummary }>(`/api/history/weekly-zones?weeks=${weeks}`),
+          apiFetch<{ dataPoints: AerobicFitnessPoint[]; summary: AerobicFitnessSummary }>(`/api/history/aerobic-fitness?days=${period}`),
           apiFetch<RoadBootcampMetrics>(`/api/history/road-bootcamp?days=${period}`),
           apiFetch<Session[]>('/api/history/sessions?limit=30'),
           apiFetch<ConsistencyData>(`/api/history/consistency?weeks=${weeks}`),
@@ -172,6 +212,10 @@ export function HistoryPage() {
         setRunData(runProgressData.dataPoints)
         setRunSummary(runProgressData.summary)
         setRecentRunEvidence(runProgressData.recentRunEvidence ?? [])
+        setWeeklyZones(weeklyZonesData.weeks)
+        setWeeklyZonesSummary(weeklyZonesData.summary)
+        setAerobicData(aerobicFitnessData.dataPoints)
+        setAerobicSummary(aerobicFitnessData.summary)
         setRoadBootcampMetrics(roadData)
         setSessions(sessionsData)
         setConsistency(consistencyData)
@@ -250,6 +294,13 @@ export function HistoryPage() {
 
   const runHeadline = runSummary?.avgPaceSecKm
     ? `${paceToMinSec(runSummary.avgPaceSecKm)}/km avg`
+    : undefined
+
+  const zoneMinutes = weeklyZones.reduce((sum, week) => sum + Math.round(week.totalSec / 60), 0)
+  const zoneHeadline = zoneMinutes > 0 ? `${zoneMinutes}m logged` : undefined
+
+  const aerobicHeadline = aerobicSummary?.avgPaceSecKm
+    ? `${paceToMinSec(aerobicSummary.avgPaceSecKm)}/km near ${aerobicSummary.avgHr ?? '-'} bpm`
     : undefined
 
   const prHeadline = prs.length > 0
@@ -346,6 +397,26 @@ export function HistoryPage() {
             sparklineColor="#C45A3C"
           >
             <RunningProgressChart data={runData} summary={runSummary} />
+          </ChartCard>
+        )}
+
+        {weeklyZonesSummary && weeklyZonesSummary.sampleCount >= 3 && weeklyZones.length > 0 && (
+          <ChartCard
+            title="Weekly Zones"
+            headline={zoneHeadline}
+          >
+            <WeeklyZonesChart weeks={weeklyZones} />
+          </ChartCard>
+        )}
+
+        {aerobicSummary && aerobicSummary.sampleCount >= 3 && (
+          <ChartCard
+            title="Aerobic Base"
+            headline={aerobicHeadline}
+            sparklineData={aerobicData.map(point => point.paceSecKm)}
+            sparklineColor="#4ACAAA"
+          >
+            <AerobicFitnessChart data={aerobicData} summary={aerobicSummary} />
           </ChartCard>
         )}
 

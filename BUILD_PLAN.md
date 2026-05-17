@@ -135,14 +135,20 @@ If the Mon strap ship slips, move the first HR session to whichever day it arriv
 
 Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
+### Current Status
+
+- v2 Strava, HR, coaching, and Ledger work is complete as of 2026-05-17.
+- Road Bootcamp now remains the active build track.
+- Remaining gates are live QA only: opt-in live AI smoke, remote Strava poll, and final Xcode sync/install.
+
 ### Phase 1: Strava ingestion pipeline
 
-- **Step 1** `TODO` Strava OAuth + token storage
+- **Step 1** `DONE` Strava OAuth + token storage
   - Files: `src/db/schema.ts` (new `strava_tokens` table), `drizzle/0012_strava_tokens.sql`, `src/server/routes/strava.ts` (new), `src/server/app.ts` (route registration, Bindings), `src/features/settings/SettingsPage.tsx` (Connect Strava button, status display), `wrangler.jsonc` (secret note).
   - Acceptance: GET `/api/strava/authorize` returns Strava auth URL with correct scopes and redirect. GET `/api/strava/callback?code=...` exchanges code for tokens, stores them, redirects to Settings with status. Settings page shows connected athlete name and "Disconnect" button. Refresh on 401 works.
   - Commit: `feat: v2 step 1 Strava OAuth and token storage`
 
-- **Step 2** `TODO` Webhook + poll ingestion
+- **Step 2** `DONE` Webhook + poll ingestion
   - Files: `src/server/routes/strava.ts` (extend), `src/server/app.ts` (webhook route, poll route), `src/features/today/TodayPage.tsx` (call poll on mount).
   - Acceptance: GET `/api/strava/webhook` echoes `hub.challenge`. POST `/api/strava/webhook` accepts create/update events and logs them (ingestion itself lands in step 3 once schema is ready). POST `/api/strava/poll-recent` returns list of recent activity IDs with `already_linked` flag. Today page calls poll silently on mount.
   - Note: webhook subscription creation is a one-time manual curl call documented in the step. Production URL required, so a prod deploy happens at end of this step to wire webhooks.
@@ -150,7 +156,7 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 ### Phase 2: HR data in Waymark
 
-- **Step 3** `TODO` Schema for HR, splits, and strava link
+- **Step 3** `DONE` Schema for HR, splits, and strava link
   - Files: `src/db/schema.ts`, `drizzle/0013_hr_and_strava_link.sql`.
     - Add to `run_sessions`: `avg_hr` int nullable, `max_hr` int nullable, `zone_seconds` text nullable (JSON `{z1,z2,z3,z4,z5}` in seconds), `elevation_gain_m` int nullable, `source` text (`'strava' | 'manual' | 'indoor'`), `strava_activity_id` int nullable unique, `attachment_status` text nullable.
     - Add to `user_profile`: `max_hr` int nullable, `dob` text nullable (ISO date, used if present for 220 minus age fallback).
@@ -158,12 +164,12 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
   - Acceptance: migration applies cleanly. Backfill sets `source='manual'` on existing rows. Typecheck clean.
   - Commit: `feat: v2 step 3 HR schema and strava link`
 
-- **Step 4** `TODO` Activity ingestion + auto-match + confirm UI
+- **Step 4** `DONE` Activity ingestion + auto-match + confirm UI
   - Files: `src/server/routes/strava.ts` (complete the `ingestStravaActivity` function), `src/features/today/ActivityConfirmCard.tsx` (new), `src/features/today/TodayPage.tsx` (show orphaned and unconfirmed attachments).
   - Acceptance: new Strava activity flows into `run_sessions` with HR + zones + elevation populated. Auto-match by date + sport type. "This run was the X session?" card on Today for every un-confirmed auto-attachment. Accept dismisses the card, Reassign opens the week-session picker. Max HR in profile auto-bumps if peak exceeds stored value.
   - Commit: `feat: v2 step 4 activity ingestion and confirm UI`
 
-- **Step 5** `TODO` Today target HR line on prescribed sessions
+- **Step 5** `DONE` Today target HR line on prescribed sessions
   - Files: `src/features/today/TimelineRow.tsx` (add target-HR line under intent), `src/lib/sessionIntent.ts` (new `getSessionTargetHr` function given session type + user max_hr).
   - Acceptance: on every running session with a known target zone and a non-null profile max_hr, a second `<p>` renders under the intent line using identical styling (`text-[13px] text-muted-foreground italic leading-relaxed`). Copy matches voice canon: `Zone 2. 140 to 155 bpm.`
   - Edge case: no max_hr yet -> omit the line silently.
@@ -171,14 +177,14 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 ### Phase 3: AI coaching updates
 
-- **Step 6** `TODO` HR-aware coaching
+- **Step 6** `DONE` HR-aware coaching
   - Files: `src/lib/sessionReviewAI.ts` (include avg HR + zone distribution + target zone in prompt, add "intensity mismatch" as a possible review flag), `src/lib/weeklyPlanAI.ts` (include last week's zone distribution across all runs, flag polarization failures, adjust next week's easy days if too much Z3 observed).
   - Acceptance: session review emits HR-aware one-liners when data present. Weekly plan output shows evidence of zone-distribution awareness in `adjustmentNotes`. Voice canon holds.
   - Commit: `feat: v2 step 6 HR-aware coaching`
 
 ### Phase 4: New ledger surfaces
 
-- **Step 7** `TODO` Aerobic Fitness + Weekly Zones ledger cards
+- **Step 7** `DONE` Aerobic Fitness + Weekly Zones ledger cards
   - Files: `src/features/history/AerobicFitnessChart.tsx` (new), `src/features/history/WeeklyZonesChart.tsx` (new), `src/features/history/HistoryPage.tsx` (add both ChartCards), `src/server/app.ts` (two new GET routes).
   - Acceptance: Aerobic Fitness shows pace-at-fixed-HR over weeks (default HR band 135-145, adjustable). Weekly Zones shows stacked horizontal bar per week with Z1-Z5 in distinct colors. Both cards only render when at least 3 HR-equipped runs exist. Empty state copy: "Strap up a few runs and this starts showing up."
   - Commit: `feat: v2 step 7 aerobic fitness and weekly zones cards`
