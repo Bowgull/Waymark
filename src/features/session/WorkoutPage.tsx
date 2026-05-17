@@ -155,6 +155,7 @@ interface RunPrescription {
   targetDesc: string
   targetDurSec: number | null
   targetDistKm: number | null
+  z2CeilingBpm?: number | null
 }
 
 interface RunWorkoutData {

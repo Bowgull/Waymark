@@ -987,6 +987,14 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+- Road run HR ceiling alignment:
+  - Removed hardcoded `145 bpm` from Road Bootcamp HR adjustment copy.
+  - Road Bootcamp run prescriptions now carry the computed profile-based Zone 2 ceiling when HR evidence is present.
+  - Run session target chips use the prescription ceiling for profile-based Zone 2 work.
+  - `npx tsx src/lib/roadBootcampTemplate.test.ts` passes.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
 
 ## Known Warnings
 

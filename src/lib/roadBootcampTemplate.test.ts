@@ -57,6 +57,7 @@ function testRunPrescriptionsStayOnRoadRails() {
 
 function testHrCanSoftenRoadRun() {
   const quality = getRoadBootcampRunPrescription(6, 'progression', {
+    z2CeilingBpm: 132,
     z2RunsWithHr: 4,
     z2RunsAboveCeiling: 0,
     z2AvgHrLast4: 140,
@@ -74,6 +75,7 @@ function testHrCanSoftenRoadRun() {
   assertEqual(quality.targetDurSec, 1800)
 
   const easy = getRoadBootcampRunPrescription(2, 'zone2', {
+    z2CeilingBpm: 132,
     z2RunsWithHr: 4,
     z2RunsAboveCeiling: 4,
     z2AvgHrLast4: 158,
@@ -87,7 +89,9 @@ function testHrCanSoftenRoadRun() {
     runsInWindow: 4,
     runsWithHr: 4,
   })
-  assertEqual(easy.targetDesc.includes('145 bpm'), true)
+  assertEqual(easy.z2CeilingBpm, 132)
+  assertEqual(easy.targetDesc.includes('132 bpm'), true)
+  assertEqual(easy.targetDesc.includes('145 bpm'), false)
 }
 
 testWeeklyRails()
