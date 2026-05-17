@@ -1004,6 +1004,7 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+  - `npm run smoke:foundation-run` passes after starting local Wrangler on `127.0.0.1:8787`.
 
 ## Known Warnings
 
