@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 05:29 EDT
+Updated: 2026-05-17 05:32 EDT
 
 ## Current State
 
@@ -8,7 +8,38 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 93 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 94 percent of the Road Bootcamp slice.
+
+## 2026-05-17 05:32 EDT - Ledger, Settings, Strength Ready QA
+
+- Browser QA checked Ledger at mobile size:
+  - Road Bootcamp metrics card renders.
+  - Empty state metrics are sane after fresh local reset.
+  - Browser console reported 0 errors.
+- Browser QA checked Settings at mobile size:
+  - Strava shows connected.
+  - Strava copy reads `Runs log themselves.`
+  - AI usage toggle is not present.
+  - Browser console reported 0 errors.
+- Created a local Road Bootcamp strength session and opened `/session/:id`.
+- Verified the Road Bootcamp strength ready screen:
+  - Time choices render.
+  - Equipment choices render.
+  - Default line reads `30 minutes. No gym. Main work stays, accessories drop.`
+  - Selecting Hotel gym and starting moved into the workout shell.
+- Verified stored strength context after start:
+  - `timeAvailable: "30"`
+  - `equipment: "hotel_gym"`
+  - `adaptationLine: "30 minutes. Hotel gym. Main work stays, accessories drop."`
+- Removed browser artifacts after QA.
+
+### Current Dirty Files
+
+- None before this handoff update.
+
+### Next Immediate Step
+
+Continue final QA/polish. Remaining useful checks are session completion/review surfaces and any last mobile overflow issues.
 
 ## 2026-05-17 05:29 EDT - Road Smoke Isolation And Program Copy
 
