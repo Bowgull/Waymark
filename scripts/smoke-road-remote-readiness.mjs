@@ -17,6 +17,15 @@ async function readJson(path) {
   }
 }
 
+async function expectStatus(path, options, expectedStatus) {
+  const response = await fetch(`${API_ORIGIN}${path}`, options)
+  const text = await response.text()
+  assert(
+    response.status === expectedStatus,
+    `${options.method ?? 'GET'} ${path} returned ${response.status}, expected ${expectedStatus}: ${text.slice(0, 300)}`,
+  )
+}
+
 function extractWranglerResults(output) {
   const start = output.indexOf('[\n')
   assert(start >= 0, `Wrangler output did not contain a JSON result block:\n${output}`)
@@ -40,6 +49,8 @@ assert(health.status === 'Waymark API running', 'Worker health route did not ret
 
 const roadMetrics = await readJson('/api/history/road-bootcamp?days=30')
 assert(typeof roadMetrics.completionRate === 'number', 'Road Bootcamp history route did not return metrics.')
+
+await expectStatus('/api/blocks/road-bootcamp', { method: 'POST' }, 400)
 
 const contextColumn = readRemoteD1("SELECT COUNT(*) AS count FROM pragma_table_info('sessions') WHERE name = 'context_json';")
 assert(contextColumn.count === 1, 'Remote sessions.context_json is missing.')
@@ -76,6 +87,7 @@ console.log('road remote readiness smoke passed')
 console.log(JSON.stringify({
   apiOrigin: API_ORIGIN,
   completionRate: roadMetrics.completionRate,
+  unconfirmedResetStatus: 400,
   roadExerciseCount: exerciseProof.road_exercise_count,
   videoCount: exerciseProof.video_count,
 }, null, 2))

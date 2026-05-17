@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 09:44 EDT
+Updated: 2026-05-17 09:46 EDT
 
 ## Current State
 
@@ -9,6 +9,34 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 97 percent of the Road Bootcamp slice.
+
+## 2026-05-17 09:46 EDT - Remote Reset Guard Smoke
+
+- Tightened `npm run smoke:road-remote`.
+- The remote readiness smoke now makes a non-destructive production request:
+  - `POST /api/blocks/road-bootcamp` with no body.
+  - Expected result: `400`.
+- This proves production rejects accidental Road Bootcamp fresh-start calls unless `confirmReset: true` is present.
+- Ran:
+  - `npm run smoke:road-remote`
+  - `npm run lint`
+  - `git diff --check`
+- All passed.
+- Remote smoke output included:
+  - `unconfirmedResetStatus: 400`
+  - `roadExerciseCount: 16`
+  - `videoCount: 16`
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `scripts/smoke-road-remote-readiness.mjs`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the remote reset-guard smoke. Remaining hard gate is still Xcode/device support for phone install.
 
 ## 2026-05-17 09:44 EDT - Road Bootcamp Reset Guard
 
