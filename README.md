@@ -68,12 +68,19 @@ List paired devices:
 
 ```bash
 npm run ios:devices
+npm run ios:doctor
 ```
 
 CLI native compile check:
 
 ```bash
 npm run ios:build:generic
+```
+
+Physical-device build, once `ios:doctor` reports `READY`:
+
+```bash
+WAYMARK_IOS_DEVICE_ID=<CoreDevice id> npm run ios:build:device
 ```
 
 The current native compile gate passes after installing the iOS 26.5 platform support. Physical sideload still depends on the phone being awake, trusted, available to Xcode, and signed with the configured Apple team.

@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 10:15 EDT
+Updated: 2026-05-17 10:19 EDT
 
 ## Current State
 
@@ -9,6 +9,38 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 98 percent of the Road Bootcamp slice.
+
+## 2026-05-17 10:19 EDT - iOS Device Doctor
+
+- Added `scripts/ios-device-doctor.mjs`.
+- Added package scripts:
+  - `npm run ios:doctor`
+  - `npm run ios:build:device`
+- `ios:doctor` reads `xcrun devicectl list devices --json-output` and prints the fields that matter for sideload:
+  - CoreDevice id.
+  - UDID.
+  - pairing state.
+  - Developer Mode state.
+  - DDI service availability.
+  - CoreDevice tunnel state.
+- Physical device build command now uses:
+  - `WAYMARK_IOS_DEVICE_ID=<CoreDevice id> npm run ios:build:device`
+- Updated README with the new physical-device gate and build command.
+- User decision: defer more Xcode sync/install work until the app build is otherwise finished.
+- Do not keep running native sync/build on every pass. Use the scripts when final phone proof is needed.
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `scripts/ios-device-doctor.mjs`
+- `package.json`
+- `README.md`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the iOS doctor slice, then pivot back to app completion work. Physical install proof waits until the final build pass.
 
 ## 2026-05-17 10:15 EDT - iOS Command Scripts
 
