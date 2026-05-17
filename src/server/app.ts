@@ -1843,11 +1843,17 @@ async function clearCollectedTrainingData(db: DrizzleDB) {
 app.post('/api/blocks/road-bootcamp', async (c) => {
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
-  const body: { confirmReset?: boolean } = await c.req.json<{ confirmReset?: boolean }>().catch(() => ({}))
+  const body: { confirmReset?: boolean; startDate?: string } = await c.req.json<{ confirmReset?: boolean; startDate?: string }>().catch(() => ({}))
 
   if (body.confirmReset !== true) {
     return c.json({ error: 'Road Bootcamp fresh start requires confirmReset: true' }, 400)
   }
+
+  const startDate = body.startDate ? new Date(`${body.startDate}T12:00:00Z`) : null
+  if (body.startDate && Number.isNaN(startDate?.getTime())) {
+    return c.json({ error: 'Road Bootcamp startDate must be YYYY-MM-DD' }, 400)
+  }
+  const startedAt = startDate ? Math.floor(startDate.getTime() / 1000) : nowSec
 
   await clearCollectedTrainingData(db)
 
@@ -1857,7 +1863,7 @@ app.post('/api/blocks/road-bootcamp', async (c) => {
     name: 'Road Bootcamp',
     blockType: 'road_bootcamp',
     totalWeeks: 8,
-    startedAt: nowSec,
+    startedAt,
     status: 'active',
     createdAt: nowSec,
   })
