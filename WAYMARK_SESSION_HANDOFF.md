@@ -979,6 +979,14 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+- Road strength ready copy source:
+  - Exported `getRoadBootcampAdaptationLine` from `src/lib/roadBootcampStrengthTemplates.ts`.
+  - Added test coverage proving the helper is reusable by the fixed matrix and UI.
+  - Updated the Road Bootcamp strength ready screen to use the shared helper instead of duplicating adaptation-line copy.
+  - `npx tsx src/lib/roadBootcampStrengthTemplates.test.ts` passes.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
 
 ## Known Warnings
 

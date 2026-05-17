@@ -1,4 +1,5 @@
 import {
+  getRoadBootcampAdaptationLine,
   getRoadBootcampStrengthTemplate,
   ROAD_BOOTCAMP_EQUIPMENT,
   ROAD_BOOTCAMP_TIMES,
@@ -174,6 +175,21 @@ function testHapbearBandCues() {
   assert(hotelWarmup?.notes?.includes('HAPBEAR yellow'), 'hotel warmup should carry light HAPBEAR guidance')
 }
 
+function testAdaptationLineIsReusable() {
+  assertEqual(
+    getRoadBootcampAdaptationLine('15', 'no_gym'),
+    '15 minutes. No gym. Main work only.',
+  )
+  assertEqual(
+    getRoadBootcampAdaptationLine('30', 'hotel_gym'),
+    '30 minutes. Hotel gym. Main work stays, accessories drop.',
+  )
+  assertEqual(
+    getRoadBootcampAdaptationLine('45_plus', 'full_gym'),
+    '45+ minutes. Full gym. Full strength session.',
+  )
+}
+
 testAllEighteenVariants()
 testNoGymPullingWork()
 testHotelGymAvoidsBarbells()
@@ -181,5 +197,6 @@ testWarmupsAreMarkedWarmupSets()
 testNewExercisesHaveVideosPlanned()
 testEveryTemplateExerciseHasSeededVideo()
 testHapbearBandCues()
+testAdaptationLineIsReusable()
 
 console.log('roadBootcampStrengthTemplates tests passed')

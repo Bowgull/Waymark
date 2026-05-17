@@ -85,7 +85,7 @@ function withBandCues(exercises: TemplateExercise[]): TemplateExercise[] {
   return exercises.map(withBandCue)
 }
 
-function adaptationLine(timeAvailable: RoadBootcampTime, equipment: RoadBootcampEquipment): string {
+export function getRoadBootcampAdaptationLine(timeAvailable: RoadBootcampTime, equipment: RoadBootcampEquipment): string {
   const timeLabel = timeAvailable === '45_plus' ? '45+ minutes' : `${timeAvailable} minutes`
   const equipmentLabel = equipment === 'no_gym'
     ? 'No gym'
@@ -109,7 +109,7 @@ function template(
     id: `road_bootcamp_${dayType}_${timeAvailable}_${equipment}`,
     blockType: 'road_bootcamp',
     label,
-    adaptationLine: adaptationLine(timeAvailable, equipment),
+    adaptationLine: getRoadBootcampAdaptationLine(timeAvailable, equipment),
     exercises: withBandCues(exercises),
   }
 }

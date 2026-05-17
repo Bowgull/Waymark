@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
 import { getMarkAsset, getSessionAccent } from '@/lib/markAssets'
+import { getRoadBootcampAdaptationLine } from '@/lib/roadBootcampStrengthTemplates'
 import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd } from '@/lib/notifications'
@@ -1173,17 +1174,7 @@ export function WorkoutPage() {
   }
 
   if (phase === 'strength-ready' && strengthData.session.blockType === 'road_bootcamp') {
-    const timeLabel = roadTime === '45_plus' ? '45+ minutes' : `${roadTime} minutes`
-    const equipmentLabel = roadEquipment === 'no_gym'
-      ? 'No gym'
-      : roadEquipment === 'hotel_gym'
-        ? 'Hotel gym'
-        : 'Full gym'
-    const adaptationLine = roadTime === '15'
-      ? `${timeLabel}. ${equipmentLabel}. Main work only.`
-      : roadTime === '30'
-        ? `${timeLabel}. ${equipmentLabel}. Main work stays, accessories drop.`
-        : `${timeLabel}. ${equipmentLabel}. Full strength session.`
+    const adaptationLine = getRoadBootcampAdaptationLine(roadTime, roadEquipment)
 
     const timeOptions: Array<{ value: RoadBootcampTime; label: string }> = [
       { value: '15', label: '15m' },
