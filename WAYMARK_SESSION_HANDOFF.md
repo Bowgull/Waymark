@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 09:16 EDT
+Updated: 2026-05-17 09:23 EDT
 
 ## Current State
 
@@ -8,7 +8,51 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 96 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 97 percent of the Road Bootcamp slice.
+
+## 2026-05-17 09:23 EDT - Mobile Visual QA
+
+- Ran headless mobile browser QA at 390 × 844.
+- Verified `/today`:
+  - Logo renders visually as Waymark.
+  - Morning Report fits.
+  - Bottom nav does not overlap primary controls.
+  - Browser console reported 0 errors.
+- Verified `/program`:
+  - Road Bootcamp card renders.
+  - Week 1 rails render.
+  - Prepared-week copy renders.
+  - No desktop layout drift.
+  - Browser console reported 0 errors.
+- Verified `/history`:
+  - Ledger loads after wait, not just loading mark.
+  - Road Bootcamp metrics card renders.
+  - Week tabs and bottom nav fit.
+  - Browser console reported 0 errors.
+- Verified `/settings`:
+  - Strava connected state renders.
+  - AI usage toggle is absent.
+  - Top settings content fits mobile width.
+  - Browser console reported 0 errors.
+- Verified Road Bootcamp strength ready:
+  - Time controls fit.
+  - Equipment controls fit.
+  - Bottom `Start Strength` CTA is reachable and not overlapping content.
+  - Browser console reported 0 errors.
+- Verified active Road Bootcamp strength:
+  - HAPBEAR note renders in-session: `HAPBEAR yellow band. Move clean. No strain.`
+  - Form video link renders.
+  - Set controls fit mobile width.
+  - Browser console reported 0 errors.
+- Removed browser screenshot artifacts after QA.
+
+### Current Dirty Files
+
+- None before this handoff update.
+
+### Next Immediate Step
+
+Commit and push the mobile visual QA handoff. Remaining major gate is Xcode phone install and production fresh-start decision.
 
 ## 2026-05-17 09:16 EDT - Road Run Flow Smoke And Metrics Fix
 
