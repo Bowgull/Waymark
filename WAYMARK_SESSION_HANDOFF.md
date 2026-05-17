@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 12:15 EDT
+Updated: 2026-05-17 12:20 EDT
 
 ## Current State
 
@@ -8,15 +8,65 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional. Estimate: roughly 98 percent of the Road Bootcamp slice because the remaining items are approval-gated live proof, not ordinary code work.
+The current build is functional. Estimate: roughly 99 percent of the Road Bootcamp slice. Live AI, remote Strava poll, production Road Bootcamp fresh start, production Week 1 generation, remote readiness, iOS sync, and generic iOS build have all been proven. The remaining blocker is physical phone install because Xcode currently sees the available iPhones as unavailable for DDI/tunnel.
 
 Current remaining gates:
-- Opt-in live AI smoke, only with explicit approval and usable `ANTHROPIC_API_KEY`.
-- Remote Strava poll, only with explicit approval because it can ingest real activities.
-- Production Road Bootcamp fresh start, only with explicit approval because it clears real history.
-- Final Xcode sync/install when the build is declared finished enough for phone proof.
+- Final Xcode phone install after an iPhone is awake, trusted, and available to Xcode.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 12:20 EDT - Live Proof Pass
+
+- User approved crossing the remaining live gates with: `do whatever you need to do`.
+- Ran live AI session-review smoke against production:
+  - Command: `WAYMARK_LIVE_AI_SMOKE=1 WAYMARK_API_BASE=https://waymark.bocas-joshua.workers.dev npm run smoke:live-review`.
+  - Result: passed.
+  - Proof session id: `c2bc0121-b9d5-4f24-902d-7ac9b718f478`.
+  - Review source: `ai`.
+  - Review flag: `intensity_mismatch`.
+  - Review: `Zone-2 attempt, HR climbed to 143 avg, 160 peak. Ceiling is 132. Pace holding back will fix it next run.`
+  - Smoke cleanup reset the proof session back to planned state.
+- Ran production Strava poll:
+  - Command: `POST https://waymark.bocas-joshua.workers.dev/api/strava/poll-recent`.
+  - Result: `{ "ingested": 0, "connected": true }`.
+- Ran iOS sync:
+  - Command: `npm run ios:sync`.
+  - Result: passed.
+- Ran iOS device doctor:
+  - Command: `npm run ios:doctor`.
+  - Result: blocked by device availability.
+  - `Josh (2)` and `iPhone` are paired with Developer Mode enabled, but DDI services and tunnel are unavailable.
+- Ran generic iOS build:
+  - Command: `npm run ios:build:generic`.
+  - Result: `** BUILD SUCCEEDED **`.
+- Started production Road Bootcamp fresh:
+  - Command: `POST /api/blocks/road-bootcamp` with `{ "confirmReset": true }`.
+  - New block id: `5aa6d3f8-a885-4fc2-a324-6fa564afb0b7`.
+  - Block type: `road_bootcamp`.
+  - Status: `active`.
+- Generated production Road Bootcamp Week 1:
+  - Command: `POST /api/weeks/generate`.
+  - Week 1 sessions: 14.
+  - Counts: 7 mobility, 2 easy runs, 1 quality run, 2 strength, 2 rope.
+  - No bag work or MT class was generated.
+- Ran remote readiness after production start:
+  - Command: `npm run smoke:road-remote`.
+  - Result: passed.
+  - `roadStrengthPreview`: `ready_state`.
+  - Road Bootcamp travel-strength exercises: 16.
+  - Form video URLs: 16.
+- Checked production Today for `2026-05-17`:
+  - 1 planned Road Bootcamp mobility session.
+- Production training history was cleared as part of the approved Road Bootcamp fresh start.
+- No source-code change was needed beyond this handoff update.
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Wake and unlock the target iPhone, trust this Mac if prompted, keep the phone screen awake, then run `npm run ios:doctor`. If a device reports `READY`, run `WAYMARK_IOS_DEVICE_ID=<CoreDevice id> npm run ios:build:device`.
 
 ## 2026-05-17 12:15 EDT - Final Plan Drift Cleanup
 
