@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 12:40 EDT
+Updated: 2026-05-17 12:48 EDT
 
 ## Current State
 
@@ -50,19 +50,21 @@ Current workspace expectation: clean after each pass. Do not trust older dirty-f
   - `npm run smoke:road-remote`
   - `npm run ios:sync`
   - `npm run ios:build:generic`
-- All passed except physical device build/install.
-  - `WAYMARK_IOS_DEVICE_ID=4B88E4ED-6344-5EAE-BDB2-F63930384B26 npm run ios:build:device` failed because Xcode reported the physical iPhone destination unavailable.
-  - `xcrun devicectl list devices` also reported both iPhones unavailable at that moment.
+- Initial physical device build/install was blocked because Xcode reported the iPhone unavailable.
+- Rechecked after the phone was plugged in and unlocked:
+  - `xcrun devicectl list devices` reported `Josh (2)` available and paired.
+  - `WAYMARK_IOS_DEVICE_ID=4B88E4ED-6344-5EAE-BDB2-F63930384B26 npm run ios:build:device` passed.
+  - Installed `/Users/lindsaybell/Library/Developer/Xcode/DerivedData/App-abudzhqhhmeiepdhfpiodsxoimvs/Build/Products/Debug-iphoneos/App.app`.
+  - Installed bundle id: `com.joshbocas.app`.
+  - Launch command succeeded with `Launched application with com.joshbocas.app bundle identifier.`
 
 ### Current Dirty Files
 
-- `src/features/program/ProgramPage.tsx`
-- `src/server/app.ts`
-- `WAYMARK_SESSION_HANDOFF.md`
+- None after commit and push.
 
 ### Next Immediate Step
 
-Commit and push this start-date fix. Reinstall to phone once `Josh (2)` is available to Xcode again.
+Open the app on the phone and confirm Road Bootcamp shows Sunday 2026-05-17 as pre-start and Monday 2026-05-18 as Day 1.
 
 ## 2026-05-17 12:35 EDT - Road Bootcamp Program Header Polish
 
