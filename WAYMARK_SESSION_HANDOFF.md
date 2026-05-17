@@ -995,6 +995,15 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+- Program/run HR preview alignment:
+  - Program now reads `/api/user-profile` and passes `maxHr` into week previews.
+  - Program Zone 2 details now show profile-derived HR bands when available, or talk test when not.
+  - Road Bootcamp Program previews use Road week run durations instead of the old 15-20 minute fallback.
+  - Block Zero/Fighter Zone 2 prescriptions now carry the computed Zone 2 ceiling through the run API.
+  - System HR coaching prompt no longer teaches a fixed `130-145` or `145 bpm` ceiling.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
 
 ## Known Warnings
 

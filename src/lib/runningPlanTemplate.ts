@@ -5,6 +5,7 @@ export interface RunPlanWeekTemplate {
   targetDesc: string
   targetDurSec: number | null
   targetDistKm: number | null
+  z2CeilingBpm?: number | null
 }
 
 /**
@@ -89,7 +90,7 @@ export const RUNNING_PLAN_TEMPLATE: RunPlanWeekTemplate[] = [
 export const ZONE2_PRESCRIPTION = {
   weekNumber: 0,
   runType: 'zone2',
-  targetDesc: 'Zone 2 easy run, 15-20 min at conversational pace. HR target: 130-145 bpm. Nasal breathing if possible.',
+  targetDesc: 'Zone 2 easy run, 15-20 min at conversational pace. Nasal breathing if possible.',
   targetDurSec: 1200,
   targetDistKm: null,
 } as const
