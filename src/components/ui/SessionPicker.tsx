@@ -71,20 +71,39 @@ function SuggestedPicker({ baseOptions, suggestions, onSelect, onClose, title, s
   title?: string
   subtitle?: string
 }) {
-  const suggestionMap = new Map(
-    suggestions.suggestions.map(s => [s.runCategory ? `${s.type}:${s.runCategory}` : s.type, s])
-  )
+  const baseKeys = new Set(baseOptions.map(optionKey))
 
-  const annotated = baseOptions.map(opt => {
-    const key = opt.runCategory ? `${opt.type}:${opt.runCategory}` : opt.type
-    const suggestion = suggestionMap.get(key)
-    return {
+  const annotated = suggestions.suggestions
+    .filter(suggestion => baseKeys.has(optionKey(suggestion)))
+    .map(suggestion => {
+      const base = baseOptions.find(opt => optionKey(opt) === optionKey(suggestion))
+      return {
+        type: suggestion.type,
+        label: suggestion.label,
+        timeSlot: suggestion.timeSlot,
+        runCategory: suggestion.runCategory,
+        flexibleTimeSlot: suggestion.flexibleTimeSlot ?? base?.flexibleTimeSlot ?? false,
+        priority: suggestion.priority,
+        reason: suggestion.reason ?? null,
+      }
+    })
+
+  if (annotated.length === 0) {
+    const fallback = baseOptions.map(opt => ({
       ...opt,
-      flexibleTimeSlot: suggestion?.flexibleTimeSlot ?? opt.flexibleTimeSlot,
-      priority: suggestion?.priority ?? 'neutral' as const,
-      reason: suggestion?.reason ?? null,
-    }
-  })
+      priority: 'neutral' as const,
+      reason: null,
+    }))
+    return (
+      <PickerShell onClose={onClose} flags={suggestions.flags} title={title} subtitle={subtitle}>
+        <div className="flex flex-col gap-0.5">
+          {fallback.map((opt, i) => (
+            <FlexibleSessionRow key={`f-${i}`} opt={opt} onSelect={onSelect} />
+          ))}
+        </div>
+      </PickerShell>
+    )
+  }
 
   const suggested = annotated.filter(a => a.priority === 'suggested')
   const rest = annotated.filter(a => a.priority !== 'suggested')
@@ -123,6 +142,10 @@ function SuggestedPicker({ baseOptions, suggestions, onSelect, onClose, title, s
       </div>
     </PickerShell>
   )
+}
+
+function optionKey(opt: { type: string; runCategory?: string }): string {
+  return opt.runCategory ? `${opt.type}:${opt.runCategory}` : opt.type
 }
 
 // ─── Picker Shell ───────────────────────────────────────────────
