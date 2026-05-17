@@ -139,7 +139,11 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 
 - v2 Strava, HR, coaching, and Ledger work is complete as of 2026-05-17.
 - Road Bootcamp now remains the active build track.
-- Remaining gates are live QA only: opt-in live AI smoke, remote Strava poll, and final Xcode sync/install.
+- Remaining gates require explicit approval:
+  - opt-in live AI smoke.
+  - remote Strava poll, because it can ingest real activities.
+  - production Road Bootcamp fresh start, because it clears collected training history.
+  - final Xcode sync/install for phone proof.
 
 ### Phase 1: Strava ingestion pipeline
 
