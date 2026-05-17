@@ -1023,6 +1023,13 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+- Worker deploy after foundation-run HR smoke hardening:
+  - Deployed the current Worker after `948eb51`.
+  - Production Worker version: `92a7f3a2-afda-4cab-bbe8-b995e677a268`.
+  - `npm run smoke:road-remote` passes.
+  - Remote smoke returned `unconfirmedResetStatus: 400`.
+  - Remote D1 still has required Road Bootcamp session columns, 16 travel-strength exercises, and 16 form videos.
+  - No remote Road Bootcamp reset, live AI smoke, remote Strava poll, or Xcode sync was run.
 
 ## Known Warnings
 
