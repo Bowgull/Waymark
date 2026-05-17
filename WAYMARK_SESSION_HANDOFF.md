@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 11:08 EDT
+Updated: 2026-05-17 11:44 EDT
 
 ## Current State
 
@@ -17,6 +17,39 @@ Current remaining gates:
 - Final Xcode sync/install when the build is declared finished enough for phone proof.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 11:44 EDT - Final Safe Verification Pass
+
+- Ran the full safe verification path:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `npm run smoke:road-remote`
+- `npm run test:lib`, `npm run lint`, and `npm run build` passed.
+- First `npm run smoke:road-remote` hit Cloudflare D1 API error `7403`.
+  - `npx wrangler whoami` showed the expected logged-in account.
+  - `npx wrangler d1 list` showed `waymark-db`.
+  - A direct `SELECT 1` against remote D1 then passed.
+  - Rerunning `npm run smoke:road-remote` passed.
+- Final remote smoke proof:
+  - Worker origin: `https://waymark.bocas-joshua.workers.dev`.
+  - Unconfirmed Road Bootcamp reset returns `400`.
+  - `sessions.context_json`, `sessions.skip_reason`, and `sessions.skip_reason_detail` exist.
+  - Road Bootcamp exercise proof: 16 rows, 16 video URLs.
+  - Road strength preview: `not_applicable` because production is not currently in Road Bootcamp.
+- No code changes were needed.
+- No production data was reset.
+- No live AI smoke was run.
+- No remote Strava poll was run.
+- No Xcode sync/install was run.
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the verification handoff. Remaining gates still require explicit approval: live AI smoke, remote Strava poll, production Road Bootcamp fresh start, and final Xcode phone proof.
 
 ## 2026-05-17 10:27 EDT - Remote Preview Scripts
 
