@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 12:08 EDT
+Updated: 2026-05-17 12:15 EDT
 
 ## Current State
 
@@ -17,6 +17,25 @@ Current remaining gates:
 - Final Xcode sync/install when the build is declared finished enough for phone proof.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 12:15 EDT - Final Plan Drift Cleanup
+
+- Rechecked current docs, scripts, and source for stale gate language.
+- Fixed one old `BUILD_PLAN.md` session-log line that omitted the production Road Bootcamp fresh-start gate.
+- No code changes were needed.
+- No production data was reset.
+- No live AI smoke was run.
+- No remote Strava poll was run.
+- No Xcode sync/install was run.
+
+### Current Dirty Files
+
+- `BUILD_PLAN.md`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the plan drift cleanup. Remaining work is still approval-gated live proof only.
 
 ## 2026-05-17 12:08 EDT - Gate Alignment Pass
 

@@ -215,4 +215,4 @@ Append one entry per session. Keep under 5 lines each.
 - AI prompts updated: blockZero/weeklyPlanAI know daily mobility runs every AM across all three phases; skipResponseAI and sessionReviewAI use new session label.
 - Recovery ring target: 2 -> 9 (7 daily mobility + 2 active_recovery).
 - Driver: user directive to make mobility visible every AM and respect Block Zero phases, kept short to avoid bailing.
-- Next: follow the current gates above: opt-in live AI smoke, approved remote Strava poll, and final Xcode sync/install.
+- Next: follow the current gates above: opt-in live AI smoke, approved remote Strava poll, approved production Road Bootcamp fresh start, and final Xcode sync/install.
