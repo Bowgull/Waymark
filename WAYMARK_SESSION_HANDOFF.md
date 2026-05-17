@@ -1005,6 +1005,14 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run lint` passes.
   - `npm run build` passes.
   - `npm run smoke:foundation-run` passes after starting local Wrangler on `127.0.0.1:8787`.
+- Worker deploy after HR ceiling alignment:
+  - Deployed the current `codex/roadtrip-coach` Worker after the run API/profile HR ceiling changes.
+  - Production Worker version: `efff7cf4-49d2-4820-a040-280f9f5f4722`.
+  - `npm run smoke:road-remote` passes.
+  - Remote smoke returned `unconfirmedResetStatus: 400`.
+  - Remote D1 still has `sessions.context_json`, `sessions.skip_reason`, and `sessions.skip_reason_detail`.
+  - Remote D1 still has 16 Road Bootcamp travel-strength exercises and 16 form videos.
+  - No remote Road Bootcamp reset, live AI smoke, or remote Strava poll was run.
 
 ## Known Warnings
 
