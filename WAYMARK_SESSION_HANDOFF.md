@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 05:20 EDT
+Updated: 2026-05-17 05:25 EDT
 
 ## Current State
 
@@ -8,7 +8,34 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 92 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 93 percent of the Road Bootcamp slice.
+
+## 2026-05-17 05:25 EDT - Strava Poll Idempotency
+
+- Ran mobile browser QA against local Today and Library without taking over the user's screen.
+- Today and Library logo surfaces render correctly in current local screenshots.
+- Found a real local browser console error:
+  - `POST /api/strava/poll-recent` could return 500 when two safety polls overlapped.
+  - Root cause: both polls could see the same recent Strava activity before either insert committed, then the second write hit the unique `run_sessions.strava_activity_id` index.
+- Made Strava ingestion idempotent at the database write:
+  - If insert/update collides and the activity now exists, return `duplicate` instead of throwing.
+  - If no duplicate exists after the failed write, log the real failure and rethrow.
+- Verified two concurrent local `POST /api/strava/poll-recent` calls both return 200.
+- Re-ran Today in browser QA:
+  - `POST /api/strava/poll-recent` returned 200 twice.
+  - Browser console reported 0 errors.
+- Ran `npm run test:lib`, `npm run lint`, `npm run build`, and `git diff --check`. All passed.
+- Deployed Worker version `aa011f90-8e02-40db-80b8-08f8c0a13ea4`.
+- Ran `npm run smoke:road-remote` after deploy. It passed.
+- Did not call remote Strava poll because that can ingest real production activities.
+
+### Current Dirty Files
+
+- `src/server/routes/strava.ts`
+
+### Next Immediate Step
+
+Commit and push the Strava idempotency fix, then continue final QA/polish.
 
 ## 2026-05-17 05:20 EDT - Remote Readiness Smoke Script
 

@@ -626,6 +626,14 @@ type IngestResult =
   | { status: 'no_token' }
   | { status: 'fetch_failed'; code: number }
 
+function errorText(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = 'cause' in error ? (error as Error & { cause?: unknown }).cause : null
+    return `${error.message}${cause ? ` ${errorText(cause)}` : ''}`
+  }
+  return String(error)
+}
+
 export async function ingestStravaActivity(activityId: number, env: Bindings): Promise<IngestResult> {
   const db = createDB(env)
 
@@ -742,38 +750,52 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   let runSessionId: string
   if (existingForParent) {
     runSessionId = existingForParent.id
-    await db.update(runSessions).set({
-      distanceKm: runData.distanceKm,
-      durationSec: runData.durationSec,
-      paceSecKm: runData.paceSecKm,
-      isIndoor: act.trainer ? runData.isIndoor : (existingForParent.isIndoor ?? 0),
-      avgHr: runData.avgHr,
-      maxHr: runData.maxHr,
-      zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
-      elevationGainM: runData.elevationGainM,
-      source: 'strava',
-      stravaActivityId: activityId,
-      attachmentStatus,
-    }).where(eq(runSessions.id, runSessionId))
+    try {
+      await db.update(runSessions).set({
+        distanceKm: runData.distanceKm,
+        durationSec: runData.durationSec,
+        paceSecKm: runData.paceSecKm,
+        isIndoor: act.trainer ? runData.isIndoor : (existingForParent.isIndoor ?? 0),
+        avgHr: runData.avgHr,
+        maxHr: runData.maxHr,
+        zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
+        elevationGainM: runData.elevationGainM,
+        source: 'strava',
+        stravaActivityId: activityId,
+        attachmentStatus,
+      }).where(eq(runSessions.id, runSessionId))
+    } catch (error) {
+      const [duplicate] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
+      if (duplicate) return { status: 'duplicate' }
+      console.error('[strava-ingest] run session update failed', activityId, errorText(error))
+      throw error
+    }
   } else {
     runSessionId = crypto.randomUUID()
-    await db.insert(runSessions).values({
-      id: runSessionId,
-      sessionId: parentSessionId,
-      planWeek: null,
-      runType: null,
-      distanceKm: runData.distanceKm,
-      durationSec: runData.durationSec,
-      paceSecKm: runData.paceSecKm,
-      isIndoor: runData.isIndoor,
-      avgHr: runData.avgHr,
-      maxHr: runData.maxHr,
-      zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
-      elevationGainM: runData.elevationGainM,
-      source: 'strava',
-      stravaActivityId: activityId,
-      attachmentStatus,
-    })
+    try {
+      await db.insert(runSessions).values({
+        id: runSessionId,
+        sessionId: parentSessionId,
+        planWeek: null,
+        runType: null,
+        distanceKm: runData.distanceKm,
+        durationSec: runData.durationSec,
+        paceSecKm: runData.paceSecKm,
+        isIndoor: runData.isIndoor,
+        avgHr: runData.avgHr,
+        maxHr: runData.maxHr,
+        zoneSeconds: zoneSeconds ? JSON.stringify(zoneSeconds) : null,
+        elevationGainM: runData.elevationGainM,
+        source: 'strava',
+        stravaActivityId: activityId,
+        attachmentStatus,
+      })
+    } catch (error) {
+      const [duplicate] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
+      if (duplicate) return { status: 'duplicate' }
+      console.error('[strava-ingest] run session insert failed', activityId, errorText(error))
+      throw error
+    }
   }
 
   if (act.splits_metric && act.splits_metric.length > 0) {
