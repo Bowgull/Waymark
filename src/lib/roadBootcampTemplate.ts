@@ -86,21 +86,21 @@ function applyHrGuidance(
   category: 'zone2' | 'progression',
   hr: HrSnapshot | null,
 ): RoadBootcampRunPrescription {
-  if (!hr || hr.runsWithHr === 0) return prescription
+  if (!hr) return prescription
   const z2CeilingBpm = hr.z2CeilingBpm
+  const withCeiling = category === 'zone2' ? { ...prescription, z2CeilingBpm } : prescription
+  if (hr.runsWithHr === 0) return withCeiling
 
   if (category === 'zone2') {
     if (hr.z2Compliance === 'over_paced') {
       return {
-        ...prescription,
-        z2CeilingBpm,
+        ...withCeiling,
         targetDesc: `${prescription.targetDesc} Cap it at ${z2CeilingBpm} bpm. Walk if HR climbs above the ceiling.`,
       }
     }
     if (hr.z2Compliance === 'slightly_high') {
       return {
-        ...prescription,
-        z2CeilingBpm,
+        ...withCeiling,
         targetDesc: `${prescription.targetDesc} Watch the ceiling. HR over ${z2CeilingBpm} bpm means slow down now, not later.`,
       }
     }
@@ -123,7 +123,7 @@ function applyHrGuidance(
     }
   }
 
-  return prescription
+  return withCeiling
 }
 
 export function getRoadBootcampRunPrescription(

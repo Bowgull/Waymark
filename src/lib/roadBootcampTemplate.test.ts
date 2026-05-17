@@ -56,6 +56,23 @@ function testRunPrescriptionsStayOnRoadRails() {
 }
 
 function testHrCanSoftenRoadRun() {
+  const firstEasy = getRoadBootcampRunPrescription(1, 'zone2', {
+    z2CeilingBpm: 132,
+    z2RunsWithHr: 0,
+    z2RunsAboveCeiling: 0,
+    z2AvgHrLast4: null,
+    z2OverCeilingRate: null,
+    z2Compliance: 'insufficient_data',
+    driftBpm: null,
+    driftAssessment: 'insufficient_data',
+    lastAvgHr: null,
+    lastMaxHr: null,
+    lastRunDaysAgo: null,
+    runsInWindow: 0,
+    runsWithHr: 0,
+  })
+  assertEqual(firstEasy.z2CeilingBpm, 132)
+
   const quality = getRoadBootcampRunPrescription(6, 'progression', {
     z2CeilingBpm: 132,
     z2RunsWithHr: 4,

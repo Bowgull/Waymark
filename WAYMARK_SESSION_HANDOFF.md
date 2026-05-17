@@ -1013,6 +1013,16 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - Remote D1 still has `sessions.context_json`, `sessions.skip_reason`, and `sessions.skip_reason_detail`.
   - Remote D1 still has 16 Road Bootcamp travel-strength exercises and 16 form videos.
   - No remote Road Bootcamp reset, live AI smoke, or remote Strava poll was run.
+- Foundation-run HR smoke hardening:
+  - Tightened `npm run smoke:foundation-run` so it asserts the returned prescription includes `z2CeilingBpm`.
+  - The smoke now rejects stale `HR target: 130-145 bpm` text.
+  - The first hardened smoke exposed that Road Bootcamp easy-run prescriptions omitted `z2CeilingBpm` before HR history existed.
+  - Fixed Road Bootcamp easy-run prescriptions so they carry the computed Zone 2 ceiling from day 1.
+  - `npx tsx src/lib/roadBootcampTemplate.test.ts` passes.
+  - `npm run smoke:foundation-run` passes with local profile ceiling `132`.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
 
 ## Known Warnings
 
