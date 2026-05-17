@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-16 19:24 EDT
+Updated: 2026-05-17 05:15 EDT
 
 ## Current State
 
@@ -8,7 +8,33 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 90 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 91 percent of the Road Bootcamp slice.
+
+## 2026-05-17 05:15 EDT - Native API Base Guard
+
+- Re-centered the session in `/Users/lindsaybell/Developer/Waymark` after the CereBro workspace mistake.
+- Verified the active branch is `codex/roadtrip-coach` and the remote is `git@github.com:Bowgull/Waymark.git`.
+- Built and synced iOS once for Xcode readiness, then fixed the Capacitor version mismatch it exposed:
+  - `@capacitor/core@8.3.1`
+  - `@capacitor/ios@8.3.1`
+  - `@capacitor/cli@8.3.1`
+- Committed and pushed that native sync hygiene as `46f7e88 Align Capacitor iOS sync versions`.
+- Found a phone-critical API-base issue: `.env.local` can point `VITE_API_URL` at localhost, which would make a sideloaded iPhone build try to call `http://localhost:8787`.
+- Added a native API-base resolver so Capacitor iOS falls back to `https://waymark.bocas-joshua.workers.dev` when the configured API origin is blank, `localhost`, or `127.0.0.1`.
+- Kept web dev behavior unchanged: browser dev still uses `http://localhost:8787`.
+- Added `src/lib/apiBase.test.ts` and wired it into `npm run test:lib`.
+- Ran `npm run lint`, `npm run test:lib`, `npm run build`, and `npx cap sync ios`. All passed.
+- iOS web assets were synced after the API-base fix. Generated `ios/App/App/public` assets are not tracked.
+
+### Current Dirty Files
+
+- `package.json`
+- `src/lib/apiBase.ts`
+- `src/lib/apiBase.test.ts`
+
+### Next Immediate Step
+
+Commit and push the native API-base guard, then continue final Road Bootcamp QA and targeted polish. Do not run live AI smoke unless explicitly approved with the Anthropic key available to Wrangler.
 
 ## What Changed This Pass
 
