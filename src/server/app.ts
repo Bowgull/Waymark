@@ -1839,6 +1839,11 @@ async function clearCollectedTrainingData(db: DrizzleDB) {
 app.post('/api/blocks/road-bootcamp', async (c) => {
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
+  const body: { confirmReset?: boolean } = await c.req.json<{ confirmReset?: boolean }>().catch(() => ({}))
+
+  if (body.confirmReset !== true) {
+    return c.json({ error: 'Road Bootcamp fresh start requires confirmReset: true' }, 400)
+  }
 
   await clearCollectedTrainingData(db)
 

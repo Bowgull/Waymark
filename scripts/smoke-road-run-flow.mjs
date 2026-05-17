@@ -72,7 +72,7 @@ if (!canResetTarget()) {
   throw new Error('Road run flow smoke will not reset remote data without WAYMARK_ALLOW_RESET=1')
 }
 
-await api('/api/blocks/road-bootcamp', { method: 'POST' })
+await api('/api/blocks/road-bootcamp', { method: 'POST', body: JSON.stringify({ confirmReset: true }) })
 
 const easy = await completeRunSession({
   type: 'foundation_run',

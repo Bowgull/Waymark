@@ -472,7 +472,10 @@ export function ProgramPage() {
     }
     setGenerating(true)
     try {
-      const newBlock = await apiFetch<Block>('/api/blocks/road-bootcamp', { method: 'POST' })
+      const newBlock = await apiFetch<Block>('/api/blocks/road-bootcamp', {
+        method: 'POST',
+        body: JSON.stringify({ confirmReset: true }),
+      })
       setBlock(newBlock)
       const monday = getMonday(0)
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {

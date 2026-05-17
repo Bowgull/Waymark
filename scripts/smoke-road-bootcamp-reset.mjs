@@ -16,6 +16,17 @@ async function api(path, options = {}) {
   return data
 }
 
+async function apiStatus(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers ?? {}),
+    },
+  })
+  return res.status
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -80,7 +91,12 @@ await api('/api/sessions/insert-ad-hoc', {
   }),
 })
 
-const block = await api('/api/blocks/road-bootcamp', { method: 'POST' })
+const unconfirmedStatus = await apiStatus('/api/blocks/road-bootcamp', { method: 'POST' })
+if (unconfirmedStatus !== 400) {
+  throw new Error(`Road Bootcamp reset without confirmReset should return 400, got ${unconfirmedStatus}`)
+}
+
+const block = await api('/api/blocks/road-bootcamp', { method: 'POST', body: JSON.stringify({ confirmReset: true }) })
 if (block.blockType !== 'road_bootcamp') {
   throw new Error(`expected road_bootcamp block, got ${block.blockType}`)
 }
