@@ -15,7 +15,7 @@ const metrics = computeRoadBootcampMetrics({
   ],
   runs: [
     { sessionId: 'easy', runType: 'zone2', durationSec: 1800 },
-    { sessionId: 'quality', runType: 'intervals', durationSec: 1500 },
+    { sessionId: 'quality', runType: 'easy', durationSec: 1500 },
   ],
   logs: [
     { logDate: 1, sleepHours: 6, soreness: 2 },

@@ -71,7 +71,7 @@ export function computeRoadBootcampMetrics(params: {
     const durationSec = run?.durationSec ?? session.durationSec ?? 0
     const minutes = Math.round(durationSec / 60)
     runMinutes += minutes
-    if (session.type === 'foundation_run' || run?.runType === 'zone2' || run?.runType === 'easy') {
+    if (session.type === 'foundation_run') {
       easyRunMinutes += minutes
     } else {
       qualityRunMinutes += minutes
