@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 10:19 EDT
+Updated: 2026-05-17 10:24 EDT
 
 ## Current State
 
@@ -9,6 +9,41 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 98 percent of the Road Bootcamp slice.
+
+## 2026-05-17 10:24 EDT - Dependency Audit Reduction
+
+- Ran `npm audit --json`.
+  - Starting state: 11 vulnerabilities.
+  - 3 high.
+  - 8 moderate.
+- Ran `npm audit fix` after dry-run confirmed the safe fix set.
+- Updated lockfile packages:
+  - `@xmldom/xmldom`: 0.8.11 to 0.8.13.
+  - `vite`: 7.3.1 to 7.3.3.
+  - `postcss`: 8.5.8 to 8.5.14.
+  - `hono`: 4.12.9 to 4.12.19.
+  - `fast-uri`: 3.1.0 to 3.1.2.
+  - `ip-address`: 10.1.0 to 10.2.0.
+  - `express-rate-limit`: 8.3.2 to 8.5.2.
+- New audit state: 4 moderate vulnerabilities, all through `drizzle-kit` and its old `@esbuild-kit` dev dependency path.
+- Did not run `npm audit fix --force`.
+  - npm would install `drizzle-kit@0.18.1`, a breaking downgrade from `0.31.10`.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+- All passed.
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `package-lock.json`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the audit reduction. Leave the remaining `drizzle-kit` moderate findings as tracked dev-tool risk unless a non-downgrade fix becomes available.
 
 ## 2026-05-17 10:19 EDT - iOS Device Doctor
 
