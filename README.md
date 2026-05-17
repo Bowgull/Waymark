@@ -29,12 +29,21 @@ npx wrangler dev
 
 Wrangler runs at `http://localhost:8787`.
 
+For quick browser QA against the production Worker:
+
+```bash
+npm run dev:remote
+```
+
+This keeps the UI local and sends API calls to `https://waymark.bocas-joshua.workers.dev`.
+
 ## Core Commands
 
 ```bash
 npm run test:lib
 npm run lint
 npm run build
+npm run preview:remote
 ```
 
 Road Bootcamp smoke checks:
