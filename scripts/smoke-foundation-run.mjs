@@ -55,6 +55,16 @@ try {
   if (started.runSession?.runType !== 'zone2') {
     throw new Error(`expected zone2 runType, got ${started.runSession?.runType}`)
   }
+  const ceiling = started.prescription?.z2CeilingBpm
+  if (!Number.isFinite(ceiling)) {
+    throw new Error(`foundation run prescription missing z2CeilingBpm: ${JSON.stringify(started.prescription)}`)
+  }
+  if (started.prescription?.targetDesc?.includes('Keep HR at or below') && !started.prescription.targetDesc.includes(`Keep HR at or below ${ceiling} bpm.`)) {
+    throw new Error(`foundation run prescription did not use computed HR ceiling: ${started.prescription?.targetDesc}`)
+  }
+  if (started.prescription.targetDesc.includes('HR target: 130-145 bpm')) {
+    throw new Error(`foundation run prescription returned stale fixed HR band: ${started.prescription.targetDesc}`)
+  }
 
   const warmupCount = started.postureExercises?.length ?? 0
   if (warmupCount !== 5) {
@@ -71,12 +81,16 @@ try {
   if (repeatedCount !== warmupCount) {
     throw new Error(`foundation run start is not idempotent: ${warmupCount} then ${repeatedCount}`)
   }
+  if (repeated.prescription?.z2CeilingBpm !== ceiling) {
+    throw new Error(`foundation run prescription changed across repeat start: ${ceiling} then ${repeated.prescription?.z2CeilingBpm}`)
+  }
 
   console.log(JSON.stringify({
     ok: true,
     sessionId,
     runId,
     runType: started.runSession.runType,
+    z2CeilingBpm: ceiling,
     warmupCount,
   }, null, 2))
 } finally {
