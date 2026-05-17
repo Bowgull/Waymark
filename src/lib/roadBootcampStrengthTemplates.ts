@@ -43,6 +43,48 @@ function warmup(exerciseId: string, label: string, notes?: string): TemplateExer
   return { exerciseId, label, section: 'warmup', sets: sets(1, 12, 30, true), notes }
 }
 
+const HAPBEAR_BANDS: Record<string, string> = {
+  mobility: 'HAPBEAR yellow or orange band. Use the one that moves cleanly.',
+  light: 'HAPBEAR yellow band. Move clean. No strain.',
+  medium: 'HAPBEAR red or blue band. Last reps should slow down.',
+  heavy: 'HAPBEAR blue or purple band. Keep the hinge clean.',
+  max: 'HAPBEAR purple band. Use only if position stays solid.',
+}
+
+function bandCue(exerciseId: string): string | null {
+  switch (exerciseId) {
+    case 'ex-band-pull-aparts':
+    case 'ex-face-pulls':
+      return HAPBEAR_BANDS.light
+    case 'ex-band-row':
+    case 'ex-band-chest-press':
+    case 'ex-band-curl':
+      return HAPBEAR_BANDS.medium
+    case 'ex-band-good-morning':
+    case 'ex-tempo-squat':
+    case 'ex-reverse-lunge':
+      return HAPBEAR_BANDS.heavy
+    case 'ex-bulgarian-split-squat':
+    case 'ex-single-leg-rdl':
+      return HAPBEAR_BANDS.mobility
+    default:
+      return null
+  }
+}
+
+function withBandCue(exercise: TemplateExercise): TemplateExercise {
+  const cue = bandCue(exercise.exerciseId)
+  if (!cue) return exercise
+  return {
+    ...exercise,
+    notes: exercise.notes ? `${exercise.notes} ${cue}` : cue,
+  }
+}
+
+function withBandCues(exercises: TemplateExercise[]): TemplateExercise[] {
+  return exercises.map(withBandCue)
+}
+
 function adaptationLine(timeAvailable: RoadBootcampTime, equipment: RoadBootcampEquipment): string {
   const timeLabel = timeAvailable === '45_plus' ? '45+ minutes' : `${timeAvailable} minutes`
   const equipmentLabel = equipment === 'no_gym'
@@ -68,7 +110,7 @@ function template(
     blockType: 'road_bootcamp',
     label,
     adaptationLine: adaptationLine(timeAvailable, equipment),
-    exercises,
+    exercises: withBandCues(exercises),
   }
 }
 
