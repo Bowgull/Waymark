@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 05:15 EDT
+Updated: 2026-05-17 05:16 EDT
 
 ## Current State
 
@@ -8,7 +8,37 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 91 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 92 percent of the Road Bootcamp slice.
+
+## 2026-05-17 05:16 EDT - Phone-Facing Remote Road Bootcamp Readiness
+
+- Checked the phone-facing Worker and remote D1 after the native API-base fix.
+- Found remote D1 was behind the Road Bootcamp schema:
+  - `sessions.context_json` was missing.
+  - Road Bootcamp travel-strength exercise rows were missing.
+- Applied `npm run db:migrate:0022:remote`.
+- Remote migration wrote the Road Bootcamp context column and 16 travel-strength exercise rows.
+- Verified remote D1 read-only:
+  - `sessions.context_json` exists.
+  - Road Bootcamp exercise count is 16.
+  - Road Bootcamp exercise video count is 16.
+- Found the deployed Worker was still old:
+  - `POST /api/blocks/road-bootcamp` returned 404 before deploy.
+- Ran `npm run deploy`.
+- Deployed Worker version `05713245-c2cf-406e-8128-d7256074b885`.
+- Verified phone-facing routes without resetting remote training history:
+  - `GET /api/health` returned 200.
+  - `GET /api/history/road-bootcamp?days=30` returned 200 and Road Bootcamp metric JSON.
+- Did not call the remote fresh-start endpoint because that would clear remote training history.
+- Current phone-facing backend is now aligned with the sideloaded iOS bundle.
+
+### Current Dirty Files
+
+- None before this handoff update.
+
+### Next Immediate Step
+
+Continue final Road Bootcamp app QA against the phone-facing build path. Use non-destructive remote checks unless the user explicitly asks to start/reset Road Bootcamp on production data.
 
 ## 2026-05-17 05:15 EDT - Native API Base Guard
 
