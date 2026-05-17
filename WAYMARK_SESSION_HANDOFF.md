@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 09:23 EDT
+Updated: 2026-05-17 09:35 EDT
 
 ## Current State
 
@@ -9,6 +9,36 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 97 percent of the Road Bootcamp slice.
+
+## 2026-05-17 09:35 EDT - iOS/Xcode Sideload Gate
+
+- Verified native project state for Xcode sideload path.
+- Ran `npx cap sync ios`; it passed and regenerated current web assets/config into `ios/App/App/public`.
+- Found the tracked Xcode SwiftPM lockfile was stale:
+  - Previous `capacitor-swift-pm`: `8.2.0`.
+  - Current Capacitor JS packages: `8.3.1`.
+  - Updated `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` to `8.3.1`.
+- Ran `swift package resolve` inside `ios/App/CapApp-SPM`; it resolved `capacitor-swift-pm` at `8.3.1` and downloaded the Capacitor/Cordova XCFramework artifacts.
+- Ran `xcodebuild -list -project ios/App/App.xcodeproj -skipPackageUpdates`; it listed targets and schemes:
+  - Targets: `App`, `WaymarkActivity`.
+  - Schemes include `App` and `WaymarkActivity`.
+- Attempted generic iOS build:
+  - `xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -skipPackageUpdates build`
+  - Result: blocked by local Xcode device/simulator environment before compile.
+  - Xcode reports CoreSimulator mismatch: installed CoreSimulator `1051.50.0`, Xcode expects `1051.54.0`.
+  - Xcode also reports connected device `Josh (2)` is ineligible until iOS 26.5 platform/device support is installed from Xcode settings.
+- Ran `xcodebuild -showsdks`; installed SDK list reports `iphoneos26.5` and `iphonesimulator26.5`, so the remaining gate is Xcode platform/device-support state, not a Waymark source-code failure.
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the Capacitor SwiftPM lockfile update plus this handoff. Then update Xcode components/device support locally and rerun the iOS build/device install from Xcode.
 
 ## 2026-05-17 09:23 EDT - Mobile Visual QA
 
