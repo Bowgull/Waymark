@@ -552,8 +552,24 @@ app.get('/api/sessions/suggestions', async (c) => {
     }
   }
 
+  // Active block context
+  let blockWeek: number | null = null
+  let blockType: string | null = null
+  let blockStartEpochDay: number | null = null
+  const blocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
+  if (blocks.length > 0) {
+    const block = blocks[0]
+    blockType = block.blockType
+    const startedAt = block.startedAt ?? Math.floor(Date.now() / 1000)
+    blockStartEpochDay = Math.floor(startedAt / 86400)
+    const weeksSinceStart = Math.floor((targetEpochDay - blockStartEpochDay) / 7)
+    blockWeek = ((Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks) - 1) % 6) + 1
+  }
+
   // This week's sessions (7-day window around target date)
-  const weekStart = targetEpochDay - new Date(targetEpochDay * 86400000).getUTCDay()
+  const weekStart = blockType === 'road_bootcamp' && blockStartEpochDay !== null
+    ? blockStartEpochDay + Math.max(0, Math.floor((targetEpochDay - blockStartEpochDay) / 7)) * 7
+    : targetEpochDay - new Date(targetEpochDay * 86400000).getUTCDay()
   const weekEnd = weekStart + 6
   const weekSessions = await db.select().from(sessions).where(
     and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd))
@@ -563,16 +579,6 @@ app.get('/api/sessions/suggestions', async (c) => {
   const existingOnDate = weekSessions
     .filter(s => s.scheduledDate === targetEpochDay)
     .map(s => ({ type: s.type, timeSlot: s.timeSlot ?? '' }))
-
-  // Active block week
-  let blockWeek: number | null = null
-  const blocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
-  if (blocks.length > 0) {
-    const block = blocks[0]
-    const startedAt = block.startedAt ?? Math.floor(Date.now() / 1000)
-    const weeksSinceStart = Math.floor((Math.floor(Date.now() / 1000) - startedAt) / (7 * 86400))
-    blockWeek = ((Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks) - 1) % 6) + 1
-  }
 
   const result = computeSuggestions({
     todayWellness,
@@ -584,8 +590,9 @@ app.get('/api/sessions/suggestions', async (c) => {
         status: s.status,
         scheduledDate: s.scheduledDate as number,
         timeSlot: s.timeSlot ?? '',
-      })),
+    })),
     blockWeek,
+    blockType,
     targetDate: targetEpochDay,
     existingSessionsOnDate: existingOnDate,
   })

@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 12:48 EDT
+Updated: 2026-05-17 19:38 EDT
 
 ## Current State
 
@@ -14,6 +14,33 @@ Current remaining gates:
 - None for the Road Bootcamp slice.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-17 19:38 EDT - Road Bootcamp Add Session Intelligence
+
+- Made Add Session block-aware for Road Bootcamp.
+- Road Bootcamp suggestions now use Road Bootcamp rails:
+  - Strength.
+  - Easy Run.
+  - Quality Run.
+  - Rope Primer.
+  - Mobility.
+- Road Bootcamp suggestions no longer show Bag Work, Reset, or MT Class.
+- Existing non-Road blocks still use the legacy Waymark training targets.
+- Fixed Road Bootcamp suggestion accounting to count the 7-day block week from the Road Bootcamp start date, not a generic Sunday-start calendar window.
+- Updated the picker so API suggestions can be authoritative for the visible option set.
+- Added `src/lib/sessionSuggestions.test.ts`.
+- Deployed Worker:
+  - Version id: `6c231056-93f0-42ba-aa61-45839e83a89e`.
+- Browser QA:
+  - `/today` Add Session showed Strength, Easy Run, Quality Run, Rope Primer, Mobility.
+  - Confirmed no Bag Work and no Reset in the Road Bootcamp picker.
+- Remote API proof:
+  - `GET /api/sessions/suggestions?date=2026-05-17` returned `["Strength","Easy Run","Quality Run","Rope Primer","Mobility"]`.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
 
 ## 2026-05-17 12:40 EDT - Road Bootcamp Tomorrow Start Fix
 

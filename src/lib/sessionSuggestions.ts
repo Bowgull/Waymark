@@ -3,7 +3,7 @@
 // wellness metrics, skip patterns, training block position,
 // and volume deficits from training targets.
 
-import { TRAINING_TARGETS } from './trainingTargets'
+import { TRAINING_TARGETS, type SessionTarget } from './trainingTargets'
 
 export interface WellnessSnapshot {
   sleepHours: number | null
@@ -30,6 +30,7 @@ export interface SuggestionInput {
   recentWellness: RecentWellness | null
   weekSessions: WeekSession[]
   blockWeek: number | null
+  blockType?: string | null
   targetDate: number           // epochDay for the date we're suggesting sessions for
   existingSessionsOnDate: { type: string; timeSlot: string }[]
 }
@@ -56,8 +57,61 @@ export interface SuggestionsResponse {
   deficits: { type: string; label: string; completed: number; target: number }[]
 }
 
-// Build options from training targets (single source of truth)
-const ALL_OPTIONS: Omit<SessionSuggestion, 'reason' | 'priority'>[] = TRAINING_TARGETS
+const ROAD_BOOTCAMP_TARGETS: SessionTarget[] = [
+  {
+    type: 'strength',
+    label: 'Strength',
+    weeklyTarget: 2,
+    priority: 'high',
+    flexibleTimeSlot: true,
+    defaultTimeSlot: 'am',
+    carryForwardWeight: 0.8,
+  },
+  {
+    type: 'foundation_run',
+    label: 'Easy Run',
+    weeklyTarget: 2,
+    priority: 'high',
+    flexibleTimeSlot: true,
+    defaultTimeSlot: 'am',
+    carryForwardWeight: 0.6,
+  },
+  {
+    type: 'running',
+    label: 'Quality Run',
+    weeklyTarget: 1,
+    priority: 'high',
+    flexibleTimeSlot: true,
+    defaultTimeSlot: 'am',
+    carryForwardWeight: 0.6,
+    runCategory: 'progression',
+  },
+  {
+    type: 'skip_rope',
+    label: 'Rope Primer',
+    weeklyTarget: 2,
+    priority: 'medium',
+    flexibleTimeSlot: true,
+    defaultTimeSlot: 'pm',
+    carryForwardWeight: 0.2,
+  },
+  {
+    type: 'mobility',
+    label: 'Mobility',
+    weeklyTarget: 7,
+    priority: 'low',
+    flexibleTimeSlot: false,
+    defaultTimeSlot: 'am',
+    carryForwardWeight: 0.1,
+  },
+]
+
+function targetsForBlock(blockType?: string | null): SessionTarget[] {
+  return blockType === 'road_bootcamp' ? ROAD_BOOTCAMP_TARGETS : TRAINING_TARGETS
+}
+
+function optionsForTargets(targets: SessionTarget[]): Omit<SessionSuggestion, 'reason' | 'priority'>[] {
+  return targets
   .filter(t => t.type !== 'mt_class') // MT class not available for ad-hoc
   .map(t => ({
     type: t.type,
@@ -66,12 +120,15 @@ const ALL_OPTIONS: Omit<SessionSuggestion, 'reason' | 'priority'>[] = TRAINING_T
     flexibleTimeSlot: t.flexibleTimeSlot,
     runCategory: t.runCategory,
   }))
+}
 
 const RECOVERY_TYPES = new Set(['active_recovery', 'mobility', 'foundation_run'])
 const INTENSE_TYPES = new Set(['bag_work', 'skip_rope'])
 
 export function computeSuggestions(input: SuggestionInput): SuggestionsResponse {
   const { todayWellness, recentWellness, weekSessions, existingSessionsOnDate } = input
+  const targets = targetsForBlock(input.blockType)
+  const allOptions = optionsForTargets(targets)
 
   const flags: string[] = []
   const overrides = new Map<string, { priority: SessionSuggestion['priority']; reason: string }>()
@@ -83,7 +140,7 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
 
   // ─── Volume deficit tracking ───────────────────────────────
   const deficits: SuggestionsResponse['deficits'] = []
-  for (const target of TRAINING_TARGETS) {
+  for (const target of targets) {
     if (target.weeklyTarget === 0) continue
     const key = target.runCategory ? `${target.type}:${target.runCategory}` : target.type
     const completed = weekSessions.filter(s => {
@@ -124,7 +181,7 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
   if (sorenessHigh) {
     flags.push('Soreness is high')
 
-    for (const opt of ALL_OPTIONS) {
+    for (const opt of allOptions) {
       const key = optKey(opt)
       if (RECOVERY_TYPES.has(opt.type)) {
         overrides.set(key, { priority: 'suggested', reason: 'Recovery. Soreness is elevated' })
@@ -141,7 +198,7 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
   if (sleepLow) {
     flags.push('Sleep is low')
 
-    for (const opt of ALL_OPTIONS) {
+    for (const opt of allOptions) {
       const key = optKey(opt)
       if (RECOVERY_TYPES.has(opt.type) && !overrides.has(key)) {
         overrides.set(key, { priority: 'suggested', reason: 'Light session. Sleep deficit' })
@@ -161,7 +218,7 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
     if (highHerb) parts.push(`herb ${todayWellness!.weedGrams}g`)
     flags.push(`Substance load (${parts.join(', ')})`)
 
-    for (const opt of ALL_OPTIONS) {
+    for (const opt of allOptions) {
       const key = optKey(opt)
       if (!overrides.has(key)) {
         if (RECOVERY_TYPES.has(opt.type)) {
@@ -180,7 +237,7 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
 
   if (recoveryGood) {
     flags.push('Good recovery. Full send')
-    for (const opt of ALL_OPTIONS) {
+    for (const opt of allOptions) {
       const key = optKey(opt)
       if (!overrides.has(key)) {
         overrides.set(key, { priority: 'suggested', reason: null! })
@@ -191,7 +248,7 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
   // ─── Build final suggestions ───────────────────────────────
   const existingTypes = new Set(existingSessionsOnDate.map(s => s.type))
 
-  const suggestions: SessionSuggestion[] = ALL_OPTIONS
+  const suggestions: SessionSuggestion[] = allOptions
     .filter(opt => {
       if (opt.type === 'running') return true
       return !existingTypes.has(opt.type)
