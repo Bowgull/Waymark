@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 10:27 EDT
+Updated: 2026-05-17 11:08 EDT
 
 ## Current State
 
@@ -9,6 +9,14 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 98 percent of the Road Bootcamp slice.
+
+Current remaining gates:
+- Opt-in live AI smoke, only with explicit approval and usable `ANTHROPIC_API_KEY`.
+- Remote Strava poll, only with explicit approval because it can ingest real activities.
+- Production Road Bootcamp fresh start, only with explicit approval because it clears real history.
+- Final Xcode sync/install when the build is declared finished enough for phone proof.
+
+Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
 
 ## 2026-05-17 10:27 EDT - Remote Preview Scripts
 
@@ -1035,6 +1043,13 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - Verified both scripts fail closed against `https://waymark.bocas-joshua.workers.dev` before any API call.
   - Verified both scripts still pass against local Wrangler on `127.0.0.1:8787`.
   - Updated README data rules with the writable-smoke guard.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
+- Build-plan stale gate cleanup:
+  - Updated `BUILD_PLAN.md` so the old mobility migration session log no longer says production migration is pending.
+  - Added explicit current gates to the top of this handoff.
+  - Added a note that older dirty-file notes are historical and should not override current `git status`.
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
