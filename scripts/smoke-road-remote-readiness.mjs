@@ -35,6 +35,15 @@ function extractWranglerResults(output) {
   return result
 }
 
+function extractWranglerRows(output) {
+  const start = output.indexOf('[\n')
+  assert(start >= 0, `Wrangler output did not contain a JSON result block:\n${output}`)
+  const parsed = JSON.parse(output.slice(start))
+  const rows = parsed?.[0]?.results
+  assert(Array.isArray(rows), `Wrangler result rows were missing:\n${output}`)
+  return rows
+}
+
 function readRemoteD1(command) {
   const output = execFileSync(
     'npx',
@@ -42,6 +51,15 @@ function readRemoteD1(command) {
     { encoding: 'utf8' },
   )
   return extractWranglerResults(output)
+}
+
+function readRemoteD1Rows(command) {
+  const output = execFileSync(
+    'npx',
+    ['wrangler', 'd1', 'execute', 'waymark-db', '--remote', `--command=${command}`],
+    { encoding: 'utf8' },
+  )
+  return extractWranglerRows(output)
 }
 
 const health = await readJson('/api/health')
@@ -91,12 +109,30 @@ const exerciseProof = readRemoteD1(`
 assert(exerciseProof.road_exercise_count === 16, `Expected 16 Road Bootcamp exercise rows, got ${exerciseProof.road_exercise_count}.`)
 assert(exerciseProof.video_count === 16, `Expected 16 Road Bootcamp exercise videos, got ${exerciseProof.video_count}.`)
 
+const roadStrengthRows = readRemoteD1Rows(`
+  SELECT id
+  FROM sessions
+  WHERE block_type = 'road_bootcamp'
+    AND type = 'strength'
+  ORDER BY scheduled_date DESC
+  LIMIT 1;
+`)
+let roadStrengthPreview = 'not_applicable'
+const roadStrength = roadStrengthRows[0] ?? null
+if (roadStrength?.id) {
+  const preview = await readJson(`/api/sessions/${roadStrength.id}/strength-preview`)
+  assert(preview.roadBootcampReady === true, 'Road Bootcamp strength preview did not return ready state.')
+  assert(Array.isArray(preview.exercises) && preview.exercises.length === 0, 'Road Bootcamp strength preview generated exercises before time/equipment selection.')
+  roadStrengthPreview = 'ready_state'
+}
+
 console.log('road remote readiness smoke passed')
 console.log(JSON.stringify({
   apiOrigin: API_ORIGIN,
   completionRate: roadMetrics.completionRate,
   unconfirmedResetStatus: 400,
   sessionColumns,
+  roadStrengthPreview,
   roadExerciseCount: exerciseProof.road_exercise_count,
   videoCount: exerciseProof.video_count,
 }, null, 2))

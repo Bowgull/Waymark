@@ -971,6 +971,14 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+- Road strength preview remote guard:
+  - Extended `scripts/smoke-road-remote-readiness.mjs` to check Road Bootcamp strength preview behavior when a production Road Bootcamp strength session exists.
+  - The smoke now asserts `roadBootcampReady: true` and no pre-generated exercises for that preview.
+  - If production has no Road Bootcamp strength session, the smoke reports `roadStrengthPreview: "not_applicable"` instead of failing on an empty D1 result.
+  - `npm run smoke:road-remote` passes.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
 
 ## Known Warnings
 
