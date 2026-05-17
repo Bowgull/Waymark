@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 09:39 EDT
+Updated: 2026-05-17 09:44 EDT
 
 ## Current State
 
@@ -9,6 +9,49 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 97 percent of the Road Bootcamp slice.
+
+## 2026-05-17 09:44 EDT - Road Bootcamp Reset Guard
+
+- Added a backend confirmation contract for the destructive Road Bootcamp fresh-start endpoint.
+- `POST /api/blocks/road-bootcamp` now returns 400 unless the JSON body includes `{ "confirmReset": true }`.
+- Updated Program fresh-start UI to send `confirmReset: true` only after the existing two-tap confirmation.
+- Updated Road Bootcamp reset-dependent smoke scripts to send explicit confirmation:
+  - `smoke:road-reset`
+  - `smoke:road-week`
+  - `smoke:road-strength`
+  - `smoke:road-strength-complete`
+  - `smoke:road-run`
+- `smoke:road-reset` now first proves that an unconfirmed reset returns 400, then runs the confirmed local reset.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `npm run smoke:road-reset`
+  - `npm run smoke:road-week`
+  - `npm run smoke:road-strength`
+  - `npx cap sync ios`
+  - `npm run deploy`
+  - `npm run smoke:road-remote`
+  - `git diff --check`
+- All passed.
+- Deployed Worker version `fe76f87c-1aec-4e82-8805-4459abb0b4a5`.
+- No production data was reset.
+- No live AI or remote Strava poll was run.
+
+### Current Dirty Files
+
+- `scripts/smoke-road-bootcamp-reset.mjs`
+- `scripts/smoke-road-run-flow.mjs`
+- `scripts/smoke-road-strength-completion.mjs`
+- `scripts/smoke-road-strength-matrix.mjs`
+- `scripts/smoke-road-week-generation.mjs`
+- `src/features/program/ProgramPage.tsx`
+- `src/server/app.ts`
+- `WAYMARK_SESSION_HANDOFF.md`
+
+### Next Immediate Step
+
+Commit and push the reset guard. Remaining gate is Xcode/device support for phone install. Product reset should still wait for explicit user approval because it clears real history.
 
 ## 2026-05-17 09:39 EDT - Starter HR Graduation
 

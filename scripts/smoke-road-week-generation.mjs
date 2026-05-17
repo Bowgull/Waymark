@@ -40,7 +40,7 @@ function canResetTarget() {
 
 async function getRoadBootcampBlock() {
   if (canResetTarget()) {
-    return await api('/api/blocks/road-bootcamp', { method: 'POST' })
+    return await api('/api/blocks/road-bootcamp', { method: 'POST', body: JSON.stringify({ confirmReset: true }) })
   }
   const block = await api('/api/blocks/current')
   expect(

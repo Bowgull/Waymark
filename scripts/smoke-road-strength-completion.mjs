@@ -36,7 +36,7 @@ if (!canResetTarget()) {
 
 const before = await api('/api/history/road-bootcamp?days=30')
 
-const block = await api('/api/blocks/road-bootcamp', { method: 'POST' })
+const block = await api('/api/blocks/road-bootcamp', { method: 'POST', body: JSON.stringify({ confirmReset: true }) })
 expect(block.blockType === 'road_bootcamp', 'fresh block must be Road Bootcamp')
 
 const session = await api('/api/sessions/insert-ad-hoc', {
