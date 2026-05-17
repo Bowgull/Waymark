@@ -840,6 +840,8 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run test:lib` passes.
   - `npm run lint` passes.
   - `npm run build` passes.
+  - `npm run deploy` passes. Deployed Worker version `22a4d8ca-c01c-46ad-b0ca-c0aefac49596`.
+  - Remote checks returned 200 for `/api/history/weekly-zones?weeks=8` and `/api/history/aerobic-fitness?days=90`.
   - `git diff --check` passes.
 - Foundation-run smoke:
   - Before local migration, `npm run smoke:foundation-run` returned `409` with missing IDs:
@@ -940,6 +942,14 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
   - `npm run build` passes.
   - `git diff --check` passes.
   - Local route smoke against `http://127.0.0.1:8787/api/history/running-progress?days=7` confirmed `recentRunEvidence` returns the completed run's HR, pace, elevation, source, run type, and review flag.
+- Ledger HR zone surfaces:
+  - `npx tsx src/lib/historyHrMetrics.test.ts` first failed because `historyHrMetrics` did not exist.
+  - Added read-only `/api/history/weekly-zones` and `/api/history/aerobic-fitness`.
+  - Ledger now has gated Weekly Zones and Aerobic Base cards derived from completed Strava/manual run evidence.
+  - Both cards wait for at least 3 HR-equipped samples.
+  - `npm run test:lib` passes.
+  - `npm run lint` passes.
+  - `npm run build` passes.
 
 ## Known Warnings
 
@@ -964,9 +974,12 @@ Commit and push the native API-base guard, then continue final Road Bootcamp QA 
 - Some Ledger surfaces still feel dense, but current copy and layout are aligned enough for this slice. Needs targeted polish, not a visual-system rewrite.
 - `/metrics` remains a separate manual logging route. Folding it into Ledger should wait until there is a real UX reason, not just cleanup pressure.
 - Local QA has reset local D1 into a fresh Road Bootcamp state. Profile/settings/Strava/static libraries remain; generated history was cleared by `npm run smoke:road-reset`.
+- v2 `BUILD_PLAN.md` has been corrected from stale TODO state to current DONE state for steps 1-7.
+- Ledger HR cards are built and tested, but not browser-screenshot verified in this pass.
 
 ## Next Slice
 
 1. If live AI QA is approved and `ANTHROPIC_API_KEY` is available to Wrangler, run `WAYMARK_LIVE_AI_SMOKE=1 npm run smoke:live-review`.
-2. Continue targeted polish only where a real Road Bootcamp flow still feels unclear.
-3. Remote D1 has the migration `0019` warmup rows. No action needed there unless a future remote smoke exposes a separate issue.
+2. If remote Strava polling is approved, run the existing poll/read-only checks against production once.
+3. Browser-check Ledger on mobile after the HR cards are deployed.
+4. Final Xcode sync/install waits until the full finished build gate.

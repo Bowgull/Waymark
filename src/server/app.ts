@@ -16,6 +16,7 @@ import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates
 import { WEEKLY_TEMPLATE, getBlockZeroTemplate } from '../lib/weeklyTemplate'
 import { getRoadBootcampRunPrescription, getRoadBootcampTemplate } from '../lib/roadBootcampTemplate'
 import { computeRoadBootcampMetrics } from '../lib/roadBootcampMetrics'
+import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import {
   getRoadBootcampStrengthTemplate,
   ROAD_BOOTCAMP_EQUIPMENT,
@@ -3206,6 +3207,46 @@ app.get('/api/history/running-progress', async (c) => {
     })),
     summary: { totalRuns: dataPoints.length, totalDistanceKm, avgPaceSecKm, bestPaceSecKm },
   })
+})
+
+app.get('/api/history/weekly-zones', async (c) => {
+  const weeksRaw = Number(c.req.query('weeks') ?? 8)
+  const weeks = Number.isFinite(weeksRaw) ? Math.max(1, Math.min(weeksRaw, 12)) : 8
+  const db = createDB(c.env)
+
+  const [allRuns, allSessions] = await Promise.all([
+    db.select().from(runSessions),
+    db.select().from(sessions),
+  ])
+
+  return c.json(computeWeeklyZones({
+    sessions: allSessions,
+    runs: allRuns,
+    weeks,
+  }))
+})
+
+app.get('/api/history/aerobic-fitness', async (c) => {
+  const daysRaw = Number(c.req.query('days') ?? 90)
+  const lowHrRaw = Number(c.req.query('lowHr') ?? 135)
+  const highHrRaw = Number(c.req.query('highHr') ?? 145)
+  const days = Number.isFinite(daysRaw) ? Math.max(7, Math.min(daysRaw, 180)) : 90
+  const lowHr = Number.isFinite(lowHrRaw) ? Math.max(90, Math.min(lowHrRaw, 200)) : 135
+  const highHr = Number.isFinite(highHrRaw) ? Math.max(lowHr, Math.min(highHrRaw, 210)) : 145
+  const db = createDB(c.env)
+
+  const [allRuns, allSessions] = await Promise.all([
+    db.select().from(runSessions),
+    db.select().from(sessions),
+  ])
+
+  return c.json(computeAerobicFitness({
+    sessions: allSessions,
+    runs: allRuns,
+    lowHr,
+    highHr,
+    days,
+  }))
 })
 
 app.get('/api/history/road-bootcamp', async (c) => {
