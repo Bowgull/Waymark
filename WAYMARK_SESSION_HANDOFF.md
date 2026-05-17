@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 19:38 EDT
+Updated: 2026-05-17 19:40 EDT
 
 ## Current State
 
@@ -41,6 +41,15 @@ Current workspace expectation: clean after each pass. Do not trust older dirty-f
   - `npm run lint`
   - `npm run build`
   - `git diff --check`
+  - `npm run ios:sync`
+  - `WAYMARK_IOS_DEVICE_ID=4B88E4ED-6344-5EAE-BDB2-F63930384B26 npm run ios:build:device`
+- iPhone:
+  - Device build passed.
+  - First install attempt failed because the phone disconnected immediately after connecting.
+  - Second install attempt passed.
+  - Installed bundle id: `com.joshbocas.app`.
+  - Installed app URL: `file:///private/var/containers/Bundle/Application/3BC1AB6C-B39F-4BFD-8184-EB4F863296D3/App.app/`.
+  - Launch was blocked because the phone was locked.
 
 ## 2026-05-17 12:40 EDT - Road Bootcamp Tomorrow Start Fix
 
