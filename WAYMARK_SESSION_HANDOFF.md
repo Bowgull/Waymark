@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 05:16 EDT
+Updated: 2026-05-17 05:20 EDT
 
 ## Current State
 
@@ -9,6 +9,28 @@ Active branch: `codex/roadtrip-coach`.
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
 The current build is functional but not finished. Estimate: roughly 92 percent of the Road Bootcamp slice.
+
+## 2026-05-17 05:20 EDT - Remote Readiness Smoke Script
+
+- Added `npm run smoke:road-remote`.
+- The smoke is non-destructive:
+  - Reads `GET https://waymark.bocas-joshua.workers.dev/api/health`.
+  - Reads `GET /api/history/road-bootcamp?days=30`.
+  - Checks remote D1 has `sessions.context_json`.
+  - Checks remote D1 has 16 Road Bootcamp travel-strength exercises.
+  - Checks all 16 Road Bootcamp travel-strength exercises have form videos.
+- Verified the smoke passes against the live Worker and remote D1.
+- Ran `npm run lint`, `npm run test:lib`, and `npm run build`. All passed.
+- This gives future passes a quick proof that the sideloaded iOS build has the backend shape it needs without clearing remote data.
+
+### Current Dirty Files
+
+- `package.json`
+- `scripts/smoke-road-remote-readiness.mjs`
+
+### Next Immediate Step
+
+Commit and push the remote readiness smoke, then continue final Road Bootcamp app QA and targeted polish.
 
 ## 2026-05-17 05:16 EDT - Phone-Facing Remote Road Bootcamp Readiness
 
