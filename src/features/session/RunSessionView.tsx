@@ -85,6 +85,7 @@ interface RunPrescription {
   targetDesc: string
   targetDurSec: number | null
   targetDistKm: number | null
+  z2CeilingBpm?: number | null
 }
 
 type RunPhase = 'ready' | 'running' | 'logging'
@@ -367,7 +368,7 @@ export function RunSessionView({
     targetSegments.push(`${prescription.targetDistKm} km`)
   }
   if (isZone2) {
-    targetSegments.push('HR 130-145')
+    targetSegments.push(prescription.z2CeilingBpm ? `HR <= ${prescription.z2CeilingBpm}` : 'HR 130-145')
     targetSegments.push('nasal breathing')
   }
 

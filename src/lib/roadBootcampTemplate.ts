@@ -7,6 +7,7 @@ export interface RoadBootcampRunPrescription {
   targetDesc: string
   targetDurSec: number | null
   targetDistKm: number | null
+  z2CeilingBpm?: number | null
 }
 
 const DAILY_MOBILITY: TemplateSession = {
@@ -86,18 +87,21 @@ function applyHrGuidance(
   hr: HrSnapshot | null,
 ): RoadBootcampRunPrescription {
   if (!hr || hr.runsWithHr === 0) return prescription
+  const z2CeilingBpm = hr.z2CeilingBpm
 
   if (category === 'zone2') {
     if (hr.z2Compliance === 'over_paced') {
       return {
         ...prescription,
-        targetDesc: `${prescription.targetDesc} Cap it at 145 bpm. Walk if HR climbs above the ceiling.`,
+        z2CeilingBpm,
+        targetDesc: `${prescription.targetDesc} Cap it at ${z2CeilingBpm} bpm. Walk if HR climbs above the ceiling.`,
       }
     }
     if (hr.z2Compliance === 'slightly_high') {
       return {
         ...prescription,
-        targetDesc: `${prescription.targetDesc} Watch the ceiling. HR over 145 means slow down now, not later.`,
+        z2CeilingBpm,
+        targetDesc: `${prescription.targetDesc} Watch the ceiling. HR over ${z2CeilingBpm} bpm means slow down now, not later.`,
       }
     }
   }
