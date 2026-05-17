@@ -123,6 +123,7 @@ Native Capacitor builds fall back to this API when the configured API origin is 
 - Production Road Bootcamp fresh start requires `confirmReset: true`.
 - Local Road Bootcamp smoke scripts reset local D1 state by design.
 - Remote smoke scripts are non-destructive unless explicitly allowed.
+- Foundation-run and offline-review smokes write ad-hoc sessions. They refuse non-local API targets unless `WAYMARK_ALLOW_REMOTE_SMOKE=1` is set.
 - No live AI smoke runs unless `WAYMARK_LIVE_AI_SMOKE=1` is set.
 - No remote Strava poll should be run casually. It can write real activities.
 
