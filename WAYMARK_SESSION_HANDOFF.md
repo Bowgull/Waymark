@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 09:12 EDT
+Updated: 2026-05-17 09:16 EDT
 
 ## Current State
 
@@ -8,7 +8,43 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 95 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 96 percent of the Road Bootcamp slice.
+
+## 2026-05-17 09:16 EDT - Road Run Flow Smoke And Metrics Fix
+
+- Added `npm run smoke:road-run`.
+- Smoke is local-reset-safe by default:
+  - Refuses remote reset unless `WAYMARK_ALLOW_RESET=1` is set.
+  - Starts a fresh local Road Bootcamp block.
+  - Completes one `foundation_run` through `start-foundation-run`.
+  - Completes one quality `running` session through `start-run`.
+  - Patches distance, pace, HR, and elevation onto both run rows.
+  - Verifies prescriptions, reviews, review flags, and review source persist.
+  - Verifies Road Bootcamp Ledger run metrics move.
+- Smoke exposed a real Ledger classification bug:
+  - Quality run minutes were classified as easy if the run row carried `runType: easy`.
+  - Road Bootcamp should classify easy versus quality from session type.
+- Fixed `computeRoadBootcampMetrics`:
+  - `foundation_run` counts as easy.
+  - `running` counts as quality.
+  - Test now covers a quality `running` session with `runType: easy`.
+- Local smoke result:
+  - Easy run: 4.80 km at 7:18/km, avg HR 126.
+  - Quality run: 5.10 km at 5:53/km, avg HR 151.
+  - Ledger counted `runMinutes: 65`, `easyRunMinutes: 35`, `qualityRunMinutes: 30`.
+- Ran `npm run smoke:road-run`, `npm run test:lib`, `npm run smoke:road-strength-complete`, `npm run smoke:road-strength`, `npm run smoke:road-week`, `npm run lint`, `npm run build`, `npx cap sync ios`, `npm run deploy`, `npm run smoke:road-remote`, and `git diff --check`. All passed.
+- Deployed Worker version `d4917ecb-2113-42d4-ad5e-e51f0bbe87bb`.
+
+### Current Dirty Files
+
+- `package.json`
+- `scripts/smoke-road-run-flow.mjs`
+- `src/lib/roadBootcampMetrics.ts`
+- `src/lib/roadBootcampMetrics.test.ts`
+
+### Next Immediate Step
+
+Commit and push the Road run-flow smoke and metrics fix. Remaining major gate is final mobile visual proof and Xcode phone install.
 
 ## 2026-05-17 09:12 EDT - Road Strength Completion Smoke
 

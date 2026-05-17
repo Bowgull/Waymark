@@ -14,6 +14,7 @@
     "smoke:road-week": "node scripts/smoke-road-week-generation.mjs",
     "smoke:road-strength": "node scripts/smoke-road-strength-matrix.mjs",
     "smoke:road-strength-complete": "node scripts/smoke-road-strength-completion.mjs",
+    "smoke:road-run": "node scripts/smoke-road-run-flow.mjs",
     "smoke:road-remote": "node scripts/smoke-road-remote-readiness.mjs",
     "deploy": "npx wrangler deploy",
     "lint": "eslint .",
