@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 08:56 EDT
+Updated: 2026-05-17 09:12 EDT
 
 ## Current State
 
@@ -8,7 +8,38 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The current build is functional but not finished. Estimate: roughly 94 percent of the Road Bootcamp slice.
+The current build is functional but not finished. Estimate: roughly 95 percent of the Road Bootcamp slice.
+
+## 2026-05-17 09:12 EDT - Road Strength Completion Smoke
+
+- Added `npm run smoke:road-strength-complete`.
+- Smoke is local-reset-safe by default:
+  - Refuses remote reset unless `WAYMARK_ALLOW_RESET=1` is set.
+  - Starts a fresh local Road Bootcamp block.
+  - Inserts a Road Bootcamp strength session.
+  - Starts a 30-minute no-gym strength session.
+  - Verifies exercises have form videos.
+  - Verifies HAPBEAR guidance appears in band work.
+  - Marks all strength sets complete.
+  - Completes the session.
+  - Verifies review, review flag, and review source persist.
+  - Verifies Road Bootcamp Ledger metrics move for strength completed, 30-minute selection, and no-gym equipment.
+- Local result:
+  - 6 exercises.
+  - 5 HAPBEAR-guided exercises.
+  - Review: `30 minutes. No gym. 6 movements logged.`
+  - Review source: `local`.
+  - Ledger counted `strengthCompleted: 1`, `30: 1`, `no_gym: 1`.
+- Ran `npm run smoke:road-strength-complete`, `npm run test:lib`, `npm run smoke:road-strength`, `npm run smoke:road-week`, `npm run lint`, `npm run build`, `npx cap sync ios`, and `git diff --check`. All passed.
+
+### Current Dirty Files
+
+- `package.json`
+- `scripts/smoke-road-strength-completion.mjs`
+
+### Next Immediate Step
+
+Commit and push the Road strength completion smoke. Continue with run-flow QA next.
 
 ## 2026-05-17 08:56 EDT - HAPBEAR Road Bands
 
