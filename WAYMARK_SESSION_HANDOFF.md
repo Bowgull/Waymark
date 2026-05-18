@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-17 19:40 EDT
+Updated: 2026-05-18 05:50 EDT
 
 ## Current State
 
@@ -14,6 +14,15 @@ Current remaining gates:
 - None for the Road Bootcamp slice.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-18 05:50 EDT - iPhone Launch Proof
+
+- Rechecked physical device state.
+  - `Josh (2)` was available and paired.
+- Launched installed Waymark build on the phone.
+  - Command: `xcrun devicectl device process launch --device 4B88E4ED-6344-5EAE-BDB2-F63930384B26 --terminate-existing com.joshbocas.app`.
+  - Result: `Launched application with com.joshbocas.app bundle identifier.`
+- Repo was clean before this handoff update.
 
 ## 2026-05-17 19:38 EDT - Road Bootcamp Add Session Intelligence
 
