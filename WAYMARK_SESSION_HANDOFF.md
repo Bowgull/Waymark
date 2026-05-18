@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-18 05:50 EDT
+Updated: 2026-05-18 05:51 EDT
 
 ## Current State
 
@@ -22,6 +22,11 @@ Current workspace expectation: clean after each pass. Do not trust older dirty-f
 - Launched installed Waymark build on the phone.
   - Command: `xcrun devicectl device process launch --device 4B88E4ED-6344-5EAE-BDB2-F63930384B26 --terminate-existing com.joshbocas.app`.
   - Result: `Launched application with com.joshbocas.app bundle identifier.`
+- Rebuilt, reinstalled, and relaunched to remove any ambiguity about installed version.
+  - `WAYMARK_IOS_DEVICE_ID=4B88E4ED-6344-5EAE-BDB2-F63930384B26 npm run ios:build:device` passed.
+  - Installed bundle id: `com.joshbocas.app`.
+  - Installed app URL: `file:///private/var/containers/Bundle/Application/588477E9-14F4-4B40-B832-310255FB044F/App.app/`.
+  - Relaunch succeeded.
 - Repo was clean before this handoff update.
 
 ## 2026-05-17 19:38 EDT - Road Bootcamp Add Session Intelligence
