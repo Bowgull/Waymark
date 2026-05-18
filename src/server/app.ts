@@ -14,7 +14,7 @@ import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTem
 import type { TemplateSession } from '../lib/weeklyTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { WEEKLY_TEMPLATE, getBlockZeroTemplate } from '../lib/weeklyTemplate'
-import { getRoadBootcampRunPrescription, getRoadBootcampTemplate } from '../lib/roadBootcampTemplate'
+import { getRoadBootcampRunPrescription, getRoadBootcampTemplate, type RoadBootcampRunPrescription } from '../lib/roadBootcampTemplate'
 import { computeRoadBootcampMetrics } from '../lib/roadBootcampMetrics'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import {
@@ -30,6 +30,7 @@ import { generateWeekPlan } from '../lib/weeklyPlanAI'
 import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, zone2CeilingBpm } from '../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
+import { assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 import { runReplaceSuggestions } from '../lib/reactiveCoach'
@@ -268,6 +269,105 @@ async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
 }
 
 // Helper: get running prescription for a session based on its block week and run category
+async function loadRecentRoadRunReality(db: DrizzleDB, todayEpochDay: number): Promise<Array<{ completionStatus: string | null; completionRatio: number | null }>> {
+  const [allSessions, allRuns] = await Promise.all([
+    db.select().from(sessions),
+    db.select().from(runSessions),
+  ])
+  const runBySession = new Map(allRuns.map(run => [run.sessionId, run]))
+  return allSessions
+    .filter(session =>
+      session.blockType === 'road_bootcamp' &&
+      session.status === 'completed' &&
+      (session.type === 'foundation_run' || session.type === 'running') &&
+      session.scheduledDate != null &&
+      session.scheduledDate <= todayEpochDay &&
+      session.scheduledDate >= todayEpochDay - 14
+    )
+    .map(session => ({ run: runBySession.get(session.id), scheduledDate: session.scheduledDate ?? 0 }))
+    .filter((entry): entry is { run: NonNullable<typeof entry.run>; scheduledDate: number } => !!entry.run && !!entry.run.completionStatus)
+    .sort((a, b) => b.scheduledDate - a.scheduledDate)
+    .slice(0, 3)
+    .map(entry => ({ completionStatus: entry.run.completionStatus, completionRatio: entry.run.completionRatio }))
+}
+
+function adjustRoadPrescriptionForReality(
+  prescription: RoadBootcampRunPrescription,
+  category: 'zone2' | 'progression',
+  recent: Array<{ completionStatus: string | null; completionRatio: number | null }>,
+): RoadBootcampRunPrescription {
+  const partialCount = recent.filter(run => run.completionStatus === 'partial').length
+  const shortCount = recent.filter(run => run.completionStatus === 'shortened' || run.completionStatus === 'partial').length
+  if (shortCount === 0) return prescription
+
+  const targetDurSec = partialCount > 0 || shortCount >= 2 ? 1200 : 1500
+  if (category === 'zone2') {
+    return {
+      ...prescription,
+      targetDesc: `${Math.round(targetDurSec / 60)} min easy. Recent runs came in short. Keep this repeatable.`,
+      targetDurSec,
+      targetDistKm: null,
+    }
+  }
+
+  return {
+    weekNumber: prescription.weekNumber,
+    runType: 'easy',
+    targetDesc: `${Math.round(targetDurSec / 60)} min easy. Quality work waits until the easy run fits.`,
+    targetDurSec,
+    targetDistKm: null,
+    z2CeilingBpm: prescription.z2CeilingBpm,
+  }
+}
+
+async function loadRecentStrengthReality(db: DrizzleDB): Promise<Map<string, { inferredStatus: string | null; bandColor: string | null }>> {
+  const [allSessions, allExercises, allSets] = await Promise.all([
+    db.select().from(sessions),
+    db.select().from(strengthSessionExercises),
+    db.select().from(strengthSets),
+  ])
+  const completedById = new Map(
+    allSessions
+      .filter(session => session.status === 'completed' && session.type === 'strength')
+      .map(session => [session.id, session]),
+  )
+  const exerciseBySet = new Map(allExercises.map(exercise => [exercise.id, exercise]))
+  const latest = new Map<string, { epoch: number; inferredStatus: string | null; bandColor: string | null }>()
+
+  for (const set of allSets) {
+    if (set.isWarmup === 1) continue
+    const sessionExercise = exerciseBySet.get(set.sessionExerciseId)
+    if (!sessionExercise) continue
+    const session = completedById.get(sessionExercise.sessionId)
+    if (!session) continue
+    const epoch = session.completedAt ?? session.createdAt
+    const current = latest.get(sessionExercise.exerciseId)
+    if (!current || epoch > current.epoch) {
+      latest.set(sessionExercise.exerciseId, {
+        epoch,
+        inferredStatus: set.inferredStatus,
+        bandColor: set.bandColor,
+      })
+    }
+  }
+
+  return new Map(Array.from(latest).map(([exerciseId, value]) => [exerciseId, {
+    inferredStatus: value.inferredStatus,
+    bandColor: value.bandColor,
+  }]))
+}
+
+function adjustSuggestedStrengthWeight(weightKg: number | null, reality: { inferredStatus: string | null } | undefined): number | null {
+  if (weightKg == null || !reality?.inferredStatus) return weightKg
+  if (reality.inferredStatus === 'lighter' || reality.inferredStatus === 'rep_shortfall') {
+    return Math.round(weightKg * 0.9 * 100) / 100
+  }
+  if (reality.inferredStatus === 'heavier' || reality.inferredStatus === 'rep_surplus') {
+    return Math.round(weightKg * 1.05 * 100) / 100
+  }
+  return weightKg
+}
+
 async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string | null; blockWeek: number | null; notes?: string | null; blockType?: string | null }) {
   let weekNumber: number | null = null
 
@@ -295,7 +395,9 @@ async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string |
     const maxHr = await loadProfileMaxHrForHr(db)
     const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr })
     const category = session.notes === 'zone2' ? 'zone2' : 'progression'
-    return getRoadBootcampRunPrescription(weekNumber, category, hrSnapshot)
+    const prescription = getRoadBootcampRunPrescription(weekNumber, category, hrSnapshot)
+    const recentReality = await loadRecentRoadRunReality(db, todayEpochDay)
+    return adjustRoadPrescriptionForReality(prescription, category, recentReality)
   }
 
   // Check if this is a Zone 2 run (tagged during generation)
@@ -926,6 +1028,7 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   // Get training maxes for weight suggestions
   const maxes = await db.select().from(trainingMaxes)
   const maxMap = new Map(maxes.map(m => [m.exerciseId, m.weightKg]))
+  const strengthReality = await loadRecentStrengthReality(db)
 
   // Create exercises and sets
   for (let exIdx = 0; exIdx < template.exercises.length; exIdx++) {
@@ -947,7 +1050,10 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
       const ts = tex.sets[setIdx]
       const suggestedWeight = ts.isWarmup
         ? computeWarmupWeightKg(trainingMax)
-        : computeWorkingWeightKg(trainingMax, tex.section, weekPct)
+        : adjustSuggestedStrengthWeight(
+          computeWorkingWeightKg(trainingMax, tex.section, weekPct),
+          strengthReality.get(tex.exerciseId),
+        )
 
       await db.insert(strengthSets).values({
         id: crypto.randomUUID(),
@@ -955,6 +1061,9 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
         setNumber: setIdx + 1,
         weightKg: suggestedWeight,
         reps: ts.targetReps,
+        plannedWeightKg: suggestedWeight,
+        plannedReps: ts.targetReps,
+        inferredStatus: 'normal',
         isWarmup: ts.isWarmup ? 1 : 0,
         restSec: ts.restSec,
         createdAt: nowSec,
@@ -1020,14 +1129,30 @@ app.patch('/api/strength-sets/:id', async (c) => {
     weightKg?: number | null
     reps?: number
     completedAt?: number
+    loadFeedback?: string | null
+    bandColor?: string | null
   }>()
 
   const db = createDB(c.env)
+  const [current] = await db.select().from(strengthSets).where(eq(strengthSets.id, setId))
+  if (!current) return c.json({ error: 'set not found' }, 404)
+
   const updates: Record<string, unknown> = {}
 
   if (body.weightKg !== undefined) updates.weightKg = body.weightKg
   if (body.reps !== undefined) updates.reps = body.reps
   if (body.completedAt !== undefined) updates.createdAt = body.completedAt // reuse createdAt for completion timestamp
+  if (body.loadFeedback !== undefined) updates.loadFeedback = body.loadFeedback
+  if (body.bandColor !== undefined) updates.bandColor = body.bandColor
+
+  const actualWeightKg = body.weightKg !== undefined ? body.weightKg : current.weightKg
+  const actualReps = body.reps !== undefined ? body.reps : current.reps
+  updates.inferredStatus = assessStrengthSet({
+    plannedWeightKg: current.plannedWeightKg ?? current.weightKg,
+    plannedReps: current.plannedReps ?? current.reps,
+    actualWeightKg,
+    actualReps,
+  })
 
   await db.update(strengthSets).set(updates).where(eq(strengthSets.id, setId))
 
@@ -1160,6 +1285,8 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
     }, 409)
   }
 
+  const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' })
+
   // Create run session (Zone 2)
   const runId = crypto.randomUUID()
   await db.insert(runSessions).values({
@@ -1167,6 +1294,7 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
     sessionId,
     runType: 'zone2',
     planWeek: null,
+    plannedDurationSec: prescription?.targetDurSec ?? null,
     isIndoor: 0,
   })
 
@@ -1188,7 +1316,6 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const [run] = await db.select().from(runSessions).where(eq(runSessions.id, runId))
-  const prescription = await getRunPrescription(db, { ...updated, notes: 'zone2' })
   const mobilityResponse = await buildMobilityWorkoutResponse(db, sessionId)
 
   return c.json({ session: updated, runSession: run, prescription, postureExercises: mobilityResponse.exercises })
@@ -1542,6 +1669,7 @@ app.post('/api/sessions/:id/start-run', async (c) => {
     sessionId,
     runType: prescription?.runType ?? 'easy',
     planWeek: prescription?.weekNumber ?? null,
+    plannedDurationSec: prescription?.targetDurSec ?? null,
     isIndoor: 0,
   })
 
@@ -1592,6 +1720,16 @@ app.patch('/api/run-sessions/:id', async (c) => {
   if (body.avgHr !== undefined) updates.avgHr = body.avgHr
   if (body.maxHr !== undefined) updates.maxHr = body.maxHr
   if (body.elevationGainM !== undefined) updates.elevationGainM = body.elevationGainM
+
+  const [current] = await db.select().from(runSessions).where(eq(runSessions.id, runId))
+  if (!current) return c.json({ error: 'run session not found' }, 404)
+  const completedDurationSec = body.durationSec !== undefined ? body.durationSec : current.durationSec
+  const reality = assessRunCompletion({
+    plannedDurationSec: current.plannedDurationSec,
+    completedDurationSec,
+  })
+  if (reality.completionRatio !== null) updates.completionRatio = reality.completionRatio
+  if (reality.completionStatus !== null) updates.completionStatus = reality.completionStatus
 
   await db.update(runSessions).set(updates).where(eq(runSessions.id, runId))
 

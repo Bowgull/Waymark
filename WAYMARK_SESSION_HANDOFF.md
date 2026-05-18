@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-18 05:51 EDT
+Updated: 2026-05-18 06:38 EDT
 
 ## Current State
 
@@ -14,6 +14,46 @@ Current remaining gates:
 - None for the Road Bootcamp slice.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-18 06:38 EDT - Training Reality Intelligence
+
+- Added planned-vs-actual intelligence for Road Bootcamp reality.
+- New migration:
+  - `drizzle/0023_training_reality.sql`.
+  - Adds planned duration, completion ratio/status, and short reason to `run_sessions`.
+  - Adds planned weight/reps, inferred set status, load feedback, and band color to `strength_sets`.
+- Run behavior:
+  - Run rows now store planned duration at start.
+  - Manual/Strava run logs now compute completion ratio and status.
+  - Status values: `complete`, `shortened`, `partial`.
+  - Road Bootcamp run prescription now walks back after recent shortened/partial runs:
+    - next easy run can reduce to 25 or 20 minutes.
+    - quality run can become easy until the easy run fits.
+  - Run log shows a tiny `◇ Short run noted` line when the logged duration is below target.
+- Strength behavior:
+  - Strength sets now store planned weight/reps before the user edits them.
+  - Actual set logging infers normal/lighter/heavier/rep shortfall/rep surplus.
+  - Future strength set suggestions can reduce or increase suggested load based on recent reality for the same exercise.
+  - Band exercises now expose small color dots inside the existing set tracker.
+- Coach context:
+  - Session review prompt now includes planned run duration, completion status, changed strength sets, and band colors.
+  - Local session review handles shortened/partial runs without treating them as a skipped session.
+- Applied D1 migrations:
+  - `npm run db:migrate:0023:local`
+  - `npm run db:migrate:0023:remote`
+- Deployed Worker:
+  - Version id: `21022898-9d5f-458a-8bad-c8d8aa99db2b`.
+- Verified:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `npm run smoke:road-remote`
+  - Browser `/today` still shows Monday May 18 with Mobility and Zone 2 ~35min.
+  - `npm run ios:sync`
+  - `WAYMARK_IOS_DEVICE_ID=4B88E4ED-6344-5EAE-BDB2-F63930384B26 npm run ios:build:device`
+- iPhone:
+  - App installed to `file:///private/var/containers/Bundle/Application/40DB9743-C1E6-4D60-A522-EC5CEB07C199/App.app/`.
+  - Launch was blocked because the phone was locked.
 
 ## 2026-05-18 05:50 EDT - iPhone Launch Proof
 
