@@ -51,6 +51,10 @@ interface SetData {
   setNumber: number
   weightKg: number | null
   reps: number
+  plannedWeightKg?: number | null
+  plannedReps?: number | null
+  inferredStatus?: string | null
+  bandColor?: string | null
   isWarmup: number
   restSec: number | null
 }
@@ -1287,7 +1291,7 @@ export function WorkoutPage() {
   const currentSection = currentExercise?.section
   const showSectionHeader = !prevExercise || prevExercise.section !== currentSection
 
-  function handleSetComplete(weightKg: number | null, reps: number) {
+  function handleSetComplete(weightKg: number | null, reps: number, meta?: { bandColor?: string | null }) {
     if (!currentSet) return
 
     apiFetch(`/api/strength-sets/${currentSet.id}`, {
@@ -1295,6 +1299,7 @@ export function WorkoutPage() {
       body: JSON.stringify({
         weightKg,
         reps,
+        bandColor: meta?.bandColor,
         completedAt: Math.floor(Date.now() / 1000),
       }),
     }).catch((e) => {
@@ -1425,7 +1430,7 @@ export function WorkoutPage() {
           totalSets: totalSetsForExercise,
           isWarmup: currentSet.isWarmup === 1,
           suggestedWeightKg: currentSet.weightKg,
-          targetReps: currentSet.reps,
+          targetReps: currentSet.plannedReps ?? currentSet.reps,
           restSec: currentSet.restSec ?? 60,
         } : undefined}
         prescription={prescriptionDisplay}

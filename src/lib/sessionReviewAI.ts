@@ -39,6 +39,9 @@ interface RunReviewContext {
   targetHrLine: string | null
   distanceKm: number | null
   durationSec: number | null
+  plannedDurationSec: number | null
+  completionRatio: number | null
+  completionStatus: string | null
   paceSecKm: number | null
   avgHr: number | null
   maxHr: number | null
@@ -63,6 +66,8 @@ interface StrengthReviewContext {
     warmupSets: number
     topWeightKg: number | null
     totalReps: number
+    changedSets: number
+    bandColors: string[]
   }>
 }
 
@@ -99,6 +104,9 @@ function formatRunContext(run: RunReviewContext): string[] {
   ]
 
   if (run.targetHrLine) lines.push(`  Prescribed: ${run.targetHrLine}`)
+  if (run.plannedDurationSec != null && run.completionRatio != null && run.completionStatus != null) {
+    lines.push(`  Planned duration: ${Math.round(run.plannedDurationSec / 60)} min. Completion: ${run.completionStatus} (${Math.round(run.completionRatio * 100)}%).`)
+  }
   if (run.elevationGainM != null) lines.push(`  Elevation: ${run.elevationGainM} m.`)
   if (run.zoneSeconds) lines.push(`  HR zones: ${run.zoneSeconds}.`)
   if (run.splits.length > 0) {
@@ -138,7 +146,9 @@ function formatStrengthContext(strength: StrengthReviewContext): string[] {
     const section = ex.section ? ` (${ex.section})` : ''
     const workingSets = `${ex.workingSets} ${ex.workingSets === 1 ? 'working set' : 'working sets'}`
     const warmupSets = `${ex.warmupSets} ${ex.warmupSets === 1 ? 'warmup' : 'warmups'}`
-    lines.push(`  ${ex.name}${section}: ${workingSets}, ${warmupSets}, ${ex.totalReps} reps, top ${top}.`)
+    const changed = ex.changedSets > 0 ? ` ${ex.changedSets} changed set${ex.changedSets === 1 ? '' : 's'}.` : ''
+    const bands = ex.bandColors.length > 0 ? ` Bands: ${ex.bandColors.join(', ')}.` : ''
+    lines.push(`  ${ex.name}${section}: ${workingSets}, ${warmupSets}, ${ex.totalReps} reps, top ${top}.${changed}${bands}`)
   }
 
   return lines
@@ -167,6 +177,15 @@ export function buildLocalSessionReview(
       return {
         line: 'Prescribed easy. Heart said hard. Easier next time.',
         flag: 'intensity_mismatch',
+      }
+    }
+
+    if (context.run.completionStatus === 'shortened' || context.run.completionStatus === 'partial') {
+      return {
+        line: context.run.completionStatus === 'partial'
+          ? 'Partial run logged. Keep the next one easy.'
+          : 'Short run logged. Aerobic work still counts.',
+        flag: 'form_note',
       }
     }
 
@@ -218,6 +237,9 @@ async function loadSessionReviewContext(
         targetHrLine: getSessionTargetHr(session.type, runCategory, maxHr),
         distanceKm: runRow.distanceKm,
         durationSec: runRow.durationSec,
+        plannedDurationSec: runRow.plannedDurationSec,
+        completionRatio: runRow.completionRatio,
+        completionStatus: runRow.completionStatus,
         paceSecKm: runRow.paceSecKm,
         avgHr: runRow.avgHr,
         maxHr: runRow.maxHr,
@@ -262,6 +284,8 @@ async function loadSessionReviewContext(
           return max == null ? s.weightKg : Math.max(max, s.weightKg)
         }, null),
         totalReps: workingSets.reduce((sum, s) => sum + s.reps, 0),
+        changedSets: workingSets.filter(s => s.inferredStatus != null && s.inferredStatus !== 'normal').length,
+        bandColors: Array.from(new Set(workingSets.map(s => s.bandColor).filter((v): v is string => !!v))),
       })
     }
 
@@ -274,6 +298,8 @@ async function loadSessionReviewContext(
         warmupSets: row.warmupSets,
         topWeightKg: row.topWeightKg,
         totalReps: row.totalReps,
+        changedSets: row.changedSets,
+        bandColors: row.bandColors,
       })),
     }
   }

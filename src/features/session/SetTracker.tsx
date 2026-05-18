@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { kgToLbs, lbsToKg } from '@/lib/units'
 import { mediumHaptic } from '@/lib/haptics'
 import { calculatePlates } from '@/lib/plateMath'
+import { assessStrengthSet, shouldShowStrengthRealityMark } from '@/lib/trainingReality'
 
 interface SetTrackerProps {
   setNumber: number
@@ -14,7 +15,7 @@ interface SetTrackerProps {
   equipment?: string | null
   lastSessionData?: { weightLbs: number; reps: number }
   suggestion?: { weightLbs: number; message: string }
-  onComplete: (weightKg: number | null, reps: number) => void
+  onComplete: (weightKg: number | null, reps: number, meta?: { bandColor?: string | null }) => void
   /** Emits the current input values (kg + reps) whenever they change.
    *  WorkoutPage uses this to push live values into the Live Activity
    *  so a lock-screen "Complete Set" tap logs what the user sees. */
@@ -40,6 +41,7 @@ export function SetTracker({
   const suggestedLbs = suggestedWeightKg != null ? kgToLbs(suggestedWeightKg) : ''
   const [weight, setWeight] = useState(String(suggestedLbs))
   const [reps, setReps] = useState(targetReps > 0 ? String(targetReps) : '')
+  const [bandColor, setBandColor] = useState<string | null>(null)
 
   useEffect(() => {
     const w = weight ? parseFloat(weight) : NaN
@@ -49,6 +51,16 @@ export function SetTracker({
   }, [weight, reps, onLiveValuesChange])
 
   const isBarbell = equipment?.toLowerCase().includes('barbell') ?? false
+  const isBand = equipment?.toLowerCase().includes('band') ?? false
+  const actualWeight = weight ? lbsToKg(parseFloat(weight)) : null
+  const actualReps = parseInt(reps) || 0
+  const inferredStatus = assessStrengthSet({
+    plannedWeightKg: suggestedWeightKg,
+    plannedReps: targetReps,
+    actualWeightKg: actualWeight,
+    actualReps,
+  })
+  const showRealityMark = shouldShowStrengthRealityMark(inferredStatus)
   const liveLoading = useMemo(() => {
     if (!isBarbell) return null
     const lbs = parseFloat(weight)
@@ -61,11 +73,10 @@ export function SetTracker({
   }, [weight, isBarbell])
 
   function handleDone() {
-    const actualReps = parseInt(reps) || 0
     if (actualReps <= 0) return
     const actualWeightKg = weight ? lbsToKg(parseFloat(weight)) : null
     mediumHaptic()
-    onComplete(actualWeightKg, actualReps)
+    onComplete(actualWeightKg, actualReps, { bandColor })
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -134,6 +145,34 @@ export function SetTracker({
         </Button>
       </div>
 
+      {(showRealityMark || isBand) && (
+        <div className="mt-3 flex items-center justify-between gap-3">
+          {showRealityMark ? (
+            <p className="font-cinzel text-[11px] uppercase tracking-[0.18em] text-gold/60">
+              ◇ Noted
+            </p>
+          ) : (
+            <span />
+          )}
+          {isBand && (
+            <div className="flex items-center gap-1.5">
+              {BAND_COLORS.map((band) => (
+                <button
+                  key={band.value}
+                  type="button"
+                  aria-label={`${band.label} band`}
+                  onClick={() => setBandColor(band.value)}
+                  className={`h-5 w-5 rounded-full border transition ${
+                    bandColor === band.value ? 'border-gold scale-110' : 'border-gold/20'
+                  }`}
+                  style={{ backgroundColor: band.color }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {liveLoading && (
         <p className="mt-2.5 font-cinzel text-xs tracking-wider text-teal/70">
           {liveLoading}
@@ -142,3 +181,11 @@ export function SetTracker({
     </div>
   )
 }
+
+const BAND_COLORS = [
+  { value: 'yellow', label: 'Yellow', color: '#E8D942' },
+  { value: 'orange', label: 'Orange', color: '#E28D37' },
+  { value: 'red', label: 'Red', color: '#C9473F' },
+  { value: 'blue', label: 'Blue', color: '#315BC7' },
+  { value: 'purple', label: 'Purple', color: '#6541A5' },
+] as const

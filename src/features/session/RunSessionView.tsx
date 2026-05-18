@@ -9,6 +9,7 @@ import { apiFetch } from '@/lib/api'
 import { logger } from '@/lib/logger'
 import { onePaceSvg } from '@/lib/markAssets'
 import { soundRoundEnd } from '@/lib/sounds'
+import { assessRunCompletion, shouldShowRunRealityMark } from '@/lib/trainingReality'
 
 import { SessionShell } from './SessionShell'
 import { resolveRunMoment, type RunType } from './runMicrocopy'
@@ -70,6 +71,9 @@ interface RunSession {
   runType: string | null
   distanceKm: number | null
   durationSec: number | null
+  plannedDurationSec?: number | null
+  completionRatio?: number | null
+  completionStatus?: string | null
   isIndoor: number
   onePaceArc: string | null
   onePaceEp: string | null
@@ -97,6 +101,14 @@ const RUN_TYPE_LABELS: Record<string, string> = {
   tempo: 'Tempo Run',
   intervals: 'Intervals',
   '5k_test': '5K Test',
+}
+
+function parseDurationToSec(value: string): number | null {
+  if (!value.trim()) return null
+  const parts = value.split(':').map(part => parseInt(part, 10))
+  if (parts.some(part => !Number.isFinite(part))) return null
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  return parts[0] * 60
 }
 
 interface RunSessionViewProps {
@@ -297,10 +309,7 @@ export function RunSessionView({
     setSaving(true)
     let durationSec: number | undefined
     if (duration) {
-      const parts = duration.split(':')
-      durationSec = parts.length === 2
-        ? parseInt(parts[0]) * 60 + parseInt(parts[1])
-        : parseInt(parts[0]) * 60
+      durationSec = parseDurationToSec(duration) ?? undefined
     }
     const distanceKm = distance ? parseFloat(distance) : undefined
     const paceSecKm = distanceKm && durationSec ? Math.round(durationSec / distanceKm) : undefined
@@ -374,6 +383,12 @@ export function RunSessionView({
 
   const runType = (prescription?.runType ?? undefined) as RunType | undefined
   const remaining = Math.max(0, timerEstimate - elapsed)
+  const loggedDurationSec = parseDurationToSec(duration)
+  const runReality = assessRunCompletion({
+    plannedDurationSec: prescription?.targetDurSec ?? runSession.plannedDurationSec,
+    completedDurationSec: loggedDurationSec,
+  })
+  const showRunRealityMark = shouldShowRunRealityMark(runReality.completionStatus)
 
   // Ring a bell once when the target duration is hit. Same bell family as bag
   // round-end so the sound vocabulary is consistent across engines.
@@ -675,6 +690,12 @@ export function RunSessionView({
               </div>
             </div>
           </div>
+        )}
+
+        {showRunRealityMark && (
+          <p className="font-cinzel text-[11px] uppercase tracking-[0.18em] text-gold/60">
+            ◇ Short run noted
+          </p>
         )}
       </div>
     )

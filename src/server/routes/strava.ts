@@ -18,6 +18,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm'
 import { createDB } from '../../db/client'
 import { runSessions, runSplits, sessions, stravaTokens, trainingBlocks, userProfile } from '../../db/schema'
 import { isoToEpochDay } from '../../lib/dates'
+import { assessRunCompletion } from '../../lib/trainingReality'
 
 type Bindings = {
   DB: D1Database
@@ -750,10 +751,16 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   let runSessionId: string
   if (existingForParent) {
     runSessionId = existingForParent.id
+    const reality = assessRunCompletion({
+      plannedDurationSec: existingForParent.plannedDurationSec,
+      completedDurationSec: runData.durationSec,
+    })
     try {
       await db.update(runSessions).set({
         distanceKm: runData.distanceKm,
         durationSec: runData.durationSec,
+        completionRatio: reality.completionRatio,
+        completionStatus: reality.completionStatus,
         paceSecKm: runData.paceSecKm,
         isIndoor: act.trainer ? runData.isIndoor : (existingForParent.isIndoor ?? 0),
         avgHr: runData.avgHr,

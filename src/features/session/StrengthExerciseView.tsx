@@ -86,7 +86,7 @@ interface StrengthExerciseViewProps {
     isPaused?: boolean
     onTogglePause?: () => void
   }
-  onSetComplete: (weightKg: number | null, reps: number) => void
+  onSetComplete: (weightKg: number | null, reps: number, meta?: { bandColor?: string | null }) => void
   onLiveValuesChange?: (weightKg: number | null, reps: number) => void
   onNextSet: () => void
   onSkip?: () => void
@@ -271,7 +271,7 @@ interface ExerciseBodyProps {
   currentSet?: StrengthSetInput
   lastSessionData?: { weightLbs: number; reps: number }
   suggestion?: { weightLbs: number; message: string }
-  onSetComplete: (weightKg: number | null, reps: number) => void
+  onSetComplete: (weightKg: number | null, reps: number, meta?: { bandColor?: string | null }) => void
   onLiveValuesChange?: (weightKg: number | null, reps: number) => void
 }
 

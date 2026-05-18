@@ -20,6 +20,9 @@ const runPrompt = buildSessionReviewPrompt(
       targetHrLine: 'Zone 2. 114 to 133 bpm.',
       distanceKm: 2.66,
       durationSec: 1086,
+      plannedDurationSec: 2100,
+      completionRatio: 0.52,
+      completionStatus: 'shortened',
       paceSecKm: 408,
       avgHr: 143,
       maxHr: 160,
@@ -40,6 +43,7 @@ assertMatch(runPrompt, /Run evidence:/)
 assertMatch(runPrompt, /Source: strava \(Strava\)\./)
 assertMatch(runPrompt, /2\.66 km, 18 min, 6:48\/km, avg HR 143 bpm, max 160\./)
 assertMatch(runPrompt, /Prescribed: Zone 2\. 114 to 133 bpm\./)
+assertMatch(runPrompt, /Planned duration: 35 min\. Completion: shortened \(52%\)\./)
 assertMatch(runPrompt, /Elevation: 6 m\./)
 assertMatch(runPrompt, /HR zones: \{"z2":900,"z3":120\}\./)
 assertMatch(runPrompt, /Splits: km 1: 6:45, HR 140; km 2: 6:53, HR 146\./)
@@ -71,6 +75,8 @@ const strengthPrompt = buildSessionReviewPrompt(
           warmupSets: 1,
           topWeightKg: 24,
           totalReps: 24,
+          changedSets: 1,
+          bandColors: [],
         },
         {
           name: 'Dead Bug',
@@ -79,6 +85,8 @@ const strengthPrompt = buildSessionReviewPrompt(
           warmupSets: 0,
           topWeightKg: null,
           totalReps: 20,
+          changedSets: 0,
+          bandColors: [],
         },
       ],
     },
@@ -88,7 +96,7 @@ const strengthPrompt = buildSessionReviewPrompt(
 assertMatch(strengthPrompt, /Strength evidence:/)
 assertMatch(strengthPrompt, /Road Bootcamp context: time 30, equipment hotel_gym\./)
 assertMatch(strengthPrompt, /Adaptation: 30 minutes\. Hotel gym\. Main work stays, accessories drop\./)
-assertMatch(strengthPrompt, /DB Romanian Deadlift \(main\): 3 working sets, 1 warmup, 24 reps, top 53 lb\./)
+assertMatch(strengthPrompt, /DB Romanian Deadlift \(main\): 3 working sets, 1 warmup, 24 reps, top 53 lb\. 1 changed set\./)
 assertMatch(strengthPrompt, /Dead Bug \(core\): 2 working sets, 0 warmups, 20 reps, top bodyweight or unloaded\./)
 
 const mismatchReview = buildLocalSessionReview(
@@ -99,6 +107,9 @@ const mismatchReview = buildLocalSessionReview(
       targetHrLine: 'Zone 2. 114 to 133 bpm.',
       distanceKm: 2.66,
       durationSec: 1086,
+      plannedDurationSec: 2100,
+      completionRatio: 0.52,
+      completionStatus: 'shortened',
       paceSecKm: 408,
       avgHr: 143,
       maxHr: 160,
@@ -131,8 +142,8 @@ const roadStrengthReview = buildLocalSessionReview(
         adaptationLine: 'HR drift is high. Main work stays, accessories drop.',
       },
       exercises: [
-        { name: 'Split Squat', section: 'main', workingSets: 3, warmupSets: 1, topWeightKg: null, totalReps: 24 },
-        { name: 'Push-Up', section: 'main', workingSets: 3, warmupSets: 0, topWeightKg: null, totalReps: 24 },
+        { name: 'Split Squat', section: 'main', workingSets: 3, warmupSets: 1, topWeightKg: null, totalReps: 24, changedSets: 0, bandColors: ['red'] },
+        { name: 'Push-Up', section: 'main', workingSets: 3, warmupSets: 0, topWeightKg: null, totalReps: 24, changedSets: 0, bandColors: [] },
       ],
     },
   },
