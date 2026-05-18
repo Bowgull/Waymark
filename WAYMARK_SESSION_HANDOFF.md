@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-18 06:38 EDT
+Updated: 2026-05-18 06:43 EDT
 
 ## Current State
 
@@ -54,6 +54,8 @@ Current workspace expectation: clean after each pass. Do not trust older dirty-f
 - iPhone:
   - App installed to `file:///private/var/containers/Bundle/Application/40DB9743-C1E6-4D60-A522-EC5CEB07C199/App.app/`.
   - Launch was blocked because the phone was locked.
+  - Rechecked at 06:43 EDT after device was available.
+  - Launch command succeeded with `Launched application with com.joshbocas.app bundle identifier.`
 
 ## 2026-05-18 05:50 EDT - iPhone Launch Proof
 
