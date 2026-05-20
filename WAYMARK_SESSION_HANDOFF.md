@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-18 06:43 EDT
+Updated: 2026-05-20 11:39 EDT
 
 ## Current State
 
@@ -14,6 +14,27 @@ Current remaining gates:
 - None for the Road Bootcamp slice.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-20 11:39 EDT - Road Bootcamp Start Date Reset
+
+- User asked to reset Road Bootcamp Day 1 to today.
+- Current date: 2026-05-20 EDT.
+- Ran production Road Bootcamp fresh start:
+  - `POST /api/blocks/road-bootcamp`
+  - Body: `{ "confirmReset": true, "startDate": "2026-05-20" }`
+- New active block:
+  - id: `7c35aaf0-445f-44f3-9107-c4783ec884f0`
+  - block type: `road_bootcamp`
+  - startedAt: `1779278400`
+- Generated Week 1 from `2026-05-20`.
+  - Week id: `9d501d6b-2977-4020-8bf7-cd5b3ca60a3a`
+  - Session count: 14.
+- Verified production Today:
+  - `2026-05-20`: Mobility and Foundation Run.
+  - `2026-05-21`: Mobility, Strength, Skip Rope.
+- Launched app on plugged-in iPhone:
+  - `xcrun devicectl device process launch --device 4B88E4ED-6344-5EAE-BDB2-F63930384B26 --terminate-existing com.joshbocas.app`
+  - Result: `Launched application with com.joshbocas.app bundle identifier.`
 
 ## 2026-05-18 06:38 EDT - Training Reality Intelligence
 
