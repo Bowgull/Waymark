@@ -7,6 +7,7 @@ import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
 import { getSessionLabel } from '@/lib/weeklyTemplate'
 import { getMarkAsset } from '@/lib/markAssets'
+import { endAllLiveActivities } from '@/lib/liveActivity'
 
 import { TodayTexture } from '@/components/backgrounds/TodayTexture'
 import { SettingsIcon } from '@/components/icons/NavIcons'
@@ -108,6 +109,9 @@ export function TodayPage() {
       console.warn('Reactive adjustments fetch failed:', e)
     }
   }, [today])
+
+  // Clear any Live Activity left over from a crashed or force-exited session.
+  useEffect(() => { void endAllLiveActivities() }, [])
 
   useEffect(() => {
     async function load() {

@@ -28,7 +28,7 @@ import { StrengthExerciseView } from './StrengthExerciseView'
 import type { StrengthSection } from './strengthMicrocopy'
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
-import { endLiveActivity } from '@/lib/liveActivity'
+import { endLiveActivity, endAllLiveActivities } from '@/lib/liveActivity'
 
 // ─── Shared types ──────────────────────────────────────────────
 
@@ -375,6 +375,7 @@ export function WorkoutPage() {
     onEnd: () => {
       cancelStrengthRestEnd()
       restTimer.stop()
+      void endAllLiveActivities()
       navigate('/today')
     },
     onCompleteSet: () => {
@@ -605,7 +606,7 @@ export function WorkoutPage() {
         style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}
       >
         <button
-          onClick={() => navigate('/today')}
+          onClick={() => { void endAllLiveActivities(); navigate('/today') }}
           className="-ml-2 inline-flex min-h-[44px] min-w-[44px] items-center px-3 text-sm font-medium text-muted-foreground active:text-teal"
         >
           Back
@@ -1078,7 +1079,7 @@ export function WorkoutPage() {
           Retry
         </button>
         <button
-          onClick={() => { clearWorkoutRecovery(); navigate('/today') }}
+          onClick={() => { clearWorkoutRecovery(); void endAllLiveActivities(); navigate('/today') }}
           className="text-sm text-muted-foreground underline"
         >
           Back to Today
@@ -1112,7 +1113,7 @@ export function WorkoutPage() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-near-black px-6 text-center">
         <p className="text-sm text-muted-foreground">Exercise data unavailable. Recovery state may be stale.</p>
         <button
-          onClick={() => { clearWorkoutRecovery(); navigate('/today') }}
+          onClick={() => { clearWorkoutRecovery(); void endAllLiveActivities(); navigate('/today') }}
           className="rounded-md border border-gold/20 bg-gold/10 px-5 py-3 text-sm text-gold"
         >
           Back to Today
