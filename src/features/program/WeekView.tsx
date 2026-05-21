@@ -239,6 +239,7 @@ function SessionRow({
   onReplace: () => void
 }) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null)
   const date = new Date(epochDay * 86400 * 1000)
   const dayOfWeek = date.getUTCDay()
   const label = getSessionLabel(session.type, dayOfWeek)
@@ -251,9 +252,12 @@ function SessionRow({
     ? getRoutineOverview(session.type, dayOfWeek, blockWeek, weekNumber, blockType)
     : null
 
-  function handleTouchStart() {
+  function handleTouchStart(e: React.TouchEvent) {
     if (!isSkippable) return
+    const touch = e.touches[0]
+    touchStartPos.current = { x: touch.clientX, y: touch.clientY }
     longPressTimer.current = setTimeout(() => {
+      touchStartPos.current = null
       onLongPress()
     }, 500)
   }
@@ -263,12 +267,18 @@ function SessionRow({
       clearTimeout(longPressTimer.current)
       longPressTimer.current = null
     }
+    touchStartPos.current = null
   }
 
-  function handleTouchMove() {
-    if (longPressTimer.current) {
+  function handleTouchMove(e: React.TouchEvent) {
+    if (!longPressTimer.current || !touchStartPos.current) return
+    const touch = e.touches[0]
+    const dx = touch.clientX - touchStartPos.current.x
+    const dy = touch.clientY - touchStartPos.current.y
+    if (Math.hypot(dx, dy) > 8) {
       clearTimeout(longPressTimer.current)
       longPressTimer.current = null
+      touchStartPos.current = null
     }
   }
 
@@ -279,7 +289,10 @@ function SessionRow({
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchMove={handleTouchMove}
-        onMouseDown={handleTouchStart}
+        onMouseDown={() => {
+          if (!isSkippable) return
+          longPressTimer.current = setTimeout(() => { onLongPress() }, 500)
+        }}
         onMouseUp={handleTouchEnd}
         onMouseLeave={handleTouchEnd}
         onContextMenu={(e) => {
@@ -529,6 +542,11 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
 
   return (
     <div>
+      {/* Global dismiss backdrop when any action tray is open */}
+      {actionTraySessionId && (
+        <div className="fixed inset-0 z-10" onClick={() => setActionTraySessionId(null)} />
+      )}
+
       {/* Draft approval banner */}
       {weekStatus === 'draft' && (
         <div className="mb-4 rounded-md border border-gold/30 bg-gold/5 p-3">
@@ -703,15 +721,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
 
               {/* Sessions — always visible */}
               <div className="space-y-1.5">
-                {/* Dismiss overlay for action tray */}
-                {actionTraySessionId && isExpanded && (
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setActionTraySessionId(null)}
-                  />
-                )}
-
-                <div className={isExpanded ? 'relative z-20' : ''}>
+                <div className={isExpanded || sortedSessions.some(s => actionTraySessionId === s.id) ? 'relative z-20' : ''}>
                   {sortedSessions.map(s => (
                     <SessionRow
                       key={s.id}

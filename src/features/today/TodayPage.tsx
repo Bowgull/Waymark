@@ -5,6 +5,8 @@ import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
+import { getSessionLabel } from '@/lib/weeklyTemplate'
+import { getMarkAsset } from '@/lib/markAssets'
 
 import { TodayTexture } from '@/components/backgrounds/TodayTexture'
 import { SettingsIcon } from '@/components/icons/NavIcons'
@@ -71,9 +73,13 @@ export function TodayPage() {
   >(null)
   const [reassignFor, setReassignFor] = useState<{ activityId: number; sessionId: string } | null>(null)
   const [maxHr, setMaxHr] = useState<number | null>(null)
+  const [tomorrowSessions, setTomorrowSessions] = useState<Session[]>([])
 
   const today = getTodayISO()
   const todayDate = new Date(`${today}T12:00:00`)
+  const tomorrowDate = new Date(todayDate)
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+  const tomorrow = tomorrowDate.toLocaleDateString('en-CA')
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -106,14 +112,16 @@ export function TodayPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [sessionsData, logData, profile] = await Promise.all([
+        const [sessionsData, logData, profile, tomorrowData] = await Promise.all([
           apiFetch<Session[]>(`/api/sessions/today?date=${today}`),
           apiFetch<DailyLog | null>(`/api/daily-logs/today?date=${today}`),
           apiFetch<{ maxHr: number | null } | null>('/api/user-profile').catch(() => null),
+          apiFetch<Session[]>(`/api/sessions/today?date=${tomorrow}`).catch(() => []),
         ])
         setSessions(sessionsData)
         setDailyLog(logData)
         setMaxHr(profile?.maxHr ?? null)
+        setTomorrowSessions(tomorrowData)
         refreshReactive()
       } catch (e) {
         console.error('Failed to load today data:', e)
@@ -123,7 +131,7 @@ export function TodayPage() {
       }
     }
     load()
-  }, [today, refreshReactive])
+  }, [today, tomorrow, refreshReactive])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
@@ -538,6 +546,8 @@ export function TodayPage() {
         </>
       )}
 
+      <TomorrowPreview sessions={tomorrowSessions} tomorrowDate={tomorrowDate} />
+
       <button
         type="button"
         onClick={() => navigate('/settings')}
@@ -605,6 +615,45 @@ export function TodayPage() {
       />
 
       <ToastContainer />
+    </div>
+  )
+}
+
+// ─── Tomorrow Preview ──────────────────────────────────────────
+
+interface TomorrowSession {
+  id: string
+  type: string
+  timeSlot: string | null
+  status: string
+}
+
+function TomorrowPreview({ sessions, tomorrowDate }: { sessions: TomorrowSession[]; tomorrowDate: Date }) {
+  const planned = sessions.filter(s => s.status === 'planned' || s.status === 'in_progress')
+  if (planned.length === 0) return null
+
+  const dow = tomorrowDate.getDay()
+
+  return (
+    <div className="mt-1">
+      <p className="mb-2 px-1 font-cinzel text-[10px] uppercase tracking-[0.3em] text-muted-foreground/35">Tomorrow</p>
+      <div className="rounded-xl border border-border/30 bg-card/20 divide-y divide-border/20">
+        {planned.map(s => {
+          const label = getSessionLabel(s.type, dow)
+          const mark = getMarkAsset(s.type)
+          return (
+            <div key={s.id} className="flex items-center gap-3 px-3 py-2.5">
+              <img src={mark.png} alt="" className="h-4 w-4 shrink-0 object-contain opacity-30 saturate-0" />
+              <span className="flex-1 text-[13px] text-muted-foreground/50">{label}</span>
+              {s.timeSlot && (
+                <span className={`font-cinzel text-[10px] tracking-[0.2em] ${s.timeSlot === 'am' ? 'text-gold/30' : 'text-teal/30'}`}>
+                  {s.timeSlot.toUpperCase()}
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
