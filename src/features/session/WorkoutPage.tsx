@@ -1069,8 +1069,20 @@ export function WorkoutPage() {
 
   if (!strengthData) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-near-black">
-        <p className="text-sm text-muted-foreground">No workout data found.</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-near-black px-6 text-center">
+        <p className="text-sm text-muted-foreground">Couldn't load workout data.</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded-md border border-border/40 bg-card/30 px-5 py-3 text-sm text-foreground"
+        >
+          Retry
+        </button>
+        <button
+          onClick={() => { clearWorkoutRecovery(); navigate('/today') }}
+          className="text-sm text-muted-foreground underline"
+        >
+          Back to Today
+        </button>
       </div>
     )
   }
@@ -1094,6 +1106,21 @@ export function WorkoutPage() {
   }
 
   const currentExercise = strengthData.exercises[exerciseIdx]
+
+  if (!currentExercise) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-near-black px-6 text-center">
+        <p className="text-sm text-muted-foreground">Exercise data unavailable. Recovery state may be stale.</p>
+        <button
+          onClick={() => { clearWorkoutRecovery(); navigate('/today') }}
+          className="rounded-md border border-gold/20 bg-gold/10 px-5 py-3 text-sm text-gold"
+        >
+          Back to Today
+        </button>
+      </div>
+    )
+  }
+
   const currentSet = currentExercise?.sets[setIdx]
   const totalExercises = strengthData.exercises.length
   const totalSetsForExercise = currentExercise?.sets.length ?? 0
