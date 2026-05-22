@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-21 22:44 ADT
+Updated: 2026-05-22 13:59 ADT
 
 ## Current State
 
@@ -8,13 +8,48 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-Overall build estimate: 95 percent. Current repair focus is restoring Waymark's road-training quality after user QA found strength resume failure, tray persistence, weak Road Bootcamp workout doctrine, and missing prescriptive loading.
+Overall build estimate: 96 percent. Current repair focus is restoring Waymark's road-training quality after user QA found strength resume failure, tray persistence, weak Road Bootcamp workout doctrine, and missing prescriptive loading.
 
 Current remaining gates:
 - Finish deeper Road Bootcamp doctrine pass around Tactical Barbell/Fighter/Green influence, Muay Thai needs, and posture/corrective work.
 - Re-test physical iPhone after the repair set is complete.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-22 13:59 ADT - Band Intelligence And Coach Evidence
+
+- Added band-specific training reality.
+  - Prescribed band versus actual band now produces `lighter` or `heavier`.
+  - Rep misses and rep surplus still work for band sets.
+  - Future Road Bootcamp band prescriptions can walk down or up by HAPBEAR color.
+- Road Bootcamp strength start now adjusts prescribed band color from recent strength reality.
+  - If the athlete manually used a lighter band, the next prescription starts from that lighter band.
+  - If the athlete missed reps, the next prescription walks down one color.
+  - If the athlete overperforms, the next prescription walks up one color.
+- Strength set PATCH now interprets band color changes instead of treating all band sets as unloaded bodyweight work.
+- Local coach review now marks Road Bootcamp strength load changes in one line:
+  - `Load change noted.`
+- Added tests:
+  - band set status.
+  - band prescription adjustment.
+  - local Road Bootcamp strength review when load changes.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md` until committed.
+
+### Next Immediate Step
+
+Finish the whole-session doctrine audit:
+- Confirm the 18 variants preserve Waymark's Tactical Barbell/Fighter base under road constraints.
+- Confirm Green-style conditioning stays cardio-first without stealing recovery from strength.
+- Confirm Muay Thai needs are present: posterior chain, trunk stiffness, scapular control, rows/pulls, single-leg work, and repeatable aerobic base.
+- Confirm posture work stays baked into warmups and mobility, not exposed as a new setup screen.
 
 ## 2026-05-21 22:33 ADT - Strength Resume And Tray Repair
 

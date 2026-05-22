@@ -203,8 +203,12 @@ export function buildLocalSessionReview(
     if (road) {
       const time = road.prescribedTime ?? road.timeAvailable ?? 'time not recorded'
       const timeLabel = time === '45_plus' ? '45+ minutes' : `${time} minutes`
+      const movementCount = context.strength.exercises.length
+      const movementLabel = movementCount === 1 ? 'movement' : 'movements'
+      const changedSets = context.strength.exercises.reduce((sum, exercise) => sum + exercise.changedSets, 0)
+      const adjustment = changedSets > 0 ? ' Load change noted.' : ''
       return {
-        line: `${timeLabel}. ${readableRoadEquipment(road.equipment)}. ${context.strength.exercises.length} movements logged.`,
+        line: `${timeLabel}. ${readableRoadEquipment(road.equipment)}. ${movementCount} ${movementLabel} logged.${adjustment}`,
         flag: 'none',
       }
     }

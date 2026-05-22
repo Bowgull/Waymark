@@ -30,7 +30,7 @@ import { generateWeekPlan } from '../lib/weeklyPlanAI'
 import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, zone2CeilingBpm } from '../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
-import { assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
+import { adjustBandColorFromReality, assessBandSet, assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 import { runReplaceSuggestions } from '../lib/reactiveCoach'
@@ -1048,12 +1048,15 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
 
     for (let setIdx = 0; setIdx < tex.sets.length; setIdx++) {
       const ts = tex.sets[setIdx]
+      const exerciseReality = strengthReality.get(tex.exerciseId)
       const templateWeight = ts.suggestedWeightKg ?? null
+      const templateBandColor = ts.bandColor ?? null
+      const prescribedBandColor = adjustBandColorFromReality(templateBandColor, exerciseReality)
       const suggestedWeight = templateWeight ?? (ts.isWarmup
         ? computeWarmupWeightKg(trainingMax)
         : adjustSuggestedStrengthWeight(
           computeWorkingWeightKg(trainingMax, tex.section, weekPct),
-          strengthReality.get(tex.exerciseId),
+          exerciseReality,
         ))
 
       await db.insert(strengthSets).values({
@@ -1065,7 +1068,7 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
         plannedWeightKg: suggestedWeight,
         plannedReps: ts.targetReps,
         inferredStatus: 'normal',
-        bandColor: ts.bandColor ?? null,
+        bandColor: prescribedBandColor,
         isWarmup: ts.isWarmup ? 1 : 0,
         restSec: ts.restSec,
         createdAt: nowSec,
@@ -1149,12 +1152,19 @@ app.patch('/api/strength-sets/:id', async (c) => {
 
   const actualWeightKg = body.weightKg !== undefined ? body.weightKg : current.weightKg
   const actualReps = body.reps !== undefined ? body.reps : current.reps
-  updates.inferredStatus = assessStrengthSet({
-    plannedWeightKg: current.plannedWeightKg ?? current.weightKg,
-    plannedReps: current.plannedReps ?? current.reps,
-    actualWeightKg,
-    actualReps,
-  })
+  updates.inferredStatus = current.bandColor || body.bandColor
+    ? assessBandSet({
+      plannedBandColor: current.bandColor,
+      actualBandColor: body.bandColor ?? current.bandColor,
+      plannedReps: current.plannedReps ?? current.reps,
+      actualReps,
+    })
+    : assessStrengthSet({
+      plannedWeightKg: current.plannedWeightKg ?? current.weightKg,
+      plannedReps: current.plannedReps ?? current.reps,
+      actualWeightKg,
+      actualReps,
+    })
 
   await db.update(strengthSets).set(updates).where(eq(strengthSets.id, setId))
 
