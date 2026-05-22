@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-21 22:33 ADT
+Updated: 2026-05-21 22:44 ADT
 
 ## Current State
 
@@ -8,12 +8,10 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-Overall build estimate: 94 percent. Current repair focus is restoring Waymark's road-training quality after user QA found strength resume failure, tray persistence, weak Road Bootcamp workout doctrine, and missing prescriptive loading.
+Overall build estimate: 95 percent. Current repair focus is restoring Waymark's road-training quality after user QA found strength resume failure, tray persistence, weak Road Bootcamp workout doctrine, and missing prescriptive loading.
 
 Current remaining gates:
-- Repair Road Bootcamp strength doctrine and loading prescriptions around Tactical Barbell/Fighter/Green influence, Muay Thai needs, posture/corrective work, and HAPBEAR bands.
-- Verify hotel gym means dumbbells plus bench only. No machines or pull-up bar assumed.
-- Verify no-gym means room-only bands/bodyweight/floor space. No suitcase. No door anchor.
+- Finish deeper Road Bootcamp doctrine pass around Tactical Barbell/Fighter/Green influence, Muay Thai needs, and posture/corrective work.
 - Re-test physical iPhone after the repair set is complete.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
@@ -55,6 +53,49 @@ Repair Road Bootcamp strength prescriptions:
 - Restore prescriptive loading for DB, barbell, bodyweight, and HAPBEAR band colors.
 - Keep time slots.
 - Keep intelligence hidden inside session/logging behavior.
+
+## 2026-05-21 22:44 ADT - Road Strength Equipment And Load Repair
+
+- Repaired Road Bootcamp hotel-gym assumptions.
+  - Hotel gym now means dumbbells plus bench only.
+  - Removed lat pulldown and hamstring curl from hotel-gym Road Bootcamp templates.
+  - No pull-up bar assumed for hotel-gym variants.
+- Tightened no-gym meaning.
+  - Room-only bands/bodyweight/floor-space work.
+  - Band rows are seated with the band around the feet.
+  - Band chest press is around the upper back.
+  - No door anchor.
+  - No suitcase.
+- Restored prescriptive loading in existing set flow.
+  - Road Bootcamp DB sets can carry suggested loading.
+  - Road Bootcamp band sets can carry prescribed band color.
+  - Set tracker now defaults to the prescribed band color.
+  - Band exercises show Band instead of a pounds input.
+- HAPBEAR source check:
+  - Official HAPBEAR listing confirms set range from yellow 5-10 lb to purple 100-125 lb.
+  - Middle colors are treated as relative progression tiers until the user provides package/manual proof with exact lb ranges.
+- Added tests:
+  - hotel-gym variants reject barbell, machine, pulldown, hamstring curl, and pull-up assumptions.
+  - hotel-gym dumbbell exercises require prescribed loading.
+  - no-gym band exercises require HAPBEAR guidance and set-level band color.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md` until committed.
+
+### Next Immediate Step
+
+Review Road Bootcamp strength A/B as whole sessions against the original Waymark training doctrine:
+- Tactical Barbell Fighter structure.
+- Green-style road conditioning intent.
+- Muay Thai posterior chain, trunk stiffness, shoulders, stance, and single-leg needs.
+- Corrective posture work for rounded shoulders/forward head/desk posture.
+- Make sure the final matrix feels like Waymark training, not generic travel fitness.
 
 ## 2026-05-20 11:39 EDT - Road Bootcamp Start Date Reset
 

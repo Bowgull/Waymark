@@ -25,8 +25,6 @@ const REQUIRED_VIDEO_EXERCISES = new Set([
   'ex-goblet-squat',
   'ex-db-rdl',
   'ex-db-ohp',
-  'ex-lat-pulldown',
-  'ex-hamstring-curl',
   'ex-push-up',
   'ex-pike-push-up',
   'ex-tempo-squat',
@@ -73,7 +71,7 @@ function testNoGymPullingWork() {
 }
 
 function testHotelGymAvoidsBarbells() {
-  const barbellExerciseIds = new Set([
+  const unavailableExerciseIds = new Set([
     'ex-front-squat',
     'ex-bench-press',
     'ex-bent-over-row',
@@ -81,6 +79,9 @@ function testHotelGymAvoidsBarbells() {
     'ex-rdl',
     'ex-deadlift',
     'ex-block-pull',
+    'ex-lat-pulldown',
+    'ex-hamstring-curl',
+    'ex-pullup-band',
   ])
 
   for (const dayType of ['strength_a', 'strength_b'] as const) {
@@ -91,8 +92,29 @@ function testHotelGymAvoidsBarbells() {
         equipment: 'hotel_gym',
       })
 
-      const barbellExercise = template.exercises.find((exercise) => barbellExerciseIds.has(exercise.exerciseId))
-      assertEqual(barbellExercise, undefined, `${template.id} includes a barbell exercise`)
+      const unavailable = template.exercises.find((exercise) => unavailableExerciseIds.has(exercise.exerciseId))
+      assertEqual(unavailable, undefined, `${template.id} includes equipment not assumed in a hotel gym`)
+    }
+  }
+}
+
+function testHotelGymHasDumbbellPrescriptions() {
+  for (const dayType of ['strength_a', 'strength_b'] as const) {
+    for (const timeAvailable of ROAD_BOOTCAMP_TIMES) {
+      const template = getRoadBootcampStrengthTemplate({
+        dayType,
+        timeAvailable,
+        equipment: 'hotel_gym',
+      })
+
+      const dumbbellExercises = template.exercises.filter(exercise => exercise.exerciseId.includes('db') || exercise.exerciseId === 'ex-goblet-squat')
+      assert(dumbbellExercises.length > 0, `${template.id} should include dumbbell work`)
+      for (const exercise of dumbbellExercises) {
+        assert(
+          exercise.sets.every(set => set.suggestedWeightKg != null),
+          `${template.id} ${exercise.exerciseId} is missing prescribed DB loading`,
+        )
+      }
     }
   }
 }
@@ -165,6 +187,7 @@ function testHapbearBandCues() {
   assert(bandExercises.length > 0, 'no-gym template should include band exercises')
   for (const exercise of bandExercises) {
     assert(exercise.notes?.includes('HAPBEAR'), `${exercise.exerciseId} is missing HAPBEAR band guidance`)
+    assert(exercise.sets.every(set => set.bandColor), `${exercise.exerciseId} is missing prescribed band color`)
   }
 
   const hotelWarmup = getRoadBootcampStrengthTemplate({
@@ -193,6 +216,7 @@ function testAdaptationLineIsReusable() {
 testAllEighteenVariants()
 testNoGymPullingWork()
 testHotelGymAvoidsBarbells()
+testHotelGymHasDumbbellPrescriptions()
 testWarmupsAreMarkedWarmupSets()
 testNewExercisesHaveVideosPlanned()
 testEveryTemplateExerciseHasSeededVideo()

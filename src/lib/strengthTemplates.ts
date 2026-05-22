@@ -2,6 +2,8 @@ export interface TemplateSet {
   isWarmup: boolean
   targetReps: number // 0 = max reps
   restSec: number
+  suggestedWeightKg?: number | null
+  bandColor?: string | null
 }
 
 export type ExerciseSection = 'warmup' | 'main' | 'accessory' | 'core'
