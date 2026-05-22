@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
+import { endAllLiveActivities } from '@/lib/liveActivity'
 
 import { TodayTexture } from '@/components/backgrounds/TodayTexture'
 import { SettingsIcon } from '@/components/icons/NavIcons'
@@ -72,9 +73,14 @@ export function TodayPage() {
   >(null)
   const [reassignFor, setReassignFor] = useState<{ activityId: number; sessionId: string } | null>(null)
   const [maxHr, setMaxHr] = useState<number | null>(null)
+  const autoResumeAttempted = useRef(false)
 
   const today = getTodayISO()
   const todayDate = new Date(`${today}T12:00:00`)
+
+  useEffect(() => {
+    void endAllLiveActivities()
+  }, [])
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -115,6 +121,23 @@ export function TodayPage() {
         setSessions(sessionsData)
         setDailyLog(logData)
         setMaxHr(profile?.maxHr ?? null)
+        if (!autoResumeAttempted.current) {
+          autoResumeAttempted.current = true
+          let suppressUntil = 0
+          try {
+            suppressUntil = Number(sessionStorage.getItem('waymark_suppress_auto_resume_until') ?? 0)
+          } catch {
+            suppressUntil = 0
+          }
+          const activeStrength = sessionsData.find(session =>
+            session.type === 'strength' &&
+            session.status === 'in_progress'
+          )
+          if (activeStrength && (!Number.isFinite(suppressUntil) || Date.now() > suppressUntil)) {
+            navigate(`/session/${activeStrength.id}`, { replace: true })
+            return
+          }
+        }
         refreshReactive()
       } catch (e) {
         console.error('Failed to load today data:', e)
@@ -124,7 +147,7 @@ export function TodayPage() {
       }
     }
     load()
-  }, [today, refreshReactive])
+  }, [today, refreshReactive, navigate])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a

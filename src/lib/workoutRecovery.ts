@@ -1,12 +1,43 @@
 const RECOVERY_KEY = 'waymark_workout_recovery'
 
-interface RecoveryState {
+export interface RecoveryState {
   sessionId: string
   exerciseIdx: number
   setIdx: number
   roundIdx: number
   phase: string
   savedAt: number
+}
+
+interface RecoveryValidationContext {
+  sessionId: string
+  exerciseSetCounts?: number[]
+  maxAgeMs?: number
+  nowMs?: number
+}
+
+const TERMINAL_PHASES = new Set(['entrance', 'complete', 'mark-earned'])
+const RECOVERABLE_PHASES = new Set(['exercise', 'rest', 'round', 'video'])
+const DEFAULT_MAX_AGE_MS = 4 * 60 * 60 * 1000
+
+export function validateWorkoutRecovery(
+  data: RecoveryState,
+  ctx: RecoveryValidationContext,
+): RecoveryState | null {
+  const nowMs = ctx.nowMs ?? Date.now()
+  const maxAgeMs = ctx.maxAgeMs ?? DEFAULT_MAX_AGE_MS
+  if (data.sessionId !== ctx.sessionId) return null
+  if (nowMs - data.savedAt > maxAgeMs) return null
+  if (!RECOVERABLE_PHASES.has(data.phase)) return null
+  if (TERMINAL_PHASES.has(data.phase)) return null
+
+  if (ctx.exerciseSetCounts) {
+    const setCount = ctx.exerciseSetCounts[data.exerciseIdx]
+    if (setCount == null) return null
+    if (data.setIdx < 0 || data.setIdx >= setCount) return null
+  }
+
+  return data
 }
 
 export function saveWorkoutProgress(state: Omit<RecoveryState, 'savedAt'>) {
@@ -23,13 +54,12 @@ export function getWorkoutRecovery(sessionId: string): RecoveryState | null {
     const raw = localStorage.getItem(RECOVERY_KEY)
     if (!raw) return null
     const data: RecoveryState = JSON.parse(raw)
-    // Only recover if same session and less than 4 hours old
-    if (data.sessionId !== sessionId) return null
-    if (Date.now() - data.savedAt > 4 * 60 * 60 * 1000) {
+    const valid = validateWorkoutRecovery(data, { sessionId })
+    if (!valid) {
       clearWorkoutRecovery()
       return null
     }
-    return data
+    return valid
   } catch {
     return null
   }

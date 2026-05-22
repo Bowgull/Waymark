@@ -269,6 +269,7 @@ function SessionRow({
   maxHr?: number | null
 }) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressFired = useRef(false)
   const date = new Date(epochDay * 86400 * 1000)
   const dayOfWeek = date.getUTCDay()
   const isRoadBootcamp = session.blockType === 'road_bootcamp'
@@ -288,7 +289,10 @@ function SessionRow({
 
   function handleTouchStart() {
     if (!isSkippable) return
+    longPressFired.current = false
     longPressTimer.current = setTimeout(() => {
+      longPressFired.current = true
+      longPressTimer.current = null
       onLongPress()
     }, 500)
   }
@@ -320,6 +324,8 @@ function SessionRow({
         onContextMenu={(e) => {
           if (!isSkippable) return
           e.preventDefault()
+          if (longPressFired.current) return
+          longPressFired.current = true
           onLongPress()
         }}
       >
@@ -424,6 +430,19 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
       .then(setAdjustments)
       .catch(() => setAdjustments([]))
   }, [weekPlanId])
+
+  useEffect(() => {
+    function closeTransientTray() {
+      setActionTraySessionId(null)
+    }
+
+    document.addEventListener('visibilitychange', closeTransientTray)
+    window.addEventListener('pagehide', closeTransientTray)
+    return () => {
+      document.removeEventListener('visibilitychange', closeTransientTray)
+      window.removeEventListener('pagehide', closeTransientTray)
+    }
+  }, [])
 
   function toggleDay(epochDay: number) {
     setExpandedDay(prev => prev === epochDay ? null : epochDay)

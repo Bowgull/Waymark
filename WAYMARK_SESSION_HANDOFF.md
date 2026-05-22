@@ -1,19 +1,60 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-20 11:39 EDT
+Updated: 2026-05-21 22:33 ADT
 
 ## Current State
 
 Active branch: `codex/roadtrip-coach`.
 
-Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, 18 strength variants, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
+Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-The Road Bootcamp slice is complete. Estimate: 100 percent. Live AI, remote Strava poll, production Road Bootcamp fresh start, production Week 1 generation, remote readiness, iOS sync, device build, physical iPhone install, and physical iPhone launch have all been proven.
+Overall build estimate: 94 percent. Current repair focus is restoring Waymark's road-training quality after user QA found strength resume failure, tray persistence, weak Road Bootcamp workout doctrine, and missing prescriptive loading.
 
 Current remaining gates:
-- None for the Road Bootcamp slice.
+- Repair Road Bootcamp strength doctrine and loading prescriptions around Tactical Barbell/Fighter/Green influence, Muay Thai needs, posture/corrective work, and HAPBEAR bands.
+- Verify hotel gym means dumbbells plus bench only. No machines or pull-up bar assumed.
+- Verify no-gym means room-only bands/bodyweight/floor space. No suitcase. No door anchor.
+- Re-test physical iPhone after the repair set is complete.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-21 22:33 ADT - Strength Resume And Tray Repair
+
+- Repaired strength session re-entry after accidental app close.
+- Added validated workout recovery:
+  - rejects wrong-session recovery.
+  - rejects stale recovery.
+  - rejects terminal or unknown phases.
+  - rejects stale exercise and set indexes before render.
+- Today now auto-resumes into an in-progress strength session unless the user intentionally backed out.
+- Strength Back/exit now stops rest timers, cancels local rest notifications, ends Live Activities, and suppresses immediate auto-resume for 2 minutes.
+- Added a safe expired-workout-state fallback instead of rendering a broken strength session.
+- Program long-press action tray cleanup:
+  - closes transient tray on app/page background.
+  - prevents long-press from also firing the browser/native context menu path.
+- Checked Claude remote branch work:
+  - `origin/claude/fix-program-context-menu-9dhil` had useful cleanup ideas.
+  - Not merged because it was based on older code and would regress Road Bootcamp strength-ready, band color, planned reps, and context behavior.
+- Added `src/lib/workoutRecovery.test.ts`.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md` until committed.
+
+### Next Immediate Step
+
+Repair Road Bootcamp strength prescriptions:
+- Make hotel gym DB plus bench only.
+- Make no-gym room-only bands/bodyweight.
+- Keep full gym as barbell/rack/cable/machine capable.
+- Restore prescriptive loading for DB, barbell, bodyweight, and HAPBEAR band colors.
+- Keep time slots.
+- Keep intelligence hidden inside session/logging behavior.
 
 ## 2026-05-20 11:39 EDT - Road Bootcamp Start Date Reset
 
