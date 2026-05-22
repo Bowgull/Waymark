@@ -1048,12 +1048,13 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
 
     for (let setIdx = 0; setIdx < tex.sets.length; setIdx++) {
       const ts = tex.sets[setIdx]
-      const suggestedWeight = ts.isWarmup
+      const templateWeight = ts.suggestedWeightKg ?? null
+      const suggestedWeight = templateWeight ?? (ts.isWarmup
         ? computeWarmupWeightKg(trainingMax)
         : adjustSuggestedStrengthWeight(
           computeWorkingWeightKg(trainingMax, tex.section, weekPct),
           strengthReality.get(tex.exerciseId),
-        )
+        ))
 
       await db.insert(strengthSets).values({
         id: crypto.randomUUID(),
@@ -1064,6 +1065,7 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
         plannedWeightKg: suggestedWeight,
         plannedReps: ts.targetReps,
         inferredStatus: 'normal',
+        bandColor: ts.bandColor ?? null,
         isWarmup: ts.isWarmup ? 1 : 0,
         restSec: ts.restSec,
         createdAt: nowSec,

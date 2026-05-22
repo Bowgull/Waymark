@@ -1481,6 +1481,7 @@ export function WorkoutPage() {
           isWarmup: currentSet.isWarmup === 1,
           suggestedWeightKg: currentSet.weightKg,
           targetReps: currentSet.plannedReps ?? currentSet.reps,
+          bandColor: currentSet.bandColor,
           restSec: currentSet.restSec ?? 60,
         } : undefined}
         prescription={prescriptionDisplay}

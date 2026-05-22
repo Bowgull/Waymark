@@ -23,8 +23,23 @@ export interface RoadBootcampStrengthTemplate {
   exercises: TemplateExercise[]
 }
 
-function sets(count: number, reps: number, restSec: number, isWarmup = false): TemplateSet[] {
-  return Array.from({ length: count }, () => ({ isWarmup, targetReps: reps, restSec }))
+interface RoadSetOptions {
+  suggestedWeightKg?: number | null
+  bandColor?: string | null
+}
+
+function lbToKg(lb: number): number {
+  return Math.round(lb * 0.45359237 * 100) / 100
+}
+
+function sets(count: number, reps: number, restSec: number, isWarmup = false, options: RoadSetOptions = {}): TemplateSet[] {
+  return Array.from({ length: count }, () => ({
+    isWarmup,
+    targetReps: reps,
+    restSec,
+    suggestedWeightKg: options.suggestedWeightKg ?? null,
+    bandColor: options.bandColor ?? null,
+  }))
 }
 
 function ex(
@@ -35,49 +50,62 @@ function ex(
   reps: number,
   restSec: number,
   notes?: string,
+  options: RoadSetOptions = {},
 ): TemplateExercise {
-  return { exerciseId, label, section, sets: sets(count, reps, restSec), notes }
+  return { exerciseId, label, section, sets: sets(count, reps, restSec, false, options), notes }
 }
 
-function warmup(exerciseId: string, label: string, notes?: string): TemplateExercise {
-  return { exerciseId, label, section: 'warmup', sets: sets(1, 12, 30, true), notes }
+function warmup(exerciseId: string, label: string, notes?: string, options: RoadSetOptions = {}): TemplateExercise {
+  return { exerciseId, label, section: 'warmup', sets: sets(1, 12, 30, true, options), notes }
 }
 
 const HAPBEAR_BANDS: Record<string, string> = {
-  mobility: 'HAPBEAR yellow or orange band. Use the one that moves cleanly.',
-  light: 'HAPBEAR yellow band. Move clean. No strain.',
-  medium: 'HAPBEAR red or blue band. Last reps should slow down.',
-  heavy: 'HAPBEAR blue or purple band. Keep the hinge clean.',
-  max: 'HAPBEAR purple band. Use only if position stays solid.',
+  mobility: 'HAPBEAR yellow or orange band. Yellow is listed at 5-10 lb. Purple is listed at 100-125 lb. Stay smooth.',
+  light: 'HAPBEAR yellow band. Listed at 5-10 lb. Move clean. No strain.',
+  medium: 'HAPBEAR red band. If it snaps form, use orange.',
+  heavy: 'HAPBEAR blue band. If the hinge shifts into your low back, use red.',
+  max: 'HAPBEAR purple band. Listed at 100-125 lb. Use only if position stays solid.',
 }
 
-function bandCue(exerciseId: string): string | null {
+function bandTier(exerciseId: string): keyof typeof HAPBEAR_BANDS | null {
   switch (exerciseId) {
     case 'ex-band-pull-aparts':
     case 'ex-face-pulls':
-      return HAPBEAR_BANDS.light
+      return 'light'
     case 'ex-band-row':
     case 'ex-band-chest-press':
     case 'ex-band-curl':
-      return HAPBEAR_BANDS.medium
+      return 'medium'
     case 'ex-band-good-morning':
     case 'ex-tempo-squat':
     case 'ex-reverse-lunge':
-      return HAPBEAR_BANDS.heavy
+      return 'heavy'
     case 'ex-bulgarian-split-squat':
     case 'ex-single-leg-rdl':
-      return HAPBEAR_BANDS.mobility
+      return 'mobility'
     default:
       return null
   }
 }
 
+function bandColorForTier(tier: keyof typeof HAPBEAR_BANDS | null): string | null {
+  if (tier === 'light') return 'yellow'
+  if (tier === 'medium') return 'red'
+  if (tier === 'heavy') return 'blue'
+  if (tier === 'max') return 'purple'
+  if (tier === 'mobility') return 'yellow'
+  return null
+}
+
 function withBandCue(exercise: TemplateExercise): TemplateExercise {
-  const cue = bandCue(exercise.exerciseId)
+  const tier = bandTier(exercise.exerciseId)
+  const cue = tier ? HAPBEAR_BANDS[tier] : null
   if (!cue) return exercise
+  const color = bandColorForTier(tier)
   return {
     ...exercise,
     notes: exercise.notes ? `${exercise.notes} ${cue}` : cue,
+    sets: exercise.sets.map(set => ({ ...set, bandColor: set.bandColor ?? color })),
   }
 }
 
@@ -117,9 +145,9 @@ function template(
 function noGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   const base = [
     warmup('ex-band-pull-aparts', 'Band Pull-Aparts'),
-    ex('ex-bulgarian-split-squat', 'Split Squat', 'main', 3, 8, 60, '8 each side. Bodyweight or band-loaded.'),
+    ex('ex-bulgarian-split-squat', 'Split Squat', 'main', 3, 8, 75, '8 each side. Bodyweight first. Add yellow band only if position stays clean.'),
     ex('ex-push-up', 'Push-Up', 'main', 3, 8, 60, 'Stop 1-2 reps before form breaks.'),
-    ex('ex-band-row', 'Band Row', 'main', 3, 12, 60),
+    ex('ex-band-row', 'Seated Band Row', 'main', 3, 10, 75, 'Band around both feet. Sit tall. Pause at ribs.'),
   ]
   if (timeAvailable === '15') return base
   base.push(
@@ -128,7 +156,7 @@ function noGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   if (timeAvailable === '30') return base
   return [
     ...base.slice(0, 2),
-    ex('ex-tempo-squat', 'Tempo Squat', 'main', 3, 10, 60, '3 seconds down.'),
+    ex('ex-tempo-squat', 'Tempo Squat', 'main', 3, 10, 75, '3 seconds down. Hold posture.'),
     ...base.slice(2),
     ex('ex-lateral-lunges', 'Lateral Lunge', 'accessory', 2, 8, 60, '8 each side.'),
   ]
@@ -137,9 +165,9 @@ function noGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
 function noGymB(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   const base = [
     warmup('ex-band-pull-aparts', 'Band Pull-Aparts'),
-    ex('ex-band-good-morning', 'Band Good Morning', 'main', 3, 12, 60),
-    ex('ex-band-chest-press', 'Band Chest Press', 'main', 3, 10, 60),
-    ex('ex-band-row', 'Seated Band Row', 'main', 3, 12, 60),
+    ex('ex-band-good-morning', 'Band Good Morning', 'main', 3, 10, 90, 'Band under feet and behind shoulders. Hinge only as far as spine stays long.'),
+    ex('ex-band-chest-press', 'Band Chest Press', 'main', 3, 10, 75, 'Band around upper back. No door anchor.'),
+    ex('ex-band-row', 'Seated Band Row', 'main', 3, 10, 75, 'Band around both feet. Pause at ribs.'),
   ]
   if (timeAvailable === '15') return base
   base.splice(2, 0, ex('ex-reverse-lunge', 'Reverse Lunge', 'main', 3, 8, 60, '8 each side.'))
@@ -147,7 +175,7 @@ function noGymB(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   if (timeAvailable === '30') return base
   return [
     ...base.slice(0, 3),
-    ex('ex-single-leg-rdl', 'Single-Leg RDL', 'accessory', 2, 8, 60, '8 each side.'),
+    ex('ex-single-leg-rdl', 'Single-Leg RDL', 'accessory', 2, 8, 60, '8 each side. Slow reach. This is lower-back control, not max loading.'),
     ...base.slice(3, -1),
     ex('ex-pike-push-up', 'Pike Push-Up', 'accessory', 2, 6, 60),
     ex('ex-band-curl', 'Band Curl', 'accessory', 2, 12, 45),
@@ -158,19 +186,19 @@ function noGymB(timeAvailable: RoadBootcampTime): TemplateExercise[] {
 function hotelGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   const base = [
     warmup('ex-band-pull-aparts', 'Band Pull-Aparts'),
-    ex('ex-goblet-squat', 'Goblet Squat', 'main', 3, 8, 90),
-    ex('ex-db-bench-press', 'DB Bench Press', 'main', 3, 8, 90),
-    ex('ex-db-row', 'Dumbbell Row', 'main', 3, 10, 75, '10 each arm.'),
+    ex('ex-goblet-squat', 'Goblet Squat', 'main', 3, 8, 120, 'Start around 35 lb. Add load only if depth and knees stay clean.', { suggestedWeightKg: lbToKg(35) }),
+    ex('ex-db-bench-press', 'DB Bench Press', 'main', 3, 8, 120, 'Start around 25 lb per hand. Leave 1-2 reps in reserve.', { suggestedWeightKg: lbToKg(25) }),
+    ex('ex-db-row', 'Dumbbell Row', 'main', 3, 10, 90, '10 each arm. Start around 30 lb. Pause at ribs.', { suggestedWeightKg: lbToKg(30) }),
   ]
   if (timeAvailable === '15') return base
   base.push(
-    ex('ex-lateral-raise', 'Lateral Raise', 'accessory', 2, 12, 45),
-    ex('ex-face-pulls', 'Face Pulls', 'accessory', 2, 15, 45),
+    ex('ex-lateral-raise', 'Lateral Raise', 'accessory', 2, 12, 45, 'Start around 10 lb per hand. No swing.', { suggestedWeightKg: lbToKg(10) }),
+    ex('ex-face-pulls', 'Band Face Pulls', 'accessory', 2, 15, 45, 'Use the band. No cable assumed.'),
   )
   if (timeAvailable === '30') return base
   return [
     ...base,
-    ex('ex-incline-db-press', 'Incline DB Press', 'accessory', 2, 10, 75),
+    ex('ex-incline-db-press', 'Incline DB Press', 'accessory', 2, 10, 90, 'Start around 25 lb per hand. Controlled stretch.', { suggestedWeightKg: lbToKg(25) }),
     ex('ex-side-plank-lift', 'Side Plank Hip Lift', 'core', 2, 8, 45, '8 each side.'),
   ]
 }
@@ -178,20 +206,20 @@ function hotelGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
 function hotelGymB(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   const base = [
     warmup('ex-band-pull-aparts', 'Band Pull-Aparts'),
-    ex('ex-db-rdl', 'DB Romanian Deadlift', 'main', 3, 8, 90),
-    ex('ex-db-ohp', 'DB Overhead Press', 'main', 3, 8, 90),
-    ex('ex-lat-pulldown', 'Lat Pulldown', 'main', 3, 10, 75),
+    ex('ex-db-rdl', 'DB Romanian Deadlift', 'main', 3, 8, 120, 'Start around 35 lb per hand. Stop before low back takes over.', { suggestedWeightKg: lbToKg(35) }),
+    ex('ex-db-ohp', 'DB Overhead Press', 'main', 3, 8, 120, 'Start around 20 lb per hand. Ribs down. Glutes tight.', { suggestedWeightKg: lbToKg(20) }),
+    ex('ex-db-row', 'Chest-Supported DB Row', 'main', 3, 10, 90, 'Bench incline if available. Otherwise one hand on bench. Start around 30 lb.', { suggestedWeightKg: lbToKg(30) }),
   ]
   if (timeAvailable === '15') return base
   base.push(
-    ex('ex-bulgarian-split-squat', 'Bulgarian Split Squat', 'accessory', 2, 8, 75, '8 each side.'),
+    ex('ex-bulgarian-split-squat', 'Bulgarian Split Squat', 'accessory', 2, 8, 90, '8 each side. Start bodyweight, then 15 lb per hand.', { suggestedWeightKg: lbToKg(15) }),
     ex('ex-dead-bugs', 'Dead Bugs', 'core', 2, 10, 45, '10 each side.'),
   )
   if (timeAvailable === '30') return base
   return [
     ...base.slice(0, -1),
-    ex('ex-hamstring-curl', 'Hamstring Curl', 'accessory', 2, 12, 60),
-    ex('ex-hammer-curl', 'Hammer Curl', 'accessory', 2, 10, 45),
+    ex('ex-single-leg-rdl', 'Single-Leg RDL', 'accessory', 2, 8, 75, '8 each side. Use bodyweight or 15 lb DBs.', { suggestedWeightKg: lbToKg(15) }),
+    ex('ex-hammer-curl', 'Hammer Curl', 'accessory', 2, 10, 45, 'Start around 15 lb per hand.', { suggestedWeightKg: lbToKg(15) }),
     base[base.length - 1],
   ]
 }

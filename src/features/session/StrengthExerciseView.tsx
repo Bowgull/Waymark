@@ -53,6 +53,7 @@ export interface StrengthSetInput {
   isWarmup: boolean
   suggestedWeightKg: number | null
   targetReps: number
+  bandColor?: string | null
   restSec: number
 }
 
@@ -405,11 +406,13 @@ function ExerciseBody({
       {/* Set tracker — stays inline because the Done button sits next to the inputs. */}
       {currentSet && (
         <SetTracker
+          key={`${exerciseName}-${currentSet.setNumber}-${currentSet.bandColor ?? ''}`}
           setNumber={currentSet.setNumber}
           totalSets={currentSet.totalSets}
           isWarmup={currentSet.isWarmup}
           suggestedWeightKg={currentSet.suggestedWeightKg}
           targetReps={currentSet.targetReps}
+          prescribedBandColor={currentSet.bandColor}
           equipment={equipment}
           lastSessionData={lastSessionData}
           suggestion={suggestion}

@@ -12,6 +12,7 @@ interface SetTrackerProps {
   isWarmup: boolean
   suggestedWeightKg: number | null
   targetReps: number
+  prescribedBandColor?: string | null
   equipment?: string | null
   lastSessionData?: { weightLbs: number; reps: number }
   suggestion?: { weightLbs: number; message: string }
@@ -32,6 +33,7 @@ export function SetTracker({
   isWarmup,
   suggestedWeightKg,
   targetReps,
+  prescribedBandColor,
   equipment,
   lastSessionData,
   suggestion,
@@ -41,7 +43,7 @@ export function SetTracker({
   const suggestedLbs = suggestedWeightKg != null ? kgToLbs(suggestedWeightKg) : ''
   const [weight, setWeight] = useState(String(suggestedLbs))
   const [reps, setReps] = useState(targetReps > 0 ? String(targetReps) : '')
-  const [bandColor, setBandColor] = useState<string | null>(null)
+  const [bandColor, setBandColor] = useState<string | null>(prescribedBandColor ?? null)
 
   useEffect(() => {
     const w = weight ? parseFloat(weight) : NaN
@@ -52,6 +54,7 @@ export function SetTracker({
 
   const isBarbell = equipment?.toLowerCase().includes('barbell') ?? false
   const isBand = equipment?.toLowerCase().includes('band') ?? false
+  const prescribedBand = BAND_COLORS.find(band => band.value === bandColor)
   const actualWeight = weight ? lbsToKg(parseFloat(weight)) : null
   const actualReps = parseInt(reps) || 0
   const inferredStatus = assessStrengthSet({
@@ -114,18 +117,27 @@ export function SetTracker({
       )}
 
       <div className="flex items-end gap-4">
-        <div className="flex-1">
-          <label className="text-label mb-1 block text-muted-foreground">Weight (lbs)</label>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="-"
-            className="min-h-[44px] w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-gold/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(232,200,96,0.15)] focus:outline-none"
-          />
-        </div>
+        {isBand ? (
+          <div className="flex-1">
+            <label className="text-label mb-1 block text-muted-foreground">Band</label>
+            <div className="flex min-h-[44px] items-center justify-center rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-sm text-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
+              {prescribedBand ? prescribedBand.label : 'Choose'}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1">
+            <label className="text-label mb-1 block text-muted-foreground">Weight (lbs)</label>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="-"
+              className="min-h-[44px] w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-gold/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(232,200,96,0.15)] focus:outline-none"
+            />
+          </div>
+        )}
         <div className="flex-1">
           <label className="text-label mb-1 block text-muted-foreground">
             Reps{targetReps === 0 ? ' (max)' : ''}
