@@ -7,7 +7,7 @@ import { getRoadBootcampAdaptationLine } from '@/lib/roadBootcampStrengthTemplat
 import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd } from '@/lib/notifications'
-import { saveWorkoutProgress, getWorkoutRecovery, clearWorkoutRecovery } from '@/lib/workoutRecovery'
+import { saveWorkoutProgress, getWorkoutRecovery, clearWorkoutRecovery, validateWorkoutRecovery } from '@/lib/workoutRecovery'
 import { logger } from '@/lib/logger'
 import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { Button } from '@/components/ui/button'
@@ -30,7 +30,7 @@ import { StrengthExerciseView } from './StrengthExerciseView'
 import type { StrengthSection } from './strengthMicrocopy'
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
-import { endLiveActivity } from '@/lib/liveActivity'
+import { endLiveActivity, endAllLiveActivities } from '@/lib/liveActivity'
 
 // ─── Shared types ──────────────────────────────────────────────
 
@@ -309,6 +309,18 @@ export function WorkoutPage() {
 
   const restTimer = useRestTimer()
 
+  function exitToToday() {
+    try {
+      sessionStorage.setItem('waymark_suppress_auto_resume_until', String(Date.now() + 2 * 60 * 1000))
+    } catch {
+      // sessionStorage can be unavailable in private contexts.
+    }
+    cancelStrengthRestEnd()
+    restTimer.stop()
+    void endAllLiveActivities()
+    navigate('/today')
+  }
+
   // Live Activity for strength — persists across both rest and exercise
   // phases so the lock screen always shows where the user is.
   const isStrengthSession =
@@ -390,9 +402,7 @@ export function WorkoutPage() {
       void scheduleStrengthRestEnd(Date.now() + restSec * 1000)
     },
     onEnd: () => {
-      cancelStrengthRestEnd()
-      restTimer.stop()
-      navigate('/today')
+      exitToToday()
     },
     onCompleteSet: () => {
       if (phase !== 'exercise') return
@@ -428,8 +438,9 @@ export function WorkoutPage() {
 
         setSessionType(session.type)
 
-        // Skip entrance for in-progress sessions (returning to continue)
-        if (session.status === 'in_progress') {
+        // Skip entrance for in-progress non-strength sessions.
+        // Strength recovery is validated after workout rows are loaded.
+        if (session.status === 'in_progress' && session.type !== 'strength') {
           const recovery = getWorkoutRecovery(id!)
           if (recovery) {
             setExerciseIdx(recovery.exerciseIdx)
@@ -505,6 +516,28 @@ export function WorkoutPage() {
             })
           )
           setExerciseHistories(histories)
+
+          if (session.status === 'in_progress') {
+            const recovery = getWorkoutRecovery(id!)
+            const validRecovery = recovery
+              ? validateWorkoutRecovery(recovery, {
+                sessionId: id!,
+                exerciseSetCounts: data.exercises.map(exercise => exercise.sets.length),
+              })
+              : null
+            if (validRecovery) {
+              setExerciseIdx(validRecovery.exerciseIdx)
+              setSetIdx(validRecovery.setIdx)
+              setRoundIdx(validRecovery.roundIdx)
+              setPhase(validRecovery.phase === 'rest' ? 'exercise' : validRecovery.phase as Phase)
+            } else {
+              clearWorkoutRecovery()
+              setExerciseIdx(0)
+              setSetIdx(0)
+              setRoundIdx(0)
+              setPhase('exercise')
+            }
+          }
         }
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
@@ -708,7 +741,7 @@ export function WorkoutPage() {
         style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}
       >
         <button
-          onClick={() => navigate('/today')}
+          onClick={exitToToday}
           className="-ml-2 inline-flex min-h-[44px] min-w-[44px] items-center px-3 text-sm font-medium text-muted-foreground active:text-teal"
         >
           Back
@@ -1282,6 +1315,23 @@ export function WorkoutPage() {
   }
 
   const currentExercise = strengthData.exercises[exerciseIdx]
+
+  if (!currentExercise) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-near-black px-6 text-center">
+        <p className="text-sm text-muted-foreground">Workout state expired.</p>
+        <button
+          onClick={() => {
+            clearWorkoutRecovery()
+            exitToToday()
+          }}
+          className="rounded-md border border-gold/20 bg-gold/10 px-5 py-3 text-sm text-gold"
+        >
+          Back to Today
+        </button>
+      </div>
+    )
+  }
   const currentSet = currentExercise?.sets[setIdx]
   const totalExercises = strengthData.exercises.length
   const totalSetsForExercise = currentExercise?.sets.length ?? 0
