@@ -153,4 +153,26 @@ if (roadStrengthReview.line !== '30 minutes. No gym. 2 movements logged.') {
   throw new Error(`Unexpected local strength line: ${roadStrengthReview.line}`)
 }
 
+const adjustedRoadStrengthReview = buildLocalSessionReview(
+  { type: 'strength', rpe: 8, durationSec: 1800 },
+  {
+    run: null,
+    strength: {
+      roadBootcamp: {
+        timeAvailable: '30',
+        prescribedTime: '30',
+        equipment: 'no_gym',
+        adaptationLine: null,
+      },
+      exercises: [
+        { name: 'Band Row', section: 'main', workingSets: 3, warmupSets: 1, topWeightKg: null, totalReps: 24, changedSets: 1, bandColors: ['yellow'] },
+      ],
+    },
+  },
+)
+
+if (adjustedRoadStrengthReview.line !== '30 minutes. No gym. 1 movement logged. Load change noted.') {
+  throw new Error(`Unexpected adjusted local strength line: ${adjustedRoadStrengthReview.line}`)
+}
+
 console.info('sessionReviewAI tests passed')
