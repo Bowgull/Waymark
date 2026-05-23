@@ -119,6 +119,104 @@ function testHotelGymHasDumbbellPrescriptions() {
   }
 }
 
+function testHotelGymDoesNotLeakBandCuesOntoDumbbellWork() {
+  for (const dayType of ['strength_a', 'strength_b'] as const) {
+    for (const timeAvailable of ROAD_BOOTCAMP_TIMES) {
+      const template = getRoadBootcampStrengthTemplate({
+        dayType,
+        timeAvailable,
+        equipment: 'hotel_gym',
+      })
+
+      const dumbbellOnly = template.exercises.filter(exercise =>
+        exercise.exerciseId === 'ex-bulgarian-split-squat' ||
+        exercise.exerciseId === 'ex-single-leg-rdl',
+      )
+      for (const exercise of dumbbellOnly) {
+        assert(!exercise.notes?.includes('HAPBEAR'), `${template.id} leaked band cue onto ${exercise.exerciseId}`)
+        assert(exercise.sets.every(set => !set.bandColor), `${template.id} leaked band color onto ${exercise.exerciseId}`)
+      }
+    }
+  }
+}
+
+function testFullGymBDoesNotDuplicateDeadBugPattern() {
+  const template = getRoadBootcampStrengthTemplate({
+    dayType: 'strength_b',
+    timeAvailable: '45_plus',
+    equipment: 'full_gym',
+  })
+  const deadBugLike = template.exercises.filter(exercise =>
+    exercise.exerciseId === 'ex-dead-bugs' ||
+    exercise.exerciseId === 'ex-weighted-dead-bug',
+  )
+
+  assert(deadBugLike.length === 1, 'full-gym Strength B should not duplicate dead bug patterns')
+}
+
+function movementRole(exerciseId: string): Set<string> {
+  const roles = new Set<string>()
+  if ([
+    'ex-front-squat',
+    'ex-goblet-squat',
+    'ex-bulgarian-split-squat',
+    'ex-tempo-squat',
+  ].includes(exerciseId)) roles.add('squat')
+  if ([
+    'ex-rdl',
+    'ex-block-pull',
+    'ex-deadlift',
+    'ex-db-rdl',
+    'ex-band-good-morning',
+    'ex-single-leg-rdl',
+  ].includes(exerciseId)) roles.add('hinge')
+  if ([
+    'ex-bench-press',
+    'ex-db-bench-press',
+    'ex-incline-db-press',
+    'ex-push-up',
+    'ex-band-chest-press',
+  ].includes(exerciseId)) roles.add('push')
+  if ([
+    'ex-ohp',
+    'ex-db-ohp',
+    'ex-pike-push-up',
+  ].includes(exerciseId)) roles.add('press')
+  if ([
+    'ex-bent-over-row',
+    'ex-db-row',
+    'ex-band-row',
+    'ex-pullup-band',
+    'ex-face-pulls',
+  ].includes(exerciseId)) roles.add('pull')
+  if ([
+    'ex-bulgarian-split-squat',
+    'ex-reverse-lunge',
+    'ex-single-leg-rdl',
+    'ex-lateral-lunges',
+  ].includes(exerciseId)) roles.add('single_leg')
+  return roles
+}
+
+function testRoadStrengthDoctrineRoles() {
+  for (const timeAvailable of ROAD_BOOTCAMP_TIMES) {
+    for (const equipment of ROAD_BOOTCAMP_EQUIPMENT) {
+      const strengthA = getRoadBootcampStrengthTemplate({ dayType: 'strength_a', timeAvailable, equipment })
+      const aRoles = new Set(strengthA.exercises.flatMap(exercise => Array.from(movementRole(exercise.exerciseId))))
+      assert(aRoles.has('squat'), `${strengthA.id} is missing squat pattern`)
+      assert(aRoles.has('push'), `${strengthA.id} is missing push pattern`)
+      assert(aRoles.has('pull'), `${strengthA.id} is missing pull pattern`)
+
+      const strengthB = getRoadBootcampStrengthTemplate({ dayType: 'strength_b', timeAvailable, equipment })
+      const bRoles = new Set(strengthB.exercises.flatMap(exercise => Array.from(movementRole(exercise.exerciseId))))
+      assert(bRoles.has('hinge'), `${strengthB.id} is missing hinge pattern`)
+      assert(bRoles.has('press'), `${strengthB.id} is missing press pattern`)
+      assert(bRoles.has('pull'), `${strengthB.id} is missing pull pattern`)
+      if (timeAvailable !== '15') assert(bRoles.has('single_leg'), `${strengthB.id} is missing single-leg work`)
+    }
+  }
+}
+
 function testWarmupsAreMarkedWarmupSets() {
   for (const dayType of ['strength_a', 'strength_b'] as const) {
     for (const timeAvailable of ROAD_BOOTCAMP_TIMES) {
@@ -217,6 +315,9 @@ testAllEighteenVariants()
 testNoGymPullingWork()
 testHotelGymAvoidsBarbells()
 testHotelGymHasDumbbellPrescriptions()
+testHotelGymDoesNotLeakBandCuesOntoDumbbellWork()
+testFullGymBDoesNotDuplicateDeadBugPattern()
+testRoadStrengthDoctrineRoles()
 testWarmupsAreMarkedWarmupSets()
 testNewExercisesHaveVideosPlanned()
 testEveryTemplateExerciseHasSeededVideo()
