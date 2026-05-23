@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-23 19:34 ADT
+Updated: 2026-05-23 20:11 ADT
 
 ## Current State
 
@@ -8,12 +8,43 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-Overall build estimate: 97 percent. Current repair focus is restoring Waymark's road-training quality after user QA found strength resume failure, tray persistence, weak Road Bootcamp workout doctrine, and missing prescriptive loading.
+Overall build estimate: 98 percent. Current repair focus is final phone proof after the Road Bootcamp repair set passed local route verification.
 
 Current remaining gates:
 - Re-test physical iPhone after the repair set is complete.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-23 20:11 ADT - Final Local Road Bootcamp Proof
+
+- Returned to Waymark after the Raven feed interruption.
+- Confirmed active checkout:
+  - `/Users/lindsaybell/Developer/Waymark`
+  - `codex/roadtrip-coach`
+  - clean and synced with `origin/codex/roadtrip-coach`
+- Ran final local proof:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `npm run smoke:road-week`
+  - `npm run smoke:road-strength`
+  - `npm run smoke:road-run`
+  - `npm run smoke:road-strength-complete`
+  - `npm run smoke:road-reset`
+- Note: the first Road Bootcamp route smoke attempt ran reset-based smokes in parallel and invalidated the week idempotency check. Reran the route smokes sequentially. All passed.
+- Local Wrangler was stopped after verification.
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md` until committed.
+
+### Next Immediate Step
+
+Proceed to final phone path:
+- Run `npm run ios:sync`.
+- Run device doctor.
+- Build/install/launch on the plugged-in iPhone.
+- User confirms Road Bootcamp surfaces and strength resume on device.
 
 ## 2026-05-23 19:34 ADT - Road Strength Doctrine Lock
 
