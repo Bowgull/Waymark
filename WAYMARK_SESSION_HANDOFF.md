@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-22 13:59 ADT
+Updated: 2026-05-23 19:34 ADT
 
 ## Current State
 
@@ -8,13 +8,48 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-Overall build estimate: 96 percent. Current repair focus is restoring Waymark's road-training quality after user QA found strength resume failure, tray persistence, weak Road Bootcamp workout doctrine, and missing prescriptive loading.
+Overall build estimate: 97 percent. Current repair focus is restoring Waymark's road-training quality after user QA found strength resume failure, tray persistence, weak Road Bootcamp workout doctrine, and missing prescriptive loading.
 
 Current remaining gates:
-- Finish deeper Road Bootcamp doctrine pass around Tactical Barbell/Fighter/Green influence, Muay Thai needs, and posture/corrective work.
 - Re-test physical iPhone after the repair set is complete.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-23 19:34 ADT - Road Strength Doctrine Lock
+
+- Audited all 18 Road Bootcamp strength variants as whole sessions.
+- Added doctrine tests for Road Bootcamp strength roles:
+  - Strength A must preserve squat, push, and pull.
+  - Strength B must preserve hinge, press, and pull.
+  - Strength B 30/45+ must preserve single-leg work.
+- Fixed no-gym Strength B:
+  - Replaced main `Band Chest Press` with `Pike Push-Up` so the session has an actual press pattern.
+  - Kept `Band Chest Press` only as longer-session accessory volume.
+- Fixed hotel-gym cue leakage:
+  - HAPBEAR band cues no longer leak onto hotel dumbbell split squat or single-leg RDL work.
+- Fixed full-gym Strength B core redundancy:
+  - Removed the extra plain dead bug pattern after suitcase carry removal.
+  - Full-gym B keeps the existing trunk work without duplicate dead-bug patterns.
+- Added regression tests:
+  - hotel DB work does not inherit band cue/color.
+  - full-gym B does not duplicate dead bug patterns.
+  - all 18 variants satisfy the Waymark road-strength role contract.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md` until committed.
+
+### Next Immediate Step
+
+Run final app proof and device path:
+- local/remote smoke as needed.
+- in-app browser click-through only if a visible surface is affected.
+- Xcode sync/device build after final clean state.
 
 ## 2026-05-22 13:59 ADT - Band Intelligence And Coach Evidence
 

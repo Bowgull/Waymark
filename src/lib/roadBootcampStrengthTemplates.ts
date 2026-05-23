@@ -67,6 +67,15 @@ const HAPBEAR_BANDS: Record<string, string> = {
   max: 'HAPBEAR purple band. Listed at 100-125 lb. Use only if position stays solid.',
 }
 
+const BAND_DEFAULT_EXERCISES = new Set([
+  'ex-band-pull-aparts',
+  'ex-face-pulls',
+  'ex-band-row',
+  'ex-band-chest-press',
+  'ex-band-curl',
+  'ex-band-good-morning',
+])
+
 function bandTier(exerciseId: string): keyof typeof HAPBEAR_BANDS | null {
   switch (exerciseId) {
     case 'ex-band-pull-aparts':
@@ -98,6 +107,9 @@ function bandColorForTier(tier: keyof typeof HAPBEAR_BANDS | null): string | nul
 }
 
 function withBandCue(exercise: TemplateExercise): TemplateExercise {
+  const hasPrescribedBand = exercise.sets.some(set => set.bandColor)
+  if (!hasPrescribedBand && !BAND_DEFAULT_EXERCISES.has(exercise.exerciseId)) return exercise
+
   const tier = bandTier(exercise.exerciseId)
   const cue = tier ? HAPBEAR_BANDS[tier] : null
   if (!cue) return exercise
@@ -145,7 +157,7 @@ function template(
 function noGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   const base = [
     warmup('ex-band-pull-aparts', 'Band Pull-Aparts'),
-    ex('ex-bulgarian-split-squat', 'Split Squat', 'main', 3, 8, 75, '8 each side. Bodyweight first. Add yellow band only if position stays clean.'),
+    ex('ex-bulgarian-split-squat', 'Split Squat', 'main', 3, 8, 75, '8 each side. Bodyweight first. Add yellow band only if position stays clean.', { bandColor: 'yellow' }),
     ex('ex-push-up', 'Push-Up', 'main', 3, 8, 60, 'Stop 1-2 reps before form breaks.'),
     ex('ex-band-row', 'Seated Band Row', 'main', 3, 10, 75, 'Band around both feet. Sit tall. Pause at ribs.'),
   ]
@@ -156,7 +168,7 @@ function noGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   if (timeAvailable === '30') return base
   return [
     ...base.slice(0, 2),
-    ex('ex-tempo-squat', 'Tempo Squat', 'main', 3, 10, 75, '3 seconds down. Hold posture.'),
+    ex('ex-tempo-squat', 'Tempo Squat', 'main', 3, 10, 75, '3 seconds down. Hold posture.', { bandColor: 'blue' }),
     ...base.slice(2),
     ex('ex-lateral-lunges', 'Lateral Lunge', 'accessory', 2, 8, 60, '8 each side.'),
   ]
@@ -166,18 +178,18 @@ function noGymB(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   const base = [
     warmup('ex-band-pull-aparts', 'Band Pull-Aparts'),
     ex('ex-band-good-morning', 'Band Good Morning', 'main', 3, 10, 90, 'Band under feet and behind shoulders. Hinge only as far as spine stays long.'),
-    ex('ex-band-chest-press', 'Band Chest Press', 'main', 3, 10, 75, 'Band around upper back. No door anchor.'),
+    ex('ex-pike-push-up', 'Pike Push-Up', 'main', 3, 6, 75, 'Controlled reps. Shorten range before form breaks.'),
     ex('ex-band-row', 'Seated Band Row', 'main', 3, 10, 75, 'Band around both feet. Pause at ribs.'),
   ]
   if (timeAvailable === '15') return base
-  base.splice(2, 0, ex('ex-reverse-lunge', 'Reverse Lunge', 'main', 3, 8, 60, '8 each side.'))
+  base.splice(2, 0, ex('ex-reverse-lunge', 'Reverse Lunge', 'main', 3, 8, 60, '8 each side.', { bandColor: 'blue' }))
   base.push(ex('ex-dead-bugs', 'Dead Bugs', 'core', 2, 10, 45, '10 each side.'))
   if (timeAvailable === '30') return base
   return [
     ...base.slice(0, 3),
-    ex('ex-single-leg-rdl', 'Single-Leg RDL', 'accessory', 2, 8, 60, '8 each side. Slow reach. This is lower-back control, not max loading.'),
+    ex('ex-single-leg-rdl', 'Single-Leg RDL', 'accessory', 2, 8, 60, '8 each side. Slow reach. This is lower-back control, not max loading.', { bandColor: 'yellow' }),
     ...base.slice(3, -1),
-    ex('ex-pike-push-up', 'Pike Push-Up', 'accessory', 2, 6, 60),
+    ex('ex-band-chest-press', 'Band Chest Press', 'accessory', 2, 10, 60, 'Band around upper back. No door anchor.'),
     ex('ex-band-curl', 'Band Curl', 'accessory', 2, 12, 45),
     base[base.length - 1],
   ]
@@ -241,12 +253,7 @@ function fullGymB(timeAvailable: RoadBootcampTime, blockWeek: number): TemplateE
   const deadliftId = getDeadliftExerciseId(blockWeek)
   const full = STRENGTH_B_BUILDER(blockWeek).exercises
     .filter((exercise) => exercise.exerciseId !== 'ex-suitcase-carry')
-  if (timeAvailable === '45_plus') {
-    return [
-      ...full,
-      ex('ex-dead-bugs', 'Dead Bugs', 'core', 2, 10, 45, '10 each side.'),
-    ]
-  }
+  if (timeAvailable === '45_plus') return full
   if (timeAvailable === '30') {
     return full.filter((exercise) => {
       return exercise.section === 'warmup' ||
