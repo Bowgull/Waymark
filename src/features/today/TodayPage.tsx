@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
@@ -55,6 +55,7 @@ const MAX_HR_LS_KEY = 'waymark_last_seen_max_hr'
 
 export function TodayPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { show: showToast, ToastContainer } = useToast()
   const [sessions, setSessions] = useState<Session[]>([])
   const [dailyLog, setDailyLog] = useState<DailyLog | null | undefined>(undefined)
@@ -123,6 +124,8 @@ export function TodayPage() {
         setMaxHr(profile?.maxHr ?? null)
         if (!autoResumeAttempted.current) {
           autoResumeAttempted.current = true
+          const suppressFromRoute = Boolean((location.state as { suppressAutoResume?: boolean } | null)?.suppressAutoResume)
+          const suppressFromSearch = new URLSearchParams(location.search).get('resume') === '0'
           let suppressUntil = 0
           try {
             suppressUntil = Number(sessionStorage.getItem('waymark_suppress_auto_resume_until') ?? 0)
@@ -133,7 +136,7 @@ export function TodayPage() {
             session.type === 'strength' &&
             session.status === 'in_progress'
           )
-          if (activeStrength && (!Number.isFinite(suppressUntil) || Date.now() > suppressUntil)) {
+          if (activeStrength && !suppressFromRoute && !suppressFromSearch && (!Number.isFinite(suppressUntil) || Date.now() > suppressUntil)) {
             navigate(`/session/${activeStrength.id}`, { replace: true })
             return
           }
@@ -147,7 +150,7 @@ export function TodayPage() {
       }
     }
     load()
-  }, [today, refreshReactive, navigate])
+  }, [today, refreshReactive, navigate, location.search, location.state])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a

@@ -318,7 +318,7 @@ export function WorkoutPage() {
     cancelStrengthRestEnd()
     restTimer.stop()
     void endAllLiveActivities()
-    navigate('/today')
+    navigate('/today?resume=0', { state: { suppressAutoResume: true } })
   }
 
   // Live Activity for strength — persists across both rest and exercise
@@ -740,12 +740,20 @@ export function WorkoutPage() {
         className="flex shrink-0 items-center justify-between px-4 pb-2"
         style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}
       >
-        <button
-          onClick={exitToToday}
+        <a
+          href="/today?resume=0"
+          onPointerUp={(event) => {
+            event.preventDefault()
+            exitToToday()
+          }}
+          onClick={(event) => {
+            event.preventDefault()
+            exitToToday()
+          }}
           className="-ml-2 inline-flex min-h-[44px] min-w-[44px] items-center px-3 text-sm font-medium text-muted-foreground active:text-teal"
         >
           Back
-        </button>
+        </a>
         {counter && (
           <span className="text-label" style={{ color: accent }}>
             {counter}
@@ -1221,7 +1229,7 @@ export function WorkoutPage() {
     ]
     const equipmentOptions: Array<{ value: RoadBootcampEquipment; label: string; detail: string }> = [
       { value: 'no_gym', label: 'No gym', detail: 'Bands + bodyweight' },
-      { value: 'hotel_gym', label: 'Hotel gym', detail: 'DBs, bench, machines' },
+      { value: 'hotel_gym', label: 'Hotel gym', detail: 'DBs and bench' },
       { value: 'full_gym', label: 'Full gym', detail: 'Barbell and rack' },
     ]
 
@@ -1506,6 +1514,7 @@ export function WorkoutPage() {
         onSetComplete={handleSetComplete}
         onLiveValuesChange={handleLiveValuesChange}
         onNextSet={handleNextSet}
+        onExit={exitToToday}
         accentColor={accent}
       />
       <ToastContainer />
