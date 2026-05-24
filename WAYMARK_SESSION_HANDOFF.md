@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-23 20:11 ADT
+Updated: 2026-05-24 08:16 ADT
 
 ## Current State
 
@@ -14,6 +14,45 @@ Current remaining gates:
 - Re-test physical iPhone after the repair set is complete.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-24 08:16 ADT - Strength Exit Browser Proof
+
+- Resumed the paused browser-proofing pass on `codex/roadtrip-coach`.
+- Root cause for strength Back failure:
+  - The active strength exercise view uses `StrengthExerciseView` through `SessionShell`.
+  - The earlier Back patch only covered the local `WorkoutPage` header, not the active strength shell.
+- Fixed active strength exit:
+  - `WorkoutPage` now passes `exitToToday` into `StrengthExerciseView`.
+  - `exitToToday` routes to `/today?resume=0` with suppress-auto-resume state.
+  - Today also suppresses auto-resume when `resume=0` is present in the URL.
+- Fixed Road Bootcamp ready copy:
+  - Hotel gym now displays `DBs and bench`.
+  - It no longer says machines.
+- Browser proof:
+  - In-app browser was attempted first. After a hard tab close it stopped accepting new local tabs, so the runtime proof continued in headless Chrome through the Playwright CLI.
+  - Built preview ran at `http://127.0.0.1:5176`.
+  - Local Worker API ran at `http://127.0.0.1:8787`.
+  - Back from an active strength session exited to `/today?resume=0` and did not auto-resume.
+  - Road Bootcamp strength ready showed `Hotel gym / DBs and bench`.
+  - Mobile route sweep showed no horizontal overflow on Today, Program, Library, Ledger, or Settings. Each reported 390 viewport width and 390 scroll width.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `git diff --check`
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md` until committed.
+
+### Next Immediate Step
+
+Proceed only after explicit approval:
+- final physical iPhone proof.
+- `npm run ios:sync`.
+- `npm run ios:doctor`.
+- build/install/launch on the plugged-in iPhone.
+- confirm Road Bootcamp surfaces, strength resume, and strength Back/exit on device.
 
 ## 2026-05-23 20:11 ADT - Final Local Road Bootcamp Proof
 
