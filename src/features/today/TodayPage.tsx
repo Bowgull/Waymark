@@ -40,6 +40,13 @@ interface Session {
   runSession?: RunSessionSummary | null
 }
 
+interface RoadBootcampPreviewOption {
+  equipment: 'no_gym' | 'hotel_gym' | 'full_gym'
+  label: string
+  note: string
+  exercises: string[]
+}
+
 interface DailyLog {
   id: string
   sleepHours: number | null
@@ -53,6 +60,12 @@ const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'running', 's
 
 const MAX_HR_LS_KEY = 'waymark_last_seen_max_hr'
 
+function addDaysISO(dateISO: string, days: number) {
+  const date = new Date(`${dateISO}T12:00:00`)
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
 export function TodayPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -65,6 +78,7 @@ export function TodayPage() {
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
   const [skipReasonFor, setSkipReasonFor] = useState<string | null>(null)
   const [reactiveNotes, setReactiveNotes] = useState<Array<{ id: string; note: string; createdAt: number }>>([])
+  const [tomorrowStrength, setTomorrowStrength] = useState<Session | null>(null)
   const [replaceState, setReplaceState] = useState<
     | { sessionId: string; stage: 'reason' }
     | { sessionId: string; stage: 'loading'; reason: string }
@@ -77,6 +91,7 @@ export function TodayPage() {
   const autoResumeAttempted = useRef(false)
 
   const today = getTodayISO()
+  const tomorrow = addDaysISO(today, 1)
   const todayDate = new Date(`${today}T12:00:00`)
 
   useEffect(() => {
@@ -114,12 +129,20 @@ export function TodayPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [sessionsData, logData, profile] = await Promise.all([
+        const [sessionsData, tomorrowSessions, logData, profile] = await Promise.all([
           apiFetch<Session[]>(`/api/sessions/today?date=${today}`),
+          apiFetch<Session[]>(`/api/sessions/today?date=${tomorrow}`).catch(() => []),
           apiFetch<DailyLog | null>(`/api/daily-logs/today?date=${today}`),
           apiFetch<{ maxHr: number | null } | null>('/api/user-profile').catch(() => null),
         ])
         setSessions(sessionsData)
+        setTomorrowStrength(
+          tomorrowSessions.find(session =>
+            session.type === 'strength' &&
+            session.status !== 'skipped' &&
+            session.status !== 'completed'
+          ) ?? null,
+        )
         setDailyLog(logData)
         setMaxHr(profile?.maxHr ?? null)
         if (!autoResumeAttempted.current) {
@@ -150,7 +173,7 @@ export function TodayPage() {
       }
     }
     load()
-  }, [today, refreshReactive, navigate, location.search, location.state])
+  }, [today, tomorrow, refreshReactive, navigate, location.search, location.state])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
@@ -553,6 +576,9 @@ export function TodayPage() {
             onReassignMatch={handleReassignStart}
             onDismissMatch={handleDismissMatch}
           />
+          {tomorrowStrength && (
+            <TomorrowStrengthCard session={tomorrowStrength} />
+          )}
           <button
             onClick={() => {
               setShowPicker(true)
@@ -637,6 +663,60 @@ export function TodayPage() {
 
       <ToastContainer />
     </div>
+  )
+}
+
+function TomorrowStrengthCard({ session }: { session: Session }) {
+  const [previews, setPreviews] = useState<RoadBootcampPreviewOption[]>([])
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<{ roadBootcampPreviews?: RoadBootcampPreviewOption[] }>(`/api/sessions/${session.id}/strength-preview`)
+      .then(res => {
+        if (cancelled) return
+        setPreviews(res.roadBootcampPreviews ?? [])
+      })
+      .catch(() => {
+        if (cancelled) return
+        setError(true)
+      })
+    return () => { cancelled = true }
+  }, [session.id])
+
+  if (error || previews.length === 0) return null
+
+  return (
+    <section className="rounded-xl border border-gold/10 bg-card/35 p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <div>
+          <p className="font-cinzel text-[10px] uppercase tracking-[0.25em] text-gold/45">Tomorrow</p>
+          <h2 className="mt-1 font-cinzel text-[17px] uppercase tracking-[0.08em] text-gold">
+            Strength
+          </h2>
+        </div>
+        <p className="text-right text-[11px] uppercase tracking-[0.14em] text-muted-foreground/45">
+          Preview
+        </p>
+      </div>
+      <div className="space-y-3">
+        {previews.map(option => (
+          <div key={option.equipment} className="border-t border-border/25 pt-3 first:border-t-0 first:pt-0">
+            <div className="mb-1">
+              <p className="font-cinzel text-[12px] uppercase tracking-[0.16em] text-foreground/85">
+                {option.label}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/50">
+                {option.note}
+              </p>
+            </div>
+            <p className="text-[12px] leading-relaxed text-muted-foreground/85">
+              {option.exercises.join(' · ')}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 

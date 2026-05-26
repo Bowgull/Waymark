@@ -23,6 +23,13 @@ export interface RoadBootcampStrengthTemplate {
   exercises: TemplateExercise[]
 }
 
+export interface RoadBootcampStrengthPreviewOption {
+  equipment: RoadBootcampEquipment
+  label: string
+  note: string
+  exercises: string[]
+}
+
 interface RoadSetOptions {
   suggestedWeightKg?: number | null
   bandColor?: string | null
@@ -197,7 +204,7 @@ function noGymB(timeAvailable: RoadBootcampTime): TemplateExercise[] {
 
 function hotelGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   const base = [
-    warmup('ex-band-pull-aparts', 'Band Pull-Aparts'),
+    warmup('ex-prone-cobra', 'Prone Cobra', 'Floor or bench. Wake up upper back before pressing.'),
     ex('ex-goblet-squat', 'Goblet Squat', 'main', 3, 8, 120, 'Start around 35 lb. Add load only if depth and knees stay clean.', { suggestedWeightKg: lbToKg(35) }),
     ex('ex-db-bench-press', 'DB Bench Press', 'main', 3, 8, 120, 'Start around 25 lb per hand. Leave 1-2 reps in reserve.', { suggestedWeightKg: lbToKg(25) }),
     ex('ex-db-row', 'Dumbbell Row', 'main', 3, 10, 90, '10 each arm. Start around 30 lb. Pause at ribs.', { suggestedWeightKg: lbToKg(30) }),
@@ -205,7 +212,7 @@ function hotelGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   if (timeAvailable === '15') return base
   base.push(
     ex('ex-lateral-raise', 'Lateral Raise', 'accessory', 2, 12, 45, 'Start around 10 lb per hand. No swing.', { suggestedWeightKg: lbToKg(10) }),
-    ex('ex-face-pulls', 'Band Face Pulls', 'accessory', 2, 15, 45, 'Use the band. No cable assumed.'),
+    ex('ex-ytw-raises', 'Prone Y-T-W Raises', 'accessory', 2, 8, 45, 'Face down on bench or floor. Small range. Own the shoulder blades.'),
   )
   if (timeAvailable === '30') return base
   return [
@@ -217,7 +224,7 @@ function hotelGymA(timeAvailable: RoadBootcampTime): TemplateExercise[] {
 
 function hotelGymB(timeAvailable: RoadBootcampTime): TemplateExercise[] {
   const base = [
-    warmup('ex-band-pull-aparts', 'Band Pull-Aparts'),
+    warmup('ex-prone-cobra', 'Prone Cobra', 'Floor or bench. Wake up upper back before loading.'),
     ex('ex-db-rdl', 'DB Romanian Deadlift', 'main', 3, 8, 120, 'Start around 35 lb per hand. Stop before low back takes over.', { suggestedWeightKg: lbToKg(35) }),
     ex('ex-db-ohp', 'DB Overhead Press', 'main', 3, 8, 120, 'Start around 20 lb per hand. Ribs down. Glutes tight.', { suggestedWeightKg: lbToKg(20) }),
     ex('ex-db-row', 'Chest-Supported DB Row', 'main', 3, 10, 90, 'Bench incline if available. Otherwise one hand on bench. Start around 30 lb.', { suggestedWeightKg: lbToKg(30) }),
@@ -286,4 +293,31 @@ export function getRoadBootcampStrengthTemplate({
     return template(dayType, timeAvailable, equipment, dayType === 'strength_a' ? 'Hotel Strength A' : 'Hotel Strength B', dayType === 'strength_a' ? hotelGymA(timeAvailable) : hotelGymB(timeAvailable))
   }
   return template(dayType, timeAvailable, equipment, dayType === 'strength_a' ? 'Full Gym Strength A' : 'Full Gym Strength B', dayType === 'strength_a' ? fullGymA(timeAvailable, blockWeek) : fullGymB(timeAvailable, blockWeek))
+}
+
+export function getRoadBootcampStrengthPreviewOptions({
+  dayType,
+  timeAvailable,
+  blockWeek = 1,
+}: Omit<RoadBootcampStrengthContext, 'equipment'>): RoadBootcampStrengthPreviewOption[] {
+  const equipmentOptions: Array<{ equipment: RoadBootcampEquipment; label: string; note: string }> = [
+    { equipment: 'no_gym', label: 'Room', note: 'Bands and bodyweight.' },
+    { equipment: 'hotel_gym', label: 'Hotel gym', note: 'Dumbbells and bench.' },
+    { equipment: 'full_gym', label: 'Full gym', note: 'Rack, barbell, machines if present.' },
+  ]
+
+  return equipmentOptions.map(option => {
+    const strength = getRoadBootcampStrengthTemplate({
+      dayType,
+      timeAvailable,
+      equipment: option.equipment,
+      blockWeek,
+    })
+    return {
+      ...option,
+      exercises: strength.exercises
+        .filter(exercise => exercise.section !== 'warmup')
+        .map(exercise => exercise.label),
+    }
+  })
 }

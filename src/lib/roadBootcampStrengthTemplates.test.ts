@@ -1,5 +1,6 @@
 import {
   getRoadBootcampAdaptationLine,
+  getRoadBootcampStrengthPreviewOptions,
   getRoadBootcampStrengthTemplate,
   ROAD_BOOTCAMP_EQUIPMENT,
   ROAD_BOOTCAMP_TIMES,
@@ -135,6 +136,25 @@ function testHotelGymDoesNotLeakBandCuesOntoDumbbellWork() {
       for (const exercise of dumbbellOnly) {
         assert(!exercise.notes?.includes('HAPBEAR'), `${template.id} leaked band cue onto ${exercise.exerciseId}`)
         assert(exercise.sets.every(set => !set.bandColor), `${template.id} leaked band color onto ${exercise.exerciseId}`)
+      }
+    }
+  }
+}
+
+function testHotelGymDoesNotRequireBands() {
+  for (const dayType of ['strength_a', 'strength_b'] as const) {
+    for (const timeAvailable of ROAD_BOOTCAMP_TIMES) {
+      const template = getRoadBootcampStrengthTemplate({
+        dayType,
+        timeAvailable,
+        equipment: 'hotel_gym',
+      })
+
+      for (const exercise of template.exercises) {
+        assert(!exercise.exerciseId.includes('band'), `${template.id} includes a band exercise`)
+        assert(exercise.exerciseId !== 'ex-face-pulls', `${template.id} includes face pulls without an anchor`)
+        assert(!exercise.notes?.includes('HAPBEAR'), `${template.id} includes band-specific notes`)
+        assert(exercise.sets.every(set => !set.bandColor), `${template.id} includes band color prescription`)
       }
     }
   }
@@ -287,13 +307,25 @@ function testHapbearBandCues() {
     assert(exercise.notes?.includes('HAPBEAR'), `${exercise.exerciseId} is missing HAPBEAR band guidance`)
     assert(exercise.sets.every(set => set.bandColor), `${exercise.exerciseId} is missing prescribed band color`)
   }
+}
 
-  const hotelWarmup = getRoadBootcampStrengthTemplate({
+function testStrengthPreviewOptionsExposeMovesOnly() {
+  const previews = getRoadBootcampStrengthPreviewOptions({
     dayType: 'strength_a',
-    timeAvailable: '15',
-    equipment: 'hotel_gym',
-  }).exercises.find(exercise => exercise.exerciseId === 'ex-band-pull-aparts')
-  assert(hotelWarmup?.notes?.includes('HAPBEAR yellow'), 'hotel warmup should carry light HAPBEAR guidance')
+    timeAvailable: '45_plus',
+    blockWeek: 1,
+  })
+
+  assertEqual(previews.length, 3, 'Road preview should expose the three equipment paths')
+  assertEqual(previews[0].label, 'Room')
+  assertEqual(previews[1].label, 'Hotel gym')
+  assertEqual(previews[2].label, 'Full gym')
+
+  const hotel = previews.find(preview => preview.equipment === 'hotel_gym')
+  assert(hotel, 'Hotel gym preview missing')
+  assert(hotel.exercises.length > 0, 'Hotel gym preview needs exact moves')
+  assert(hotel.exercises.every(move => !/\d|lb|kg|×|x\s*\d/i.test(move)), 'Preview should not expose sets, reps, or load')
+  assert(hotel.exercises.every(move => !/band|face pull/i.test(move)), 'Hotel gym preview should not require bands or anchors')
 }
 
 function testAdaptationLineIsReusable() {
@@ -316,12 +348,14 @@ testNoGymPullingWork()
 testHotelGymAvoidsBarbells()
 testHotelGymHasDumbbellPrescriptions()
 testHotelGymDoesNotLeakBandCuesOntoDumbbellWork()
+testHotelGymDoesNotRequireBands()
 testFullGymBDoesNotDuplicateDeadBugPattern()
 testRoadStrengthDoctrineRoles()
 testWarmupsAreMarkedWarmupSets()
 testNewExercisesHaveVideosPlanned()
 testEveryTemplateExerciseHasSeededVideo()
 testHapbearBandCues()
+testStrengthPreviewOptionsExposeMovesOnly()
 testAdaptationLineIsReusable()
 
 console.log('roadBootcampStrengthTemplates tests passed')

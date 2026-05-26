@@ -18,6 +18,7 @@ import { getRoadBootcampRunPrescription, getRoadBootcampTemplate, type RoadBootc
 import { computeRoadBootcampMetrics } from '../lib/roadBootcampMetrics'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import {
+  getRoadBootcampStrengthPreviewOptions,
   getRoadBootcampStrengthTemplate,
   ROAD_BOOTCAMP_EQUIPMENT,
   ROAD_BOOTCAMP_TIMES,
@@ -162,10 +163,16 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
   const blockWeek = session.blockWeek ?? 1
   if (session.blockType === 'road_bootcamp') {
     const dayType = dayOfWeek === 2 ? 'strength_a' : 'strength_b'
+    const timeAvailable: RoadBootcampTime = session.durationSec != null && session.durationSec <= 30 * 60 ? '30' : '45_plus'
     return {
       session,
       templateLabel: dayType === 'strength_a' ? 'Road Strength A' : 'Road Strength B',
       roadBootcampReady: true,
+      roadBootcampPreviews: getRoadBootcampStrengthPreviewOptions({
+        dayType,
+        timeAvailable,
+        blockWeek,
+      }),
       exercises: [],
     }
   }
