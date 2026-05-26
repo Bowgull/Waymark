@@ -5,6 +5,7 @@ import { kgToLbs, lbsToKg } from '@/lib/units'
 import { mediumHaptic } from '@/lib/haptics'
 import { calculatePlates } from '@/lib/plateMath'
 import { assessStrengthSet, shouldShowStrengthRealityMark } from '@/lib/trainingReality'
+import { BAND_COLORS, getBandSelectionLine } from './bandSelector'
 
 interface SetTrackerProps {
   setNumber: number
@@ -54,7 +55,7 @@ export function SetTracker({
 
   const isBarbell = equipment?.toLowerCase().includes('barbell') ?? false
   const isBand = equipment?.toLowerCase().includes('band') ?? false
-  const prescribedBand = BAND_COLORS.find(band => band.value === bandColor)
+  const selectedBand = BAND_COLORS.find(band => band.value === bandColor)
   const actualWeight = weight ? lbsToKg(parseFloat(weight)) : null
   const actualReps = parseInt(reps) || 0
   const inferredStatus = assessStrengthSet({
@@ -116,12 +117,45 @@ export function SetTracker({
         </div>
       )}
 
-      <div className="flex items-end gap-4">
+      <div className="flex items-end gap-3">
         {isBand ? (
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <label className="text-label mb-1 block text-muted-foreground">Band</label>
-            <div className="flex min-h-[44px] items-center justify-center rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-sm text-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
-              {prescribedBand ? prescribedBand.label : 'Choose'}
+            <div className="min-h-[70px] rounded-md border border-gold/10 bg-deep-forest px-3 py-2 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
+              <div className="flex min-h-[30px] items-center justify-between gap-2">
+                {BAND_COLORS.map((band) => {
+                  const selected = bandColor === band.value
+                  return (
+                    <button
+                      key={band.value}
+                      type="button"
+                      aria-label={`${band.label} band`}
+                      aria-pressed={selected}
+                      onClick={() => setBandColor(band.value)}
+                      className={`relative h-5 w-5 rounded-full border transition ${
+                        selected
+                          ? 'scale-110 border-gold shadow-[0_0_0_3px_rgba(232,200,96,0.16),0_0_14px_rgba(232,200,96,0.16)]'
+                          : 'border-gold/20 opacity-35 saturate-75'
+                      }`}
+                      style={{ backgroundColor: band.color }}
+                    >
+                      {selected && (
+                        <span className="pointer-events-none absolute -inset-1.5 rounded-full border border-gold/25" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="mt-2 text-center text-[12px] leading-tight text-muted-foreground">
+                {selectedBand ? (
+                  <>
+                    <span className="font-medium text-foreground/90">{selectedBand.label}.</span>{' '}
+                    {bandColor === prescribedBandColor ? 'Working band.' : 'Adjusted.'}
+                  </>
+                ) : (
+                  getBandSelectionLine(bandColor, prescribedBandColor)
+                )}
+              </p>
             </div>
           </div>
         ) : (
@@ -138,7 +172,7 @@ export function SetTracker({
             />
           </div>
         )}
-        <div className="flex-1">
+        <div className={isBand ? 'w-16 shrink-0' : 'flex-1'}>
           <label className="text-label mb-1 block text-muted-foreground">
             Reps{targetReps === 0 ? ' (max)' : ''}
           </label>
@@ -152,36 +186,16 @@ export function SetTracker({
             className="min-h-[44px] w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-gold/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(232,200,96,0.15)] focus:outline-none"
           />
         </div>
-        <Button onClick={handleDone} size="sm" className="min-h-[44px] px-5">
+        <Button onClick={handleDone} size="sm" className="shrink-0 min-h-[44px] px-4">
           Done
         </Button>
       </div>
 
-      {(showRealityMark || isBand) && (
+      {showRealityMark && (
         <div className="mt-3 flex items-center justify-between gap-3">
-          {showRealityMark ? (
-            <p className="font-cinzel text-[11px] uppercase tracking-[0.18em] text-gold/60">
-              ◇ Noted
-            </p>
-          ) : (
-            <span />
-          )}
-          {isBand && (
-            <div className="flex items-center gap-1.5">
-              {BAND_COLORS.map((band) => (
-                <button
-                  key={band.value}
-                  type="button"
-                  aria-label={`${band.label} band`}
-                  onClick={() => setBandColor(band.value)}
-                  className={`h-5 w-5 rounded-full border transition ${
-                    bandColor === band.value ? 'border-gold scale-110' : 'border-gold/20'
-                  }`}
-                  style={{ backgroundColor: band.color }}
-                />
-              ))}
-            </div>
-          )}
+          <p className="font-cinzel text-[11px] uppercase tracking-[0.18em] text-gold/60">
+            ◇ Noted
+          </p>
         </div>
       )}
 
@@ -193,11 +207,3 @@ export function SetTracker({
     </div>
   )
 }
-
-const BAND_COLORS = [
-  { value: 'yellow', label: 'Yellow', color: '#E8D942' },
-  { value: 'orange', label: 'Orange', color: '#E28D37' },
-  { value: 'red', label: 'Red', color: '#C9473F' },
-  { value: 'blue', label: 'Blue', color: '#315BC7' },
-  { value: 'purple', label: 'Purple', color: '#6541A5' },
-] as const

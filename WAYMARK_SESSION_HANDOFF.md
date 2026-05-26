@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-26 04:15 ADT
+Updated: 2026-05-26 08:22 ADT
 
 ## Current State
 
@@ -8,12 +8,46 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-Overall build estimate: 99 percent. Current repair focus is final on-device confirmation after the missed-session Today drill-in repair was installed.
+Overall build estimate: 99 percent. Current repair focus is final on-device confirmation after the band selector simplification.
 
 Current remaining gates:
-- User confirms Today rows open on the physical iPhone.
+- User confirms the simplified band selector on the physical iPhone.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-26 08:22 ADT - Band Selector Simplification
+
+- Implemented the approved band selector direction.
+  - Band set tracker now uses the color circles as the primary control.
+  - Prescribed band is highlighted.
+  - Other bands are dimmed.
+  - Tapping another circle changes the actual band color stored with the set.
+  - Copy is reduced to `Yellow. Working band.` or `Blue. Adjusted.`
+- Added `src/features/session/bandSelector.ts`.
+- Added regression coverage:
+  - HAPBEAR band order stays `yellow,orange,red,blue,purple`.
+  - prescribed copy stays minimal.
+  - adjusted copy stays minimal.
+- Browser proof:
+  - Local Road Bootcamp no-gym strength session at mobile 390x844.
+  - Verified prescribed yellow band state.
+  - Tapped blue and verified `Blue. Adjusted.`
+  - Fixed layout after proof so reps show `12` without cropping.
+  - Screenshot proof saved at `/tmp/waymark-band-selector-live-after.png`.
+- Ran:
+  - `npx tsx src/features/session/bandSelector.test.ts`
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md` until committed.
+
+### Next Immediate Step
+
+- Commit and push this band selector repair.
+- Sync and install to iPhone if the user wants immediate device proof.
 
 ## 2026-05-26 04:15 ADT - Today Missed Drill-In Repair
 
