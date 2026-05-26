@@ -6,6 +6,7 @@ import { tapHaptic, mediumHaptic } from '@/lib/haptics'
 import { apiFetch } from '@/lib/api'
 import { kgToLbs } from '@/lib/units'
 import { useEffect, useState, type KeyboardEvent } from 'react'
+import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
 
 export interface RunSessionSummary {
   id: string
@@ -102,7 +103,7 @@ export function TimelineRow({
   const run = session.runSession ?? null
   const isAutoPending = run?.attachmentStatus === 'auto_pending' && run.stravaActivityId != null
   const isOrphan = run?.attachmentStatus === 'orphan' && run.stravaActivityId != null
-  const isActionable = (session.status === 'planned' || session.status === 'in_progress') && !isAutoPending
+  const isActionable = isActionableTodaySession(session.status, isAutoPending)
   const isCompleted = session.status === 'completed' && !isOrphan
   const isSkipped = session.status === 'skipped'
 
@@ -222,7 +223,7 @@ export function TimelineRow({
                 >
                   {session.status === 'in_progress' ? 'Resume' : 'Enter'}
                 </Button>
-                {session.status === 'planned' && (
+                {canReplaceOrSkipTodaySession(session.status) && (
                   <>
                     <button
                       type="button"

@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-25 22:25 ADT
+Updated: 2026-05-26 04:15 ADT
 
 ## Current State
 
@@ -8,12 +8,52 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-Overall build estimate: 99 percent. Current repair focus is final phone proof after the Road Bootcamp preview, hotel-gym, and mobility posture repair set passed local route verification.
+Overall build estimate: 99 percent. Current repair focus is final on-device confirmation after the missed-session Today drill-in repair was installed.
 
 Current remaining gates:
-- Re-test physical iPhone after the repair set is complete.
+- User confirms Today rows open on the physical iPhone.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-26 04:15 ADT - Today Missed Drill-In Repair
+
+- Confirmed the reported phone bug in remote-browser proof before changing code.
+  - Remote Today data for 2026-05-26 had 3 sessions with status `missed`.
+  - `TimelineRow` toggled expanded state, but `missed` had no expanded body.
+  - Visible result: tapping rows appeared to do nothing.
+- Fixed Today row behavior:
+  - `missed` Today rows now render the normal actionable drill-in body.
+  - `missed` rows expose Enter, Replace, and Skip.
+  - Strava auto-pending rows still use the Strava confirmation path.
+- Added regression coverage:
+  - `src/features/today/timelineStatus.test.ts`.
+- Deployed Worker:
+  - `npm run deploy`
+  - Version ID `1ace3794-61c0-4ea0-935f-88f00edc62f7`
+  - Remote Road Bootcamp strength preview now returns Room, Hotel gym, and Full gym move paths.
+- Browser proof:
+  - Remote API mobile viewport at 390x844.
+  - Missed Mobility row opened and showed intent plus Enter/Replace/Skip.
+  - Missed Strength row opened and showed Strength paths plus Enter/Replace/Skip.
+  - Screenshot proof saved at `/tmp/waymark-qa/today-missed-drill-fixed-remote.png`.
+- iPhone proof:
+  - `npm run ios:sync`
+  - `WAYMARK_IOS_DEVICE_ID=4B88E4ED-6344-5EAE-BDB2-F63930384B26 npm run ios:build:device`
+  - Installed via `xcrun devicectl device install app`.
+  - Launched `com.joshbocas.app` successfully.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md` until committed.
+
+### Next Immediate Step
+
+- Commit and push this drill-in repair.
+- User confirms Today row drill-in works on phone.
 
 ## 2026-05-25 22:25 ADT - Road Preview And Hotel Gym Repair
 
