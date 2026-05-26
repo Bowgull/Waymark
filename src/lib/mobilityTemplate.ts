@@ -11,12 +11,13 @@ export interface MobilityExerciseTemplate {
 }
 
 /**
- * Daily Mobility. Runs every day AM, ~8 min.
+ * Daily Mobility. Runs every day AM, ~8-10 min.
  *
  * Science-backed sequence:
  * - Breathing first (diaphragm reset sequences the ribcage correctly).
- * - Thoracic extension + prone cobra target UCS (mid/lower trap + posterior chain).
- * - Band external rotations train rear delt / rotator cuff (anti-rounded-shoulders).
+ * - Band pull-aparts + external rotations train scapular retraction and rotator cuff.
+ * - Prone cobra reinforces mid/lower trap and posterior-chain posture.
+ * - Dead bugs train ribs-down trunk control for lower-back position.
  * - Couch stretch lengthens rectus femoris (direct APT driver).
  * - World's greatest stretch is a compound hip + thoracic opener.
  * - Ankle CARs maintain dorsiflexion (squat depth, kick mechanics, gait).
@@ -35,13 +36,13 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     notes: 'Face down, forehead on hands. Breathe into your lower back and ribs, not your chest. Resets the diaphragm that shallow chest breathing has parked.',
   },
   {
-    exerciseId: 'ex-foam-roll-thoracic',
-    label: 'Thoracic Extension on Foam Roller',
+    exerciseId: 'ex-band-pull-aparts',
+    label: 'Band Pull-Aparts',
     section: 'upper',
-    sets: 1,
-    holdSec: 60,
-    reps: null,
-    notes: 'Roller under mid-back, hands behind head. Let the spine extend backwards. This is the single best move against desk kyphosis.',
+    sets: 2,
+    holdSec: null,
+    reps: 12,
+    notes: 'Yellow HAPBEAR band. Arms straight, pull to chest height, shoulder blades move first. Posture work, not a max set.',
   },
   {
     exerciseId: 'ex-prone-cobra',
@@ -60,6 +61,15 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     holdSec: null,
     reps: 10,
     notes: 'Elbow tucked to side, rotate forearm outward against band. 10 each arm. Rear delt and rotator cuff, the muscles that pull shoulders back.',
+  },
+  {
+    exerciseId: 'ex-dead-bugs',
+    label: 'Dead Bugs',
+    section: 'lower',
+    sets: 2,
+    holdSec: null,
+    reps: 8,
+    notes: '8 each side. Low back stays quiet. Ribs down. This is the brace you need before running or hinging.',
   },
   {
     exerciseId: 'ex-couch-stretch',

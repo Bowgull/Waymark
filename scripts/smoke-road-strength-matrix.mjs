@@ -101,6 +101,7 @@ for (const day of [
       }
       if (equipment === 'hotel_gym') {
         expect(!text.includes('barbell'), `${day.label} ${timeAvailable} hotel_gym includes barbell equipment`)
+        expect(!text.includes('band'), `${day.label} ${timeAvailable} hotel_gym includes band equipment`)
       }
       if (equipment === 'full_gym') {
         expect(text.includes('barbell') || text.includes('pull-up bar'), `${day.label} ${timeAvailable} full_gym did not use full-gym equipment`)

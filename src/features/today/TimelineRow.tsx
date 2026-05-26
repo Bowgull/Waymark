@@ -341,6 +341,13 @@ interface PreviewExercise {
   }
 }
 
+interface RoadBootcampPreviewOption {
+  equipment: 'no_gym' | 'hotel_gym' | 'full_gym'
+  label: string
+  note: string
+  exercises: string[]
+}
+
 function stripLiftSuffix(label: string): string {
   return label.replace(/\s+Press$/i, '').replace(/\s+Progression$/i, '').trim()
 }
@@ -356,16 +363,22 @@ function shortLiftSummary(ex: PreviewExercise): string {
 
 function StrengthLiftPreview({ sessionId }: { sessionId: string }) {
   const [exercises, setExercises] = useState<PreviewExercise[] | null>(null)
+  const [roadPreviews, setRoadPreviews] = useState<RoadBootcampPreviewOption[]>([])
   const [roadBootcampReady, setRoadBootcampReady] = useState(false)
   const [error, setError] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    apiFetch<{ exercises?: PreviewExercise[]; roadBootcampReady?: boolean }>(`/api/sessions/${sessionId}/strength-preview`)
+    apiFetch<{
+      exercises?: PreviewExercise[]
+      roadBootcampReady?: boolean
+      roadBootcampPreviews?: RoadBootcampPreviewOption[]
+    }>(`/api/sessions/${sessionId}/strength-preview`)
       .then(res => {
         if (cancelled) return
         setRoadBootcampReady(Boolean(res.roadBootcampReady))
+        setRoadPreviews(res.roadBootcampPreviews ?? [])
         setExercises(res.exercises ?? [])
       })
       .catch(() => {
@@ -376,11 +389,7 @@ function StrengthLiftPreview({ sessionId }: { sessionId: string }) {
   }, [sessionId])
 
   if (roadBootcampReady) {
-    return (
-      <p className="pb-2 text-[12px] text-muted-foreground/70">
-        Pick time and equipment when you start.
-      </p>
-    )
+    return <RoadBootcampMovePreview options={roadPreviews} />
   }
   if (error || (exercises != null && exercises.length === 0)) return null
   if (exercises == null) {
@@ -431,6 +440,43 @@ function StrengthLiftPreview({ sessionId }: { sessionId: string }) {
           )}
         </ul>
       )}
+    </div>
+  )
+}
+
+function RoadBootcampMovePreview({ options }: { options: RoadBootcampPreviewOption[] }) {
+  if (options.length === 0) {
+    return (
+      <p className="pb-2 text-[12px] text-muted-foreground/70">
+        Pick time and equipment when you start.
+      </p>
+    )
+  }
+
+  return (
+    <div className="mb-2 rounded-lg border border-gold/10 bg-near-black/35 p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="font-cinzel text-[10px] uppercase tracking-[0.22em] text-gold/45">
+          Strength paths
+        </p>
+      </div>
+      <div className="space-y-2.5">
+        {options.map(option => (
+          <div key={option.equipment} className="border-t border-border/25 pt-2 first:border-t-0 first:pt-0">
+            <div className="mb-1">
+              <p className="font-cinzel text-[12px] uppercase tracking-[0.16em] text-foreground/85">
+                {option.label}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/50">
+                {option.note}
+              </p>
+            </div>
+            <p className="text-[12px] leading-relaxed text-muted-foreground/85">
+              {option.exercises.join(' · ')}
+            </p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

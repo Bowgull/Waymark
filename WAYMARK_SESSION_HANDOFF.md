@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-24 08:16 ADT
+Updated: 2026-05-25 22:25 ADT
 
 ## Current State
 
@@ -8,12 +8,59 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-Overall build estimate: 98 percent. Current repair focus is final phone proof after the Road Bootcamp repair set passed local route verification.
+Overall build estimate: 99 percent. Current repair focus is final phone proof after the Road Bootcamp preview, hotel-gym, and mobility posture repair set passed local route verification.
 
 Current remaining gates:
 - Re-test physical iPhone after the repair set is complete.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-05-25 22:25 ADT - Road Preview And Hotel Gym Repair
+
+- Repaired Road Bootcamp hotel-gym assumptions again after product review.
+  - Hotel gym now means dumbbells plus bench only.
+  - Removed band warmups from hotel-gym Road Bootcamp templates.
+  - Removed band face pulls from hotel-gym Strength A.
+  - Replaced hotel-gym face-pull accessory with prone Y-T-W raises.
+  - Hotel-gym generated sessions now carry DB loading but no band colors.
+- Moved posture band work into Daily Mobility.
+  - Daily Mobility now includes HAPBEAR yellow band pull-aparts.
+  - Kept band external rotations.
+  - Added dead bugs for ribs-down trunk control and lower-back position.
+  - Removed foam-roller dependence from active Daily Mobility.
+- Added Today strength previews.
+  - Road Bootcamp strength preview API returns Room, Hotel gym, and Full gym move lists.
+  - Preview lists exact exercises only, not sets, reps, or loads.
+  - Today shows a read-only Tomorrow strength preview when tomorrow has a planned strength day.
+- Browser proof:
+  - In-app browser connector was attempted first but reported no active Codex browser pane.
+  - Continued with headless Playwright so no external browser window took over the screen.
+  - Verified Today mobile viewport at 390x844.
+  - Screenshot proof saved at `/tmp/waymark-qa/today-strength-preview-scrolled.png`.
+- Local API proof:
+  - Road Bootcamp strength preview returned all 3 equipment paths.
+  - Hotel-gym preview returned DB/bench moves only.
+  - Hotel-gym start-strength returned no band exercise, no band color, and no HAPBEAR notes.
+  - Mobility start returned band pull-aparts, band external rotations, and dead bugs.
+- Ran:
+  - `npm run test:lib`
+  - `npm run lint`
+  - `npm run build`
+  - `npm run smoke:road-strength`
+
+### Current Dirty Files
+
+- `WAYMARK_SESSION_HANDOFF.md` until committed.
+
+### Next Immediate Step
+
+- Commit and push this repair set if the diff remains clean.
+- Then run final physical iPhone path:
+  - `npm run ios:sync`
+  - `npm run ios:doctor`
+  - build/install/launch on the plugged-in iPhone.
+  - user trusts the Apple Development profile if iOS blocks launch.
+  - confirm Road Bootcamp Today preview, strength ready, mobility posture work, and strength resume on device.
 
 ## 2026-05-24 08:16 ADT - Strength Exit Browser Proof
 
