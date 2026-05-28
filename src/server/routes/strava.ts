@@ -24,6 +24,7 @@ type Bindings = {
   STRAVA_CLIENT_ID: string
   STRAVA_CLIENT_SECRET: string
   STRAVA_WEBHOOK_VERIFY_TOKEN: string
+  DEMO_MODE?: string
 }
 
 const REDIRECT_URI = 'https://waymark.bocas-joshua.workers.dev/api/strava/callback'

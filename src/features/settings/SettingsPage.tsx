@@ -221,9 +221,7 @@ export function SettingsPage() {
       if (isDemo) {
         // Demo mode: skip Strava OAuth entirely. Server stamps a fake
         // connected athlete and pre-attaches matched runs to recent sessions.
-        const res = await apiFetch('/api/strava/demo-connect', { method: 'POST' })
-        if (!res.ok) throw new Error('demo connect failed')
-        const data = await res.json() as { athleteName?: string }
+        const data = await apiFetch<{ athleteName?: string }>('/api/strava/demo-connect', { method: 'POST' })
         setStrava({ connected: true, athleteName: data.athleteName ?? 'Demo Athlete', athleteId: 999000001 } as StravaStatus)
         showToast('Strava connected (demo). Recent runs attached.', 'success')
         return

@@ -354,7 +354,7 @@ export function TodayPage() {
       })
     } catch (e) {
       console.error('Failed to replace session:', e)
-      showToast('Could not replace session. Try again.', 'error')
+      showToast('Could not replace session. Try again.', 'warning')
     }
   }
 
@@ -389,7 +389,7 @@ export function TodayPage() {
       })
     } catch (e) {
       console.error('Failed to replace session:', e)
-      showToast('Could not replace session. Try again.', 'error')
+      showToast('Could not replace session. Try again.', 'warning')
     }
   }
 
