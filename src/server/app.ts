@@ -584,8 +584,8 @@ app.post('/api/sessions/:id/replace-suggestions', async (c) => {
   const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
   try {
     const out = await runReplaceSuggestions(db, c.env.ANTHROPIC_API_KEY, sessionId, todayEpochDay, body.reason ?? null)
-    if (!out) return c.json({ suggestions: null })
-    return c.json({ suggestions: out })
+    if (!out) return c.json({ coachLine: '', suggestions: [] })
+    return c.json(out)
   } catch (err) {
     console.warn('[replaceSuggestions] route failed', err)
     return c.json({ suggestions: null })

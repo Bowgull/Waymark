@@ -346,15 +346,15 @@ export function TodayPage() {
         }),
       })
       setSessions(prev => {
-        const withOriginal = prev.map(s => (s.id === result.original.id ? result.original : s))
-        const next = [...withOriginal, result.replacement]
-        return next.sort((a, b) =>
+        const without = prev.filter(s => s.id !== result.original.id)
+        return [...without, result.replacement].sort((a, b) =>
           (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0)
           || ((a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1))
         )
       })
     } catch (e) {
       console.error('Failed to replace session:', e)
+      showToast('Could not replace session. Try again.', 'error')
     }
   }
 
@@ -381,15 +381,15 @@ export function TodayPage() {
         }),
       })
       setSessions(prev => {
-        const withOriginal = prev.map(s => (s.id === result.original.id ? result.original : s))
-        const next = [...withOriginal, result.replacement]
-        return next.sort((a, b) =>
+        const without = prev.filter(s => s.id !== result.original.id)
+        return [...without, result.replacement].sort((a, b) =>
           (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0)
           || ((a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1))
         )
       })
     } catch (e) {
       console.error('Failed to replace session:', e)
+      showToast('Could not replace session. Try again.', 'error')
     }
   }
 
