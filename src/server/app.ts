@@ -874,11 +874,23 @@ app.get('/api/sessions/:id/strength-preview', async (c) => {
   if (session.type !== 'strength') return c.json({ error: 'not a strength session' }, 400)
 
   // If the session has already been started, read from the DB so any manual
-  // set-weight edits are reflected.
+  // set-weight edits are reflected. Convert to PreviewExercise shape so the
+  // client's StrengthLiftPreview can access name/label at the top level.
   const existing = await db.select().from(strengthSessionExercises)
     .where(eq(strengthSessionExercises.sessionId, sessionId))
   if (existing.length > 0) {
-    return c.json(await buildWorkoutResponse(db, sessionId))
+    const workoutData = await buildWorkoutResponse(db, sessionId)
+    return c.json({
+      session: workoutData.session,
+      exercises: workoutData.exercises.map(ex => ({
+        exerciseId: ex.exerciseId,
+        name: ex.exercise?.name ?? '',
+        label: ex.exercise?.name ?? '',
+        section: ex.section,
+        orderIndex: ex.orderIndex,
+        prescription: ex.prescription,
+      })),
+    })
   }
 
   const preview = await buildStrengthPreview(db, sessionId)

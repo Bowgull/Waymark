@@ -345,7 +345,7 @@ function stripLiftSuffix(label: string): string {
 }
 
 function shortLiftSummary(ex: PreviewExercise): string {
-  const name = stripLiftSuffix(ex.label || ex.name)
+  const name = stripLiftSuffix(ex.label || ex.name || '')
   const weightKg = ex.prescription.prescribedWeightKg
   const setsMatch = ex.prescription.setsReps.match(/^(\d+)×/)
   const sets = setsMatch ? setsMatch[1] : null
