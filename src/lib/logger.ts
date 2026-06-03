@@ -153,9 +153,13 @@ class Logger {
       const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), 8000)
       try {
+        const apiKey = import.meta.env.VITE_API_KEY as string | undefined
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
           body: JSON.stringify({ entries: batch }),
           signal: ctrl.signal,
         })
