@@ -1,6 +1,8 @@
 import { getApiBaseUrl } from './apiBase'
 import { logger } from './logger'
 
+const API_KEY = import.meta.env.VITE_API_KEY as string | undefined
+
 export class ApiError extends Error {
   status: number
   body: string
@@ -36,6 +38,7 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
       ...options?.headers,
     },
   }

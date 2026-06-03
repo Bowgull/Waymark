@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 import logoPng from '@/assets/brand/Logo.png'
 import { logger } from '@/lib/logger'
 import { apiFetch } from '@/lib/api'
+import { clearWorkoutRecovery } from '@/lib/workoutRecovery'
 
 interface Props {
   children: ReactNode
@@ -36,6 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   handleRetry = () => {
+    clearWorkoutRecovery()
     this.setState({ hasError: false, error: null })
   }
 

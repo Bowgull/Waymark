@@ -15,6 +15,7 @@ interface Env {
   STRAVA_CLIENT_ID: string
   STRAVA_CLIENT_SECRET: string
   STRAVA_WEBHOOK_VERIFY_TOKEN: string
+  WAYMARK_API_KEY: string
   DEMO_MODE?: string
 }
 
