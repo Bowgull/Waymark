@@ -30,3 +30,4 @@ dist-ssr
 
 # Claude worktree staging
 .claude/worktrees/
+.dev.vars
