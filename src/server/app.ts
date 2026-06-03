@@ -34,7 +34,7 @@ import { runSessionReview } from '../lib/sessionReviewAI'
 import { adjustBandColorFromReality, assessBandSet, assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
-import { runReplaceSuggestions } from '../lib/reactiveCoach'
+import { runReactiveReplan, runReplaceSuggestions } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { logs } from './routes/logs'
 
@@ -44,11 +44,28 @@ type Bindings = {
   STRAVA_CLIENT_ID: string
   STRAVA_CLIENT_SECRET: string
   STRAVA_WEBHOOK_VERIFY_TOKEN: string
+  WAYMARK_API_KEY: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
 
-app.use('/api/*', cors())
+app.use('/api/*', cors({
+  origin: ['https://waymark.bocas-joshua.workers.dev', 'capacitor://localhost', 'http://localhost:5173', 'http://localhost:8787'],
+}))
+
+// Auth: all /api/* routes require Bearer token except health check and Strava webhook
+app.use('/api/*', async (c, next) => {
+  const path = new URL(c.req.url).pathname
+  if (path === '/api/health' || path.startsWith('/api/strava/webhook')) {
+    return next()
+  }
+  const key = c.env.WAYMARK_API_KEY
+  const auth = c.req.header('Authorization')
+  if (!key || !auth || auth !== `Bearer ${key}`) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+  return next()
+})
 
 app.route('/api/strava', strava)
 app.route('/api/logs', logs)
@@ -832,6 +849,7 @@ app.post('/api/sessions/:id/replace', async (c) => {
   await db.insert(sessions).values({
     id: newId,
     type: body.type,
+    label: body.label ?? null,
     weekPlanId: original.weekPlanId,
     scheduledDate,
     timeSlot: body.timeSlot,
@@ -845,6 +863,16 @@ app.post('/api/sessions/:id/replace', async (c) => {
 
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
   const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
+
+  const todayEpochDay = Math.floor(Date.now() / 86400000)
+  c.executionCtx.waitUntil(
+    runReactiveReplan(db, c.env.ANTHROPIC_API_KEY, {
+      trigger: 'session_replaced',
+      todayEpochDay,
+      sessionId: id,
+    }).catch(err => console.warn('[reactive] session_replaced failed', err))
+  )
+
   return c.json({ original: replaced, replacement: created })
 })
 
@@ -882,9 +910,15 @@ app.patch('/api/sessions/:id', async (c) => {
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
 
-  // Skip commits silently. Reactive replan runs nightly and will read the
-  // saved skip_reason columns when it reshapes the week.
   if (body.status === 'skipped' && row) {
+    const todayEpochDay = Math.floor(Date.now() / 86400000)
+    c.executionCtx.waitUntil(
+      runReactiveReplan(createDB(c.env), c.env.ANTHROPIC_API_KEY, {
+        trigger: 'session_skipped',
+        todayEpochDay,
+        sessionId: id,
+      }).catch(err => console.warn('[reactive] session_skipped failed', err))
+    )
     return c.json({ session: row, coach: null })
   }
 
@@ -1153,7 +1187,7 @@ app.patch('/api/strength-sets/:id', async (c) => {
 
   if (body.weightKg !== undefined) updates.weightKg = body.weightKg
   if (body.reps !== undefined) updates.reps = body.reps
-  if (body.completedAt !== undefined) updates.createdAt = body.completedAt // reuse createdAt for completion timestamp
+  if (body.completedAt !== undefined) updates.completedAt = body.completedAt
   if (body.loadFeedback !== undefined) updates.loadFeedback = body.loadFeedback
   if (body.bandColor !== undefined) updates.bandColor = body.bandColor
 
@@ -1237,6 +1271,16 @@ app.post('/api/sessions/:id/complete', async (c) => {
     : 'none'
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
+
+  const todayEpochDay = Math.floor(Date.now() / 86400000)
+  c.executionCtx.waitUntil(
+    runReactiveReplan(db, c.env.ANTHROPIC_API_KEY, {
+      trigger: 'session_completed',
+      todayEpochDay,
+      sessionId,
+    }).catch(err => console.warn('[reactive] session_completed failed', err))
+  )
+
   return c.json({ ...updated, reviewSource })
 })
 
@@ -1589,6 +1633,16 @@ app.post('/api/sessions/:id/rate-combos', async (c) => {
 
     await db.update(combos).set(updates).where(eq(combos.id, r.comboId))
   }
+
+  const ratingSummary = `Rated ${body.ratings.length} combo${body.ratings.length === 1 ? '' : 's'}${newFavourites.length > 0 ? `. ${newFavourites.length} new favourite${newFavourites.length === 1 ? '' : 's'}.` : '.'}`
+  await db.insert(coachingOutputs).values({
+    id: crypto.randomUUID(),
+    kind: 'combo_ratings',
+    model: 'client',
+    scopeSessionId: sessionId,
+    outputJson: JSON.stringify({ summary: ratingSummary, newFavourites }),
+    createdAt: nowSec,
+  })
 
   return c.json({ success: true, newFavourites })
 })
@@ -1943,6 +1997,15 @@ app.post('/api/daily-logs', async (c) => {
   })
 
   const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, id))
+
+  const todayEpochDay = Math.floor(Date.now() / 86400000)
+  c.executionCtx.waitUntil(
+    runReactiveReplan(createDB(c.env), c.env.ANTHROPIC_API_KEY, {
+      trigger: 'wellness_logged',
+      todayEpochDay,
+    }).catch(err => console.warn('[reactive] wellness_logged failed', err))
+  )
+
   return c.json(row)
 })
 
@@ -2499,12 +2562,14 @@ app.get('/api/history/stats', async (c) => {
   const rpeValues = completed.filter(s => s.rpe != null).map(s => s.rpe!)
   const avgRpe = rpeValues.length > 0 ? Math.round(rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length * 10) / 10 : null
 
-  // Streak: consecutive days with at least one completed session (counting back from today)
+  // Streak: count from ALL completed sessions, not just the days window
   const todayEpochDay = Math.floor(nowSec / 86400)
-  const completedDays = new Set(completed.map(s => s.scheduledDate).filter(Boolean))
+  const allCompletedDays = new Set(
+    allSessions.filter(s => s.status === 'completed').map(s => s.scheduledDate).filter(Boolean)
+  )
   let streak = 0
   for (let d = todayEpochDay; d >= todayEpochDay - 60; d--) {
-    if (completedDays.has(d)) streak++
+    if (allCompletedDays.has(d)) streak++
     else break
   }
 
@@ -2936,7 +3001,7 @@ app.post('/api/blocks/:id/progress-tm', async (c) => {
       const entry = exerciseSetMap.get(se.exerciseId) ?? { total: 0, clean: 0 }
       for (const s of workingSets) {
         entry.total++
-        if (s.weightKg != null && s.weightKg > 0 && s.reps >= (s.reps > 0 ? s.reps : 1)) {
+        if (s.weightKg != null && s.weightKg > 0 && s.reps >= (s.plannedReps ?? s.reps)) {
           entry.clean++
         }
       }
@@ -3746,7 +3811,7 @@ app.post('/api/body-metrics', async (c) => {
   if (!body.weightKg || body.weightKg <= 0) {
     return c.json({ error: 'weightKg required' }, 400)
   }
-  const now = Date.now()
+  const now = Math.floor(Date.now() / 1000)
   const id = crypto.randomUUID()
   await db.insert(bodyMetrics).values({
     id,
@@ -3759,6 +3824,64 @@ app.post('/api/body-metrics', async (c) => {
   })
   const entry = await db.select().from(bodyMetrics).where(eq(bodyMetrics.id, id)).get()
   return c.json({ entry })
+})
+
+app.get('/api/export', async (c) => {
+  const db = createDB(c.env)
+  const [
+    allSessions, allStrengthExercises, allStrengthSets, allRunSessions,
+    allBagRounds, allBagRoundCombos, allComboPerformance, allCombos,
+    allDailyLogs, allWeeklyJournals, allJournalEntries, allBodyMetrics,
+    allTrainingBlocks, allWeekPlans, allTrainingMaxes, allUserProfile,
+    allSettings,
+  ] = await Promise.all([
+    db.select().from(sessions),
+    db.select().from(strengthSessionExercises),
+    db.select().from(strengthSets),
+    db.select().from(runSessions),
+    db.select().from(bagWorkRounds),
+    db.select().from(bagWorkRoundCombos),
+    db.select().from(comboPerformance),
+    db.select().from(combos),
+    db.select().from(dailyLogs),
+    db.select().from(weeklyJournals),
+    db.select().from(journalEntries),
+    db.select().from(bodyMetrics),
+    db.select().from(trainingBlocks),
+    db.select().from(weekPlans),
+    db.select().from(trainingMaxes),
+    db.select().from(userProfile),
+    db.select().from(settings),
+  ])
+
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    sessions: allSessions,
+    strengthSessionExercises: allStrengthExercises,
+    strengthSets: allStrengthSets,
+    runSessions: allRunSessions,
+    bagWorkRounds: allBagRounds,
+    bagWorkRoundCombos: allBagRoundCombos,
+    comboPerformance: allComboPerformance,
+    combos: allCombos,
+    dailyLogs: allDailyLogs,
+    weeklyJournals: allWeeklyJournals,
+    journalEntries: allJournalEntries,
+    bodyMetrics: allBodyMetrics,
+    trainingBlocks: allTrainingBlocks,
+    weekPlans: allWeekPlans,
+    trainingMaxes: allTrainingMaxes,
+    userProfile: allUserProfile,
+    settings: allSettings,
+  }
+
+  const date = new Date().toISOString().split('T')[0]
+  return new Response(JSON.stringify(payload, null, 2), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Disposition': `attachment; filename="waymark-export-${date}.json"`,
+    },
+  })
 })
 
 app.get('/api/body-metrics', async (c) => {

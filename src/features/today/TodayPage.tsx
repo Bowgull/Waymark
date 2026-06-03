@@ -271,6 +271,7 @@ export function TodayPage() {
 
     // Other session types: just update status
     const nowSec = Math.floor(Date.now() / 1000)
+    const prevSessions = sessions
     setSessions((prev) =>
       prev.map((s) =>
         s.id === id ? { ...s, status: 'in_progress', startedAt: nowSec } : s
@@ -282,6 +283,7 @@ export function TodayPage() {
         body: JSON.stringify({ status: 'in_progress', startedAt: nowSec }),
       })
     } catch (e) {
+      setSessions(prevSessions)
       const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to start session:', e)
       logger.error('session', 'patch start-session failed', { sessionId: id, message }, 'PATCH /sessions/:id status=in_progress failed. Session state inconsistent.')
@@ -295,6 +297,7 @@ export function TodayPage() {
 
   async function handleEndEarly(id: string, action: 'completed' | 'reset') {
     const nowSec = Math.floor(Date.now() / 1000)
+    const prevSessions = sessions
     if (action === 'completed') {
       setSessions((prev) =>
         prev.map((s) => (s.id === id ? { ...s, status: 'completed', completedAt: nowSec } : s)),
@@ -305,7 +308,9 @@ export function TodayPage() {
           body: JSON.stringify({ status: 'completed', completedAt: nowSec }),
         })
       } catch (e) {
+        setSessions(prevSessions)
         console.error('Failed to end session early (completed):', e)
+        showToast("Couldn't save. Check your connection.", 'warning')
       }
     } else {
       setSessions((prev) =>
@@ -317,13 +322,16 @@ export function TodayPage() {
           body: JSON.stringify({ status: 'planned', startedAt: null, completedAt: null }),
         })
       } catch (e) {
+        setSessions(prevSessions)
         console.error('Failed to end session early (reset):', e)
+        showToast("Couldn't save. Check your connection.", 'warning')
       }
     }
   }
 
   async function commitSkip(id: string, commit: SkipReasonCommit) {
     setSkipReasonFor(null)
+    const prevSessions = sessions
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, status: 'skipped' } : s))
     )
@@ -337,7 +345,9 @@ export function TodayPage() {
         }),
       })
     } catch (e) {
+      setSessions(prevSessions)
       console.error('Failed to skip session:', e)
+      showToast("Couldn't save. Check your connection.", 'warning')
     }
   }
 

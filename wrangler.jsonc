@@ -19,4 +19,5 @@
 	//   STRAVA_CLIENT_ID             - Strava app client id (226927)
 	//   STRAVA_CLIENT_SECRET         - Strava app client secret
 	//   STRAVA_WEBHOOK_VERIFY_TOKEN  - random string Strava echoes on subscription verify
+	//   WAYMARK_API_KEY              - shared secret for client auth (Bearer token); set VITE_API_KEY to same value in .env
 }

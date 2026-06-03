@@ -17,7 +17,7 @@ interface RecoveryValidationContext {
 }
 
 const TERMINAL_PHASES = new Set(['entrance', 'complete', 'mark-earned'])
-const RECOVERABLE_PHASES = new Set(['exercise', 'rest', 'round', 'video'])
+const RECOVERABLE_PHASES = new Set(['exercise', 'rest', 'bag-preview', 'bag-warmup', 'fr-warmup', 'fr-run'])
 const DEFAULT_MAX_AGE_MS = 4 * 60 * 60 * 1000
 
 export function validateWorkoutRecovery(

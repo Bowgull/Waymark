@@ -56,6 +56,7 @@ export const sessions = sqliteTable('sessions', {
   difficulty: integer('difficulty'),
   blockWeek: integer('block_week'),
   blockType: text('block_type').notNull().default('fighter'),
+  label: text('label'),
   notes: text('notes'),
   review: text('review'),
   reviewFlag: text('review_flag'),
@@ -97,6 +98,7 @@ export const strengthSets = sqliteTable('strength_sets', {
   bandColor: text('band_color'),
   isWarmup: integer('is_warmup').notNull().default(0),
   restSec: integer('rest_sec'),
+  completedAt: integer('completed_at'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_sets_exercise').on(t.sessionExerciseId),

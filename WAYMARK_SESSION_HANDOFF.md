@@ -1,6 +1,6 @@
 # Waymark Session Handoff
 
-Updated: 2026-05-26 08:22 ADT
+Updated: 2026-06-03 ADT
 
 ## Current State
 
@@ -8,12 +8,87 @@ Active branch: `codex/roadtrip-coach`.
 
 Road Bootcamp is implemented as a bounded 8-week block with fixed weekly rails, strength ready UI, structured session context, Road Bootcamp Ledger metrics, Strava local proof, and a fresh reset path.
 
-Overall build estimate: 99 percent. Current repair focus is final on-device confirmation after the band selector simplification.
+Overall build estimate: 99 percent. Full bug-fix pass completed 2026-06-03 — 20 code bugs fixed across security, crash recovery, data correctness, reactive coaching wiring, and UI rollback. See entry below for details.
 
 Current remaining gates:
 - User confirms the simplified band selector on the physical iPhone.
+- Set `WAYMARK_API_KEY` Worker secret (`wrangler secret put WAYMARK_API_KEY`) and add matching `VITE_API_KEY=<same-value>` to `.env` before deploying.
+- Run migrations `0024_strength_set_completed_at.sql` and `0025_session_label.sql` against remote D1.
+- One-time data fix for body metrics: any existing `body_metrics` rows where `logged_at > 9999999999` need to be divided by 1000 (milliseconds → seconds).
+
+Open decisions awaiting the user's go-ahead:
+- Add shadowboxing to Road Bootcamp (Sun + Fri, reuse bag engine) — decided, not built.
+- MT skill brain depth (32 combos → full skill tree), persistent athlete model, timezone hardening, onboarding completeness — product gaps, separate session.
 
 Current workspace expectation: clean after each pass. Do not trust older dirty-file notes inside historical entries.
+
+## 2026-06-03 ADT - Full Bug Fix Pass (20 code bugs fixed)
+
+Build passes, lint clean, all 16 lib tests pass.
+
+### Phase 1 — Auth + Security
+- Added `WAYMARK_API_KEY` Bearer token middleware to all `/api/*` routes in `app.ts` (exempts `/api/health` and `/api/strava/webhook`)
+- Restricted CORS to known origins (`workers.dev`, `capacitor://localhost`, local dev)
+- Added `Authorization: Bearer` header to client `apiFetch` in `src/lib/api.ts` via `VITE_API_KEY` env var
+- Documented `WAYMARK_API_KEY` secret in `wrangler.jsonc` and `.env.example`
+
+### Phase 2 — P0 Crash Fix
+- Fixed `RECOVERABLE_PHASES` in `workoutRecovery.ts` — removed `'round'`/`'video'` (not in Phase union), added actual recoverable phases: `'bag-preview'`, `'bag-warmup'`, `'fr-warmup'`, `'fr-run'`
+- Fixed `ErrorBoundary.handleRetry` to call `clearWorkoutRecovery()` before re-rendering, so Resume no longer re-enters the crashing phase
+
+### Phase 3 — strengthSets.completedAt
+- Added `completedAt` column to `strengthSets` schema (`src/db/schema.ts`)
+- Created migration `drizzle/0024_strength_set_completed_at.sql`
+- Fixed `PATCH /api/strength-sets/:id` (was overwriting `createdAt` with completion time — `app.ts:1156`)
+
+### Phase 4 — Data Correctness
+- Fixed body metrics timestamp: `POST /api/body-metrics` now uses `Math.floor(Date.now() / 1000)` (was `Date.now()` — off by 1000x)
+- Fixed TM progression tautology: `progress-tm` now checks `s.reps >= (s.plannedReps ?? s.reps)` (was always true)
+- Fixed streak calc: `/api/history/stats` now loads ALL completed sessions for streak, not just the `days` window
+
+### Phase 5 — Reactive Coaching Wired
+- Imported `runReactiveReplan` in `app.ts`
+- Wired fire-and-forget reactive replan on: `session_skipped`, `session_completed`, `session_replaced`, `wellness_logged`
+- All use `c.executionCtx.waitUntil()` to avoid blocking the response
+
+### Phase 6 — Incomplete Wiring
+- Added `label` column to sessions schema + migration `drizzle/0025_session_label.sql`; `label` now persisted in the replace endpoint
+- Bag work `rate-combos` now writes a `coachingOutputs` entry so bag sessions appear in Ledger
+- TodayPage optimistic UI: `handleStart`, `handleEndEarly`, `commitSkip` now capture previous state and roll back + show toast on API failure
+
+### Phase 7 — D1 Export Endpoint
+- Added `GET /api/export` (auth-gated) — dumps all 17 tables as JSON with `Content-Disposition: attachment`
+
+### Remaining Deploy Steps
+1. `wrangler secret put WAYMARK_API_KEY` (generate a strong random string)
+2. Add `VITE_API_KEY=<same value>` to `.env`
+3. Run `0024_strength_set_completed_at.sql` and `0025_session_label.sql` against remote D1
+4. One-time body metrics data fix: divide `logged_at`/`created_at` by 1000 for rows where `logged_at > 9999999999`
+
+## 2026-06-02 ADT - Full App Audit (analysis only, no code changed)
+
+Reviewed front + back through four lenses (engineer, trainer/MT, marketing, end user). Verified findings against source, not comments. Nothing was edited in the app; this entry plus the memory files are the only writes.
+
+Prioritized backlog (full detail in memory: `waymark-audit-backlog`):
+- CORRECTNESS: per-event reactive coaching is unwired. `app.ts` never calls `runReactiveReplan` for `session_skipped`/`session_completed`/`wellness_logged`; only the nightly cron fires `trigger: 'rollover'` (`src/index.ts:67`), gated to 2+ missed days in 3. A single skip does nothing. Skip handler returns `coach: null` (`app.ts:887`). `TOOL_SKIP_RESPONSE` is dead code. Highest-leverage fix.
+- CORRECTNESS: optimistic UI writes have no rollback (TodayPage) — desync risk on flaky wifi. Root cause is no React Query (RESILIENCE_ROADMAP step 15).
+- SECURITY/DATA: no auth on the public Worker; no D1 backup/export; Strava tokens plaintext; timezone fragility (matters on the road); `reactiveCoach` uses `claude-sonnet-4-6` despite its "Haiku only" comment, no spend cap.
+- ARCHITECTURE: `app.ts` is a 3,776-line monolith (~90 routes); session-creation loop duplicated 4x and already drifted; session `label` not persisted; zero component/E2E tests (lib logic IS tested); inconsistent error handling.
+- PRODUCT: MT skill brain thin (32 combos, self-rated mastery, unbuilt skill tree, loop doesn't close); no persistent athlete model; onboarding under-collects vs `userProfile` columns.
+
+Caveat: this was a sample, not line-by-line. Not yet read: WorkoutPage internals, `strava.ts` (35KB), strength progression engine, history/charts.
+
+GitHub question: adopt TanStack Query; learn training-load modeling from intervals.icu; MT skill depth is ours to build. Don't integrate generic fitness/gamification templates.
+
+### Shadowboxing decision (parked, not built)
+- Engine: reuse the bag engine. Placement: Sun + Fri (the empty mobility-only days).
+- Snag: road test asserts `bag_work` must not appear in Road Bootcamp, and `label` isn't persisted. Recommended: a distinct `shadow` type reusing bag tables/UI/prescription (shadow flag drops bag-impact conditioning, emphasizes footwork/defense/flow). Detail in memory: `waymark-shadowboxing-plan`.
+
+### Current Dirty Files
+- `WAYMARK_SESSION_HANDOFF.md` until committed. No app code changed.
+
+### Next Immediate Step
+- Await user go-ahead on either: wiring the skip/event reactive triggers (#1), or building shadowboxing, or a targeted GitHub search (TanStack Query patterns / intervals.icu load model).
 
 ## 2026-05-26 08:22 ADT - Band Selector Simplification
 
