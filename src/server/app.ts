@@ -31,7 +31,9 @@ import { generateWeekPlan } from '../lib/weeklyPlanAI'
 import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, zone2CeilingBpm } from '../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../lib/sessionRollover'
 import { runSessionReview } from '../lib/sessionReviewAI'
-import { adjustBandColorFromReality, assessBandSet, assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
+import { adjustBandColorFromVerdict, assessBandSet, assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
+import { loadLiftTrends } from '../lib/athleteState/liftTrends'
+import { loadLatestAthleteState, resolveEffectiveLift } from '../lib/athleteState/store'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 import { runReactiveReplan, runReplaceSuggestions } from '../lib/reactiveCoach'
@@ -342,54 +344,6 @@ function adjustRoadPrescriptionForReality(
     targetDistKm: null,
     z2CeilingBpm: prescription.z2CeilingBpm,
   }
-}
-
-async function loadRecentStrengthReality(db: DrizzleDB): Promise<Map<string, { inferredStatus: string | null; bandColor: string | null }>> {
-  const [allSessions, allExercises, allSets] = await Promise.all([
-    db.select().from(sessions),
-    db.select().from(strengthSessionExercises),
-    db.select().from(strengthSets),
-  ])
-  const completedById = new Map(
-    allSessions
-      .filter(session => session.status === 'completed' && session.type === 'strength')
-      .map(session => [session.id, session]),
-  )
-  const exerciseBySet = new Map(allExercises.map(exercise => [exercise.id, exercise]))
-  const latest = new Map<string, { epoch: number; inferredStatus: string | null; bandColor: string | null }>()
-
-  for (const set of allSets) {
-    if (set.isWarmup === 1) continue
-    const sessionExercise = exerciseBySet.get(set.sessionExerciseId)
-    if (!sessionExercise) continue
-    const session = completedById.get(sessionExercise.sessionId)
-    if (!session) continue
-    const epoch = session.completedAt ?? session.createdAt
-    const current = latest.get(sessionExercise.exerciseId)
-    if (!current || epoch > current.epoch) {
-      latest.set(sessionExercise.exerciseId, {
-        epoch,
-        inferredStatus: set.inferredStatus,
-        bandColor: set.bandColor,
-      })
-    }
-  }
-
-  return new Map(Array.from(latest).map(([exerciseId, value]) => [exerciseId, {
-    inferredStatus: value.inferredStatus,
-    bandColor: value.bandColor,
-  }]))
-}
-
-function adjustSuggestedStrengthWeight(weightKg: number | null, reality: { inferredStatus: string | null } | undefined): number | null {
-  if (weightKg == null || !reality?.inferredStatus) return weightKg
-  if (reality.inferredStatus === 'lighter' || reality.inferredStatus === 'rep_shortfall') {
-    return Math.round(weightKg * 0.9 * 100) / 100
-  }
-  if (reality.inferredStatus === 'heavier' || reality.inferredStatus === 'rep_surplus') {
-    return Math.round(weightKg * 1.05 * 100) / 100
-  }
-  return weightKg
 }
 
 async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string | null; blockWeek: number | null; notes?: string | null; blockType?: string | null }) {
@@ -1069,7 +1023,11 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   // Get training maxes for weight suggestions
   const maxes = await db.select().from(trainingMaxes)
   const maxMap = new Map(maxes.map(m => [m.exerciseId, m.weightKg]))
-  const strengthReality = await loadRecentStrengthReality(db)
+  const liftTrends = await loadLiftTrends(db, Math.floor(Date.now() / 86400000))
+  // Phase 3: the AI verdict from the latest AthleteState wins per-lift; fall back
+  // to the deterministic trend when no state has assessed that lift.
+  const latestState = await loadLatestAthleteState(db)
+  const stateLiftById = new Map((latestState?.lifts ?? []).map(l => [l.exerciseId, l]))
 
   // Create exercises and sets
   for (let exIdx = 0; exIdx < template.exercises.length; exIdx++) {
@@ -1089,16 +1047,18 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
 
     for (let setIdx = 0; setIdx < tex.sets.length; setIdx++) {
       const ts = tex.sets[setIdx]
-      const exerciseReality = strengthReality.get(tex.exerciseId)
+      const trend = liftTrends.get(tex.exerciseId)
+      const effective = resolveEffectiveLift(trend, stateLiftById.get(tex.exerciseId))
       const templateWeight = ts.suggestedWeightKg ?? null
       const templateBandColor = ts.bandColor ?? null
-      const prescribedBandColor = adjustBandColorFromReality(templateBandColor, exerciseReality)
+      const prescribedBandColor = adjustBandColorFromVerdict(templateBandColor, effective.verdict, trend?.bandColor)
+      const baseWorking = computeWorkingWeightKg(trainingMax, tex.section, weekPct)
+      const adjustedWorking = baseWorking == null
+        ? null
+        : Math.round(baseWorking * effective.loadFactor * 100) / 100
       const suggestedWeight = templateWeight ?? (ts.isWarmup
         ? computeWarmupWeightKg(trainingMax)
-        : adjustSuggestedStrengthWeight(
-          computeWorkingWeightKg(trainingMax, tex.section, weekPct),
-          exerciseReality,
-        ))
+        : adjustedWorking)
 
       await db.insert(strengthSets).values({
         id: crypto.randomUUID(),

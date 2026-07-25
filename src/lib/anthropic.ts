@@ -4,7 +4,7 @@ const RETRY_DELAY_MS = 1_000
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504, 529])
 let missingKeyLogged = false
 
-export type AnthropicModel = 'claude-haiku-4-5-20251001' | 'claude-sonnet-4-6'
+export type AnthropicModel = 'claude-haiku-4-5-20251001' | 'claude-sonnet-4-6' | 'claude-opus-4-8'
 
 export interface CacheControl {
   type: 'ephemeral'
@@ -84,7 +84,7 @@ export type AnthropicResult = AnthropicResponse | AnthropicOffline
 
 function buildHeaders(model: AnthropicModel, apiKey: string): Record<string, string> {
   const betas: string[] = ['prompt-caching-2024-07-31']
-  if (model === 'claude-sonnet-4-6') {
+  if (model === 'claude-sonnet-4-6' || model === 'claude-opus-4-8') {
     betas.push('interleaved-thinking-2025-05-14')
   }
   return {
