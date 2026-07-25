@@ -97,6 +97,21 @@ export function adjustBandColorFromReality(
   return prescribed
 }
 
+// Trend-based band adjustment (Phase 0 athlete-state). A 'push' verdict shifts
+// the prescribed band one step heavier, 'deload' one step lighter, anchored on
+// the most recent actual band the athlete used. 'hold' keeps the prescription.
+export function adjustBandColorFromVerdict(
+  prescribedBandColor: string | null | undefined,
+  verdict: 'push' | 'hold' | 'deload' | undefined,
+  latestBandColor: string | null | undefined,
+): BandColor | null {
+  const prescribed = normalizeBandColor(prescribedBandColor)
+  if (!prescribed || !verdict || verdict === 'hold') return prescribed
+  const anchor = normalizeBandColor(latestBandColor) ?? prescribed
+  if (verdict === 'push') return shiftBandColor(anchor, 1)
+  return shiftBandColor(anchor, -1)
+}
+
 export function shouldShowRunRealityMark(status: RunCompletionStatus | null): boolean {
   return status === 'shortened' || status === 'partial'
 }

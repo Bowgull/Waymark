@@ -536,6 +536,77 @@ export const TOOL_REPLACE_SUGGESTIONS: Tool = {
   },
 }
 
+// ─── Athlete-State assessment (Phase 2) ───────────────────────────
+
+export type AthleteReadiness = 'fresh' | 'normal' | 'taxed' | 'overreached'
+export type AthleteWeekShape = 'as_planned' | 'pull_back' | 'add_recovery' | 'push_volume'
+export type AthleteLiftVerdict = 'push' | 'hold' | 'deload'
+export type AthleteFlagKind = 'pain' | 'plateau' | 'overreach' | 'undertrained'
+
+export interface AthleteLiftAssessmentOutput {
+  exerciseId: string
+  verdict: AthleteLiftVerdict
+  loadFactor: number
+  rationale: string
+}
+
+export interface AthleteAssessmentOutput {
+  readiness: AthleteReadiness
+  readinessRationale: string
+  lifts: AthleteLiftAssessmentOutput[]
+  weekShape: AthleteWeekShape
+  weekShapeRationale: string
+  flags?: Array<{ kind: AthleteFlagKind; detail: string }>
+  note: string
+}
+
+export const TOOL_ASSESS_ATHLETE: Tool = {
+  name: 'assessAthlete',
+  description:
+    'Form a single coherent read of the athlete from the full recent picture: strength ' +
+    'trends, effort, wellness, notes, runs. Compound the signals, do not treat them in ' +
+    'isolation: high effort plus poor sleep plus a strength shortfall together mean deload, ' +
+    'not three separate nudges. Honor the deterministic baseline verdicts; only override a ' +
+    'lift with a stated reason. Voice canon: observation before conclusion, no second person, ' +
+    'no hype, no em dashes.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      readiness: { type: 'string', enum: ['fresh', 'normal', 'taxed', 'overreached'] },
+      readinessRationale: { type: 'string', description: 'One sentence. Voice canon.' },
+      lifts: {
+        type: 'array',
+        description: 'Only lifts present in the trend window. Omit lifts with insufficient data.',
+        items: {
+          type: 'object',
+          properties: {
+            exerciseId: { type: 'string', description: 'The exerciseId exactly as given in the context.' },
+            verdict: { type: 'string', enum: ['push', 'hold', 'deload'] },
+            loadFactor: { type: 'number', description: 'Multiplier on the baseline prescription, 0.85 to 1.05.' },
+            rationale: { type: 'string', description: 'One sentence tying the verdict to the trend.' },
+          },
+          required: ['exerciseId', 'verdict', 'loadFactor', 'rationale'],
+        },
+      },
+      weekShape: { type: 'string', enum: ['as_planned', 'pull_back', 'add_recovery', 'push_volume'] },
+      weekShapeRationale: { type: 'string', description: 'One sentence. Voice canon.' },
+      flags: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', enum: ['pain', 'plateau', 'overreach', 'undertrained'] },
+            detail: { type: 'string' },
+          },
+          required: ['kind', 'detail'],
+        },
+      },
+      note: { type: 'string', description: 'One-line silent summary. Under 140 chars. Voice canon.' },
+    },
+    required: ['readiness', 'readinessRationale', 'lifts', 'weekShape', 'weekShapeRationale', 'note'],
+  },
+}
+
 export const ALL_TOOLS: Tool[] = [
   TOOL_WEEK_PLAN,
   TOOL_WEEK_REVIEW,
@@ -546,6 +617,7 @@ export const ALL_TOOLS: Tool[] = [
   TOOL_BAG_PRESCRIPTION,
   TOOL_REACTIVE_REPLAN,
   TOOL_REPLACE_SUGGESTIONS,
+  TOOL_ASSESS_ATHLETE,
 ]
 
 export const TOOL_BY_NAME: Record<string, Tool> = Object.fromEntries(

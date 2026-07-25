@@ -31,3 +31,6 @@ dist-ssr
 # Claude worktree staging
 .claude/worktrees/
 .dev.vars
+
+# Athlete-state smoke throwaway DB
+_smoke.sqlite
