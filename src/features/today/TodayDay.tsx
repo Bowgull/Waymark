@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon } from '@/design'
+import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon, glowRow } from '@/design'
 import { SessionSummary } from '@/features/dayboard/SessionSummary'
 import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
@@ -39,6 +39,8 @@ export interface TodayDayProps {
   onReassignMatch: (activityId: number) => void
   onDismissMatch: (activityId: number) => void
   onAdd: () => void
+  /** Block Zero's quick "class tonight" add (no approved mockup places it; it sits under + ADD SESSION). */
+  classTonight?: { added: boolean; onAdd: () => Promise<string | null> } | null
 }
 
 export function TodayDay(props: TodayDayProps) {
@@ -63,7 +65,33 @@ export function TodayDay(props: TodayDayProps) {
         ))}
       </Board>
       <FlapButton label="+ ADD SESSION" onClick={props.onAdd} />
+      {props.classTonight && <ClassTonightButton {...props.classTonight} />}
     </>
+  )
+}
+
+/** One tap adds an MT class this evening (the type is asked when it's logged). A refusal glows clay with its line under it. */
+function ClassTonightButton({ added, onAdd }: { added: boolean; onAdd: () => Promise<string | null> }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  return (
+    <div ref={ref}>
+      <FlapButton
+        label={added ? '✓ CLASS TONIGHT' : '+ CLASS TONIGHT'}
+        tone={added ? 'teal' : undefined}
+        disabled={added || busy}
+        onClick={async () => {
+          setBusy(true)
+          setRefusal(null)
+          const refused = await onAdd()
+          setBusy(false)
+          setRefusal(refused)
+          glowRow(ref.current, refused ? 'bad' : 'good')
+        }}
+      />
+      {refusal && <p className="wm-row-note" role="alert">{refusal}</p>}
+    </div>
   )
 }
 

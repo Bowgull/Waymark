@@ -38,12 +38,23 @@ function emit() {
   for (const l of listeners) l(messages)
 }
 
-/** Split a message into a flap title and plain words: short ones go on the flap. */
+/**
+ * Split a message into a flap title and plain words. Page 35 A puts the short
+ * words on the flap (LOGGED, COULDN'T SAVE): a short message is all flap; a
+ * longer one whose first sentence fits gives that sentence to the flap and
+ * keeps the rest as plain words under it; otherwise it is all plain words.
+ */
 export function popParts(message: string, title?: string): { title: string | null; text: string | null } {
   const msg = message.trim()
   const bare = msg.replace(/[.!]+$/, '')
   if (title) return { title, text: msg && bare.toUpperCase() !== title.toUpperCase() ? msg : null }
   if (fitsOnFlap(bare)) return { title: bare, text: null }
+  const cut = msg.search(/[.!?]\s/)
+  if (cut > 0) {
+    const first = msg.slice(0, cut)
+    const rest = msg.slice(cut + 1).trim()
+    if (fitsOnFlap(first) && rest) return { title: first, text: rest }
+  }
   return { title: null, text: msg }
 }
 

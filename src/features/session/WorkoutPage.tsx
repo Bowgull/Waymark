@@ -1192,7 +1192,7 @@ export function WorkoutPage() {
   }
 
   // ─── MT class workout ───────────────────────────────────────
-  // MtClassLogView owns its SessionShell. WorkoutPage handles only complete.
+  // MtClassLogView is the page-31 board over the forest. WorkoutPage handles only complete.
 
   if (sessionType === 'mt_class' && mtData?.mtLog) {
     if (phase === 'complete') {

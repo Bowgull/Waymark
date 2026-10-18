@@ -1,62 +1,91 @@
-import { useState } from 'react'
+import { useRef } from 'react'
 
-import { CentredCard, FlapButton, TileChoice, showPop } from '@/design'
+import { CentredCard, FlapButton, FlapLabel, SessionIcon } from '@/design'
 
-import { CLASS_TYPE_TILES, type ClassTypeValue } from './classType'
+import { CLASS_MIN, CLASS_TYPES, clampClassMinutes, type ClassTypeValue } from './classType'
 
 /**
- * "What kind of class?" asked when the class is logged (quick add leaves the
- * type open). The pick is saved at once so a Block Zero refusal (sparring,
- * clinch too early, the weekly cap) shows on the tile with its one-line reason.
+ * The MT Class Log (page 31, "MT Class Log"): one centred board over the
+ * forest. CLASS TYPE flap chips (the lit one gold), CLASS LENGTH (MIN) on a
+ * − / + stepper, WHAT TO WORK ON, then SAVE CLASS LOG. A type the coach
+ * refuses (Block Zero: sparring, clinch too early, the weekly cap) turns clay
+ * with its line under the chips. Controlled: MtClassLogView owns the state.
  */
-export function ClassTypeCard({
-  blockZero,
+export function MtClassLogCard({
+  classType,
+  minutes,
+  note,
+  refused,
+  error,
+  saving,
+  onType,
+  onMinutes,
+  onNote,
   onSave,
-  onDone,
   onClose,
-  initialRefused,
 }: {
-  /** Design gallery only: open on a refused pick. */
-  initialRefused?: { type: ClassTypeValue; reason: string }
-  blockZero: boolean
-  /** PATCH the class type. Resolves null when saved, or the refusal line. */
-  onSave: (type: ClassTypeValue) => Promise<string | null>
-  onDone: (type: ClassTypeValue) => void
-  onClose: () => void
+  classType: ClassTypeValue
+  minutes: number
+  note: string
+  /** A type the server refused, with its one-line reason. */
+  refused: { type: ClassTypeValue; reason: string } | null
+  /** A save that failed for another reason (connection). */
+  error: string | null
+  saving: boolean
+  onType: (t: ClassTypeValue, chips: HTMLElement | null) => void
+  onMinutes: (m: number) => void
+  onNote: (text: string) => void
+  onSave: (button: HTMLElement | null) => void
+  onClose?: () => void
 }) {
-  const [picked, setPicked] = useState<ClassTypeValue | null>(null)
-  const [refused, setRefused] = useState<{ type: ClassTypeValue; reason: string } | null>(initialRefused ?? null)
-  const [saving, setSaving] = useState(false)
-  const tiles = blockZero ? CLASS_TYPE_TILES : [...CLASS_TYPE_TILES, { value: 'general' as const, label: 'GENERAL', sub: 'regular class' }]
-
-  async function pick(type: ClassTypeValue) {
-    if (saving) return
-    setPicked(type)
-    setRefused(null)
-    setSaving(true)
-    const reason = await onSave(type)
-    setSaving(false)
-    if (reason) {
-      setRefused({ type, reason })
-      setPicked(null)
-      showPop(reason, 'bad', { title: 'NOT TODAY', durationMs: 4000 })
-      return
-    }
-    onDone(type)
-  }
-
+  const chipsRef = useRef<HTMLDivElement>(null)
+  const saveRef = useRef<HTMLDivElement>(null)
   return (
-    <CentredCard label="What kind of class?" head="Log class" sub="What kind of class was it?" onDismiss={saving ? undefined : onClose}>
-      <TileChoice
-        label="Class type"
-        columns={2}
-        options={tiles.map(t => ({ value: t.value, label: t.label, sub: t.sub }))}
-        selected={picked}
-        refused={refused?.type ?? null}
-        onPick={v => void pick(v)}
+    <CentredCard label="MT Class Log" head="MT Class Log" headRight={<SessionIcon kind="mt" size={34} />} onDismiss={saving ? undefined : onClose} className="wm-mtlog">
+      <div className="wm-mlabel">CLASS TYPE</div>
+      <div ref={chipsRef} className="wm-types" role="radiogroup" aria-label="Class type">
+        {CLASS_TYPES.map(t => {
+          const on = classType === t.value
+          const isRefused = refused?.type === t.value
+          return (
+            <button
+              key={t.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              className={`wm-ty${on ? ' is-on' : ''}${isRefused ? ' is-refused' : ''}`}
+              disabled={saving}
+              onClick={() => onType(t.value, chipsRef.current)}
+            >
+              <FlapLabel text={t.label} size="xs" tone={isRefused ? 'clay' : on ? 'gold' : 'ink'} />
+            </button>
+          )
+        })}
+        {refused && <p className="wm-row-note" role="alert">{refused.reason}</p>}
+      </div>
+
+      <div className="wm-mlabel" style={{ marginTop: 10 }}>CLASS LENGTH (MIN)</div>
+      <div className="wm-stepper" role="group" aria-label="Class length in minutes">
+        <button type="button" aria-label="Shorter" disabled={saving || minutes <= CLASS_MIN.min} onClick={() => onMinutes(clampClassMinutes(minutes - CLASS_MIN.step))}>−</button>
+        <span className="v" aria-live="polite"><FlapLabel text={String(minutes)} size="lg" /></span>
+        <button type="button" aria-label="Longer" disabled={saving || minutes >= CLASS_MIN.max} onClick={() => onMinutes(clampClassMinutes(minutes + CLASS_MIN.step))}>+</button>
+      </div>
+
+      <div className="wm-mlabel" style={{ marginTop: 10 }}>WHAT TO WORK ON</div>
+      <textarea
+        className="wm-fld-in"
+        rows={2}
+        maxLength={1000}
+        value={note}
+        onChange={e => onNote(e.target.value)}
+        placeholder="e.g. Guard dropping after combos"
+        aria-label="What to work on"
       />
-      {refused && <p className="wm-row-note" role="alert">{refused.reason}</p>}
-      <FlapButton label="LATER" quiet onClick={onClose} disabled={saving} />
+
+      <div ref={saveRef} className="wm-btns" style={{ marginTop: 12, flexWrap: 'wrap' }}>
+        <FlapButton label="SAVE CLASS LOG" primary disabled={saving} onClick={() => onSave(saveRef.current)} />
+        {error && <p className="wm-row-note" role="alert">{error}</p>}
+      </div>
     </CentredCard>
   )
 }

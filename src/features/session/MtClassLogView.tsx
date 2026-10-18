@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
+import { glowRow, showPop } from '@/design'
 import { ApiError, apiFetch } from '@/lib/api'
 import type { EngineState } from '@/lib/sessionResume'
+import { setWorldBackdrop } from '@/world/worldStore'
 
-import { ClassTypeCard } from '@/features/blockZero/ClassTypeCard'
-import { formTypeFor } from '@/features/blockZero/classType'
-
-import { resolveMtClassMoment, type MtClassType } from './mtClassMicrocopy'
-import { SessionShell } from './SessionShell'
+import { MtClassLogCard } from '@/features/blockZero/ClassTypeCard'
+import { clampClassMinutes, classLogPatch, defaultClassType, type ClassTypeValue } from '@/features/blockZero/classType'
 
 interface MtLog {
   id: string
@@ -22,9 +20,9 @@ interface MtLog {
 
 interface MtClassLogViewProps {
   mtLog: MtLog
-  /** Planned class length in minutes: the field's default. */
+  /** Planned class length in minutes: the stepper's start. */
   plannedMin?: number | null
-  /** Block Zero ramp weeks refuse 'general', so the default there is technique. */
+  /** Block Zero ramp weeks refuse 'general', so the default there is technical. */
   blockType?: string | null
   onComplete: () => void
   onExit?: () => void
@@ -34,244 +32,93 @@ interface MtClassLogViewProps {
   onPersist?: (state: Extract<EngineState, { kind: 'mt' }>) => void
 }
 
-const CLASS_TYPES: MtClassType[] = [
-  'technical',
-  'sparring',
-  'padwork',
-  'clinch',
-  'general',
-]
+/** The server's refusal line, if the body carries one. */
+function refusalReason(err: unknown): string | null {
+  const body = err instanceof ApiError ? err.body : ''
+  try { return (JSON.parse(body) as { reason?: string }).reason ?? null } catch { return null }
+}
 
-const ACCENT = '#4ACAAA'
+const COULDNT_SAVE = "Couldn't save. Check your connection."
 
-export function MtClassLogView({
-  mtLog,
-  plannedMin,
-  blockType,
-  onComplete,
-  onExit,
-  resume,
-  onPersist,
-}: MtClassLogViewProps) {
+/**
+ * The post-class log (page 31, "MT Class Log"): type, length, one note, as one
+ * centred board over the forest. In Block Zero a tapped type is saved at once,
+ * so a refusal (sparring, clinch too early, the weekly cap) shows on its chip.
+ */
+export function MtClassLogView({ mtLog, plannedMin, blockType, onComplete, onExit, resume, onPersist }: MtClassLogViewProps) {
   const draft = resume?.draft ?? {}
-  const [classType, setClassType] = useState<MtClassType>(
-    (draft.classType as MtClassType | undefined) ?? (mtLog.classType as MtClassType) ?? (blockType === 'block_zero' ? 'technical' : 'general'),
-  )
-  // Class minutes drive the session load (minutes x RPE), so the class length
-  // is sent, not the time spent on this screen.
-  const [durationMin, setDurationMin] = useState(draft.durationMin ?? String(mtLog.durationMin ?? plannedMin ?? 60))
+  const blockZero = blockType === 'block_zero'
+  const [classType, setClassType] = useState<ClassTypeValue>(() => defaultClassType(draft.classType ?? mtLog.classType, blockZero))
+  // Class minutes drive the session load (minutes x RPE), so the class length is sent, not the time on this screen.
+  const [minutes, setMinutes] = useState(() => clampClassMinutes(Number(draft.durationMin ?? mtLog.durationMin ?? plannedMin ?? 60)))
+  const [note, setNote] = useState(draft.weakness ?? mtLog.weakness ?? '')
+  const [refused, setRefused] = useState<{ type: ClassTypeValue; reason: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [focusSkill, setFocusSkill] = useState(draft.focusSkill ?? mtLog.focusSkill ?? '')
-  const [weakness, setWeakness] = useState(draft.weakness ?? mtLog.weakness ?? '')
-  const [concept, setConcept] = useState(draft.concept ?? mtLog.concept ?? '')
-  const [actionItems, setActionItems] = useState(draft.actionItems ?? mtLog.actionItems ?? '')
   const [saving, setSaving] = useState(false)
-  // Quick add ("class tonight") leaves the type open: ask it first, as a centred card.
-  const [askType, setAskType] = useState(() => mtLog.classType == null && draft.classType == null)
 
-  async function saveTypeNow(type: string): Promise<string | null> {
+  // Page 31 draws this board over the forest.
+  useEffect(() => {
+    setWorldBackdrop('clearing')
+    return () => setWorldBackdrop(null)
+  }, [])
+
+  useEffect(() => {
+    onPersist?.({ kind: 'mt', draft: { classType, durationMin: String(minutes), weakness: note } })
+  }, [onPersist, classType, minutes, note])
+
+  async function pickType(type: ClassTypeValue, chips: HTMLElement | null) {
+    const before = classType
+    setClassType(type)
+    setRefused(null)
+    if (!blockZero) return
     try {
       await apiFetch(`/api/mt-class-logs/${mtLog.id}`, { method: 'PATCH', body: JSON.stringify({ classType: type }) })
-      return null
     } catch (err) {
-      const body = err instanceof ApiError ? err.body : ''
-      let reason: string | null = null
-      try { reason = (JSON.parse(body) as { reason?: string }).reason ?? null } catch { reason = null }
-      return reason ?? "Couldn't save. Check connection and try again."
+      const reason = refusalReason(err)
+      if (!reason) return // offline: SAVE CLASS LOG says so
+      // The refused chip stays clay with its line; the lit pick goes back to what was allowed.
+      setClassType(before)
+      setRefused({ type, reason })
+      glowRow(chips, 'bad')
+      showPop(reason, 'bad', { title: 'NOT TODAY', durationMs: 4000 })
     }
   }
 
-  useEffect(() => {
-    onPersist?.({ kind: 'mt', draft: { classType, durationMin, focusSkill, weakness, concept, actionItems } })
-  }, [onPersist, classType, durationMin, focusSkill, weakness, concept, actionItems])
-
-  async function handleSave(e?: React.FormEvent) {
-    e?.preventDefault()
+  async function save(button: HTMLElement | null) {
     if (saving) return
     setSaving(true)
     setError(null)
-    const minutes = parseInt(durationMin, 10)
     try {
-      await apiFetch(`/api/mt-class-logs/${mtLog.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          classType,
-          ...(Number.isFinite(minutes) && minutes >= 1 && minutes <= 300 ? { durationMin: minutes } : {}),
-          focusSkill: focusSkill || undefined,
-          weakness: weakness || undefined,
-          concept: concept || undefined,
-          actionItems: actionItems || undefined,
-        }),
-      })
+      await apiFetch(`/api/mt-class-logs/${mtLog.id}`, { method: 'PATCH', body: JSON.stringify(classLogPatch({ classType, minutes, note })) })
       onComplete()
     } catch (err) {
       console.error('Failed to save MT class log:', err)
-      // The Block Zero ramp refuses some class types with a reason; show it.
-      const body = err instanceof ApiError ? err.body : ''
-      let reason: string | null = null
-      try { reason = (JSON.parse(body) as { reason?: string; error?: string }).reason ?? null } catch { reason = null }
-      setError(reason ?? "Couldn't save. Check connection and try again.")
+      const reason = refusalReason(err)
+      if (reason) {
+        setRefused({ type: classType, reason })
+        showPop(reason, 'bad', { title: 'NOT TODAY', durationMs: 4000 })
+      } else {
+        setError(COULDNT_SAVE)
+        showPop(COULDNT_SAVE, 'bad')
+      }
+      glowRow(button, 'bad')
       setSaving(false)
     }
   }
 
-  const moment = resolveMtClassMoment({
-    phase: saving ? 'saving' : 'logging',
-    classType,
-  })
-
-  // Simple single-step progress — one dot filled on save
-  const progress = {
-    completed: 0,
-    active: 0,
-    total: 1,
-  }
-
-  const body = (
-    <form
-      id="mt-class-log-form"
-      onSubmit={handleSave}
-      className="mx-auto max-w-md animate-fade-in space-y-5"
-    >
-      <div>
-        <h2 className="text-display-lg leading-[1.1] text-foreground">
-          MT Class Log
-        </h2>
-        <p className="mt-3 text-sm leading-relaxed text-foreground/85">
-          Record what you worked on and what to improve.
-        </p>
-      </div>
-
-      <div>
-        <label className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
-          Class Type
-        </label>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {CLASS_TYPES.map((t) => {
-            const active = classType === t
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setClassType(t)}
-                className="min-h-[44px] rounded-md border px-3 py-2 text-xs font-medium capitalize transition-colors"
-                style={{
-                  backgroundColor: active ? ACCENT : 'transparent',
-                  borderColor: active ? ACCENT : 'rgba(232,200,96,0.15)',
-                  color: active ? '#020A08' : 'var(--color-muted-foreground)',
-                }}
-              >
-                {t}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div>
-        <label className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
-          Class Length (min)
-        </label>
-        <input
-          type="number"
-          inputMode="numeric"
-          min={1}
-          max={300}
-          value={durationMin}
-          onChange={(e) => setDurationMin(e.target.value)}
-          className="mt-2 min-h-[44px] w-full rounded-md border border-gold/15 bg-deep-forest/60 px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
-        />
-      </div>
-
-      <div>
-        <label className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
-          Focus / Skill
-        </label>
-        <input
-          type="text"
-          value={focusSkill}
-          onChange={(e) => setFocusSkill(e.target.value)}
-          placeholder="e.g. Defense, teep timing"
-          className="mt-2 min-h-[44px] w-full rounded-md border border-gold/15 bg-deep-forest/60 px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
-        />
-      </div>
-
-      <div>
-        <label className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
-          Weakness / Struggle
-        </label>
-        <input
-          type="text"
-          value={weakness}
-          onChange={(e) => setWeakness(e.target.value)}
-          placeholder="e.g. Guard dropping after combos"
-          className="mt-2 min-h-[44px] w-full rounded-md border border-gold/15 bg-deep-forest/60 px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
-        />
-      </div>
-
-      <div>
-        <label className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
-          Concept to Learn
-        </label>
-        <input
-          type="text"
-          value={concept}
-          onChange={(e) => setConcept(e.target.value)}
-          placeholder="e.g. Hands up, check kicks"
-          className="mt-2 min-h-[44px] w-full rounded-md border border-gold/15 bg-deep-forest/60 px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
-        />
-      </div>
-
-      <div>
-        <label className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
-          Action Items
-        </label>
-        <textarea
-          value={actionItems}
-          onChange={(e) => setActionItems(e.target.value)}
-          rows={2}
-          placeholder="e.g. Add guard reset to bag work combos"
-          className="mt-2 min-h-[44px] w-full rounded-md border border-gold/15 bg-deep-forest/60 px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
-        />
-      </div>
-
-      {error && <p className="text-sm text-[#C45A3C]">{error}</p>}
-    </form>
-  )
-
-  const footer = (
-    <Button
-      type="submit"
-      form="mt-class-log-form"
-      disabled={saving}
-      size="lg"
-      className="w-full"
-      style={{ backgroundColor: ACCENT, color: '#020A08' }}
-    >
-      {saving ? 'Saving...' : 'Save Class Log'}
-    </Button>
-  )
-
   return (
-    <>
-    {askType && (
-      <ClassTypeCard
-        blockZero={blockType === 'block_zero'}
-        onSave={saveTypeNow}
-        onDone={(t) => { setClassType(formTypeFor(t)); setAskType(false) }}
-        onClose={() => setAskType(false)}
-      />
-    )}
-    <SessionShell
-      sessionType="mt_class"
-      counter="Post-Class"
-      progress={progress}
-      moment={moment}
-      onExit={onExit}
-      footer={footer}
-    >
-      {body}
-    </SessionShell>
-    </>
+    <MtClassLogCard
+      classType={classType}
+      minutes={minutes}
+      note={note}
+      refused={refused}
+      error={error}
+      saving={saving}
+      onType={(t, chips) => void pickType(t, chips)}
+      onMinutes={setMinutes}
+      onNote={setNote}
+      onSave={b => void save(b)}
+      onClose={onExit}
+    />
   )
 }

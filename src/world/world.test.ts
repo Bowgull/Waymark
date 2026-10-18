@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, TODAY_ZOOM, frustumFor, glideEase, mixView, placeForPath, sceneGlyphWorld, sceneLamp, sceneOf, scenesInView, viewGlyphWorld } from './places'
 import { modeForClock, msUntilNextChange, parseOverride, resolveMode, TIME_OVERRIDES } from './timeOfDay'
-import { getWorldState, sameWeeks, setWorldBare, setWorldLantern, setWorldPlace, setWorldWeeks, subscribeWorld, weeksOrDefault } from './worldStore'
+import { getWorldState, sameWeeks, setWorldBackdrop, setWorldBare, setWorldLantern, setWorldPlace, setWorldWeeks, subscribeWorld, weeksOrDefault } from './worldStore'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; void name }
@@ -101,6 +101,9 @@ test('the store tells the world only what changed', () => {
   setWorldWeeks([{ state: 'done', notches: 10 }, { state: 'now', notches: 2 }])
   assert.equal(calls, before, 'same weeks: no rebuild')
   setWorldBare(true); assert.equal(getWorldState().bare, true); setWorldBare(false)
+  assert.equal(getWorldState().backdrop, null, 'no backdrop by default')
+  setWorldBackdrop('clearing'); assert.equal(getWorldState().backdrop, 'clearing', 'the MT class log shows the forest behind its card (page 31)')
+  setWorldBackdrop(null); assert.equal(getWorldState().backdrop, null)
   assert.equal(weeksOrDefault(null).length, 6)
   assert.equal(sameWeeks(null, null), true)
   off()

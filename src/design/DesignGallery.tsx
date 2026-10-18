@@ -3,13 +3,12 @@ import { useSearchParams } from 'react-router-dom'
 
 import { PageErrorScreen, SessionInterruptedScreen } from '@/components/ui/ErrorScreens'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
-import { ClassTypeCard } from '@/features/blockZero/ClassTypeCard'
+import { MtClassLogCard } from '@/features/blockZero/ClassTypeCard'
 import { EffortCard } from '@/features/blockZero/EffortCard'
 import { EndGateView } from '@/features/blockZero/EndGate'
 import { BlockZeroProgramBoards } from '@/features/blockZero/ProgramBoards'
 import { GuidedTestView, ResultsSheetCard, TestEntryCard } from '@/features/blockZero/TestWeekPage'
-import { MorningReportCard, TodayHeroCard } from '@/features/blockZero/TodayPieces'
-import { readinessLine } from '@/features/blockZero/readinessLine'
+import { MorningReportRow } from '@/features/blockZero/TodayPieces'
 import { GUIDED_TESTS, initialGuided } from '@/features/blockZero/testWeek'
 import { BodyProfileBoard } from '@/features/settings/BodyProfileBoard'
 
@@ -51,7 +50,6 @@ const TEST_ROWS = [
 ]
 
 const READY_EASE = { checkedIn: true, ease: true, worseItems: ['sleepHours', 'backToday'], reason: 'Sleep and your back are off your 7-day trend for 2 days.', items: [] }
-const READY_GOOD = { checkedIn: true, ease: false, worseItems: [], reason: null, items: [{ item: 'sleepHours', today: 7, mean7: 7.2, worse: false }] }
 
 function Phone({ children, world = true }: { children: ReactNode; world?: boolean }) {
   return (
@@ -137,17 +135,16 @@ function Gallery({ screen }: { screen: string }) {
     case 'today':
       return (
         <Phone>
-          <div style={{ flex: 1 }} />
-          <TodayHeroCard line={readinessLine(READY_EASE)} showClassChip classAdded={false} onAddClass={async () => null} />
-          <MorningReportCard answers={{ sleepHours: 6, energy: 2, soreness: 4, backToday: 2 }} onCheckIn={noop} onEdit={noop} onAddNote={noop} />
-          <MorningReportCard answers={null} onCheckIn={noop} onEdit={noop} onAddNote={noop} />
-          <TodayHeroCard line={readinessLine(READY_GOOD)} showClassChip classAdded onAddClass={async () => null} />
+          <MorningReportRow logged onOpen={noop} />
+          <MorningReportRow logged={false} onOpen={noop} />
         </Phone>
       )
     case 'effort':
       return <Phone><EffortCard setLabel="Set 2 of 3" onPick={noop} onSkip={noop} /></Phone>
     case 'class':
-      return <Phone><ClassTypeCard blockZero onSave={async () => null} onDone={noop} onClose={noop} initialRefused={{ type: 'sparring', reason: 'No hard sparring in Block Zero. Take the technique class or work pads.' }} /></Phone>
+      return <Phone><MtClassLogCard classType="technical" minutes={60} note="" refused={null} error={null} saving={false} onType={noop} onMinutes={noop} onNote={noop} onSave={noop} /></Phone>
+    case 'class-refused':
+      return <Phone><MtClassLogCard classType="technical" minutes={60} note="" refused={{ type: 'sparring', reason: 'No hard sparring in Block Zero. Take the technique class or work pads.' }} error={null} saving={false} onType={noop} onMinutes={noop} onNote={noop} onSave={noop} /></Phone>
     case 'tests':
       return <GuidedTestView week={1} tests={GUIDED_TESTS} state={{ ...initialGuided(GUIDED_TESTS), index: 2, saved: { talk_test_hr: 142, fixed_effort_hr: 151 } }} saving={false} onDial={noop} onNext={noop} onSkip={noop} onBack={noop} onExit={noop} onOpenSheet={noop} />
     case 'tests-score':
@@ -201,7 +198,7 @@ function Gallery({ screen }: { screen: string }) {
       return (
         <Phone>
           <Board head="Design gallery">
-            <p className="wm-prose">?screen= foundation, checkin, checkin-back, checkin-done, today, effort, class, tests, tests-score, tests-done, sheet, entry, program, program-6, gate, gate-extend, gate-check, error-session, error-page, settings</p>
+            <p className="wm-prose">?screen= foundation, checkin, checkin-back, checkin-done, today, effort, class, class-refused, tests, tests-score, tests-done, sheet, entry, program, program-6, gate, gate-extend, gate-check, error-session, error-page, settings</p>
           </Board>
         </Phone>
       )

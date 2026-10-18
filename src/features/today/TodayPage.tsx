@@ -29,10 +29,10 @@ import { AllDoneBoard, CoachBoard, EmptyDayBoard, RestDayBoards, TodayHeader, Wa
 import { TodayDay, type TodaySession } from './TodayDay'
 import { lanternFor, shortWhy, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
-import { answersFromLog, shouldOpenCheckIn } from '@/features/blockZero/checkInFlow'
+import { answersFromLog, answeredCount, shouldOpenCheckIn } from '@/features/blockZero/checkInFlow'
 import { CHECK_IN_EVENT, checkInSkippedOn, markCheckInSkipped, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
 import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessLine'
-import { MorningNoteCard, MorningReportCard, TodayHeroCard } from '@/features/blockZero/TodayPieces'
+import { MorningReportRow } from '@/features/blockZero/TodayPieces'
 import './today.css'
 
 type Session = TodaySession & { startedAt: number | null; completedAt: number | null; durationSec: number | null; rpe: number | null; notes: string | null }
@@ -102,7 +102,6 @@ export function TodayPage() {
   const [askBusy, setAskBusy] = useState(false)
   const [showDayAnyway, setShowDayAnyway] = useState(false)
   const [deck, setDeck] = useState<{ startAt: number; firstOpen: boolean } | null>(null)
-  const [noteOpen, setNoteOpen] = useState(false)
   const autoResumeAttempted = useRef(false)
   const [slowLoad, setSlowLoad] = useState(false)
   useEffect(() => {
@@ -688,22 +687,6 @@ export function TodayPage() {
 
   const handleCheckInClose = useCallback(() => setDeck(null), [])
 
-  async function handleMorningNote(text: string): Promise<boolean> {
-    try {
-      await apiFetch('/api/journal', {
-        method: 'POST',
-        headers: idempotencyHeaders(),
-        body: JSON.stringify({ date: today, type: 'wellness', content: text, append: true }),
-      })
-      showToast('Saved to the Waybook.', 'success', { durationMs: 2400 })
-      return true
-    } catch (e) {
-      console.error('Failed to save wellness note:', e)
-      showToast("Couldn't save. Check your connection.", 'warning')
-      return false
-    }
-  }
-
   // "Class tonight": one tap adds an MT class this evening; the type is asked
   // when it's logged. Returns the refusal line, or null when added.
   async function handleAddClassTonight(): Promise<string | null> {
@@ -748,6 +731,7 @@ export function TodayPage() {
   const newWeekTomorrow = todayEpoch + 1 > mondayOf(todayEpoch) + 6 ? nextWeek?.week?.weekNumber ?? null : null
   const tomorrowText = tomorrowLine(tomorrow, s => sessionDisplayName({ type: s.type, label: s.label ?? null, notes: s.notes ?? null }), newWeekTomorrow)
   const home = showsHome(mode)
+  const morningLogged = dailyLog != null && answeredCount(answersFromLog(dailyLog)) > 0
 
   return (
     <div className="td-page">
@@ -757,21 +741,11 @@ export function TodayPage() {
 
       {mode === 'day' && (
         <>
-          {/* the clearing and its lantern show between the strip and the boards (pages 35, 36) */}
-          <div className="td-spacer" style={{ minHeight: strip ? '22dvh' : '30dvh' }} />
-          <TodayHeroCard
-            line={readinessLine(readiness)}
-            showClassChip={block != null}
-            classAdded={sessions.some(s => s.type === 'mt_class' && s.status !== 'skipped')}
-            onAddClass={handleAddClassTonight}
-          />
-          <CoachBoard why={whyLine} changes={coachChanges} questions={coachQuestions} onOpen={openQuestion} />
-          <MorningReportCard
-            answers={dailyLog ? answersFromLog(dailyLog) : null}
-            onCheckIn={() => setDeck({ startAt: 0, firstOpen: false })}
-            onEdit={(i) => setDeck({ startAt: i, firstOpen: false })}
-            onAddNote={() => setNoteOpen(true)}
-          />
+          {/* page 17: the Morning Report, collapsed to one row at the top of the day; tap to edit */}
+          <MorningReportRow logged={morningLogged} onOpen={() => setDeck({ startAt: 0, firstOpen: false })} />
+          {/* the clearing and its lantern show between the top and the boards (pages 17, 35, 36) */}
+          <div className="td-spacer" style={{ minHeight: strip ? '16dvh' : '24dvh' }} />
+          <CoachBoard why={whyLine} readiness={readinessLine(readiness)} changes={coachChanges} questions={coachQuestions} onOpen={openQuestion} />
           <TodayDay
             sessions={sessions}
             onStart={handleStart}
@@ -782,6 +756,7 @@ export function TodayPage() {
             onReassignMatch={handleReassignStart}
             onDismissMatch={handleDismissMatch}
             onAdd={openAddPicker}
+            classTonight={block != null ? { added: sessions.some(s => s.type === 'mt_class' && s.status !== 'skipped'), onAdd: handleAddClassTonight } : null}
           />
           <WaybookLine today={today} />
         </>
@@ -877,7 +852,6 @@ export function TodayPage() {
         />
       )}
 
-      {noteOpen && <MorningNoteCard onSave={handleMorningNote} onClose={() => setNoteOpen(false)} />}
 
       <ToastContainer />
     </div>

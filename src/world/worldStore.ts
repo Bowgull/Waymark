@@ -26,6 +26,8 @@ export interface WorldState {
   offline: boolean
   /** A full-screen moment (splash, session entrance) hides the world's UI scrims. */
   bare: boolean
+  /** A screen with no place of its own that shows the world behind a centred card (page 31's MT Class Log: the forest). */
+  backdrop: WorldPlace | null
 }
 
 const DEFAULT_WEEKS: WeekPost[] = [
@@ -33,7 +35,7 @@ const DEFAULT_WEEKS: WeekPost[] = [
   { state: 'todo', notches: 0 }, { state: 'todo', notches: 0 }, { state: 'todo', notches: 0 },
 ]
 
-let state: WorldState = { place: 'clearing', lantern: 1, weeks: null, offline: false, bare: false }
+let state: WorldState = { place: 'clearing', lantern: 1, weeks: null, offline: false, bare: false, backdrop: null }
 const listeners = new Set<() => void>()
 
 function emit(next: Partial<WorldState>) {
@@ -74,6 +76,11 @@ export function setWorldOffline(offline: boolean): void {
 
 export function setWorldBare(bare: boolean): void {
   emit({ bare })
+}
+
+/** Show a place behind a screen that has none of its own (null puts it away). */
+export function setWorldBackdrop(place: WorldPlace | null): void {
+  emit({ backdrop: place })
 }
 
 export function sameWeeks(a: WeekPost[] | null, b: WeekPost[] | null): boolean {

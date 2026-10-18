@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { Crest, FlapButton, FlapLabel } from '@/design'
 import { fitFlapSize } from '@/design/flap'
-import { savedSetLines, pendingSetCount, type SavedLine, type WorkoutExerciseIn } from '@/features/blockZero/savedSets'
+import { pageSavedLines, savedSetLines, pendingSetCount, type SavedLine, type WorkoutExerciseIn } from '@/features/blockZero/savedSets'
 import { apiFetch } from '@/lib/api'
 import { loadOutbox, pendingFor, type OutboxEntry } from '@/lib/outbox'
 
@@ -91,16 +91,12 @@ function pageNameFor(pathname: string): string {
 
 /** The page error: names the page, says nothing is lost, RELOAD. */
 export function PageErrorScreen({ pathname, onReload, onBack }: { pathname: string; onReload: () => void; onBack?: () => void }) {
-  const waiting = outboxNow().length
   const name = pageNameFor(pathname)
   return (
     <ErrorFrame
       title={`${name} DIDN'T LOAD`}
       line="Your training is safe. This page hit a problem showing it."
-      saved={{
-        head: 'NOTHING LOST',
-        lines: waiting > 0 ? [{ name: 'Saves', detail: `${waiting} waiting on this phone` }] : [{ name: 'Saves', detail: 'all sent' }],
-      }}
+      saved={{ head: 'NOTHING LOST', lines: pageSavedLines(outboxNow()) }}
     >
       <FlapButton label="RELOAD" primary onClick={onReload} />
       {onBack && <FlapButton label="BACK TO TODAY" onClick={onBack} />}

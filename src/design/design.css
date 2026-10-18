@@ -272,6 +272,26 @@
   .wm-choice.is-refused { background: rgba(156, 90, 64, 0.22); box-shadow: inset 0 0 0 2px var(--sf-clay); }
   .wm-choice-sub { font: 600 12px/1.2 var(--font-body); letter-spacing: 0.06em; color: rgba(240, 230, 192, 0.78); }
 
+  /* ── effort after a set (page 17 .tiles / .tile): a big flap and its word ── */
+  .wm-effort { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .wm-effort-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; border: 0; border-radius: 10px; cursor: pointer; background: rgba(0, 0, 0, 0.22); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); transition: transform var(--t-tap) ease-out; -webkit-tap-highlight-color: transparent; }
+  .wm-effort-tile:active { transform: scale(0.97); }
+  .wm-card.wm-effort-card { gap: 0; }
+  .wm-effort-card .wm-prose { margin-top: 10px; }
+
+  /* ── the MT class log (page 31): small brass labels, type chips, the − / + stepper, the note box ── */
+  .wm-mlabel { font: 800 12px/1 var(--font-body); letter-spacing: 0.2em; color: #c9b27a; margin-top: 4px; }
+  .wm-types { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .wm-ty { display: inline-flex; padding: 6px 8px; border: 0; border-radius: 10px; cursor: pointer; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); -webkit-tap-highlight-color: transparent; }
+  .wm-ty.is-on { background: rgba(184, 152, 74, 0.16); box-shadow: inset 0 0 0 2px var(--sf-gold); }
+  .wm-ty.is-refused { background: rgba(156, 90, 64, 0.22); box-shadow: inset 0 0 0 2px var(--sf-clay); }
+  .wm-stepper { display: grid; grid-template-columns: 60px 1fr 60px; gap: 8px; align-items: center; }
+  .wm-stepper button { height: 56px; border: 0; border-radius: 12px; cursor: pointer; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.25); color: #e8dcb4; font: 800 24px/1 var(--font-mono); -webkit-tap-highlight-color: transparent; }
+  .wm-stepper button:disabled { opacity: 0.45; cursor: default; }
+  .wm-stepper .v { display: flex; justify-content: center; }
+  .wm-fld-in { width: 100%; min-height: 74px; resize: none; border: 0; border-radius: 10px; padding: 12px; background: rgba(0, 0, 0, 0.38); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.25); font: 700 16px/1.4 var(--font-body); color: #e8dcb4; outline: none; }
+  .wm-fld-in::placeholder { color: rgba(232, 220, 180, 0.38); font-weight: 500; }
+
   /* ── centred card (every selection sits centre-screen; no bottom sheets) ── */
   .wm-scrim {
     position: fixed;
@@ -302,7 +322,7 @@
     position: fixed;
     left: 0;
     right: 0;
-    top: calc(env(safe-area-inset-top) + 10px);
+    top: calc(env(safe-area-inset-top) + 4px);
     z-index: 80;
     display: flex;
     flex-direction: column;
@@ -376,11 +396,12 @@
   /* "saved" box on the error screens */
   .wm-saved { align-self: stretch; text-align: left; padding: 10px 12px; border-radius: 10px; background: rgba(95, 160, 140, 0.12); box-shadow: inset 3px 0 0 var(--sf-good-edge), inset 0 0 0 1px rgba(95, 160, 140, 0.3); }
   .wm-saved-head { margin-bottom: 6px; font: 800 12px/1.2 var(--font-body); letter-spacing: 0.16em; color: var(--sf-good-ink); }
-  .wm-saved-line { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; font: 700 15px/1.35 var(--font-mono); color: #e6efe9; }
+  .wm-saved-line { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; font: 700 14px/normal var(--font-mono); color: #e6efe9; }
   .wm-saved-line > span:first-child { text-transform: uppercase; }
 
   /* solid dark backdrop for full-screen moments and errors */
-  .wm-dark { background: radial-gradient(ellipse 80% 50% at 50% 42%, #101a15, #050907 70%); }
+  /* full-screen dark pages (errors, tests, the gate) sit above the world layer (fixed, z 0, opaque) */
+  .wm-dark { position: relative; z-index: 1; background: radial-gradient(ellipse 80% 50% at 50% 42%, #101a15, #050907 70%); }
 
   /* ── tab bar (page 42, A): painted place icons; the lit one lifted with a brass light ── */
   .wm-tabs {

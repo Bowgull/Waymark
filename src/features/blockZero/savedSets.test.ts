@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { pendingSetCount, savedSetLines } from './savedSets'
+import { pageSavedLines, pendingSetCount, savedSetLines } from './savedSets'
 
 const kg = (lb: number) => lb / 2.20462
 
@@ -55,3 +55,11 @@ assert.equal(pendingSetCount(pending), 2, 'two sets wait on the phone (an effort
 assert.equal(savedSetLines([], [{ path: '/api/strength-sets/a', body: 'not json' }]).length, 0)
 
 console.log('savedSets tests passed')
+
+// ─── the page error's NOTHING LOST lines (page 38, "A page") ──
+{
+  assert.deepEqual(pageSavedLines([]), [{ name: 'Sessions', detail: 'all saved' }, { name: 'Morning reports', detail: 'all saved' }], 'as mocked: SESSIONS all saved, MORNING REPORTS all saved')
+  const two = pageSavedLines([{ sessionId: 's1' }, { sessionId: 's1' }, { sessionId: 's2' }])
+  assert.equal(two[0].detail, '2 sessions waiting on this phone')
+  assert.equal(pageSavedLines([{ sessionId: 's1' }])[0].detail, '1 session waiting on this phone')
+}

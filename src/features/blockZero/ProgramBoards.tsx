@@ -25,7 +25,8 @@ export function BlockZeroProgramBoards({
   onOpenGate: () => void
 }) {
   const weeks = stripWeeks(currentWeek, totalWeeks)
-  const testWeek = isTestWeek(viewWeek, totalWeeks)
+  // Week 3's check has no board (owner, 2026-10-18): its guidance is on the test-week screens.
+  const testWeek = isTestWeek(viewWeek, totalWeeks) && viewWeek !== 3
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <Board head="Block Zero" headRight={<FlapLabel text={`WEEK ${currentWeek}/${totalWeeks}`} size="xs" tone="gold" />}>
@@ -53,25 +54,14 @@ export function BlockZeroProgramBoards({
       </Board>
 
       {testWeek && (
-        <Board head={viewWeek === 1 ? 'Test week' : viewWeek === 3 ? 'The check' : 'Retest'}>
-          {viewWeek === 3 ? (
-            <p className="wm-prose">One set of 3 to 5 on each main lift. Tap the reps left after it; that sets the estimated max.</p>
-          ) : (
-            <>
-              <p className="wm-prose" style={{ marginBottom: 10 }}>
-                {viewWeek === 1 ? 'One test at a time. The numbers become your baseline.' : 'The week-1 tests again. Then the gate.'}
-              </p>
-              <div className="wm-btns">
-                <FlapButton label="RESULTS" onClick={() => onOpenTests(viewWeek, true)} />
-                <FlapButton label="START TESTS" primary onClick={() => onOpenTests(viewWeek, false)} />
-              </div>
-            </>
-          )}
-          {viewWeek === 3 && (
-            <div style={{ marginTop: 10 }}>
-              <FlapButton label="RESULTS" onClick={() => onOpenTests(viewWeek, true)} />
-            </div>
-          )}
+        <Board head={viewWeek === 1 ? 'Test week' : 'Retest'}>
+          <p className="wm-prose" style={{ marginBottom: 10 }}>
+            {viewWeek === 1 ? 'One test at a time. The numbers become your baseline.' : 'The week-1 tests again. Then the gate.'}
+          </p>
+          <div className="wm-btns">
+            <FlapButton label="RESULTS" onClick={() => onOpenTests(viewWeek, true)} />
+            <FlapButton label="START TESTS" primary onClick={() => onOpenTests(viewWeek, false)} />
+          </div>
         </Board>
       )}
 

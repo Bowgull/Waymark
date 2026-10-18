@@ -51,7 +51,9 @@ import { sessionIconFor } from './sessionIconKeys'
 // ─── pop-ups: short words on the flap, long ones as plain words ──
 {
   assert.deepEqual(popParts('Logged.'), { title: 'Logged', text: null })
-  assert.deepEqual(popParts("Couldn't save. Check your connection."), { title: null, text: "Couldn't save. Check your connection." })
+  assert.deepEqual(popParts("Couldn't save. Check your connection."), { title: "Couldn't save", text: 'Check your connection.' }, "page 35 A: COULDN'T SAVE on the flap")
+  assert.deepEqual(popParts('No connection. Set saved on this phone. It syncs when you are back online.'), { title: 'No connection', text: 'Set saved on this phone. It syncs when you are back online.' })
+  assert.deepEqual(popParts('Bag work moved to Thursday evening because Wednesday is full.'), { title: null, text: 'Bag work moved to Thursday evening because Wednesday is full.' }, 'no short first sentence: plain words only')
   assert.deepEqual(popParts('Saved.', 'SAVED'), { title: 'SAVED', text: null }, 'a title equal to the message is not repeated')
   assert.deepEqual(popParts('Week 2 back.', 'NOT TODAY'), { title: 'NOT TODAY', text: 'Week 2 back.' })
   assert.ok(fitsOnFlap('RESUME'))

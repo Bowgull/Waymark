@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Board, Crest, FlapButton, FlapLabel, SessionIcon, showPop, type SessionIconKey } from '@/design'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { logger } from '@/lib/logger'
+import type { ReadinessLineView } from '@/features/blockZero/readinessLine'
 import { coachCount, dateFlap, splitLead, type StripDay } from './weekStrip'
 
 // The pieces of Today (pages 35, 36, 43), on the split-flap boards over the forest.
@@ -67,9 +68,14 @@ export function WeekStrip({ days, home = false }: { days: StripDay[]; home?: boo
 export interface CoachChangeLine { id: string; line: string; lead?: string | null; body?: string | null; icon: SessionIconKey | null }
 export interface CoachQuestionLine { id: string; line: string; icon: SessionIconKey | null }
 
-/** The Coach board (page 36): the why line first, each change with its reason, open questions with a gold dot. */
-export function CoachBoard({ why, changes, questions, onOpen }: { why: string | null; changes: CoachChangeLine[]; questions: CoachQuestionLine[]; onOpen: (id: string) => void }) {
-  if (!why && changes.length === 0 && questions.length === 0) return null
+/**
+ * The Coach board (page 36): the why line first, each change with its reason,
+ * open questions with a gold dot. The morning's readiness read sits under the
+ * why line, written the same way (bold lead, then the rest); tap it for why.
+ */
+export function CoachBoard({ why, readiness = null, changes, questions, onOpen }: { why: string | null; readiness?: ReadinessLineView | null; changes: CoachChangeLine[]; questions: CoachQuestionLine[]; onOpen: (id: string) => void }) {
+  const [readyOpen, setReadyOpen] = useState(false)
+  if (!why && !readiness && changes.length === 0 && questions.length === 0) return null
   // The first sentence of the why line is the kind of week (bold), the rest the reason.
   const w = splitLead(why ?? '', 'sentence')
   return (
@@ -78,6 +84,18 @@ export function CoachBoard({ why, changes, questions, onOpen }: { why: string | 
         <div className="crow is-why" style={{ paddingTop: 0 }}>
           <p>{w.rest ? <><b>{w.lead}</b> {w.rest}</> : why}</p>
         </div>
+      )}
+      {readiness && (
+        <button
+          type="button"
+          className="crow is-ready"
+          style={why ? undefined : { paddingTop: 0 }}
+          aria-expanded={readyOpen}
+          onClick={() => setReadyOpen(o => !o)}
+        >
+          <p>{readiness.rest ? <><b>{readiness.lead}</b> {readiness.rest}</> : <b>{readiness.lead}</b>}</p>
+          {readyOpen && <p className="why">{readiness.why}</p>}
+        </button>
       )}
       {changes.map(c => {
         // "Strength C eased: one set, 10% lighter. Soreness was 4 this morning." (lead in brass)

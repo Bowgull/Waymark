@@ -36,8 +36,8 @@ export function WorldLayer() {
   const [appActive, setAppActive] = useState(true)
   const [shown, setShown] = useState<WorldPlace | null>(null)
 
-  // Today's rest-day home stands in for the clearing.
-  const place: WorldPlace | null = routePlace === 'clearing' && ws.place === 'home' ? 'home' : routePlace
+  // Today's rest-day home stands in for the clearing; a screen with no place may ask for one behind it.
+  const place: WorldPlace | null = routePlace === 'clearing' && ws.place === 'home' ? 'home' : (routePlace ?? ws.backdrop)
   const visible = place != null || ws.bare
   const live = visible && appActive && !failed
 

@@ -124,7 +124,7 @@ export function LogsPage() {
   }, [entries])
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="relative z-[1] flex min-h-screen flex-col bg-background">
       <header
         className="sticky top-0 z-30 border-b border-border bg-background/90 px-4 pb-3 backdrop-blur-md"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}

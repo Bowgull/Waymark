@@ -1,5 +1,6 @@
-// Per-set effort (Block Zero Phase C, direction 3): after LOG SET, a centred
-// card asks how many reps were left in the tank: 3+ / 2 / 1 / 0. One tap,
+// Per-set effort (Block Zero Phase C, direction 3; page 17 "Effort after a
+// set"): after LOG SET, a centred card asks how many reps were left:
+// 3+ easy / 2 solid / 1 hard / 0 limit. One tap,
 // then rest starts. The tap is the set's RIR (PATCH /api/strength-sets/:id
 // { rir }, 0-3 where 3 means "3 or more"). Pure.
 
@@ -13,7 +14,7 @@ export const EFFORT_TILES: readonly EffortTile[] = [
   { rir: 3, label: '3+', sub: 'easy' },
   { rir: 2, label: '2', sub: 'solid' },
   { rir: 1, label: '1', sub: 'hard' },
-  { rir: 0, label: '0', sub: 'nothing' },
+  { rir: 0, label: '0', sub: 'limit' },
 ]
 
 /** The RIR a tile label stands for ("3+" -> 3). Null for anything else. */

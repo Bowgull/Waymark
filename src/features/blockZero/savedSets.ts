@@ -76,3 +76,18 @@ export function savedSetLines(exercises: readonly WorkoutExerciseIn[], pending: 
 export function pendingSetCount(pending: readonly PendingWriteIn[]): number {
   return new Set(pending.map(p => p.path.match(SET_PATH)?.[1]).filter(Boolean)).size
 }
+
+/**
+ * The page error's NOTHING LOST lines (page 38, "A page"): SESSIONS and
+ * MORNING REPORTS. Session writes (sets, finishes, effort) wait in this
+ * phone's outbox until the server has them; a morning report is never held
+ * on the phone (it saves at once, or the cards say it couldn't).
+ */
+export function pageSavedLines(pending: ReadonlyArray<{ sessionId: string | null }>): SavedLine[] {
+  const sessions = new Set(pending.map(p => p.sessionId ?? '')).size
+  const waiting = pending.length
+  return [
+    { name: 'Sessions', detail: waiting === 0 ? 'all saved' : `${sessions === 1 ? '1 session' : `${sessions} sessions`} waiting on this phone` },
+    { name: 'Morning reports', detail: 'all saved' },
+  ]
+}
