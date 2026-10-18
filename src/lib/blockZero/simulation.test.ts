@@ -6,6 +6,12 @@
 // week 3; a missed week 4; back at 2 for 3 days in week 5; two MT classes
 // asked for in week 3 (one is sparring). Plus a clean athlete and a
 // persistently inconsistent one for the gate.
+//
+// Phase D: every week's plan comes from a fake "AI" that tries to break the
+// rules (sparring, strength on the wrong days, 50-min runs, wrong labels) and
+// goes through the guardrails before the athlete follows it. On ease days and
+// class days the fake coach also pushes hard mid-week changes. The guardrails
+// must correct every one.
 
 import {
   BACK_FRIENDLY_SWAPS,
@@ -35,6 +41,9 @@ import {
 } from './index'
 import { extensionsUsed } from './weeks'
 import { blockZeroWorkingLoad, checkInFromDailyLog, readinessReport, type DailyLogFields, type LoggedWorkingSet } from './index'
+import { guardReactiveReplan, guardReplaceSuggestions, guardWeekPlan, type Clamp, type GuardSession } from './guardrails'
+import { WEEKLY_RUN_CAP_RATIO } from './running'
+import type { WeekPlanOutput } from '../prompts/tools'
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(msg)
@@ -60,6 +69,24 @@ interface RunLog { day: number; sec: number; longest30: number; capped: boolean 
 interface LoadStep { day: number; liftId: string; rpe: number; target: [number, number]; before: number; after: number }
 interface BackPick { day: number; picked: string; original: string }
 interface ClassLog { day: number; type: string; allowed: boolean; rampWeek: number; classType: string | null }
+interface GuardWeek { week: number; plan: WeekPlanOutput; clamps: Clamp[]; longest30: number; lastWeek: number; shapeMatches: boolean }
+interface GuardDay { day: number; kind: 'ease' | 'class'; action: string; type: string; label: string; clamps: Clamp[]; suggestionTypes: string[] }
+
+/** A fake planner that tries to break every rule it can. */
+function adversarialPlan(week: number): WeekPlanOutput {
+  const t = getBlockZeroWeekTemplate(week)
+  const days = [0, 1, 2, 3, 4, 5, 6].map(d => ({
+    dayOfWeek: d,
+    sessions: t[d].map(x => ({ type: x.type as never, timeSlot: x.timeSlot, label: x.label, estimatedMin: x.type === 'foundation_run' ? 50 : x.estimatedMin })),
+  }))
+  days[2].sessions.push({ type: 'mt_class' as never, timeSlot: 'pm', label: 'Sparring', estimatedMin: 90 })
+  days[2].sessions.push({ type: 'strength' as never, timeSlot: 'am', label: 'Strength B', estimatedMin: 60 })
+  days[0].sessions.push({ type: 'strength' as never, timeSlot: 'am', label: 'Strength D', estimatedMin: 75 })
+  days[0].sessions.push({ type: 'mt_class' as never, timeSlot: 'pm', label: 'Open Mat', estimatedMin: 60 })
+  for (const s of days[1].sessions) if (s.type === 'strength') s.label = 'Strength C'
+  for (const s of days[4].sessions) if (s.type === 'foundation_run') Object.assign(s, { type: 'running', label: 'Tempo', runCategory: 'progression' })
+  return { narrative: 'Big week \u2014 push it!', days, mtSessionsThisWeek: 3 }
+}
 
 const SLOT_BY_DAY: Record<string, MainLiftSlot> = { A: 'squat', B: 'hinge', C: 'row' }
 const REGION: Record<MainLiftSlot, 'upper' | 'lower'> = { squat: 'lower', hinge: 'lower', row: 'upper' }
@@ -87,6 +114,8 @@ function simulate(script: Script) {
   const loadEntries: Array<{ epochDay: number; rpe: number; minutes: number }> = []
   const weights = new Map<string, number>()
   const plans: Array<{ week: number; plan: TransitionPlan }> = []
+  const guardWeeks: GuardWeek[] = []
+  const guardDays: GuardDay[] = []
   let firstClassDay: number | null = null
   let classesThisWeek = 0
   let skipToggle = false
@@ -95,6 +124,20 @@ function simulate(script: Script) {
   for (let week = 1; week <= totalWeeks; week++) {
     classesThisWeek = 0
     const template = getBlockZeroWeekTemplate(week)
+
+    // The fake planner's week, through the guardrails, is the week the athlete follows.
+    const monday = START + (week - 1) * 7
+    const longest30 = runs.filter(r => r.day >= monday - 30 && r.day < monday).reduce((m, r) => Math.max(m, r.sec), 0)
+    const lastWeekRun = runs.filter(r => r.day >= monday - 7 && r.day < monday).reduce((n, r) => n + r.sec, 0)
+    const guarded = guardWeekPlan(adversarialPlan(week), { weekNumber: week, run: { longestLast30Sec: longest30 || null, lastWeekRunSec: lastWeekRun } })
+    const shapeMatches = [0, 1, 2, 3, 4, 5, 6].every(d => {
+      const got = (guarded.output.days.find(x => x.dayOfWeek === d)?.sessions ?? []).map(x => `${x.type}:${x.type === 'strength' ? x.label : ''}`).sort().join(',')
+      const want = template[d].map(x => `${x.type}:${x.type === 'strength' ? x.label : ''}`).sort().join(',')
+      return got === want
+    })
+    guardWeeks.push({ week, plan: guarded.output, clamps: guarded.clamps, longest30, lastWeek: lastWeekRun, shapeMatches })
+    const weekPlan: Record<number, PlannedSession[]> = {}
+    for (const d of guarded.output.days) weekPlan[d.dayOfWeek] = d.sessions.map(x => ({ type: x.type, label: x.label, timeSlot: x.timeSlot, estimatedMin: x.estimatedMin }))
     for (let i = 0; i < 7; i++) {
       const day = START + (week - 1) * 7 + i
       const isMissed = missed.has(week)
@@ -117,7 +160,41 @@ function simulate(script: Script) {
       if (easeToday) easeDays.push(day)
       const backToday = flare.has(day) ? 2 : 4
 
-      let sessions: PlannedSession[] = template[dow(day)].map(s => ({ type: s.type, label: s.label, timeSlot: s.timeSlot, estimatedMin: s.estimatedMin }))
+      let sessions: PlannedSession[] = weekPlan[dow(day)] ?? []
+
+      // Mid-week: on an ease day or a class day the fake coach pushes hard work.
+      const classAsk = classByDay.get(day)
+      if (!isMissed && (easeToday || classAsk)) {
+        const guardSessions: GuardSession[] = [0, 1, 2, 3, 4, 5, 6].flatMap(k => (weekPlan[dow(monday + k)] ?? []).map((x, j) => ({
+          id: `${monday + k}-${j}`, type: x.type, epochDay: monday + k, timeSlot: x.timeSlot, status: monday + k < day ? 'completed' : 'planned', label: x.label,
+        })))
+        const ctx = {
+          weekNumber: week,
+          todayEpochDay: day,
+          sessions: guardSessions,
+          readinessEase: easeToday,
+          loadFlag: false,
+          easeReason: easeToday ? readiness.reason : null,
+          run: { longestLast30Sec: runs.filter(r => r.day >= day - 30 && r.day < day).reduce((m, r) => Math.max(m, r.sec), 0) || null, lastWeekRunSec: lastWeekRun, thisWeekRunSec: runs.filter(r => r.day >= monday && r.day < day).reduce((n, r) => n + r.sec, 0) },
+          mt: { weeksSinceFirstClass: firstClassDay == null ? null : Math.floor((day - firstClassDay) / 7), classesThisWeek, profileCap: null },
+        }
+        const ask = easeToday
+          ? { note: 'Push through.', shiftAction: 'add_recovery' as const, shiftReason: 'Add a heavy day!', targetSessionType: 'strength' as const, targetLabel: 'Heavy Strength', targetDay: dow(day), targetTimeSlot: 'pm' as const }
+          : { note: 'Spar tonight.', shiftAction: 'swap' as const, shiftReason: 'Sparring builds timing.', targetSessionType: 'mt_class' as const, targetLabel: 'Hard Sparring', targetDay: dow(day), targetTimeSlot: 'pm' as const }
+        const r = guardReactiveReplan(ask, ctx)
+        const replaced = guardSessions.find(x => x.epochDay === day && x.type !== 'mobility') ?? guardSessions.find(x => x.epochDay === day)
+        const sugg = replaced
+          ? guardReplaceSuggestions({ coachLine: 'Go hard!', suggestions: [
+            { type: 'mt_class', label: 'Sparring', timeSlot: 'pm', estimatedMin: 90 },
+            { type: 'strength', label: 'Strength', timeSlot: 'am', estimatedMin: 70 },
+            { type: 'foundation_run', label: 'Long Run', timeSlot: 'am', estimatedMin: 50 },
+          ] }, { id: replaced.id as string, type: replaced.type, epochDay: day, timeSlot: replaced.timeSlot }, ctx)
+          : null
+        guardDays.push({
+          day, kind: easeToday ? 'ease' : 'class', action: r.output.shiftAction, type: r.output.targetSessionType, label: r.output.targetLabel,
+          clamps: [...r.clamps, ...(sugg?.clamps ?? [])], suggestionTypes: sugg?.output.suggestions.map(x => `${x.type}:${x.label}:${x.estimatedMin}`) ?? [],
+        })
+      }
 
       // Athlete asks for a class.
       const classType = classByDay.get(day)
@@ -200,7 +277,38 @@ function simulate(script: Script) {
     }
   }
 
-  return { checkIns, runs, loadSteps, backPicks, classes, easeDays, plans, totalWeeks, loadEntries }
+  return { checkIns, runs, loadSteps, backPicks, classes, easeDays, plans, totalWeeks, loadEntries, guardWeeks, guardDays }
+}
+
+/** Phase D: the fake planner and coach never get a rule past the guardrails. */
+function assertGuarded(name: string, sim: ReturnType<typeof simulate>): void {
+  for (const g of sim.guardWeeks) {
+    const all = g.plan.days.flatMap(d => d.sessions)
+    const tag = `${name} week ${g.week}`
+    assert(!all.some(s => s.type === 'mt_class') && g.plan.mtSessionsThisWeek === 0, `${tag}: fake AI's sparring and open mat dropped`)
+    const strengthDays = g.plan.days.filter(d => d.sessions.some(s => s.type === 'strength')).map(d => d.dayOfWeek).sort()
+    assert(strengthDays.join(',') === '1,3,5', `${tag}: strength Mon/Wed/Fri only, never back to back`)
+    assert(g.plan.days.every(d => d.sessions.filter(s => s.type === 'strength').every(s => s.label === `Strength ${({ 1: 'A', 3: 'B', 5: 'C' } as Record<number, string>)[d.dayOfWeek]}`)), `${tag}: labels A/B/C preserved`)
+    assert(g.plan.days.every(d => d.sessions.some(s => s.type === 'mobility')), `${tag}: back care every day`)
+    assert(g.shapeMatches, `${tag}: guarded week has exactly the rules' shape`)
+    const runs = all.filter(s => s.type === 'foundation_run' || s.type === 'running')
+    const single = g.longest30 > 0 ? Math.floor(g.longest30 * 1.1 / 60) : 23
+    assert(runs.every(s => s.type === 'foundation_run' && s.estimatedMin <= single), `${tag}: 50-min runs cut to <= ${single} min`)
+    const weekly = g.lastWeek > 0 ? Math.floor(g.lastWeek * WEEKLY_RUN_CAP_RATIO / 60) : 69
+    assert(runs.reduce((n, s) => n + s.estimatedMin, 0) <= weekly, `${tag}: run total within the weekly cap (${weekly} min)`)
+    assert(g.clamps.length > 0 && g.clamps.every(c => c.reason.length > 0 && !/[!\u2014]/.test(c.reason)), `${tag}: ${g.clamps.length} clamps, each with a house-voice reason`)
+    assert(!/[!\u2014]/.test(g.plan.narrative), `${tag}: narrative cleaned`)
+  }
+  for (const d of sim.guardDays) {
+    const tag = `${name} day ${d.day - START} (${d.kind})`
+    if (d.kind === 'ease') {
+      assert(d.action !== 'add_recovery' && d.clamps.some(c => c.code === 'ease_day'), `${tag}: heavy strength on an ease day refused, ${d.action} instead`)
+      assert(d.suggestionTypes.every(t => !t.startsWith('strength') && !t.startsWith('mt_class') && !t.startsWith('foundation_run')), `${tag}: replace options stay easy (${d.suggestionTypes.join(', ')})`)
+    } else {
+      assert(!/spar/i.test(d.label), `${tag}: sparring never gets through (${d.action} ${d.type} ${d.label})`)
+      assert(d.suggestionTypes.every(t => !/spar/i.test(t)), `${tag}: no sparring among replace options`)
+    }
+  }
 }
 
 // ─── Scripted athlete ───────────────────────────────────────────
@@ -213,6 +321,9 @@ const scripted = simulate({
   backFlare: [30, 31, 32], // week 5 Wed-Fri (Strength B and C fall inside)
   classes: [{ offset: W3_TUE, type: 'technique' }, { offset: W3_TUE + 2, type: 'sparring' }, { offset: 29, type: 'clinch' }, { offset: 31, type: 'sparring' }, { offset: 36, type: 'sparring' }],
 })
+
+assertGuarded('scripted', scripted)
+assert(scripted.guardDays.some(d => d.kind === 'ease') && scripted.guardDays.some(d => d.kind === 'class'), 'the fake coach was tested on ease days and class days')
 
 // Runs: R7 and R8 never broken.
 assert(scripted.runs.length > 10, `${scripted.runs.length} runs logged`)
@@ -277,6 +388,7 @@ assert(getStrengthWeekTarget(7).loadPct === getStrengthWeekTarget(5).loadPct, 'e
 // ─── Clean athlete ──────────────────────────────────────────────
 
 const clean = simulate({ name: 'clean' })
+assertGuarded('clean', clean)
 assert(clean.plans.length === 1 && clean.plans[0].plan.decision === 'proceed' && clean.totalWeeks === 6, 'clean athlete: proceed at week 6, no extension')
 assert(clean.easeDays.length === 0, 'clean athlete: no ease days')
 for (let w = 2; w <= 6; w++) {

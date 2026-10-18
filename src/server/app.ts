@@ -2303,9 +2303,12 @@ app.post('/api/weeks/auto-generate', async (c) => {
       for (const entry of validSessions) {
         const sessionId = crypto.randomUUID()
         const isStrength = entry.type === 'strength'
+        // Block Zero keeps the template labels (Strength A/B/C) the guardrail set.
+        const labelField = isBlockZero ? { label: entry.label } : {}
         await db.insert(sessions).values({
           id: sessionId,
           type: entry.type,
+          ...labelField,
           weekPlanId: weekId,
           scheduledDate: epochDay,
           timeSlot: entry.timeSlot,
@@ -2316,7 +2319,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
           createdAt: nowSec,
         })
         createdSessions.push({
-          id: sessionId, type: entry.type, weekPlanId: weekId,
+          id: sessionId, type: entry.type, ...labelField, weekPlanId: weekId,
           scheduledDate: epochDay, timeSlot: entry.timeSlot,
           blockWeek: isStrength ? blockWeek : null,
           blockType: sessionBlockType,

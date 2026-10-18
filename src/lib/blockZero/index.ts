@@ -122,3 +122,48 @@ export {
   type TestResultInput,
   type TestUnit,
 } from './tests'
+
+export {
+  calibrationCeilingKg,
+  fixedResults,
+  hasWeek1Tests,
+  retestCeilingKg,
+  testDeltas,
+  week1LiftBaselines,
+  workupE1rm,
+  type FixedResult,
+  type LiftBaseline,
+  type TestDelta,
+  type TestRow,
+  type WorkupSet,
+} from './testData'
+
+export {
+  DURATION_BOUNDS,
+  GUARDRAIL_TAG,
+  HARD_TYPES,
+  capLoad,
+  checkPlacement,
+  clampsForStorage,
+  classTypeFromLabel,
+  guardCalibrationStarts,
+  guardCalibrationWrites,
+  guardLoadProposals,
+  guardMtCap,
+  guardReactiveReplan,
+  guardReplaceSuggestions,
+  guardWeekPlan,
+  houseVoice,
+  isBlockZeroRestDay,
+  logClamps,
+  safeReplaceOptions,
+  type BlockZeroGuardContext,
+  type Clamp,
+  type ClampCode,
+  type GuardSession,
+  type Guarded,
+  type ReplacedSession,
+  type RunHistory,
+} from './guardrails'
+
+export { estimateTokens, runCapsMin, serializeBlockZeroContext, type AiContextLift, type BlockZeroAiContextInput } from './aiContext'

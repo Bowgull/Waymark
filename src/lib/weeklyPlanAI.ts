@@ -15,6 +15,8 @@ import { rolloverStaleSessions } from './sessionRollover'
 import { getEpochDay } from './dates'
 import type { createDB } from '../db/client'
 import { MODELS } from './models'
+import { clampsForStorage, guardWeekPlan, logClamps, serializeBlockZeroContext } from './blockZero'
+import { loadBlockZeroAiContext, loadRunHistory } from '../server/blockZeroData'
 
 type DB = ReturnType<typeof createDB>
 
@@ -41,7 +43,7 @@ function blockZeroPhaseNote(blockWeek: number): string {
   return `Build week ${blockWeek}: strength RPE ${blockWeek <= 2 ? '6-7' : '7-8'}, never to failure. Run-walk grows under the 110% single-run and 30% weekly caps. ${shape}`
 }
 
-interface MtLogRecord {
+export interface MtLogRecord {
   classType: string | null
   focusSkill: string | null
   weakness: string | null
@@ -49,7 +51,7 @@ interface MtLogRecord {
   actionItems: string | null
 }
 
-interface TrackedIssue {
+export interface TrackedIssue {
   region: string
   lastSeenWeek: number
   mentionsLast4Weeks: number
@@ -149,7 +151,7 @@ function rankSeverity(s: BodyIssueDetection['severity']): number {
   return 1
 }
 
-function buildPrompt(
+export function buildWeekPlanPrompt(
   params: WeekPlanParams,
   prevSessions: Array<{ type: string; status: string; rpe: number | null; notes: string | null }>,
   prevLogs: Array<{ sleepHours: number | null; soreness: number | null; notes: string | null }>,
@@ -159,6 +161,7 @@ function buildPrompt(
   trackedIssues: TrackedIssue[],
   adherenceBlock: string,
   hrBlock: string | null,
+  blockZeroContext: string | null = null,
 ): string {
   const lines: string[] = [
     `Generate week plan for week ${params.weekNumber} (block week ${params.blockWeek}).`,
@@ -167,6 +170,10 @@ function buildPrompt(
 
   if (params.isBlockZero) {
     lines.push(`Block type: Block Zero. ${blockZeroPhaseNote(params.blockWeek)}`)
+    if (blockZeroContext) {
+      lines.push('', blockZeroContext)
+      lines.push('For each session that differs from the rules\' week, put its one-line why in that session\'s notes. Put the week\'s why in adjustmentNotes.')
+    }
   } else {
     lines.push('Block type: Fighter block (full training load).')
   }
@@ -343,11 +350,16 @@ export async function generateWeekPlan(
   const starter = await computeStarterStatus(db, todayEpochDay, profile.trainingHistory, profile.constraints)
   const starterBlock = serializeStarterStatus(starter)
   const systemBlocks = buildSystemPrompt(profile, null, starterBlock || null)
-  const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues, adherenceBlock, hrBlock)
+  // Block Zero: the rules' limits and the athlete's trends go in the user
+  // message (after the cached system blocks), and the output is guarded.
+  const mondayEpochDay = params.prevWeekEnd + 1
+  const bzInput = params.isBlockZero ? await loadBlockZeroAiContext(db, todayEpochDay, params.weekNumber) : null
+  const bzContext = bzInput ? serializeBlockZeroContext(bzInput) : null
+  const prompt = buildWeekPlanPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues, adherenceBlock, hrBlock, bzContext)
 
   const result = await anthropicCall(apiKey, {
     model: MODELS.fast,
-    max_tokens: 2048,
+    max_tokens: 4096,
     system: systemBlocks,
     messages: [{ role: 'user', content: prompt }],
     tools: [TOOL_WEEK_PLAN],
@@ -359,10 +371,19 @@ export async function generateWeekPlan(
     return null
   }
 
-  const output = getToolInput<WeekPlanOutput>(result, 'weekPlan')
-  if (!output) {
+  const raw = getToolInput<WeekPlanOutput>(result, 'weekPlan')
+  if (!raw) {
     console.warn('[weeklyPlan] no tool output, falling back to rule engine')
     return null
+  }
+
+  let output = raw
+  let guardrails: ReturnType<typeof clampsForStorage> & { original?: WeekPlanOutput } | null = null
+  if (params.isBlockZero) {
+    const guarded = guardWeekPlan(raw, { weekNumber: params.weekNumber, run: await loadRunHistory(db, mondayEpochDay) })
+    logClamps('week_plan', guarded.clamps)
+    output = guarded.output
+    guardrails = { ...clampsForStorage(guarded.clamps), ...(guarded.clamps.length > 0 ? { original: raw } : {}) }
   }
 
   const nowSec = Math.floor(Date.now() / 1000)
@@ -374,7 +395,7 @@ export async function generateWeekPlan(
     scopeWeekPlanId: params.weekId,
     scopeSessionId: null,
     inputHash: null,
-    outputJson: JSON.stringify(output),
+    outputJson: JSON.stringify(guardrails ? { ...output, guardrails } : output),
     tokensIn: result.usage.input_tokens,
     tokensOut: result.usage.output_tokens,
     cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,

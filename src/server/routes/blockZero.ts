@@ -1,150 +1,102 @@
 // Block Zero entry assessment and transition readiness check. Sonnet with extended thinking.
-// Assessment: called once when Block Zero starts. Its starting maxes and MT cap are saved.
+// Assessment: called when Block Zero starts, and again once the week-1 tests are in.
+// Its starting maxes (capped by the tests) and MT cap are saved.
 // Transition: called at the end of Block Zero. The rules gate (lib/blockZero/endGate)
 // sets the limits; the AI decision only moves inside them. Proceed creates Fighter Block 1.
+// Prompts live in lib/prompts/blockZero; outputs go through lib/blockZero/guardrails.
 
 import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
 import { blockTests, coachingOutputs, dailyLogs, exercises, sessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekPlans } from '../../db/schema'
-import { anthropicCall, getStructuredOutput, jsonFormatFor, jsonInstructionFor, type Tool } from '../../lib/anthropic'
+import { anthropicCall, getStructuredOutput, jsonFormatFor } from '../../lib/anthropic'
 import { MODELS } from '../../lib/models'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
 import { getLatestBodyweightKg } from '../../lib/bodyMetrics'
 import { TOOL_BLOCK_TRANSITION, type BlockTransitionOutput } from '../../lib/prompts/tools'
-import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt, type AdherenceSnapshot, type AdherenceGuidance } from '../../lib/adherence'
+import {
+  BLOCK_ZERO_TOOL,
+  buildAssessmentPrompt,
+  buildTransitionPrompt,
+  type AssessmentTestData,
+  type BlockZeroAssessmentOutput,
+  type TransitionPromptData,
+  type TransitionTestData,
+  type TransitionWeekSummary,
+} from '../../lib/prompts/blockZero'
+import { computeBlockAdherence, deriveGuidance } from '../../lib/adherence'
 import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from '../../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../../lib/sessionRollover'
 import { getEpochDay } from '../../lib/dates'
 import {
   backTrend,
+  clampsForStorage,
   e1rmsFromTests,
   extensionsUsed,
+  fixedResults,
+  guardCalibrationStarts,
+  guardCalibrationWrites,
+  guardMtCap,
+  houseVoice,
   keySessionCompletionRate,
+  logClamps,
   longestGapInWindow,
   planTransition,
-  resolveCalibrationStarts,
+  resolveLiftId,
+  retestCeilingKg,
   retestE1rms,
   selectMainLifts,
+  type Clamp,
   BLOCK_ZERO_BASE_WEEKS,
   KEY_SESSION_TYPES,
   type EndGateInput,
   type TransitionPlan,
 } from '../../lib/blockZero'
 import { createTrainingBlock, endActiveBlocks } from '../blocks'
-import { loadBackScores } from '../blockZeroData'
+import { loadBackScores, loadBlockTestData, transitionTestSummary, type BlockTestData } from '../blockZeroData'
 import type { createDB } from '../../db/client'
 
 type DB = ReturnType<typeof createDB>
 
-export interface BlockZeroWeekTheme {
-  weekNumber: number
-  focus: string
-}
+export type { BlockZeroAssessmentOutput, BlockZeroCalibrationStart, BlockZeroWeekTheme } from '../../lib/prompts/blockZero'
+export { BLOCK_ZERO_TOOL }
 
-export interface BlockZeroCalibrationStart {
-  exerciseName: string
-  startingWeightKg: number
-  rationale: string
-}
-
-export interface BlockZeroAssessmentOutput {
-  narrative: string
-  weekThemes: BlockZeroWeekTheme[]
-  calibrationStarts: BlockZeroCalibrationStart[]
-  mtCapPerWeek: number
-  coachNote?: string
-}
-
-export const BLOCK_ZERO_TOOL: Tool = {
-  name: 'blockZeroAssessment',
-  description:
-    'Block Zero entry assessment. Reads onboarding answers and produces a 6-week plan overview with starting weight estimates. Voice canon applies to all user-facing strings: short sentences, no exclamation marks, no congratulations, observation before instruction.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      narrative: {
-        type: 'string',
-        description:
-          'Two to three sentences. Voice canon: what this block is for and what the user should expect. No congratulations. No exclamation marks. No em dashes. Example tone: "Four weeks. Corrective work, light loading, habit building. Skip this block and the next one breaks you."',
-      },
-      weekThemes: {
-        type: 'array',
-        description: '6 items, one per Block Zero week.',
-        items: {
-          type: 'object',
-          properties: {
-            weekNumber: { type: 'integer', description: '1 through 6' },
-            focus: {
-              type: 'string',
-              description: 'One short phrase. What this week emphasizes. No exclamation marks.',
-            },
-          },
-          required: ['weekNumber', 'focus'],
-        },
-        minItems: 6,
-        maxItems: 6,
-      },
-      calibrationStarts: {
-        type: 'array',
-        description:
-          'Starting weight estimates for main compound lifts, saved as training maxes. Conservative. Block Zero suggests ~55% of these for sets of 8 in week 1, rising to ~65% by week 5, then autoregulates by RPE. Based on training history and current detraining state.',
-        items: {
-          type: 'object',
-          properties: {
-            exerciseName: { type: 'string' },
-            startingWeightKg: {
-              type: 'number',
-              description:
-                'Estimated training max. Block Zero week 1 suggests about 55% of this for a set of 8 at RPE 6-7. Must be realistic given current state.',
-            },
-            rationale: {
-              type: 'string',
-              description:
-                'One sentence. Voice canon: plain, factual. State the data point behind the estimate. Example: "No recent strength data. Estimate from typical detrained intermediate baseline."',
-            },
-          },
-          required: ['exerciseName', 'startingWeightKg', 'rationale'],
-        },
-      },
-      mtCapPerWeek: {
-        type: 'integer',
-        description:
-          'Recommended MT sessions cap for Block Zero. Must account for recovery needs during reintroduction phase. Typically 1-2 for weeks 1-2, up to 3 for weeks 5-6.',
-      },
-      coachNote: {
-        type: 'string',
-        description:
-          'Optional. One sentence flagging a specific concern from onboarding (injury, posture issue, long training gap). Voice canon: state the fact plainly. Omit if nothing specific to flag.',
-      },
-    },
-    required: ['narrative', 'weekThemes', 'calibrationStarts', 'mtCapPerWeek'],
-  },
-}
-
-function buildAssessmentPrompt(profile: UserProfileContext): string {
-  const lines: string[] = [
-    'Block Zero is starting. Assess this user and produce a Block Zero plan overview.',
-    '',
-    'Block Zero structure (6 weeks, up to 2 extension weeks):',
-    '  Week 1: test week. Each main lift works up to a set of 8 at RPE 6-7. Run-walk at talk-test pace.',
-    '  Weeks 2-5: build. 2-3 sets of 8, RPE 6-7 then 7-8, never to failure. Week 3 adds a 3-5 rep check set.',
-    '  Week 6: consolidate and retest. Volume down 30-50%, intensity held.',
-    '  Weekly: Strength A/B/C, 3 run-walks, daily back-care mobility, durability twice a week, 1 rest day.',
-    '  No MT classes are scheduled. The athlete adds them: technique and pads only for the first 2 weeks back, light clinch from week 3, no hard sparring.',
-    '',
-    'User profile is in the system prompt.',
-    '',
-    'For calibrationStarts: estimate training maxes for the main compound lifts. Use these exact exercise names: Front Squat, Romanian Deadlift, Block Pull, Conventional Deadlift, Bench Press, Overhead Press, Bent Over Row. Be conservative. If training history indicates a long gap or no strength training, use detrained intermediate baselines.',
-    '',
-    'For mtCapPerWeek: this is the cap for the entire block. Set based on injury risk and recovery needs. The user has access to MT most evenings and will overtrain without enforcement.',
-    '',
-    jsonInstructionFor(BLOCK_ZERO_TOOL),
-  ]
-
-  if (!profile.trainingHistory && !profile.goals) {
-    lines.push('', 'No onboarding data available. Use defaults appropriate for a returning adult athlete.')
+/** Week-1 tests in the shape the assessment prompt reads. Null when none are logged. */
+export function assessmentTestData(data: BlockTestData): AssessmentTestData | null {
+  if (!data.testsExist) return null
+  return {
+    lifts: [...data.baselines.values()].map(b => ({
+      exerciseId: b.exerciseId,
+      name: data.names.get(b.exerciseId) ?? b.exerciseId,
+      e1rmKg: b.e1rmKg,
+      ceilingKg: data.ceilings.get(b.exerciseId) ?? b.e1rmKg,
+      source: b.source,
+      workup: b.workup,
+    })),
+    fixed: fixedResults(data.rows, w => w === 1),
   }
+}
 
-  return lines.join('\n')
+/**
+ * Clamp an assessment to the rules: calibrationStarts at or under the week-1
+ * ceilings (and, once tests exist, only tested lifts are written), MT cap 0-3,
+ * text in the house voice. Pure.
+ */
+export function guardAssessment(
+  output: BlockZeroAssessmentOutput,
+  exerciseRows: Array<{ id: string; name: string }>,
+  tests: Pick<BlockTestData, 'ceilings' | 'testsExist'>,
+): { output: BlockZeroAssessmentOutput; clamps: Clamp[]; writes: Array<{ exerciseId: string; weightKg: number }>; mtCap: number | null } {
+  const starts = guardCalibrationStarts(output.calibrationStarts ?? [], name => resolveLiftId(name, exerciseRows), tests.ceilings, tests.testsExist)
+  const clamps = [...starts.clamps]
+  const cap = guardMtCap(output.mtCapPerWeek)
+  if (cap.clamp) clamps.push(cap.clamp)
+  const guarded: BlockZeroAssessmentOutput = {
+    ...output,
+    narrative: houseVoice(output.narrative ?? ''),
+    calibrationStarts: starts.output,
+    mtCapPerWeek: cap.value ?? output.mtCapPerWeek,
+    ...(output.coachNote != null ? { coachNote: houseVoice(output.coachNote) } : {}),
+  }
+  return { output: guarded, clamps, writes: starts.writes, mtCap: cap.value }
 }
 
 export async function runBlockZeroAssessment(
@@ -175,6 +127,8 @@ export async function runBlockZeroAssessment(
   }
 
   const systemBlocks = buildSystemPrompt(profile, null)
+  // Week-1 tests, once logged, ground the estimates. Re-running after week 1 is expected.
+  const testData = await loadBlockTestData(db, blockId)
 
   const result = await anthropicCall(apiKey, {
     model: MODELS.reasoning,
@@ -183,7 +137,7 @@ export async function runBlockZeroAssessment(
     output_config: { effort: 'high', format: jsonFormatFor(BLOCK_ZERO_TOOL) },
     fallbacks: 'default',
     system: systemBlocks,
-    messages: [{ role: 'user', content: buildAssessmentPrompt(profile) }],
+    messages: [{ role: 'user', content: buildAssessmentPrompt(profile, assessmentTestData(testData)) }],
   }, { timeoutMs: 150_000 })
 
   if (result.offline) {
@@ -191,11 +145,17 @@ export async function runBlockZeroAssessment(
     return null
   }
 
-  const output = getStructuredOutput<BlockZeroAssessmentOutput>(result)
-  if (!output) {
+  const raw = getStructuredOutput<BlockZeroAssessmentOutput>(result)
+  if (!raw) {
     console.warn('[blockZero] no structured output from assessment')
     return null
   }
+
+  const exerciseRows = await db.select({ id: exercises.id, name: exercises.name }).from(exercises)
+  const guarded = guardAssessment(raw, exerciseRows, testData)
+  logClamps('block_zero_assessment', guarded.clamps)
+  const output = guarded.output
+  const guardrails = { ...clampsForStorage(guarded.clamps), testBacked: testData.testsExist, ...(guarded.clamps.length > 0 ? { original: raw } : {}) }
 
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
@@ -204,34 +164,33 @@ export async function runBlockZeroAssessment(
     scopeWeekPlanId: null,
     scopeSessionId: null,
     inputHash: blockId,
-    outputJson: JSON.stringify(output),
+    outputJson: JSON.stringify({ ...output, guardrails }),
     tokensIn: result.usage.input_tokens,
     tokensOut: result.usage.output_tokens,
     cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
     createdAt: Math.floor(Date.now() / 1000),
   })
 
-  await persistAssessment(db, output)
+  await persistAssessment(db, guarded.writes, guarded.mtCap)
 
-  console.log(`[blockZero] assessment complete for block ${blockId}`)
+  console.log(`[blockZero] assessment complete for block ${blockId} (tests=${testData.testsExist}, clamps=${guarded.clamps.length})`)
   return output
 }
 
-// Save what the assessment decided: starting training maxes for lifts that
-// exist in the library, and the block's MT cap on the profile. training_maxes
-// has no "set by hand" marker, so a plain upsert is the honest option.
-async function persistAssessment(db: DB, output: BlockZeroAssessmentOutput): Promise<void> {
+// Save what the assessment decided: starting training maxes (already
+// guarded: capped by week-1 tests, and once tests exist only tested lifts),
+// and the block's MT cap on the profile. training_maxes has no "set by hand"
+// marker, so a plain upsert is the honest option.
+async function persistAssessment(db: DB, writes: Array<{ exerciseId: string; weightKg: number }>, mtCap: number | null): Promise<void> {
   const nowSec = Math.floor(Date.now() / 1000)
-  const exerciseRows = await db.select({ id: exercises.id, name: exercises.name }).from(exercises)
-  const writes = resolveCalibrationStarts(output.calibrationStarts ?? [], exerciseRows)
   await upsertTrainingMaxes(db, writes, nowSec)
 
-  if (Number.isInteger(output.mtCapPerWeek) && output.mtCapPerWeek >= 0) {
+  if (mtCap != null) {
     const [profile] = await db.select({ id: userProfile.id }).from(userProfile).where(eq(userProfile.id, 'default'))
     if (profile) {
-      await db.update(userProfile).set({ mtCapPerWeek: output.mtCapPerWeek, updatedAt: nowSec }).where(eq(userProfile.id, 'default'))
+      await db.update(userProfile).set({ mtCapPerWeek: mtCap, updatedAt: nowSec }).where(eq(userProfile.id, 'default'))
     } else {
-      await db.insert(userProfile).values({ id: 'default', mtCapPerWeek: output.mtCapPerWeek, createdAt: nowSec, updatedAt: nowSec })
+      await db.insert(userProfile).values({ id: 'default', mtCapPerWeek: mtCap, createdAt: nowSec, updatedAt: nowSec })
     }
   }
 }
@@ -272,25 +231,8 @@ export async function getStoredBlockZeroAssessment(
 
 // ─── Block Zero Transition ─────────────────────────────────────
 
-const DIFFICULTY_LABELS = ['Too Easy', 'Easy', 'Just Right', 'Hard', 'Too Hard']
-
-interface WeekSummary {
-  weekNumber: number
-  planned: number
-  completed: number
-  avgRpe: number | null
-  avgDifficulty: number | null
-  avgSleepHours: number | null
-  avgSoreness: number | null
-}
-
-async function gatherTransitionData(db: DB, blockId: string): Promise<{
+async function gatherTransitionData(db: DB, blockId: string): Promise<TransitionPromptData & {
   block: { startedAt: number | null; totalWeeks: number }
-  weeks: WeekSummary[]
-  mainLifts: Array<{ id: string; name: string; currentMaxKg: number | null }>
-  adherence: AdherenceSnapshot
-  guidance: AdherenceGuidance
-  hrBlock: string | null
 }> {
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
   const blockStartSec = block?.startedAt ?? 0
@@ -306,7 +248,7 @@ async function gatherTransitionData(db: DB, blockId: string): Promise<{
     ? await db.select().from(sessions).where(inArray(sessions.weekPlanId, weekPlanIds))
     : []
 
-  const weeks: WeekSummary[] = []
+  const weeks: TransitionWeekSummary[] = []
 
   for (const wk of blockWeeks.sort((a, b) => a.weekNumber - b.weekNumber)) {
     const wkSessions = allSessions.filter(s => s.weekPlanId === wk.id)
@@ -369,55 +311,6 @@ async function gatherTransitionData(db: DB, blockId: string): Promise<{
   }
 }
 
-function buildTransitionPrompt(
-  data: Awaited<ReturnType<typeof gatherTransitionData>>,
-): string {
-  const lines: string[] = [
-    `Block Zero transition readiness check. ${data.weeks.length} weeks of data available.`,
-    '',
-    'Week summary:',
-  ]
-
-  for (const w of data.weeks) {
-    const rpeStr = w.avgRpe != null ? `RPE ${w.avgRpe.toFixed(1)}` : 'no RPE data'
-    const diffStr = w.avgDifficulty != null
-      ? `difficulty ${DIFFICULTY_LABELS[Math.round(w.avgDifficulty)] ?? w.avgDifficulty.toFixed(1)}`
-      : 'no difficulty data'
-    const sleepStr = w.avgSleepHours != null ? `sleep ${w.avgSleepHours.toFixed(1)}h` : 'no sleep data'
-    const sorenessStr = w.avgSoreness != null ? `soreness ${w.avgSoreness.toFixed(1)}/5` : 'no soreness data'
-    lines.push(
-      `  Week ${w.weekNumber}: ${w.completed}/${w.planned} sessions completed. ${rpeStr}. ${diffStr}. ${sleepStr}. ${sorenessStr}.`,
-    )
-  }
-
-  lines.push('')
-  lines.push('Main lifts (with database IDs for calibrationTargets):')
-  for (const lift of data.mainLifts) {
-    const maxStr = lift.currentMaxKg != null ? `current max ${lift.currentMaxKg}kg` : 'no max set'
-    lines.push(`  ${lift.name} (id: ${lift.id}): ${maxStr}`)
-  }
-
-  lines.push('')
-  lines.push(serializeAdherenceForPrompt(data.adherence, data.guidance))
-
-  if (data.hrBlock) {
-    lines.push('')
-    lines.push(data.hrBlock)
-    lines.push('HR signal is a tiebreaker. Over-paced zone-2 runs across Block Zero means the aerobic base work got skipped in favor of conditioning — lean toward hold and prescribe stricter HR ceilings next block.')
-  }
-
-  lines.push('')
-  lines.push('Decide: proceed (advance to Fighter Block 1), hold (extend Block Zero by one week), or adjust (advance with modified starting loads).')
-  lines.push('Adherence floor: if block completion is below 70% or there is a recent gap of 7+ days, lean toward hold or adjust. Block Zero builds base through exposure, not calendar time. A block where half the sessions never happened has not built the base, no matter how many weeks passed.')
-  lines.push('The athlete never sees this decision. They will just experience the next week. Do not ask for input. Do not soften with praise. State the decision and move.')
-  lines.push('Set calibrationTargets with updated training max estimates based on observed Block Zero performance. Use the exact exercise IDs from above. If adherence was poor, keep estimates conservative (low confidence).')
-  lines.push('Voice canon applies to rationale and nextBlockNotes: short sentences, no exclamation marks, no congratulations.')
-  lines.push('')
-  lines.push(jsonInstructionFor(TOOL_BLOCK_TRANSITION))
-
-  return lines.join('\n')
-}
-
 // Gate inputs from the block's own sessions, the daily "back today" score
 // (first week vs last week; 'unknown' with under 3 scores each) and block_tests.
 async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
@@ -477,6 +370,15 @@ export interface BlockZeroTransitionResult extends BlockTransitionOutput {
     totalWeeks: number
   }
   nextBlockId: string | null
+  /** Clamps the rules applied to the AI's targets, for audit. */
+  guardrails?: { applied: boolean; clamps: Clamp[] }
+}
+
+/** Week 1 vs retest for the transition prompt. Null when no test data exists. */
+export function transitionTestData(data: BlockTestData, retest: Map<string, number>, trend: TransitionTestData['backTrend']): TransitionTestData | null {
+  const summary = transitionTestSummary(data, retest)
+  if (summary.deltas.length === 0 && summary.ceilings.length === 0) return null
+  return { ...summary, backTrend: trend }
 }
 
 export async function runBlockZeroTransition(
@@ -508,7 +410,11 @@ export async function runBlockZeroTransition(
 
   const systemBlocks = buildSystemPrompt(profile, null)
   const transitionData = await gatherTransitionData(db, blockId)
-  const userPrompt = buildTransitionPrompt(transitionData)
+  // Gate inputs first: the retest e1RMs set the ceilings the prompt states.
+  const todayEpochDay = getEpochDay(new Date())
+  const gateData = await gatherGateData(db, blockId, todayEpochDay)
+  const tests = transitionTestData(await loadBlockTestData(db, blockId), gateData.e1rms, gateData.gate.backTrend)
+  const userPrompt = buildTransitionPrompt(transitionData, tests)
 
   const result = await anthropicCall(apiKey, {
     model: MODELS.reasoning,
@@ -529,9 +435,7 @@ export async function runBlockZeroTransition(
     if (!output) console.warn('[blockZero] no structured output from transition check, rules decide alone')
   }
 
-  const todayEpochDay = getEpochDay(new Date())
-  const gateData = await gatherGateData(db, blockId, todayEpochDay)
-  const plan = planTransition({
+  const planned = planTransition({
     gate: gateData.gate,
     aiDecision: output?.decision ?? null,
     aiTargets: output?.calibrationTargets ?? [],
@@ -539,15 +443,20 @@ export async function runBlockZeroTransition(
     totalWeeks: gateData.totalWeeks,
     atEndBoundary: gateData.atEndBoundary,
   })
+  // AI targets never above the retest rule (90% of e1RM, 85% on adjust).
+  const calibration = guardCalibrationWrites(planned.calibration, gateData.e1rms, planned.decision, retestCeilingKg)
+  logClamps('block_zero_transition', calibration.clamps)
+  const plan: TransitionPlan = { ...planned, calibration: calibration.output }
+  const aiWeight = new Map(plan.calibration.filter(c => c.source === 'ai').map(c => [c.exerciseId, c.weightKg]))
 
   const nowSec = Math.floor(Date.now() / 1000)
   const nextBlockId = await applyTransitionPlan(db, blockId, plan, nowSec)
 
   const combined: BlockZeroTransitionResult = {
     decision: plan.reportedDecision,
-    rationale: output?.rationale ?? plan.reasons.join(' '),
-    calibrationTargets: output?.calibrationTargets ?? [],
-    ...(output?.nextBlockNotes ? { nextBlockNotes: output.nextBlockNotes } : {}),
+    rationale: output?.rationale ? houseVoice(output.rationale) : plan.reasons.join(' '),
+    calibrationTargets: (output?.calibrationTargets ?? []).map(t => ({ ...t, estimatedMaxKg: aiWeight.get(t.exerciseId) ?? t.estimatedMaxKg })),
+    ...(output?.nextBlockNotes ? { nextBlockNotes: houseVoice(output.nextBlockNotes) } : {}),
     rules: {
       decision: plan.decision,
       aiDecision: output?.decision ?? null,
@@ -556,6 +465,7 @@ export async function runBlockZeroTransition(
       totalWeeks: plan.newTotalWeeks,
     },
     nextBlockId,
+    ...(calibration.clamps.length > 0 ? { guardrails: clampsForStorage(calibration.clamps) } : {}),
   }
   // When the rules overrode the AI, the athlete-facing line is the rules' reason.
   if (output && output.decision !== plan.reportedDecision) combined.rationale = plan.reasons.join(' ')

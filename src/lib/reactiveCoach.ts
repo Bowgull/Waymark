@@ -29,6 +29,8 @@ import { TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type ReactiveReplanOutp
 import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
 import { computeStarterStatus, serializeStarterStatus } from './starterStatus'
+import { clampsForStorage, guardReactiveReplan, guardReplaceSuggestions, logClamps, serializeBlockZeroContext } from './blockZero'
+import { loadBlockZeroAiContext, loadBlockZeroGuardContext } from '../server/blockZeroData'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -73,7 +75,7 @@ interface AdHocConflict {
   volumeSpike: { target: number; trainingDays: number } | null
 }
 
-interface SignalBundle {
+export interface SignalBundle {
   trigger: ReactiveTrigger
   sessionId?: string
   todayEpochDay: number
@@ -316,7 +318,7 @@ async function debounced(db: DB, nowSec: number): Promise<boolean> {
 
 // ─── Prompt builder ─────────────────────────────────────────────
 
-function buildPrompt(bundle: SignalBundle, rationale: string, adherenceBlock: string, hrBlock: string | null, weekSessions: Array<{ type: string; scheduledDate: number | null; timeSlot: string | null; status: string }>): string {
+export function buildReactivePrompt(bundle: SignalBundle, rationale: string, adherenceBlock: string, hrBlock: string | null, weekSessions: Array<{ type: string; scheduledDate: number | null; timeSlot: string | null; status: string }>, blockZeroContext: string | null = null): string {
   const lines: string[] = [
     `Reactive trigger: ${bundle.trigger}. Rationale: ${rationale}`,
     `Today: ${DAY_NAMES[bundle.todayDow]} (dow=${bundle.todayDow}). Week runs Sun (dow 0) to Sat (dow 6).`,
@@ -398,6 +400,11 @@ function buildPrompt(bundle: SignalBundle, rationale: string, adherenceBlock: st
   }
   if (hrBlock) {
     lines.push('', hrBlock)
+  }
+
+  if (blockZeroContext) {
+    lines.push('', blockZeroContext)
+    lines.push('shiftReason is the one-line why. On an overreach signal prefer reduce_intensity or add_recovery over a swap.')
   }
 
   lines.push('')
@@ -493,7 +500,10 @@ export async function runReactiveReplan(
   const starter = await computeStarterStatus(db, ctx.todayEpochDay, profile.trainingHistory, profile.constraints)
   const starterBlock = serializeStarterStatus(starter)
   const systemBlocks = buildSystemPrompt(profile, null, starterBlock || null)
-  const prompt = buildPrompt(bundle, g.rationale, adherenceBlock, hrBlock, weekSessions)
+  // Block Zero: rules context in the user message, guardrails on the output.
+  const bzGuard = await loadBlockZeroGuardContext(db, ctx.todayEpochDay)
+  const bzInput = bzGuard ? await loadBlockZeroAiContext(db, ctx.todayEpochDay) : null
+  const prompt = buildReactivePrompt(bundle, g.rationale, adherenceBlock, hrBlock, weekSessions, bzInput ? serializeBlockZeroContext(bzInput) : null)
 
   const result = await anthropicCall(apiKey, {
     model: MODELS.reasoning,
@@ -510,10 +520,19 @@ export async function runReactiveReplan(
     return null
   }
 
-  const output = getStructuredOutput<ReactiveReplanOutput>(result)
-  if (!output) {
+  const raw = getStructuredOutput<ReactiveReplanOutput>(result)
+  if (!raw) {
     console.warn('[reactiveCoach] no structured output; skipping')
     return null
+  }
+
+  let output = raw
+  let guardrails: ReturnType<typeof clampsForStorage> & { original?: ReactiveReplanOutput } | null = null
+  if (bzGuard) {
+    const guarded = guardReactiveReplan(raw, bzGuard)
+    logClamps('reactive_replan', guarded.clamps)
+    output = guarded.output
+    guardrails = { ...clampsForStorage(guarded.clamps), ...(guarded.clamps.length > 0 ? { original: raw } : {}) }
   }
 
   const cleanNote = sanitizeVoice(output.note)
@@ -526,7 +545,7 @@ export async function runReactiveReplan(
     scopeWeekPlanId: weekPlanId,
     scopeSessionId: ctx.sessionId ?? null,
     inputHash: null,
-    outputJson: JSON.stringify({ ...output, note: cleanNote, shiftReason: cleanReason, trigger: ctx.trigger, gate: g.rationale }),
+    outputJson: JSON.stringify({ ...output, note: cleanNote, shiftReason: cleanReason, trigger: ctx.trigger, gate: g.rationale, ...(guardrails ? { guardrails } : {}) }),
     tokensIn: result.usage.input_tokens,
     tokensOut: result.usage.output_tokens,
     cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
@@ -553,6 +572,7 @@ export async function runReactiveReplan(
       z2: bundle.justCompleted?.z2 ?? null,
       recentMissed: bundle.recentMissed.length,
       wellness: bundle.wellnessToday,
+      ...(guardrails?.applied ? { guardrails: guardrails.clamps.map(c => c.code) } : {}),
     }),
     status: 'accepted',
     createdAt: nowSec,
@@ -563,6 +583,53 @@ export async function runReactiveReplan(
 }
 
 // ─── Replace-suggestions blocking call ──────────────────────────
+
+export interface ReplacePromptInput {
+  session: { type: string; timeSlot: string | null }
+  todayEpochDay: number
+  reason: string | null
+  wellness: { sleepHours: number | null; soreness: number | null; alcoholScale: number | null } | null
+  weekSessions: Array<{ type: string; scheduledDate: number | null; timeSlot: string | null; status: string }>
+  adherenceBlock: string
+  hrBlock: string | null
+  /** Block Zero rules context (lib/blockZero/aiContext). Null outside Block Zero. */
+  blockZeroContext: string | null
+}
+
+/** The replace-suggestions user message. Pure. */
+export function buildReplacePrompt(input: ReplacePromptInput): string {
+  const todayDow = new Date(input.todayEpochDay * 86400000).getUTCDay()
+  const lines: string[] = [
+    `Replacing: ${SESSION_LABEL[input.session.type] ?? input.session.type} (${(input.session.timeSlot ?? 'am').toUpperCase()}) today (${DAY_NAMES[todayDow]}).`,
+    input.reason ? `Athlete reason: ${input.reason}.` : 'No reason given.',
+    'Rank three alternatives for right now. Best pick first. Respect MT cap and posture constraints from the profile.',
+  ]
+  if (input.wellness) {
+    const w: string[] = []
+    if (input.wellness.sleepHours != null) w.push(`sleep ${input.wellness.sleepHours}h`)
+    if (input.wellness.soreness != null) w.push(`soreness ${input.wellness.soreness}/5`)
+    if (input.wellness.alcoholScale != null) w.push(`alcohol ${input.wellness.alcoholScale}/10`)
+    if (w.length > 0) lines.push(`Wellness today: ${w.join(', ')}.`)
+  }
+  const completed = input.weekSessions.filter(s => s.status === 'completed')
+  lines.push(`Completed so far this week: ${completed.length > 0 ? completed.map(s => SESSION_LABEL[s.type] ?? s.type).join(', ') : 'none'}.`)
+  const remaining = input.weekSessions.filter(s => s.scheduledDate != null && s.scheduledDate > input.todayEpochDay && s.status !== 'skipped')
+  if (remaining.length > 0) {
+    lines.push('Remaining this week:')
+    for (const s of remaining) {
+      const dow = new Date((s.scheduledDate ?? 0) * 86400000).getUTCDay()
+      lines.push(`  ${DAY_NAMES[dow]} ${(s.timeSlot ?? 'am').toUpperCase()}: ${SESSION_LABEL[s.type] ?? s.type}`)
+    }
+  }
+  if (input.adherenceBlock) lines.push('', input.adherenceBlock)
+  if (input.hrBlock) lines.push('', input.hrBlock)
+  if (input.blockZeroContext) {
+    lines.push('', input.blockZeroContext)
+    lines.push('Only offer options inside these limits. coachLine is the one-line why for the top pick.')
+  }
+  lines.push('', 'Give exactly three options ranked best to worst. coachLine explains only the top pick. Voice canon.', jsonInstructionFor(TOOL_REPLACE_SUGGESTIONS))
+  return lines.join('\n')
+}
 
 export async function runReplaceSuggestions(
   db: DB,
@@ -599,31 +666,19 @@ export async function runReplaceSuggestions(
     }
   }
 
-  const lines: string[] = [
-    `Replacing: ${SESSION_LABEL[sess.type] ?? sess.type} (${(sess.timeSlot ?? 'am').toUpperCase()}) today (${DAY_NAMES[todayDow]}).`,
-    reason ? `Athlete reason: ${reason}.` : 'No reason given.',
-    'Rank three alternatives for right now. Best pick first. Respect MT cap and posture constraints from the profile.',
-  ]
-  if (todayLog) {
-    const w: string[] = []
-    if (todayLog.sleepHours != null) w.push(`sleep ${todayLog.sleepHours}h`)
-    if (todayLog.soreness != null) w.push(`soreness ${todayLog.soreness}/5`)
-    if (todayLog.alcoholScale != null) w.push(`alcohol ${todayLog.alcoholScale}/10`)
-    if (w.length > 0) lines.push(`Wellness today: ${w.join(', ')}.`)
-  }
-  const completed = weekSessions.filter(s => s.status === 'completed')
-  lines.push(`Completed so far this week: ${completed.length > 0 ? completed.map(s => SESSION_LABEL[s.type] ?? s.type).join(', ') : 'none'}.`)
-  const remaining = weekSessions.filter(s => s.scheduledDate != null && s.scheduledDate > todayEpochDay && s.status !== 'skipped')
-  if (remaining.length > 0) {
-    lines.push('Remaining this week:')
-    for (const s of remaining) {
-      const dow = new Date((s.scheduledDate ?? 0) * 86400000).getUTCDay()
-      lines.push(`  ${DAY_NAMES[dow]} ${(s.timeSlot ?? 'am').toUpperCase()}: ${SESSION_LABEL[s.type] ?? s.type}`)
-    }
-  }
-  if (adherenceBlock) lines.push('', adherenceBlock)
-  if (hrBlock) lines.push('', hrBlock)
-  lines.push('', 'Give exactly three options ranked best to worst. coachLine explains only the top pick. Voice canon.', jsonInstructionFor(TOOL_REPLACE_SUGGESTIONS))
+  // Block Zero: rules context in the user message, guardrails on the output.
+  const bzGuard = await loadBlockZeroGuardContext(db, todayEpochDay)
+  const bzInput = bzGuard ? await loadBlockZeroAiContext(db, todayEpochDay) : null
+  const prompt = buildReplacePrompt({
+    session: { type: sess.type, timeSlot: sess.timeSlot },
+    todayEpochDay,
+    reason,
+    wellness: todayLog ? { sleepHours: todayLog.sleepHours, soreness: todayLog.soreness, alcoholScale: todayLog.alcoholScale } : null,
+    weekSessions,
+    adherenceBlock,
+    hrBlock,
+    blockZeroContext: bzInput ? serializeBlockZeroContext(bzInput) : null,
+  })
 
   const profile = await loadProfile(db)
   const starter = await computeStarterStatus(db, todayEpochDay, profile.trainingHistory, profile.constraints)
@@ -637,7 +692,7 @@ export async function runReplaceSuggestions(
     output_config: { effort: 'low', format: jsonFormatFor(TOOL_REPLACE_SUGGESTIONS) },
     fallbacks: 'default',
     system: systemBlocks,
-    messages: [{ role: 'user', content: lines.join('\n') }],
+    messages: [{ role: 'user', content: prompt }],
   })
 
   if (result.offline) {
@@ -653,6 +708,16 @@ export async function runReplaceSuggestions(
   }
   output.suggestions = output.suggestions.slice(0, 3)
 
+  let final = output
+  let guardrails: ReturnType<typeof clampsForStorage> & { original?: ReplaceSuggestionsOutput } | null = null
+  if (bzGuard) {
+    const replaced = { id: sess.id, type: sess.type, epochDay: sess.scheduledDate ?? todayEpochDay, timeSlot: sess.timeSlot === 'pm' ? 'pm' as const : 'am' as const }
+    const guarded = guardReplaceSuggestions(output, replaced, bzGuard)
+    logClamps('replace_suggestions', guarded.clamps)
+    final = guarded.output
+    guardrails = { ...clampsForStorage(guarded.clamps), ...(guarded.clamps.length > 0 ? { original: output } : {}) }
+  }
+
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'replace_suggestions',
@@ -660,14 +725,14 @@ export async function runReplaceSuggestions(
     scopeWeekPlanId: weekPlanId,
     scopeSessionId: sessionId,
     inputHash: null,
-    outputJson: JSON.stringify(output),
+    outputJson: JSON.stringify(guardrails ? { ...final, guardrails } : final),
     tokensIn: result.usage.input_tokens,
     tokensOut: result.usage.output_tokens,
     cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
     createdAt: Math.floor(Date.now() / 1000),
   })
 
-  return { ...output, coachLine: sanitizeVoice(output.coachLine) }
+  return { ...final, coachLine: sanitizeVoice(final.coachLine) }
 }
 
 // Voice canon: strip em dashes in case the model slips. Cheap insurance.
