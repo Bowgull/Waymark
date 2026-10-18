@@ -71,7 +71,7 @@ import { formatTestValue, liftNameFromId } from './testWeek'
   assert.equal(gateBoardShows(1, 1, 6, []), false, 'no test-week board in week 1')
   assert.equal(gateBoardShows(6, 6, 6, []), false, 'week 6 before a number is in: no board')
   assert.equal(gateBoardShows(6, 6, 6, talk6), true, 'week 6 once the talk test is in')
-  assert.equal(gateBoardShows(6, 6, 6, [{ week: 6, testKey: 'e1rm:ex-front-squat', value: 88 }]), true, 'or the front squat estimate')
+  assert.equal(gateBoardShows(6, 6, 6, [{ week: 6, testKey: 'e1rm:ex-front-squat', value: 88 }]), false, 'the squat estimate alone does not open it')
   assert.equal(gateBoardShows(6, 6, 6, [{ week: 6, testKey: 'pushups_max', value: 20 }]), false, 'a dropped test does not open it')
   assert.equal(gateBoardShows(5, 6, 6, talk6), false, 'only on the current week')
   assert.equal(gateBoardShows(6, 6, 6, null), true, 'results could not load: shows by the week')

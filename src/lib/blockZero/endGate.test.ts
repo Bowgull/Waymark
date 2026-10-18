@@ -83,12 +83,12 @@ assert(retestE1rms([{ exerciseId: 'ex-front-squat', weightKg: 60, reps: 8, rir: 
 
 // ─── "Retest done" with no test week (2026-10-18) ──────────────
 assert(GATE_SQUAT_ID === 'ex-front-squat', 'the gate reads the front squat')
-assert(retestDoneFrom(new Map([['ex-front-squat', 88]]), []), 'the week-6 front squat estimate from sets is enough')
+assert(!retestDoneFrom(new Map([['ex-front-squat', 88]]), []), 'the squat estimate alone does not open the gate')
 assert(retestDoneFrom(new Map(), [1, 6]), 'the week-6 talk test is enough')
 assert(retestDoneFrom(new Map(), [7]), 'an extension-week talk test counts')
 assert(!retestDoneFrom(new Map([['ex-bench-press', 70]]), [1]), 'bench only and a week-1 talk test: not done')
 assert(isRetestSetWeek(5) && isRetestSetWeek(6) && !isRetestSetWeek(4) && !isRetestSetWeek(null), 'week 5 and 6 sets (and extension weeks, stamped 5) feed the estimates')
-assert(evaluateEndGate({ ...clean, retestDone: false }).reasons.includes('No week-6 front squat estimate or talk test yet.'), 'missing numbers: the reason names them')
+assert(evaluateEndGate({ ...clean, retestDone: false }).reasons.includes('No week-6 talk test yet. Log it on an easy run.'), 'missing numbers: the reason names them')
 assert(evaluateEndGate(clean).reasons[0] === 'Consistency, back and the week-6 numbers are in. Move on.', 'proceed reason')
 
 // ─── Transition plan (bug 1e) ───────────────────────────────────

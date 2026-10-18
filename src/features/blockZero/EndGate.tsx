@@ -15,7 +15,7 @@ function ComparisonBoard({ rows }: { rows: ComparisonRow[] }) {
   return (
     <Board className="bz-bd" head="Week 1 → week 6">
       {rows.length === 0 ? (
-        <p className="bz-q is-last">No week-6 numbers yet. The front squat sets and the week-6 talk test fill this in.</p>
+        <p className="bz-q is-last">No week-6 talk test yet. Log it on an easy run.</p>
       ) : rows.map(r => {
         // Page 45: teal band up, clay band down; no change or no judgement is a plain row with a neutral chip.
         const tone = r.better == null ? 'nt' : r.better ? 'up' : 'dn'

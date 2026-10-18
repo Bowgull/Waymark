@@ -61,7 +61,7 @@ export function evaluateEndGate(input: EndGateInput): EndGateResult {
     if (input.longestRecentGapDays >= 14) severe = true
   }
   if (input.backTrend === 'worse') reasons.push('The back is trending worse.')
-  if (!input.retestDone) reasons.push('No week-6 front squat estimate or talk test yet.')
+  if (!input.retestDone) reasons.push('No week-6 talk test yet. Log it on an easy run.')
 
   if (reasons.length === 0) {
     return { decision: 'proceed', extendWeeks: 0, forced: false, reasons: ['Consistency, back and the week-6 numbers are in. Move on.'] }
@@ -144,11 +144,12 @@ export function isRetestSetWeek(blockWeek: number | null | undefined): boolean {
 }
 
 /**
- * "Retest done": the week-6 front squat estimate from logged sets, or the
- * week-6 (or later) talk-test HR from the run log. Either one is enough.
+ * "Retest done": the week-6 (or later) talk-test HR from the run log. The
+ * front squat estimate always exists from logged sets, so it never gates
+ * (owner decision, design-decisions.md "Block Zero tests").
  */
-export function retestDoneFrom(e1rms: ReadonlyMap<string, number>, talkTestWeeks: readonly number[]): boolean {
-  return e1rms.has(GATE_SQUAT_ID) || talkTestWeeks.some(w => w >= BLOCK_ZERO_BASE_WEEKS)
+export function retestDoneFrom(_e1rms: ReadonlyMap<string, number>, talkTestWeeks: readonly number[]): boolean {
+  return talkTestWeeks.some(w => w >= BLOCK_ZERO_BASE_WEEKS)
 }
 
 export interface RetestSet {

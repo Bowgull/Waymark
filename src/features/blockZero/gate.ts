@@ -130,12 +130,12 @@ export function gateOpen(currentWeek: number, totalWeeks: number): boolean {
 
 /**
  * Program's one Block Zero board (page 45): THE GATE · SEE THE VERDICT, in
- * the block's last week once a week-6 number is in (the talk test from the
- * run log, or the front squat estimate). No test-week or retest boards.
+ * the block's last week once the week-6 talk test from the run log is in.
+ * No test-week or retest boards.
  * `rows` null (couldn't load): it shows by the week.
  */
 export function gateBoardShows(viewWeek: number, currentWeek: number, totalWeeks: number, rows: readonly TestRowIn[] | null): boolean {
   if (!gateOpen(currentWeek, totalWeeks) || viewWeek !== currentWeek) return false
   if (rows == null) return true
-  return rows.some(r => r.week >= BLOCK_ZERO_BASE_WEEKS && GATE_ROWS.some(g => g.key === r.testKey))
+  return rows.some(r => r.week >= BLOCK_ZERO_BASE_WEEKS && r.testKey === 'talk_test_hr')
 }
