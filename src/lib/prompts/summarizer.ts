@@ -56,7 +56,8 @@ export const WEEK_SUMMARY_TOOL: Tool = {
 const SUMMARIZER_SYSTEM =
   'You summarize training weeks into compact factual records for AI context reuse. ' +
   'No encouragement. No filler. State numbers plainly. Fragments are fine. ' +
-  'Two sentences max for narrative. If data is missing, say "no data" rather than speculating.'
+  'Two sentences max for narrative. If data is missing, say "no data" rather than speculating. ' +
+  'Weights in lb only. Never write kg.'
 
 function buildWeekPrompt(
   weekNumber: number,

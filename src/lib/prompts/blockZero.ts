@@ -7,6 +7,7 @@ import { serializeAdherenceForPrompt, type AdherenceGuidance, type AdherenceSnap
 import type { BackTrend, FixedResult, TestDelta } from '../blockZero'
 import type { UserProfileContext } from './system'
 import { TOOL_BLOCK_TRANSITION } from './tools'
+import { kgToLbs, kgToLbsFloor, lbsToKgStored } from '../units'
 
 export interface BlockZeroWeekTheme {
   weekNumber: number
@@ -25,6 +26,28 @@ export interface BlockZeroAssessmentOutput {
   calibrationStarts: BlockZeroCalibrationStart[]
   mtCapPerWeek: number
   coachNote?: string
+}
+
+/**
+ * The assessment as the model writes it. Every weight in the prompt is lb, so
+ * the model answers in lb (startingWeightLb) and never converts. The server
+ * turns it into the stored kg shape (assessmentFromModel) before any guard.
+ * startingWeightKg is read only from an older reply with no lb field.
+ */
+export interface BlockZeroAssessmentModelOutput extends Omit<BlockZeroAssessmentOutput, 'calibrationStarts'> {
+  calibrationStarts?: Array<{ exerciseName: string; startingWeightLb?: number; startingWeightKg?: number; rationale: string }>
+}
+
+/** Model reply (lb) -> stored assessment (kg). Pure. */
+export function assessmentFromModel(raw: BlockZeroAssessmentModelOutput): BlockZeroAssessmentOutput {
+  const starts = Array.isArray(raw.calibrationStarts) ? raw.calibrationStarts : []
+  return {
+    ...raw,
+    calibrationStarts: starts.map(({ startingWeightLb, startingWeightKg, ...rest }) => ({
+      ...rest,
+      startingWeightKg: typeof startingWeightLb === 'number' ? lbsToKgStored(startingWeightLb) : (startingWeightKg ?? 0),
+    })),
+  }
 }
 
 export const BLOCK_ZERO_TOOL: Tool = {
@@ -64,18 +87,18 @@ export const BLOCK_ZERO_TOOL: Tool = {
           type: 'object',
           properties: {
             exerciseName: { type: 'string' },
-            startingWeightKg: {
+            startingWeightLb: {
               type: 'number',
               description:
-                'Estimated training max. Block Zero week 1 suggests about 55% of this for a set of 8 at RPE 6-7. Must be realistic given current state.',
+                'Estimated training max in pounds (lb), the same unit as every weight in the prompt. Block Zero week 1 suggests about 55% of this for a set of 8 at RPE 6-7. Must be realistic given current state.',
             },
             rationale: {
               type: 'string',
               description:
-                'One sentence. Voice canon: plain, factual. State the data point behind the estimate. Example: "No recent strength data. Estimate from typical detrained intermediate baseline."',
+                'One sentence. Voice canon: plain, factual. State the data point behind the estimate, in lb. Never write kg. Example: "No recent strength data. Estimate from typical detrained intermediate baseline."',
             },
           },
-          required: ['exerciseName', 'startingWeightKg', 'rationale'],
+          required: ['exerciseName', 'startingWeightLb', 'rationale'],
         },
       },
       mtCapPerWeek: {
@@ -110,21 +133,31 @@ export interface AssessmentTestData {
   fixed: FixedResult[]
 }
 
-function kg(n: number): string {
+function num(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
 
+/** A stored kg weight as the lb the athlete reads. */
+function lb(kgValue: number): string {
+  return `${kgToLbs(kgValue)} lb`
+}
+
+/** A training-max ceiling in lb, rounded down so an answer at it stays under the kg rule. */
+function lbCeiling(kgValue: number): string {
+  return `${kgToLbsFloor(kgValue)} lb`
+}
+
 function fixedLine(r: FixedResult): string {
-  return `${r.label} ${kg(r.value)} ${r.unit}`
+  return r.unit === 'kg' ? `${r.label} ${lb(r.value)}` : `${r.label} ${num(r.value)} ${r.unit}`
 }
 
 export function serializeAssessmentTests(tests: AssessmentTestData): string[] {
   const lines = ['Week 1 test results. These are real numbers. Base calibrationStarts on them:']
   for (const l of tests.lifts) {
     const from = l.source === 'test'
-      ? `logged e1RM ${kg(l.e1rmKg)} kg`
-      : `work-up ${kg(l.workup?.weightKg ?? 0)} kg x ${l.workup?.reps ?? 8}, ${(l.workup?.rir ?? 3) >= 3 ? '3+' : l.workup?.rir} left, e1RM about ${kg(l.e1rmKg)} kg`
-    lines.push(`  ${l.name} (id: ${l.exerciseId}): ${from}. Ceiling ${kg(l.ceilingKg)} kg.`)
+      ? `logged e1RM ${lb(l.e1rmKg)}`
+      : `work-up ${lb(l.workup?.weightKg ?? 0)} x ${l.workup?.reps ?? 8}, ${(l.workup?.rir ?? 3) >= 3 ? '3+' : l.workup?.rir} left, e1RM about ${lb(l.e1rmKg)}`
+    lines.push(`  ${l.name} (id: ${l.exerciseId}): ${from}. Ceiling ${lbCeiling(l.ceilingKg)}.`)
   }
   if (tests.fixed.length > 0) lines.push(`  ${tests.fixed.map(fixedLine).join('. ')}.`)
   lines.push(
@@ -153,6 +186,8 @@ export function buildAssessmentPrompt(
     '  No MT classes are scheduled. The athlete adds them: technique and pads only for the first 2 weeks back, light clinch from week 3, no hard sparring.',
     '',
     'User profile is in the system prompt.',
+    '',
+    'Every weight here is in lb. startingWeightLb is pounds (lb). Write weights in lb only, never kg.',
     '',
     'For calibrationStarts: estimate training maxes for the main compound lifts. Use these exact exercise names: Front Squat, Romanian Deadlift, Block Pull, Conventional Deadlift, Bench Press, Overhead Press, Bent Over Row. Be conservative. If training history indicates a long gap or no strength training, use detrained intermediate baselines.',
   ]
@@ -203,9 +238,15 @@ export interface TransitionTestData {
 }
 
 function deltaLine(d: TestDelta): string {
-  const a = d.week1 != null ? kg(d.week1) : 'none'
-  const b = d.retest != null ? kg(d.retest) : 'none'
-  const change = d.change != null ? ` (${d.change >= 0 ? '+' : ''}${kg(d.change)})` : ''
+  if (d.unit === 'kg') {
+    const a = d.week1 != null ? kgToLbs(d.week1) : null
+    const b = d.retest != null ? kgToLbs(d.retest) : null
+    const change = a != null && b != null ? ` (${b - a >= 0 ? '+' : ''}${b - a})` : ''
+    return `  ${d.label}: ${a ?? 'none'} -> ${b ?? 'none'} lb${change}.`
+  }
+  const a = d.week1 != null ? num(d.week1) : 'none'
+  const b = d.retest != null ? num(d.retest) : 'none'
+  const change = d.change != null ? ` (${d.change >= 0 ? '+' : ''}${num(d.change)})` : ''
   return `  ${d.label}: ${a} -> ${b} ${d.unit}${change}.`
 }
 
@@ -216,7 +257,7 @@ export function serializeTransitionTests(tests: TransitionTestData): string[] {
   lines.push('The talk-test HR is the Zone 2 ceiling; a higher number at the same talk test means the aerobic base improved.')
   if (tests.ceilings.length > 0) {
     lines.push('Retest ceilings for calibrationTargets (90% of retest e1RM, 85% on adjust):')
-    for (const c of tests.ceilings) lines.push(`  ${c.name} (id: ${c.exerciseId}): e1RM ${kg(c.retestE1rmKg)} kg. Ceiling ${kg(c.ceilingKg)} kg, ${kg(c.adjustCeilingKg)} kg on adjust.`)
+    for (const c of tests.ceilings) lines.push(`  ${c.name} (id: ${c.exerciseId}): e1RM ${lb(c.retestE1rmKg)}. Ceiling ${lbCeiling(c.ceilingKg)}, ${lbCeiling(c.adjustCeilingKg)} on adjust.`)
     lines.push('HARD LIMIT: no calibrationTarget above its ceiling. The app clamps anything above it.')
   }
   return lines
@@ -244,7 +285,7 @@ export function buildTransitionPrompt(data: TransitionPromptData, tests: Transit
   lines.push('')
   lines.push('Main lifts (with database IDs for calibrationTargets):')
   for (const lift of data.mainLifts) {
-    const maxStr = lift.currentMaxKg != null ? `current max ${lift.currentMaxKg}kg` : 'no max set'
+    const maxStr = lift.currentMaxKg != null ? `current max ${lb(lift.currentMaxKg)}` : 'no max set'
     lines.push(`  ${lift.name} (id: ${lift.id}): ${maxStr}`)
   }
 
@@ -269,6 +310,7 @@ export function buildTransitionPrompt(data: TransitionPromptData, tests: Transit
   lines.push(tests && tests.ceilings.length > 0
     ? 'Set calibrationTargets from the retest e1RMs above, at or under each ceiling. Use the exact exercise IDs from above. Lifts with no retest: keep estimates conservative (low confidence).'
     : 'Set calibrationTargets with updated training max estimates based on observed Block Zero performance. Use the exact exercise IDs from above. If adherence was poor, keep estimates conservative (low confidence).')
+  lines.push('Every weight here is in lb. estimatedMaxLb is pounds (lb). Write weights in lb only, never kg.')
   lines.push('Voice canon applies to rationale and nextBlockNotes: short sentences, no exclamation marks, no congratulations, no em dashes. The rationale is the one-line why.')
   lines.push('')
   lines.push(jsonInstructionFor(TOOL_BLOCK_TRANSITION))

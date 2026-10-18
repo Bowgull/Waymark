@@ -11,12 +11,14 @@ import { anthropicCall, getStructuredOutput, jsonFormatFor } from '../../lib/ant
 import { MODELS } from '../../lib/models'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
 import { getLatestBodyweightKg } from '../../lib/bodyMetrics'
-import { TOOL_BLOCK_TRANSITION, type BlockTransitionOutput } from '../../lib/prompts/tools'
+import { TOOL_BLOCK_TRANSITION, transitionFromModel, type BlockTransitionModelOutput, type BlockTransitionOutput } from '../../lib/prompts/tools'
 import {
   BLOCK_ZERO_TOOL,
+  assessmentFromModel,
   buildAssessmentPrompt,
   buildTransitionPrompt,
   type AssessmentTestData,
+  type BlockZeroAssessmentModelOutput,
   type BlockZeroAssessmentOutput,
   type TransitionPromptData,
   type TransitionTestData,
@@ -148,7 +150,9 @@ export async function runBlockZeroAssessment(
     return null
   }
 
-  const raw = getStructuredOutput<BlockZeroAssessmentOutput>(result)
+  // The model answers in lb; from here on it is the stored kg shape.
+  const reply = getStructuredOutput<BlockZeroAssessmentModelOutput>(result)
+  const raw = reply ? assessmentFromModel(reply) : null
   if (!raw) {
     console.warn('[blockZero] no structured output from assessment')
     return null
@@ -437,7 +441,9 @@ export async function runBlockZeroTransition(
   if (result.offline) {
     console.warn('[blockZero] offline during transition check, rules decide alone')
   } else {
-    output = getStructuredOutput<BlockTransitionOutput>(result)
+    // The model answers in lb; the rules and guards read kg.
+    const reply = getStructuredOutput<BlockTransitionModelOutput>(result)
+    output = reply ? transitionFromModel(reply) : null
     if (!output) console.warn('[blockZero] no structured output from transition check, rules decide alone')
   }
 

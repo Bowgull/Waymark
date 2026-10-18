@@ -1,6 +1,7 @@
 // Pure serializer: AthleteContext -> prompt body for the Phase 2 reasoning pass.
 // Kept separate from assembly so it can be unit-tested without a DB.
 import type { AthleteContext } from './types'
+import { kgToLbs } from '../units'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -84,9 +85,9 @@ export function serializeAthleteContext(ctx: AthleteContext): string {
   }
 
   // Body + maxes
-  if (ctx.bodyweightKg != null) lines.push('', `Latest bodyweight: ${ctx.bodyweightKg} kg.`)
+  if (ctx.bodyweightKg != null) lines.push('', `Latest bodyweight: ${kgToLbs(ctx.bodyweightKg)} lb.`)
   if (ctx.trainingMaxes.length > 0) {
-    lines.push(`Training maxes: ${ctx.trainingMaxes.map(t => `${t.exerciseName} ${t.weightKg}kg`).join(', ')}.`)
+    lines.push(`Training maxes: ${ctx.trainingMaxes.map(t => `${t.exerciseName} ${kgToLbs(t.weightKg)} lb`).join(', ')}.`)
   }
 
   // Reused blocks

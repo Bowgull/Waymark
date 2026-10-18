@@ -1,4 +1,5 @@
 import { cachedSystem, system, type SystemBlock } from '../anthropic'
+import { kgToLbs } from '../units'
 
 export interface TrainingMax {
   exerciseName: string
@@ -27,6 +28,7 @@ Voice rules (apply to all user-facing strings in your structured outputs):
 - Never congratulate. Acknowledge, then raise the bar.
 - Never apologize for app behavior. State the fact.
 - Numbers stated plainly: "Deadlift 145", not "You hit 145lb on the deadlift!"
+- Weights in lb only. Never write kg. Every weight you are given is already in lb.
 - No em dashes. Use periods, commas, or parentheses instead.
 
 Approved copy examples:
@@ -125,13 +127,13 @@ function serializeProfile(profile: UserProfileContext): string {
   if (profile.mtGymAccessDays) lines.push(`MT gym access days: ${profile.mtGymAccessDays}`)
   if (profile.mtCapPerWeek != null) lines.push(`MT cap per week: ${profile.mtCapPerWeek} sessions`)
   if (profile.weeklyDayTarget != null) lines.push(`Weekly training days target: ${profile.weeklyDayTarget}`)
-  if (profile.latestBodyweightKg != null) lines.push(`Bodyweight: ${profile.latestBodyweightKg.toFixed(1)}kg (logged within last 30 days)`)
+  if (profile.latestBodyweightKg != null) lines.push(`Bodyweight: ${kgToLbs(profile.latestBodyweightKg)} lb (logged within last 30 days)`)
 
   if (profile.trainingMaxes.length > 0) {
     lines.push('')
     lines.push('# Training Maxes')
     for (const max of profile.trainingMaxes) {
-      lines.push(`${max.exerciseName}: ${max.weightKg}kg`)
+      lines.push(`${max.exerciseName}: ${kgToLbs(max.weightKg)} lb`)
     }
   }
 

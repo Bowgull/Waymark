@@ -26,12 +26,14 @@ import {
   TOOL_REACTIVE_REPLAN,
   TOOL_REPLACE_SUGGESTIONS,
   TOOL_WEEK_PLAN,
+  transitionFromModel,
+  type BlockTransitionModelOutput,
   type BlockTransitionOutput,
   type ReactiveReplanOutput,
   type ReplaceSuggestionsOutput,
   type WeekPlanOutput,
 } from '../src/lib/prompts/tools'
-import { BLOCK_ZERO_TOOL, buildAssessmentPrompt, buildTransitionPrompt, type BlockZeroAssessmentOutput, type TransitionPromptData } from '../src/lib/prompts/blockZero'
+import { BLOCK_ZERO_TOOL, assessmentFromModel, buildAssessmentPrompt, buildTransitionPrompt, type BlockZeroAssessmentModelOutput, type BlockZeroAssessmentOutput, type TransitionPromptData } from '../src/lib/prompts/blockZero'
 import {
   calibrationCeilingKg,
   getBlockZeroWeekTemplate,
@@ -298,6 +300,19 @@ const sonnet = (tool: typeof TOOL_REACTIVE_REPLAN, content: string, effort: 'low
 
 const ok = (clamps: Clamp[]) => clamps.filter(c => c.code !== 'voice')
 
+// Josh reads lb. Model text must never say kg; a prompt may name kg only to forbid it.
+const KG = /\bkg\b|\dkg/i
+function kgStrings(value: unknown, out: string[] = []): string[] {
+  if (typeof value === 'string') { if (KG.test(value)) out.push(value) }
+  else if (Array.isArray(value)) for (const v of value) kgStrings(v, out)
+  else if (value && typeof value === 'object') for (const v of Object.values(value)) kgStrings(v, out)
+  return out
+}
+function promptHasKg(req: AnthropicRequest): boolean {
+  const text = [...(req.system ?? []).map(b => b.text), ...req.messages.map(m => (typeof m.content === 'string' ? m.content : ''))].join('\n')
+  return KG.test(text.replace(/never (write )?kg/gi, ''))
+}
+
 // ─── Weekly pass (adaptive coach): fake Fighter athlete ─────────
 
 const NEXT_MON = MON + 7
@@ -422,10 +437,11 @@ const checks: Check[] = [
     name: 'assessment with week-1 tests (Sonnet)',
     req: { ...sonnet(BLOCK_ZERO_TOOL as typeof TOOL_REACTIVE_REPLAN, assessmentPrompt, 'high', 16000) },
     timeoutMs: 150_000,
-    parse: r => getStructuredOutput<BlockZeroAssessmentOutput>(r),
-    stub: { narrative: 'Stub.', weekThemes: [], calibrationStarts: [{ exerciseName: 'Bench Press', startingWeightKg: 90, rationale: 'Stub.' }], mtCapPerWeek: 4 },
+    parse: r => getStructuredOutput<BlockZeroAssessmentModelOutput>(r),
+    stub: { narrative: 'Stub.', weekThemes: [], calibrationStarts: [{ exerciseName: 'Bench Press', startingWeightLb: 200, rationale: 'Stub.' }], mtCapPerWeek: 4 },
     guard: out => {
-      const g = guardAssessment(out as BlockZeroAssessmentOutput, exerciseRows, blockTests)
+      // The model answers in lb; the server converts to kg before the guard.
+      const g = guardAssessment(assessmentFromModel(out as BlockZeroAssessmentModelOutput) as BlockZeroAssessmentOutput, exerciseRows, blockTests)
       const capped = g.writes.every(w => w.weightKg <= (blockTests.ceilings.get(w.exerciseId) ?? Infinity))
       return { clamps: g.clamps, pass: capped && (g.mtCap ?? 0) <= 3, note: `writes: ${g.writes.map(w => `${w.exerciseId}=${w.weightKg}`).join(', ') || 'none'}; MT cap ${g.mtCap}` }
     },
@@ -434,10 +450,11 @@ const checks: Check[] = [
     name: 'transition with retest (Sonnet)',
     req: sonnet(TOOL_BLOCK_TRANSITION, transitionPrompt, 'high', 16000),
     timeoutMs: 150_000,
-    parse: r => getStructuredOutput<BlockTransitionOutput>(r),
-    stub: { decision: 'proceed', rationale: 'Stub.', calibrationTargets: [{ exerciseId: 'ex-bench-press', exerciseName: 'Bench Press', estimatedMaxKg: 100, confidence: 'high' }] },
+    parse: r => getStructuredOutput<BlockTransitionModelOutput>(r),
+    stub: { decision: 'proceed', rationale: 'Stub.', calibrationTargets: [{ exerciseId: 'ex-bench-press', exerciseName: 'Bench Press', estimatedMaxLb: 220, confidence: 'high' }] },
     guard: out => {
-      const o = out as BlockTransitionOutput
+      // The model answers in lb; the server converts to kg before the rules.
+      const o: BlockTransitionOutput = transitionFromModel(out as BlockTransitionModelOutput)
       const plan = planTransition({
         gate: { completionRate: 0.88, longestRecentGapDays: 3, backTrend: 'better', retestDone: true, extensionsUsed: 0 },
         aiDecision: o.decision,
@@ -486,8 +503,13 @@ for (const c of checks) {
     continue
   }
   const g = c.guard(output)
-  if (!g.pass) failures++
-  console.log(`${g.pass ? 'PASS' : 'FAIL'} ${c.name}\n  ${line}\n  clamps applied: ${g.clamps.length}${g.clamps.map(x => `\n    - ${x.code} ${x.detail}: ${x.reason}`).join('')}\n  result: ${g.note}\n`)
+  // Model text (raw, before any guard) and the prompt: weights in lb only.
+  const kgText = kgStrings(output)
+  const kgPrompt = promptHasKg(c.req)
+  const pass = g.pass && kgText.length === 0 && !kgPrompt
+  if (!pass) failures++
+  const kgNote = `${kgPrompt ? '\n  prompt mentions kg' : ''}${kgText.map(t => `\n  model wrote kg: ${t}`).join('')}`
+  console.log(`${pass ? 'PASS' : 'FAIL'} ${c.name}\n  ${line}\n  clamps applied: ${g.clamps.length}${g.clamps.map(x => `\n    - ${x.code} ${x.detail}: ${x.reason}`).join('')}\n  result: ${g.note}${kgNote}\n`)
 }
 
 console.log(`${checks.length - failures}/${checks.length} passed.${DRY ? '' : ` Approximate cost: $${total.toFixed(4)} (list prices, see PRICES).`}`)

@@ -50,6 +50,7 @@ import { zone2CeilingBpm } from '../lib/hrAnalysis'
 import { mondayOf } from '../lib/dates'
 import type { createDB } from '../db/client'
 import { lbText } from '../lib/units'
+import { loadEquipment, snapForChangeKg } from '../lib/strengthLoads'
 
 type DB = ReturnType<typeof createDB>
 
@@ -486,7 +487,7 @@ export async function loadBlockZeroGuardContext(db: DB, todayEpochDay: number): 
 }
 
 /** Main working sets this block, all lifts, with names. Optionally one set of block weeks. */
-async function loadBlockMainSets(db: DB, blockStart: number, weeks?: number[]): Promise<Array<WorkupSet & { name: string }>> {
+async function loadBlockMainSets(db: DB, blockStart: number, weeks?: number[]): Promise<Array<WorkupSet & { name: string; equipment: string | null }>> {
   const filters = [
     eq(sessions.blockType, 'block_zero'),
     gte(sessions.scheduledDate, blockStart),
@@ -499,6 +500,7 @@ async function loadBlockMainSets(db: DB, blockStart: number, weeks?: number[]): 
     .select({
       exerciseId: strengthSessionExercises.exerciseId,
       name: exercises.name,
+      equipment: exercises.equipment,
       weightKg: strengthSets.weightKg,
       reps: strengthSets.reps,
       plannedReps: strengthSets.plannedReps,
@@ -526,19 +528,21 @@ export async function loadBlockZeroAiContext(db: DB, todayEpochDay: number, week
   const target = getStrengthWeekTarget(week)
   const report = await readinessFor(db, todayEpochDay)
 
-  const byLift = new Map<string, { name: string; sets: LoggedWorkingSet[] }>()
+  const byLift = new Map<string, { name: string; equipment: string | null; sets: LoggedWorkingSet[] }>()
   for (const s of await loadBlockMainSets(db, start)) {
-    const entry = byLift.get(s.exerciseId) ?? { name: s.name, sets: [] }
+    const entry = byLift.get(s.exerciseId) ?? { name: s.name, equipment: s.equipment, sets: [] }
     entry.sets.push(s)
     byLift.set(s.exerciseId, entry)
   }
   const lifts: Array<{ lift: AiContextLift; at: number }> = []
-  for (const [exerciseId, { name, sets: history }] of byLift) {
+  for (const [exerciseId, { name, equipment, sets: history }] of byLift) {
     const top = latestRirTopSet(history, target.reps)
     if (!top || top.weightKg == null || top.rir == null) continue
     const next = blockZeroWorkingLoad({ exerciseId, history, target, eased: report.ease })
+    // The next load as the app prescribes it: snapped to what can be loaded (lb plates).
+    const nextKg = next ? snapForChangeKg(next.weightKg, loadEquipment(equipment), next.change, next.fromKg) : null
     lifts.push({
-      lift: { name, topSet: { weightKg: top.weightKg, reps: top.reps, rir: top.rir }, next: next ? { weightKg: next.weightKg, change: next.change } : null },
+      lift: { name, topSet: { weightKg: top.weightKg, reps: top.reps, rir: top.rir }, next: next && nextKg != null ? { weightKg: nextKg, change: next.change } : null },
       at: top.completedAt ?? 0,
     })
   }

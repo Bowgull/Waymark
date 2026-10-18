@@ -4,7 +4,9 @@
 // data, plus the test-data math they read (week-1 baselines, ceilings,
 // week 1 vs retest deltas) and the assessment guard. Pure: no DB, no API.
 
-import { buildAssessmentPrompt, buildTransitionPrompt, type BlockZeroAssessmentOutput, type TransitionPromptData } from './blockZero'
+import { BLOCK_ZERO_TOOL, assessmentFromModel, buildAssessmentPrompt, buildTransitionPrompt, type BlockZeroAssessmentOutput, type TransitionPromptData } from './blockZero'
+import { TOOL_BLOCK_TRANSITION, transitionFromModel } from './tools'
+import { buildSystemPrompt, emptyProfile } from './system'
 import { calibrationCeilingKg, fixedResults, hasWeek1Tests, retestCeilingKg, testDeltas, week1LiftBaselines, workupE1rm, type TestRow, type WorkupSet } from '../blockZero'
 import { assessmentTestData, guardAssessment, transitionTestData } from '../../server/routes/blockZero'
 import type { BlockTestData } from '../../server/blockZeroData'
@@ -12,6 +14,11 @@ import type { BlockTestData } from '../../server/blockZeroData'
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(msg)
   console.log(`ok: ${msg}`)
+}
+
+/** Josh reads lb. A rendered prompt may name kg only to forbid it ("never kg"). */
+function kgFree(text: string): boolean {
+  return !/\bkg\b|\dkg/i.test(text.replace(/never (write )?kg/gi, ''))
 }
 
 // ─── Test-data math ─────────────────────────────────────────────
@@ -71,8 +78,10 @@ const tests = assessmentTestData(testData)
 assert(tests != null && tests.lifts.length === 3, 'assessment test data: one line per baseline lift')
 const withTests = buildAssessmentPrompt(profile, tests)
 assert(withTests.startsWith('Block Zero week 1 tests are in.'), 'with tests: reassessment framing')
-assert(withTests.includes('Bench Press (id: ex-bench-press): work-up 50 kg x 8, 3+ left, e1RM about 66.7 kg. Ceiling 60 kg.'), 'work-up line with the ceiling')
-assert(withTests.includes('Romanian Deadlift (id: ex-rdl): logged e1RM 80 kg. Ceiling 72 kg.'), 'logged e1RM line with the ceiling')
+assert(withTests.includes('Bench Press (id: ex-bench-press): work-up 110 lb x 8, 3+ left, e1RM about 147 lb. Ceiling 132 lb.'), 'work-up line with the ceiling, in lb (ceiling rounded down)')
+assert(withTests.includes('Romanian Deadlift (id: ex-rdl): logged e1RM 176 lb. Ceiling 158 lb.'), 'logged e1RM line with the ceiling, in lb')
+assert(withTests.includes('startingWeightLb is pounds (lb)'), 'the unit of the returned field is stated')
+assert(kgFree(plain) && kgFree(withTests), 'assessment prompts: no kg')
 assert(withTests.includes('Push-ups 22 reps') && withTests.includes('HR at fixed effort 151 bpm') && withTests.includes('Talk-test HR 142 bpm') && withTests.includes('Mobility thoracic 3 score'), 'fixed tests listed')
 assert(withTests.includes('HARD LIMIT: no calibrationStart above its lift\'s ceiling'), 'the ceiling is stated as a hard limit')
 assert(withTests.includes('They are not saved until tested.'), 'untested lifts: told they wait for a test')
@@ -126,10 +135,34 @@ const tt = transitionTestData(testData, new Map([['ex-bench-press', 72]]), 'bett
 assert(tt != null && tt.ceilings.length === 1 && tt.ceilings[0].ceilingKg === 65 && tt.ceilings[0].adjustCeilingKg === 61, 'retest ceilings 90% / 85% of 72')
 const t1 = buildTransitionPrompt(data, tt)
 assert(t1.includes('Week 1 vs retest (real test numbers):'), 'with tests: deltas block')
-assert(t1.includes('Bench Press e1RM: 66.7 -> 72 kg (+5.3).') && t1.includes('Talk-test HR: 142 -> 146 bpm (+4).') && !t1.includes('Push-ups') && !t1.includes('fixed effort'), 'e1RM and talk-test deltas only')
+assert(t1.includes('Bench Press e1RM: 147 -> 159 lb (+12).') && t1.includes('Talk-test HR: 142 -> 146 bpm (+4).') && !t1.includes('Push-ups') && !t1.includes('fixed effort'), 'e1RM and talk-test deltas only')
 assert(t1.includes('Back today trend (first week vs last week): better.'), 'back trend')
-assert(t1.includes('Bench Press (id: ex-bench-press): e1RM 72 kg. Ceiling 65 kg, 61 kg on adjust.') && t1.includes('HARD LIMIT: no calibrationTarget above its ceiling.'), 'retest ceilings stated as a hard limit')
+assert(t1.includes('Bench Press (id: ex-bench-press): e1RM 159 lb. Ceiling 143 lb, 134 lb on adjust.') && t1.includes('HARD LIMIT: no calibrationTarget above its ceiling.'), 'retest ceilings stated as a hard limit')
 assert(t1.includes('Set calibrationTargets from the retest e1RMs above'), 'targets anchored to the retest')
 assert(transitionTestData({ ...testData, rows: [], baselines: new Map() }, new Map(), 'unknown') === null, 'no test data at all: no test block')
+assert(t0.includes('Bench Press (id: ex-bench-press): current max 132 lb') && t1.includes('estimatedMaxLb is pounds (lb)'), 'current max in lb, the unit of the returned field stated')
+assert(kgFree(t0) && kgFree(t1), 'transition prompts: no kg')
+
+// ─── System prompt and returned-field units ─────────────────────
+
+const sys = buildSystemPrompt({ ...emptyProfile(), latestBodyweightKg: 80, trainingMaxes: [{ exerciseName: 'Bench Press', weightKg: 60 }] }, null).map(b => b.text).join('\n')
+assert(sys.includes('Weights in lb only. Never write kg.'), 'voice rule: lb only')
+assert(sys.includes('Bodyweight: 176 lb') && sys.includes('Bench Press: 132 lb'), 'profile bodyweight and training maxes in lb')
+assert(kgFree(sys), 'system prompt: no kg')
+
+const startSchema = (BLOCK_ZERO_TOOL.input_schema as { properties: { calibrationStarts: { items: { properties: Record<string, { description?: string }>; required: string[] } } } }).properties.calibrationStarts.items
+assert(startSchema.required.includes('startingWeightLb') && /pounds \(lb\)/.test(startSchema.properties.startingWeightLb.description ?? ''), 'assessment returns startingWeightLb, defined as pounds')
+const targetSchema = (TOOL_BLOCK_TRANSITION.input_schema as { properties: { calibrationTargets: { items: { properties: Record<string, { description?: string }>; required: string[] } } } }).properties.calibrationTargets.items
+assert(targetSchema.required.includes('estimatedMaxLb') && /pounds \(lb\)/.test(targetSchema.properties.estimatedMaxLb.description ?? ''), 'transition returns estimatedMaxLb, defined as pounds')
+
+// lb reply -> stored kg, then the kg guard.
+const fromLb = assessmentFromModel({ narrative: 'x', weekThemes: [], mtCapPerWeek: 2, calibrationStarts: [{ exerciseName: 'Bench Press', startingWeightLb: 132, rationale: 'Test.' }, { exerciseName: 'Romanian Deadlift', startingWeightLb: 200, rationale: 'Test.' }] })
+assert(fromLb.calibrationStarts[0].startingWeightKg === 59.87 && fromLb.calibrationStarts[1].startingWeightKg === 90.72, 'assessment lb -> kg (132 lb = 59.87 kg)')
+const gLb = guardAssessment(fromLb, exerciseRows, testData)
+assert(gLb.clamps.every(c => c.code !== 'load_cap' || c.detail.includes('ex-rdl')) && gLb.writes.find(w => w.exerciseId === 'ex-bench-press')?.weightKg === 59.87, 'bench at its lb ceiling stays under the kg ceiling, no clamp')
+assert(gLb.writes.find(w => w.exerciseId === 'ex-rdl')?.weightKg === 72, 'RDL 200 lb (90.7 kg) clamped to its 72 kg ceiling')
+assert(assessmentFromModel({ narrative: 'x', weekThemes: [], mtCapPerWeek: 2, calibrationStarts: [{ exerciseName: 'Bench Press', startingWeightKg: 55, rationale: 'Old.' }] }).calibrationStarts[0].startingWeightKg === 55, 'an older kg reply still reads as kg')
+const tr = transitionFromModel({ decision: 'proceed', rationale: 'x', calibrationTargets: [{ exerciseId: 'ex-bench-press', exerciseName: 'Bench Press', estimatedMaxLb: 143, confidence: 'high' }] })
+assert(tr.calibrationTargets[0].estimatedMaxKg === 64.86 && tr.calibrationTargets[0].estimatedMaxKg <= 65, 'transition lb -> kg, at the lb ceiling stays under the 65 kg rule')
 
 console.log('\nBlock Zero prompt assembly passed')

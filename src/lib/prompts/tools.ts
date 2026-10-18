@@ -1,4 +1,5 @@
 import type { Tool } from '../anthropic'
+import { lbsToKgStored } from '../units'
 
 // ─── Output types (used with getToolInput<T>) ─────────────────────
 
@@ -75,6 +76,28 @@ export interface BlockTransitionOutput {
   rationale: string
   calibrationTargets: CalibrationTarget[]
   nextBlockNotes?: string
+}
+
+/**
+ * The transition as the model writes it: targets in lb (estimatedMaxLb), the
+ * unit of every weight in the prompt. transitionFromModel turns it into the
+ * kg shape the rules and guards read. estimatedMaxKg is read only from an
+ * older reply with no lb field.
+ */
+export interface BlockTransitionModelOutput extends Omit<BlockTransitionOutput, 'calibrationTargets'> {
+  calibrationTargets?: Array<Omit<CalibrationTarget, 'estimatedMaxKg'> & { estimatedMaxLb?: number; estimatedMaxKg?: number }>
+}
+
+/** Model reply (lb) -> transition output (kg). Pure. */
+export function transitionFromModel(raw: BlockTransitionModelOutput): BlockTransitionOutput {
+  const targets = Array.isArray(raw.calibrationTargets) ? raw.calibrationTargets : []
+  return {
+    ...raw,
+    calibrationTargets: targets.map(({ estimatedMaxLb, estimatedMaxKg, ...rest }) => ({
+      ...rest,
+      estimatedMaxKg: typeof estimatedMaxLb === 'number' ? lbsToKgStored(estimatedMaxLb) : (estimatedMaxKg ?? 0),
+    })),
+  }
 }
 
 export type SessionFlag = 'none' | 'wellness_concern' | 'pr_hit' | 'form_note' | 'intensity_mismatch'
@@ -278,7 +301,7 @@ export const TOOL_BLOCK_TRANSITION: Tool = {
       },
       rationale: {
         type: 'string',
-        description: 'One to two sentences. Voice canon: plain, no hype, no congratulations.',
+        description: 'One to two sentences. Voice canon: plain, no hype, no congratulations. Weights in lb only, never kg.',
       },
       calibrationTargets: {
         type: 'array',
@@ -288,14 +311,14 @@ export const TOOL_BLOCK_TRANSITION: Tool = {
           properties: {
             exerciseId: { type: 'string' },
             exerciseName: { type: 'string' },
-            estimatedMaxKg: { type: 'number' },
+            estimatedMaxLb: { type: 'number', description: 'Estimated training max in pounds (lb), the same unit as every weight in the prompt.' },
             confidence: {
               type: 'string',
               enum: ['high', 'medium', 'low'],
               description: 'high: observed near-max effort. medium: inferred from working sets. low: insufficient data.',
             },
           },
-          required: ['exerciseId', 'exerciseName', 'estimatedMaxKg', 'confidence'],
+          required: ['exerciseId', 'exerciseName', 'estimatedMaxLb', 'confidence'],
         },
       },
       nextBlockNotes: {

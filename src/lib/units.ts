@@ -15,3 +15,16 @@ export function formatWeight(kg: number | null): string {
   if (kg == null) return '-'
   return `${kgToLbs(kg)} lbs`
 }
+
+/**
+ * A ceiling in whole lb, rounded down, so a number at the ceiling converts
+ * back to kg at or under it (the guardrails compare in kg).
+ */
+export function kgToLbsFloor(kg: number): number {
+  return Math.floor(kg * 2.20462 + 1e-9)
+}
+
+/** A weight the model gave in lb, as the kg the app stores (2 decimals). */
+export function lbsToKgStored(lbs: number): number {
+  return Math.round((lbs / 2.20462) * 100) / 100
+}

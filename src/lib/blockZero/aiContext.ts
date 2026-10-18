@@ -10,6 +10,7 @@ import type { ReadinessItem } from './readiness'
 import { RESTART_SESSION_SEC, RESTART_WEEKLY_SEC, SINGLE_RUN_CAP_RATIO, WEEKLY_RUN_CAP_RATIO, getRunWalkWeek, runWalkTotalSec } from './running'
 import { getStrengthWeekTarget } from './strength'
 import { blockZeroPhase } from './weeks'
+import { kgToLbs } from '../units'
 
 export interface AiContextLift {
   name: string
@@ -129,11 +130,11 @@ export function serializeBlockZeroContext(input: BlockZeroAiContextInput): strin
 
   if (input.lifts.length > 0) {
     const lifts = input.lifts.slice(0, 6).map(x => {
-      const top = x.topSet ? `${fmt(x.topSet.weightKg)}x${x.topSet.reps} @${x.topSet.rir >= 3 ? '3+' : x.topSet.rir}` : 'no RIR'
-      const next = x.next ? ` -> ${fmt(x.next.weightKg)} ${CHANGE_WORD[x.next.change]}` : ''
+      const top = x.topSet ? `${kgToLbs(x.topSet.weightKg)}x${x.topSet.reps} @${x.topSet.rir >= 3 ? '3+' : x.topSet.rir}` : 'no RIR'
+      const next = x.next ? ` -> ${kgToLbs(x.next.weightKg)} ${CHANGE_WORD[x.next.change]}` : ''
       return `${x.name} ${top}${next}`
     })
-    lines.push(`Lifts (kg x reps @RIR -> next per rules): ${lifts.join('; ')}.`)
+    lines.push(`Lifts (lb x reps @RIR -> next per rules): ${lifts.join('; ')}.`)
   }
 
   const backs = input.backScores.map(b => (b == null ? '-' : String(b))).join(' ')
