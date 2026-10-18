@@ -1,5 +1,8 @@
 // Run: tsx src/lib/coach/simulation.test.ts
 //
+// Part 2 (adaptive coach, E3) runs a second athlete through the weekly pass,
+// ramp-up asks, oversleep, added sessions, felt-hard eases and a retest.
+//
 // A scripted athlete runs 16 calendar weeks of a Fighter block through the
 // coach rules, day by day, the way the server calls them (no DB). Life events:
 // a 1-week holiday, a 3-week gap, a sick week, a back flare with an injury
@@ -30,6 +33,26 @@ import {
   type SessionLike,
   type SkipSignal,
 } from './index'
+import {
+  feltHardEase,
+  fighterTmDecision,
+  freshStreak,
+  makeRegularAsk,
+  makeRegularCandidates,
+  rampUpAsk,
+  summarizeEffort,
+  tmProposal,
+  typicalRpe,
+  weekRuleEases,
+  weeklyPassKey,
+  weeklyPassTarget,
+  whyThisWeek,
+  type AddedSession,
+  type BlockWorkingSet,
+  type EffortRead,
+  type WeekSignals,
+} from './index'
+import { evaluateReadiness, type CheckIn } from '../blockZero/readiness'
 import { MON, assert } from './testUtil'
 
 const MT_DAYS = new Set([1, 3, 5])
@@ -120,7 +143,7 @@ function tryChange(change: Parameters<typeof checkSessionChange>[0], today: numb
   const r = checkSessionChange(change, ctx)
   if (r.ok) {
     // Belt and braces: the accepted state must still pass its own rules.
-    const load = ctx.sessions.filter(s => s.epochDay >= mondayOf(change.epochDay) && s.epochDay <= mondayOf(change.epochDay) + 6 && s.status !== 'missed' && s.status !== 'skipped' && s.id !== change.sessionId)
+    const load = ctx.sessions.filter(s => s.epochDay >= mondayOf(change.epochDay) && s.epochDay <= mondayOf(change.epochDay) + 6 && s.status !== 'missed' && s.status !== 'skipped' && s.id !== change.sessionId && !['mobility', 'active_recovery'].includes(s.type))
       .reduce((n, s) => n + plannedLoad(s, 'fighter', ctx.weekNumber), 0) + (change.kind === 'move' ? 0 : plannedLoad(r.change, 'fighter', ctx.weekNumber))
     if (change.kind !== 'move' && !['mobility', 'active_recovery'].includes(change.type) && ctx.planWeekLoad != null && load > ctx.planWeekLoad * 1.05) violations.push(`${label}: crammed past the plan`)
   } else {
@@ -284,5 +307,176 @@ const bz = trainingWeek({ blockType: 'block_zero', startDay: MON, totalWeeks: 6,
 assert(bz.restarted && bz.week === 1, 'Block Zero after 5 weeks off: back to week 1')
 const bzRet = returnContext(bzDays, bzBack)
 assert(bzRet.plan.restart && bzRet.loadFactor === 0.75 && bzRet.noFinishers, 'Block Zero return: mini Block Zero factors, no finishers')
+
+
+// ─── Adaptive coach (E3): a second scripted athlete, 10 weeks ─
+//
+// Well-rested streaks (ramp-up asks: at most one a week, never on an ease
+// day), oversleep with and without fatigue, a session added two weeks
+// running, a hard session plus next-day soreness, a retest that proposes
+// training maxes, and the Sunday weekly pass preparing next week with reasons
+// and no approval step (run twice: once).
+
+{
+  const A_WEEKS = 10
+  const A_MON = MON + 30 * 7
+  const aWeekOf = (d: number) => Math.floor((d - A_MON) / 7)
+  const checkIns: CheckIn[] = []
+  const done: Array<EffortRead & { id: string }> = []
+  const planned: Array<SessionLike & { id: string; eased?: boolean; reason?: string }> = []
+  const rampAsks: Array<{ day: number; easeToday: boolean; streak: number }> = []
+  const passRuns = new Map<string, number>()
+  const preparedWeeks: Array<{ monday: number; status: string; why: string; changes: Array<{ reason: string; was: string }> }> = []
+  const easeLog: Array<{ day: number; target: string; reason: string }> = []
+  const tmSets: BlockWorkingSet[] = []
+  let aid = 0
+
+  // Weeks 2-3 and 6 are well rested; week 4 has a long sleep with low energy
+  // (fatigue), week 5 a long sleep with good energy (recovery); week 7 has an
+  // ease (three bad days) in the middle of a good stretch.
+  const restedWeeks = new Set([2, 3, 6, 7])
+  for (let day = A_MON - 7; day < A_MON + A_WEEKS * 7; day++) {
+    const wi = aWeekOf(day)
+    const dow = dowOf(day)
+    let c: CheckIn = { epochDay: day, sleepHours: 7, energy: 3, soreness: 3 }
+    if (restedWeeks.has(wi) && dow >= 2) c = { epochDay: day, sleepHours: 7.5, energy: 4, soreness: 2 }
+    if (wi === 7 && dow >= 3 && dow <= 5) c = { epochDay: day, sleepHours: 5, energy: 2, soreness: 4 }
+    if (wi === 4 && (dow === 2 || dow === 3)) c = { epochDay: day, sleepHours: 9.5, energy: 2, soreness: 3 }
+    if (wi === 5 && (dow === 2 || dow === 3)) c = { epochDay: day, sleepHours: 9.5, energy: 4, soreness: 3 }
+    // Hard session + next-day soreness: week 8 Tue strength at RPE 9, Wed soreness 4.
+    if (wi === 8 && dow === 3) c = { ...c, soreness: 4 }
+    checkIns.push(c)
+  }
+
+  const readiness = evaluateReadiness(checkIns)
+  const rByDay = new Map(readiness.map(r => [r.epochDay, r]))
+  // Oversleep reads.
+  const fatigueDay = rByDay.get(A_MON + 4 * 7 + 2)!
+  assert(fatigueDay.oversleep === 'fatigue' && fatigueDay.ease, 'sim: long sleep with low energy two days eases (fatigue cue)')
+  const recoveryDay = rByDay.get(A_MON + 5 * 7 + 2)!
+  assert(recoveryDay.oversleep === 'recovery' && !recoveryDay.flagged && !recoveryDay.fresh, 'sim: long sleep with good energy is neutral (no ease, no push)')
+
+  for (let day = A_MON; day < A_MON + A_WEEKS * 7; day++) {
+    const wi = aWeekOf(day)
+    const dow = dowOf(day)
+    const monday = mondayOf(day)
+    // Monday: the week's sessions (as the pass prepared them, below).
+    if (dow === 1 && planned.every(p => mondayOf(p.epochDay) !== monday)) {
+      for (let d = monday; d < monday + 7; d++) {
+        for (const t of getDayTemplate('fighter', wi + 1, dowOf(d), MT_DAYS)) planned.push({ id: `p${aid++}`, type: t.type, label: t.label, notes: t.runCategory ?? null, epochDay: d, timeSlot: t.timeSlot, status: 'planned' })
+      }
+    }
+    // The athlete's day: easy effort in rested weeks, on target otherwise.
+    for (const p of planned.filter(x => x.epochDay === day && x.status === 'planned')) {
+      p.status = 'completed'
+      const rested = restedWeeks.has(wi)
+      let rpe = p.type === 'mobility' || p.type === 'active_recovery' ? 2 : rested ? Math.max(1, typicalRpe(p) - 2) : typicalRpe(p)
+      if (wi === 8 && dow === 2 && p.type === 'strength') rpe = 9
+      done.push({ id: p.id, sessionId: p.id, epochDay: day, type: p.type, label: p.label, notes: p.notes, rpe })
+      if (p.type === 'strength') for (let k = 0; k < 4; k++) tmSets.push({ week: wi + 1, weightKg: 100 + wi * 2.5, reps: 5, plannedWeightKg: 100 + wi * 2.5, plannedReps: 5 })
+    }
+    // Repeated added sessions: Saturday PM rope, weeks 2 and 3.
+    if ((wi === 2 || wi === 3) && dow === 6) {
+      done.push({ id: `add${aid++}`, epochDay: day, type: 'skip_rope', label: 'Rope', rpe: 5, source: 'ad_hoc' })
+    }
+
+    // Nightly: felt hard (next-morning soreness), then the ramp-up rule.
+    const upcoming = planned.filter(p => p.status === 'planned' && p.epochDay > day)
+    for (const d of done.filter(x => x.epochDay === day - 1)) {
+      const ease = feltHardEase({ done: d, nextMorningSoreness: rByDay.get(day)?.epochDay === day ? checkIns.find(ci => ci.epochDay === day)?.soreness ?? null : null, upcoming, todayEpochDay: day, nowSec: day * 86400 })
+      if (!ease) continue
+      const t = planned.find(p => p.id === ease.targetSessionId)!
+      t.eased = true
+      t.reason = ease.ease.reason
+      easeLog.push({ day, target: t.type, reason: ease.ease.reason })
+    }
+    const r = rByDay.get(day)
+    const easeToday = Boolean(r?.ease) || planned.some(p => p.epochDay === day && p.eased)
+    const askedThisWeek = rampAsks.some(a => mondayOf(a.day) === monday)
+    const effort = summarizeEffort(done.filter(x => x.epochDay >= day - 7 && x.epochDay < day))
+    const weekSessions = planned.filter(p => mondayOf(p.epochDay) === monday)
+    const ask = rampUpAsk(
+      { todayEpochDay: day, readiness: readiness.filter(x => x.epochDay <= day), effort, liftPush: false, easeToday, noPush: false, askedThisWeek },
+      { ctx: { ...context(day, day), weekNumber: wi + 1, planWeekLoad: planLoad(wi + 1), sessions: weekSessions, easeDays: weekSessions.filter(p => p.eased).map(p => p.epochDay) }, upcoming: weekSessions.filter(p => p.status === 'planned'), blockType: 'fighter', weekNumber: wi + 1, liftPush: false, classDays: MT_DAYS },
+    )
+    if (ask) {
+      rampAsks.push({ day, easeToday, streak: freshStreak(readiness.filter(x => x.epochDay <= day), day) })
+      for (const o of ask.options) {
+        if (o.epochDay < day || mondayOf(o.epochDay) !== monday) violations.push(`ramp option outside the week on ${day}`)
+        if (o.kind === 'add' && !checkSessionChange({ kind: 'add', type: o.type, label: o.sessionLabel, epochDay: o.epochDay, timeSlot: o.timeSlot }, { ...context(day, day), sessions: weekSessions, planWeekLoad: null }, { alternatives: false }).ok) violations.push(`unsafe ramp add on ${day}`)
+        if (weekSessions.some(p => p.eased && p.epochDay === o.epochDay)) violations.push(`ramp option on an eased day ${o.epochDay}`)
+      }
+    }
+
+    // Sunday night: the weekly pass prepares next week (and a Monday catch-up
+    // run finds it done). No approval step: the week is active with a why line.
+    for (const runDay of [day, day + 1]) {
+      const target = weeklyPassTarget(runDay)
+      if (target == null || target <= day - 6) continue
+      const key = weeklyPassKey('sim-block', target)
+      if (passRuns.has(key)) { passRuns.set(key, (passRuns.get(key) ?? 0) + 0); continue }
+      if (dowOf(runDay) !== 0) continue
+      passRuns.set(key, 1)
+      const last = done.filter(x => x.epochDay >= target - 7 && x.epochDay < target)
+      const lastPlanned = planned.filter(p => p.epochDay >= target - 7 && p.epochDay < target && KEY_TYPES.has(p.type))
+      const days7 = readiness.filter(x => x.epochDay >= target - 7 && x.epochDay < target)
+      const signals: WeekSignals = {
+        weekNumber: aWeekOf(target) + 1, totalWeeks: 12, blockType: 'fighter',
+        lastWeek: { planned: lastPlanned.length, completed: lastPlanned.filter(p => p.status === 'completed').length, missed: 0, skipped: 0, added: last.filter(x => x.source === 'ad_hoc').length },
+        completionRate: lastPlanned.length ? lastPlanned.filter(p => p.status === 'completed').length / lastPlanned.length : null,
+        load: { last7: 0, prev7: 0, changePct: null, flagged: false },
+        readiness: { days: days7.length, flaggedDays: days7.filter(x => x.flagged).length, easeDays: days7.filter(x => x.ease).length, freshDays: days7.filter(x => x.fresh).length, oversleepFatigueDays: days7.filter(x => x.oversleep === 'fatigue').length },
+        effort: summarizeEffort(last), avgSoreness: null, avgSleep: null,
+        returnRamp: { active: false, gapDays: 0, reason: null }, retestLastWeek: false,
+        waveEnd: (aWeekOf(target)) % 6 === 0, athleteShape: null,
+      }
+      const nextTemplate: SessionLike[] = []
+      for (let d = target; d < target + 7; d++) for (const t of getDayTemplate('fighter', signals.weekNumber, dowOf(d), MT_DAYS)) nextTemplate.push({ type: t.type, label: t.label, notes: t.runCategory ?? null, epochDay: d, timeSlot: t.timeSlot, status: 'planned' })
+      const weekEases = weekRuleEases(signals, nextTemplate)
+      preparedWeeks.push({ monday: target, status: 'active', why: whyThisWeek(signals, weekEases), changes: weekEases.map(e => ({ reason: e.reason, was: e.was })) })
+      // The prepared week becomes next week's plan, eases applied.
+      for (let i = 0; i < nextTemplate.length; i++) {
+        const t = nextTemplate[i]
+        const e = weekEases.find(x => x.index === i)
+        planned.push({ ...t, id: `p${aid++}`, eased: e != null, reason: e?.reason })
+      }
+    }
+  }
+
+  // Ramp-up asks.
+  assert(rampAsks.length >= 2, `sim: well-rested streaks produced ramp-up asks (${rampAsks.length})`)
+  const perWeek = new Map<number, number>()
+  for (const a of rampAsks) perWeek.set(mondayOf(a.day), (perWeek.get(mondayOf(a.day)) ?? 0) + 1)
+  assert([...perWeek.values()].every(n => n <= 1), 'sim: at most one ramp-up ask a week')
+  assert(rampAsks.every(a => !a.easeToday && a.streak >= 2), 'sim: never on an ease day, always after a 2-day fresh streak')
+  assert(rampAsks.every(a => restedWeeks.has(aWeekOf(a.day))), 'sim: asks only in well-rested weeks')
+  assert(!rampAsks.some(a => aWeekOf(a.day) === 5), 'sim: long sleep with good energy never triggers a push')
+
+  // Hard session + next-day soreness.
+  const w8 = easeLog.find(e => aWeekOf(e.day) === 8)
+  assert(w8 != null && w8.target === 'strength' && w8.reason.includes('eases'), `sim: RPE 9 then soreness 4 eases the next strength day (${w8?.reason})`)
+
+  // Repeated added sessions: an ask after the second week, not the first.
+  const adds = (upTo: number): AddedSession[] => done.filter(x => x.source === 'ad_hoc' && x.epochDay < upTo).map(x => ({ type: x.type, label: x.label, notes: null, epochDay: x.epochDay, timeSlot: 'pm', status: 'completed', rpe: x.rpe }))
+  const afterOne = makeRegularCandidates(adds(A_MON + 3 * 7), A_MON + 2 * 7)
+  const afterTwo = makeRegularCandidates(adds(A_MON + 4 * 7), A_MON + 3 * 7)
+  assert(afterOne.length === 0 && afterTwo.length === 1 && afterTwo[0].type === 'skip_rope', 'sim: rope added two weeks running becomes a make-regular candidate (not after one)')
+  const regular = makeRegularAsk(afterTwo[0], { ...context(A_MON + 4 * 7, A_MON + 4 * 7 - 1), weekNumber: 5, planWeekLoad: planLoad(5), sessions: planned.filter(p => mondayOf(p.epochDay) === A_MON + 4 * 7) }, A_MON + 4 * 7)
+  assert(regular != null && regular.options.some(o => o.id === 'keep_extra') && regular.options[0].kind === 'make_regular', 'sim: the make-regular ask offers a safe slot and I\'LL ADD IT MYSELF')
+
+  // Retest: the wave's clean sets propose new training maxes.
+  const sq = fighterTmDecision({ exerciseId: 'sq', currentTmKg: 140, region: 'lower', sets: tmSets.filter(x => x.week <= 6).map(x => ({ ...x, weightKg: (x.weightKg ?? 0) + (x.week >= 4 ? 10 : 0), plannedWeightKg: x.plannedWeightKg })) })
+  const prop = tmProposal([sq], new Map([['sq', 'Squat']]))
+  assert(sq.action === 'progress' && prop != null && prop.lifts[0].proposedKg > prop.lifts[0].currentKg && prop.decline.title === 'KEEP THE OLD ONES', 'sim: the retest proposes a new squat max; nothing written until approved')
+
+  // The Sunday weekly pass.
+  assert(preparedWeeks.length >= A_WEEKS - 1, `sim: a week prepared every Sunday (${preparedWeeks.length})`)
+  assert([...passRuns.values()].every(n => n === 1), 'sim: one pass per week (Sunday run and Monday catch-up share the key)')
+  assert(preparedWeeks.every(w => w.status === 'active' && w.why.length > 0 && !w.why.includes('!') && !w.why.includes('—')), 'sim: every prepared week is active (no approval) with a why line')
+  assert(preparedWeeks.every(w => w.changes.every(c => c.reason.length > 0 && c.was.length > 0)), 'sim: every automatic change carries a reason and a was')
+  const afterTired = preparedWeeks.find(w => w.monday === A_MON + 8 * 7)
+  assert(afterTired != null && afterTired.changes.length >= 1, `sim: after the week with three bad check-in days the next week eases (${afterTired?.why})`)
+  assert(violations.length === 0, `sim: no rule broken by the adaptive coach${violations.length ? `: ${violations.slice(0, 5).join('; ')}` : ''}`)
+}
 
 console.log('coach simulation passed')

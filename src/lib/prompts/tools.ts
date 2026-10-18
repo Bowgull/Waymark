@@ -175,7 +175,7 @@ export const TOOL_WEEK_PLAN: Tool = {
                   label: { type: 'string' },
                   estimatedMin: { type: 'integer' },
                   runCategory: { type: 'string', enum: ['zone2', 'progression'] },
-                  notes: { type: 'string' },
+                  notes: { type: 'string', description: 'One-line reason when this session differs from the template. Omit otherwise.' },
                 },
                 required: ['type', 'timeSlot', 'label', 'estimatedMin'],
               },
@@ -190,7 +190,7 @@ export const TOOL_WEEK_PLAN: Tool = {
       },
       adjustmentNotes: {
         type: 'string',
-        description: 'Why this week differs from the default template. Omit if no deviation.',
+        description: 'The one "why this week" line: what happened last week and what that changes. Short, house voice, no exclamation marks, no em dashes.',
       },
       bodyIssuesDetected: {
         type: 'array',
@@ -464,7 +464,7 @@ export const TOOL_BAG_PRESCRIPTION: Tool = {
 export const TOOL_REACTIVE_REPLAN: Tool = {
   name: 'reactiveReplan',
   description:
-    'Mid-week silent adjustment. Triggered when a meaningful signal changes (HR drift, repeated missed days, sleep or soreness overreach, MT class diverging from prescribed type). Produces one adjustment at a time. Never address the user directly. Voice canon: observation before conclusion, no hype, no decision prompts.',
+    'Mid-week adjustment. Triggered when a meaningful signal changes (HR drift, repeated missed days, sleep or soreness overreach, MT class diverging from prescribed type). Produces one adjustment at a time. Never address the user directly. Small changes are applied with your note; big ones (another day, another type, an added session) become a question the app asks with safe options. Voice canon: observation before conclusion, no hype.',
   input_schema: {
     type: 'object',
     properties: {

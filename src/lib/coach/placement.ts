@@ -318,7 +318,8 @@ function evaluate(change: SessionChange, ctx: PlacementContext): { refusal: Refu
   // F14: no cramming. Added load can't take the week past the plan.
   const exempt = RECOVERY_TYPES.has(change.type) || (ctx.blockType === 'block_zero' && change.type === 'mt_class')
   if (change.kind !== 'move' && !exempt && ctx.planWeekLoad != null && ctx.planWeekLoad > 0) {
-    const current = inWeek.reduce((n, s) => n + plannedLoad(s, ctx.blockType, ctx.weekNumber), 0)
+    // Recovery work never counts against the plan's load (the plan's load leaves it out too).
+    const current = inWeek.filter(s => !RECOVERY_TYPES.has(s.type)).reduce((n, s) => n + plannedLoad(s, ctx.blockType, ctx.weekNumber), 0)
     const added = plannedLoad(next, ctx.blockType, ctx.weekNumber)
     if (current + added > ctx.planWeekLoad * PLAN_LOAD_TOLERANCE) {
       return { refusal: refuse('over_plan', 'That takes the week past its planned load. Missed work is not made up.') }

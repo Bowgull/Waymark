@@ -31,6 +31,8 @@ export interface WeekPlanParams {
   mtClassDays: Set<number>
   prevWeekStart: number
   prevWeekEnd: number
+  /** What happened, as the rules read it (server/weeklyPass). */
+  coachContext?: string | null
 }
 
 // Mirrors src/lib/blockZero/weekPlan.ts. blockWeek here is the training week
@@ -162,6 +164,7 @@ export function buildWeekPlanPrompt(
   adherenceBlock: string,
   hrBlock: string | null,
   blockZeroContext: string | null = null,
+  coachContext: string | null = null,
 ): string {
   const lines: string[] = [
     `Generate week plan for week ${params.weekNumber} (block week ${params.blockWeek}).`,
@@ -257,6 +260,14 @@ export function buildWeekPlanPrompt(
     lines.push('Use these to tailor MT session focus notes for next week.')
   }
 
+  if (coachContext) {
+    lines.push('', coachContext)
+  }
+  lines.push(
+    '',
+    "The rules check every session you plan (placement, run caps, MT ramp and cap, the week's load) and drop any that break them. Small changes (easier sessions, fewer sets) are applied with a note. Never add sessions or load beyond the template to push: the app asks the athlete about that. Never make up missed work.",
+    `Put the week's one "why this week" line in adjustmentNotes. Put a one-line reason in a session's notes only when it differs from the template.`,
+  )
   lines.push('', 'Call weekPlan.')
   return lines.join('\n')
 }
@@ -356,7 +367,7 @@ export async function generateWeekPlan(
   const mondayEpochDay = params.prevWeekEnd + 1
   const bzInput = params.isBlockZero ? await loadBlockZeroAiContext(db, todayEpochDay, params.weekNumber) : null
   const bzContext = bzInput ? serializeBlockZeroContext(bzInput) : null
-  const prompt = buildWeekPlanPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues, adherenceBlock, hrBlock, bzContext)
+  const prompt = buildWeekPlanPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues, adherenceBlock, hrBlock, bzContext, params.coachContext ?? null)
 
   const result = await anthropicCall(apiKey, {
     model: MODELS.fast,

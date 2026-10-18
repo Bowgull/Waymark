@@ -5,6 +5,12 @@
 //
 // Every field is optional so today's sleep + soreness-only check-in already
 // works; the extra items light up when Phase B adds them.
+//
+// Oversleep (soft rule, weak evidence): sleep 1.5 h or more above the
+// athlete's own 7-day mean counts as worse when energy is low or soreness is
+// high that day (a fatigue or illness cue, eased like poor sleep). Long sleep
+// with good energy is recovery: neutral, never "better". The same read feeds
+// the "fresh" day used by the ramp-up ask (better than the 7-day mean).
 
 export interface CheckIn {
   epochDay: number
@@ -46,15 +52,53 @@ export const BASELINE_DAYS = 7
 export const MIN_BASELINE_VALUES = 4
 export const MIN_WORSE_ITEMS = 2
 export const MIN_CONSECUTIVE_DAYS = 2
+/** Hours above the 7-day sleep mean that count as a long sleep. */
+export const OVERSLEEP_HOURS = 1.5
+/** Energy at or below this (1-5) is low. */
+export const LOW_ENERGY = 2
+/** Soreness at or above this (1-5) is high. */
+export const HIGH_SORENESS = 4
+/** A fresh day: no item worse and this many items better than the mean. */
+export const MIN_BETTER_ITEMS = 2
+/** "Better" is half an item's worse-threshold the other way. */
+export const BETTER_FRACTION = 0.5
+
+export type OversleepRead = 'fatigue' | 'recovery' | null
+
+/**
+ * Long sleep read for one day. 'fatigue': long sleep with low energy or high
+ * soreness (energy/soreness also count against their own mean). 'recovery':
+ * long sleep with good energy. Null: not a long sleep, or no sleep baseline.
+ */
+export function oversleepRead(input: {
+  sleepHours: number | null | undefined
+  sleepMean: number | null
+  energy?: number | null
+  energyWorseBy?: number | null
+  soreness?: number | null
+  sorenessWorseBy?: number | null
+}): OversleepRead {
+  if (input.sleepHours == null || input.sleepMean == null) return null
+  if (input.sleepHours < input.sleepMean + OVERSLEEP_HOURS) return null
+  const lowEnergy = input.energy != null && (input.energy <= LOW_ENERGY || (input.energyWorseBy ?? 0) >= 1)
+  const sore = input.soreness != null && (input.soreness >= HIGH_SORENESS || (input.sorenessWorseBy ?? 0) >= 1)
+  return lowEnergy || sore ? 'fatigue' : 'recovery'
+}
 
 export interface ReadinessDay {
   epochDay: number
   /** Signed: positive = worse than the 7-day mean, in that item's units. Null = no value or no baseline. */
   deltas: Partial<Record<ReadinessItem, number | null>>
   worseItems: ReadinessItem[]
+  /** Items at least half a threshold better than the mean. */
+  betterItems: ReadinessItem[]
   flagged: boolean
   /** Flagged today and on each of the previous MIN_CONSECUTIVE_DAYS - 1 days. */
   ease: boolean
+  /** No item worse and MIN_BETTER_ITEMS or more better: above the athlete's own baseline. */
+  fresh: boolean
+  /** Long sleep read (soft rule). */
+  oversleep: OversleepRead
 }
 
 function mean(values: number[]): number {
@@ -73,15 +117,18 @@ export function evaluateReadiness(checkIns: CheckIn[]): ReadinessDay[] {
 
   const out: ReadinessDay[] = []
   const flaggedDays = new Set<number>()
+  const oversleepFatigueDays = new Set<number>()
   for (const day of days) {
     const today = byDay.get(day) as CheckIn
     const deltas: Partial<Record<ReadinessItem, number | null>> = {}
-    const worseItems: ReadinessItem[] = []
+    const means: Partial<Record<ReadinessItem, number>> = {}
     for (const item of items) {
       const value = today[item]
       if (value == null) continue
       const window: number[] = []
       for (let d = day - BASELINE_DAYS; d < day; d++) {
+        // A long sleep read as fatigue never pulls the sleep baseline up.
+        if (item === 'sleepHours' && oversleepFatigueDays.has(d)) continue
         const v = byDay.get(d)?.[item]
         if (v != null) window.push(v)
       }
@@ -89,16 +136,40 @@ export function evaluateReadiness(checkIns: CheckIn[]): ReadinessDay[] {
         deltas[item] = null
         continue
       }
+      const m = mean(window)
+      means[item] = m
+      deltas[item] = Math.round((m - value) * READINESS_ITEMS[item].polarity * 100) / 100
+    }
+    // Oversleep: long sleep is worse with low energy or high soreness, else neutral.
+    const oversleep = oversleepRead({
+      sleepHours: today.sleepHours,
+      sleepMean: means.sleepHours ?? null,
+      energy: today.energy,
+      energyWorseBy: deltas.energy ?? null,
+      soreness: today.soreness,
+      sorenessWorseBy: deltas.soreness ?? null,
+    })
+    if (oversleep === 'fatigue' && today.sleepHours != null && means.sleepHours != null) {
+      oversleepFatigueDays.add(day)
+      deltas.sleepHours = Math.round((today.sleepHours - means.sleepHours) * 100) / 100
+    } else if (oversleep === 'recovery') {
+      deltas.sleepHours = 0
+    }
+    const worseItems: ReadinessItem[] = []
+    const betterItems: ReadinessItem[] = []
+    for (const item of items) {
+      const delta = deltas[item]
+      if (delta == null) continue
       const rule = READINESS_ITEMS[item]
-      const delta = (mean(window) - value) * rule.polarity
-      deltas[item] = Math.round(delta * 100) / 100
       if (delta >= rule.threshold) worseItems.push(item)
+      else if (-delta >= rule.threshold * BETTER_FRACTION) betterItems.push(item)
     }
     const flagged = worseItems.length >= MIN_WORSE_ITEMS
     if (flagged) flaggedDays.add(day)
     let ease = flagged
     for (let k = 1; ease && k < MIN_CONSECUTIVE_DAYS; k++) ease = flaggedDays.has(day - k)
-    out.push({ epochDay: day, deltas, worseItems, flagged, ease })
+    const fresh = worseItems.length === 0 && betterItems.length >= MIN_BETTER_ITEMS
+    out.push({ epochDay: day, deltas, worseItems, betterItems, flagged, ease, fresh, oversleep })
   }
   return out
 }
@@ -133,7 +204,7 @@ export function latestReadiness(checkIns: CheckIn[]): ReadinessVerdict {
   const last = days[days.length - 1]
   if (!last) return { ease: false, epochDay: null, worseItems: [], reason: null }
   if (!last.ease) return { ease: false, epochDay: last.epochDay, worseItems: last.worseItems, reason: null }
-  const words = joinWords(last.worseItems.map(i => ITEM_WORDS[i]))
+  const words = joinWords(last.worseItems.map(i => i === 'sleepHours' && last.oversleep === 'fatigue' ? 'long sleep' : ITEM_WORDS[i]))
   const text = `${words.charAt(0).toUpperCase()}${words.slice(1)} are off your 7-day trend for ${MIN_CONSECUTIVE_DAYS} days.`
   return { ease: true, epochDay: last.epochDay, worseItems: last.worseItems, reason: text }
 }

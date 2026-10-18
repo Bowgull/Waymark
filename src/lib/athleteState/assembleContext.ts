@@ -136,7 +136,8 @@ export async function assembleAthleteContext(db: DB, todayEpochDay: number): Pro
     .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id))
   const trainingMaxesOut = tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg }))
 
-  const priorState = await loadLatestAthleteState(db)
+  // Memory reads the prior state even when it is too old to set loads.
+  const priorState = await loadLatestAthleteState(db, 0)
 
   return {
     todayEpochDay,

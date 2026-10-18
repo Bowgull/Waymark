@@ -20,9 +20,24 @@ import {
   syncAlarmsFromSettings,
 } from '../lib/notifications'
 import { apiFetch } from '../lib/api'
+import { getTodayISO } from '../lib/dates'
 import { startOutboxSync } from '../lib/outboxSync'
 import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
 import { Capacitor } from '@capacitor/core'
+
+/**
+ * The coach's "N changes, M questions" since the last open, then mark this
+ * open. Null when there is nothing or the API is unreachable.
+ */
+async function coachMorningLine(): Promise<string | null> {
+  try {
+    const summary = await apiFetch<{ line: string | null } | null>(`/api/coach/summary?date=${getTodayISO()}`)
+    await apiFetch('/api/coach/seen', { method: 'POST' }).catch(() => null)
+    return summary?.line ?? null
+  } catch {
+    return null
+  }
+}
 
 export function AppRoutes() {
   const navigate = useNavigate()
@@ -61,7 +76,7 @@ export function AppRoutes() {
             pmSessionTime: string | null
             pmLeadMin: number | null
           } | null>('/api/settings')
-          if (settings) await syncAlarmsFromSettings(settings)
+          if (settings) await syncAlarmsFromSettings(settings, await coachMorningLine())
         } catch {
           // settings unavailable at boot — Settings save will reschedule later
         }
@@ -103,7 +118,7 @@ export function AppRoutes() {
         if (settings.amReminder) {
           await handleForegroundAlarmCheck(settings.amReminder)
         }
-        await syncAlarmsFromSettings(settings)
+        await syncAlarmsFromSettings(settings, await coachMorningLine())
       } catch {
         // settings unavailable, skip
       }

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
-import { Button } from '@/components/ui/button'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { SkipReasonSheet, type SkipReasonCommit } from '@/features/session/SkipReasonSheet'
 import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
@@ -9,6 +8,7 @@ import { useToast } from '@/components/ui/Toast'
 import { parseRefusal, refusalMessage } from '@/lib/refusal'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import type { WeekAnalysis } from '@/lib/weekAnalysis'
+import type { WeekIntelligence } from '@/lib/coach/weeklyPass'
 import { getSessionLabel, volumeKeyLabel } from '@/lib/weeklyTemplate'
 import { getMarkAsset } from '@/lib/markAssets'
 import { getStrengthTemplate, getWeekLabel, getDeadliftExerciseId } from '@/lib/strengthTemplates'
@@ -41,11 +41,9 @@ interface WeekAdjustment {
 
 interface WeekViewProps {
   sessions: SessionSummary[]
-  weekStatus: string
   weekPlanId?: string
   analysisJson?: string | null
   weekNumber?: number
-  onApprove: () => void
   onSessionUpdate?: (id: string, status: string) => void
   onSessionAdded?: (session: SessionSummary) => void
   maxHr?: number | null
@@ -241,7 +239,6 @@ function ProgressIcon({ type }: { type: 'up' | 'new-variant' }) {
 function SessionRow({
   session,
   epochDay,
-  weekStatus,
   isActionTrayOpen,
   showOverview,
   weekNumber,
@@ -252,7 +249,6 @@ function SessionRow({
 }: {
   session: SessionSummary
   epochDay: number
-  weekStatus: string
   isActionTrayOpen: boolean
   showOverview: boolean
   weekNumber: number
@@ -336,18 +332,10 @@ function SessionRow({
             {label}
           </span>
           {session.adjustmentId && (
-            <span className="text-[13px] text-gold/50">makeup</span>
+            <span className="text-[13px] text-gold/50">coach</span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {weekStatus === 'draft' && session.status === 'planned' && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onSkip() }}
-              className="px-2 py-0.5 text-[13px] font-medium text-muted-foreground active:text-red-400"
-            >
-              Skip
-            </button>
-          )}
           <StatusIcon status={session.status} sessionType={session.type} label={label} />
         </div>
       </div>
@@ -395,7 +383,7 @@ function SessionRow({
 
 // ─── WeekView ──────────────────────────────────────────────────
 
-export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekNumber = 1, onApprove, onSessionUpdate, onSessionAdded, maxHr }: WeekViewProps) {
+export function WeekView({ sessions, weekPlanId, analysisJson, weekNumber = 1, onSessionUpdate, onSessionAdded, maxHr }: WeekViewProps) {
   const [pickerDate, setPickerDate] = useState<string | null>(null)
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
   const [adjustments, setAdjustments] = useState<WeekAdjustment[]>([])
@@ -415,10 +403,14 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
   }
   const [showAllChanges, setShowAllChanges] = useState(false)
 
-  // Parse analysis from JSON
-  const analysis: WeekAnalysis | null = analysisJson ? (() => {
+  // The week's stored read: the weekly pass writes version 2 (why line and
+  // per-change reasons); older weeks carry the rules analysis or an AI plan.
+  const parsed: (Partial<WeekAnalysis> & Partial<WeekIntelligence> & { narrative?: string; adjustmentNotes?: string }) | null = analysisJson ? (() => {
     try { return JSON.parse(analysisJson) } catch { return null }
   })() : null
+  const analysis = parsed
+  const whyLine = parsed ? (parsed.version === 2 ? parsed.why : parsed.summary ?? parsed.adjustmentNotes ?? parsed.narrative ?? null) : null
+  const weekChanges = parsed?.version === 2 && Array.isArray(parsed.changes) ? parsed.changes.filter(ch => ch.source !== 'placement') : []
 
   // Fetch pending adjustments
   useEffect(() => {
@@ -594,24 +586,21 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
 
   return (
     <div>
-      {/* Draft approval banner */}
-      {weekStatus === 'draft' && (
-        <div className="mb-4 rounded-md border border-gold/30 bg-gold/5 p-3">
-          <p className="mb-1 text-sm text-gold">Prepared week. Review and approve.</p>
-          <p className="mb-2 text-xs text-muted-foreground">Remove anything that will not happen.</p>
-          <Button size="sm" onClick={onApprove}>
-            Approve Week
-          </Button>
-        </div>
-      )}
-
       {/* Week Intelligence Card */}
       {(analysis || proposedAdj.length > 0) && (
         <div className="mb-4 rounded-md border border-border bg-card p-3 space-y-3">
           <p className="text-xs font-medium uppercase tracking-wider text-gold/60">Week Intelligence</p>
 
-          {analysis && (
-            <p className="text-xs text-muted-foreground">{analysis.summary}</p>
+          {whyLine && (
+            <p className="text-xs text-muted-foreground">{whyLine}</p>
+          )}
+
+          {weekChanges.length > 0 && (
+            <ul className="space-y-1">
+              {weekChanges.map((ch, i) => (
+                <li key={ch.sessionId ?? i} className="text-[13px] text-muted-foreground/80">{ch.reason}</li>
+              ))}
+            </ul>
           )}
 
           {analysis?.volumeByType && (
@@ -782,7 +771,6 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
                       key={s.id}
                       session={s}
                       epochDay={epochDay}
-                      weekStatus={weekStatus}
                       isActionTrayOpen={actionTraySessionId === s.id}
                       showOverview={isExpanded}
                       weekNumber={weekNumber}

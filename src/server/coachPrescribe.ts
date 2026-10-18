@@ -10,6 +10,8 @@ import type { SessionCoachState } from './coachData'
 
 /** Load cut for a reduced or injury-eased Fighter strength day. */
 export const EASED_LOAD_FACTOR = 0.9
+/** Run time on a small coach ease. */
+export const EASED_RUN_FACTOR = 0.8
 
 export interface FighterStrengthAdjust {
   template: StrengthTemplate
@@ -85,6 +87,11 @@ export function adjustFighterRun<T extends RunLike>(p: T, state: SessionCoachSta
     dur = Math.round(dur * state.returnCtx.volumeFactor)
     if (state.returnCtx.reason) reasons.push(state.returnCtx.reason)
   }
+  // A small coach ease on a run (felt hard, weekly ease): about 80% of the time.
+  if (dur != null && state.coachEase?.kind === 'reduce') {
+    dur = Math.round(dur * EASED_RUN_FACTOR)
+    reasons.push(state.coachEase.reason)
+  }
   if (dur != null) {
     const cap = singleRunCap(dur, longestLast30Sec)
     if (cap.capSec < dur) {
@@ -95,4 +102,51 @@ export function adjustFighterRun<T extends RunLike>(p: T, state: SessionCoachSta
   if (dur !== p.targetDurSec) desc = `Cut to ${Math.round((dur ?? 0) / 60)} min today. ${desc}`
   if (reasons.length > 0) desc = `${desc} ${reasons.join(' ')}`
   return { ...p, targetDesc: desc.trim(), targetDurSec: dur, coach: { eased: false, reasons } }
+}
+
+// ─── An accepted push (ramp-up ask) ───────────────────────────
+
+export interface CoachPushLike {
+  kind: 'extra_set' | 'load_step'
+  factor?: number
+  reason: string
+}
+
+export interface PushApplied {
+  template: StrengthTemplate
+  /** Multiplier on main working loads (1 for an extra set). */
+  loadFactor: number
+  note: string | null
+  applied: boolean
+}
+
+/**
+ * The athlete said yes to a push. +1 SET adds one working set (a copy of the
+ * last) to each main lift; MORE WEIGHT raises main loads (the caller caps the
+ * combined push at +5%). Never on a day the rules ease (return ramp, a coach
+ * ease, an injury flag): then it is skipped with a note.
+ */
+export function applyCoachPush(template: StrengthTemplate, push: CoachPushLike | null, state: SessionCoachState): PushApplied {
+  if (!push) return { template, loadFactor: 1, note: null, applied: false }
+  if (state.returnCtx.active || state.coachEase != null || state.injuryAction.action !== 'none') {
+    return { template, loadFactor: 1, note: 'The push waits: today is an easier day.', applied: false }
+  }
+  if (push.kind === 'load_step') {
+    return { template, loadFactor: push.factor && push.factor > 1 ? push.factor : 1.05, note: push.reason, applied: true }
+  }
+  const exercises = template.exercises.map(tex => {
+    if (tex.section !== 'main') return tex
+    const working = tex.sets.filter((s: TemplateSet) => !s.isWarmup)
+    const last = working[working.length - 1]
+    if (!last || last.loadMultiplier != null) return tex
+    return { ...tex, sets: [...tex.sets, { ...last }], notes: `${push.reason} ${tex.notes ?? ''}`.trim() }
+  })
+  return { template: { ...template, exercises }, loadFactor: 1, note: push.reason, applied: true }
+}
+
+/** One line for a lift's trend factor, so an automatic load change always says why. */
+export function liftTrendReason(name: string, factor: number): string | null {
+  if (factor > 1) return `${name}: beat the plan in 2 of the last 3 sessions. Load up ${Math.round((factor - 1) * 100)}%.`
+  if (factor < 1) return `${name}: short of the plan lately. Load down ${Math.round((1 - factor) * 100)}%.`
+  return null
 }

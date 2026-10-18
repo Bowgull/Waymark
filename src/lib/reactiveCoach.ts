@@ -32,7 +32,7 @@ import { TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type ReactiveReplanOutp
 import { computeHrSnapshot, loadEasyHrCeiling, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
 import { computeStarterStatus, serializeStarterStatus } from './starterStatus'
-import { clampsForStorage, guardReactiveReplan, guardReplaceSuggestions, logClamps, serializeBlockZeroContext } from './blockZero'
+import { checkInFromDailyLog, clampsForStorage, evaluateReadiness, guardReactiveReplan, guardReplaceSuggestions, logClamps, serializeBlockZeroContext } from './blockZero'
 import { loadBlockZeroAiContext, loadBlockZeroGuardContext } from '../server/blockZeroData'
 import { checkChange, loadInjuryFlag } from '../server/coachData'
 import { classifyReplan, withCoachEase, type CoachEase, type InjuryFlag, type SessionChange } from './coach'
@@ -240,10 +240,17 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
   const wellnessToday = todayLog
     ? { sleepHours: todayLog.sleepHours, soreness: todayLog.soreness, alcoholScale: todayLog.alcoholScale }
     : null
+  // Oversleep (soft rule): 1.5 h+ over the 7-day sleep mean with low energy or
+  // high soreness reads like poor sleep. Long sleep with good energy is neutral.
+  const recentLogs = todayLog
+    ? await db.select().from(dailyLogs).where(and(gte(dailyLogs.logDate, ctx.todayEpochDay - 7), lte(dailyLogs.logDate, ctx.todayEpochDay)))
+    : []
+  const longSleepTired = evaluateReadiness(recentLogs.map(checkInFromDailyLog)).find(d => d.epochDay === ctx.todayEpochDay)?.oversleep === 'fatigue'
   const wellnessOverreach = Boolean(
     wellnessToday &&
     ((wellnessToday.sleepHours != null && wellnessToday.sleepHours < 6) ||
-      (wellnessToday.soreness != null && wellnessToday.soreness >= 4)),
+      (wellnessToday.soreness != null && wellnessToday.soreness >= 4) ||
+      longSleepTired),
   )
 
   // Skip reasons are a signal (map #10): injury, sick, sore, tired.
@@ -631,6 +638,8 @@ export async function runReactiveReplan(
     }),
     // Small changes are already applied (Today shows the note). Big ones wait for the athlete.
     status: applied.summary.size === 'big' ? 'proposed' : 'accepted',
+    // An applied small change is an automatic change with a note (morning summary).
+    auto: applied.summary.size === 'small' && applied.summary.applied ? 1 : 0,
     targetSessionId: applied.targetSessionId,
     expiresAt: applied.summary.size === 'big' ? (mondayOf(ctx.todayEpochDay) + 7) * 86400 + 12 * 3600 : null,
     createdAt: nowSec,

@@ -1,5 +1,5 @@
 // Run: tsx src/lib/blockZero/readiness.test.ts
-import { evaluateReadiness, latestReadiness, type CheckIn } from './readiness'
+import { evaluateReadiness, latestReadiness, oversleepRead, type CheckIn } from './readiness'
 import { easeSession, type PlannedSession } from './autoEase'
 import { allowedClassTypes, evaluateClassRequest, mtRampWeek, normaliseClassType, rebalanceDayForClass, weeklyClassCap } from './muayThai'
 
@@ -71,6 +71,24 @@ assert(easeSession({ ...strength, sets: 1 }, { readinessEase: true }).session.se
 const mt = easeSession({ type: 'mt_class', label: 'MT', timeSlot: 'pm', estimatedMin: 90, classType: 'clinch' }, { readinessEase: true })
 assert(mt.session.classType === 'technical', 'class eases to technique')
 assert([es, er, mt].every(e => houseVoice(e.reason)), 'ease reasons in house voice')
+
+// ─── Oversleep (soft rule) ──────────────────────────────────────
+
+const steadySleep: CheckIn[] = Array.from({ length: 7 }, (_, i) => ({ epochDay: 300 + i, sleepHours: 7, energy: 4, soreness: 2 }))
+const longTired = evaluateReadiness([...steadySleep, { epochDay: 307, sleepHours: 9, energy: 2, soreness: 2 }, { epochDay: 308, sleepHours: 9, energy: 2, soreness: 2 }])
+const lt = longTired.find(d => d.epochDay === 307)!
+assert(lt.oversleep === 'fatigue' && lt.worseItems.includes('sleepHours') && lt.deltas.sleepHours === 2, 'long sleep with low energy counts as worse sleep')
+assert(longTired[longTired.length - 1].ease, 'long sleep + low energy two days running: ease, like poor sleep')
+assert(latestReadiness([...steadySleep, { epochDay: 307, sleepHours: 9, energy: 2 }, { epochDay: 308, sleepHours: 9, energy: 2 }]).reason?.startsWith('Long sleep and energy'), 'the reason names the long sleep')
+const longSore = evaluateReadiness([...steadySleep, { epochDay: 307, sleepHours: 8.6, energy: 4, soreness: 4 }, { epochDay: 308, sleepHours: 8.6, energy: 4, soreness: 4 }])
+assert(longSore[longSore.length - 1].oversleep === 'fatigue' && longSore[longSore.length - 1].ease, 'long sleep with high soreness: ease')
+const longGood = evaluateReadiness([...steadySleep, { epochDay: 307, sleepHours: 9, energy: 4, soreness: 2 }, { epochDay: 308, sleepHours: 9.5, energy: 5, soreness: 2 }])
+const lg = longGood[longGood.length - 1]
+assert(lg.oversleep === 'recovery' && lg.deltas.sleepHours === 0 && !lg.flagged && !lg.worseItems.includes('sleepHours'), 'long sleep with good energy: neutral')
+assert(!lg.betterItems.includes('sleepHours'), 'long sleep never counts as better (no fresh credit)')
+const normalMore = evaluateReadiness([...steadySleep, { epochDay: 307, sleepHours: 8, energy: 4, soreness: 2 }])
+assert(normalMore[normalMore.length - 1].oversleep === null && normalMore[normalMore.length - 1].betterItems.includes('sleepHours'), 'an hour more than usual is just better sleep')
+assert(oversleepRead({ sleepHours: 9, sleepMean: null, energy: 1 }) === null, 'no sleep baseline: no oversleep read')
 
 // ─── MT ramp (R12) ──────────────────────────────────────────────
 

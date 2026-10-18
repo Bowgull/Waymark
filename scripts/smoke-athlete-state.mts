@@ -94,7 +94,7 @@ check('built state has clamped squat loadFactor', state.lifts[0].loadFactor === 
 check('built state joined exerciseName', state.lifts[0].exerciseName === 'Back Squat')
 
 await db.insert(schema.coachingOutputs).values({
-  id: uid(), kind: 'athlete_state', model: 'claude-opus-4-8',
+  id: uid(), kind: 'athlete_state', model: 'claude-sonnet-5-5',
   outputJson: JSON.stringify(state), createdAt: nowSec,
 })
 
@@ -114,7 +114,7 @@ const overrideState = buildAthleteState(
   ctx, 'rollover', nowSec + 10,
 )
 await db.insert(schema.coachingOutputs).values({
-  id: uid(), kind: 'athlete_state', model: 'claude-opus-4-8',
+  id: uid(), kind: 'athlete_state', model: 'claude-sonnet-5-5',
   outputJson: JSON.stringify(overrideState), createdAt: nowSec + 10,
 })
 const latest = await loadLatestAthleteState(db)

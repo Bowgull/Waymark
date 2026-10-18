@@ -1,9 +1,12 @@
 // ─── Week Analysis Engine ────────────────────────────────────────
-// Pure function that analyzes a completed week's data and produces
-// recommendations for the next week. This is the brain of the
-// training intelligence system.
+// Pure function that analyzes a completed week's data: volume against
+// targets, wellness and effort trends, and patterns (types skipped or added
+// two weeks running). The weekly pass (server/weeklyPass) uses it as the
+// rules-only read of last week. Missed work is never made up (F14): deficits
+// are reported, not carried forward. Added sessions become an ask elsewhere
+// (coach/makeRegular), never an automatic add.
 
-import { getTrackableTargets, getTarget, type SessionTarget } from './trainingTargets'
+import { getTrackableTargets, getTarget } from './trainingTargets'
 import { WEEKLY_TEMPLATE } from './weeklyTemplate'
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -29,6 +32,7 @@ export interface DailyLogRecord {
 export interface PreviousWeekAnalysis {
   deficits: VolumeDeficit[]
   consistentSkips: string[]
+  /** Types added the previous week (stored as addedTypes; older rows as consistentAdds). */
   consistentAdds: string[]
 }
 
@@ -75,11 +79,30 @@ export interface WeekAnalysis {
   performance: PerformanceSignals
   consistentSkips: string[]   // types skipped 2+ weeks in a row
   consistentAdds: string[]    // types added ad-hoc 2+ weeks
+  addedTypes: string[]        // types added ad-hoc this week (next week's "previous")
   recommendations: WeekRecommendation[]
   summary: string             // one-line human-readable summary
 }
 
 // ─── Analysis ───────────────────────────────────────────────────
+
+/**
+ * Read a stored week analysis back as the previous week's patterns. Week
+ * plans store several shapes (this analysis, the weekly pass's intelligence,
+ * an old AI week plan); anything without the arrays reads as no history
+ * instead of crashing.
+ */
+export function previousAnalysisFrom(raw: unknown): PreviousWeekAnalysis | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+  const deficits = Array.isArray(o.deficits)
+    ? o.deficits.filter((d): d is VolumeDeficit => !!d && typeof d === 'object' && typeof (d as VolumeDeficit).type === 'string')
+    : null
+  const added = o.addedTypes ?? o.consistentAdds
+  if (!deficits && !Array.isArray(added) && !Array.isArray(o.consistentSkips)) return null
+  return { deficits: deficits ?? [], consistentSkips: strings(o.consistentSkips), consistentAdds: strings(added) }
+}
 
 export function analyzeWeek(
   weekSessions: WeekSessionRecord[],
@@ -103,6 +126,7 @@ export function analyzeWeek(
     performance,
     consistentSkips,
     consistentAdds,
+    addedTypes: Object.entries(volumeByType).filter(([, v]) => v.added > 0).map(([k]) => k),
     recommendations,
     summary,
   }
@@ -251,7 +275,7 @@ function detectConsistentSkips(
   previous: PreviousWeekAnalysis | null,
 ): string[] {
   if (!previous) return []
-  const prevDeficitTypes = new Set(previous.deficits.map(d => d.type))
+  const prevDeficitTypes = new Set((Array.isArray(previous.deficits) ? previous.deficits : []).map(d => d.type))
   return deficits
     .filter(d => prevDeficitTypes.has(d.type))
     .map(d => d.type)
@@ -262,7 +286,7 @@ function detectConsistentAdds(
   previous: PreviousWeekAnalysis | null,
 ): string[] {
   if (!previous) return []
-  const prevAdds = new Set(previous.consistentAdds)
+  const prevAdds = new Set(Array.isArray(previous.consistentAdds) ? previous.consistentAdds : [])
   const thisWeekAdds = Object.entries(volume)
     .filter(([, entry]) => entry.added > 0)
     .map(([key]) => key)
@@ -282,34 +306,18 @@ function generateRecommendations(
   const recs: WeekRecommendation[] = []
   const consistentSkipSet = new Set(consistentSkips)
 
-  // ─── Deficit carry-forward ────────────────────────────────
+  // ─── Deficits: never made up (F14) ─────────────────────────
+  // A type missed two weeks running is worth a look; once is just life.
   for (const deficit of deficits) {
-    if (deficit.carryForwardWeight < 0.2) continue // not worth carrying forward
-
+    if (!consistentSkipSet.has(deficit.type)) continue
     const [type, runCategory] = deficit.type.split(':')
     const target = getTarget(type, runCategory)
     if (!target) continue
-
-    // If consistently skipped 2+ weeks, suggest template adjustment instead
-    if (consistentSkipSet.has(deficit.type)) {
-      recs.push({
-        action: 'swap',
-        sessionType: type,
-        runCategory,
-        reason: `${target.label} missed 2+ weeks in a row. Consider swapping for something you'll do`,
-      })
-      continue
-    }
-
-    // Otherwise: suggest adding a makeup session
-    const slot = findOpenSlot(type, target)
     recs.push({
-      action: 'add',
+      action: 'swap',
       sessionType: type,
       runCategory,
-      reason: `Make up ${deficit.missed} missed ${target.label} session${deficit.missed > 1 ? 's' : ''}`,
-      timeSlot: slot?.timeSlot,
-      dayOfWeek: slot?.dayOfWeek,
+      reason: `${target.label} missed 2+ weeks in a row. Worth swapping for something that fits.`,
     })
   }
 
@@ -357,19 +365,8 @@ function generateRecommendations(
     })
   }
 
-  // ─── Consistent adds → template suggestion ────────────────
-  for (const addType of consistentAdds) {
-    const [type, runCategory] = addType.split(':')
-    const target = getTarget(type, runCategory)
-    if (!target) continue
-
-    recs.push({
-      action: 'add',
-      sessionType: type,
-      runCategory,
-      reason: `You've been adding ${target.label} ad-hoc consistently. Building it into the plan`,
-    })
-  }
+  // Consistent adds are asked about by the weekly pass (coach/makeRegular).
+  void consistentAdds
 
   // ─── All good ──────────────────────────────────────────────
   if (recs.length === 0 && performance.completionRate >= 0.8) {
@@ -381,23 +378,6 @@ function generateRecommendations(
   }
 
   return recs
-}
-
-/** Find an open slot in the weekly template for a given session type */
-function findOpenSlot(type: string, target: SessionTarget): { dayOfWeek: number; timeSlot: 'am' | 'pm' } | null {
-  // Prefer Saturday for makeup sessions (most flexible day)
-  // Then try other days that don't already have this type
-  const preferredDays = [6, 0, 4, 2, 1, 3, 5] // Sat, Sun, Thu, Tue, Mon, Wed, Fri
-  const timeSlot = target.flexibleTimeSlot ? 'am' : target.defaultTimeSlot
-
-  for (const day of preferredDays) {
-    const daySessions = WEEKLY_TEMPLATE[day] ?? []
-    const hasType = daySessions.some(s => s.type === type)
-    if (!hasType) {
-      return { dayOfWeek: day, timeSlot }
-    }
-  }
-  return null
 }
 
 // ─── Summary Builder ────────────────────────────────────────────

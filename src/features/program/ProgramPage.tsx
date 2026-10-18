@@ -122,13 +122,14 @@ export function ProgramPage() {
   const loadWeek = useCallback(async (b: Block, wn: number) => {
     let wd = await apiFetch<WeekData | null>(`/api/weeks/current?blockId=${b.id}&weekNumber=${wn}`)
 
-    // Auto-generate current/next week if no plan exists
+    // The current week is prepared on open if it has no plan (the same path
+    // as the Sunday weekly pass). Later weeks show "Not prepared yet" until
+    // the weekly pass prepares them.
     const currentWn = getCurrentWeekNumber(b)
-    if (!wd && (wn === currentWn || wn === currentWn + 1)) {
-      const weekOffset = wn - currentWn
-      wd = await apiFetch<WeekData>('/api/weeks/generate', {
+    if (!wd && wn === currentWn) {
+      wd = await apiFetch<WeekData>('/api/weeks/auto-generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: b.id, weekNumber: wn, startDate: getMonday(weekOffset), today: getTodayISO() }),
+        body: JSON.stringify({ blockId: b.id, startDate: getMonday(0), today: getTodayISO() }),
       })
     }
 
@@ -277,31 +278,15 @@ export function ProgramPage() {
     setGenerating(true)
     try {
       const weekOffset = weekNumber - getCurrentWeekNumber(block)
-      const wd = await apiFetch<WeekData>('/api/weeks/generate', {
+      const wd = await apiFetch<WeekData>('/api/weeks/auto-generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: block.id, weekNumber, startDate: getMonday(weekOffset), today: getTodayISO() }),
+        body: JSON.stringify({ blockId: block.id, startDate: getMonday(weekOffset), today: getTodayISO() }),
       })
       setWeekData(wd)
     } catch (e) {
-      console.error('Failed to generate week:', e)
+      console.error('Failed to prepare week:', e)
     } finally {
       setGenerating(false)
-    }
-  }
-
-  async function handleApprove() {
-    if (!weekData) return
-    try {
-      await apiFetch(`/api/weeks/${weekData.week.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'approved' }),
-      })
-      setWeekData({
-        ...weekData,
-        week: { ...weekData.week, status: 'approved' },
-      })
-    } catch (e) {
-      console.error('Failed to approve week:', e)
     }
   }
 
@@ -547,19 +532,17 @@ export function ProgramPage() {
       {/* Week Content */}
       {!weekData ? (
         <div className="flex flex-col items-center py-12">
-          <p className="mb-4 text-sm text-muted-foreground">No plan for week {weekNumber} yet.</p>
+          <p className="mb-4 text-sm text-muted-foreground">Not prepared yet.</p>
           <Button onClick={handleGenerateWeek} disabled={generating}>
-            {generating ? 'Generating...' : `Prepare Week ${weekNumber}`}
+            {generating ? 'Preparing...' : `Prepare Week ${weekNumber}`}
           </Button>
         </div>
       ) : (
         <WeekView
           sessions={weekData.sessions}
-          weekStatus={weekData.week.status}
           weekPlanId={weekData.week.id}
           analysisJson={weekData.week.analysisJson}
           weekNumber={weekNumber}
-          onApprove={handleApprove}
           onSessionUpdate={(id, status) => {
             setWeekData(prev => prev ? {
               ...prev,

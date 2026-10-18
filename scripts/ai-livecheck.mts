@@ -1,9 +1,15 @@
-// Live check for the Block Zero Phase D AI calls. NOT part of any test run:
-// it spends real money. Sends the five changed Block Zero requests to the real
-// API with a FAKE athlete and fake data, runs each output through the
-// guardrails, and prints model, tokens, pass/fail, clamps and an approximate cost.
+// Live check for the Block Zero Phase D AI calls and the adaptive coach's
+// weekly pass. NOT part of any test run: it spends real money. Sends the
+// changed requests to the real API with a FAKE athlete and fake data, runs
+// each output through the guardrails, and prints model, tokens, pass/fail,
+// clamps and an approximate cost.
+//   Block Zero: week planner, reactive replan, replace suggestions,
+//     assessment, transition.
+//   Weekly pass (E3): the Fighter week planner with the rules' read of last
+//     week (E1 placement on every session, small eases with reasons), and the
+//     athlete model (Sonnet 5.5, structured output, guarded, 10-day expiry).
 //
-//   npx tsx scripts/ai-livecheck.mts            five live calls (about 1-2 minutes)
+//   npx tsx scripts/ai-livecheck.mts            seven live calls (about 2-3 minutes)
 //   npx tsx scripts/ai-livecheck.mts --dry-run  builds every request and runs the
 //                                              guardrails on stub outputs, no API call
 //
@@ -48,6 +54,13 @@ import { buildWeekPlanPrompt, type WeekPlanParams } from '../src/lib/weeklyPlanA
 import { buildReactivePrompt, buildReplacePrompt, type SignalBundle } from '../src/lib/reactiveCoach'
 import { assessmentTestData, guardAssessment, transitionTestData } from '../src/server/routes/blockZero'
 import type { BlockTestData } from '../src/server/blockZeroData'
+import { serializeWeekSignals } from '../src/server/weeklyPass'
+import { houseLine, placePlannedWeek, summarizeEffort, weekRuleEases, whyThisWeek, type PlacementContext, type PlannedEntry, type SessionLike, type WeekSignals } from '../src/lib/coach'
+import { getDayTemplate } from '../src/lib/weeklyTemplate'
+import { athleteStateRequest, buildAthleteState, buildAthleteStatePrompt } from '../src/lib/athleteState/runAthleteState'
+import { guardAthleteState } from '../src/lib/athleteState/guard'
+import type { AthleteContext } from '../src/lib/athleteState/types'
+import type { AthleteAssessmentOutput } from '../src/lib/prompts/tools'
 
 const DRY = process.argv.includes('--dry-run')
 
@@ -239,6 +252,8 @@ const bundle: SignalBundle = {
   wellnessToday: { sleepHours: 5.5, soreness: 3, alcoholScale: 0 },
   wellnessOverreach: true,
   adHocConflict: null,
+  recentSkips: [],
+  injury: null,
 }
 const fakeWeekRows = guardCtx.sessions.map(s => ({ type: s.type, scheduledDate: s.epochDay, timeSlot: s.timeSlot, status: s.status }))
 const reactivePrompt = buildReactivePrompt(bundle, 'Sleep or soreness crossed overreach threshold.', '', null, fakeWeekRows, contextText)
@@ -283,7 +298,90 @@ const sonnet = (tool: typeof TOOL_REACTIVE_REPLAN, content: string, effort: 'low
 
 const ok = (clamps: Clamp[]) => clamps.filter(c => c.code !== 'voice')
 
+// ─── Weekly pass (adaptive coach): fake Fighter athlete ─────────
+
+const NEXT_MON = MON + 7
+const passSignals: WeekSignals = {
+  weekNumber: 5, totalWeeks: 12, blockType: 'fighter',
+  lastWeek: { planned: 10, completed: 8, missed: 1, skipped: 1, added: 1 },
+  completionRate: 0.8,
+  load: { last7: 2650, prev7: 2200, changePct: 20, flagged: true },
+  readiness: { days: 7, flaggedDays: 2, easeDays: 1, freshDays: 0, oversleepFatigueDays: 1 },
+  effort: summarizeEffort([{ epochDay: MON - 6, type: 'strength', rpe: 8 }, { epochDay: MON - 5, type: 'mt_class', rpe: 8 }, { epochDay: MON - 3, type: 'strength', rpe: 9 }]),
+  avgSoreness: 3.1, avgSleep: 7.0,
+  returnRamp: { active: false, gapDays: 0, reason: null },
+  retestLastWeek: false, waveEnd: false, athleteShape: 'pull_back',
+}
+const fighterParams: WeekPlanParams = { blockId: 'fake-fighter', weekId: 'fake-week-5', weekNumber: 5, blockWeek: 5, isBlockZero: false, mtClassDays: new Set([1, 3, 5]), prevWeekStart: MON - 7, prevWeekEnd: MON - 1, coachContext: serializeWeekSignals(passSignals) }
+const fighterWeekPrompt = buildWeekPlanPrompt(
+  fighterParams,
+  [{ type: 'strength', status: 'completed', rpe: 8, notes: null }, { type: 'mt_class', status: 'completed', rpe: 8, notes: null }, { type: 'strength', status: 'completed', rpe: 9, notes: null }, { type: 'foundation_run', status: 'skipped', rpe: null, notes: null }],
+  [{ sleepHours: 9.5, soreness: 3, notes: 'Slept long, still flat.' }, { sleepHours: 6.5, soreness: 4, notes: null }],
+  '', [], [], [],
+  '# Adherence signal\nBlock completion: 34/40 (85%). Adherence label: steady.',
+  null, null, fighterParams.coachContext,
+)
+const passCtx: PlacementContext = {
+  blockType: 'fighter', weekNumber: 5, todayEpochDay: NEXT_MON - 1, sessions: [], readinessEase: false, loadFlag: false, easeReason: null, easeDays: [],
+  run: { longestLast30Sec: 40 * 60, lastWeekRunSec: 110 * 60, thisWeekRunSec: 0 }, mt: { weeksSinceRampStart: 10, profileCap: 3 }, planWeekLoad: 3600, injury: null,
+}
+function guardFighterWeek(plan: WeekPlanOutput) {
+  // The rules' week (template) for next week; the planner's changes must pass E1.
+  const template: PlannedEntry[] = []
+  for (let d = NEXT_MON; d < NEXT_MON + 7; d++) for (const t of getDayTemplate('fighter', 5, dowOf(d), new Set([1, 3, 5]))) template.push({ type: t.type, label: null, notes: t.runCategory ?? null, epochDay: d, timeSlot: t.timeSlot, estimatedMin: null })
+  const planned: PlannedEntry[] = []
+  for (const day of Array.isArray(plan.days) ? plan.days : []) {
+    for (const e of day.sessions ?? []) planned.push({ type: e.type, label: null, notes: e.runCategory ?? null, epochDay: NEXT_MON + ((day.dayOfWeek + 6) % 7), timeSlot: e.timeSlot === 'pm' ? 'pm' : 'am', estimatedMin: e.estimatedMin ?? null })
+  }
+  const placed = placePlannedWeek(planned, template, passCtx, NEXT_MON)
+  const accepted: SessionLike[] = placed.accepted.map(a => ({ ...a, status: 'planned' }))
+  const eases = weekRuleEases(passSignals, accepted)
+  return { accepted, dropped: placed.dropped.map(d => `${d.entry.type} ${dowOf(d.entry.epochDay)}: ${d.code}`), eases, why: plan.adjustmentNotes ? houseLine(plan.adjustmentNotes) : whyThisWeek(passSignals, eases) }
+}
+
+const athleteCtx: AthleteContext = {
+  todayEpochDay: NEXT_MON - 1, todayDow: 0, weekStart: MON, weekEnd: NEXT_MON - 1,
+  lifts: [
+    { exerciseId: 'ex-back-squat', exerciseName: 'Back Squat', direction: 'progressing', verdict: 'push', loadFactor: 1.05, sessions: [{ epochDay: MON + 1, signal: 'over' }, { epochDay: MON - 6, signal: 'over' }] },
+    { exerciseId: 'ex-bench-press', exerciseName: 'Bench Press', direction: 'stalling', verdict: 'hold', loadFactor: 1, sessions: [{ epochDay: MON + 3, signal: 'normal' }] },
+  ],
+  effort: [{ epochDay: MON + 1, type: 'strength', rpe: 8, difficulty: null }, { epochDay: MON + 3, type: 'strength', rpe: 9, difficulty: null }, { epochDay: MON + 2, type: 'mt_class', rpe: 8, difficulty: null }],
+  wellness: [{ epochDay: MON + 4, sleepHours: 9.5, soreness: 3, alcoholScale: 0 }, { epochDay: MON + 5, sleepHours: 6.5, soreness: 4, alcoholScale: 0 }],
+  notes: [{ epochDay: MON + 4, source: 'daily_log', text: 'Slept long, still flat.' }],
+  runs: [], adherenceBlock: null, hrBlock: null, comboRatings: [], bodyweightKg: 82, trainingMaxes: [{ exerciseName: 'Back Squat', weightKg: 140 }], priorState: null,
+}
+
 const checks: Check[] = [
+  {
+    name: 'weekly pass: Fighter week planner (Haiku, rules read, E1 placement)',
+    req: { model: MODELS.fast, max_tokens: 4096, system: systemBlocks, messages: [{ role: 'user', content: fighterWeekPrompt }], tools: [TOOL_WEEK_PLAN], tool_choice: { type: 'tool', name: 'weekPlan' } },
+    parse: r => getToolInput<WeekPlanOutput>(r, 'weekPlan'),
+    stub: { narrative: 'Stub.', adjustmentNotes: 'Load jumped 20% — sleep long and flat!', mtSessionsThisWeek: 4, days: [
+      { dayOfWeek: 1, sessions: [{ type: 'mt_class', timeSlot: 'pm', label: 'MT', estimatedMin: 90 }, { type: 'bag_work', timeSlot: 'pm', label: 'Bag', estimatedMin: 30 }] },
+      { dayOfWeek: 2, sessions: [{ type: 'strength', timeSlot: 'am', label: 'Strength', estimatedMin: 75 }] },
+      { dayOfWeek: 4, sessions: [{ type: 'strength', timeSlot: 'am', label: 'Strength', estimatedMin: 75 }] },
+    ] },
+    guard: out => {
+      const g = guardFighterWeek(out as WeekPlanOutput)
+      const voiceOk = !g.why.includes('!') && !g.why.includes('—') && g.why.length <= 160
+      return { clamps: g.dropped.map(d => ({ code: 'placement', detail: d, reason: 'dropped by E1 placement' }) as unknown as Clamp), pass: g.accepted.length > 0 && voiceOk && g.eases.every(e => e.reason.length > 0), note: `${g.accepted.length} sessions kept, ${g.dropped.length} dropped, ${g.eases.length} eases; why: ${g.why}` }
+    },
+  },
+  {
+    name: 'weekly pass: athlete model (Sonnet 5.5, structured, guarded)',
+    req: athleteStateRequest(systemBlocks, buildAthleteStatePrompt(athleteCtx)),
+    timeoutMs: 120_000,
+    parse: r => getStructuredOutput<AthleteAssessmentOutput>(r),
+    stub: { readiness: 'taxed', readinessRationale: 'Long sleep, still flat.', lifts: [{ exerciseId: 'ex-back-squat', verdict: 'push', loadFactor: 1.3, rationale: 'Moving well.' }], weekShape: 'push_volume', weekShapeRationale: 'Room to add.', note: 'Squat moving — effort high!' },
+    guard: out => {
+      const o = out as AthleteAssessmentOutput
+      // The pass runs the guard with the day's context; check the strict case (ease day).
+      const g = guardAthleteState(buildAthleteState(o, athleteCtx, 'weekly_pass', 1_700_000_000), { noPush: false, easeActive: true })
+      const inRange = g.state.lifts.every(l => l.loadFactor >= 0.85 && l.loadFactor <= 1 && l.verdict !== 'push')
+      const verdict = g.state.verdict ?? ''
+      return { clamps: g.clamps.map(c => ({ code: 'athlete_guard', detail: c, reason: 'within the rules' }) as unknown as Clamp), pass: inRange && g.state.weekShape !== 'push_volume' && verdict.length > 0 && verdict.length <= 140 && g.state.expiresAtEpoch === 1_700_000_000 + 10 * 86400, note: `readiness=${g.state.readiness} shape=${g.state.weekShape}; verdict: ${verdict}` }
+    },
+  },
   {
     name: 'week planner (Haiku, Block Zero context)',
     req: { model: MODELS.fast, max_tokens: 2048, system: systemBlocks, messages: [{ role: 'user', content: weekPrompt }], tools: [TOOL_WEEK_PLAN], tool_choice: { type: 'tool', name: 'weekPlan' } },
@@ -357,7 +455,7 @@ const checks: Check[] = [
 
 // ─── Run ────────────────────────────────────────────────────────
 
-console.log(`Block Zero AI livecheck${DRY ? ' (dry run, no API calls)' : ''}. Fake athlete, fake data.`)
+console.log(`Block Zero + weekly pass AI livecheck${DRY ? ' (dry run, no API calls)' : ''}. Fake athlete, fake data.`)
 console.log(`Context block: ${contextText.length} chars (about ${Math.ceil(contextText.length / 4)} tokens).\n`)
 
 let total = 0

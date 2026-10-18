@@ -31,6 +31,12 @@ export interface AthleteState {
   computedAtEpoch: number
   trigger: string
   modelVersion: string
+  /** One line shown to the athlete (guard.ts). */
+  verdict?: string
+  /** Unix seconds; a stale state never sets loads (10 days). */
+  expiresAtEpoch?: number
+  /** What the rules clamped. */
+  guardrails?: string[]
 }
 
 // ─── Assembled context (input to the reasoning pass, Phase 2) ──────

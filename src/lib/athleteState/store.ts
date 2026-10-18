@@ -5,10 +5,12 @@ import { desc, eq } from 'drizzle-orm'
 import { coachingOutputs } from '../../db/schema'
 import type { createDB } from '../../db/client'
 import type { AthleteState } from './types'
+import { isAthleteStateFresh } from './guard'
 
 type DB = ReturnType<typeof createDB>
 
-export async function loadLatestAthleteState(db: DB): Promise<AthleteState | null> {
+/** The latest state, or null when none exists or it is stale (10 days). */
+export async function loadLatestAthleteState(db: DB, nowSec: number = Math.floor(Date.now() / 1000)): Promise<AthleteState | null> {
   const [row] = await db
     .select({ outputJson: coachingOutputs.outputJson })
     .from(coachingOutputs)
@@ -17,7 +19,8 @@ export async function loadLatestAthleteState(db: DB): Promise<AthleteState | nul
     .limit(1)
   if (!row?.outputJson) return null
   try {
-    return JSON.parse(row.outputJson) as AthleteState
+    const state = JSON.parse(row.outputJson) as AthleteState
+    return isAthleteStateFresh(state, nowSec) ? state : null
   } catch {
     return null
   }

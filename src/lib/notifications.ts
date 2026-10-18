@@ -113,7 +113,17 @@ interface AlarmPulse {
   actionTypeId: AlarmPhase
 }
 
-function buildMorningSequence(baseTimeStr: string): AlarmPulse[] {
+/**
+ * The first pulse with the coach's line ("2 changes, 1 question") when there
+ * is one. No push on a free Apple account: the line is whatever was pending
+ * when the app was last opened. Pure.
+ */
+export function withCoachLine(body: string, coachLine: string | null | undefined): string {
+  if (!coachLine) return body
+  return `${body} ${coachLine.toUpperCase()}.`
+}
+
+function buildMorningSequence(baseTimeStr: string, coachLine?: string | null): AlarmPulse[] {
   const pulses: AlarmPulse[] = []
 
   // Phase 1 — gentle (0–60s, every 15s, 5 pulses)
@@ -121,7 +131,7 @@ function buildMorningSequence(baseTimeStr: string): AlarmPulse[] {
     const copy = GENTLE_COPY[i]
     pulses.push({
       offsetSec: i * 15,
-      body: copy(baseTimeStr),
+      body: i === 0 ? withCoachLine(copy(baseTimeStr), coachLine) : copy(baseTimeStr),
       actionTypeId: 'alarm',
     })
   }
@@ -217,7 +227,7 @@ export async function scheduleAlarms(
   amReminder: string,
   pmSessionTime: string,
   pmLeadMin: number,
-  options: { amEnabled?: boolean; pmEnabled?: boolean } = {},
+  options: { amEnabled?: boolean; pmEnabled?: boolean; coachLine?: string | null } = {},
 ): Promise<ScheduleAlarmsResult> {
   if (!isNative) return { scheduled: false, reason: 'not-native' }
   const permitted = await requestNotificationPermission()
@@ -234,7 +244,7 @@ export async function scheduleAlarms(
   const base = nextOccurrence(amH, amM)
 
   if (amEnabled) {
-    const pulses = buildMorningSequence(formatTime12(base))
+    const pulses = buildMorningSequence(formatTime12(base), options.coachLine)
     if (pulses.length > ALARM_ALL_IDS.length) {
       throw new Error(
         `Morning alarm sequence has ${pulses.length} pulses but only ${ALARM_ALL_IDS.length} ID slots reserved`,
@@ -302,13 +312,14 @@ export async function syncAlarmsFromSettings(settings: {
   pmLeadMin?: number | null
   amEnabled?: number | null
   pmEnabled?: number | null
-}): Promise<void> {
+}, coachLine?: string | null): Promise<void> {
   if (!isNative) return
   const { amReminder, pmSessionTime, pmLeadMin } = settings
   if (!amReminder || !pmSessionTime || pmLeadMin == null) return
   await scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, {
     amEnabled: settings.amEnabled !== 0,
     pmEnabled: settings.pmEnabled !== 0,
+    coachLine,
   })
 }
 

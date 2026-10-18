@@ -9,8 +9,8 @@ const DEFAULT_TIMEOUT_MS = 60_000
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529])
 let missingKeyLogged = false
 
-// 'claude-opus-4-8' is only used by the unfinished athlete-state module (not wired up).
-export type AnthropicModel = WaymarkModel | 'claude-opus-4-8'
+// Every call uses a model from lib/models.
+export type AnthropicModel = WaymarkModel
 
 export interface CacheControl {
   type: 'ephemeral'

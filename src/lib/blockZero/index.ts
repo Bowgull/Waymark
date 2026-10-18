@@ -71,7 +71,7 @@ export {
 
 export { WEEKLY_LOAD_SOFT_CAP, sessionLoad, weekOverWeekChange, weeklyLoadFlag, weeklyLoadTotals, type LoadEntry, type LoadFlag } from './load'
 
-export { evaluateReadiness, latestReadiness, READINESS_ITEMS, type CheckIn, type ReadinessDay, type ReadinessItem, type ReadinessVerdict } from './readiness'
+export { evaluateReadiness, latestReadiness, oversleepRead, READINESS_ITEMS, OVERSLEEP_HOURS, type CheckIn, type OversleepRead, type ReadinessDay, type ReadinessItem, type ReadinessVerdict } from './readiness'
 
 export { EASED_RPE_CEILING, easeSession, type EaseTriggers, type EasedSession, type PlannedSession } from './autoEase'
 
