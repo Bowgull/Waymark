@@ -10,12 +10,15 @@ import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_BAG_PRESCRIPTION, type BagPrescriptionOutput } from './prompts/tools'
 import type { createDB } from '../db/client'
 import { MODELS } from './models'
+import { governBagRounds, type BagRules } from './coach/bag'
 
 type DB = ReturnType<typeof createDB>
 
 interface BagPrescriptionInput {
   sessionId: string
   todayEpochDay: number
+  /** Ease, gap and block rules (lib/coach/bag). The output is held to them too. */
+  rules?: BagRules
 }
 
 interface AvailableCombo {
@@ -39,6 +42,7 @@ function buildPrompt(
   available: AvailableCombo[],
   wellness: { sleepHours: number | null; soreness: number | null; weedGrams: number | null; alcoholScale: number | null } | null,
   recentMtNotes: string[],
+  rules?: BagRules,
 ): string {
   const lines: string[] = [
     'Prescribe today\'s heavy-bag session. You are this athlete\'s coach.',
@@ -50,6 +54,7 @@ function buildPrompt(
     '- At least one drill_isolation round every session to reinforce fundamentals. Cite the Fagan or Sylvie protocol from the chosen combo form_tips in the rationale.',
     '- No freestyle type. The coach prescribes, the athlete does not choose in the round.',
     '- Kick-strong athlete (TKD background). Balance kick work with hand fundamentals. Do not skip the hands.',
+    ...(rules ? ['', 'Today the rules set these limits. They override the structure rules above:', ...rules.promptLines] : []),
     '',
     'Available combos (pick comboIds from this list only, by id):',
     ...available.map(summarizeCombo),
@@ -153,7 +158,7 @@ export async function runBagPrescription(
         alcoholScale: todayLog.alcoholScale,
       }
     : null
-  const prompt = buildPrompt(available, wellness, recentMtNotes)
+  const prompt = buildPrompt(available, wellness, recentMtNotes, input.rules)
 
   const result = await anthropicCall(apiKey, {
     model: MODELS.fast,
@@ -176,14 +181,16 @@ export async function runBagPrescription(
   }
 
   const availableIds = new Set(available.map(c => c.id))
+  const rounds = output.rounds.map((r, idx) => ({
+    roundNumber: idx + 1,
+    roundType: r.roundType,
+    rationale: r.rationale,
+    comboIds: r.comboIds.filter(id => availableIds.has(id)),
+  })).filter(r => r.comboIds.length > 0)
   const sanitized: BagPrescriptionOutput = {
     sessionIntent: output.sessionIntent,
-    rounds: output.rounds.map((r, idx) => ({
-      roundNumber: idx + 1,
-      roundType: r.roundType,
-      rationale: r.rationale,
-      comboIds: r.comboIds.filter(id => availableIds.has(id)),
-    })).filter(r => r.comboIds.length > 0),
+    // The rules win over the model: finishers out, round count capped.
+    rounds: input.rules ? governBagRounds(rounds, input.rules) as typeof rounds : rounds,
   }
 
   if (sanitized.rounds.length < 3) {

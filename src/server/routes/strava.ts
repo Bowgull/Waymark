@@ -775,10 +775,6 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     attachmentStatus = 'auto_pending'
   } else {
     const [activeBlock] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
-    const blockStartedAt = activeBlock?.startedAt ?? nowSec
-    const blockWeek = activeBlock
-      ? Math.min(Math.max(Math.floor((nowSec - blockStartedAt) / (7 * 86400)) + 1, 1), activeBlock.totalWeeks)
-      : null
     parentSessionId = crypto.randomUUID()
     await db.insert(sessions).values({
       id: parentSessionId,
@@ -786,7 +782,9 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
       scheduledDate: epochDay,
       timeSlot: null,
       blockType: activeBlock?.blockType ?? 'fighter',
-      blockWeek,
+      // Only strength carries a block week. An unplanned run is an ad-hoc session.
+      blockWeek: null,
+      source: 'ad_hoc',
       status: 'completed',
       completedAt: runData.completedAt,
       durationSec: runData.durationSec,

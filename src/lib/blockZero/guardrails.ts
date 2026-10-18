@@ -499,8 +499,11 @@ export function checkPlacement(p: Placement, ctx: BlockZeroGuardContext): Placem
 
 // ─── Reactive replan (ReactiveReplanOutput) ───────────────────
 
-function weekStartSunday(epochDay: number): number {
-  return epochDay - dowOf(epochDay)
+/** A 0=Sun..6=Sat day as an epoch day from today through this Sunday (plans run Monday-Sunday). Null when outside. */
+function dayInPlanWeek(todayEpochDay: number, dow: number): number | null {
+  if (!Number.isInteger(dow) || dow < 0 || dow > 6) return null
+  const day = todayEpochDay + ((dow - dowOf(todayEpochDay) + 7) % 7)
+  return day <= mondayOf(todayEpochDay) + 6 ? day : null
 }
 
 function findOriginal(output: ReactiveReplanOutput, ctx: BlockZeroGuardContext): GuardSession | null {
@@ -548,7 +551,7 @@ function safeReplan(output: ReactiveReplanOutput, ctx: BlockZeroGuardContext, cl
     shiftReason: clamp.reason,
     targetSessionType: (original?.type ?? (output.targetSessionType === 'mt_class' ? 'mobility' : output.targetSessionType)) as SessionType,
     targetLabel: original?.label ?? (output.targetSessionType === 'mt_class' ? 'Back Care' : output.targetLabel),
-    targetDay: Math.max(dowOf(ctx.todayEpochDay), Math.min(6, Number.isInteger(output.targetDay) ? output.targetDay : dowOf(ctx.todayEpochDay))),
+    targetDay: Number.isInteger(output.targetDay) && dayInPlanWeek(ctx.todayEpochDay, output.targetDay) != null ? output.targetDay : dowOf(ctx.todayEpochDay),
     targetTimeSlot: output.targetTimeSlot === 'pm' ? 'pm' : 'am',
     ...(original?.id ? { originalSessionId: original.id } : {}),
   }
@@ -584,7 +587,8 @@ export function guardReactiveReplan(output: ReactiveReplanOutput, ctx: BlockZero
   }
 
   const todayDow = dowOf(ctx.todayEpochDay)
-  if (!Number.isInteger(out.targetDay) || out.targetDay < todayDow || out.targetDay > 6) {
+  const targetEpochDay = dayInPlanWeek(ctx.todayEpochDay, out.targetDay)
+  if (targetEpochDay == null) {
     const clamp: Clamp = { code: 'bad_day', detail: `targetDay=${String(out.targetDay)} today=${todayDow}`, reason: 'That day is outside this week. Nothing changes.' }
     clamps.push(clamp)
     return { output: safeReplan(out, ctx, clamp), clamps }
@@ -595,7 +599,7 @@ export function guardReactiveReplan(output: ReactiveReplanOutput, ctx: BlockZero
   const result = checkPlacement({
     type,
     label: out.targetLabel,
-    epochDay: weekStartSunday(ctx.todayEpochDay) + out.targetDay,
+    epochDay: targetEpochDay,
     timeSlot: out.targetTimeSlot === 'pm' ? 'pm' : 'am',
     removedSessionId: original?.id ?? null,
     adds: action !== 'move',
@@ -735,14 +739,14 @@ export interface CalibrationStartLike {
 
 /**
  * Assessment calibrationStarts against week-1 test ceilings (TM = 90% of the
- * week-1 e1RM). `resolve` maps a name to an exercise id. Once tests exist,
- * lifts without a test are reported as untested and left out of `writes`.
+ * week-1 e1RM). `resolve` maps a name to an exercise id. Lifts without a
+ * test are reported as untested and left out of `writes`, so an assessment
+ * before the week-1 tests writes no maxes at all (map #8).
  */
 export function guardCalibrationStarts<T extends CalibrationStartLike>(
   starts: T[],
   resolve: (name: string) => string | null,
   ceilings: Map<string, number>,
-  testsExist: boolean,
 ): Guarded<T[]> & { writes: Array<{ exerciseId: string; weightKg: number }> } {
   const clamps: Clamp[] = []
   const out: T[] = []
@@ -762,7 +766,8 @@ export function guardCalibrationStarts<T extends CalibrationStartLike>(
     }
     out.push(next.rationale != null ? { ...next, rationale: houseVoice(next.rationale) } : next)
     if (!id || seen.has(id)) continue
-    if (testsExist && ceiling == null) {
+    // Map #8: an untested lift's max is never written, before or after week 1.
+    if (ceiling == null) {
       clamps.push({ code: 'calibration_untested', detail: id, reason: `${s.exerciseName} has no test yet. Its max waits for one.` })
       continue
     }

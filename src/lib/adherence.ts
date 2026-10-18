@@ -14,6 +14,7 @@
 //
 // These metrics feed the coach silently. The user never sees a "missed" tag.
 // The coach reads the signal and reshapes the plan.
+import { returnPlan } from './coach/gap'
 import { eq, inArray } from 'drizzle-orm'
 import { sessions, weekPlans } from '../db/schema'
 import type { createDB } from '../db/client'
@@ -130,11 +131,13 @@ export interface AdherenceGuidance {
  * wellness/RPE/goals, but these are the defaults grounded in sports science.
  */
 export function deriveGuidance(s: AdherenceSnapshot): AdherenceGuidance {
-  // Return-from-gap deload (ACSM / NSCA detraining curves)
+  // Return-from-gap deload: the same table the code applies (lib/coach/gap,
+  // F12/F13). 7-13 days light, 14-27 significant, 28+ a mini Block Zero.
   let returnDeload: AdherenceGuidance['returnDeload'] = 'none'
-  if (s.currentGapDays >= 21) returnDeload = 'reset_to_base'
-  else if (s.currentGapDays >= 14) returnDeload = 'significant'  // ~70% volume, all intensity down one zone
-  else if (s.currentGapDays >= 7) returnDeload = 'light'         // ~85% volume, skip progression work
+  const ret = returnPlan(s.currentGapDays)
+  if (ret.tier === 'restart') returnDeload = 'reset_to_base'
+  else if (ret.tier === 'medium' || ret.tier === 'long') returnDeload = 'significant'
+  else if (ret.tier === 'short') returnDeload = 'light'
 
   // Block progression
   let blockProgression: AdherenceGuidance['blockProgression'] = 'proceed'
@@ -179,7 +182,9 @@ export function serializeAdherenceForPrompt(s: AdherenceSnapshot, g: AdherenceGu
     lines.push(`Longest recent gap: ${s.longestGapDays} days.`)
   }
   if (s.acuteChronicRatio != null) {
-    lines.push(`Acute:Chronic workload ratio: ${s.acuteChronicRatio.toFixed(2)} (target 0.8-1.3; <0.8 detraining, >1.5 spike).`)
+    // No ACWR bands (system rules): direction only, never a target or a gate.
+    const dir = s.acuteChronicRatio > 1.1 ? 'rising' : s.acuteChronicRatio < 0.9 ? 'falling' : 'flat'
+    lines.push(`Recent load vs the last month: ${dir}. Read the direction only.`)
   }
   lines.push(`Adherence label: ${s.label}.`)
   lines.push('')
@@ -265,13 +270,12 @@ function buildRationale(
   progression: AdherenceGuidance['blockProgression'],
 ): string {
   const parts: string[] = []
-  if (deload === 'reset_to_base') parts.push(`${s.currentGapDays}-day gap means treat first week back like Block Zero week 1.`)
-  else if (deload === 'significant') parts.push(`${s.currentGapDays}-day gap: drop volume to ~70% and intensity down one zone this week.`)
-  else if (deload === 'light') parts.push(`${s.currentGapDays}-day gap: trim volume to ~85%, no progression work this week.`)
+  const ret = returnPlan(s.currentGapDays)
+  if (deload !== 'none' && ret.reason) parts.push(`${ret.reason} The app already applies this to loads and run time. Do not add load on top.`)
 
   if (progression === 'repeat_week') parts.push(`Completion below 50%: the base isn't built yet. Repeat this week, do not advance.`)
   else if (progression === 'hold') parts.push(`Completion below 70%: hold the current block week, extend block by up to one week if needed.`)
-  else if (progression === 'extend_sessions') parts.push(`Completion 70-85%: add makeup sessions for missed work before advancing.`)
+  else if (progression === 'extend_sessions') parts.push(`Completion 70-85%: hold progression steps this week. Missed work is not made up.`)
 
   if (parts.length === 0) parts.push('Adherence is within tolerance. Progress the plan normally.')
   return parts.join(' ')

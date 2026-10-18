@@ -10,9 +10,9 @@ import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_WEEK_PLAN, type BodyIssueDetection, type WeekPlanOutput } from './prompts/tools'
 import { getWeekSummaries } from './prompts/summarizer'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
-import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
+import { computeHrSnapshot, loadEasyHrCeiling, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { rolloverStaleSessions } from './sessionRollover'
-import { getEpochDay } from './dates'
+import { getEpochDay, serverRolloverDay } from './dates'
 import type { createDB } from '../db/client'
 import { MODELS } from './models'
 import { clampsForStorage, guardWeekPlan, logClamps, serializeBlockZeroContext } from './blockZero'
@@ -336,7 +336,8 @@ export async function generateWeekPlan(
   // Adherence: roll stale sessions, then read block-wide signal so the coach
   // can deload-on-return, extend base work, or rescale volume silently.
   const todayEpochDay = getEpochDay(new Date())
-  await rolloverStaleSessions(db, todayEpochDay)
+  // No local date here: roll over only days that have ended everywhere.
+  await rolloverStaleSessions(db, serverRolloverDay())
   const adherence = await computeBlockAdherence(db, params.blockId, todayEpochDay)
   const guidance = deriveGuidance(adherence)
   const adherenceBlock = serializeAdherenceForPrompt(adherence, guidance)
@@ -344,7 +345,7 @@ export async function generateWeekPlan(
   // HR signal (zone-2 compliance + drift). Silent omission if no HR recorded.
   const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
   const maxHr = await loadProfileMaxHrForHr(db)
-  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr })
+  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr, ceilingBpm: (await loadEasyHrCeiling(db, todayEpochDay)).bpm })
   const hrBlock = serializeHrForPrompt(hrSnapshot)
 
   const starter = await computeStarterStatus(db, todayEpochDay, profile.trainingHistory, profile.constraints)

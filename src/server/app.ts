@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, lte } from 'drizzle-orm'
+import { and, desc, eq, gt, gte, inArray, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
 import { getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
 import { Hono } from 'hono'
@@ -7,20 +7,20 @@ import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
-import { isoToEpochDay } from '../lib/dates'
+import { isoToEpochDay, mondayOf } from '../lib/dates'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_COOLDOWN_TEMPLATE, FR_WARMUP_TEMPLATE } from '../lib/mobilityTemplate'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
-import { WEEKLY_TEMPLATE, getBlockZeroTemplate, getDayTemplate, strengthBlockWeek } from '../lib/weeklyTemplate'
-import { BLOCK_ZERO_BASE_WEEKS, ageFromDob, blockZeroTrainingWeek, hrCeiling, prescribeRunWalk, validateTestResult } from '../lib/blockZero'
+import { WEEKLY_TEMPLATE, getBlockZeroTemplate, getDayTemplate } from '../lib/weeklyTemplate'
+import { BLOCK_ZERO_BASE_WEEKS, blockZeroTrainingWeek, getRunWalkWeek, liftRegion, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
+import { KNOWN_SESSION_TYPES, bagRules, fallbackRoundTypes, fighterTmDecision, governBagRounds, mergeContext, type BlockWorkingSet, type SafeAlternative, type SessionChange } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek } from '../lib/weekAnalysis'
 import { generateWeekPlan } from '../lib/weeklyPlanAI'
-import { loadProfileMaxHrForHr, zone2CeilingBpm } from '../lib/hrAnalysis'
-import { rolloverStaleSessions } from '../lib/sessionRollover'
+import { loadEasyHrCeiling } from '../lib/hrAnalysis'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
 import { loadLiftTrends } from '../lib/athleteState/liftTrends'
@@ -30,8 +30,24 @@ import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsights
 import { runReactiveReplan, runReplaceSuggestions } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { clearCollectedTrainingData } from './trainingReset'
-import { checkMtClassForBlockZero, easeForReadiness, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, talkTestBpm, todayEpochDayUtc, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
+import { checkMtClassForBlockZero, easeForReadiness, getActiveBlock, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, todayEpochDayUtc, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
 import { logs } from './routes/logs'
+import {
+  checkChange,
+  currentBlockWeek,
+  expireAsks,
+  generateDaySessions,
+  latestWeekPlan,
+  loadSessionCoachState,
+  refusalBody,
+  resolveWeekPlan,
+  returnContextFor,
+  rolloverAndAsk,
+  trainingWeekFor,
+  weekStamps,
+  type SessionCoachState,
+} from './coachData'
+import { adjustFighterRun, adjustFighterStrength } from './coachPrescribe'
 
 type Bindings = {
   DB: D1Database
@@ -197,9 +213,12 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
   let template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label)
   const wavePct = getWeekPercentage(blockWeek, blockType)
-  // Same Block Zero adjustments start-strength applies.
-  const bzPlan = blockType === 'block_zero' ? await planBlockZeroStrength(db, session, template) : null
+  // Same coach and Block Zero adjustments start-strength applies.
+  const state = await loadSessionCoachState(db, session, Math.floor(Date.now() / 86400000))
+  const bzPlan = blockType === 'block_zero' ? await planBlockZeroStrength(db, session, template, coachStrengthInputs(state)) : null
   if (bzPlan) template = bzPlan.template
+  const fighter = blockType === 'fighter' ? adjustFighterStrength(template, state) : null
+  if (fighter) template = fighter.template
 
   const exRows = await db.select().from(exercises)
   const exMap = new Map(exRows.map(e => [e.id, e]))
@@ -213,7 +232,8 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
     const setsCount = workingSets.length
     const targetReps = workingSets[0]?.targetReps ?? 0
     const bzLoad = tex.section === 'main' ? bzPlan?.loads.get(tex.exerciseId) : undefined
-    const prescribedWeightKg = bzLoad ? bzLoad.weightKg : computeWorkingWeightKg(tmKg, tex.section, wavePct)
+    const base = computeWorkingWeightKg(tmKg, tex.section, wavePct)
+    const prescribedWeightKg = bzLoad ? bzLoad.weightKg : base != null && fighter && tex.section === 'main' ? Math.round(base * fighter.loadMultiplier * 100) / 100 : base
 
     return {
       exerciseId: tex.exerciseId,
@@ -235,6 +255,22 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
     templateLabel: template.label,
     exercises: previewExercises,
     ...(bzPlan ? { blockZero: blockZeroPlanSummary(bzPlan) } : {}),
+    coach: coachSummary(state, fighter),
+  }
+}
+
+/** What the coach rules hand Block Zero strength planning. */
+function coachStrengthInputs(state: SessionCoachState) {
+  return { returnCtx: state.returnCtx, coachEase: state.coachEase, injury: state.injuryAction }
+}
+
+/** The coach's reasons for today's loads, for the response and context_json. */
+function coachSummary(state: SessionCoachState, fighter: { loadMultiplier: number; noPush: boolean; notes: string[] } | null) {
+  return {
+    returnRamp: state.returnCtx.active ? { gapDays: state.returnCtx.plan.gapDays, tier: state.returnCtx.plan.tier, loadFactor: state.returnCtx.loadFactor, volumeFactor: state.returnCtx.volumeFactor, reason: state.returnCtx.reason } : null,
+    coachEase: state.coachEase,
+    injury: state.injury ? { region: state.injury.region, redFlag: state.injury.redFlag, note: state.injuryAction.note } : null,
+    ...(fighter ? { loadMultiplier: fighter.loadMultiplier, noPush: fighter.noPush, notes: fighter.notes } : {}),
   }
 }
 
@@ -342,20 +378,19 @@ async function loadRunGuardInputs(db: DrizzleDB, sessionId: string | null, weekP
 }
 
 // Block Zero run-walk: week shape from the rules module, capped by the run
-// guards, under the talk-test / HRmax ceiling. runType stays 'zone2' so the
-// run screen keeps its easy-run framing and HR ceiling.
-async function getBlockZeroRunPrescription(db: DrizzleDB, session: { id?: string; scheduledDate?: number | null; weekPlanId: string | null }, weekNumber: number) {
+// guards and the return ramp, under the shared easy-run HR ceiling. runType
+// stays 'zone2' so the run screen keeps its easy-run framing and HR ceiling.
+async function getBlockZeroRunPrescription(db: DrizzleDB, session: RunSessionInput, weekNumber: number, state: SessionCoachState) {
   const todayEpochDay = Math.floor(Date.now() / 86400000)
   const epochDay = session.scheduledDate ?? todayEpochDay
   const guards = await loadRunGuardInputs(db, session.id ?? null, session.weekPlanId, epochDay)
-  const [profile] = await db.select({ maxHr: userProfile.maxHr, dob: userProfile.dob }).from(userProfile).where(eq(userProfile.id, 'default'))
-  const ceiling = hrCeiling({
-    talkTestBpm: await talkTestBpm(db), // week-1 talk test (block_tests 'talk_test_hr')
-    measuredMaxHr: profile?.maxHr ?? null,
-    ageYears: ageFromDob(profile?.dob ?? null, todayEpochDay),
-    defaultBpm: zone2CeilingBpm(null),
-  })
-  const p = prescribeRunWalk({ week: weekNumber, ...guards, hrCeilingBpm: ceiling.bpm })
+  // R9: talk test, else HRmax, else age. Compliance scoring reads the same ceiling.
+  const ceiling = await loadEasyHrCeiling(db, epochDay)
+  // F12/F13: the return ramp trims run time like the caps do.
+  const ramp = state.returnCtx.active ? state.returnCtx : null
+  const plannedSec = runWalkTotalSec(getRunWalkWeek(weekNumber))
+  const extraCap = ramp ? { capSec: Math.round(plannedSec * ramp.volumeFactor), reason: ramp.reason ?? 'Back from a break. Shorter today.' } : null
+  const p = prescribeRunWalk({ week: weekNumber, ...guards, hrCeilingBpm: ceiling.bpm, extraCap })
   const base = {
     weekNumber: blockZeroTrainingWeek(weekNumber),
     runType: 'zone2',
@@ -366,23 +401,39 @@ async function getBlockZeroRunPrescription(db: DrizzleDB, session: { id?: string
     runWalk: { runSec: p.runSec, walkSec: p.walkSec, rounds: p.rounds, warmupSec: p.warmupSec, capped: p.capped },
   }
 
-  // Auto-ease: readiness or load says run down, so the run becomes an easy walk or bike.
+  // Auto-ease: readiness or load says run down, an applied coach ease, or an
+  // injury flag on the legs or back. The run becomes an easy walk or bike.
   const report = await readinessFor(db, epochDay)
   const eased = easeForReadiness(report, { type: 'foundation_run', label: 'Run-Walk', timeSlot: 'am', estimatedMin: Math.round(p.totalSec / 60) })
-  if (!eased.eased) return { ...base, autoEase: { eased: false, reason: null } }
-  const min = eased.session.estimatedMin
+  const coachWhy = state.injuryAction.action === 'walk_or_bike' ? state.injuryAction.note : state.coachEase?.kind === 'run_to_walk' ? state.coachEase.reason : null
+  if (!eased.eased && !coachWhy) return { ...base, autoEase: { eased: false, reason: null } }
+  const min = eased.eased ? eased.session.estimatedMin : Math.min(30, Math.max(15, Math.round(p.totalSec / 60)))
+  const reason = (eased.eased ? eased.reason : coachWhy) ?? 'Easy day.'
   return {
     ...base,
-    targetDesc: `Easy walk or bike, ${min} min. Keep HR at or below ${ceiling.bpm} bpm. ${eased.reason}`,
+    targetDesc: `Easy walk or bike, ${min} min. Keep HR at or below ${ceiling.bpm} bpm. ${reason}`,
     targetDurSec: min * 60,
     runWalk: { runSec: 0, walkSec: 0, rounds: 0, warmupSec: min * 60, capped: p.capped },
-    autoEase: { eased: true, reason: eased.reason },
+    autoEase: { eased: true, reason },
   }
 }
 
-// Helper: get running prescription for a session based on its block week and run category
-async function getRunPrescription(db: DrizzleDB, session: { id?: string; scheduledDate?: number | null; weekPlanId: string | null; blockWeek: number | null; notes?: string | null; blockType?: string | null }) {
+interface RunSessionInput {
+  id?: string
+  type?: string
+  scheduledDate?: number | null
+  weekPlanId: string | null
+  blockWeek: number | null
+  notes?: string | null
+  blockType?: string | null
+  contextJson?: string | null
+}
+
+// Helper: get running prescription for a session based on its training week and run category
+async function getRunPrescription(db: DrizzleDB, session: RunSessionInput) {
   let weekNumber: number | null = null
+  const todayEpochDay = Math.floor(Date.now() / 86400000)
+  const epochDay = session.scheduledDate ?? todayEpochDay
 
   if (session.weekPlanId) {
     const [wp] = await db.select().from(weekPlans).where(eq(weekPlans.id, session.weekPlanId))
@@ -390,47 +441,58 @@ async function getRunPrescription(db: DrizzleDB, session: { id?: string; schedul
   }
 
   if (weekNumber == null) {
-    // Fallback: compute from active block
-    const blocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
-    if (blocks.length > 0) {
-      const block = blocks[0]
-      const startedAt = block.startedAt ?? Math.floor(Date.now() / 1000)
-      const weeksSinceStart = Math.floor((Math.floor(Date.now() / 1000) - startedAt) / (7 * 86400))
-      weekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks)
-    }
+    // Fallback: the active block's training week (paused through gaps)
+    const block = await getActiveBlock(db)
+    if (block) weekNumber = (await trainingWeekFor(db, block, epochDay, epochDay)).week
   }
 
   if (weekNumber == null) return null
 
+  const state = await loadSessionCoachState(db, { type: session.type ?? 'running', scheduledDate: session.scheduledDate ?? null, contextJson: session.contextJson ?? null }, todayEpochDay)
+
   if (session.blockType === 'block_zero') {
-    return getBlockZeroRunPrescription(db, session, weekNumber)
+    return getBlockZeroRunPrescription(db, session, weekNumber, state)
   }
+
+  const { longestLast30Sec } = await loadRunGuardInputs(db, session.id ?? null, session.weekPlanId, epochDay)
 
   // Check if this is a Zone 2 run (tagged during generation)
   if (session.notes === 'zone2') {
-    const maxHr = await loadProfileMaxHrForHr(db)
-    const z2Ceiling = zone2CeilingBpm(maxHr)
-    return {
+    const ceiling = await loadEasyHrCeiling(db, epochDay)
+    return adjustFighterRun({
       weekNumber: ZONE2_PRESCRIPTION.weekNumber,
       runType: ZONE2_PRESCRIPTION.runType,
-      targetDesc: `${ZONE2_PRESCRIPTION.targetDesc} Keep HR at or below ${z2Ceiling} bpm.`,
+      targetDesc: `${ZONE2_PRESCRIPTION.targetDesc} Keep HR at or below ${ceiling.bpm} bpm.`,
       targetDurSec: ZONE2_PRESCRIPTION.targetDurSec,
       targetDistKm: ZONE2_PRESCRIPTION.targetDistKm,
-      z2CeilingBpm: z2Ceiling,
-    }
+      z2CeilingBpm: ceiling.bpm,
+    }, state, longestLast30Sec)
   }
 
-  // Progression run: determine week number from weekPlan or block
+  // Progression run: the training week picks the plan week
   const plan = RUNNING_PLAN_TEMPLATE.find(r => r.weekNumber === weekNumber)
   if (!plan) return null
 
-  return {
+  return adjustFighterRun({
     weekNumber: plan.weekNumber,
     runType: plan.runType,
     targetDesc: plan.targetDesc,
     targetDurSec: plan.targetDurSec,
     targetDistKm: plan.targetDistKm,
-  }
+  }, state, longestLast30Sec)
+}
+
+/** Loading routes stop on a back red flag (F17) with one line. */
+async function redFlagStop(db: DrizzleDB, session: { type: string; scheduledDate: number | null; contextJson: string | null }) {
+  const state = await loadSessionCoachState(db, session, Math.floor(Date.now() / 86400000))
+  return state.injuryAction.action === 'stop' ? { error: state.injuryAction.note, code: 'red_flag', reason: state.injuryAction.note } : null
+}
+
+/** The athlete's local today: `today` (YYYY-MM-DD) when sent, else the target day capped at UTC today, so tonight never reads as past. */
+function localToday(today: unknown, targetDay?: number): number {
+  if (typeof today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(today)) return isoToEpochDay(today)
+  const utc = Math.floor(Date.now() / 86400000)
+  return targetDay != null ? Math.min(targetDay, utc) : utc
 }
 
 app.get('/', (c) => {
@@ -457,7 +519,7 @@ app.get('/api/sessions/today', async (c) => {
   const db = createDB(c.env)
   // Silent rollover: any planned session dated before today becomes 'missed'.
   // Runs before the read so the client sees the rolled-over state.
-  await rolloverStaleSessions(db, epochDay)
+  await rolloverAndAsk(db, epochDay)
   const rows = await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay))
 
   // Attach run_sessions (Strava ingestion results) per session so Today can
@@ -505,7 +567,7 @@ app.get('/api/sessions/week-runs', async (c) => {
   const sundayEpoch = mondayEpoch + 6
 
   const db = createDB(c.env)
-  await rolloverStaleSessions(db, epochDay)
+  await rolloverAndAsk(db, epochDay)
   const rows = await db.select().from(sessions)
     .where(and(
       eq(sessions.type, 'running'),
@@ -524,104 +586,19 @@ app.post('/api/sessions/generate-today', async (c) => {
   if (!body.date) return c.json({ error: 'date required' }, 400)
 
   const epochDay = isoToEpochDay(body.date)
-  const dayOfWeek = new Date(`${body.date}T12:00:00Z`).getUTCDay()
   const nowSec = Math.floor(Date.now() / 1000)
-
   const db = createDB(c.env)
 
-  // Idempotent: return existing sessions if any
+  // Idempotent: return the day if its template sessions exist. Ad-hoc adds
+  // alone don't count, so an early add can't stop the template filling.
   const existing = await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay))
-  if (existing.length > 0) {
-    existing.sort((a, b) => (a.timeSlot === 'am' ? -1 : 1) - (b.timeSlot === 'am' ? -1 : 1))
-    return c.json(existing)
-  }
+  const sortDay = <T extends { timeSlot: string | null }>(rows: T[]) => rows.sort((a, b) => (a.timeSlot === 'am' ? -1 : 1) - (b.timeSlot === 'am' ? -1 : 1))
+  if (existing.some(s => s.source == null || s.source === 'template')) return c.json(sortDay(existing))
 
-  // Read settings to determine which days have MT classes
-  const settingsRows = await db.select().from(settings)
-  const mtDaysSetting = settingsRows[0]?.mtClassDays ?? '1,3,5'
-  const mtClassDays = new Set(mtDaysSetting.split(',').filter(Boolean).map(Number))
-
-  const created = []
-
-  // Determine current block and week for session stamping.
-  let blockWeek = 1
-  let weekPlanId: string | null = null
-  let currentWeekNumber = 1
-  let activeBlockType = 'fighter'
-  const blocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
-  if (blocks.length > 0) {
-    const block = blocks[0]
-    activeBlockType = block.blockType
-    const startedAt = block.startedAt ?? nowSec
-    const weeksSinceStart = Math.floor((nowSec - startedAt) / (7 * 86400))
-    currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks)
-    // Fighter keeps its 6-week wave off the raw calendar; Block Zero never wraps.
-    blockWeek = block.blockType === 'block_zero'
-      ? strengthBlockWeek('block_zero', currentWeekNumber)
-      : strengthBlockWeek('fighter', weeksSinceStart + 1)
-
-    // Auto-create week plan if none exists
-    const existingWeeks = await db.select().from(weekPlans).where(eq(weekPlans.blockId, block.id))
-    const existingWeek = existingWeeks.find(w => w.weekNumber === currentWeekNumber)
-    if (existingWeek) {
-      weekPlanId = existingWeek.id
-    } else {
-      weekPlanId = crypto.randomUUID()
-      await db.insert(weekPlans).values({
-        id: weekPlanId,
-        blockId: block.id,
-        weekNumber: currentWeekNumber,
-        status: 'draft',
-        autoGenerated: 1,
-        createdAt: nowSec,
-      })
-    }
-  }
-
-  const template = getDayTemplate(activeBlockType, currentWeekNumber, dayOfWeek, mtClassDays)
-  const isBlockZero = activeBlockType === 'block_zero'
-
-  for (const entry of template) {
-    const id = crypto.randomUUID()
-    const isStrength = entry.type === 'strength'
-    // Tag running sessions with their category so start-run can determine prescription
-    const runTag = entry.type === 'running' ? (entry.runCategory ?? null) : null
-    // Block Zero labels carry the strength day (A/B/C) so a moved session keeps its content
-    const label = isBlockZero ? entry.label : null
-    await db.insert(sessions).values({
-      id,
-      type: entry.type,
-      label,
-      weekPlanId,
-      scheduledDate: epochDay,
-      timeSlot: entry.timeSlot,
-      blockWeek: isStrength ? blockWeek : null,
-      blockType: activeBlockType,
-      status: 'planned',
-      notes: runTag,
-      createdAt: nowSec,
-    })
-    created.push({
-      id,
-      type: entry.type,
-      label,
-      weekPlanId,
-      scheduledDate: epochDay,
-      timeSlot: entry.timeSlot,
-      blockWeek: isStrength ? blockWeek : null,
-      blockType: activeBlockType,
-      status: 'planned',
-      startedAt: null,
-      completedAt: null,
-      durationSec: null,
-      rpe: null,
-      difficulty: null,
-      notes: runTag,
-      createdAt: nowSec,
-    })
-  }
-
-  return c.json(created)
+  // Template for the day's training week (paused through gaps), stamped
+  // source 'template', in the week plan for this calendar week.
+  const created = await generateDaySessions(db, epochDay, epochDay, nowSec)
+  return c.json(sortDay([...existing, ...created]))
 })
 
 // ─── Smart session suggestions ──────────────────────────────
@@ -632,7 +609,7 @@ app.get('/api/sessions/suggestions', async (c) => {
 
   const targetEpochDay = isoToEpochDay(date)
   const db = createDB(c.env)
-  await rolloverStaleSessions(db, targetEpochDay)
+  await rolloverAndAsk(db, targetEpochDay)
 
   // Today's wellness
   const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, targetEpochDay))
@@ -657,21 +634,17 @@ app.get('/api/sessions/suggestions', async (c) => {
     }
   }
 
-  // Active block context
+  // Active block context: the training week, paused through gaps
   let blockWeek: number | null = null
   let blockType: string | null = null
-  const blocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
-  if (blocks.length > 0) {
-    const block = blocks[0]
+  const block = await getActiveBlock(db)
+  if (block) {
     blockType = block.blockType
-    const startedAt = block.startedAt ?? Math.floor(Date.now() / 1000)
-    const blockStartEpochDay = Math.floor(startedAt / 86400)
-    const weeksSinceStart = Math.floor((targetEpochDay - blockStartEpochDay) / 7)
-    blockWeek = strengthBlockWeek(block.blockType, Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks))
+    blockWeek = weekStamps(block, await trainingWeekFor(db, block, targetEpochDay, targetEpochDay)).strengthWeek
   }
 
-  // This week's sessions (7-day window around target date)
-  const weekStart = targetEpochDay - new Date(targetEpochDay * 86400000).getUTCDay()
+  // This week's sessions (the Monday-Sunday plan week)
+  const weekStart = mondayOf(targetEpochDay)
   const weekEnd = weekStart + 6
   const weekSessions = await db.select().from(sessions).where(
     and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd))
@@ -709,46 +682,86 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   const parsed = adHocSessionSchema.safeParse(raw)
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
   const body = parsed.data
+  if (!KNOWN_SESSION_TYPES.has(body.type)) return c.json({ error: 'Unknown session type.', code: 'unknown_type', reason: 'Unknown session type.', safeAlternatives: [] }, 400)
 
   const epochDay = isoToEpochDay(body.date)
   const nowSec = Math.floor(Date.now() / 1000)
   const db = createDB(c.env)
+  const todayDay = localToday(body.today, epochDay)
+  const runTag = body.type === 'running' ? (body.runCategory ?? null) : null
 
-  // Determine weekPlanId from active block
+  // Placement rules (stacking, 24 h legs, run caps, ramp, no cramming, ease days).
+  const check = await checkChange(db, { kind: 'add', type: body.type, label: body.label ?? null, notes: runTag, epochDay, timeSlot: body.timeSlot }, todayDay)
+  if (!check.ok) return c.json(refusalBody(check), 409)
+
+  // Week plan for this calendar week of the active block, training week stamped.
   let weekPlanId: string | null = null
   let blockWeek: number | null = null
   let blockType = 'fighter'
-  const blocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
-  if (blocks.length > 0) {
-    const block = blocks[0]
-    const startedAt = block.startedAt ?? nowSec
-    const weeksSinceStart = Math.floor((nowSec - startedAt) / (7 * 86400))
-    const currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks)
-    const existingWeeks = await db.select().from(weekPlans).where(eq(weekPlans.blockId, block.id))
-    const existingWeek = existingWeeks.find(w => w.weekNumber === currentWeekNumber)
-    weekPlanId = existingWeek?.id ?? null
-    blockWeek = block.blockType === 'block_zero' ? strengthBlockWeek('block_zero', currentWeekNumber) : currentWeekNumber
+  const block = await getActiveBlock(db)
+  if (block) {
+    const stamps = weekStamps(block, await trainingWeekFor(db, block, epochDay, todayDay))
+    weekPlanId = await resolveWeekPlan(db, block.id, stamps.weekNumber, mondayOf(epochDay), nowSec)
+    blockWeek = body.type === 'strength' ? stamps.strengthWeek : null
     blockType = block.blockType
   }
 
   const id = crypto.randomUUID()
-  const runTag = body.type === 'running' ? (body.runCategory ?? null) : null
-
   await db.insert(sessions).values({
     id,
     type: body.type,
+    label: body.label ?? null,
     weekPlanId,
     scheduledDate: epochDay,
-    timeSlot: body.timeSlot,
+    timeSlot: check.change.timeSlot,
     blockWeek,
     blockType,
     status: 'planned',
     notes: runTag,
+    source: 'ad_hoc',
+    ...(check.notes.length > 0 ? { contextJson: JSON.stringify({ placement: { notes: check.notes, estimatedMin: check.change.estimatedMin ?? null } }) } : {}),
     createdAt: nowSec,
   })
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
-  return c.json(row)
+  return c.json(check.notes.length > 0 ? { ...row, coach: { notes: check.notes } } : row)
+})
+
+// Move a planned session to another day or slot in its own week. Same
+// placement rules as every other change; a refusal comes back as 409 with
+// the safe days and easier swaps.
+app.post('/api/sessions/:id/move', async (c) => {
+  const id = c.req.param('id')
+  const body = await c.req.json<{ date?: string; timeSlot?: string; today?: string }>().catch(() => ({} as { date?: string; timeSlot?: string; today?: string }))
+  if (!body.date || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) return c.json({ error: 'date (YYYY-MM-DD) required' }, 400)
+  if (body.timeSlot !== 'am' && body.timeSlot !== 'pm') return c.json({ error: 'timeSlot must be am or pm' }, 400)
+  const db = createDB(c.env)
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, id))
+  if (!session) return c.json({ error: 'session not found' }, 404)
+  if (session.status !== 'planned') return c.json({ error: 'Only a planned session can move.' }, 400)
+
+  const epochDay = isoToEpochDay(body.date)
+  const todayDay = localToday(body.today, epochDay)
+  const change: SessionChange = {
+    kind: 'move',
+    type: session.type,
+    label: session.label,
+    notes: session.notes,
+    epochDay,
+    timeSlot: body.timeSlot,
+    sessionId: session.id,
+    fromEpochDay: session.scheduledDate,
+  }
+  const check = await checkChange(db, change, todayDay)
+  if (!check.ok) return c.json(refusalBody(check), 409)
+
+  await db.update(sessions).set({
+    scheduledDate: epochDay,
+    timeSlot: check.change.timeSlot,
+    contextJson: mergeContext(session.contextJson, { movedFrom: { epochDay: session.scheduledDate, timeSlot: session.timeSlot } }),
+  }).where(eq(sessions.id, id))
+  const [moved] = await db.select().from(sessions).where(eq(sessions.id, id))
+  return c.json({ session: moved, notes: check.notes })
 })
 
 // Coach-ranked replacement suggestions. Reads wellness, HR, adherence, the
@@ -779,6 +792,7 @@ app.post('/api/sessions/:id/replace', async (c) => {
     label?: string
     timeSlot: 'am' | 'pm'
     runCategory?: string
+    today?: string
   }>()
 
   const db = createDB(c.env)
@@ -789,8 +803,24 @@ app.post('/api/sessions/:id/replace', async (c) => {
   if (original.status !== 'planned' && original.status !== 'in_progress') {
     return c.json({ error: 'session is not replaceable' }, 400)
   }
+  if (!KNOWN_SESSION_TYPES.has(body.type)) return c.json({ error: 'Unknown session type.', code: 'unknown_type', reason: 'Unknown session type.', safeAlternatives: [] }, 400)
+  if (body.timeSlot !== 'am' && body.timeSlot !== 'pm') return c.json({ error: 'timeSlot must be am or pm' }, 400)
 
-  const skipLine = body.reason.trim() ? `Replaced: ${body.reason.trim()}` : 'Replaced'
+  // Same placement rules as an add, with the original taken out of the day.
+  const replaceDay = original.scheduledDate ?? isoToEpochDay(new Date().toISOString().split('T')[0])
+  const check = await checkChange(db, {
+    kind: 'replace',
+    type: body.type,
+    label: body.label ?? null,
+    notes: body.type === 'running' ? (body.runCategory ?? null) : null,
+    epochDay: replaceDay,
+    timeSlot: body.timeSlot,
+    sessionId: id,
+  }, localToday(body.today, replaceDay))
+  if (!check.ok) return c.json(refusalBody(check), 409)
+
+  const reasonText = (body.reason ?? '').trim()
+  const skipLine = reasonText ? `Replaced: ${reasonText}` : 'Replaced'
   const priorNotes = (original.notes ?? '').trim()
   const updatedNotes = priorNotes ? `${skipLine}\n${priorNotes}` : skipLine
 
@@ -808,12 +838,13 @@ app.post('/api/sessions/:id/replace', async (c) => {
     adjustmentType: 'skip_reschedule',
     sessionType: body.type,
     action: 'swap',
-    reason: body.reason,
+    reason: reasonText || 'Replaced.',
     targetDay: new Date(scheduledDate * 86400000).getUTCDay(),
-    targetTimeSlot: body.timeSlot,
+    targetTimeSlot: check.change.timeSlot,
     sourceData: JSON.stringify({
-      userSkipReason: body.reason,
+      userSkipReason: reasonText || null,
       originalSessionId: id,
+      targetEpochDay: scheduledDate,
       originalType: original.type,
       swapToLabel: body.label ?? null,
     }),
@@ -828,12 +859,13 @@ app.post('/api/sessions/:id/replace', async (c) => {
     label: body.label ?? null,
     weekPlanId: original.weekPlanId,
     scheduledDate,
-    timeSlot: body.timeSlot,
+    timeSlot: check.change.timeSlot,
     blockWeek: body.type === 'strength' ? original.blockWeek : null,
     blockType: original.blockType,
     status: 'planned',
     notes: runTag,
     adjustmentId,
+    source: 'replace',
     createdAt: nowSec,
   })
 
@@ -852,6 +884,8 @@ app.post('/api/sessions/:id/replace', async (c) => {
   return c.json({ original: replaced, replacement: created })
 })
 
+const SESSION_STATUSES = new Set(['planned', 'in_progress', 'completed', 'skipped', 'missed'])
+
 app.patch('/api/sessions/:id', async (c) => {
   const id = c.req.param('id')
   const body = await c.req.json<{
@@ -866,6 +900,7 @@ app.patch('/api/sessions/:id', async (c) => {
     skipReasonDetail?: string | null
   }>()
 
+  if (body.status !== undefined && !SESSION_STATUSES.has(body.status)) return c.json({ error: 'Unknown status.' }, 400)
   const db = createDB(c.env)
   const updates: Record<string, unknown> = {}
 
@@ -903,59 +938,153 @@ app.patch('/api/sessions/:id', async (c) => {
 
 // ─── Adjustment accept/reject ──────────────────────────────────
 
+type MissedOptionBody = { kind: 'drop' } | { kind: 'move'; epochDay: number; timeSlot: 'am' | 'pm' } | { kind: 'swap'; type: string; label: string; notes?: string | null; epochDay: number; timeSlot: 'am' | 'pm' }
+
+function parseJson<T>(raw: string | null | undefined, fallback: T): T {
+  if (!raw) return fallback
+  try { return JSON.parse(raw) as T } catch { return fallback }
+}
+
+/** Session stamps (plan, block, strength week) for a session landing on a day. */
+async function stampsForDay(db: DrizzleDB, epochDay: number, todayDay: number, nowSec: number) {
+  const block = await getActiveBlock(db)
+  if (!block) return { weekPlanId: null as string | null, blockType: 'fighter', strengthWeek: null as number | null }
+  const stamps = weekStamps(block, await trainingWeekFor(db, block, epochDay, todayDay))
+  return {
+    weekPlanId: await resolveWeekPlan(db, block.id, stamps.weekNumber, mondayOf(epochDay), nowSec),
+    blockType: block.blockType,
+    strengthWeek: stamps.strengthWeek,
+  }
+}
+
+// A missed session's question: drop it, move it to a safe day, or swap it for
+// an easier one. The athlete picks (body.option = index into options); a
+// plain Accept takes the default the card names. Re-checked before applying.
+async function acceptMissedSession(c: { json: (b: unknown, s?: ContentfulStatusCode) => Response }, db: DrizzleDB, adj: typeof weekAdjustments.$inferSelect, body: { option?: number; today?: string }, nowSec: number) {
+  const options = parseJson<MissedOptionBody[]>(adj.optionsJson, [{ kind: 'drop' }])
+  const source = parseJson<{ defaultOption?: MissedOptionBody; missedSessionId?: string }>(adj.sourceData, {})
+  const choice: MissedOptionBody | undefined = body.option != null ? options[body.option] : source.defaultOption ?? options[0]
+  if (!choice) return c.json({ error: 'No such option.' }, 400)
+  const resolve = async (extra: Record<string, unknown>) => {
+    await db.update(weekAdjustments).set({
+      status: 'accepted',
+      resolvedAt: nowSec,
+      sourceData: JSON.stringify({ ...source, resolution: { ...choice, ...extra } }),
+    }).where(eq(weekAdjustments.id, adj.id))
+  }
+  if (choice.kind === 'drop') {
+    await resolve({})
+    return c.json({ adjustment: { ...adj, status: 'accepted' }, resolution: choice })
+  }
+
+  const [missed] = await db.select().from(sessions).where(eq(sessions.id, adj.targetSessionId ?? source.missedSessionId ?? ''))
+  if (!missed) return c.json({ error: 'session not found' }, 404)
+  const change: SessionChange = choice.kind === 'move'
+    ? { kind: 'add', type: missed.type, label: missed.label, notes: missed.notes, epochDay: choice.epochDay, timeSlot: choice.timeSlot }
+    : { kind: 'add', type: choice.type, label: choice.label, notes: choice.notes ?? null, epochDay: choice.epochDay, timeSlot: choice.timeSlot }
+  const todayDay = localToday(body.today, choice.epochDay)
+  const check = await checkChange(db, change, todayDay)
+  if (!check.ok) return c.json(refusalBody(check), 409)
+
+  const stamps = await stampsForDay(db, change.epochDay, todayDay, nowSec)
+  const newId = crypto.randomUUID()
+  await db.insert(sessions).values({
+    id: newId,
+    type: change.type,
+    label: change.label ?? null,
+    weekPlanId: stamps.weekPlanId ?? missed.weekPlanId,
+    scheduledDate: change.epochDay,
+    timeSlot: check.change.timeSlot,
+    blockWeek: change.type === 'strength' ? (missed.type === 'strength' ? missed.blockWeek : stamps.strengthWeek) : null,
+    blockType: stamps.blockType,
+    status: 'planned',
+    notes: change.notes ?? null,
+    adjustmentId: adj.id,
+    source: 'coach',
+    contextJson: JSON.stringify({ fromMissed: missed.id }),
+    createdAt: nowSec,
+  })
+  await resolve({ sessionId: newId })
+  const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
+  return c.json({ adjustment: { ...adj, status: 'accepted' }, session: created, resolution: choice })
+}
+
 app.post('/api/adjustments/:id/accept', async (c) => {
   const adjustmentId = c.req.param('id')
+  const body = await c.req.json<{ option?: number; today?: string }>().catch(() => ({} as { option?: number; today?: string }))
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
 
   const [adj] = await db.select().from(weekAdjustments).where(eq(weekAdjustments.id, adjustmentId))
   if (!adj) return c.json({ error: 'adjustment not found' }, 404)
   if (adj.status !== 'proposed') return c.json({ error: 'adjustment already resolved' }, 400)
-
-  // Mark accepted
-  await db.update(weekAdjustments).set({ status: 'accepted' }).where(eq(weekAdjustments.id, adjustmentId))
-
-  // Create the makeup / swap session
-  if ((adj.action === 'add' || adj.action === 'swap') && adj.targetDay != null) {
-    // Calculate the epoch day for the target day this week
-    const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
-    const weekStart = todayEpochDay - new Date(todayEpochDay * 86400000).getUTCDay()
-    const targetEpochDay = weekStart + adj.targetDay
-
-    const sessionId = crypto.randomUUID()
-    const runTag = adj.sessionType === 'running'
-      ? (JSON.parse(adj.sourceData ?? '{}').runCategory ?? null)
-      : null
-    let sessionBlockType = 'fighter'
-    let sessionBlockWeek: number | null = null
-    if (adj.weekPlanId) {
-      const [week] = await db.select().from(weekPlans).where(eq(weekPlans.id, adj.weekPlanId))
-      if (week) {
-        const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, week.blockId))
-        sessionBlockType = block?.blockType ?? 'fighter'
-        sessionBlockWeek = adj.sessionType === 'strength' ? strengthBlockWeek(sessionBlockType, week.weekNumber) : null
-      }
-    }
-
-    await db.insert(sessions).values({
-      id: sessionId,
-      type: adj.sessionType,
-      weekPlanId: adj.weekPlanId,
-      scheduledDate: targetEpochDay,
-      timeSlot: adj.targetTimeSlot ?? 'am',
-      blockWeek: sessionBlockWeek,
-      blockType: sessionBlockType,
-      status: 'planned',
-      notes: runTag,
-      adjustmentId,
-      createdAt: nowSec,
-    })
-
-    const [created] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-    return c.json({ adjustment: adj, session: created })
+  if (adj.expiresAt != null && adj.expiresAt <= nowSec) {
+    await db.update(weekAdjustments).set({ status: 'expired', resolvedAt: nowSec }).where(eq(weekAdjustments.id, adjustmentId))
+    return c.json({ error: 'That question lapsed with the week.' }, 400)
   }
 
-  return c.json({ adjustment: adj })
+  if (adj.adjustmentType === 'missed_session') return acceptMissedSession(c, db, adj, body, nowSec)
+
+  const source = parseJson<{ targetEpochDay?: number; originalSessionId?: string | null; targetLabel?: string; runCategory?: string; swapToLabel?: string }>(adj.sourceData, {})
+  // Plans run Monday-Sunday: a stored target day wins; a bare weekday lands in this Monday-Sunday week.
+  const baseDay = localToday(body.today)
+  const targetEpochDay = source.targetEpochDay ?? (adj.targetDay != null ? mondayOf(baseDay) + ((adj.targetDay + 6) % 7) : null)
+  const accept = async (sessionId: string | null) => {
+    await db.update(weekAdjustments).set({ status: 'accepted', resolvedAt: nowSec, ...(sessionId ? { sourceData: JSON.stringify({ ...source, appliedSessionId: sessionId }) } : {}) }).where(eq(weekAdjustments.id, adjustmentId))
+  }
+  if (targetEpochDay == null || adj.action === 'remove') {
+    await accept(null)
+    return c.json({ adjustment: { ...adj, status: 'accepted' } })
+  }
+
+  const [original] = source.originalSessionId
+    ? await db.select().from(sessions).where(eq(sessions.id, source.originalSessionId))
+    : []
+  const timeSlot: 'am' | 'pm' = adj.targetTimeSlot === 'pm' ? 'pm' : 'am'
+  const runTag = adj.sessionType === 'running' ? (source.runCategory ?? null) : null
+  const label = source.targetLabel ?? source.swapToLabel ?? null
+  const live = original && (original.status === 'planned' || original.status === 'in_progress')
+  const change: SessionChange = adj.action === 'move_timeslot' && live
+    ? { kind: 'move', type: original.type, label: original.label, notes: original.notes, epochDay: targetEpochDay, timeSlot, sessionId: original.id, fromEpochDay: original.scheduledDate }
+    : adj.action === 'swap' && live
+      ? { kind: 'replace', type: adj.sessionType, label, notes: runTag, epochDay: targetEpochDay, timeSlot, sessionId: original.id }
+      : { kind: 'add', type: adj.sessionType, label, notes: runTag, epochDay: targetEpochDay, timeSlot }
+  if (!KNOWN_SESSION_TYPES.has(change.type)) return c.json({ error: 'Unknown session type.', code: 'unknown_type', reason: 'Unknown session type.', safeAlternatives: [] }, 400)
+  const todayDay = localToday(body.today, targetEpochDay)
+  const check = await checkChange(db, change, todayDay)
+  if (!check.ok) return c.json(refusalBody(check), 409)
+
+  if (change.kind === 'move' && original) {
+    await db.update(sessions).set({ scheduledDate: change.epochDay, timeSlot: check.change.timeSlot, adjustmentId, contextJson: mergeContext(original.contextJson, { movedFrom: { epochDay: original.scheduledDate, timeSlot: original.timeSlot } }) }).where(eq(sessions.id, original.id))
+    await accept(original.id)
+    const [moved] = await db.select().from(sessions).where(eq(sessions.id, original.id))
+    return c.json({ adjustment: { ...adj, status: 'accepted' }, session: moved, movedSessionId: original.id })
+  }
+
+  if (change.kind === 'replace' && original) {
+    const prior = (original.notes ?? '').trim()
+    await db.update(sessions).set({ status: 'skipped', notes: prior ? `Replaced: coach\n${prior}` : 'Replaced: coach' }).where(eq(sessions.id, original.id))
+  }
+  const stamps = await stampsForDay(db, change.epochDay, todayDay, nowSec)
+  const sessionId = crypto.randomUUID()
+  await db.insert(sessions).values({
+    id: sessionId,
+    type: change.type,
+    label: change.label ?? null,
+    weekPlanId: stamps.weekPlanId ?? adj.weekPlanId,
+    scheduledDate: change.epochDay,
+    timeSlot: check.change.timeSlot,
+    blockWeek: change.type === 'strength' ? stamps.strengthWeek : null,
+    blockType: stamps.blockType,
+    status: 'planned',
+    notes: runTag,
+    adjustmentId,
+    source: 'coach',
+    createdAt: nowSec,
+  })
+  await accept(sessionId)
+  const [created] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
+  return c.json({ adjustment: { ...adj, status: 'accepted' }, session: created })
 })
 
 app.post('/api/adjustments/:id/reject', async (c) => {
@@ -965,24 +1094,29 @@ app.post('/api/adjustments/:id/reject', async (c) => {
   const [adj] = await db.select().from(weekAdjustments).where(eq(weekAdjustments.id, adjustmentId))
   if (!adj) return c.json({ error: 'adjustment not found' }, 404)
 
-  await db.update(weekAdjustments).set({ status: 'rejected' }).where(eq(weekAdjustments.id, adjustmentId))
+  // For a missed session, rejecting is "let it go": nothing is rescheduled.
+  await db.update(weekAdjustments).set({ status: 'rejected', resolvedAt: Math.floor(Date.now() / 1000) }).where(eq(weekAdjustments.id, adjustmentId))
   return c.json({ adjustment: { ...adj, status: 'rejected' } })
 })
 
-// ─── Pending adjustments for a week ────────────────────────────
+// ─── Adjustments for a week (proposed questions included) ─────
 
 app.get('/api/adjustments', async (c) => {
   const weekPlanId = c.req.query('weekPlanId')
   const db = createDB(c.env)
+  // Questions lapse with their week.
+  await expireAsks(db, Math.floor(Date.now() / 1000))
+  const withOptions = (rows: Array<typeof weekAdjustments.$inferSelect>) =>
+    rows.map(r => ({ ...r, options: parseJson<Array<MissedOptionBody | SafeAlternative> | null>(r.optionsJson, null) }))
 
   if (weekPlanId) {
     const rows = await db.select().from(weekAdjustments).where(eq(weekAdjustments.weekPlanId, weekPlanId))
-    return c.json(rows)
+    return c.json(withOptions(rows))
   }
 
   // Default: return all proposed adjustments
   const rows = await db.select().from(weekAdjustments).where(eq(weekAdjustments.status, 'proposed'))
-  return c.json(rows)
+  return c.json(withOptions(rows))
 })
 
 // ─── Strength Workout ──────────────────────────────────────────
@@ -1013,12 +1147,19 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   let template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label)
   const weekPct = getWeekPercentage(blockWeek, blockType)
 
-  // Block Zero: back swaps, auto-ease and RIR-based loads for today.
+  // Coach state: return ramp after a gap (F12/F13), an applied coach ease, injury flags (F16/F17).
+  const state = await loadSessionCoachState(db, session, Math.floor(Date.now() / 86400000))
+  if (state.injuryAction.action === 'stop') return c.json({ error: state.injuryAction.note, code: 'red_flag', reason: state.injuryAction.note }, 409)
+
+  // Block Zero: back swaps, auto-ease, the return ramp and RIR-based loads for today.
   let bzPlan: BlockZeroStrengthPlan | null = null
   if (blockType === 'block_zero') {
-    bzPlan = await planBlockZeroStrength(db, session, template)
+    bzPlan = await planBlockZeroStrength(db, session, template, coachStrengthInputs(state))
     template = bzPlan.template
   }
+  // Fighter: the same inputs trim sets and scale TM x wave.
+  const fighter = blockType === 'fighter' ? adjustFighterStrength(template, state) : null
+  if (fighter) template = fighter.template
 
   // Block Zero templates use exercises from migrations 0022 and 0026; fail clearly if
   // the library is behind instead of tripping a foreign key mid-insert.
@@ -1056,12 +1197,15 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
       const ts = tex.sets[setIdx]
       const trend = liftTrends.get(tex.exerciseId)
       const effective = resolveEffectiveLift(trend, stateLiftById.get(tex.exerciseId))
+      // Right after a gap, or on an eased day, the trend / AI factor may not push.
+      const trendFactor = fighter?.noPush ? Math.min(1, effective.loadFactor) : effective.loadFactor
+      const coachFactor = fighter && tex.section === 'main' ? fighter.loadMultiplier : 1
       const templateWeight = ts.suggestedWeightKg ?? null
       const baseWorking = computeWorkingWeightKg(trainingMax, tex.section, weekPct)
       // Check sets (Block Zero weeks 3 and 6) run ~10% above the working load.
       const adjustedWorking = baseWorking == null
         ? null
-        : Math.round(baseWorking * effective.loadFactor * (ts.loadMultiplier ?? 1) * 100) / 100
+        : Math.round(baseWorking * trendFactor * coachFactor * (ts.loadMultiplier ?? 1) * 100) / 100
       // Block Zero: the last RIR-logged top set sets the load; TM x % only until one exists.
       const bzLoad = tex.section === 'main' && !ts.isWarmup ? bzPlan?.loads.get(tex.exerciseId) : undefined
       const suggestedWeight = templateWeight ?? (ts.isWarmup
@@ -1084,16 +1228,18 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
     }
   }
 
-  // Mark session as in_progress. Block Zero keeps what today's rules did on the session.
+  // Mark session as in_progress. Keep what today's rules did on the session
+  // (merged, so an applied coach ease stays readable).
   const blockZero = bzPlan ? blockZeroPlanSummary(bzPlan) : null
+  const coach = coachSummary(state, fighter)
   await db.update(sessions).set({
     status: 'in_progress',
     startedAt: nowSec,
-    ...(blockZero ? { contextJson: JSON.stringify({ blockZero }) } : {}),
+    contextJson: mergeContext(session.contextJson, { ...(blockZero ? { blockZero } : {}), coach }),
   }).where(eq(sessions.id, sessionId))
 
   const workout = await buildWorkoutResponse(db, sessionId)
-  return c.json(blockZero ? { ...workout, blockZero } : workout)
+  return c.json({ ...workout, ...(blockZero ? { blockZero } : {}), coach })
 })
 
 app.get('/api/sessions/:id/workout', async (c) => {
@@ -1244,8 +1390,7 @@ app.get('/api/reactive/active', async (c) => {
   if (!date) return c.json({ error: 'date query param required' }, 400)
   const todayEpochDay = isoToEpochDay(date)
   const db = createDB(c.env)
-  const todayDow = new Date(todayEpochDay * 86400000).getUTCDay()
-  const weekStart = todayEpochDay - todayDow
+  const weekStart = mondayOf(todayEpochDay)
   const weekEnd = weekStart + 6
   const rows = await db.select().from(weekAdjustments).where(
     and(
@@ -1281,6 +1426,8 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
   if (session.type !== 'foundation_run') return c.json({ error: 'not a foundation_run session' }, 400)
+  const stop = await redFlagStop(db, session)
+  if (stop) return c.json(stop, 409)
 
   // Idempotent
   const existingRun = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
@@ -1420,6 +1567,8 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
   if (session.type !== 'bag_work') return c.json({ error: 'not a bag work session' }, 400)
+  const stop = await redFlagStop(db, session)
+  if (stop) return c.json(stop, 409)
 
   // Idempotent
   const existingRounds = await db.select().from(bagWorkRounds).where(eq(bagWorkRounds.sessionId, sessionId))
@@ -1442,20 +1591,38 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
     return c.json({ error: 'no unlocked combos available' }, 400)
   }
 
-  // AI prescription path (coach prescribes typed rounds)
+  // Governance (map #9): ease day, injury flag, gap and block decide finishers and round count.
+  const bagDay = session.scheduledDate ?? Math.floor(nowSec / 86400)
+  const bagState = await loadSessionCoachState(db, session, bagDay)
+  const bagReport = await readinessFor(db, bagDay)
+  const bagEase = easeForReadiness(bagReport, { type: 'bag_work', label: 'Bag Work', timeSlot: session.timeSlot === 'pm' ? 'pm' : 'am', estimatedMin: 30 })
+  const activeBlock = await getActiveBlock(db)
+  const rules = bagRules({
+    blockType: session.blockType === 'block_zero' ? 'block_zero' : 'fighter',
+    weekNumber: activeBlock ? (await trainingWeekFor(db, activeBlock, bagDay, bagDay)).week : 1,
+    eased: bagEase.eased || bagState.coachEase != null,
+    easeReason: bagEase.eased ? bagEase.reason : bagState.coachEase?.reason ?? null,
+    returnActive: bagState.returnCtx.active,
+    gapDays: bagState.returnCtx.plan.gapDays,
+    returnReason: bagState.returnCtx.reason,
+    injuryReason: bagState.injuryAction.action === 'technical' ? bagState.injuryAction.note : null,
+  })
+
+  // AI prescription path (coach prescribes typed rounds), inside the rules
   const apiKey = (c.env as { ANTHROPIC_API_KEY?: string }).ANTHROPIC_API_KEY
   let prescribed: Awaited<ReturnType<typeof runBagPrescription>> = null
   if (apiKey) {
     try {
       const todayEpochDay = Math.floor(nowSec / 86400)
-      prescribed = await runBagPrescription(db, apiKey, { sessionId, todayEpochDay })
+      prescribed = await runBagPrescription(db, apiKey, { sessionId, todayEpochDay, rules })
     } catch (err) {
       console.warn('[start-bag-work] prescription failed', err)
     }
   }
+  if (rules.reason) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: rules.maxRounds } }) }).where(eq(sessions.id, sessionId))
 
   if (prescribed && prescribed.rounds.length >= 3) {
-    for (const r of prescribed.rounds) {
+    for (const r of governBagRounds(prescribed.rounds, rules)) {
       const roundId = crypto.randomUUID()
       const durationSec = r.roundType === 'warmup' ? 150 : r.roundType === 'conditioning' ? 180 : 180
       await db.insert(bagWorkRounds).values({
@@ -1478,10 +1645,11 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
       }
     }
   } else {
-    // Deterministic fallback: 6 weighted-random rounds with positional round types.
+    // Deterministic fallback: weighted-random rounds with positional round types,
+    // after the rules (no power or conditioning finishers when eased or back from a gap).
     // Used when AI is offline or returns too few rounds.
-    const POSITIONAL_TYPES = ['warmup', 'technical_flow', 'combo_practice', 'combo_practice', 'power', 'conditioning'] as const
-    const ROUND_COUNT = 6
+    const POSITIONAL_TYPES = fallbackRoundTypes(rules)
+    const ROUND_COUNT = POSITIONAL_TYPES.length
     const COMBOS_PER_ROUND = 3
 
     for (let r = 0; r < ROUND_COUNT; r++) {
@@ -1493,7 +1661,7 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
         durationSec: 180,
         restSec: 60,
         roundType: POSITIONAL_TYPES[r],
-        coachRationale: '',
+        coachRationale: rules.noFinishers && r === ROUND_COUNT - 1 && rules.reason ? `Finisher out. ${rules.reason}` : '',
         createdAt: nowSec,
       })
 
@@ -1678,6 +1846,8 @@ app.post('/api/sessions/:id/start-run', async (c) => {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
   if (session.type !== 'running') return c.json({ error: 'not a running session' }, 400)
+  const stop = await redFlagStop(db, session)
+  if (stop) return c.json(stop, 409)
 
   // Idempotent
   const existing = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
@@ -1777,9 +1947,19 @@ app.post('/api/sessions/:id/start-skip-rope', async (c) => {
   if (existing.length > 0) {
     return c.json({ session, skipSession: existing[0] })
   }
+  const stop = await redFlagStop(db, session)
+  if (stop) return c.json(stop, 409)
+
+  // Rope is lower-leg load (F11): fewer rounds on an ease day, an injury flag or the return ramp.
+  const state = await loadSessionCoachState(db, session, Math.floor(nowSec / 86400))
+  const report = await readinessFor(db, session.scheduledDate ?? Math.floor(nowSec / 86400))
+  const eased = report.readinessEase || state.coachEase != null || state.injuryAction.action === 'walk_or_bike'
+  const roundCount = eased ? 3 : state.returnCtx.active ? Math.max(2, Math.round(5 * state.returnCtx.volumeFactor)) : 5
+  const ropeNote = eased ? (state.injuryAction.note ?? state.coachEase?.reason ?? report.reason ?? 'Easy day.') : state.returnCtx.reason
+  if (ropeNote) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: ropeNote, roundCount } }) }).where(eq(sessions.id, sessionId))
 
   const skipId = crypto.randomUUID()
-  await db.insert(skipRopeSessions).values({ id: skipId, sessionId, roundCount: 5, roundDurSec: 180 })
+  await db.insert(skipRopeSessions).values({ id: skipId, sessionId, roundCount, roundDurSec: 180 })
   await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
@@ -1855,14 +2035,31 @@ app.post('/api/sessions/:id/start-mt-class', async (c) => {
   if (existing.length > 0) {
     return c.json({ session, mtLog: existing[0] })
   }
+  const stop = await redFlagStop(db, session)
+  if (stop) return c.json(stop, 409)
+
+  // Ease day, applied coach ease, injury flag or the return ramp: keep it technical (R10, F16).
+  const day = session.scheduledDate ?? Math.floor(nowSec / 86400)
+  const state = await loadSessionCoachState(db, session, day)
+  const report = await readinessFor(db, day)
+  const eased = easeForReadiness(report, { type: 'mt_class', label: session.label ?? 'MT Class', timeSlot: session.timeSlot === 'am' ? 'am' : 'pm', estimatedMin: 90 })
+  const mtNote = state.injuryAction.action === 'technical'
+    ? state.injuryAction.note
+    : eased.eased ? eased.reason
+      : state.coachEase ? `${state.coachEase.reason} Technique only tonight. Sit out the hard rounds.`
+        : state.returnCtx.active ? `${state.returnCtx.reason} Keep it technical. No hard rounds or sparring.` : null
 
   const logId = crypto.randomUUID()
   await db.insert(mtClassLogs).values({ id: logId, sessionId })
-  await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
+  await db.update(sessions).set({
+    status: 'in_progress',
+    startedAt: nowSec,
+    ...(mtNote ? { contextJson: mergeContext(session.contextJson, { coach: { note: mtNote, classType: 'technical' } }) } : {}),
+  }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const [mt] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
-  return c.json({ session: updated, mtLog: mt })
+  return c.json({ session: updated, mtLog: mt, ...(mtNote ? { coach: { note: mtNote, classType: 'technical' } } : {}) })
 })
 
 app.get('/api/sessions/:id/mt-class-workout', async (c) => {
@@ -2043,10 +2240,32 @@ app.post('/api/blocks/:id/tests', async (c) => {
 
 // ─── Program / Blocks / Weeks ──────────────────────────────────
 
+// The active block plus its training week (paused through gaps) and the
+// return plan after a gap. ?date=YYYY-MM-DD is the athlete's local today.
+// offerBlockZero: a Fighter block after 4+ weeks off (F13: mini Block Zero).
 app.get('/api/blocks/current', async (c) => {
   const db = createDB(c.env)
-  const blocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
-  return c.json(blocks[0] ?? null)
+  const date = c.req.query('date')
+  const todayDay = localToday(date)
+  const current = await currentBlockWeek(db, todayDay)
+  if (!current) return c.json(null)
+  const ret = await returnContextFor(db, todayDay)
+  return c.json({
+    ...current.block,
+    currentWeek: current.tw.week,
+    trainingWeek: { week: current.tw.week, rawWeek: current.tw.rawWeek, pausedWeeks: current.tw.pausedWeeks, restarted: current.tw.restarted, monday: current.tw.monday },
+    returnPlan: ret.active
+      ? {
+          gapDays: ret.plan.gapDays,
+          tier: ret.plan.tier,
+          loadFactor: ret.loadFactor,
+          volumeFactor: ret.volumeFactor,
+          restart: ret.plan.restart,
+          reason: ret.reason,
+          offerBlockZero: current.block.blockType === 'fighter' && ret.plan.restart && ret.daysSinceReturn < 7,
+        }
+      : null,
+  })
 })
 
 app.post('/api/blocks', async (c) => {
@@ -2103,8 +2322,8 @@ app.get('/api/weeks/current', async (c) => {
   if (!blockId || !weekNumber) return c.json({ error: 'blockId and weekNumber required' }, 400)
 
   const db = createDB(c.env)
-  const weeks = await db.select().from(weekPlans).where(eq(weekPlans.blockId, blockId))
-  const week = weeks.find(w => w.weekNumber === parseInt(weekNumber))
+  // A paused block can repeat a week number: the latest plan for it is current.
+  const week = await latestWeekPlan(db, blockId, parseInt(weekNumber))
   if (!week) return c.json(null)
 
   // Get sessions for this week
@@ -2119,48 +2338,40 @@ app.get('/api/weeks/current', async (c) => {
 })
 
 app.post('/api/weeks/generate', async (c) => {
-  const body = await c.req.json<{ blockId: string; weekNumber: number; startDate: string }>()
-  if (!body.blockId || !body.weekNumber || !body.startDate) {
-    return c.json({ error: 'blockId, weekNumber, startDate required' }, 400)
+  const body = await c.req.json<{ blockId: string; weekNumber?: number; startDate: string; today?: string }>()
+  if (!body.blockId || !body.startDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate)) {
+    return c.json({ error: 'blockId, startDate required' }, 400)
   }
 
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
 
-  // Check if week already exists
-  const existing = await db.select().from(weekPlans).where(eq(weekPlans.blockId, body.blockId))
-  const existingWeek = existing.find(w => w.weekNumber === body.weekNumber)
-  const weekId = existingWeek?.id ?? crypto.randomUUID()
-  if (existingWeek) {
-    const weekSessions = await db.select().from(sessions).where(eq(sessions.weekPlanId, existingWeek.id))
-    if (weekSessions.length > 0) return c.json({ week: existingWeek, sessions: weekSessions })
-  }
-
-  if (!existingWeek) {
-    await db.insert(weekPlans).values({
-      id: weekId,
-      blockId: body.blockId,
-      weekNumber: body.weekNumber,
-      status: 'draft',
-      createdAt: nowSec,
-    })
-  }
-
-  // Parse start date (Monday of the week)
-  const startDate = new Date(`${body.startDate}T12:00:00Z`)
-  const createdSessions = []
-
   // Determine block type for template and session stamping
   const [blockRow] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, body.blockId))
-  const blockType = blockRow?.blockType === 'block_zero' ? 'block_zero' : 'fighter'
+  if (!blockRow) return c.json({ error: 'block not found' }, 404)
+  const blockType = blockRow.blockType === 'block_zero' ? 'block_zero' : 'fighter'
+
+  // The server decides the training week for this Monday-Sunday week (paused
+  // through gaps); the client's number is only a hint.
+  const mondayDay = mondayOf(isoToEpochDay(body.startDate))
+  const stamps = weekStamps(blockRow, await trainingWeekFor(db, blockRow, mondayDay, localToday(body.today, mondayDay + 6)))
+  const weekNumber = stamps.weekNumber
+  const weekId = (await resolveWeekPlan(db, body.blockId, weekNumber, mondayDay, nowSec)) as string
+  const weekSessions = await db.select().from(sessions).where(eq(sessions.weekPlanId, weekId))
+  const [existingWeek] = await db.select().from(weekPlans).where(eq(weekPlans.id, weekId))
+  if (weekSessions.length > 0) return c.json({ week: existingWeek, sessions: weekSessions })
+
+  // Monday of the week
+  const startDate = new Date(`${new Date(mondayDay * 86400000).toISOString().slice(0, 10)}T12:00:00Z`)
+  const createdSessions = []
 
   // Block week for strength sessions. Fighter cycles every 6 weeks; Block Zero
   // extension weeks hold week-5 levels instead of wrapping to week 1.
-  const blockWeek = strengthBlockWeek(blockType, body.weekNumber)
+  const blockWeek = stamps.strengthWeek
 
   // Pick the correct weekly template
   const weeklyTemplate = blockType === 'block_zero'
-    ? getBlockZeroTemplate(body.weekNumber)
+    ? getBlockZeroTemplate(weekNumber)
     : WEEKLY_TEMPLATE
 
   // Generate sessions for 7 days (Mon=0 through Sun=6)
@@ -2186,6 +2397,7 @@ app.post('/api/weeks/generate', async (c) => {
         blockType,
         status: 'planned',
         notes: entry.runCategory ?? null,
+        source: 'template',
         createdAt: nowSec,
       })
       createdSessions.push({
@@ -2214,7 +2426,7 @@ app.post('/api/weeks/generate', async (c) => {
 })
 
 app.post('/api/weeks/auto-generate', async (c) => {
-  const body = await c.req.json<{ blockId: string }>()
+  const body = await c.req.json<{ blockId: string; today?: string }>()
   if (!body.blockId) return c.json({ error: 'blockId required' }, 400)
 
   const db = createDB(c.env)
@@ -2223,43 +2435,31 @@ app.post('/api/weeks/auto-generate', async (c) => {
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, body.blockId))
   if (!block) return c.json({ error: 'block not found' }, 404)
 
-  const startedAt = block.startedAt ?? nowSec
-  const weeksSinceStart = Math.floor((nowSec - startedAt) / (7 * 86400))
-  const currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks)
-
-  // Check if week already exists
+  // The athlete's local today (body.today) picks the Monday-Sunday week; the
+  // training week is paused through gaps.
+  const todayDay = localToday(body.today)
+  const mondayEpoch = mondayOf(todayDay)
+  const stamps = weekStamps(block, await trainingWeekFor(db, block, todayDay, todayDay))
+  const currentWeekNumber = stamps.weekNumber
   const existing = await db.select().from(weekPlans).where(eq(weekPlans.blockId, body.blockId))
-  const existingWeek = existing.find(w => w.weekNumber === currentWeekNumber)
-  if (existingWeek) {
-    const weekSessions = await db.select().from(sessions).where(eq(sessions.weekPlanId, existingWeek.id))
-    weekSessions.sort((a, b) => {
+
+  // Check if this week's plan already has sessions
+  const weekId = (await resolveWeekPlan(db, body.blockId, currentWeekNumber, mondayEpoch, nowSec, { autoGenerated: true })) as string
+  const existingSessions = await db.select().from(sessions).where(eq(sessions.weekPlanId, weekId))
+  if (existingSessions.length > 0) {
+    const [existingWeek] = await db.select().from(weekPlans).where(eq(weekPlans.id, weekId))
+    existingSessions.sort((a, b) => {
       const dateDiff = (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0)
       if (dateDiff !== 0) return dateDiff
       return (a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)
     })
-    return c.json({ week: existingWeek, sessions: weekSessions })
+    return c.json({ week: existingWeek, sessions: existingSessions })
   }
 
-  // Calculate Monday of current week
-  const now = new Date()
-  const day = now.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  const monday = new Date(now)
-  monday.setDate(now.getDate() + diff)
-  const startDate = new Date(`${monday.toLocaleDateString('en-CA')}T12:00:00Z`)
-
-  const weekId = crypto.randomUUID()
-  await db.insert(weekPlans).values({
-    id: weekId,
-    blockId: body.blockId,
-    weekNumber: currentWeekNumber,
-    status: 'draft',
-    autoGenerated: 1,
-    createdAt: nowSec,
-  })
+  const startDate = new Date(`${new Date(mondayEpoch * 86400000).toISOString().slice(0, 10)}T12:00:00Z`)
 
   const isBlockZero = block.blockType === 'block_zero'
-  const blockWeek = strengthBlockWeek(block.blockType, currentWeekNumber)
+  const blockWeek = stamps.strengthWeek
   const sessionBlockType = isBlockZero ? 'block_zero' : 'fighter'
 
   const mondayEpochDay = Math.floor(startDate.getTime() / 1000 / 86400)
@@ -2316,6 +2516,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
           blockType: sessionBlockType,
           status: 'planned',
           notes: entry.runCategory ?? entry.notes ?? null,
+          source: 'template',
           createdAt: nowSec,
         })
         createdSessions.push({
@@ -2396,6 +2597,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
         blockType: sessionBlockType,
         status: 'planned',
         notes: entry.runCategory ?? null,
+        source: 'template',
         createdAt: nowSec,
       })
       createdSessions.push({
@@ -2884,8 +3086,13 @@ app.get('/api/exercises/:id/history', async (c) => {
   })
 })
 
-// ─── TM Progression (after 6-week block) ─────────────────────
-
+// ─── TM Progression (Fighter, end of a wave) ──────────────────
+//
+// Rule-based (F2, F3, F20, lib/coach/tm): a max moves only on a clean block
+// with enough sets and a best effort that beats the e1RM noise. Lifts with no
+// sets hold. Idempotent per block and training week: a second call returns the
+// stored result and writes nothing. No client calls this yet, and Fighter has
+// no end-of-block path to call it from (E2).
 app.post('/api/blocks/:id/progress-tm', async (c) => {
   const blockId = c.req.param('id')
   const db = createDB(c.env)
@@ -2893,71 +3100,71 @@ app.post('/api/blocks/:id/progress-tm', async (c) => {
 
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
   if (!block) return c.json({ error: 'block not found' }, 404)
+  if (block.blockType !== 'fighter') return c.json({ error: 'Training max progression is for Fighter blocks.' }, 400)
 
-  // Get all exercises and determine upper vs lower
+  const todayDay = Math.floor(nowSec / 86400)
+  const week = (await trainingWeekFor(db, block, todayDay, todayDay)).week
+  const key = `${blockId}:w${week}`
+  const [done] = await db.select().from(coachingOutputs)
+    .where(and(eq(coachingOutputs.kind, 'tm_progression'), eq(coachingOutputs.inputHash, key)))
+  if (done) return c.json({ ...JSON.parse(done.outputJson), idempotent: true })
+
   const allExercises = await db.select().from(exercises)
   const exMap = new Map(allExercises.map(e => [e.id, e]))
-
-  // Get all sessions in this block via week plans
   const blockWeekPlans = await db.select().from(weekPlans).where(eq(weekPlans.blockId, blockId))
-  const weekPlanIds = new Set(blockWeekPlans.map(wp => wp.id))
-  const allBlockSessions = await db.select().from(sessions)
-  const blockStrengthSessions = allBlockSessions.filter(s =>
-    s.status === 'completed' && s.type === 'strength' &&
-    s.weekPlanId != null && weekPlanIds.has(s.weekPlanId)
-  )
+  const planWeek = new Map(blockWeekPlans.map(wp => [wp.id, wp.weekNumber]))
+  const blockStrengthSessions = blockWeekPlans.length > 0
+    ? (await db.select().from(sessions).where(inArray(sessions.weekPlanId, [...planWeek.keys()])))
+      .filter(s => s.status === 'completed' && s.type === 'strength')
+    : []
 
-  // Build a map of exercise → completed working sets in this block
-  const exerciseSetMap = new Map<string, { total: number; clean: number }>()
+  // Main working sets per lift, tagged with their training week.
+  const setsByLift = new Map<string, BlockWorkingSet[]>()
   for (const session of blockStrengthSessions) {
-    const sexes = await db.select().from(strengthSessionExercises)
-      .where(eq(strengthSessionExercises.sessionId, session.id))
+    const sexes = await db.select().from(strengthSessionExercises).where(eq(strengthSessionExercises.sessionId, session.id))
     for (const se of sexes) {
       if (se.section !== 'main') continue
-      const sets = await db.select().from(strengthSets)
-        .where(eq(strengthSets.sessionExerciseId, se.id))
-      const workingSets = sets.filter(s => s.isWarmup === 0)
-      const entry = exerciseSetMap.get(se.exerciseId) ?? { total: 0, clean: 0 }
-      for (const s of workingSets) {
-        entry.total++
-        if (s.weightKg != null && s.weightKg > 0 && s.reps >= (s.plannedReps ?? s.reps)) {
-          entry.clean++
-        }
+      const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
+      const list = setsByLift.get(se.exerciseId) ?? []
+      for (const s of sets.filter(x => x.isWarmup === 0)) {
+        list.push({ week: planWeek.get(session.weekPlanId ?? '') ?? 1, weightKg: s.weightKg, reps: s.reps, plannedWeightKg: s.plannedWeightKg, plannedReps: s.plannedReps })
       }
-      exerciseSetMap.set(se.exerciseId, entry)
+      setsByLift.set(se.exerciseId, list)
     }
   }
 
   const currentMaxes = await db.select().from(trainingMaxes)
-  const updates: { exerciseId: string; newWeightKg: number }[] = []
+  const updates: { exerciseId: string; newWeightKg: number; reason: string }[] = []
   const warnings: { exerciseId: string; reason: string }[] = []
-
   for (const tm of currentMaxes) {
     const ex = exMap.get(tm.exerciseId)
     if (!ex) continue
-    const isLower = ex.muscleGroups?.includes('quads') || ex.muscleGroups?.includes('glutes') || ex.muscleGroups?.includes('hamstrings')
-    const increment = isLower ? 4.54 : 2.27 // +10lb lower, +5lb upper
-
-    // Check if this exercise had clean sets in the block
-    const setData = exerciseSetMap.get(tm.exerciseId)
-    if (setData && setData.total > 0) {
-      const cleanRate = setData.clean / setData.total
-      if (cleanRate < 0.9) {
-        warnings.push({
-          exerciseId: tm.exerciseId,
-          reason: `Only ${Math.round(cleanRate * 100)}% of sets completed clean. TM held`,
-        })
-        continue // Skip TM bump for this exercise
-      }
+    const lowerByMuscle = ex.muscleGroups?.includes('quads') || ex.muscleGroups?.includes('glutes') || ex.muscleGroups?.includes('hamstrings')
+    const region = liftRegion(tm.exerciseId) === 'lower' || lowerByMuscle ? 'lower' : 'upper'
+    const decision = fighterTmDecision({ exerciseId: tm.exerciseId, currentTmKg: tm.weightKg, region, sets: setsByLift.get(tm.exerciseId) ?? [] })
+    if (decision.action === 'hold') {
+      warnings.push({ exerciseId: tm.exerciseId, reason: decision.reason })
+      continue
     }
-
-    const newWeight = Math.round((tm.weightKg + increment) * 100) / 100
-    await db.update(trainingMaxes).set({ weightKg: newWeight, updatedAt: nowSec })
-      .where(eq(trainingMaxes.exerciseId, tm.exerciseId))
-    updates.push({ exerciseId: tm.exerciseId, newWeightKg: newWeight })
+    await db.update(trainingMaxes).set({ weightKg: decision.newTmKg, updatedAt: nowSec }).where(eq(trainingMaxes.exerciseId, tm.exerciseId))
+    updates.push({ exerciseId: tm.exerciseId, newWeightKg: decision.newTmKg, reason: decision.reason })
   }
 
-  return c.json({ updated: updates, warnings })
+  const result = { updated: updates, warnings, week }
+  await db.insert(coachingOutputs).values({
+    id: crypto.randomUUID(),
+    kind: 'tm_progression',
+    model: 'rules',
+    scopeWeekPlanId: null,
+    scopeSessionId: null,
+    inputHash: key,
+    outputJson: JSON.stringify(result),
+    tokensIn: 0,
+    tokensOut: 0,
+    cachedTokensIn: 0,
+    createdAt: nowSec,
+  })
+  return c.json(result)
 })
 
 // ─── Reference Data ────────────────────────────────────────────
@@ -3633,9 +3840,8 @@ app.post('/api/ai/summarize-old-weeks', async (c) => {
 
   if (!block) return c.json({ error: 'no active block' }, 404)
 
-  const startedAt = block.startedAt ?? nowSec
-  const weeksSinceStart = Math.floor((nowSec - startedAt) / (7 * 86400))
-  const currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks)
+  const todayDay = Math.floor(nowSec / 86400)
+  const currentWeekNumber = (await trainingWeekFor(db, block, todayDay, todayDay)).week
 
   const summarized = await summarizeOldWeeks(db, c.env.ANTHROPIC_API_KEY, block.id, currentWeekNumber)
   return c.json({ summarized, currentWeekNumber })

@@ -12,10 +12,11 @@
 //    For adherence math they both count against completion. For coaching
 //    voice the distinction lets the model hedge ("noted" for skipped,
 //    deload-aware framing for missed).
-//  - Never surface "missed" in UI tags or warnings. Silent — the coach reads
-//    it as a signal and reshapes the plan; the user just sees a smart plan.
+//  - No "missed" tags or warnings in the UI. A missed key session becomes one
+//    pending question with safe options (server/coachData createMissedAsks;
+//    plan: "ask me each time"), never a scolding and never a reschedule.
 
-import { and, eq, lt } from 'drizzle-orm'
+import { and, eq, inArray, lt } from 'drizzle-orm'
 import { sessions } from '../db/schema'
 import type { createDB } from '../db/client'
 
@@ -48,4 +49,22 @@ export async function rolloverStaleSessions(
   // just surface it for logs when available.
   const changes = (result as unknown as { meta?: { changes?: number } })?.meta?.changes
   return typeof changes === 'number' ? changes : 0
+}
+
+/**
+ * Same rollover, returning the ids that flipped so the coach can ask about
+ * each missed session. Same local-day rule: only days before todayEpochDay.
+ */
+export async function rolloverStaleSessionIds(
+  db: DB,
+  todayEpochDay: number,
+): Promise<string[]> {
+  const stale = await db.select({ id: sessions.id }).from(sessions)
+    .where(and(eq(sessions.status, 'planned'), lt(sessions.scheduledDate, todayEpochDay)))
+  const ids = stale.map(s => s.id)
+  for (let i = 0; i < ids.length; i += 50) {
+    await db.update(sessions).set({ status: 'missed' })
+      .where(and(eq(sessions.status, 'planned'), inArray(sessions.id, ids.slice(i, i + 50))))
+  }
+  return ids
 }

@@ -415,6 +415,7 @@ export function TodayPage() {
           label: option.label,
           timeSlot: option.timeSlot,
           runCategory: option.runCategory,
+          today: getTodayISO(),
         }),
       })
       setSessions(prev => {
@@ -440,6 +441,7 @@ export function TodayPage() {
           type: option.type,
           timeSlot: option.timeSlot,
           runCategory: option.runCategory,
+          today: getTodayISO(),
         }),
       })
       setSessions(prev => [...prev, created].sort((a, b) =>

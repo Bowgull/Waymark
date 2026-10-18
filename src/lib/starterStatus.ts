@@ -5,7 +5,8 @@
 // fatigue as overreach.
 //
 // Exit criteria (either triggers graduation):
-//   (a) 8+ weeks of training have elapsed since the first completed session
+//   (a) exposure: 24+ completed key sessions (about 8 weeks at 3 a week).
+//       Elapsed time no longer counts, so a gap doesn't graduate anyone (F15).
 //   (b) 3 consecutive zone-2 runs average under 150 bpm at conversational pace
 //
 // Until one fires, we stay active. Status feeds into buildSystemPrompt as an
@@ -17,7 +18,9 @@ import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
 
-const STARTER_WINDOW_DAYS = 8 * 7
+/** Completed key sessions (strength, runs, rope, bag, muay thai) that end the starter window. */
+export const STARTER_EXPOSURE_SESSIONS = 24
+const KEY_TYPES = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
 const HR_GRAD_STREAK = 3
 const HR_GRAD_CEILING = 150
 
@@ -56,6 +59,11 @@ export function hasStarterHrGraduation(runs: StarterRunEvidence[]): boolean {
   return recentZone2.length >= HR_GRAD_STREAK && recentZone2.every(run => run.avgHr! < HR_GRAD_CEILING)
 }
 
+/** Exposure, not elapsed time: completed key sessions so far. */
+export function starterGraduatedByExposure(completedKeySessions: number): boolean {
+  return completedKeySessions >= STARTER_EXPOSURE_SESSIONS
+}
+
 export async function computeStarterStatus(
   db: DB,
   todayEpochDay: number,
@@ -82,8 +90,9 @@ export async function computeStarterStatus(
     .sort((a, b) => a - b)[0]
   const daysIn = firstDay != null ? todayEpochDay - firstDay : null
 
-  if (daysIn != null && daysIn >= STARTER_WINDOW_DAYS) {
-    return { active: false, daysIntoProgram: daysIn, reason: `graduated: ${daysIn} days since first completed session` }
+  const exposure = completed.filter(s => KEY_TYPES.has(s.type)).length
+  if (starterGraduatedByExposure(exposure)) {
+    return { active: false, daysIntoProgram: daysIn, reason: `graduated: ${exposure} key sessions completed` }
   }
 
   const recentRuns = await db
@@ -111,7 +120,7 @@ export async function computeStarterStatus(
   return {
     active: true,
     daysIntoProgram: daysIn,
-    reason: daysIn != null ? `${daysIn}/${STARTER_WINDOW_DAYS} days into starter window` : 'starter window active',
+    reason: `${exposure}/${STARTER_EXPOSURE_SESSIONS} key sessions into the starter window`,
   }
 }
 

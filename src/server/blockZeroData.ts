@@ -43,7 +43,11 @@ import {
   type WorkingLoad,
 } from '../lib/blockZero'
 import type { StrengthTemplate, TemplateSet } from '../lib/strengthTemplates'
+import { mtRampStartDay, scaleLoadKg, scaleSets, type CoachEase, type ReturnContext } from '../lib/coach'
+import type { InjuryAction } from '../lib/coach/injury'
+import { trainingWeekFor } from './coachData'
 import { zone2CeilingBpm } from '../lib/hrAnalysis'
+import { mondayOf } from '../lib/dates'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -168,27 +172,46 @@ async function loadMainSetHistory(db: DB, blockStart: number, excludeSessionId: 
  * fewer, no check set, RPE 6 cap), and RIR-based working loads per main lift.
  * Pure on the template it is given; reads check-ins, history and readiness.
  */
+/** What the coach rules add on top of readiness: the return ramp, an applied coach ease, an injury flag. */
+export interface CoachStrengthInputs {
+  returnCtx?: ReturnContext | null
+  coachEase?: CoachEase | null
+  injury?: { action: InjuryAction; note: string | null } | null
+}
+
 export async function planBlockZeroStrength(
   db: DB,
   session: { id: string; scheduledDate: number | null; blockWeek: number | null; label: string | null; timeSlot: string | null },
   template: StrengthTemplate,
+  coach: CoachStrengthInputs = {},
 ): Promise<BlockZeroStrengthPlan> {
   const epochDay = session.scheduledDate ?? todayEpochDayUtc()
   const target = getStrengthWeekTarget(session.blockWeek ?? 1)
   const report = await readinessFor(db, epochDay)
   const [log] = await db.select({ backToday: dailyLogs.backToday }).from(dailyLogs).where(eq(dailyLogs.logDate, epochDay))
-  const backToday = log?.backToday ?? null
+  const injuryAction = coach.injury?.action ?? 'none'
+  // An injury flag on the back reads as "back today" 1: the back-friendly lifts.
+  const backToday = injuryAction === 'back_swap' ? Math.min(log?.backToday ?? 1, 1) : log?.backToday ?? null
 
-  const eased = easeForReadiness(report, {
+  const planned = {
     type: 'strength',
     label: session.label ?? template.label,
-    timeSlot: session.timeSlot === 'pm' ? 'pm' : 'am',
+    timeSlot: (session.timeSlot === 'pm' ? 'pm' : 'am') as 'am' | 'pm',
     estimatedMin: 60,
     sets: mainLiftHardSets(target),
     rpe: target.rpe,
-  })
-  const easedSets = eased.eased ? eased.session.sets ?? target.mainSets : null
+  }
+  // Readiness first; an injury flag or an applied coach ease also eases (same shape).
+  let eased = easeForReadiness(report, planned)
+  const extraWhy = injuryAction === 'ease' || injuryAction === 'back_swap' ? coach.injury?.note ?? null : coach.coachEase?.reason ?? null
+  if (!eased.eased && extraWhy) {
+    eased = { ...easeSession(planned, { readinessEase: true, readinessReason: extraWhy }), reason: extraWhy }
+  }
+  // F12/F13: the return ramp trims sets on top of any ease.
+  const ramp = coach.returnCtx?.active ? coach.returnCtx : null
+  let easedSets = eased.eased ? eased.session.sets ?? target.mainSets : null
   const easedRpe = eased.eased ? eased.session.rpe ?? target.rpe : null
+  if (ramp) easedSets = scaleSets(easedSets ?? mainLiftHardSets(target), ramp.volumeFactor)
 
   const swaps: BlockZeroStrengthPlan['swaps'] = []
   const exercises = template.exercises.map(tex => {
@@ -199,14 +222,15 @@ export async function planBlockZeroStrength(
       swaps.push({ from: tex.exerciseId, to: pick.exerciseId, reason: pick.reason })
       next = { ...next, exerciseId: pick.exerciseId, label: pick.label ?? next.label, notes: `${pick.reason} ${next.notes ?? ''}`.trim() }
     }
-    if (easedSets != null && easedRpe != null) {
-      // Eased: the e1RM check (RPE 8) waits, working sets drop to the eased count.
+    if (easedSets != null) {
+      // Eased or ramping: the e1RM check (RPE 8) waits, working sets drop to the eased count.
       const working = next.sets.filter((s: TemplateSet) => !s.isWarmup && s.loadMultiplier == null)
       const warm = next.sets.filter((s: TemplateSet) => s.isWarmup)
+      const why = [eased.eased ? eased.reason : null, ramp?.reason ?? null].filter(Boolean).join(' ')
       next = {
         ...next,
         sets: [...warm, ...working.slice(0, Math.max(1, Math.min(easedSets, working.length)))],
-        notes: `${eased.reason ?? ''} ${next.notes ?? ''}`.trim(),
+        notes: `${why} ${next.notes ?? ''}`.trim(),
       }
     }
     return next
@@ -217,19 +241,27 @@ export async function planBlockZeroStrength(
   const history = await loadMainSetHistory(db, block ? blockStartDay(block) : epochDay - 56, session.id, mainIds)
   const loads = new Map<string, WorkingLoad>()
   for (const id of mainIds) {
+    const hist = history.get(id) ?? []
     const load = blockZeroWorkingLoad({
       exerciseId: id,
-      history: history.get(id) ?? [],
+      history: hist,
       target: { reps: target.reps, rpe: easedRpe ?? target.rpe },
-      eased: eased.eased,
+      eased: eased.eased || ramp != null,
     })
-    if (load) loads.set(id, load)
+    if (load && ramp) {
+      // F12/F13: after a gap the last top set is scaled down, never pushed.
+      const top = latestRirTopSet(hist, target.reps)
+      const from = top?.weightKg ?? load.weightKg
+      loads.set(id, { weightKg: Math.min(load.weightKg, scaleLoadKg(from, ramp.loadFactor)), source: 'rir', change: 'decrease', reason: ramp.reason ?? 'Back from a break. Load down.' })
+    } else if (load) {
+      loads.set(id, load)
+    }
   }
 
   return {
     template: { ...template, exercises },
     loads,
-    autoEase: { eased: eased.eased, reason: eased.reason },
+    autoEase: { eased: eased.eased || ramp != null, reason: [eased.reason, ramp?.reason].filter(Boolean).join(' ') || null },
     swaps,
     backToday,
   }
@@ -339,7 +371,7 @@ export async function talkTestBpm(db: DB): Promise<number | null> {
 
 /**
  * Rules check for logging a class type while Block Zero is active. Ramp week
- * counts from the first class this block; the cap counts the other classes
+ * counts from the first class after the last 14+ day class gap; the cap counts the other classes
  * started or done in the same Monday-Sunday week. Null when not Block Zero.
  */
 export async function checkMtClassForBlockZero(db: DB, sessionId: string, classType: string): Promise<ClassDecision | null> {
@@ -351,12 +383,13 @@ export async function checkMtClassForBlockZero(db: DB, sessionId: string, classT
   const dow = new Date(day * DAY_SEC * 1000).getUTCDay()
   const monday = day - ((dow + 6) % 7)
 
+  // The ramp counts from the first class after the last 14+ day class gap, not the first class ever.
   const classes = await db.select({ id: sessions.id, scheduledDate: sessions.scheduledDate, status: sessions.status })
     .from(sessions)
-    .where(and(eq(sessions.type, 'mt_class'), gte(sessions.scheduledDate, blockStartDay(block)), lte(sessions.scheduledDate, monday + 6)))
+    .where(and(eq(sessions.type, 'mt_class'), gte(sessions.scheduledDate, day - 180), lte(sessions.scheduledDate, monday + 6)))
   const others = classes.filter(c => c.id !== sessionId && c.scheduledDate != null && (c.status === 'completed' || c.status === 'in_progress'))
   const before = others.filter(c => (c.scheduledDate as number) <= day).map(c => c.scheduledDate as number)
-  const firstDay = before.length > 0 ? Math.min(...before) : null
+  const firstDay = mtRampStartDay(before, day)
   const classesThisWeek = others.filter(c => (c.scheduledDate as number) >= monday && (c.scheduledDate as number) <= monday + 6).length
 
   const [profile] = await db.select({ cap: userProfile.mtCapPerWeek }).from(userProfile).where(eq(userProfile.id, 'default'))
@@ -378,16 +411,11 @@ export async function loadBackScores(db: DB, fromDay: number, toDay: number) {
 
 // ─── AI guardrail context (Phase D) ────────────────────────────
 
-/** Block week a day falls in, 1..totalWeeks. */
-export function blockWeekFor(block: { startedAt: number | null; createdAt: number; totalWeeks: number }, epochDay: number): number {
-  const weeks = Math.floor((epochDay - blockStartDay(block)) / 7) + 1
-  return Math.min(Math.max(weeks, 1), block.totalWeeks)
+/** Training week a day falls in, 1..totalWeeks, paused through gaps (lib/coach/weekCounter). */
+export async function blockWeekFor(db: DB, block: typeof trainingBlocks.$inferSelect, epochDay: number): Promise<number> {
+  return (await trainingWeekFor(db, block, epochDay, epochDay)).week
 }
 
-function mondayOf(epochDay: number): number {
-  const dow = new Date(epochDay * DAY_SEC * 1000).getUTCDay()
-  return epochDay - ((dow + 6) % 7)
-}
 
 /** Run history the R7 / R8 caps read, relative to a day (Monday-Sunday weeks). */
 export async function loadRunHistory(db: DB, epochDay: number): Promise<Required<RunHistory>> {
@@ -405,15 +433,15 @@ export async function loadRunHistory(db: DB, epochDay: number): Promise<Required
   }
 }
 
-/** Ramp inputs for the class rules: first class this block, classes this week, profile cap. */
-async function loadMtRamp(db: DB, block: { startedAt: number | null; createdAt: number }, epochDay: number) {
+/** Ramp inputs for the class rules: ramp start (after the last 14+ day class gap), classes this week, profile cap. */
+async function loadMtRamp(db: DB, epochDay: number) {
   const monday = mondayOf(epochDay)
   const classes = await db.select({ scheduledDate: sessions.scheduledDate, status: sessions.status })
     .from(sessions)
-    .where(and(eq(sessions.type, 'mt_class'), gte(sessions.scheduledDate, blockStartDay(block)), lte(sessions.scheduledDate, monday + 6)))
+    .where(and(eq(sessions.type, 'mt_class'), gte(sessions.scheduledDate, epochDay - 180), lte(sessions.scheduledDate, monday + 6)))
   const live = classes.filter(c => c.scheduledDate != null && (c.status === 'completed' || c.status === 'in_progress' || c.status === 'planned'))
   const done = live.filter(c => c.status !== 'planned' && (c.scheduledDate as number) <= epochDay).map(c => c.scheduledDate as number)
-  const first = done.length > 0 ? Math.min(...done) : null
+  const first = mtRampStartDay(done, epochDay)
   const [profile] = await db.select({ cap: userProfile.mtCapPerWeek }).from(userProfile).where(eq(userProfile.id, 'default'))
   return {
     weeksSinceFirstClass: first == null ? null : Math.floor((epochDay - first) / 7),
@@ -443,14 +471,14 @@ export async function loadBlockZeroGuardContext(db: DB, todayEpochDay: number): 
   }))
   const report = await readinessFor(db, todayEpochDay)
   return {
-    weekNumber: blockWeekFor(block, todayEpochDay),
+    weekNumber: await blockWeekFor(db, block, todayEpochDay),
     todayEpochDay,
     sessions: around,
     readinessEase: report.readinessEase,
     loadFlag: report.load?.flagged ?? false,
     easeReason: report.reason,
     run: await loadRunHistory(db, todayEpochDay),
-    mt: await loadMtRamp(db, block, todayEpochDay),
+    mt: await loadMtRamp(db, todayEpochDay),
   }
 }
 
@@ -490,7 +518,7 @@ export async function loadBlockZeroAiContext(db: DB, todayEpochDay: number, week
   const block = await getActiveBlockZero(db)
   if (!block) return null
   const start = blockStartDay(block)
-  const week = weekNumber ?? blockWeekFor(block, todayEpochDay)
+  const week = weekNumber ?? await blockWeekFor(db, block, todayEpochDay)
   const target = getStrengthWeekTarget(week)
   const report = await readinessFor(db, todayEpochDay)
 
@@ -534,7 +562,7 @@ export async function loadBlockZeroAiContext(db: DB, todayEpochDay: number, week
     backTrend: backTrend(backRows, start, todayEpochDay),
     run: { longestLast30Sec: run.longestLast30Sec, lastWeekRunSec: run.lastWeekRunSec },
     hrCeilingBpm: ceiling.bpm,
-    mt: await loadMtRamp(db, block, todayEpochDay),
+    mt: await loadMtRamp(db, todayEpochDay),
   }
 }
 

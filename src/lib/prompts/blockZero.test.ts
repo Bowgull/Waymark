@@ -102,7 +102,7 @@ assert(g.writes.map(w => w.exerciseId).join(',') === 'ex-bench-press,ex-rdl', 'o
 assert(g.mtCap === 3 && g.output.mtCapPerWeek === 3, 'MT cap clamped to 3')
 assert(!/[!—]/.test(g.output.narrative), 'narrative in the house voice')
 const fresh = guardAssessment(aiAssessment, exerciseRows, { ceilings: new Map(), testsExist: false })
-assert(fresh.writes.length === 3 && fresh.writes[0].weightKg === 85, 'before any test: estimates written as before')
+assert(fresh.writes.length === 0, 'before any test: no untested max is written (map #8)')
 
 // ─── Transition prompt ──────────────────────────────────────────
 

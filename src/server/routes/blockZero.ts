@@ -23,9 +23,9 @@ import {
   type TransitionWeekSummary,
 } from '../../lib/prompts/blockZero'
 import { computeBlockAdherence, deriveGuidance } from '../../lib/adherence'
-import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from '../../lib/hrAnalysis'
+import { computeHrSnapshot, loadEasyHrCeiling, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from '../../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../../lib/sessionRollover'
-import { getEpochDay } from '../../lib/dates'
+import { getEpochDay, serverRolloverDay } from '../../lib/dates'
 import {
   backTrend,
   clampsForStorage,
@@ -52,6 +52,7 @@ import {
 } from '../../lib/blockZero'
 import { createTrainingBlock, endActiveBlocks } from '../blocks'
 import { loadBackScores, loadBlockTestData, transitionTestSummary, type BlockTestData } from '../blockZeroData'
+import { trainingWeekFor } from '../coachData'
 import type { createDB } from '../../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -85,7 +86,7 @@ export function guardAssessment(
   exerciseRows: Array<{ id: string; name: string }>,
   tests: Pick<BlockTestData, 'ceilings' | 'testsExist'>,
 ): { output: BlockZeroAssessmentOutput; clamps: Clamp[]; writes: Array<{ exerciseId: string; weightKg: number }>; mtCap: number | null } {
-  const starts = guardCalibrationStarts(output.calibrationStarts ?? [], name => resolveLiftId(name, exerciseRows), tests.ceilings, tests.testsExist)
+  const starts = guardCalibrationStarts(output.calibrationStarts ?? [], name => resolveLiftId(name, exerciseRows), tests.ceilings)
   const clamps = [...starts.clamps]
   const cap = guardMtCap(output.mtCapPerWeek)
   if (cap.clamp) clamps.push(cap.clamp)
@@ -178,7 +179,7 @@ export async function runBlockZeroAssessment(
 }
 
 // Save what the assessment decided: starting training maxes (already
-// guarded: capped by week-1 tests, and once tests exist only tested lifts),
+// guarded: capped by week-1 tests, and only tested lifts; none before the tests),
 // and the block's MT cap on the profile. training_maxes has no "set by hand"
 // marker, so a plain upsert is the honest option.
 async function persistAssessment(db: DB, writes: Array<{ exerciseId: string; weightKg: number }>, mtCap: number | null): Promise<void> {
@@ -292,13 +293,14 @@ async function gatherTransitionData(db: DB, blockId: string): Promise<Transition
   // Adherence snapshot — feeds silent progression decisions. Roll stale
   // planned sessions to 'missed' first so the math reflects reality.
   const todayEpochDay = getEpochDay(new Date())
-  await rolloverStaleSessions(db, todayEpochDay)
+  // No local date here: roll over only days that have ended everywhere.
+  await rolloverStaleSessions(db, serverRolloverDay())
   const adherence = await computeBlockAdherence(db, blockId, todayEpochDay)
   const guidance = deriveGuidance(adherence)
 
   const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
   const maxHr = await loadProfileMaxHrForHr(db)
-  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr })
+  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr, ceilingBpm: (await loadEasyHrCeiling(db, todayEpochDay)).bpm })
   const hrBlock = serializeHrForPrompt(hrSnapshot)
 
   return {
@@ -347,8 +349,8 @@ async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
   const e1rms = new Map([...setE1rms, ...e1rmsFromTests(testRows, w => w >= BLOCK_ZERO_BASE_WEEKS)])
 
   const totalWeeks = block?.totalWeeks ?? BLOCK_ZERO_BASE_WEEKS
-  const weeksSinceStart = Math.floor((todayEpochDay - startEpochDay) / 7)
-  const currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), totalWeeks)
+  // The training week, paused through gaps: a holiday doesn't reach the end gate early.
+  const currentWeekNumber = block ? (await trainingWeekFor(db, block, todayEpochDay, todayEpochDay)).week : 1
 
   const gate: EndGateInput = {
     completionRate: keySessionCompletionRate(blockSessions, todayEpochDay),
@@ -442,6 +444,7 @@ export async function runBlockZeroTransition(
     retestE1rms: gateData.e1rms,
     totalWeeks: gateData.totalWeeks,
     atEndBoundary: gateData.atEndBoundary,
+    currentTms: new Map((await db.select({ exerciseId: trainingMaxes.exerciseId, weightKg: trainingMaxes.weightKg }).from(trainingMaxes)).map(t => [t.exerciseId, t.weightKg])),
   })
   // AI targets never above the retest rule (90% of e1RM, 85% on adjust).
   const calibration = guardCalibrationWrites(planned.calibration, gateData.e1rms, planned.decision, retestCeilingKg)

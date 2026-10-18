@@ -14,7 +14,8 @@
 //   treadmill or Strava-pulled outdoor). Missing HR = no signal, not an error.
 
 import { and, desc, eq, gte, isNotNull } from 'drizzle-orm'
-import { runSessions, sessions, userProfile } from '../db/schema'
+import { blockTests, runSessions, sessions, trainingBlocks, userProfile } from '../db/schema'
+import { ageFromDob, hrCeiling, type HrCeilingSource } from './blockZero/running'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -66,6 +67,12 @@ export interface HrSnapshot {
 
 export interface HrSnapshotOptions {
   maxHr?: number | null
+  /**
+   * The easy-run ceiling the prescription uses (loadEasyHrCeiling). When set
+   * it wins, so compliance is scored against the same number the athlete was
+   * given (talk test first, then HRmax, then age).
+   */
+  ceilingBpm?: number | null
 }
 
 // ─── Public API ─────────────────────────────────────────────────
@@ -75,13 +82,39 @@ export function zone2CeilingBpm(maxHr: number | null | undefined): number {
   return Math.round(maxHr * Z2_CEILING_PCT)
 }
 
+/** Talk tests older than this stop setting the ceiling (fitness has moved). */
+const TALK_TEST_MAX_AGE_DAYS = 180
+
+/**
+ * The one easy-run HR ceiling (R9): the talk test (active block first, else
+ * the latest in 180 days), else 70% of a measured HRmax, else 70% of the age
+ * estimate, else the default. Prescriptions and compliance scoring both read
+ * this, so they can't disagree.
+ */
+export async function loadEasyHrCeiling(db: DB, todayEpochDay: number): Promise<{ bpm: number; source: HrCeilingSource }> {
+  const rows = await db
+    .select({ value: blockTests.value, week: blockTests.week, recordedAt: blockTests.recordedAt, status: trainingBlocks.status })
+    .from(blockTests)
+    .innerJoin(trainingBlocks, eq(blockTests.blockId, trainingBlocks.id))
+    .where(and(eq(blockTests.testKey, 'talk_test_hr'), gte(blockTests.recordedAt, (todayEpochDay - TALK_TEST_MAX_AGE_DAYS) * 86400)))
+  const active = rows.filter(r => r.status === 'active').sort((a, b) => b.week - a.week)[0]
+  const latest = active ?? rows.sort((a, b) => b.recordedAt - a.recordedAt)[0]
+  const [profile] = await db.select({ maxHr: userProfile.maxHr, dob: userProfile.dob }).from(userProfile).where(eq(userProfile.id, 'default'))
+  return hrCeiling({
+    talkTestBpm: latest?.value ?? null,
+    measuredMaxHr: profile?.maxHr ?? null,
+    ageYears: ageFromDob(profile?.dob ?? null, todayEpochDay),
+    defaultBpm: zone2CeilingBpm(null),
+  })
+}
+
 export async function loadProfileMaxHrForHr(db: DB): Promise<number | null> {
   const [profile] = await db.select({ maxHr: userProfile.maxHr }).from(userProfile).where(eq(userProfile.id, 'default'))
   return profile?.maxHr ?? null
 }
 
 export function computeHrSnapshot(runs: RunHrLite[], todayEpochDay: number, options: HrSnapshotOptions = {}): HrSnapshot {
-  const z2Ceiling = zone2CeilingBpm(options.maxHr)
+  const z2Ceiling = options.ceilingBpm != null && options.ceilingBpm > 0 ? Math.round(options.ceilingBpm) : zone2CeilingBpm(options.maxHr)
   const runsInWindow = runs.length
   const withHr = runs.filter(r => r.avgHr != null && r.avgHr > 0)
   const runsWithHr = withHr.length

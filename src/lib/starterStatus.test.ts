@@ -1,4 +1,4 @@
-import { hasStarterHrGraduation, profileIndicatesStarter } from './starterStatus'
+import { STARTER_EXPOSURE_SESSIONS, hasStarterHrGraduation, profileIndicatesStarter, starterGraduatedByExposure } from './starterStatus'
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message)
@@ -23,5 +23,10 @@ assert(!hasStarterHrGraduation([
   { scheduledDate: 9, type: 'running', runType: 'interval', avgHr: 147 },
   { scheduledDate: 8, type: 'running', runType: 'easy', avgHr: 149 },
 ]), 'does not graduate from quality runs')
+
+// Exposure, not elapsed time: a long gap never graduates anyone.
+assert(STARTER_EXPOSURE_SESSIONS === 24, 'starter window is 24 key sessions')
+assert(!starterGraduatedByExposure(10), '10 sessions over 9 weeks (with a gap) still a starter')
+assert(starterGraduatedByExposure(24), '24 completed key sessions graduates')
 
 console.log('starterStatus tests passed')

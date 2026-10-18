@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { Link } from 'react-router-dom'
 import { apiFetch } from '@/lib/api'
+import { getTodayISO } from '@/lib/dates'
 import { Button } from '@/components/ui/button'
 import { GoldDivider } from '@/components/ui/GoldDivider'
 import { PageBackground } from '@/components/backgrounds/PageBackground'
@@ -19,6 +20,10 @@ interface Block {
   totalWeeks: number
   startedAt: number | null
   status: string
+  /** Training week from the server, paused through gaps. */
+  currentWeek?: number
+  /** Return plan after a gap; offerBlockZero after 4+ weeks off in a Fighter block. */
+  returnPlan?: { offerBlockZero: boolean; reason: string | null } | null
 }
 
 interface Session {
@@ -107,6 +112,8 @@ export function ProgramPage() {
   const [maxHr, setMaxHr] = useState<number | null>(null)
 
   const getCurrentWeekNumber = useCallback((b: Block): number => {
+    // The server's training week pauses through gaps; the calendar is only a fallback.
+    if (b.currentWeek != null) return b.currentWeek
     if (!b.startedAt) return 1
     const weeksSinceStart = Math.floor((Date.now() / 1000 - b.startedAt) / (7 * 86400))
     return Math.min(Math.max(weeksSinceStart + 1, 1), b.totalWeeks)
@@ -121,7 +128,7 @@ export function ProgramPage() {
       const weekOffset = wn - currentWn
       wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: b.id, weekNumber: wn, startDate: getMonday(weekOffset) }),
+        body: JSON.stringify({ blockId: b.id, weekNumber: wn, startDate: getMonday(weekOffset), today: getTodayISO() }),
       })
     }
 
@@ -133,7 +140,7 @@ export function ProgramPage() {
     async function load() {
       try {
         const [existingBlock, profile] = await Promise.all([
-          apiFetch<Block | null>('/api/blocks/current'),
+          apiFetch<Block | null>(`/api/blocks/current?date=${getTodayISO()}`),
           apiFetch<{ maxHr: number | null } | null>('/api/user-profile').catch(() => null),
         ])
         setMaxHr(profile?.maxHr ?? null)
@@ -176,13 +183,9 @@ export function ProgramPage() {
           }
         }
 
-        // Check for return-from-break: last completed session > 10 days ago
-        const lastSession = await apiFetch<Session | null>('/api/sessions/last-completed')
-        if (lastSession?.completedAt) {
-          const daysSince = (Date.now() / 1000 - lastSession.completedAt) / 86400
-          if (daysSince >= 10 && existingBlock.blockType !== 'block_zero') {
-            setBlockZeroPrompt('return_from_break')
-          }
+        // Return from a break: the server decides (4+ weeks off in a Fighter block).
+        if (existingBlock.returnPlan?.offerBlockZero) {
+          setBlockZeroPrompt('return_from_break')
         }
 
         setBlock(existingBlock)
@@ -276,7 +279,7 @@ export function ProgramPage() {
       const weekOffset = weekNumber - getCurrentWeekNumber(block)
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: block.id, weekNumber, startDate: getMonday(weekOffset) }),
+        body: JSON.stringify({ blockId: block.id, weekNumber, startDate: getMonday(weekOffset), today: getTodayISO() }),
       })
       setWeekData(wd)
     } catch (e) {

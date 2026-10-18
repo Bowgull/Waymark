@@ -81,6 +81,8 @@ export const sessions = sqliteTable('sessions', {
   skipReason: text('skip_reason'),
   skipReasonDetail: text('skip_reason_detail'),
   contextJson: text('context_json'),
+  // 'template' | 'ad_hoc' | 'coach' | 'replace'. Null = written before 0027.
+  source: text('source'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_sessions_date').on(t.scheduledDate),
@@ -340,11 +342,19 @@ export const weekAdjustments = sqliteTable('week_adjustments', {
   targetDay: integer('target_day'), // day of week (0-6)
   targetTimeSlot: text('target_time_slot'), // 'am' | 'pm'
   sourceData: text('source_data'), // JSON: wellness snapshot, skip context
-  status: text('status').notNull().default('proposed'), // 'proposed' | 'accepted' | 'rejected'
+  status: text('status').notNull().default('proposed'), // 'proposed' | 'accepted' | 'rejected' | 'expired'
+  // Pending decisions (0027): the session it is about, the rules' safe options
+  // (JSON), when it lapses (unix seconds) and when it was answered.
+  targetSessionId: text('target_session_id'),
+  optionsJson: text('options_json'),
+  expiresAt: integer('expires_at'),
+  resolvedAt: integer('resolved_at'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_wa_week').on(t.weekPlanId),
   index('idx_wa_status').on(t.status),
+  index('idx_wa_target_session').on(t.targetSessionId),
+  index('idx_wa_type_status').on(t.adjustmentType, t.status),
 ])
 
 // ─── Config ────────────────────────────────────────────────────

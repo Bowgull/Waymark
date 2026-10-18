@@ -1,6 +1,9 @@
 // Event-driven reactive replan. Listens for meaningful signals mid-week and
-// produces a WeekAdjustment of type 'reactive' silently. No decision prompts,
-// no user-facing friction. The coach adjusts; the user sees a smarter plan.
+// produces one WeekAdjustment of type 'reactive'. Small auto, big ask: small
+// changes (hold, reduce intensity, a run becomes a walk or bike) are applied to
+// the target session with a short note; big ones (another session type,
+// another day, an added session) are placement-checked and stored as a
+// proposal the athlete accepts or rejects.
 //
 // Triggers:
 //  - session_completed: HR drift or over-paced zone-2 on the just-finished run,
@@ -14,10 +17,10 @@
 //    hard day, or weekly training days exceeded the target).
 //
 // Cost safety:
-//  - One Haiku call per trigger, never Sonnet.
+//  - One reasoning-model call per trigger (MODELS.reasoning, Sonnet, effort low).
 //  - Debounced per 2h window via coachingOutputs(kind='reactive_replan').
 //  - Pre-filter gates: if no rule fires, we skip the AI call entirely.
-//  - Fails closed: Haiku offline -> no adjustment, the weekly plan still stands.
+//  - Fails closed: model offline -> no adjustment, the weekly plan still stands.
 
 import { and, desc, eq, gte, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, sessions, trainingMaxes, userProfile, weekAdjustments, weekPlans } from '../db/schema'
@@ -26,11 +29,14 @@ import { MODELS } from './models'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type ReactiveReplanOutput, type ReplaceSuggestionsOutput } from './prompts/tools'
-import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
+import { computeHrSnapshot, loadEasyHrCeiling, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
 import { computeStarterStatus, serializeStarterStatus } from './starterStatus'
 import { clampsForStorage, guardReactiveReplan, guardReplaceSuggestions, logClamps, serializeBlockZeroContext } from './blockZero'
 import { loadBlockZeroAiContext, loadBlockZeroGuardContext } from '../server/blockZeroData'
+import { checkChange, loadInjuryFlag } from '../server/coachData'
+import { classifyReplan, withCoachEase, type CoachEase, type InjuryFlag, type SessionChange } from './coach'
+import { mondayOf } from './dates'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -88,13 +94,19 @@ export interface SignalBundle {
   wellnessToday: { sleepHours: number | null; soreness: number | null; alcoholScale: number | null } | null
   wellnessOverreach: boolean
   adHocConflict: AdHocConflict | null
+  /** Skips in the last 7 days with their reason (injury, sick, tired...). */
+  recentSkips: Array<{ type: string; scheduledDate: number; reason: string | null; detail: string | null }>
+  /** Deterministic injury / red-flag rule from skips and back notes (F16, F17). */
+  injury: InjuryFlag | null
 }
 
-// ─── Gates (cheap pre-filter before Haiku) ──────────────────────
+// ─── Gates (cheap pre-filter before the model call) ─────────────
 
-// Ad-hoc bonus sessions carry blockWeek = null (see POST /api/sessions/insert-ad-hoc).
-// A conflict arises when bonus volume pushes the week past a real ceiling:
-// MT cap, adjacent-day hard session stacking, or weekly day target.
+// Ad-hoc bonus sessions carry sessions.source = 'ad_hoc' (POST /api/sessions/insert-ad-hoc).
+// Template sessions carry 'template'; null is a row from before the marker and
+// counts as planned work, never as a bonus. A conflict arises when bonus volume
+// pushes the week past a real ceiling: MT cap, adjacent-day hard session
+// stacking, or weekly day target.
 async function detectAdHocConflicts(
   db: DB,
   weekStart: number,
@@ -108,14 +120,14 @@ async function detectAdHocConflicts(
       scheduledDate: sessions.scheduledDate,
       timeSlot: sessions.timeSlot,
       status: sessions.status,
-      blockWeek: sessions.blockWeek,
+      source: sessions.source,
     })
     .from(sessions)
     .where(and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd)))
 
   const active = weekRows.filter(s => s.status !== 'skipped' && s.scheduledDate != null)
   const adHoc = active
-    .filter(s => s.blockWeek == null)
+    .filter(s => s.source === 'ad_hoc')
     .map(s => ({ type: s.type, scheduledDate: s.scheduledDate as number, timeSlot: s.timeSlot, status: s.status }))
   if (adHoc.length === 0) return null
 
@@ -127,7 +139,7 @@ async function detectAdHocConflicts(
 
   const prescribedHardByDay = new Map<number, string>()
   for (const s of active) {
-    if (s.blockWeek != null && HIGH_INTENSITY_TYPES.has(s.type)) {
+    if (s.source !== 'ad_hoc' && HIGH_INTENSITY_TYPES.has(s.type)) {
       prescribedHardByDay.set(s.scheduledDate as number, s.type)
     }
   }
@@ -153,7 +165,8 @@ async function detectAdHocConflicts(
 
 async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundle> {
   const todayDow = new Date(ctx.todayEpochDay * 86400000).getUTCDay()
-  const weekStart = ctx.todayEpochDay - todayDow
+  // Plans run Monday-Sunday; so does the coach's "this week".
+  const weekStart = mondayOf(ctx.todayEpochDay)
   const weekEnd = weekStart + 6
 
   let justCompleted: SignalBundle['justCompleted'] = null
@@ -182,7 +195,7 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
       if (ctx.trigger === 'session_completed') {
         const runs = await loadRecentRunsForHr(db, ctx.todayEpochDay)
         const maxHr = await loadProfileMaxHrForHr(db)
-        const snap = computeHrSnapshot(runs, ctx.todayEpochDay, { maxHr })
+        const snap = computeHrSnapshot(runs, ctx.todayEpochDay, { maxHr, ceilingBpm: (await loadEasyHrCeiling(db, ctx.todayEpochDay)).bpm })
         if (snap.driftAssessment === 'clear_fatigue' || snap.driftAssessment === 'mild_fatigue') {
           hrDrift = snap.driftAssessment
         }
@@ -233,6 +246,16 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
       (wellnessToday.soreness != null && wellnessToday.soreness >= 4)),
   )
 
+  // Skip reasons are a signal (map #10): injury, sick, sore, tired.
+  const skipRows = await db
+    .select({ type: sessions.type, scheduledDate: sessions.scheduledDate, reason: sessions.skipReason, detail: sessions.skipReasonDetail })
+    .from(sessions)
+    .where(and(eq(sessions.status, 'skipped'), gte(sessions.scheduledDate, ctx.todayEpochDay - 7), lte(sessions.scheduledDate, ctx.todayEpochDay)))
+  const recentSkips = skipRows
+    .filter(r => r.scheduledDate != null)
+    .map(r => ({ type: r.type, scheduledDate: r.scheduledDate as number, reason: r.reason ?? null, detail: r.detail ?? null }))
+  const injury = await loadInjuryFlag(db, ctx.todayEpochDay)
+
   // Ad-hoc conflict detection only matters for the nightly rollover sweep.
   // Other triggers already have their own specific signal and don't need
   // the extra query cost.
@@ -264,6 +287,8 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
     wellnessToday,
     wellnessOverreach,
     adHocConflict,
+    recentSkips,
+    injury,
   }
 }
 
@@ -321,7 +346,7 @@ async function debounced(db: DB, nowSec: number): Promise<boolean> {
 export function buildReactivePrompt(bundle: SignalBundle, rationale: string, adherenceBlock: string, hrBlock: string | null, weekSessions: Array<{ type: string; scheduledDate: number | null; timeSlot: string | null; status: string }>, blockZeroContext: string | null = null): string {
   const lines: string[] = [
     `Reactive trigger: ${bundle.trigger}. Rationale: ${rationale}`,
-    `Today: ${DAY_NAMES[bundle.todayDow]} (dow=${bundle.todayDow}). Week runs Sun (dow 0) to Sat (dow 6).`,
+    `Today: ${DAY_NAMES[bundle.todayDow]} (dow=${bundle.todayDow}). The plan week runs Monday to Sunday. Day numbers: 0=Sun, 1=Mon .. 6=Sat.`,
   ]
 
   if (bundle.justCompleted) {
@@ -337,7 +362,20 @@ export function buildReactivePrompt(bundle: SignalBundle, rationale: string, adh
   }
 
   if (bundle.recentMissed.length > 0) {
-    lines.push(`Recently missed: ${bundle.recentMissed.map(m => SESSION_LABEL[m.type] ?? m.type).join(', ')}.`)
+    lines.push(`Recently missed: ${bundle.recentMissed.map(m => SESSION_LABEL[m.type] ?? m.type).join(', ')}. The athlete is asked about each one. Do not make it up elsewhere.`)
+  }
+
+  if (bundle.recentSkips.length > 0) {
+    const skips = bundle.recentSkips.map(s => {
+      const dow = DAY_NAMES[new Date(s.scheduledDate * 86400000).getUTCDay()]
+      return `${dow} ${SESSION_LABEL[s.type] ?? s.type}${s.reason ? ` (${s.reason}${s.detail ? `: ${s.detail}` : ''})` : ''}`
+    })
+    lines.push(`Skipped this week: ${skips.join(', ')}.`)
+  }
+  if (bundle.injury) {
+    lines.push(bundle.injury.redFlag
+      ? `Back red flag in the notes. The rules stop all loading. Only hold or add_recovery.`
+      : `Rules flag: ${bundle.injury.reason} Sessions on that region are eased or swapped by the rules. Do not load it.`)
   }
 
   if (bundle.recentCompleted.length > 0) {
@@ -410,7 +448,9 @@ export function buildReactivePrompt(bundle: SignalBundle, rationale: string, adh
   lines.push('')
   lines.push('Decide one adjustment.', jsonInstructionFor(TOOL_REACTIVE_REPLAN))
   lines.push('Stay silent: no "missed" labels, no scolding, no second person. Pick the smallest shift that honors the signal.')
-  lines.push(`Valid targetDay values: ${bundle.todayDow}..6 (today through end of week).`)
+  const left = Array.from({ length: (mondayOf(bundle.todayEpochDay) + 6) - bundle.todayEpochDay + 1 }, (_, i) => new Date((bundle.todayEpochDay + i) * 86400000).getUTCDay())
+  lines.push(`Valid targetDay values: ${left.join(', ')} (today through Sunday).`)
+  lines.push('Small changes (hold, reduce_intensity, a run to a walk or bike) apply at once. A swap to another type, a move or an added session is asked first and must pass the placement rules.')
 
   return lines.join('\n')
 }
@@ -489,7 +529,7 @@ export async function runReactiveReplan(
 
   const recentRuns = await loadRecentRunsForHr(db, ctx.todayEpochDay)
   const maxHr = await loadProfileMaxHrForHr(db)
-  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, ctx.todayEpochDay, { maxHr }))
+  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, ctx.todayEpochDay, { maxHr, ceilingBpm: (await loadEasyHrCeiling(db, ctx.todayEpochDay)).bpm }))
 
   const weekSessions = await db
     .select({ type: sessions.type, scheduledDate: sessions.scheduledDate, timeSlot: sessions.timeSlot, status: sessions.status })
@@ -538,6 +578,9 @@ export async function runReactiveReplan(
   const cleanNote = sanitizeVoice(output.note)
   const cleanReason = sanitizeVoice(output.shiftReason)
 
+  // Small auto, big ask: sort the decision, then apply it or store the question.
+  const applied = await applyReplanDecision(db, output, cleanNote, cleanReason, ctx.todayEpochDay, nowSec)
+
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'reactive_replan',
@@ -545,41 +588,151 @@ export async function runReactiveReplan(
     scopeWeekPlanId: weekPlanId,
     scopeSessionId: ctx.sessionId ?? null,
     inputHash: null,
-    outputJson: JSON.stringify({ ...output, note: cleanNote, shiftReason: cleanReason, trigger: ctx.trigger, gate: g.rationale, ...(guardrails ? { guardrails } : {}) }),
+    outputJson: JSON.stringify({ ...output, note: cleanNote, shiftReason: cleanReason, trigger: ctx.trigger, gate: g.rationale, decision: applied.summary, ...(guardrails ? { guardrails } : {}) }),
     tokensIn: result.usage.input_tokens,
     tokensOut: result.usage.output_tokens,
     cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
     createdAt: nowSec,
   })
 
+  const planId = applied.weekPlanId ?? weekPlanId
+  if (!planId) {
+    console.warn('[reactiveCoach] no week plan for the adjustment row; decision kept in coaching_outputs only')
+    return null
+  }
   const adjustmentId = crypto.randomUUID()
   await db.insert(weekAdjustments).values({
     id: adjustmentId,
-    weekPlanId: weekPlanId ?? '',
+    weekPlanId: planId,
     adjustmentType: 'reactive',
-    sessionType: output.targetSessionType,
-    action: output.shiftAction === 'move' ? 'move_timeslot' : output.shiftAction === 'swap' ? 'swap' : 'add',
-    reason: cleanReason,
-    targetDay: output.targetDay,
-    targetTimeSlot: output.targetTimeSlot,
+    sessionType: applied.sessionType,
+    action: applied.action,
+    reason: applied.reason,
+    targetDay: applied.targetEpochDay != null ? new Date(applied.targetEpochDay * 86400000).getUTCDay() : output.targetDay,
+    targetTimeSlot: applied.timeSlot,
     sourceData: JSON.stringify({
       trigger: ctx.trigger,
       gate: g.rationale,
-      note: cleanNote,
-      originalSessionId: output.originalSessionId ?? ctx.sessionId ?? null,
-      targetLabel: output.targetLabel,
+      note: applied.note,
+      size: applied.summary.size,
+      applied: applied.summary.applied,
+      originalSessionId: applied.targetSessionId,
+      targetEpochDay: applied.targetEpochDay,
+      targetLabel: applied.label,
+      runCategory: applied.runCategory,
       hrDrift: bundle.justCompleted?.hrDrift ?? null,
       z2: bundle.justCompleted?.z2 ?? null,
       recentMissed: bundle.recentMissed.length,
+      recentSkips: bundle.recentSkips.length,
+      injury: bundle.injury ? { region: bundle.injury.region, redFlag: bundle.injury.redFlag } : null,
       wellness: bundle.wellnessToday,
       ...(guardrails?.applied ? { guardrails: guardrails.clamps.map(c => c.code) } : {}),
+      ...(applied.summary.refusal ? { refusal: applied.summary.refusal } : {}),
     }),
-    status: 'accepted',
+    // Small changes are already applied (Today shows the note). Big ones wait for the athlete.
+    status: applied.summary.size === 'big' ? 'proposed' : 'accepted',
+    targetSessionId: applied.targetSessionId,
+    expiresAt: applied.summary.size === 'big' ? (mondayOf(ctx.todayEpochDay) + 7) * 86400 + 12 * 3600 : null,
     createdAt: nowSec,
   })
 
   console.log(`[reactiveCoach] replan written. trigger=${ctx.trigger} tokens=${result.usage.input_tokens}/${result.usage.output_tokens}`)
   return { adjustmentId, note: cleanNote }
+}
+
+// ─── Applying a decision (small auto, big ask) ──────────────────
+
+interface AppliedDecision {
+  summary: { size: 'small' | 'big'; applied: boolean; action: string; refusal?: { code: string; reason: string } }
+  note: string
+  reason: string
+  /** week_adjustments.action */
+  action: string
+  sessionType: string
+  timeSlot: 'am' | 'pm'
+  targetEpochDay: number | null
+  targetSessionId: string | null
+  label: string | null
+  runCategory: string | null
+  weekPlanId: string | null
+}
+
+/** A 0=Sun..6=Sat day from the model, as an epoch day from today to this Sunday. */
+function dayThisWeek(todayEpochDay: number, dow: number): number | null {
+  if (!Number.isInteger(dow) || dow < 0 || dow > 6) return null
+  const todayDow = new Date(todayEpochDay * 86400000).getUTCDay()
+  const day = todayEpochDay + ((dow - todayDow + 7) % 7)
+  return day <= mondayOf(todayEpochDay) + 6 ? day : null
+}
+
+/**
+ * Sort the guarded decision and act on it. SMALL (hold, reduce intensity, a run
+ * to a walk or bike) is applied to the target session at once: the ease goes
+ * into its context_json, which start-strength and the run prescription read.
+ * BIG (another type, another day, an added session) is placement-checked and
+ * stored as a proposal the athlete accepts or rejects; a refused one becomes
+ * a note only. Big changes are never applied here.
+ */
+async function applyReplanDecision(db: DB, output: ReactiveReplanOutput, note: string, reason: string, todayEpochDay: number, nowSec: number): Promise<AppliedDecision> {
+  const sunday = mondayOf(todayEpochDay) + 6
+  const upcoming = await db.select().from(sessions)
+    .where(and(eq(sessions.status, 'planned'), gte(sessions.scheduledDate, todayEpochDay), lte(sessions.scheduledDate, sunday)))
+  const wantedDay = dayThisWeek(todayEpochDay, output.targetDay)
+  const byId = output.originalSessionId ? upcoming.find(s => s.id === output.originalSessionId) : undefined
+  const target = byId ?? upcoming
+    .filter(s => s.type === output.targetSessionType)
+    .sort((a, b) => Math.abs((a.scheduledDate ?? 0) - (wantedDay ?? todayEpochDay)) - Math.abs((b.scheduledDate ?? 0) - (wantedDay ?? todayEpochDay)))[0]
+  const cls = classifyReplan(output, target ?? null)
+  const slot: 'am' | 'pm' = output.targetTimeSlot === 'pm' ? 'pm' : 'am'
+  const base = {
+    note,
+    reason,
+    sessionType: target?.type ?? output.targetSessionType,
+    timeSlot: (target?.timeSlot === 'pm' ? 'pm' : 'am') as 'am' | 'pm',
+    targetEpochDay: target?.scheduledDate ?? wantedDay,
+    targetSessionId: target?.id ?? null,
+    label: target?.label ?? output.targetLabel ?? null,
+    runCategory: target?.type === 'running' ? target.notes : null,
+    weekPlanId: target?.weekPlanId ?? null,
+  }
+
+  if (cls.size === 'small') {
+    if (cls.action === 'ease' && target) {
+      const ease: CoachEase = { kind: cls.kind, reason, source: 'reactive', at: nowSec }
+      await db.update(sessions).set({ contextJson: withCoachEase(target.contextJson, ease) }).where(eq(sessions.id, target.id))
+      return { ...base, action: 'ease', summary: { size: 'small', applied: true, action: `ease:${cls.kind}` } }
+    }
+    return { ...base, action: 'hold', summary: { size: 'small', applied: false, action: 'note' } }
+  }
+
+  const refuse = (code: string, why: string): AppliedDecision => ({
+    ...base,
+    note: why,
+    reason: why,
+    action: 'hold',
+    summary: { size: 'small', applied: false, action: 'note', refusal: { code, reason: why } },
+  })
+  if (wantedDay == null) return refuse('bad_day', 'That day is outside this week. Nothing changes.')
+  let change: SessionChange
+  if (cls.action === 'move') {
+    if (!target) return refuse('no_target', 'Nothing planned to move. The week holds.')
+    change = { kind: 'move', type: target.type, label: target.label, notes: target.notes, epochDay: wantedDay, timeSlot: slot, sessionId: target.id, fromEpochDay: target.scheduledDate }
+  } else if (cls.action === 'swap' && target) {
+    change = { kind: 'replace', type: output.targetSessionType, label: output.targetLabel, notes: null, epochDay: target.scheduledDate ?? wantedDay, timeSlot: target.timeSlot === 'pm' ? 'pm' : 'am', sessionId: target.id }
+  } else {
+    change = { kind: 'add', type: output.targetSessionType, label: output.targetLabel, notes: null, epochDay: wantedDay, timeSlot: slot }
+  }
+  const check = await checkChange(db, change, todayEpochDay)
+  if (!check.ok) return refuse(check.code, check.reason)
+  return {
+    ...base,
+    sessionType: change.kind === 'move' ? change.type : output.targetSessionType,
+    label: change.label ?? null,
+    timeSlot: check.change.timeSlot,
+    targetEpochDay: check.change.epochDay,
+    action: change.kind === 'move' ? 'move_timeslot' : change.kind === 'replace' ? 'swap' : 'add',
+    summary: { size: 'big', applied: false, action: change.kind },
+  }
 }
 
 // ─── Replace-suggestions blocking call ──────────────────────────
@@ -641,8 +794,7 @@ export async function runReplaceSuggestions(
   const [sess] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!sess) return null
 
-  const todayDow = new Date(todayEpochDay * 86400000).getUTCDay()
-  const weekStart = todayEpochDay - todayDow
+  const weekStart = mondayOf(todayEpochDay)
   const weekEnd = weekStart + 6
 
   const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, todayEpochDay))
@@ -653,7 +805,7 @@ export async function runReplaceSuggestions(
 
   const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
   const maxHr = await loadProfileMaxHrForHr(db)
-  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, todayEpochDay, { maxHr }))
+  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, todayEpochDay, { maxHr, ceilingBpm: (await loadEasyHrCeiling(db, todayEpochDay)).bpm }))
 
   const weekPlanId = await currentWeekPlanId(db, weekStart, weekEnd)
   let adherenceBlock = ''

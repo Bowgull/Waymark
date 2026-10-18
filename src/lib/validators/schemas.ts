@@ -75,6 +75,9 @@ export const adHocSessionSchema = z.object({
   timeSlot: z.enum(['am', 'pm']),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   runCategory: z.string().optional(),
+  label: z.string().max(80).optional(),
+  /** The athlete's local today (YYYY-MM-DD). Past days are refused against it. */
+  today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 })
 
 export const settingsUpdateSchema = z.object({

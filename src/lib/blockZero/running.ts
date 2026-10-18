@@ -112,6 +112,8 @@ export interface RunWalkInput {
   longestLast30Sec: number | null
   weekly: WeeklyRunContext
   hrCeilingBpm?: number | null
+  /** Another cap on session time, e.g. the return ramp after a gap (F12, F13). */
+  extraCap?: { capSec: number; reason: string } | null
 }
 
 const MIN_RUN_WALK_SEC = 300 + 2 * (60 + 120) // warm-up + two week-1 intervals
@@ -136,10 +138,11 @@ export function prescribeRunWalk(input: RunWalkInput): RunWalkPrescription {
   const plannedSec = runWalkTotalSec(base)
   const single = singleRunCap(plannedSec, input.longestLast30Sec)
   const weekly = weeklyRunCap(plannedSec, input.weekly)
-  const capSec = Math.min(single.capSec, weekly.capSec)
+  const extra: CapResult = input.extraCap && input.extraCap.capSec < plannedSec ? { capSec: Math.max(0, Math.floor(input.extraCap.capSec)), reason: input.extraCap.reason } : { capSec: plannedSec, reason: null }
+  const capSec = Math.min(single.capSec, weekly.capSec, extra.capSec)
   // A restart from no recent runs explains both caps; say it once.
   const restarting = input.longestLast30Sec == null || input.longestLast30Sec <= 0
-  const reasons = [single, ...(restarting && single.capSec < plannedSec ? [] : [weekly])]
+  const reasons = [single, ...(restarting && single.capSec < plannedSec ? [] : [weekly]), extra]
     .filter(r => r.capSec < plannedSec && r.reason)
     .map(r => r.reason as string)
 

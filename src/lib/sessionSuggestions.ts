@@ -94,31 +94,12 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
       const sKey = s.type === 'running' ? `${s.type}:${s.notes ?? ''}` : s.type
       return sKey === key && s.status === 'completed'
     }).length
-    const skipped = weekSessions.filter(s => {
-      const sKey = s.type === 'running' ? `${s.type}:${s.notes ?? ''}` : s.type
-      return sKey === key && s.status === 'skipped'
-    }).length
 
     if (completed < target.weeklyTarget) {
       deficits.push({ type: key, label: target.label, completed, target: target.weeklyTarget })
     }
-
-    // Flag skipped high/medium priority sessions
-    if (skipped > 0 && target.priority !== 'low') {
-      const msg = skipped >= 2
-        ? `Missed ${skipped} ${target.label} sessions this week`
-        : `Missed 1 ${target.label} session this week`
-      flags.push(msg)
-
-      // Boost this type in suggestions if behind target
-      if (completed < target.weeklyTarget) {
-        const optKey = target.runCategory ? `${target.type}:${target.runCategory}` : target.type
-        overrides.set(optKey, {
-          priority: 'suggested',
-          reason: `Behind target (${completed}/${target.weeklyTarget}). Make up ${target.label}`,
-        })
-      }
-    }
+    // Skipped sessions are not flagged and never boosted: missed work is not
+    // made up (F14, system rules). Each missed session gets its own question.
   }
 
   // ─── Rule 1: High soreness ─────────────────────────────────

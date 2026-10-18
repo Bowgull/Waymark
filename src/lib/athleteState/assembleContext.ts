@@ -13,7 +13,7 @@ import { computeLiftVerdict, loadLiftTrendData, TREND_WINDOW_DAYS } from './lift
 import { loadLatestAthleteState } from './store'
 import type { AthleteContext } from './types'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from '../adherence'
-import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from '../hrAnalysis'
+import { computeHrSnapshot, loadEasyHrCeiling, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from '../hrAnalysis'
 import { getLatestBodyweightKg } from '../bodyMetrics'
 
 type DB = ReturnType<typeof createDB>
@@ -126,7 +126,7 @@ export async function assembleAthleteContext(db: DB, todayEpochDay: number): Pro
   const adherenceBlock = await buildAdherenceBlock(db, weekStart, weekEnd, todayEpochDay)
   const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
   const maxHr = await loadProfileMaxHrForHr(db)
-  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, todayEpochDay, { maxHr }))
+  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, todayEpochDay, { maxHr, ceilingBpm: (await loadEasyHrCeiling(db, todayEpochDay)).bpm }))
 
   // Bodyweight + training maxes
   const bodyweightKg = await getLatestBodyweightKg(db)

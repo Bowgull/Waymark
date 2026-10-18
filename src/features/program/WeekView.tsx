@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api'
+import { getTodayISO } from '@/lib/dates'
 import { Button } from '@/components/ui/button'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { SkipReasonSheet, type SkipReasonCommit } from '@/features/session/SkipReasonSheet'
@@ -464,6 +465,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
               label: option.label,
               timeSlot: option.timeSlot,
               runCategory: option.runCategory,
+              today: getTodayISO(),
             }),
           },
         )
@@ -483,6 +485,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
           type: option.type,
           timeSlot: option.timeSlot,
           runCategory: option.runCategory,
+          today: getTodayISO(),
         }),
       })
       onSessionAdded?.(created)

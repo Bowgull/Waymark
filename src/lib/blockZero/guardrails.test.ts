@@ -366,11 +366,11 @@ assert(classTypeFromLabel('Sparring') === 'sparring' && classTypeFromLabel('Pads
   const ceilings = new Map([['ex-bench-press', 60]])
   const resolve = (name: string) => ({ 'Bench Press': 'ex-bench-press', 'Front Squat': 'ex-front-squat' } as Record<string, string>)[name] ?? null
   const starts = [{ exerciseName: 'Bench Press', startingWeightKg: 90, rationale: 'Strong lifter!' }, { exerciseName: 'Front Squat', startingWeightKg: 100, rationale: 'Guess.' }]
-  const tested = guardCalibrationStarts(starts, resolve, ceilings, true)
+  const tested = guardCalibrationStarts(starts, resolve, ceilings)
   assert(tested.writes.length === 1 && tested.writes[0].weightKg === 60, 'calibration above the week-1 ceiling capped; untested lift not written once tests exist')
   assert(has(tested.clamps, 'calibration_cap') && has(tested.clamps, 'calibration_untested') && voiceOk(tested.output[0].rationale), 'clamps: calibration_cap, calibration_untested')
-  const fresh = guardCalibrationStarts(starts, resolve, new Map(), false)
-  assert(fresh.writes.length === 2 && fresh.clamps.length === 0, 'no tests yet: estimates written as before')
+  const fresh = guardCalibrationStarts(starts, resolve, new Map())
+  assert(fresh.writes.length === 0 && fresh.clamps.every(c => c.code === 'calibration_untested'), 'no tests yet: no untested max is written (map #8)')
 }
 {
   assert(guardMtCap(5).value === 3 && guardMtCap(2).clamp === null && guardMtCap(-1).value === 0, 'MT cap kept to 0-3')

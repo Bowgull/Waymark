@@ -8,6 +8,7 @@
 import { epley } from './e1rm'
 import { isFighterMainLift } from './lifts'
 import { BLOCK_ZERO_MAX_EXTENSIONS } from './weeks'
+import { transitionTmWrites } from '../coach/tm'
 
 export const MIN_COMPLETION_RATE = 0.7
 export const MAX_RECENT_GAP_DAYS = 7
@@ -169,6 +170,8 @@ export interface TransitionInput {
   totalWeeks: number
   /** False before the block's last week: nothing is extended early. */
   atEndBoundary: boolean
+  /** Current training maxes. A lift without a retest keeps its max (map #8). */
+  currentTms?: ReadonlyMap<string, number>
 }
 
 export interface CalibrationWrite {
@@ -233,16 +236,24 @@ export function planTransition(input: TransitionInput): TransitionPlan {
     reasons.push('Not at the end of the block yet. Nothing changes.')
   }
 
-  // AI targets apply on every decision (existing behaviour). Retest-derived
-  // maxes fill the lifts the AI left out, only when moving on.
+  // Training maxes are written only when moving on (map #8): never on extend
+  // or not_yet. AI targets for a retested lift are capped later by the retest
+  // rule; a lift without a retest keeps its current max (capped at it, dropped
+  // when there is none). Retest-derived maxes fill the lifts the AI left out.
+  const movingOn = decision === 'proceed' || decision === 'adjust'
   const calibration: CalibrationWrite[] = []
   const covered = new Set<string>()
-  for (const t of input.aiTargets) {
-    if (!t.exerciseId || !(t.estimatedMaxKg > 0)) continue
-    calibration.push({ exerciseId: t.exerciseId, weightKg: t.estimatedMaxKg, source: 'ai' })
-    covered.add(t.exerciseId)
+  const aiWrites = transitionTmWrites(
+    decision,
+    input.aiTargets.filter(t => t.exerciseId).map(t => ({ exerciseId: t.exerciseId, weightKg: t.estimatedMaxKg, source: 'ai' as const })),
+    new Set(input.retestE1rms.keys()),
+    input.currentTms ?? new Map(),
+  )
+  for (const w of aiWrites) {
+    calibration.push(w)
+    covered.add(w.exerciseId)
   }
-  const movingOn = decision === 'proceed' || decision === 'adjust'
+  for (const t of input.aiTargets) if (t.exerciseId) covered.add(t.exerciseId)
   if (movingOn) {
     const factor = decision === 'adjust' ? TM_FROM_E1RM_ADJUST : TM_FROM_E1RM
     for (const [exerciseId, e1rm] of input.retestE1rms) {
