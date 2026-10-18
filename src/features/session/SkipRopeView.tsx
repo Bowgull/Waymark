@@ -135,6 +135,8 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
           state: {
             phase: 'active',
             label: `Round ${currentRound} of ${totalRounds}`,
+            stepIndex: currentRound,
+            stepTotal: totalRounds,
             startedAt: roundTimer.startedAtMs,
             endsAt: roundTimer.endsAtMs,
             isPaused: roundTimer.isPaused,
@@ -151,6 +153,8 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
               phase: 'rest',
               label: 'Rest',
               detail: `Next: Round ${currentRound + 1}`,
+              stepIndex: currentRound,
+              stepTotal: totalRounds,
               startedAt: restTimer.startedAtMs,
               endsAt: restTimer.endsAtMs,
               isPaused: restTimer.isPaused,

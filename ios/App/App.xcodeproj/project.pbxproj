@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B7A55E7000000000000000A1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B7A55E7000000000000000A2 /* Assets.xcassets */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		3B43D41FCEEB1922DF31D173 /* WaymarkActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 86162085BAEEB079C2ED35DC /* WaymarkActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
@@ -54,6 +55,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B7A55E7000000000000000A2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1CEBEC6EC546360300EEEE36 /* WaymarkAudioPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaymarkAudioPlugin.swift; sourceTree = "<group>"; };
 		1CECF790B714596CF4B3869E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		289A30B9437C5545319E3224 /* WaymarkActivityBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaymarkActivityBundle.swift; sourceTree = "<group>"; };
@@ -153,6 +155,7 @@
 			children = (
 				289A30B9437C5545319E3224 /* WaymarkActivityBundle.swift */,
 				96329F31B785AB55EB30C35D /* WaymarkActivityWidget.swift */,
+				B7A55E7000000000000000A2 /* Assets.xcassets */,
 				63154C59D1180C43A7A0CA1F /* Info.plist */,
 			);
 			name = WaymarkActivity;
@@ -253,6 +256,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B7A55E7000000000000000A1 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

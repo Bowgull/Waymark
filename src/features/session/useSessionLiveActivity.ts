@@ -11,6 +11,7 @@ import {
   onCompleteSetRequested,
   onStartHoldRequested,
   onAdvanceRequested,
+  LIVE_ACTIVITY_ICON,
   type ActivityState,
   type SessionType,
 } from '@/lib/liveActivity'
@@ -77,18 +78,23 @@ export function useSessionLiveActivity(
   useEffect(() => {
     if (!config) return
 
-    const key = stateKey(config.state)
+    // The painted icon (page 44): engines may name it (runs: Zone 2 dial vs
+    // shoe); otherwise it follows the session type.
+    const state: ActivityState = config.state.iconKey
+      ? config.state
+      : { ...config.state, iconKey: LIVE_ACTIVITY_ICON[config.sessionType] }
+    const key = stateKey(state)
 
     if (!startedRef.current) {
       startedRef.current = true
       lastStateKey.current = key
-      void startLiveActivity(config.sessionType, config.sessionLabel, config.state)
+      void startLiveActivity(config.sessionType, config.sessionLabel, state)
       return
     }
 
     if (key !== lastStateKey.current) {
       lastStateKey.current = key
-      void updateLiveActivity(config.state)
+      void updateLiveActivity(state)
     }
   }, [config])
 
@@ -143,5 +149,10 @@ function stateKey(s: ActivityState): string {
     s.pausedRemaining != null ? Math.round(s.pausedRemaining) : '',
     s.completeMessage ?? '',
     s.exerciseName ?? '',
+    s.iconKey ?? '',
+    s.stepIndex ?? '',
+    s.stepTotal ?? '',
+    s.setIndex ?? '',
+    s.setTotal ?? '',
   ].join('|')
 }

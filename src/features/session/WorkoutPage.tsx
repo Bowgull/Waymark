@@ -499,6 +499,11 @@ export function WorkoutPage() {
   const strengthActiveExercise = strengthData?.exercises[exerciseIdx]
   const strengthActiveName = strengthActiveExercise?.exercise?.name
   const strengthActiveTotalSets = strengthActiveExercise?.sets.length ?? 0
+  // Header count on the lock screen (STRENGTH · 2/5): the lift's place in the session.
+  const strengthExerciseCount = strengthData?.exercises.length ?? 0
+  const strengthStep = strengthExerciseCount > 0
+    ? { stepIndex: exerciseIdx + 1, stepTotal: strengthExerciseCount }
+    : {}
 
   // Pending weight/reps from the SetTracker inputs — pushed live so a
   // lock-screen "Complete Set" tap logs the same values the user sees.
@@ -526,6 +531,7 @@ export function WorkoutPage() {
           detail: strengthActiveName,
           // Kept on the rest card too, so the lock screen never loses the lift.
           exerciseName: strengthActiveName,
+          ...strengthStep,
           startedAt: restTimer.startedAtMs,
           endsAt: restTimer.endsAtMs,
           isPaused: restTimer.isPaused,
@@ -543,6 +549,9 @@ export function WorkoutPage() {
           label: `Set ${setIdx + 1} of ${strengthActiveTotalSets}`,
           detail: strengthActiveName,
           exerciseName: strengthActiveName,
+          ...strengthStep,
+          setIndex: setIdx + 1,
+          setTotal: strengthActiveTotalSets,
           // Timer fields ignored by the widget in exercise phase, but the
           // payload shape requires them.
           startedAt: exerciseCardAtMs,

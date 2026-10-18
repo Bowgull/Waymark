@@ -68,6 +68,19 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
         // ignored in this phase; the widget renders a static "what's next"
         // card with a Complete Set action.
         public var exerciseName: String?
+        // Page 44 (redesign step 4). All optional so a state encoded by an
+        // older build (or sent by an older JS bundle) still decodes; the
+        // widget falls back to parsing `label` and to `sessionType`.
+        // Painted session icon key ("bag", "strength", "zone2", ...); the
+        // widget's asset catalog holds it as "session-<key>".
+        public var iconKey: String?
+        // Session-level count for the header flap (BAG WORK · 3/12): the
+        // round for bag work / skip rope, the exercise for strength.
+        public var stepIndex: Int?
+        public var stepTotal: Int?
+        // Strength set counter shown in the big tiles (2/3).
+        public var setIndex: Int?
+        public var setTotal: Int?
 
         public init(
             phase: String,
@@ -79,7 +92,12 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             pausedRemaining: TimeInterval? = nil,
             completeMessage: String? = nil,
             endPending: Bool = false,
-            exerciseName: String? = nil
+            exerciseName: String? = nil,
+            iconKey: String? = nil,
+            stepIndex: Int? = nil,
+            stepTotal: Int? = nil,
+            setIndex: Int? = nil,
+            setTotal: Int? = nil
         ) {
             self.phase = phase
             self.label = label
@@ -91,6 +109,11 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             self.completeMessage = completeMessage
             self.endPending = endPending
             self.exerciseName = exerciseName
+            self.iconKey = iconKey
+            self.stepIndex = stepIndex
+            self.stepTotal = stepTotal
+            self.setIndex = setIndex
+            self.setTotal = setTotal
         }
     }
 

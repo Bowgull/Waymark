@@ -4,6 +4,7 @@
 
 import { registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 import { Capacitor } from '@capacitor/core'
+import type { SessionIconKey } from '@/design/sessionIconKeys'
 
 export type SessionType =
   | 'bag_work'
@@ -28,6 +29,29 @@ export interface ActivityState {
   // the lock screen shows exercise name + set counter only. Weight, plate
   // math, PR chrome live inside the app.
   exerciseName?: string    // e.g. "Back Squat"
+  // Page 44 (redesign step 4). All optional: the widget falls back to the
+  // older fields (it parses "Round 3 of 12" from label) when these are absent.
+  /** Painted session icon (src/design/sessionIconKeys), bundled in the widget
+   *  as `session-<key>`. The hook fills it from sessionType when omitted. */
+  iconKey?: SessionIconKey
+  /** Session-level count on the header flap (BAG WORK · 3/12): the round for
+   *  bag work / skip rope (kept through the rest after it), the exercise for
+   *  strength. */
+  stepIndex?: number
+  stepTotal?: number
+  /** Strength set counter shown in the big tiles (2/3) and filling the grass. */
+  setIndex?: number
+  setTotal?: number
+}
+
+/** Default painted icon for a Live Activity session type. */
+export const LIVE_ACTIVITY_ICON: Readonly<Record<SessionType, SessionIconKey>> = {
+  bag_work: 'bag',
+  strength: 'strength',
+  mobility: 'foundation',
+  skip_rope: 'rope',
+  run: 'run',
+  recovery: 'reset',
 }
 
 interface IsSupportedResult {

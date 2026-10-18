@@ -531,6 +531,8 @@ export function RunSessionView({
         ? `${onePaceArc} · Ep ${onePaceEp}`
         : onePaceArc || (onePaceEp ? `Ep ${onePaceEp}` : undefined))
     : 'Outdoor'
+  // The painted icon on the lock screen: the Zone 2 dial or the run shoe.
+  const runIconKey = isZone2 || runSession.runType === 'zone2' ? 'zone2' as const : 'run' as const
   const runLiveConfig: LiveActivityConfig | null =
     phase === 'running' && runStartedAtMs > 0
       ? {
@@ -538,6 +540,7 @@ export function RunSessionView({
           sessionLabel: isIndoor ? indoorLabel : 'Run',
           state: {
             phase: 'active',
+            iconKey: runIconKey,
             label: isIndoor ? indoorLabel : runTypeLabel,
             detail: indoorDetail,
             startedAt: runStartedAtMs,
@@ -554,6 +557,7 @@ export function RunSessionView({
             sessionLabel: isIndoor ? indoorLabel : 'Run',
             state: {
               phase: 'complete',
+              iconKey: runIconKey,
               label: runTypeLabel,
               detail: indoorDetail,
               startedAt: runStartedAtMs,

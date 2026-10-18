@@ -366,7 +366,23 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             pausedRemaining: dict["pausedRemaining"] as? TimeInterval,
             completeMessage: dict["completeMessage"] as? String,
             endPending: dict["endPending"] as? Bool ?? false,
-            exerciseName: dict["exerciseName"] as? String
+            exerciseName: dict["exerciseName"] as? String,
+            iconKey: dict["iconKey"] as? String,
+            stepIndex: Self.intValue(dict["stepIndex"]),
+            stepTotal: Self.intValue(dict["stepTotal"]),
+            setIndex: Self.intValue(dict["setIndex"]),
+            setTotal: Self.intValue(dict["setTotal"])
         )
+    }
+
+    // JS numbers arrive as NSNumber (often a Double); accept any whole value.
+    private static func intValue(_ value: Any?) -> Int? {
+        if let n = value as? NSNumber {
+            let d = n.doubleValue
+            guard d.isFinite, abs(d) < 1_000_000 else { return nil }
+            return Int(d.rounded())
+        }
+        if let i = value as? Int { return i }
+        return nil
     }
 }

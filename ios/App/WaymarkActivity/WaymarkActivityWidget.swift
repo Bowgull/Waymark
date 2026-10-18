@@ -1,74 +1,334 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
+import UIKit
 import WidgetKit
 
-// MARK: - Brand palette
-// Muted charcoal-forest background, warm parchment text, soft gold accent,
-// teal for hold / mobility. Matches Waymark's lofi + fantasy-book aesthetic.
+// The Live Activity and Dynamic Island, as approved on mockup page 44
+// (design-decisions.md, "Live Activity", reworked 2026-10-18):
+//   - the countdown in big split-flap digit tiles. The digits are the
+//     system's live timer text (fixed-width font) drawn over tiles, so they
+//     keep counting on the lock screen with no updates from the app;
+//   - a glyph grass strip that lights as the phase goes (gold for work, teal
+//     for rest). It is the system progress bar masked by the glyphs, so it
+//     fills by itself;
+//   - labels and buttons as flaps; the crest and the painted session icon
+//     (images in this extension's Assets.xcassets);
+//   - strength: the set counter in gold tiles and LOG SET →;
+//   - finish: the large lit crest, WELL TRAVELED, one line, the grass lit.
+// iOS limit: no flip animation. The lock-screen card must stay under the
+// system's 160 pt height, so the page-44 card is drawn at a smaller scale.
+
+// MARK: - Palette (mockups shared/flap.css + page 44)
+
 extension Color {
-    static let waymarkBg = Color(red: 10.0 / 255.0, green: 10.0 / 255.0, blue: 10.0 / 255.0)
-    static let waymarkBgDeep = Color(red: 6.0 / 255.0, green: 22.0 / 255.0, blue: 18.0 / 255.0)
-    static let waymarkBgForest = Color(red: 18.0 / 255.0, green: 46.0 / 255.0, blue: 38.0 / 255.0)
-    static let waymarkText = Color(red: 240.0 / 255.0, green: 230.0 / 255.0, blue: 210.0 / 255.0)
-    static let waymarkTextMuted = Color(red: 240.0 / 255.0, green: 230.0 / 255.0, blue: 210.0 / 255.0).opacity(0.65)
-    static let waymarkTextFaint = Color(red: 240.0 / 255.0, green: 230.0 / 255.0, blue: 210.0 / 255.0).opacity(0.35)
-    static let waymarkGold = Color(red: 220.0 / 255.0, green: 180.0 / 255.0, blue: 90.0 / 255.0)
-    static let waymarkGoldDim = Color(red: 150.0 / 255.0, green: 120.0 / 255.0, blue: 56.0 / 255.0)
-    static let waymarkTeal = Color(red: 74.0 / 255.0, green: 202.0 / 255.0, blue: 170.0 / 255.0)
-    static let waymarkEmber = Color(red: 196.0 / 255.0, green: 90.0 / 255.0, blue: 60.0 / 255.0)
-    // Widget-only per-session tints. Intentionally distinct from the
-    // in-app getSessionAccent() palette — the LA uses these so each
-    // session reads differently at a glance on the lock screen.
-    static let waymarkSessionGreen = Color(red: 78.0 / 255.0, green: 168.0 / 255.0, blue: 106.0 / 255.0) // skip_rope
-    static let waymarkSessionAmber = Color(red: 232.0 / 255.0, green: 155.0 / 255.0, blue: 74.0 / 255.0) // run
-    static let waymarkSessionSage = Color(red: 138.0 / 255.0, green: 184.0 / 255.0, blue: 122.0 / 255.0) // active_recovery
+    init(wmHex hex: UInt32, opacity: Double = 1) {
+        self.init(
+            .sRGB,
+            red: Double((hex >> 16) & 0xFF) / 255.0,
+            green: Double((hex >> 8) & 0xFF) / 255.0,
+            blue: Double(hex & 0xFF) / 255.0,
+            opacity: opacity
+        )
+    }
+
+    static let wmCard = Color(wmHex: 0x040A08)
+    static let wmCardEdge = Color(wmHex: 0xB8984A, opacity: 0.30)
+    static let wmBody = Color(wmHex: 0xF0EAD6)
+    static let wmBodyDim = Color(wmHex: 0xF0EAD6, opacity: 0.72)
+    static let wmTile = Color(wmHex: 0x262A26)
+    static let wmTile2 = Color(wmHex: 0x1D201D)
+    static let wmInk = Color(wmHex: 0xF0E6C0)
+    static let wmGold = Color(wmHex: 0xB8984A)
+    static let wmGold2 = Color(wmHex: 0xA0823C)
+    static let wmGoldInk = Color(wmHex: 0x1C1608)
+    static let wmTeal = Color(wmHex: 0x45796A)
+    static let wmTeal2 = Color(wmHex: 0x3A6658)
+    static let wmTealInk = Color(wmHex: 0xE8E2C8)
+    static let wmGrassGold = Color(wmHex: 0xE8C878)
+    static let wmGrassTeal = Color(wmHex: 0x8FD4B8)
+    static let wmGrassOff = Color(wmHex: 0x6E9858, opacity: 0.45)
+    static let wmBtn = Color(wmHex: 0x080D0B, opacity: 0.42)
+    static let wmBtnEdge = Color(wmHex: 0xE8C860, opacity: 0.26)
+    static let wmBtnPrimary = Color(wmHex: 0x1E1806, opacity: 0.50)
+    static let wmBtnPrimaryEdge = Color(wmHex: 0xE8C860, opacity: 0.55)
 }
 
-// Per-session glyph tint. Each workout type gets a distinct hue so the
-// lock-screen icon alone tells you what you're doing.
-//
-// Palette:
-//   bag_work      → red (ember)
-//   strength      → gold
-//   mobility      → teal
-//   mt_class      → teal (shares mobility; same body practice)
-//   skip_rope     → green
-//   run / fr      → amber
-//   recovery      → sage
-@available(iOS 16.2, *)
-private func sessionTint(for sessionType: String) -> Color {
-    switch sessionType {
-    case "bag_work":
-        return .waymarkEmber
-    case "skip_rope":
-        return .waymarkSessionGreen
-    case "run", "running", "foundation_run":
-        return .waymarkSessionAmber
-    case "recovery", "active_recovery":
-        return .waymarkSessionSage
-    case "mobility", "mt_class":
-        return .waymarkTeal
-    case "strength":
-        return .waymarkGold
-    default:
-        return .waymarkGold
+// MARK: - Flap tiles
+
+private enum FlapTone {
+    case ink, dim, gold, teal
+
+    var top: Color {
+        switch self {
+        case .ink, .dim: return .wmTile
+        case .gold: return .wmGold
+        case .teal: return .wmTeal
+        }
+    }
+
+    var bottom: Color {
+        switch self {
+        case .ink, .dim: return .wmTile2
+        case .gold: return .wmGold2
+        case .teal: return .wmTeal2
+        }
+    }
+
+    var ink: Color {
+        switch self {
+        case .ink: return .wmInk
+        case .dim: return Color.wmInk.opacity(0.74)
+        case .gold: return .wmGoldInk
+        case .teal: return .wmTealInk
+        }
     }
 }
 
-// MARK: - Format
+// One tile: two halves and the dark split line across the middle.
+private struct FlapTileBackground: View {
+    let tone: FlapTone
+    let radius: CGFloat
 
-private func formatDuration(_ seconds: TimeInterval) -> String {
-    let clamped = max(0, seconds.rounded())
-    let total = Int(clamped)
-    let m = total / 60
-    let r = total % 60
-    return String(format: "%d:%02d", m, r)
+    var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                Rectangle().fill(tone.top)
+                Rectangle().fill(tone.bottom)
+            }
+            Rectangle()
+                .fill(Color.black.opacity(0.45))
+                .frame(height: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        .shadow(color: Color.black.opacity(0.4), radius: 1.5, x: 0, y: 1)
+    }
 }
 
-// MARK: - Round-pip parsing
-// Extracts (current, total) from strings like "Round 3 of 6", "Set 2 of 5".
-// Returns nil for non-counter labels ("Rest", "Hold", etc.).
+private func flapFont(_ size: CGFloat) -> Font {
+    .system(size: size, weight: .heavy, design: .monospaced)
+}
 
+// A static flap label: one tile per character; a space is a clear gap.
+private struct FlapText: View {
+    let text: String
+    let size: CGFloat
+    var tone: FlapTone = .ink
+
+    var body: some View {
+        HStack(spacing: max(1, size * 0.09)) {
+            ForEach(Array(text.enumerated()), id: \.offset) { item in
+                if item.element == " " {
+                    Color.clear
+                        .frame(width: size * 0.38, height: size * 1.28)
+                } else {
+                    Text(String(item.element))
+                        .font(flapFont(size))
+                        .foregroundStyle(tone.ink)
+                        .shadow(color: Color.black.opacity(0.5), radius: 0, x: 0, y: 1)
+                        .frame(width: size * 0.74, height: size * 1.28)
+                        .background(FlapTileBackground(tone: tone, radius: size * 0.12))
+                }
+            }
+        }
+        .fixedSize()
+    }
+}
+
+// A flap label never truncates: it steps down a size, and only as a last
+// resort becomes plain text.
+private struct FitFlap: View {
+    let text: String
+    let size: CGFloat
+    var tone: FlapTone = .ink
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            FlapText(text: text, size: size, tone: tone)
+            FlapText(text: text, size: size * 0.85, tone: tone)
+            FlapText(text: text, size: size * 0.7, tone: tone)
+            Text(text)
+                .font(flapFont(size * 0.85))
+                .foregroundStyle(tone == .gold ? Color.wmGold : Color.wmBody)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+    }
+}
+
+// MARK: - Countdown on flap tiles
+
+// "m:ss", or "h:mm:ss" from an hour up: the same shape the system timer text
+// uses, so the tile count matches what it draws.
+private func formatDuration(_ seconds: TimeInterval) -> String {
+    let total = Int(max(0, seconds.rounded()))
+    let h = total / 3600
+    let m = (total % 3600) / 60
+    let s = total % 60
+    if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+    return String(format: "%d:%02d", m, s)
+}
+
+// Advance of one character in the monospaced flap font: the pitch at which
+// the live timer's characters sit, so each can be cut out into its own tile.
+private func monoAdvance(_ size: CGFloat) -> CGFloat {
+    let font = UIFont.monospacedSystemFont(ofSize: size, weight: .heavy)
+    let width = ("0" as NSString).size(withAttributes: [.font: font]).width
+    return width > 0 ? width : size * 0.6
+}
+
+@available(iOS 16.2, *)
+private func safeRange(_ s: WaymarkActivityAttributes.ContentState) -> ClosedRange<Date> {
+    let lo = min(s.startedAt, s.endsAt)
+    let hi = max(s.startedAt, s.endsAt)
+    return lo...hi
+}
+
+// How many tiles the countdown needs: as many characters as its longest
+// value. Below that (12:00 → 9:59) the leading tile stays blank, as a flap
+// row keeps its padding tiles.
+@available(iOS 16.2, *)
+private func clockCells(_ s: WaymarkActivityAttributes.ContentState) -> Int {
+    var n = formatDuration(s.endsAt.timeIntervalSince(s.startedAt)).count
+    if s.isPaused, let remaining = s.pausedRemaining {
+        n = max(n, formatDuration(remaining).count)
+    }
+    return min(7, max(4, n))
+}
+
+@available(iOS 16.2, *)
+private func clockText(_ s: WaymarkActivityAttributes.ContentState) -> Text {
+    if s.isPaused, let remaining = s.pausedRemaining {
+        return Text(formatDuration(remaining))
+    }
+    return Text(timerInterval: safeRange(s), countsDown: true)
+}
+
+// The live countdown in flap tiles. Every tile draws the same right-aligned
+// timer text, shifted so that only its own character shows through; the
+// system keeps that text counting on the lock screen by itself.
+@available(iOS 16.2, *)
+private struct FlapClock: View {
+    let state: WaymarkActivityAttributes.ContentState
+    let size: CGFloat
+    let tone: FlapTone
+
+    // Spare width to the left of the text, so a timer that measures wider
+    // than its digits can never wrap or truncate; trailing alignment keeps
+    // the digits at the right edge.
+    private let slackCells: CGFloat = 4
+
+    var body: some View {
+        let adv = monoAdvance(size)
+        let n = clockCells(state)
+        let tileW = max(size * 0.74, adv + 2)
+        let tileH = size * 1.28
+        HStack(spacing: max(1, size * 0.08)) {
+            ForEach(0..<n, id: \.self) { i in
+                clockText(state)
+                    .font(flapFont(size))
+                    .foregroundStyle(tone.ink)
+                    .lineLimit(1)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: adv * (CGFloat(n) + slackCells), alignment: .trailing)
+                    .offset(x: -adv * (slackCells + CGFloat(i)))
+                    .frame(width: adv, alignment: .leading)
+                    .clipped()
+                    .frame(width: tileW, height: tileH)
+                    .background(FlapTileBackground(tone: tone, radius: size * 0.12))
+            }
+        }
+        .fixedSize()
+    }
+}
+
+// MARK: - Glyph grass strip
+
+private let grassGlyphs: [Character] = Array("/\\|'`,.;:")
+
+// Three rows of blades, the same pattern as the mockup's GRASS().
+private let grassRows: [String] = (0..<3).map { r in
+    String((0..<120).map { i -> Character in
+        if r == 0 && i % 3 != 0 { return " " }
+        return grassGlyphs[(i * 7 + r * 13 + (i * i) % 5) % grassGlyphs.count]
+    })
+}
+
+private struct GrassGlyphs: View {
+    let fontSize: CGFloat
+    let rowHeight: CGFloat
+
+    var body: some View {
+        // The rows are wider than any card; drawn in an overlay so they never
+        // widen the layout, then clipped to the strip.
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: rowHeight * 3)
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(0..<3, id: \.self) { r in
+                        Text(grassRows[r])
+                            .font(.system(size: fontSize, weight: .heavy, design: .monospaced))
+                            .lineLimit(1)
+                            .fixedSize()
+                            .frame(height: rowHeight, alignment: .leading)
+                    }
+                }
+            }
+            .clipped()
+    }
+}
+
+private enum GrassFill {
+    case timer(ClosedRange<Date>)
+    case value(Double)
+}
+
+// The grass is a picture filled by the system's own progress bar: the bar,
+// stretched to the strip's height, shows only through the glyphs.
+private struct GrassStrip: View {
+    let fill: GrassFill
+    let teal: Bool
+    var fontSize: CGFloat = 7.5
+    var rowHeight: CGFloat = 6
+
+    var body: some View {
+        let lit = teal ? Color.wmGrassTeal : Color.wmGrassGold
+        ZStack {
+            GrassGlyphs(fontSize: fontSize, rowHeight: rowHeight)
+                .foregroundStyle(Color.wmGrassOff)
+            bar
+                .progressViewStyle(.linear)
+                .tint(lit)
+                .frame(maxWidth: .infinity)
+                .scaleEffect(x: 1, y: rowHeight * 3, anchor: .center)
+                .frame(height: rowHeight * 3)
+                .mask {
+                    GrassGlyphs(fontSize: fontSize, rowHeight: rowHeight)
+                }
+        }
+        .frame(height: rowHeight * 3)
+    }
+
+    @ViewBuilder
+    private var bar: some View {
+        switch fill {
+        case .timer(let range):
+            ProgressView(timerInterval: range, countsDown: false) {
+                EmptyView()
+            } currentValueLabel: {
+                EmptyView()
+            }
+        case .value(let v):
+            ProgressView(value: min(1, max(0, v)))
+        }
+    }
+}
+
+// MARK: - Content helpers
+
+// Extracts (current, total) from "Round 3 of 6", "Set 2 of 5". Fallback for
+// states sent before stepIndex / setIndex existed.
 private func parseCount(_ label: String) -> (current: Int, total: Int)? {
     let pattern = #"(\d+)\s+of\s+(\d+)"#
     guard let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
@@ -81,877 +341,407 @@ private func parseCount(_ label: String) -> (current: Int, total: Int)? {
     return (cur, tot)
 }
 
-// MARK: - Waymark logo mark (simplified SwiftUI)
-// Shield + rim. When a sessionType is passed, the session's glyph is drawn
-// inside the shield (mobility → spine, strength → dumbbell, etc.) so the
-// lock-screen at-a-glance reads "what am I doing" rather than just branding.
-// Without a sessionType, falls back to the classic Waymark eye.
+private let knownIconKeys: Set<String> = [
+    "strength", "bag", "mt", "zone2", "run", "rope",
+    "foundation", "reset", "core", "mobility", "waybook",
+]
 
-private struct WaymarkLogoMark: View {
-    var tint: Color = .waymarkGold
-    var darkFill: Color = Color(red: 4.0 / 255.0, green: 16.0 / 255.0, blue: 13.0 / 255.0)
-    var sessionType: String? = nil
+// Asset name of the painted session icon (Assets.xcassets/session-<key>).
+@available(iOS 16.2, *)
+private func iconAsset(_ context: ActivityViewContext<WaymarkActivityAttributes>) -> String {
+    if let key = context.state.iconKey, knownIconKeys.contains(key) {
+        return "session-\(key)"
+    }
+    switch context.attributes.sessionType {
+    case "bag_work": return "session-bag"
+    case "strength": return "session-strength"
+    case "skip_rope": return "session-rope"
+    case "run", "running": return "session-run"
+    case "foundation_run": return "session-zone2"
+    case "recovery", "active_recovery": return "session-reset"
+    case "mt_class": return "session-mt"
+    case "core": return "session-core"
+    default: return "session-foundation"
+    }
+}
+
+@available(iOS 16.2, *)
+private struct LAInfo {
+    let state: WaymarkActivityAttributes.ContentState
+    let sessionLabel: String
+
+    var phase: String { state.phase }
+    var isRest: Bool { phase == "rest" }
+    var isComplete: Bool { phase == "complete" }
+    var isCard: Bool { phase == "exercise" || phase == "ready" }
+    var isTimer: Bool { !isComplete && !isCard }
+
+    // Session-level count (round n of N, exercise n of N).
+    var step: (current: Int, total: Int)? {
+        if let i = state.stepIndex, let t = state.stepTotal, i > 0, t > 0 { return (min(i, t), t) }
+        if phase == "active" { return parseCount(state.label) }
+        return nil
+    }
+
+    // Strength set (or mobility set) counter for the big tiles.
+    var setCount: (current: Int, total: Int)? {
+        if let i = state.setIndex, let t = state.setTotal, i > 0, t > 0 { return (min(i, t), t) }
+        if isCard { return parseCount(state.label) }
+        return nil
+    }
+
+    // A bag / rope round: the phase has a round count.
+    var isRound: Bool {
+        phase == "active" && (state.stepIndex != nil || state.label.lowercased().hasPrefix("round"))
+    }
+
+    var headerText: String {
+        let session = sessionLabel.uppercased()
+        if !isComplete, let c = step { return "\(session) · \(c.current)/\(c.total)" }
+        return session
+    }
+
+    // The phase on a flap: ROUND 3 (gold) / REST (teal) / the lift or hold.
+    var phaseFlap: String {
+        switch phase {
+        case "rest": return "REST"
+        case "exercise", "ready":
+            return (state.exerciseName ?? state.detail ?? state.label).uppercased()
+        default:
+            if isRound, let c = step { return "ROUND \(c.current)" }
+            return state.label.uppercased()
+        }
+    }
+
+    // The words beside the phase flap: the combo, what's next, the side.
+    var phaseDetail: String? {
+        switch phase {
+        case "exercise": return nil
+        case "ready":
+            return setCount == nil ? state.label : nil
+        default:
+            if let d = state.detail, !d.isEmpty { return d }
+            return nil
+        }
+    }
+
+    var phaseTone: FlapTone {
+        if isRest { return .teal }
+        if isCard { return .ink }
+        return .gold
+    }
+
+    var clockTone: FlapTone {
+        if isRest { return .teal }
+        return state.isPaused ? .dim : .ink
+    }
+
+    var grass: GrassFill {
+        if isComplete { return .value(1) }
+        if isCard {
+            if let c = setCount { return .value(Double(c.current) / Double(c.total)) }
+            return .value(0)
+        }
+        if state.isPaused, let remaining = state.pausedRemaining {
+            let total = max(1, state.endsAt.timeIntervalSince(state.startedAt))
+            return .value(1 - remaining / total)
+        }
+        return .timer(safeRange(state))
+    }
+
+    // Long-press island: ROUND 3 OF 12, SET 2 OF 3, REST, WELL TRAVELED.
+    var islandFlap: String {
+        if isComplete { return "WELL TRAVELED" }
+        if isRest { return "REST" }
+        if isCard, let c = setCount { return "SET \(c.current) OF \(c.total)" }
+        if isRound, let c = step { return "ROUND \(c.current) OF \(c.total)" }
+        return phaseFlap
+    }
+
+    var islandDetail: String? {
+        if isComplete { return state.completeMessage }
+        if isCard { return state.exerciseName ?? state.detail }
+        return state.detail
+    }
+}
+
+// MARK: - Crest and icon
+
+private struct CrestImage: View {
+    var big = false
 
     var body: some View {
-        GeometryReader { geo in
-            let s = min(geo.size.width, geo.size.height)
-            ZStack {
-                ShieldShape()
-                    .fill(darkFill)
-                ShieldShape()
-                    .stroke(tint, lineWidth: max(1, s * 0.05))
-                    .padding(s * 0.08)
-                if let type = sessionType, SessionGlyph.hasGlyph(for: type) {
-                    SessionGlyph(type: type)
-                        .stroke(tint, style: StrokeStyle(
-                            lineWidth: max(0.8, s * 0.075),
-                            lineCap: .round,
-                            lineJoin: .round
-                        ))
-                        .padding(s * 0.24)
-                        .frame(width: s, height: s)
+        Image(big ? "crest-big" : "crest-small")
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+    }
+}
+
+@available(iOS 16.2, *)
+private struct SessionIcon: View {
+    let context: ActivityViewContext<WaymarkActivityAttributes>
+
+    var body: some View {
+        Image(iconAsset(context))
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+    }
+}
+
+// MARK: - Buttons (flaps on a board; primary = gold tiles)
+
+@available(iOS 17.0, *)
+private struct FlapButton<I: AppIntent>: View {
+    let intent: I
+    let text: String
+    let primary: Bool
+    var height: CGFloat = 28
+
+    var body: some View {
+        Button(intent: intent) {
+            FitFlap(text: text, size: primary ? 12 : 11, tone: primary ? .gold : .ink)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(primary ? Color.wmBtnPrimary : Color.wmBtn)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(primary ? Color.wmBtnPrimaryEdge : Color.wmBtnEdge, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// Wording kept from the app: Pause / Resume, NEXT ROUND → and SKIP REST →
+// beside it on a round or a rest (page 44), Next → / Done → once the timer
+// has run out, LOG SET → on a strength set, START HOLD → between holds.
+@available(iOS 17.0, *)
+private struct ActionRow: View {
+    let info: LAInfo
+
+    var body: some View {
+        let state = info.state
+        switch state.phase {
+        case "complete":
+            EmptyView()
+        case "exercise":
+            FlapButton(intent: CompleteSetIntent(), text: "LOG SET →", primary: true)
+        case "ready":
+            FlapButton(intent: StartHoldIntent(), text: "START HOLD →", primary: true)
+        default:
+            TimelineView(.periodic(from: Date(), by: 1.0)) { timeline in
+                timerButtons(now: timeline.date)
+            }
+        }
+    }
+
+    // A round or a rest offers its skip beside Pause from the start (page
+    // 44); other timers show only Pause until they run out.
+    private var skipLabel: String? {
+        if info.isRest { return "SKIP REST →" }
+        if info.isRound {
+            if let c = info.step, c.current >= c.total { return "NEXT →" }
+            return "NEXT ROUND →"
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private func timerButtons(now: Date) -> some View {
+        let state = info.state
+        if !state.isPaused && state.endsAt <= now {
+            FlapButton(intent: AdvancePhaseIntent(), text: state.phase == "hold" ? "DONE →" : "NEXT →", primary: true)
+        } else {
+            HStack(spacing: 8) {
+                if state.isPaused {
+                    FlapButton(intent: ResumeTimerIntent(), text: "RESUME", primary: skipLabel == nil)
                 } else {
-                    Circle()
-                        .fill(darkFill)
-                        .frame(width: s * 0.46, height: s * 0.46)
-                    Circle()
-                        .stroke(tint, lineWidth: max(0.5, s * 0.035))
-                        .frame(width: s * 0.46, height: s * 0.46)
-                    EyeShape()
-                        .fill(tint)
-                        .frame(width: s * 0.18, height: s * 0.30)
+                    FlapButton(intent: PauseTimerIntent(), text: "PAUSE", primary: false)
+                }
+                if let skip = skipLabel {
+                    FlapButton(intent: AdvancePhaseIntent(), text: skip, primary: true)
                 }
             }
-            .frame(width: s, height: s)
-            .position(x: geo.size.width / 2, y: geo.size.height / 2)
-        }
-    }
-
-    private struct ShieldShape: Shape {
-        func path(in rect: CGRect) -> Path {
-            // Pointed-bottom shield. Normalized to rect.
-            var p = Path()
-            let w = rect.width, h = rect.height
-            let topY = rect.minY + h * 0.05
-            let shoulderY = rect.minY + h * 0.30
-            let hipY = rect.minY + h * 0.70
-            let tipY = rect.minY + h * 0.98
-            p.move(to: CGPoint(x: rect.midX, y: topY))
-            p.addCurve(
-                to: CGPoint(x: rect.maxX - w * 0.05, y: shoulderY),
-                control1: CGPoint(x: rect.maxX - w * 0.10, y: topY),
-                control2: CGPoint(x: rect.maxX - w * 0.05, y: topY + h * 0.12)
-            )
-            p.addCurve(
-                to: CGPoint(x: rect.maxX - w * 0.18, y: hipY),
-                control1: CGPoint(x: rect.maxX - w * 0.02, y: shoulderY + h * 0.18),
-                control2: CGPoint(x: rect.maxX - w * 0.08, y: hipY - h * 0.06)
-            )
-            p.addCurve(
-                to: CGPoint(x: rect.midX, y: tipY),
-                control1: CGPoint(x: rect.maxX - w * 0.28, y: hipY + h * 0.15),
-                control2: CGPoint(x: rect.midX + w * 0.10, y: tipY - h * 0.04)
-            )
-            p.addCurve(
-                to: CGPoint(x: rect.minX + w * 0.18, y: hipY),
-                control1: CGPoint(x: rect.midX - w * 0.10, y: tipY - h * 0.04),
-                control2: CGPoint(x: rect.minX + w * 0.28, y: hipY + h * 0.15)
-            )
-            p.addCurve(
-                to: CGPoint(x: rect.minX + w * 0.05, y: shoulderY),
-                control1: CGPoint(x: rect.minX + w * 0.08, y: hipY - h * 0.06),
-                control2: CGPoint(x: rect.minX + w * 0.02, y: shoulderY + h * 0.18)
-            )
-            p.addCurve(
-                to: CGPoint(x: rect.midX, y: topY),
-                control1: CGPoint(x: rect.minX + w * 0.05, y: topY + h * 0.12),
-                control2: CGPoint(x: rect.minX + w * 0.10, y: topY)
-            )
-            p.closeSubpath()
-            return p
-        }
-    }
-
-    private struct EyeShape: Shape {
-        func path(in rect: CGRect) -> Path {
-            var p = Path()
-            let w = rect.width, h = rect.height
-            p.move(to: CGPoint(x: rect.midX, y: rect.minY))
-            p.addCurve(
-                to: CGPoint(x: rect.midX, y: rect.maxY),
-                control1: CGPoint(x: rect.midX + w * 0.9, y: rect.minY + h * 0.35),
-                control2: CGPoint(x: rect.midX + w * 0.9, y: rect.minY + h * 0.65)
-            )
-            p.addCurve(
-                to: CGPoint(x: rect.midX, y: rect.minY),
-                control1: CGPoint(x: rect.midX - w * 0.9, y: rect.minY + h * 0.65),
-                control2: CGPoint(x: rect.midX - w * 0.9, y: rect.minY + h * 0.35)
-            )
-            p.closeSubpath()
-            return p
         }
     }
 }
 
-// MARK: - Session glyphs
-// Ported from src/components/icons/SessionIcons.tsx — each glyph draws in
-// a 24×24 virtual box and is scaled to fit the caller's rect. Stroke-only,
-// so the widget applies one stroke style across all glyphs consistently.
-
-private func drawInBox(_ rect: CGRect, _ build: (inout Path) -> Void) -> Path {
-    let size = min(rect.width, rect.height)
-    var p = Path()
-    build(&p)
-    let scale = size / 24.0
-    let tx = rect.midX - size / 2
-    let ty = rect.midY - size / 2
-    return p.applying(CGAffineTransform(translationX: tx, y: ty).scaledBy(x: scale, y: scale))
-}
-
-private struct SessionGlyph: Shape {
-    let type: String
-
-    static func hasGlyph(for type: String) -> Bool {
-        switch type {
-        case "mobility", "strength", "bag_work", "skip_rope",
-             "run", "running", "foundation_run",
-             "recovery", "active_recovery":
-            return true
-        default:
-            return false
-        }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        switch type {
-        case "mobility":
-            return PostureGlyph().path(in: rect)
-        case "strength":
-            return StrengthGlyph().path(in: rect)
-        case "bag_work":
-            return BagWorkGlyph().path(in: rect)
-        case "skip_rope":
-            return SkipRopeGlyph().path(in: rect)
-        case "run", "running", "foundation_run":
-            return RunningGlyph().path(in: rect)
-        case "recovery", "active_recovery":
-            return RecoveryGlyph().path(in: rect)
-        default:
-            return Path()
-        }
-    }
-}
-
-// Spine + stretch marks — posture / mobility.
-private struct PostureGlyph: Shape {
-    func path(in rect: CGRect) -> Path {
-        drawInBox(rect) { p in
-            p.move(to: CGPoint(x: 12, y: 2)); p.addLine(to: CGPoint(x: 12, y: 10))
-            p.move(to: CGPoint(x: 12, y: 14)); p.addLine(to: CGPoint(x: 12, y: 22))
-            p.move(to: CGPoint(x: 8, y: 6)); p.addLine(to: CGPoint(x: 12, y: 4)); p.addLine(to: CGPoint(x: 16, y: 6))
-            p.move(to: CGPoint(x: 8, y: 18)); p.addLine(to: CGPoint(x: 12, y: 20)); p.addLine(to: CGPoint(x: 16, y: 18))
-            p.move(to: CGPoint(x: 9, y: 10)); p.addLine(to: CGPoint(x: 12, y: 12)); p.addLine(to: CGPoint(x: 15, y: 10))
-        }
-    }
-}
-
-// Dumbbell — strength.
-private struct StrengthGlyph: Shape {
-    func path(in rect: CGRect) -> Path {
-        drawInBox(rect) { p in
-            // Outer plate caps
-            p.move(to: CGPoint(x: 6.5, y: 6.5)); p.addLine(to: CGPoint(x: 17.5, y: 6.5))
-            p.move(to: CGPoint(x: 6.5, y: 17.5)); p.addLine(to: CGPoint(x: 17.5, y: 17.5))
-            // Left weight
-            p.addRoundedRect(in: CGRect(x: 3, y: 8, width: 4, height: 8),
-                             cornerSize: CGSize(width: 1, height: 1))
-            // Right weight
-            p.addRoundedRect(in: CGRect(x: 17, y: 8, width: 4, height: 8),
-                             cornerSize: CGSize(width: 1, height: 1))
-            // Grip bar
-            p.move(to: CGPoint(x: 7, y: 12)); p.addLine(to: CGPoint(x: 17, y: 12))
-        }
-    }
-}
-
-// Punching bag — bag work.
-private struct BagWorkGlyph: Shape {
-    func path(in rect: CGRect) -> Path {
-        drawInBox(rect) { p in
-            // Hook stem
-            p.move(to: CGPoint(x: 12, y: 2)); p.addLine(to: CGPoint(x: 12, y: 5))
-            // Strap
-            p.move(to: CGPoint(x: 9, y: 5)); p.addLine(to: CGPoint(x: 15, y: 5))
-            // Bag body
-            p.addRoundedRect(in: CGRect(x: 8, y: 5, width: 8, height: 14),
-                             cornerSize: CGSize(width: 3, height: 3))
-            // Floor bar
-            p.move(to: CGPoint(x: 10, y: 21)); p.addLine(to: CGPoint(x: 14, y: 21))
-        }
-    }
-}
-
-// Jump rope with handles — skip rope.
-private struct SkipRopeGlyph: Shape {
-    func path(in rect: CGRect) -> Path {
-        drawInBox(rect) { p in
-            // Rope (U-shape with two lobes + bottom bar)
-            p.move(to: CGPoint(x: 7, y: 20))
-            p.addCurve(to: CGPoint(x: 4, y: 16),
-                       control1: CGPoint(x: 5, y: 20),
-                       control2: CGPoint(x: 4, y: 18))
-            p.addCurve(to: CGPoint(x: 7, y: 12),
-                       control1: CGPoint(x: 4, y: 14),
-                       control2: CGPoint(x: 5, y: 12))
-            p.addLine(to: CGPoint(x: 17, y: 12))
-            p.addCurve(to: CGPoint(x: 20, y: 16),
-                       control1: CGPoint(x: 19, y: 12),
-                       control2: CGPoint(x: 20, y: 14))
-            p.addCurve(to: CGPoint(x: 17, y: 20),
-                       control1: CGPoint(x: 20, y: 18),
-                       control2: CGPoint(x: 19, y: 20))
-            // Handle shafts
-            p.move(to: CGPoint(x: 7, y: 12)); p.addLine(to: CGPoint(x: 7, y: 4))
-            p.move(to: CGPoint(x: 17, y: 12)); p.addLine(to: CGPoint(x: 17, y: 4))
-        }
-    }
-}
-
-// Runner silhouette — running.
-private struct RunningGlyph: Shape {
-    func path(in rect: CGRect) -> Path {
-        drawInBox(rect) { p in
-            // Head (circle cx=14 cy=4 r=2)
-            p.addEllipse(in: CGRect(x: 12, y: 2, width: 4, height: 4))
-            // Body: M6 20 l3 -5 l3 1 l4 -6 l2 3
-            p.move(to: CGPoint(x: 6, y: 20))
-            p.addLine(to: CGPoint(x: 9, y: 15))
-            p.addLine(to: CGPoint(x: 12, y: 16))
-            p.addLine(to: CGPoint(x: 16, y: 10))
-            p.addLine(to: CGPoint(x: 18, y: 13))
-            // Back leg: M10 16 l-2 4
-            p.move(to: CGPoint(x: 10, y: 16)); p.addLine(to: CGPoint(x: 8, y: 20))
-        }
-    }
-}
-
-// Leaf with vein — active recovery.
-private struct RecoveryGlyph: Shape {
-    func path(in rect: CGRect) -> Path {
-        drawInBox(rect) { p in
-            // Outer leaf curve (approximation of A9 9 0 003 17)
-            p.move(to: CGPoint(x: 17, y: 8))
-            p.addCurve(to: CGPoint(x: 3, y: 17),
-                       control1: CGPoint(x: 11, y: 8),
-                       control2: CGPoint(x: 5, y: 11))
-            // Vein from tip down to base
-            p.move(to: CGPoint(x: 17, y: 8))
-            p.addCurve(to: CGPoint(x: 3.82, y: 21.34),
-                       control1: CGPoint(x: 8, y: 10),
-                       control2: CGPoint(x: 5.9, y: 16.17))
-            // Stem flourish
-            p.move(to: CGPoint(x: 17, y: 8))
-            p.addCurve(to: CGPoint(x: 22, y: 8),
-                       control1: CGPoint(x: 20, y: 7),
-                       control2: CGPoint(x: 22, y: 8))
-            p.addCurve(to: CGPoint(x: 19, y: 13),
-                       control1: CGPoint(x: 22, y: 8),
-                       control2: CGPoint(x: 21, y: 11))
-        }
-    }
-}
-
-// MARK: - Gold progress arc
-// Drains as time elapses. Uses a sliding window clamped in SwiftUI for
-// smoothness without per-second widget updates.
-
-private struct ProgressArc: View {
-    let startedAt: Date
-    let endsAt: Date
-    let tint: Color
-    let paused: Bool
-    let pausedFraction: Double?
-    var lineWidth: CGFloat = 3
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.waymarkText.opacity(0.08), lineWidth: lineWidth)
-            TimelineView(.periodic(from: Date(), by: 1.0)) { timeline in
-                let now = timeline.date
-                let total = max(1, endsAt.timeIntervalSince(startedAt))
-                let elapsed = max(0, now.timeIntervalSince(startedAt))
-                let fraction: Double = paused ? (1 - (pausedFraction ?? 0)) : min(1, max(0, elapsed / total))
-                Circle()
-                    .trim(from: 0, to: 1 - fraction)
-                    .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.5), value: fraction)
-            }
-        }
-    }
-}
-
-// MARK: - Round / set pips
-
-private struct RoundPips: View {
-    let current: Int
-    let total: Int
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<min(total, 10), id: \.self) { idx in
-                Image(systemName: idx < current ? "diamond.fill" : "diamond")
-                    .font(.system(size: 7, weight: .medium))
-                    .foregroundStyle(idx < current ? Color.waymarkGold : Color.waymarkTextFaint)
-            }
-            if total > 10 {
-                Text("+\(total - 10)")
-                    .font(.system(size: 8, weight: .medium, design: .serif))
-                    .foregroundStyle(Color.waymarkTextFaint)
-            }
-        }
-    }
-}
-
-// MARK: - Shared pieces
-
-@available(iOS 16.2, *)
-private func phaseAccent(_ phase: String) -> Color {
-    switch phase {
-    case "hold": return .waymarkTeal
-    case "rest": return .waymarkGoldDim
-    case "complete": return .waymarkGold
-    case "exercise", "ready": return .waymarkGold
-    default: return .waymarkGold
-    }
-}
-
-// Parses "Set 2 of 5" → "2/5". Falls back to the original label if no match.
-private func shortCounter(_ label: String) -> String {
-    if let c = parseCount(label) { return "\(c.current)/\(c.total)" }
-    return label
-}
-
-// Background — subtle forest → charcoal radial gradient inside a rounded
-// card, plus a faint gold hairline that hints at the shield's rim.
-@available(iOS 16.2, *)
-private struct WaymarkCardBackground: View {
-    var body: some View {
-        ZStack {
-            // Solid near-black base so the card reads over any wallpaper
-            // (including high-chroma reds, whites, photos).
-            Color.waymarkBg.opacity(0.92)
-            RadialGradient(
-                colors: [Color.waymarkBgForest.opacity(0.55), Color.waymarkBgDeep.opacity(0.85), Color.clear],
-                center: UnitPoint(x: 0.15, y: 0.1),
-                startRadius: 8,
-                endRadius: 360
-            )
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.waymarkGold.opacity(0.25), lineWidth: 0.75)
-        }
-    }
-}
-
-// MARK: - Lock screen view
+// MARK: - Lock screen
 
 @available(iOS 16.2, *)
 private struct LockScreenView: View {
     let context: ActivityViewContext<WaymarkActivityAttributes>
 
     var body: some View {
-        let state = context.state
-        let counter = parseCount(state.label)
-        let accent = phaseAccent(state.phase)
-        let showDetail = (state.detail?.isEmpty == false)
-
-        ZStack {
-            WaymarkCardBackground()
-            VStack(alignment: .leading, spacing: 8) {
-                headerRow(counter: counter, accent: accent)
-
-                if state.phase == "complete" {
-                    completeBody
-                } else if state.phase == "exercise" || state.phase == "ready" {
-                    readyBody(accent: accent)
-                } else {
-                    bodyRow(accent: accent, showDetail: showDetail)
-                }
-
-                if state.phase != "complete" {
-                    controlRow
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-        }
-    }
-
-    @ViewBuilder
-    private func readyBody(accent: Color) -> some View {
-        let state = context.state
-        let counter = parseCount(state.label)
-        HStack(alignment: .center, spacing: 14) {
-            if let c = counter {
-                Text("\(c.current)/\(c.total)")
-                    .font(.system(size: 30, weight: .regular, design: .serif))
-                    .italic()
-                    .monospacedDigit()
-                    .foregroundStyle(Color.waymarkGold)
-                    .fixedSize()
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("UP NEXT")
-                    .font(.system(.caption2, design: .serif))
-                    .tracking(1.0)
-                    .foregroundStyle(Color.waymarkTextFaint)
-                Text(state.exerciseName ?? state.detail ?? "—")
-                    .font(.system(.callout, design: .serif))
-                    .italic()
-                    .foregroundStyle(Color.waymarkText)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    @ViewBuilder
-    private func headerRow(counter: (current: Int, total: Int)?, accent: Color) -> some View {
-        let state = context.state
-        let showPip = state.phase != "complete" && state.phase != "exercise" && state.phase != "ready"
-        HStack(spacing: 6) {
-            // Glyph is tinted per-session (bag_work red, strength gold,
-            // mobility teal, etc.) so the icon alone conveys the workout.
-            // The progress arc stays phase-accent so pause/hold/rest still
-            // read through color language.
-            WaymarkLogoMark(tint: sessionTint(for: context.attributes.sessionType), sessionType: context.attributes.sessionType)
-                .frame(width: 14, height: 14)
-            if showPip {
-                ProgressArc(
-                    startedAt: state.startedAt,
-                    endsAt: state.endsAt,
-                    tint: accent,
-                    paused: state.isPaused,
-                    pausedFraction: pausedFraction,
-                    lineWidth: 1.5
-                )
-                .frame(width: 10, height: 10)
-            }
-            Text(headerLine(counter: counter))
-                .font(.system(.caption2, design: .serif))
-                .tracking(1.2)
-                .foregroundStyle(Color.waymarkTextMuted)
-                .lineLimit(1)
-            Spacer()
-        }
-    }
-
-    private func headerLine(counter: (current: Int, total: Int)?) -> String {
-        let session = context.attributes.sessionLabel.uppercased()
-        if let c = counter { return "\(session) · \(c.current)/\(c.total)" }
-        return session
-    }
-
-    private func bodyRow(accent: Color, showDetail: Bool) -> some View {
-        let state = context.state
-        return HStack(alignment: .center, spacing: 14) {
-            timerText
-                .font(.system(size: 32, weight: .regular, design: .serif))
-                .monospacedDigit()
-                .foregroundStyle(timerTint(accent: accent))
-                .frame(minWidth: 92, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(phaseHeading)
-                    .font(.system(.caption2, design: .serif))
-                    .tracking(1.0)
-                    .foregroundStyle(Color.waymarkTextMuted)
-                if showDetail, let detail = state.detail {
-                    Text(detail)
-                        .font(.system(.callout, design: .serif))
-                        .italic()
-                        .foregroundStyle(Color.waymarkText)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    @ViewBuilder
-    private var completeBody: some View {
-        let state = context.state
-        HStack(alignment: .center, spacing: 14) {
-            Text("✓")
-                .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(Color.waymarkGold)
-                .fixedSize()
-            VStack(alignment: .leading, spacing: 2) {
-                Text("WELL TRAVELED")
-                    .font(.system(.caption2, design: .serif))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.waymarkGold.opacity(0.9))
-                if let msg = state.completeMessage, !msg.isEmpty {
-                    Text(msg)
-                        .font(.system(.callout, design: .serif))
-                        .italic()
-                        .foregroundStyle(Color.waymarkText)
-                        .lineLimit(2)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    // Every non-"complete" phase shows exactly ONE primary button. For
-    // timer phases (hold, rest, active) the button morphs through three
-    // states as time progresses:
-    //   playing   → [Pause]
-    //   paused    → [Resume]
-    //   time up   → [Next →] (endsAt has passed; Resume would be a no-op)
-    // Non-timer phases (exercise, ready) show their static advance button.
-    @ViewBuilder
-    private var controlRow: some View {
-        if #available(iOS 17.0, *) {
-            primaryButton(compact: false)
-        }
-    }
-
-    @available(iOS 17.0, *)
-    @ViewBuilder
-    fileprivate func primaryButton(compact: Bool) -> some View {
-        let state = context.state
-        let minHeight: CGFloat = compact ? 30 : 32
-        let font: Font = compact
-            ? .system(.caption, design: .serif)
-            : .system(.footnote, design: .serif)
-
-        switch state.phase {
-        case "exercise":
-            // Strength exercise: single "Log Set →" (reads pending weight/
-            // reps from the app UI; no timer to pause here).
-            Button(intent: CompleteSetIntent()) {
-                Text("Log Set →")
-                    .font(font)
-                    .tracking(1.4)
-                    .frame(maxWidth: .infinity, minHeight: minHeight)
-            }
-            .tint(Color.waymarkGold)
-            .buttonStyle(.borderedProminent)
-        case "ready":
-            // Mobility between holds: single "Start Hold →" (no active timer).
-            Button(intent: StartHoldIntent()) {
-                Text("Start Hold →")
-                    .font(font)
-                    .tracking(1.4)
-                    .frame(maxWidth: .infinity, minHeight: minHeight)
-            }
-            .tint(Color.waymarkGold)
-            .buttonStyle(.borderedProminent)
-        default:
-            // Timer phases (hold/rest/active) — single morphing button.
-            // TimelineView ticks every second so we re-evaluate whether
-            // endsAt has been reached and swap the intent accordingly.
-            TimelineView(.periodic(from: Date(), by: 1.0)) { timeline in
-                morphingTimerButton(
-                    state: state,
-                    now: timeline.date,
-                    font: font,
-                    minHeight: minHeight
-                )
-            }
-        }
-    }
-
-    // Renders whichever of [Pause] / [Resume] / [Next →] applies right now.
-    // Paused wins over time-up (a paused timer is never "done"). Otherwise
-    // if endsAt has passed we prefer Next so the user can advance from the
-    // lock screen without opening the app.
-    @available(iOS 17.0, *)
-    @ViewBuilder
-    private func morphingTimerButton(
-        state: WaymarkActivityAttributes.ContentState,
-        now: Date,
-        font: Font,
-        minHeight: CGFloat
-    ) -> some View {
-        if state.isPaused {
-            Button(intent: ResumeTimerIntent()) {
-                Text("Resume")
-                    .font(font)
-                    .tracking(1.4)
-                    .frame(maxWidth: .infinity, minHeight: minHeight)
-            }
-            .tint(Color.waymarkGoldDim)
-            .buttonStyle(.bordered)
-        } else if state.endsAt <= now {
-            Button(intent: AdvancePhaseIntent()) {
-                Text(advanceLabel(state.phase))
-                    .font(font)
-                    .tracking(1.4)
-                    .frame(maxWidth: .infinity, minHeight: minHeight)
-            }
-            .tint(Color.waymarkGold)
-            .buttonStyle(.borderedProminent)
-        } else {
-            Button(intent: PauseTimerIntent()) {
-                Text("Pause")
-                    .font(font)
-                    .tracking(1.4)
-                    .frame(maxWidth: .infinity, minHeight: minHeight)
-            }
-            .tint(Color.waymarkGoldDim)
-            .buttonStyle(.bordered)
-        }
-    }
-
-    // The morph only surfaces this button once endsAt has passed, so the
-    // user is advancing a completed timer — "Skip" no longer applies.
-    private func advanceLabel(_ phase: String) -> String {
-        switch phase {
-        case "hold": return "Done →"
-        default: return "Next →"
-        }
-    }
-
-    // MARK: Lock-screen helpers
-
-    @ViewBuilder
-    private var timerText: some View {
-        let state = context.state
-        if state.phase == "complete" {
-            Text("✓")
-        } else if state.isPaused, let remaining = state.pausedRemaining {
-            Text(formatDuration(remaining))
-        } else {
-            Text(timerInterval: state.startedAt...state.endsAt, countsDown: true)
-        }
-    }
-
-    private func timerTint(accent: Color) -> Color {
-        if context.state.isPaused { return Color.waymarkTextMuted }
-        return accent == .waymarkTeal ? .waymarkTeal : .waymarkText
-    }
-
-    private var phaseHeading: String {
-        let s = context.state
-        switch s.phase {
-        case "rest": return "REST"
-        case "hold": return "HOLD"
-        case "complete": return "DONE"
-        default:
-            let stripped = s.label.replacingOccurrences(
-                of: #"\s*\d+\s+of\s+\d+\s*"#,
-                with: "",
-                options: [.regularExpression, .caseInsensitive]
-            ).trimmingCharacters(in: .whitespaces)
-            return stripped.isEmpty ? s.label.uppercased() : stripped.uppercased()
-        }
-    }
-
-    private var pausedFraction: Double? {
-        let s = context.state
-        guard s.isPaused, let remaining = s.pausedRemaining else { return nil }
-        let total = max(1, s.endsAt.timeIntervalSince(s.startedAt))
-        return min(1, max(0, remaining / total))
-    }
-}
-
-// MARK: - Dynamic Island — compact + minimal
-
-@available(iOS 16.2, *)
-private struct CompactTrailingView: View {
-    let context: ActivityViewContext<WaymarkActivityAttributes>
-    var body: some View {
-        let state = context.state
-        Group {
-            if state.phase == "complete" {
-                Text("✓").foregroundStyle(Color.waymarkGold)
-            } else if state.phase == "exercise" || state.phase == "ready" {
-                Text(shortCounter(state.label))
-                    .foregroundStyle(Color.waymarkGold)
-            } else if state.isPaused, let remaining = state.pausedRemaining {
-                Text(formatDuration(remaining))
+        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
+        VStack(spacing: 4) {
+            header(info)
+            if info.isComplete {
+                finish(info)
             } else {
-                Text(timerInterval: state.startedAt...state.endsAt, countsDown: true)
+                tiles(info)
+                phaseRow(info)
+            }
+            GrassStrip(fill: info.grass, teal: info.isRest)
+                .padding(.horizontal, -4)
+            if !info.isComplete, #available(iOS 17.0, *) {
+                ActionRow(info: info)
             }
         }
-        .font(.caption2)
-        .monospacedDigit()
-        .frame(minWidth: 40, alignment: .trailing)
-        .foregroundStyle(Color.waymarkText)
+        .padding(.horizontal, 14)
+        .padding(.top, 9)
+        .padding(.bottom, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.wmCardEdge, lineWidth: 0.75)
+        )
     }
-}
 
-// MARK: - Dynamic Island — expanded regions
-
-@available(iOS 16.2, *)
-private struct ExpandedLeadingView: View {
-    let context: ActivityViewContext<WaymarkActivityAttributes>
-    var body: some View {
-        let counter = parseCount(context.state.label)
-        let session = context.attributes.sessionLabel.uppercased()
-        let headerText = counter.map { "\(session) · \($0.current)/\($0.total)" } ?? session
-        HStack(spacing: 6) {
-            WaymarkLogoMark(tint: sessionTint(for: context.attributes.sessionType), sessionType: context.attributes.sessionType)
-                .frame(width: 14, height: 14)
-            Text(headerText)
-                .font(.system(.caption2, design: .serif))
-                .tracking(1.0)
-                .foregroundStyle(Color.waymarkTextMuted)
-                .lineLimit(1)
+    private func header(_ info: LAInfo) -> some View {
+        HStack(spacing: 8) {
+            CrestImage()
+                .frame(width: 18, height: 20)
+            FitFlap(text: info.headerText, size: 12)
+                .layoutPriority(1)
+            Spacer(minLength: 4)
+            SessionIcon(context: context)
+                .frame(width: 22, height: 22)
         }
-        .padding(.leading, 4)
+        .frame(height: 20)
     }
-}
 
-@available(iOS 16.2, *)
-private struct ExpandedTrailingView: View {
-    let context: ActivityViewContext<WaymarkActivityAttributes>
-    var body: some View {
-        let state = context.state
-        let accent = phaseAccent(state.phase)
-        let tint: Color = state.isPaused
-            ? Color.waymarkTextMuted
-            : (accent == .waymarkTeal ? Color.waymarkTeal : Color.waymarkGold)
-        Group {
-            if state.phase == "complete" {
-                Text("✓")
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(Color.waymarkGold)
-            } else if state.phase == "exercise" || state.phase == "ready" {
-                Text(shortCounter(state.label))
-                    .font(.system(size: 26, weight: .regular, design: .serif))
-                    .monospacedDigit()
-                    .foregroundStyle(Color.waymarkGold)
-            } else if state.isPaused, let remaining = state.pausedRemaining {
-                Text(formatDuration(remaining))
-                    .font(.system(size: 26, weight: .regular, design: .serif))
-                    .monospacedDigit()
-                    .foregroundStyle(tint)
+    // The countdown, or the set counter (2/3 in gold) on a strength set.
+    @ViewBuilder
+    private func tiles(_ info: LAInfo) -> some View {
+        if info.isCard {
+            if let c = info.setCount {
+                FlapText(text: "\(c.current)/\(c.total)", size: 28, tone: .gold)
+                    .frame(height: 36)
             } else {
-                Text(timerInterval: state.startedAt...state.endsAt, countsDown: true)
-                    .font(.system(size: 26, weight: .regular, design: .serif))
-                    .monospacedDigit()
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(tint)
+                FlapText(text: "GO", size: 28, tone: .gold)
+                    .frame(height: 36)
             }
+        } else {
+            FlapClock(state: info.state, size: 28, tone: info.clockTone)
+                .frame(height: 36)
         }
-        .padding(.trailing, 4)
     }
-}
 
-@available(iOS 16.2, *)
-private struct ExpandedBottomView: View {
-    let context: ActivityViewContext<WaymarkActivityAttributes>
-    var body: some View {
-        let state = context.state
-        VStack(alignment: .leading, spacing: 8) {
-            // Detail / name line — always italic serif.
-            if state.phase == "complete", let msg = state.completeMessage, !msg.isEmpty {
-                Text(msg)
-                    .font(.system(.callout, design: .serif))
-                    .italic()
-                    .foregroundStyle(Color.waymarkGold.opacity(0.9))
-                    .lineLimit(2)
-            } else if state.phase == "exercise" || state.phase == "ready" {
-                Text(state.exerciseName ?? state.detail ?? "—")
-                    .font(.system(.callout, design: .serif))
-                    .italic()
-                    .foregroundStyle(Color.waymarkText)
-                    .lineLimit(1)
-            } else if let detail = state.detail, !detail.isEmpty {
+    private func phaseRow(_ info: LAInfo) -> some View {
+        HStack(spacing: 8) {
+            FitFlap(text: info.phaseFlap, size: 12, tone: info.phaseTone)
+                .layoutPriority(1)
+            if let detail = info.phaseDetail {
                 Text(detail)
-                    .font(.system(.callout, design: .serif))
-                    .italic()
-                    .foregroundStyle(Color.waymarkText)
-                    .lineLimit(2)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.wmBody)
+                    .lineLimit(1)
             }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 16)
+    }
 
-            if state.phase != "complete", #available(iOS 17.0, *) {
-                ExpandedPrimaryButton(context: context)
+    private func finish(_ info: LAInfo) -> some View {
+        VStack(spacing: 3) {
+            CrestImage(big: true)
+                .frame(height: 42)
+                .shadow(color: Color.wmGrassGold.opacity(0.55), radius: 7)
+            FitFlap(text: "WELL TRAVELED", size: 12, tone: .gold)
+            if let msg = info.state.completeMessage, !msg.isEmpty {
+                Text(msg)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.wmBodyDim)
+                    .lineLimit(1)
             }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Dynamic Island
+
+// Compact: the countdown on small gold flap tiles (teal in rest); the set
+// counter on a strength set; the crest at the finish.
+@available(iOS 16.2, *)
+private struct CompactTrailing: View {
+    let context: ActivityViewContext<WaymarkActivityAttributes>
+
+    var body: some View {
+        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
+        if info.isComplete {
+            CrestImage()
+                .frame(width: 18, height: 20)
+        } else if info.isCard {
+            if let c = info.setCount {
+                FlapText(text: "\(c.current)/\(c.total)", size: 12, tone: .gold)
+            } else {
+                FlapText(text: "GO", size: 12, tone: .gold)
+            }
+        } else {
+            FlapClock(state: info.state, size: 12, tone: info.isRest ? .teal : (info.state.isPaused ? .dim : .gold))
         }
     }
 }
 
-// Mirrors the lock-screen primary button in the Dynamic Island expanded view.
-// Timer phases use the same single-button morph: playing → Pause,
-// paused → Resume, time-up → Next →. Non-timer phases (exercise, ready)
-// render their static context button.
-@available(iOS 17.0, *)
-private struct ExpandedPrimaryButton: View {
+@available(iOS 16.2, *)
+private struct ExpandedCenter: View {
     let context: ActivityViewContext<WaymarkActivityAttributes>
 
-    private let font: Font = .system(.caption, design: .serif)
-    private let minHeight: CGFloat = 30
+    var body: some View {
+        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
+        VStack(alignment: .leading, spacing: 4) {
+            FitFlap(text: info.islandFlap, size: 11, tone: info.isRest ? .teal : .gold)
+            if let detail = info.islandDetail, !detail.isEmpty {
+                Text(detail)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.wmBody)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+@available(iOS 16.2, *)
+private struct ExpandedTrailing: View {
+    let context: ActivityViewContext<WaymarkActivityAttributes>
 
     var body: some View {
-        let state = context.state
+        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
         Group {
-            switch state.phase {
-            case "exercise":
-                Button(intent: CompleteSetIntent()) {
-                    Text("Log Set →")
-                        .font(font).tracking(1.0)
-                        .frame(maxWidth: .infinity, minHeight: minHeight)
+            if info.isComplete {
+                CrestImage(big: true)
+                    .frame(width: 36, height: 40)
+                    .shadow(color: Color.wmGrassGold.opacity(0.55), radius: 6)
+            } else if info.isCard {
+                if let c = info.setCount {
+                    FlapText(text: "\(c.current)/\(c.total)", size: 18, tone: .gold)
+                } else {
+                    FlapText(text: "GO", size: 18, tone: .gold)
                 }
-                .tint(Color.waymarkGold)
-                .buttonStyle(.borderedProminent)
-            case "ready":
-                Button(intent: StartHoldIntent()) {
-                    Text("Start Hold →")
-                        .font(font).tracking(1.0)
-                        .frame(maxWidth: .infinity, minHeight: minHeight)
-                }
-                .tint(Color.waymarkGold)
-                .buttonStyle(.borderedProminent)
-            default:
-                TimelineView(.periodic(from: Date(), by: 1.0)) { timeline in
-                    morph(state: state, now: timeline.date)
-                }
+            } else {
+                FlapClock(state: info.state, size: 18, tone: info.clockTone)
             }
         }
+        .frame(maxHeight: .infinity)
+        .padding(.trailing, 2)
     }
+}
 
-    @ViewBuilder
-    private func morph(state: WaymarkActivityAttributes.ContentState, now: Date) -> some View {
-        if state.isPaused {
-            Button(intent: ResumeTimerIntent()) {
-                Text("Resume")
-                    .font(font).tracking(1.0)
-                    .frame(maxWidth: .infinity, minHeight: minHeight)
-            }
-            .tint(Color.waymarkGoldDim)
-            .buttonStyle(.bordered)
-        } else if state.endsAt <= now {
-            Button(intent: AdvancePhaseIntent()) {
-                Text(advanceLabel(state.phase))
-                    .font(font).tracking(1.0)
-                    .frame(maxWidth: .infinity, minHeight: minHeight)
-            }
-            .tint(Color.waymarkGold)
-            .buttonStyle(.borderedProminent)
-        } else {
-            Button(intent: PauseTimerIntent()) {
-                Text("Pause")
-                    .font(font).tracking(1.0)
-                    .frame(maxWidth: .infinity, minHeight: minHeight)
-            }
-            .tint(Color.waymarkGoldDim)
-            .buttonStyle(.bordered)
-        }
-    }
+@available(iOS 16.2, *)
+private struct ExpandedBottom: View {
+    let context: ActivityViewContext<WaymarkActivityAttributes>
 
-    private func advanceLabel(_ phase: String) -> String {
-        switch phase {
-        case "hold": return "Done →"
-        case "rest": return "Next →"
-        default: return "Next →"
-        }
+    var body: some View {
+        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
+        GrassStrip(fill: info.grass, teal: info.isRest)
+            .padding(.top, 4)
     }
 }
 
@@ -962,27 +752,33 @@ struct WaymarkActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WaymarkActivityAttributes.self) { context in
             LockScreenView(context: context)
-                .activityBackgroundTint(Color.waymarkBg)
-                .activitySystemActionForegroundColor(Color.waymarkText)
+                .activityBackgroundTint(Color.wmCard.opacity(0.93))
+                .activitySystemActionForegroundColor(Color.wmBody)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    ExpandedLeadingView(context: context)
+                    SessionIcon(context: context)
+                        .frame(width: 42, height: 42)
+                        .frame(maxHeight: .infinity)
+                        .padding(.leading, 2)
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    ExpandedCenter(context: context)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    ExpandedTrailingView(context: context)
+                    ExpandedTrailing(context: context)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    ExpandedBottomView(context: context)
+                    ExpandedBottom(context: context)
                 }
             } compactLeading: {
-                WaymarkLogoMark(tint: sessionTint(for: context.attributes.sessionType), sessionType: context.attributes.sessionType)
-                    .frame(width: 14, height: 14)
+                SessionIcon(context: context)
+                    .frame(width: 24, height: 24)
             } compactTrailing: {
-                CompactTrailingView(context: context)
+                CompactTrailing(context: context)
             } minimal: {
-                WaymarkLogoMark(tint: sessionTint(for: context.attributes.sessionType), sessionType: context.attributes.sessionType)
-                    .frame(width: 14, height: 14)
+                SessionIcon(context: context)
+                    .frame(width: 22, height: 22)
             }
         }
     }
