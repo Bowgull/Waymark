@@ -11,6 +11,7 @@ import { isoToEpochDay, mondayOf } from '../lib/dates'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
 import { FOUNDATION_LABEL, LEGACY_FOUNDATION_LABELS, foundationTemplate, strengthKindFromLabel, type FoundationInput } from '../lib/foundation'
+import { validateNarutoPatch } from '../lib/naruto'
 import { isLoggedWorkSet } from '../lib/loggedSets'
 import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
 import { idempotent } from './idempotency'
@@ -2861,15 +2862,20 @@ app.patch('/api/settings', async (c) => {
     pmSessionTime?: string
     onePaceArc?: string
     onePaceEp?: string
+    narutoArc?: string | null
+    narutoEp?: number | string | null
     lastDeploy?: number
     enabledTechniques?: string
     amEnabled?: boolean
     pmEnabled?: boolean
   }>()
 
+  const naruto = validateNarutoPatch(body)
+  if (!naruto.ok) return c.json({ error: naruto.error }, 400)
+
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
-  const updates: Record<string, unknown> = { updatedAt: nowSec }
+  const updates: Record<string, unknown> = { updatedAt: nowSec, ...naruto.updates }
 
   // Read old settings for cascade comparison
   const [oldSettings] = await db.select().from(settings).where(eq(settings.id, 'default'))

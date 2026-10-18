@@ -389,6 +389,9 @@ export const settings = sqliteTable('settings', {
   // 0031: last app open (unix seconds) and sessions made regular (JSON).
   coachSeenAt: integer('coach_seen_at'),
   templateExtras: text('template_extras'),
+  // 0032: Naruto progress (arc name, next episode 1..220).
+  narutoArc: text('naruto_arc'),
+  narutoEp: integer('naruto_ep'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 })

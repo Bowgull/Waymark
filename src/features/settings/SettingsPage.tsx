@@ -7,6 +7,7 @@ import { Capacitor } from '@capacitor/core'
 import { apiFetch } from '@/lib/api'
 import { scheduleAlarms } from '@/lib/notifications'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
+import { NARUTO_ARC_NAMES, NARUTO_EPISODES, narutoArcForEp } from '@/lib/naruto'
 import { isHapticsEnabled, setHapticsEnabled, tapHaptic } from '@/lib/haptics'
 import { ScrollDrum, ScrollDrumList } from '@/components/ui/ScrollDrum'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
@@ -22,11 +23,20 @@ interface Settings {
   pmSessionTime: string | null
   onePaceArc: string | null
   onePaceEp: string | null
+  narutoArc: string | null
+  narutoEp: number | null
   lastDeploy: number | null
   enabledTechniques: string | null
   amEnabled: number | null
   pmEnabled: number | null
   cascade?: { removed: number; freedDays?: string[] } | null
+}
+
+/** A typed Naruto episode the API accepts: whole number 1..220. */
+function narutoEpValid(v: string): boolean {
+  if (!/^\d+$/.test(v.trim())) return false
+  const n = Number(v)
+  return n >= 1 && n <= NARUTO_EPISODES
 }
 
 interface StravaStatus {
@@ -108,8 +118,10 @@ export function SettingsPage() {
   const [pmEnabled, setPmEnabled] = useState(true)
   const [onePaceArc, setOnePaceArc] = useState('')
   const [onePaceEp, setOnePaceEp] = useState('')
+  const [narutoArc, setNarutoArc] = useState('')
+  const [narutoEp, setNarutoEp] = useState('')
   const [enabledTechniques, setEnabledTechniques] = useState<Set<string>>(new Set(['boxing', 'kicks', 'defensive']))
-  const [activeDrum, setActiveDrum] = useState<'am' | 'pmTime' | 'pmLead' | 'arc' | null>(null)
+  const [activeDrum, setActiveDrum] = useState<'am' | 'pmTime' | 'pmLead' | 'arc' | 'narutoArc' | null>(null)
 
   // Close drum on any pointerdown that lands outside the drum body
   useEffect(() => {
@@ -167,6 +179,8 @@ export function SettingsPage() {
           setPmEnabled(s.pmEnabled !== 0)
           setOnePaceArc(s.onePaceArc ?? '')
           setOnePaceEp(s.onePaceEp ?? '')
+          setNarutoArc(s.narutoArc ?? '')
+          setNarutoEp(s.narutoEp != null ? String(s.narutoEp) : '')
           setEnabledTechniques(new Set((s.enabledTechniques ?? 'boxing,kicks,defensive').split(',').filter(Boolean)))
         }
       } catch (e) {
@@ -280,6 +294,9 @@ export function SettingsPage() {
             pmSessionTime,
             onePaceArc: onePaceArc || null,
             onePaceEp: onePaceEp || null,
+            narutoArc: narutoArc || null,
+            // Half-typed or out-of-range text is not saved (and not cleared).
+            narutoEp: narutoEp === '' ? null : narutoEpValid(narutoEp) ? Number(narutoEp) : undefined,
             enabledTechniques: Array.from(enabledTechniques).join(','),
             amEnabled,
             pmEnabled,
@@ -307,7 +324,14 @@ export function SettingsPage() {
       clearTimeout(t)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mtDays, amReminder, amEnabled, pmLeadMin, pmSessionTime, pmEnabled, onePaceArc, onePaceEp, enabledTechniques])
+  }, [mtDays, amReminder, amEnabled, pmLeadMin, pmSessionTime, pmEnabled, onePaceArc, onePaceEp, narutoArc, narutoEp, enabledTechniques])
+
+  function stepNarutoEp(delta: number) {
+    const cur = Number(narutoEp) || 0
+    const n = Math.min(NARUTO_EPISODES, Math.max(1, cur + delta))
+    setNarutoEp(String(n))
+    setNarutoArc(narutoArcForEp(n) ?? '')
+  }
 
   function toggleDay(day: string) {
     const next = new Set(mtDays)
@@ -542,6 +566,71 @@ export function SettingsPage() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* Naruto */}
+      <section>
+        <p className="mb-2 text-sm font-medium text-foreground">Naruto Progress</p>
+        <div className="flex items-end gap-3">
+          <div className="min-w-0 flex-1">
+            <label className="mb-1 block text-xs text-muted-foreground">Current Arc</label>
+            {activeDrum === 'narutoArc' ? (
+              <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
+                <ScrollDrumList
+                  items={NARUTO_ARC_NAMES}
+                  value={NARUTO_ARC_NAMES.includes(narutoArc) ? narutoArc : NARUTO_ARC_NAMES[0]}
+                  onChange={setNarutoArc}
+                  onTap={() => setActiveDrum(null)}
+                />
+                <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!narutoArc) setNarutoArc(narutoArcForEp(Number(narutoEp)) ?? NARUTO_ARC_NAMES[0])
+                  setActiveDrum('narutoArc')
+                }}
+                className="min-h-[44px] w-full truncate rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground"
+                style={{ fontFamily: 'var(--font-display)' }}
+              >
+                {narutoArc || 'Select arc'}
+              </button>
+            )}
+          </div>
+          <div className="w-28 shrink-0">
+            <label className="mb-1 block text-xs text-muted-foreground">Episode</label>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => stepNarutoEp(-1)}
+                className="min-h-[44px] w-8 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
+              >
+                -
+              </button>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={narutoEp}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setNarutoEp(v)
+                  if (narutoEpValid(v)) setNarutoArc(narutoArcForEp(Number(v)) ?? '')
+                }}
+                placeholder="1"
+                className="min-h-[44px] w-full min-w-0 flex-1 rounded-md border border-border bg-border px-1 py-2 text-center text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => stepNarutoEp(1)}
+                className="min-h-[44px] w-8 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">Arc follows the episode (approximate). Netflix resumes the episode itself.</p>
       </section>
 
       {/* Bag Work Techniques */}

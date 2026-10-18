@@ -12,6 +12,7 @@ import { soundRoundEnd } from '@/lib/sounds'
 import { assessRunCompletion, shouldShowRunRealityMark } from '@/lib/trainingReality'
 import { parseDurationToSec } from '@/lib/duration'
 import { NARUTO_NETFLIX_URL, ONEPACE_URL, type IndoorMedia } from '@/lib/onePace'
+import { NARUTO_EPISODES, narutoArcForEp, narutoEpisodesWatched, narutoNextEp } from '@/lib/naruto'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import {
   stopwatchElapsedMs,
@@ -166,6 +167,11 @@ export function RunSessionView({
   const [onePaceArc, setOnePaceArc] = useState(draft.onePaceArc ?? runSession.onePaceArc ?? '')
   const [onePaceEp, setOnePaceEp] = useState(draft.onePaceEp ?? runSession.onePaceEp ?? '')
   const [saving, setSaving] = useState(false)
+  // Naruto: the saved next episode (settings), and the after-run confirm.
+  const [narutoEp, setNarutoEp] = useState<number | null>(null)
+  const [narutoConfirm, setNarutoConfirm] = useState<
+    { watched: number; minutes: number; proposed: number; adjusting: boolean } | null
+  >(null)
   const [stravaActivityId, setStravaActivityId] = useState<number | null>(
     runSession.stravaActivityId ?? null,
   )
@@ -208,13 +214,14 @@ export function RunSessionView({
     storageSet(INDOOR_MEDIA_KEY, next)
   }
 
-  // Auto-fill One Pace arc/ep from settings if not already set
+  // Naruto episode from settings; One Pace arc/ep too if not already set
   useEffect(() => {
-    if (runSession.onePaceArc || runSession.onePaceEp) return
-    apiFetch<{ onePaceArc?: string | null; onePaceEp?: string | null } | null>('/api/settings')
+    const fillOnePace = !runSession.onePaceArc && !runSession.onePaceEp
+    apiFetch<{ onePaceArc?: string | null; onePaceEp?: string | null; narutoEp?: number | null } | null>('/api/settings')
       .then((s) => {
-        if (s?.onePaceArc) setOnePaceArc(s.onePaceArc)
-        if (s?.onePaceEp) setOnePaceEp(s.onePaceEp)
+        if (fillOnePace && s?.onePaceArc) setOnePaceArc(s.onePaceArc)
+        if (fillOnePace && s?.onePaceEp) setOnePaceEp(s.onePaceEp)
+        if (typeof s?.narutoEp === 'number') setNarutoEp(s.narutoEp)
       })
       .catch((e) => {
         const message = e instanceof Error ? e.message : String(e)
@@ -388,6 +395,21 @@ export function RunSessionView({
         })
       }
 
+      // Naruto: ask before moving the episode on. Never advance silently.
+      if (isIndoor && media === 'naruto') {
+        const watched = narutoEpisodesWatched(durationSec)
+        if (watched > 0 && durationSec) {
+          setNarutoConfirm({
+            watched,
+            minutes: Math.round(durationSec / 60),
+            proposed: narutoNextEp(narutoEp, watched),
+            adjusting: false,
+          })
+          setSaving(false)
+          return
+        }
+      }
+
       if (isIndoor && media === 'one_pace' && onePaceEp) {
         const oldEp = onePaceEp
         const newEp = String(Number(oldEp) + 1)
@@ -406,6 +428,36 @@ export function RunSessionView({
       setSaving(false)
     }
   }
+
+  async function confirmNarutoEp() {
+    if (!narutoConfirm) return
+    const ep = narutoConfirm.proposed
+    setSaving(true)
+    try {
+      await apiFetch('/api/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ narutoEp: ep, narutoArc: narutoArcForEp(ep) }),
+      })
+      setNarutoEp(ep)
+      showToast(`Naruto ep ${ep}`, 'success')
+      setTimeout(() => onComplete(), 1200)
+    } catch (err) {
+      logger.warn('session', 'naruto ep save failed', {
+        message: err instanceof Error ? err.message : String(err),
+      }, 'PATCH /settings narutoEp failed. Run saved, episode not moved.')
+      showToast('Episode not saved. Try again.', 'warning')
+      setSaving(false)
+    }
+  }
+
+  function stepNarutoProposed(delta: number) {
+    setNarutoConfirm(c => c && {
+      ...c,
+      proposed: Math.min(NARUTO_EPISODES, Math.max(1, c.proposed + delta)),
+    })
+  }
+
+  const narutoEpLabel = narutoEp != null ? `Naruto ep ${narutoEp}` : null
 
   const isZone2 = prescription?.runType === 'zone2'
   const runTypeLabel = prescription
@@ -460,7 +512,7 @@ export function RunSessionView({
   // detail, not label, so "Ep 3" alone would be meaningless without the arc.
   const indoorLabel = media === 'naruto' ? 'Naruto' : 'One Piece'
   const indoorDetail = isIndoor && media === 'naruto'
-    ? 'Netflix'
+    ? (narutoEp != null ? `Ep ${narutoEp}` : 'Netflix')
     : isIndoor
     ? (onePaceArc && onePaceEp
         ? `${onePaceArc} · Ep ${onePaceEp}`
@@ -592,6 +644,9 @@ export function RunSessionView({
 
         {isIndoor && media === 'naruto' && (
           <div className="mt-6 flex flex-col items-center gap-4">
+            {narutoEpLabel && (
+              <p className="font-cinzel text-display-lg text-gold text-center">{narutoEpLabel}</p>
+            )}
             <button
               onClick={() => window.open(NARUTO_NETFLIX_URL, '_blank')}
               className="flex w-full flex-col items-center gap-2 rounded-md border border-gold/15 bg-deep-forest px-6 py-8"
@@ -634,6 +689,9 @@ export function RunSessionView({
           Running
         </p>
         <h2 className="mt-1 text-display-lg text-foreground">{runTypeLabel}</h2>
+        {isIndoor && media === 'naruto' && narutoEpLabel && (
+          <p className="mt-2 font-cinzel text-sm tracking-wider text-gold/70">{narutoEpLabel}</p>
+        )}
         <div className="mt-8 rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
           <RingTimer
             totalSeconds={timerEstimate}
@@ -655,6 +713,41 @@ export function RunSessionView({
             {checkingStrava ? 'Checking Strava…' : 'Pull run from Strava'}
           </button>
         )}
+      </div>
+    ) : narutoConfirm ? (
+      // Naruto: one-tap confirm after the run is saved
+      <div className="mx-auto max-w-md space-y-5 animate-fade-in">
+        <div className="rounded-md border border-border bg-deep-forest p-4 text-center">
+          <p className="text-sm font-medium text-teal">Naruto</p>
+          <p className="mt-2 text-base text-foreground">
+            Watched about {narutoConfirm.watched} episode{narutoConfirm.watched === 1 ? '' : 's'} ({narutoConfirm.minutes} min).
+            {' '}Now on ep {narutoConfirm.proposed}?
+          </p>
+          {narutoConfirm.adjusting && (
+            <div className="mx-auto mt-4 flex w-40 gap-1">
+              <button
+                type="button"
+                onClick={() => stepNarutoProposed(-1)}
+                className="min-h-[44px] w-10 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
+              >
+                -
+              </button>
+              <div className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-border bg-surface text-lg text-foreground">
+                {narutoConfirm.proposed}
+              </div>
+              <button
+                type="button"
+                onClick={() => stepNarutoProposed(1)}
+                className="min-h-[44px] w-10 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
+              >
+                +
+              </button>
+            </div>
+          )}
+          {narutoArcForEp(narutoConfirm.proposed) && (
+            <p className="mt-2 text-xs text-muted-foreground">{narutoArcForEp(narutoConfirm.proposed)}</p>
+          )}
+        </div>
       </div>
     ) : (
       // logging
@@ -786,6 +879,27 @@ export function RunSessionView({
       <Button onClick={finishRun} size="lg" className="w-full">
         Finish Run
       </Button>
+    ) : narutoConfirm ? (
+      <div className="flex flex-col gap-2">
+        <Button onClick={confirmNarutoEp} disabled={saving} size="lg" className="w-full">
+          {saving ? 'Saving...' : `Yes, ep ${narutoConfirm.proposed}`}
+        </Button>
+        <div className="flex gap-2">
+          {!narutoConfirm.adjusting && (
+            <Button
+              variant="outline"
+              disabled={saving}
+              className="flex-1"
+              onClick={() => setNarutoConfirm(c => c && { ...c, adjusting: true })}
+            >
+              Adjust
+            </Button>
+          )}
+          <Button variant="ghost" disabled={saving} className="flex-1" onClick={onComplete}>
+            Skip
+          </Button>
+        </div>
+      </div>
     ) : (
       <Button onClick={handleSave} disabled={saving} size="lg" className="w-full">
         {saving ? 'Saving...' : 'Save Run'}
