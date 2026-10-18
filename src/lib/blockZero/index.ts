@@ -27,17 +27,25 @@ export {
   BACK_FRIENDLY_THRESHOLD,
   STRENGTH_WEEK_TARGETS,
   backFriendlyVariation,
+  blockZeroWorkingLoad,
   defaultMainLift,
+  effectiveRir,
   getStrengthWeekTarget,
   mainLiftHardSets,
+  latestRirTopSet,
+  liftRegion,
   nextLoad,
+  RIR_MAX,
+  RIR_THREE_PLUS_AS,
   type LiftRegion,
+  type LoggedWorkingSet,
   type LoadTarget,
   type MainLiftSlot,
   type NextLoad,
   type StrengthWeekTarget,
   type TopSet,
   type VariationChoice,
+  type WorkingLoad,
 } from './strength'
 
 export { E1RM_MAX_REPS, brzycki, e1rmFromRir, e1rmFromRpe, epley, rirFromRpe } from './e1rm'
@@ -97,3 +105,20 @@ export {
 } from './endGate'
 
 export { FIGHTER_MAIN_LIFT_IDS, isFighterMainLift, resolveCalibrationStarts, resolveLiftId, selectMainLifts } from './lifts'
+
+export { checkInFromDailyLog, readinessReport, rollingLoadRead, type DailyLogFields, type LoadRead, type ReadinessItemRead, type ReadinessReport } from './checkIn'
+
+export {
+  CHECK_SET_MAX_PLANNED_REPS,
+  FIXED_TEST_KEYS,
+  MOBILITY_AREAS,
+  checkSetE1rm,
+  e1rmTestKey,
+  e1rmsFromTests,
+  isTestWeek,
+  parseTestKey,
+  validateTestResult,
+  type LoggedCheckSet,
+  type TestResultInput,
+  type TestUnit,
+} from './tests'

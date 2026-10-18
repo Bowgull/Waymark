@@ -40,6 +40,23 @@ export const runningPlanWeeks = sqliteTable('running_plan_weeks', {
   index('idx_rpw_block').on(t.blockId, t.weekNumber),
 ])
 
+// Test-week and retest results. test_key: 'e1rm:<exerciseId>', 'pushups_max',
+// 'side_plank_sec_l', 'talk_test_hr', 'mobility:<area>', ... (lib/blockZero/tests.ts).
+// One row per block, week and test; re-entering a result updates it.
+export const blockTests = sqliteTable('block_tests', {
+  id: text('id').primaryKey(),
+  blockId: text('block_id').notNull().references(() => trainingBlocks.id),
+  week: integer('week').notNull(),
+  testKey: text('test_key').notNull(),
+  value: real('value').notNull(),
+  unit: text('unit').notNull(),
+  notes: text('notes'),
+  source: text('source').notNull().default('manual'), // 'manual' | 'auto' (e1RM from a logged check set)
+  recordedAt: integer('recorded_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_block_tests_block_week_key').on(t.blockId, t.week, t.testKey),
+])
+
 // ─── Sessions (hub table) ──────────────────────────────────────
 
 export const sessions = sqliteTable('sessions', {
@@ -98,6 +115,8 @@ export const strengthSets = sqliteTable('strength_sets', {
   bandColor: text('band_color'),
   isWarmup: integer('is_warmup').notNull().default(0),
   restSec: integer('rest_sec'),
+  // Reps in reserve: 0, 1, 2 or 3 (3 = "3 or more"). Block Zero loads key off it.
+  rir: integer('rir'),
   completedAt: integer('completed_at'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
@@ -214,6 +233,7 @@ export const mtClassLogs = sqliteTable('mt_class_logs', {
   weakness: text('weakness'),
   concept: text('concept'),
   actionItems: text('action_items'),
+  durationMin: integer('duration_min'),
 }, (t) => [
   uniqueIndex('idx_mt_session').on(t.sessionId),
 ])
@@ -272,6 +292,13 @@ export const dailyLogs = sqliteTable('daily_logs', {
   weedGrams: real('weed_grams'),
   alcoholScale: integer('alcohol_scale'),
   soreness: integer('soreness'),
+  // Detailed check-in (Block Zero readiness). 1-5; stress is the only one where higher is worse.
+  sleepQuality: integer('sleep_quality'),
+  energy: integer('energy'),
+  stress: integer('stress'),
+  mood: integer('mood'),
+  backToday: integer('back_today'),
+  backNotes: text('back_notes'),
   notes: text('notes'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [

@@ -4,7 +4,7 @@
 // sets the limits; the AI decision only moves inside them. Proceed creates Fighter Block 1.
 
 import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
-import { coachingOutputs, dailyLogs, exercises, sessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekPlans } from '../../db/schema'
+import { blockTests, coachingOutputs, dailyLogs, exercises, sessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekPlans } from '../../db/schema'
 import { anthropicCall, getStructuredOutput, jsonFormatFor, jsonInstructionFor, type Tool } from '../../lib/anthropic'
 import { MODELS } from '../../lib/models'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
@@ -16,6 +16,7 @@ import { rolloverStaleSessions } from '../../lib/sessionRollover'
 import { getEpochDay } from '../../lib/dates'
 import {
   backTrend,
+  e1rmsFromTests,
   extensionsUsed,
   keySessionCompletionRate,
   longestGapInWindow,
@@ -29,6 +30,7 @@ import {
   type TransitionPlan,
 } from '../../lib/blockZero'
 import { createTrainingBlock, endActiveBlocks } from '../blocks'
+import { loadBackScores } from '../blockZeroData'
 import type { createDB } from '../../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -416,8 +418,8 @@ function buildTransitionPrompt(
   return lines.join('\n')
 }
 
-// Gate inputs from the block's own sessions. Back trend needs the Phase B
-// "back today" score, so it reads 'unknown' (never blocks) until that exists.
+// Gate inputs from the block's own sessions, the daily "back today" score
+// (first week vs last week; 'unknown' with under 3 scores each) and block_tests.
 async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
   const weeks = await db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, blockId))
@@ -443,9 +445,13 @@ async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
     ? await db.select().from(strengthSets).where(inArray(strengthSets.sessionExerciseId, mainSse.map(e => e.id)))
     : []
   const exerciseBySse = new Map(mainSse.map(e => [e.id, e.exerciseId]))
-  const e1rms = retestE1rms(retestSetRows
+  const setE1rms = retestE1rms(retestSetRows
     .filter(r => r.isWarmup === 0 && (r.completedAt != null || r.weightKg != null))
     .map(r => ({ exerciseId: exerciseBySse.get(r.sessionExerciseId) ?? '', weightKg: r.weightKg, reps: r.reps })))
+  // Retest rows (week 6 and extension weeks) win per lift: they come from the
+  // RIR-adjusted check set or the athlete's own entry. Sets fill the rest.
+  const testRows = await db.select().from(blockTests).where(eq(blockTests.blockId, blockId))
+  const e1rms = new Map([...setE1rms, ...e1rmsFromTests(testRows, w => w >= BLOCK_ZERO_BASE_WEEKS)])
 
   const totalWeeks = block?.totalWeeks ?? BLOCK_ZERO_BASE_WEEKS
   const weeksSinceStart = Math.floor((todayEpochDay - startEpochDay) / 7)
@@ -454,7 +460,7 @@ async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
   const gate: EndGateInput = {
     completionRate: keySessionCompletionRate(blockSessions, todayEpochDay),
     longestRecentGapDays: longestGapInWindow(completedDays, todayEpochDay, startEpochDay),
-    backTrend: backTrend([], startEpochDay, todayEpochDay),
+    backTrend: backTrend(await loadBackScores(db, startEpochDay, todayEpochDay), startEpochDay, todayEpochDay),
     retestDone: e1rms.size > 0,
     extensionsUsed: extensionsUsed(totalWeeks),
   }

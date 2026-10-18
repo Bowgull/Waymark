@@ -34,6 +34,7 @@ import {
   type TransitionPlan,
 } from './index'
 import { extensionsUsed } from './weeks'
+import { blockZeroWorkingLoad, checkInFromDailyLog, readinessReport, type DailyLogFields, type LoggedWorkingSet } from './index'
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(msg)
@@ -292,5 +293,79 @@ assert(flaky.totalWeeks === 8, 'extended to 8 weeks at most')
 const last = flaky.plans[flaky.plans.length - 1].plan
 assert(last.decision === 'adjust' && last.gate.forced && last.nextBlock != null, 'at 8 weeks: forced move-on with conservative loads')
 assert(flaky.plans.every(p => p.plan.newTotalWeeks <= 8), 'no plan ever goes past 8 weeks')
+
+
+// ─── Phase B: readiness from daily_logs rows, loads from logged RIR ──
+//
+// The same athlete as the API sees them: check-ins arrive as daily_logs rows
+// (sleep quality, energy, stress, mood, back today) and go through
+// checkInFromDailyLog + readinessReport. Strength loads come from the RIR the
+// athlete logs, through blockZeroWorkingLoad, starting from the week-1 work-up.
+// A capacity model decides the RIR: true e1RM grows ~1.5% a week of training,
+// reps to failure at a load follow Epley, and the athlete taps 0-3 (3 = 3+).
+
+{
+  const lifts = [
+    { id: 'ex-goblet-squat', day: 1, e1rm: 50 },
+    { id: 'ex-bench-press', day: 1, e1rm: 70 },
+    { id: 'ex-db-rdl', day: 3, e1rm: 60 },
+    { id: 'ex-ohp', day: 3, e1rm: 45 },
+  ]
+  const badDays = new Set([START + 15, START + 16, START + 17]) // week 3 Tue-Thu
+  const rows: DailyLogFields[] = []
+  const history = new Map<string, LoggedWorkingSet[]>()
+  const loadLog: Array<{ week: number; id: string; weight: number; rir: number; source: string; eased: boolean }> = []
+  const easedDays: number[] = []
+  const rirFor = (e1rm: number, weight: number, reps: number) => {
+    const toFailure = Math.floor(30 * (e1rm / weight - 1))
+    return Math.max(0, Math.min(3, toFailure - reps))
+  }
+
+  for (let week = 1; week <= 6; week++) {
+    const target = getStrengthWeekTarget(week)
+    for (let i = 0; i < 7; i++) {
+      const day = START + (week - 1) * 7 + i
+      const off = badDays.has(day)
+      rows.push({ logDate: day, sleepHours: off ? 5.5 : 7.5, sleepQuality: off ? 2 : 4, energy: off ? 2 : 4, soreness: 2, stress: off ? 4 : 2, mood: 4, backToday: 4, alcoholScale: 0, weedGrams: 0 })
+      const report = readinessReport(rows.map(checkInFromDailyLog), day)
+      if (report.ease) easedDays.push(day)
+
+      for (const lift of lifts.filter(l => l.day === dow(day))) {
+        const trueE1rm = lift.e1rm * (1 + 0.015 * (week - 1))
+        let weight: number
+        let source = 'rir'
+        const planned = blockZeroWorkingLoad({ exerciseId: lift.id, history: history.get(lift.id) ?? [], target, eased: report.ease })
+        if (planned) {
+          weight = planned.weightKg
+        } else {
+          // Week 1 work-up: climb in 2.5 kg steps until the set of 8 has 3+ left, then stop.
+          source = 'workup'
+          weight = 10
+          while (rirFor(trueE1rm, weight + 2.5, 8) >= 3) weight += 2.5
+        }
+        const rir = rirFor(trueE1rm, weight, 8)
+        const at = day * 86400 + 3600
+        const list = history.get(lift.id) ?? []
+        list.push({ weightKg: weight, reps: 8, plannedReps: 8, rir, completedAt: at, setNumber: 1 })
+        history.set(lift.id, list)
+        loadLog.push({ week, id: lift.id, weight, rir, source, eased: report.ease })
+      }
+    }
+  }
+
+  assert(easedDays.length > 0 && easedDays.every(d => badDays.has(d)), `check-in rows drive ease on ${easedDays.length} bad-stretch day(s) only`)
+  assert(!easedDays.includes(START + 15), 'first bad check-in alone does not ease')
+  for (const lift of lifts) {
+    const steps = loadLog.filter(l => l.id === lift.id)
+    assert(steps[0].source === 'workup' && steps[0].rir === 3, `${lift.id}: week 1 work-up ends on a set of 8 with 3+ left`)
+    assert(steps[1].weight === steps[0].weight, `${lift.id}: the work-up weight is the week-2 starting load (${steps[0].weight} kg)`)
+    assert(steps.every(s => s.rir >= 1), `${lift.id}: never to failure (RIR >= 1 every session)`)
+    for (let k = 1; k < steps.length; k++) {
+      if (steps[k - 1].rir <= 2) assert(steps[k].weight <= steps[k - 1].weight, `${lift.id} week ${steps[k].week}: last top set had ${steps[k - 1].rir} left, no increase`)
+      if (steps[k].eased) assert(steps[k].weight <= steps[k - 1].weight, `${lift.id} week ${steps[k].week}: eased day, no increase`)
+    }
+    assert(steps[steps.length - 1].weight > steps[0].weight, `${lift.id}: load rose over the block (${steps[0].weight} to ${steps[steps.length - 1].weight} kg)`)
+  }
+}
 
 console.log('\nBlock Zero simulation passed')

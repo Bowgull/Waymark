@@ -6,7 +6,11 @@
 		{
 			"binding": "DB",
 			"database_name": "waymark-db",
-			"database_id": "93509b7f-2a0b-420c-8e80-f2b1aebd771d"
+			"database_id": "93509b7f-2a0b-420c-8e80-f2b1aebd771d",
+			// Tracked by wrangler in the d1_migrations table: only *.sql files
+			// count, applied in numeric-prefix order, recorded by filename.
+			// Production was baselined with scripts/d1-baseline-migrations.sql.
+			"migrations_dir": "drizzle"
 		}
 	],
 	// 03:00 America/Los_Angeles (10:00 UTC) — nightly reactive replan window.

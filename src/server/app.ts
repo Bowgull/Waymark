@@ -6,14 +6,14 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
-import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
+import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
-import { adHocSessionSchema, completeSessionSchema, dailyLogSchema } from '../lib/validators/schemas'
+import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_COOLDOWN_TEMPLATE, FR_WARMUP_TEMPLATE } from '../lib/mobilityTemplate'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { WEEKLY_TEMPLATE, getBlockZeroTemplate, getDayTemplate, strengthBlockWeek } from '../lib/weeklyTemplate'
-import { BLOCK_ZERO_BASE_WEEKS, ageFromDob, blockZeroTrainingWeek, hrCeiling, prescribeRunWalk } from '../lib/blockZero'
+import { BLOCK_ZERO_BASE_WEEKS, ageFromDob, blockZeroTrainingWeek, hrCeiling, prescribeRunWalk, validateTestResult } from '../lib/blockZero'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { computeSuggestions } from '../lib/sessionSuggestions'
@@ -30,6 +30,7 @@ import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsights
 import { runReactiveReplan, runReplaceSuggestions } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { clearCollectedTrainingData } from './trainingReset'
+import { checkMtClassForBlockZero, easeForReadiness, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, talkTestBpm, todayEpochDayUtc, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
 import { logs } from './routes/logs'
 
 type Bindings = {
@@ -119,6 +120,17 @@ function computeWarmupWeightKg(trainingMaxKg: number | null): number | null {
   return Math.round(trainingMaxKg * 0.5 * 100) / 100
 }
 
+// What today's Block Zero rules did to a strength session, for the response
+// and sessions.context_json: auto-ease, back swaps, RIR-based loads.
+function blockZeroPlanSummary(plan: BlockZeroStrengthPlan) {
+  return {
+    autoEase: plan.autoEase,
+    backToday: plan.backToday,
+    swaps: plan.swaps,
+    loads: [...plan.loads.entries()].map(([exerciseId, l]) => ({ exerciseId, weightKg: l.weightKg, change: l.change, reason: l.reason })),
+  }
+}
+
 async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const sexes = await db.select().from(strengthSessionExercises)
@@ -147,7 +159,11 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
     const workingSets = sets.filter(s => s.isWarmup === 0)
     const setsCount = workingSets.length
     const targetReps = workingSets[0]?.reps ?? 0
-    const prescribedWeightKg = computeWorkingWeightKg(tmKg, se.section, wavePct)
+    // Block Zero loads were written per set at start (RIR rules or TM x %);
+    // the last working set is the working load (a check set may lead).
+    const prescribedWeightKg = blockType === 'block_zero' && se.section === 'main' && workingSets.length > 0
+      ? workingSets[workingSets.length - 1].plannedWeightKg
+      : computeWorkingWeightKg(tmKg, se.section, wavePct)
 
     result.push({
       id: se.id,
@@ -179,8 +195,11 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
   const dayOfWeek = new Date(dateMs).getUTCDay()
   const blockWeek = session.blockWeek ?? 1
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
-  const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label)
+  let template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label)
   const wavePct = getWeekPercentage(blockWeek, blockType)
+  // Same Block Zero adjustments start-strength applies.
+  const bzPlan = blockType === 'block_zero' ? await planBlockZeroStrength(db, session, template) : null
+  if (bzPlan) template = bzPlan.template
 
   const exRows = await db.select().from(exercises)
   const exMap = new Map(exRows.map(e => [e.id, e]))
@@ -193,7 +212,8 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
     const workingSets = tex.sets.filter(s => !s.isWarmup)
     const setsCount = workingSets.length
     const targetReps = workingSets[0]?.targetReps ?? 0
-    const prescribedWeightKg = computeWorkingWeightKg(tmKg, tex.section, wavePct)
+    const bzLoad = tex.section === 'main' ? bzPlan?.loads.get(tex.exerciseId) : undefined
+    const prescribedWeightKg = bzLoad ? bzLoad.weightKg : computeWorkingWeightKg(tmKg, tex.section, wavePct)
 
     return {
       exerciseId: tex.exerciseId,
@@ -210,7 +230,12 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
     }
   })
 
-  return { session, templateLabel: template.label, exercises: previewExercises }
+  return {
+    session,
+    templateLabel: template.label,
+    exercises: previewExercises,
+    ...(bzPlan ? { blockZero: blockZeroPlanSummary(bzPlan) } : {}),
+  }
 }
 
 async function buildMobilityWorkoutResponse(db: DrizzleDB, sessionId: string) {
@@ -325,13 +350,13 @@ async function getBlockZeroRunPrescription(db: DrizzleDB, session: { id?: string
   const guards = await loadRunGuardInputs(db, session.id ?? null, session.weekPlanId, epochDay)
   const [profile] = await db.select({ maxHr: userProfile.maxHr, dob: userProfile.dob }).from(userProfile).where(eq(userProfile.id, 'default'))
   const ceiling = hrCeiling({
-    talkTestBpm: null, // Phase B: week-1 talk test result
+    talkTestBpm: await talkTestBpm(db), // week-1 talk test (block_tests 'talk_test_hr')
     measuredMaxHr: profile?.maxHr ?? null,
     ageYears: ageFromDob(profile?.dob ?? null, todayEpochDay),
     defaultBpm: zone2CeilingBpm(null),
   })
   const p = prescribeRunWalk({ week: weekNumber, ...guards, hrCeilingBpm: ceiling.bpm })
-  return {
+  const base = {
     weekNumber: blockZeroTrainingWeek(weekNumber),
     runType: 'zone2',
     targetDesc: p.reasons.length > 0 ? `${p.targetDesc} ${p.reasons.join(' ')}` : p.targetDesc,
@@ -339,6 +364,19 @@ async function getBlockZeroRunPrescription(db: DrizzleDB, session: { id?: string
     targetDistKm: null,
     z2CeilingBpm: ceiling.bpm,
     runWalk: { runSec: p.runSec, walkSec: p.walkSec, rounds: p.rounds, warmupSec: p.warmupSec, capped: p.capped },
+  }
+
+  // Auto-ease: readiness or load says run down, so the run becomes an easy walk or bike.
+  const report = await readinessFor(db, epochDay)
+  const eased = easeForReadiness(report, { type: 'foundation_run', label: 'Run-Walk', timeSlot: 'am', estimatedMin: Math.round(p.totalSec / 60) })
+  if (!eased.eased) return { ...base, autoEase: { eased: false, reason: null } }
+  const min = eased.session.estimatedMin
+  return {
+    ...base,
+    targetDesc: `Easy walk or bike, ${min} min. Keep HR at or below ${ceiling.bpm} bpm. ${eased.reason}`,
+    targetDurSec: min * 60,
+    runWalk: { runSec: 0, walkSec: 0, rounds: 0, warmupSec: min * 60, capped: p.capped },
+    autoEase: { eased: true, reason: eased.reason },
   }
 }
 
@@ -972,10 +1010,17 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   const blockWeek = session.blockWeek ?? 1
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
 
-  const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label)
+  let template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label)
   const weekPct = getWeekPercentage(blockWeek, blockType)
 
-  // Block Zero templates use exercises from migration 0022; fail clearly if
+  // Block Zero: back swaps, auto-ease and RIR-based loads for today.
+  let bzPlan: BlockZeroStrengthPlan | null = null
+  if (blockType === 'block_zero') {
+    bzPlan = await planBlockZeroStrength(db, session, template)
+    template = bzPlan.template
+  }
+
+  // Block Zero templates use exercises from migrations 0022 and 0026; fail clearly if
   // the library is behind instead of tripping a foreign key mid-insert.
   const missingIds = await missingExerciseIds(db, [...new Set(template.exercises.map(e => e.exerciseId))])
   if (missingIds.length > 0) {
@@ -1017,9 +1062,11 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
       const adjustedWorking = baseWorking == null
         ? null
         : Math.round(baseWorking * effective.loadFactor * (ts.loadMultiplier ?? 1) * 100) / 100
+      // Block Zero: the last RIR-logged top set sets the load; TM x % only until one exists.
+      const bzLoad = tex.section === 'main' && !ts.isWarmup ? bzPlan?.loads.get(tex.exerciseId) : undefined
       const suggestedWeight = templateWeight ?? (ts.isWarmup
         ? computeWarmupWeightKg(trainingMax)
-        : adjustedWorking)
+        : bzLoad ? planSetWeightKg(bzLoad, ts) : adjustedWorking)
 
       await db.insert(strengthSets).values({
         id: crypto.randomUUID(),
@@ -1037,13 +1084,16 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
     }
   }
 
-  // Mark session as in_progress
+  // Mark session as in_progress. Block Zero keeps what today's rules did on the session.
+  const blockZero = bzPlan ? blockZeroPlanSummary(bzPlan) : null
   await db.update(sessions).set({
     status: 'in_progress',
     startedAt: nowSec,
+    ...(blockZero ? { contextJson: JSON.stringify({ blockZero }) } : {}),
   }).where(eq(sessions.id, sessionId))
 
-  return c.json(await buildWorkoutResponse(db, sessionId))
+  const workout = await buildWorkoutResponse(db, sessionId)
+  return c.json(blockZero ? { ...workout, blockZero } : workout)
 })
 
 app.get('/api/sessions/:id/workout', async (c) => {
@@ -1083,12 +1133,9 @@ app.get('/api/sessions/:id/strength-preview', async (c) => {
 
 app.patch('/api/strength-sets/:id', async (c) => {
   const setId = c.req.param('id')
-  const body = await c.req.json<{
-    weightKg?: number | null
-    reps?: number
-    completedAt?: number
-    loadFeedback?: string | null
-  }>()
+  const parsed = strengthSetPatchSchema.safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
+  const body = parsed.data
 
   const db = createDB(c.env)
   const [current] = await db.select().from(strengthSets).where(eq(strengthSets.id, setId))
@@ -1100,6 +1147,7 @@ app.patch('/api/strength-sets/:id', async (c) => {
   if (body.reps !== undefined) updates.reps = body.reps
   if (body.completedAt !== undefined) updates.completedAt = body.completedAt
   if (body.loadFeedback !== undefined) updates.loadFeedback = body.loadFeedback
+  if (body.rir !== undefined) updates.rir = body.rir
 
   const actualWeightKg = body.weightKg !== undefined ? body.weightKg : current.weightKg
   const actualReps = body.reps !== undefined ? body.reps : current.reps
@@ -1113,7 +1161,9 @@ app.patch('/api/strength-sets/:id', async (c) => {
   await db.update(strengthSets).set(updates).where(eq(strengthSets.id, setId))
 
   const [row] = await db.select().from(strengthSets).where(eq(strengthSets.id, setId))
-  return c.json(row)
+  // Block Zero week-3/6 check set with weight, reps and RIR → e1RM test row (R4).
+  const e1rmTest = await recordCheckSetE1rm(db, setId)
+  return c.json(e1rmTest ? { ...row, e1rmTest } : row)
 })
 
 app.post('/api/sessions/:id/complete', async (c) => {
@@ -1247,7 +1297,7 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
     return c.json({
       error: 'foundation run warmup exercises missing',
       missingExerciseIds: missingWarmupIds,
-      recovery: 'Run npm run db:migrate:0019:local for local D1, or npm run db:migrate:0019:remote for remote D1.',
+      recovery: 'Run npm run db:migrate:local for local D1, or npm run db:migrate:remote for remote D1.',
     }, 409)
   }
 
@@ -1826,23 +1876,34 @@ app.get('/api/sessions/:id/mt-class-workout', async (c) => {
 
 app.patch('/api/mt-class-logs/:id', async (c) => {
   const logId = c.req.param('id')
-  const body = await c.req.json<{
-    classType?: string
-    focusSkill?: string
-    weakness?: string
-    concept?: string
-    actionItems?: string
-  }>()
+  const parsed = mtClassLogPatchSchema.safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
+  const body = parsed.data
   const db = createDB(c.env)
+  const [current] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
+  if (!current) return c.json({ error: 'class log not found' }, 404)
+
+  // Block Zero ramp (R12): no hard sparring, technique/pads/bag in ramp weeks
+  // 1-2, light clinch from week 3, weekly class cap. Checked when the type changes.
+  let blockZeroNote: { rampWeek: number; reason: string } | null = null
+  if (body.classType !== undefined && body.classType !== current.classType) {
+    const decision = await checkMtClassForBlockZero(db, current.sessionId, body.classType)
+    if (decision && !decision.allowed) {
+      return c.json({ error: decision.reason, reason: decision.reason, suggestedType: decision.suggestedType, rampWeek: decision.rampWeek }, 400)
+    }
+    if (decision) blockZeroNote = { rampWeek: decision.rampWeek, reason: decision.reason }
+  }
+
   const updates: Record<string, unknown> = {}
   if (body.classType !== undefined) updates.classType = body.classType
+  if (body.durationMin !== undefined) updates.durationMin = body.durationMin
   if (body.focusSkill !== undefined) updates.focusSkill = body.focusSkill
   if (body.weakness !== undefined) updates.weakness = body.weakness
   if (body.concept !== undefined) updates.concept = body.concept
   if (body.actionItems !== undefined) updates.actionItems = body.actionItems
-  await db.update(mtClassLogs).set(updates).where(eq(mtClassLogs.id, logId))
+  if (Object.keys(updates).length > 0) await db.update(mtClassLogs).set(updates).where(eq(mtClassLogs.id, logId))
   const [row] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
-  return c.json(row)
+  return c.json(blockZeroNote ? { ...row, blockZero: blockZeroNote } : row)
 })
 
 // ─── Daily Logs ────────────────────────────────────────────────
@@ -1881,6 +1942,12 @@ app.post('/api/daily-logs', async (c) => {
       weedGrams: hasKey('weedGrams') ? body.weedGrams ?? null : prev.weedGrams,
       alcoholScale: hasKey('alcoholScale') ? body.alcoholScale ?? null : prev.alcoholScale,
       soreness: hasKey('soreness') ? body.soreness ?? null : prev.soreness,
+      sleepQuality: hasKey('sleepQuality') ? body.sleepQuality ?? null : prev.sleepQuality,
+      energy: hasKey('energy') ? body.energy ?? null : prev.energy,
+      stress: hasKey('stress') ? body.stress ?? null : prev.stress,
+      mood: hasKey('mood') ? body.mood ?? null : prev.mood,
+      backToday: hasKey('backToday') ? body.backToday ?? null : prev.backToday,
+      backNotes: hasKey('backNotes') ? body.backNotes ?? null : prev.backNotes,
       notes: hasKey('notes') ? body.notes ?? null : prev.notes,
     }).where(eq(dailyLogs.id, prev.id))
     const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, prev.id))
@@ -1895,6 +1962,12 @@ app.post('/api/daily-logs', async (c) => {
     weedGrams: body.weedGrams ?? null,
     alcoholScale: body.alcoholScale ?? null,
     soreness: body.soreness ?? null,
+    sleepQuality: body.sleepQuality ?? null,
+    energy: body.energy ?? null,
+    stress: body.stress ?? null,
+    mood: body.mood ?? null,
+    backToday: body.backToday ?? null,
+    backNotes: body.backNotes ?? null,
     notes: body.notes ?? null,
     createdAt: nowSec,
   })
@@ -1910,6 +1983,62 @@ app.post('/api/daily-logs', async (c) => {
   )
 
   return c.json(row)
+})
+
+// ─── Block Zero readiness (R10) ────────────────────────────────
+
+// Today's read: each check-in item against the 7-day mean, the ease trigger
+// (readiness 2+ items x 2 days, or the soft load flag in Block Zero) and a
+// one-line reason. ?date=YYYY-MM-DD (the athlete's local day), default UTC today.
+app.get('/api/readiness/today', async (c) => {
+  const date = c.req.query('date')
+  if (date != null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400)
+  const epochDay = date ? isoToEpochDay(date) : todayEpochDayUtc()
+  const db = createDB(c.env)
+  const report = await readinessFor(db, epochDay)
+  return c.json({ date: new Date(epochDay * 86400000).toISOString().slice(0, 10), ...report })
+})
+
+// ─── Block tests (week 1 / 3 / 6 results) ──────────────────────
+
+app.get('/api/blocks/:id/tests', async (c) => {
+  const blockId = c.req.param('id')
+  const weekRaw = c.req.query('week')
+  const week = weekRaw != null ? Number(weekRaw) : undefined
+  if (week !== undefined && !Number.isInteger(week)) return c.json({ error: 'week must be an integer' }, 400)
+  const db = createDB(c.env)
+  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
+  if (!block) return c.json({ error: 'block not found' }, 404)
+  return c.json(await listBlockTests(db, blockId, week))
+})
+
+// Upsert one or many results: { week, testKey, value, unit?, notes? }, an
+// array of those, or { results: [...] }. Re-entering a key for a week updates it.
+app.post('/api/blocks/:id/tests', async (c) => {
+  const blockId = c.req.param('id')
+  const parsed = blockTestsBodySchema.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
+  const db = createDB(c.env)
+  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
+  if (!block) return c.json({ error: 'block not found' }, 404)
+  if (block.blockType !== 'block_zero') return c.json({ error: 'Test results belong to a Block Zero block.' }, 400)
+
+  const valid = []
+  for (const r of parsed.data) {
+    const v = validateTestResult(r, block.totalWeeks)
+    if (!v.ok) return c.json({ error: v.error, testKey: r.testKey }, 400)
+    valid.push(v)
+  }
+  const e1rmIds = [...new Set(valid.map(v => v.exerciseId).filter((id): id is string => id != null))]
+  const missing = await missingExerciseIds(db, e1rmIds)
+  if (missing.length > 0) return c.json({ error: `Unknown exercise: ${missing.join(', ')}.`, missingExerciseIds: missing }, 400)
+
+  const nowSec = Math.floor(Date.now() / 1000)
+  const saved = []
+  for (const v of valid) {
+    saved.push(await upsertBlockTest(db, { blockId, week: v.week, testKey: v.testKey, value: v.value, unit: v.unit, notes: v.notes, source: 'manual', recordedAt: nowSec }))
+  }
+  return c.json(saved)
 })
 
 // ─── Program / Blocks / Weeks ──────────────────────────────────
@@ -3595,7 +3724,7 @@ app.get('/api/export', async (c) => {
     allBagRounds, allBagRoundCombos, allComboPerformance, allCombos,
     allDailyLogs, allWeeklyJournals, allJournalEntries, allBodyMetrics,
     allTrainingBlocks, allWeekPlans, allTrainingMaxes, allUserProfile,
-    allSettings,
+    allSettings, allBlockTests,
   ] = await Promise.all([
     db.select().from(sessions),
     db.select().from(strengthSessionExercises),
@@ -3614,6 +3743,7 @@ app.get('/api/export', async (c) => {
     db.select().from(trainingMaxes),
     db.select().from(userProfile),
     db.select().from(settings),
+    db.select().from(blockTests),
   ])
 
   const payload = {
@@ -3635,6 +3765,7 @@ app.get('/api/export', async (c) => {
     trainingMaxes: allTrainingMaxes,
     userProfile: allUserProfile,
     settings: allSettings,
+    blockTests: allBlockTests,
   }
 
   const date = new Date().toISOString().split('T')[0]

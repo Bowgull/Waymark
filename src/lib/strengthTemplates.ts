@@ -169,16 +169,26 @@ function mainNote(cue: string | null, t: StrengthWeekTarget): string {
   return cue ? `${cue} ${t.note}` : t.note
 }
 
-// Durability twice a week (A and C). R14: neck work for robustness, not
-// concussion claims. Chin tucks stand in for neck isometrics, hammer curls and
-// carries for wrist and grip, until dedicated exercises exist.
-function durability(t: StrengthWeekTarget): TemplateExercise[] {
+// Durability twice a week (A and C), exercises from migration 0026.
+// R14: 4-way neck isometrics for robustness and clinch loading, not
+// concussion claims. R13: wrist flexors and extensors for load tolerance;
+// calf raises (A) and tibialis raises (C) for the lower leg. Grip carry on C.
+function durability(t: StrengthWeekTarget, day: 'A' | 'C'): TemplateExercise[] {
   const sets = t.phase === 'consolidate' ? 1 : 2
-  return [
-    { exerciseId: 'ex-chin-tucks', label: 'Neck: Chin Tucks', section: 'core', sets: coreSets(sets, 10), notes: 'Durability. Hold each rep 5s. Add light hand pressure for an isometric. Easy effort.' },
-    { exerciseId: 'ex-hammer-curl', label: 'Wrist: Hammer Curl', section: 'core', sets: coreSets(sets, 12), notes: 'Durability. Slow lower. Wrist stays neutral.' },
-    { exerciseId: 'ex-suitcase-carry', label: 'Grip: Suitcase Carry', section: 'core', sets: coreSets(sets, 30), notes: 'Durability. 30s each hand. Stand tall, no lean.' },
+  const out: TemplateExercise[] = [
+    { exerciseId: 'ex-neck-iso-4way', label: 'Neck: 4-Way Isometric', section: 'core', sets: coreSets(sets, 4), notes: 'Durability. Front, back, left, right. Hold each 10-20s against your hand. Easy effort, nothing moves.' },
+    { exerciseId: 'ex-wrist-curl', label: 'Wrist Curl', section: 'core', sets: coreSets(sets, 15), notes: 'Durability. Light. Slow lower to the fingertips.' },
+    { exerciseId: 'ex-reverse-wrist-curl', label: 'Reverse Wrist Curl', section: 'core', sets: coreSets(sets, 15), notes: 'Durability. Lighter than the curl. Slow lower.' },
   ]
+  if (day === 'A') {
+    out.push({ exerciseId: 'ex-single-leg-calf-raise', label: 'Single-Leg Calf Raise', section: 'core', sets: coreSets(sets, 12), notes: 'Durability. 12 each leg. Full range, 2-3s down.' })
+  } else {
+    out.push(
+      { exerciseId: 'ex-tibialis-raise', label: 'Tibialis Raise', section: 'core', sets: coreSets(sets, 15), notes: 'Durability. Toes up high, lower slowly.' },
+      { exerciseId: 'ex-suitcase-carry', label: 'Grip: Suitcase Carry', section: 'core', sets: coreSets(sets, 30), notes: 'Durability. 30s each hand. Stand tall, no lean.' },
+    )
+  }
+  return out
 }
 
 /**
@@ -200,7 +210,7 @@ function buildBlockZeroStrengthA(blockWeek: number): StrengthTemplate {
   if (t.phase === 'test' || t.phase === 'consolidate') {
     exercises.push({ exerciseId: 'ex-push-up', label: 'Push-Up Test', section: 'core', sets: coreSets(1, 0), notes: 'Test. One set of clean push-ups, stop when form breaks. Log the reps.' })
   }
-  exercises.push(...durability(t))
+  exercises.push(...durability(t, 'A'))
   return { id: 'strength_a', label: 'Block Zero: A', exercises }
 }
 
@@ -243,7 +253,7 @@ function buildBlockZeroStrengthC(blockWeek: number): StrengthTemplate {
     { exerciseId: 'ex-incline-db-press', label: 'Incline DB Press', section: 'accessory', sets: workingSets(t.accessorySets, 10, 75) },
     { exerciseId: 'ex-lateral-raise', label: 'Lateral Raise', section: 'accessory', sets: workingSets(t.accessorySets, 12, 60) },
     { exerciseId: 'ex-pallof-press', label: 'Pallof Press', section: 'core', sets: coreSets(t.coreSets, 10), notes: '10 each side.' },
-    ...durability(t),
+    ...durability(t, 'C'),
   ]
   return { id: 'strength_c', label: 'Block Zero: C', exercises }
 }

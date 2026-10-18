@@ -53,15 +53,21 @@ npm run smoke:block-zero-reset
 
 Do not run a destructive production fresh start unless that is the explicit task.
 
-Targeted D1 migrations:
+D1 migrations (wrangler-tracked, `migrations_dir: drizzle` in `wrangler.jsonc`, recorded in the
+`d1_migrations` table by filename):
 
 ```bash
-npm run db:migrate:0011:remote
-npm run db:migrate:0019:remote
-npm run db:migrate:0022:remote
+npm run db:migrations:list:local    # what is pending
+npm run db:migrate:local            # apply pending migrations
+npm run db:migrations:list:remote
+npm run db:migrate:remote           # production: only with the owner's OK
 ```
 
-Use the targeted script for the migration you mean. Do not pass extra `--file` arguments through `npm run db:migrate:remote`.
+A database built before tracking (by hand with `wrangler d1 execute --file`, as production and older
+local `.wrangler` state were) has no `d1_migrations` rows, so `migrate` would re-run everything.
+Run the baseline once first: it checks the schema is at 0025 and marks 0000-0025 applied without
+running them (`npm run db:migrations:baseline:local` or `:remote`). A fresh empty database needs no
+baseline. New migrations: add the next `drizzle/00NN_name.sql`; never edit or rename an applied file.
 
 ## iOS
 

@@ -183,12 +183,13 @@ export function defaultMainLift(slot: MainLiftSlot, weekNumber: number): { exerc
 export const BACK_FRIENDLY_THRESHOLD = 2
 
 // Spine-loading or hinged patterns → versions with less axial or shear load.
-// Every id here exists in seed.ts or migration 0022.
+// Every id here exists in seed.ts or migrations 0022 / 0026.
 export const BACK_FRIENDLY_SWAPS: Readonly<Record<string, { exerciseId: string; label: string }>> = {
   'ex-front-squat': { exerciseId: 'ex-goblet-squat', label: 'Goblet Squat' },
   'ex-tempo-squat': { exerciseId: 'ex-goblet-squat', label: 'Goblet Squat' },
   'ex-deadlift': { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges' },
   'ex-block-pull': { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges' },
+  'ex-trap-bar-deadlift': { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges' },
   'ex-rdl': { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges' },
   'ex-db-rdl': { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges' },
   'ex-single-leg-rdl': { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges' },
@@ -221,4 +222,112 @@ export function backFriendlyVariation(exerciseId: string, backToday: number | nu
     swapped: true,
     reason: `Back is at ${backToday} today. ${swap.label} keeps load off the spine.`,
   }
+}
+
+// ─── Working load from logged effort (R1, R3) ─────────────────
+
+/** Region for the load step. Lifts not listed step as upper body (the smaller step). */
+export const LIFT_REGION: Readonly<Record<string, LiftRegion>> = {
+  'ex-goblet-squat': 'lower',
+  'ex-front-squat': 'lower',
+  'ex-tempo-squat': 'lower',
+  'ex-db-rdl': 'lower',
+  'ex-rdl': 'lower',
+  'ex-single-leg-rdl': 'lower',
+  'ex-block-pull': 'lower',
+  'ex-trap-bar-deadlift': 'lower',
+  'ex-deadlift': 'lower',
+  'ex-reverse-lunge': 'lower',
+  'ex-bulgarian-split-squat': 'lower',
+  'ex-glute-bridges': 'lower',
+  'ex-bench-press': 'upper',
+  'ex-db-bench-press': 'upper',
+  'ex-ohp': 'upper',
+  'ex-db-ohp': 'upper',
+  'ex-bent-over-row': 'upper',
+  'ex-db-row': 'upper',
+}
+
+export function liftRegion(exerciseId: string): LiftRegion {
+  return LIFT_REGION[exerciseId] ?? 'upper'
+}
+
+/** Highest RIR the set log offers. The tap reads "3 or more". */
+export const RIR_MAX = 3
+/**
+ * "3 or more" counts as 3.5 (RPE 6.5) for the load step. Exactly 3 would sit
+ * on the edge of the RPE 7-8 band and load could never rise from a 3+ tap;
+ * 3.5 reads as a little easier than the build-week band (small step up) and
+ * inside the test-week band (hold), which is what the tap means.
+ */
+export const RIR_THREE_PLUS_AS = 3.5
+
+/** Logged RIR (0-3) → the value the load step reads. */
+export function effectiveRir(rir: number): number {
+  return rir >= RIR_MAX ? RIR_THREE_PLUS_AS : rir
+}
+
+export interface LoggedWorkingSet {
+  weightKg: number | null
+  reps: number
+  plannedReps: number | null
+  rir: number | null
+  /** Unix seconds; orders sets across sessions. */
+  completedAt: number | null
+  setNumber: number
+  /** Groups sets by session. Without it, sets within 3 h of the latest count as one session. */
+  sessionId?: string
+}
+
+/**
+ * The top set of the latest session that logged effort: the heaviest working
+ * set with weight, reps and RIR (the later one on a tie, it carries the most
+ * fatigue). Check sets (planned 3-5 reps) never count, they have their own target.
+ */
+export function latestRirTopSet(sets: LoggedWorkingSet[], workingReps: number): LoggedWorkingSet | null {
+  const usable = sets.filter(s => s.weightKg != null && s.weightKg > 0 && s.rir != null && s.completedAt != null
+    && (s.plannedReps == null || s.plannedReps >= workingReps))
+  if (usable.length === 0) return null
+  const latest = usable.reduce((a, s) => ((s.completedAt as number) > (a.completedAt as number) ? s : a))
+  const session = latest.sessionId != null
+    ? usable.filter(s => s.sessionId === latest.sessionId)
+    : usable.filter(s => (s.completedAt as number) >= (latest.completedAt as number) - 3 * 3600)
+  return session.reduce((best, s) => {
+    if ((s.weightKg as number) > (best.weightKg as number)) return s
+    if (s.weightKg === best.weightKg && s.setNumber > best.setNumber) return s
+    return best
+  })
+}
+
+export interface WorkingLoad {
+  weightKg: number
+  source: 'rir'
+  change: LoadChange
+  reason: string
+}
+
+/**
+ * Next session's working load for a main lift from its last RIR-logged top
+ * set, against the coming week's target. Week 1's work-up (a set of 8 at 3-4
+ * left) is that top set, so it becomes the starting load: it lands inside the
+ * RPE 6-7 band and holds. An eased day never goes up. Null = no RIR data
+ * yet; the caller falls back to training max x %.
+ */
+export function blockZeroWorkingLoad(input: {
+  exerciseId: string
+  history: LoggedWorkingSet[]
+  target: Pick<StrengthWeekTarget, 'reps' | 'rpe'>
+  eased?: boolean
+}): WorkingLoad | null {
+  const top = latestRirTopSet(input.history, input.target.reps)
+  if (!top || top.rir == null || top.weightKg == null) return null
+  const next = nextLoad(
+    { weightKg: top.weightKg, reps: top.reps, rir: effectiveRir(top.rir) },
+    { reps: input.target.reps, rpe: input.target.rpe },
+    liftRegion(input.exerciseId),
+  )
+  if (input.eased && next.weightKg > top.weightKg) {
+    return { weightKg: top.weightKg, source: 'rir', change: 'hold', reason: 'Easy day. Load holds.' }
+  }
+  return { weightKg: next.weightKg, source: 'rir', change: next.change, reason: next.reason }
 }

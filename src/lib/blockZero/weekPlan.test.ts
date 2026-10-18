@@ -84,8 +84,11 @@ assert(b1.exercises.some(e => e.exerciseId === 'ex-db-rdl' && e.section === 'mai
 const mainNotes = a1.exercises.filter(e => e.section === 'main').map(e => e.notes ?? '')
 assert(mainNotes.every(n => n.includes('RPE 6-7')), 'week 1 main lifts carry the RPE 6-7 target in notes')
 assert(a3.exercises.filter(e => e.section === 'main').every(e => e.sets[0].targetReps === 5 && e.sets[0].loadMultiplier === 1.1), 'week 3 starts with a check set of 5 at ~1.1x load')
-assert(a1.exercises.some(e => e.exerciseId === 'ex-chin-tucks') && c1.exercises.some(e => e.exerciseId === 'ex-chin-tucks'), 'durability on A and C')
-assert(!b1.exercises.some(e => e.exerciseId === 'ex-chin-tucks'), 'no durability on B (2x per week)')
+const DURABILITY = ['ex-neck-iso-4way', 'ex-wrist-curl', 'ex-reverse-wrist-curl']
+assert(DURABILITY.every(id => a1.exercises.some(e => e.exerciseId === id) && c1.exercises.some(e => e.exerciseId === id)), 'durability on A and C: 4-way neck isometrics, wrist curl, reverse wrist curl')
+assert(a1.exercises.some(e => e.exerciseId === 'ex-single-leg-calf-raise') && c1.exercises.some(e => e.exerciseId === 'ex-tibialis-raise'), 'calf raises on A, tibialis raises on C')
+assert(![...DURABILITY, 'ex-chin-tucks', 'ex-hammer-curl'].some(id => b1.exercises.some(e => e.exerciseId === id)), 'no durability on B (2x per week)')
+assert(![a1, c1].some(t => t.exercises.some(e => e.exerciseId === 'ex-chin-tucks' || e.exerciseId === 'ex-hammer-curl')), 'Phase A stand-ins (chin tucks, hammer curl) are gone')
 assert(JSON.stringify(c7) === JSON.stringify(c5), 'week 7 strength C is identical to week 5')
 const fighterB = getStrengthTemplate(4, 1, 'fighter')
 assert(fighterB.id === 'strength_b' && fighterB.exercises.some(e => e.exerciseId === 'ex-rdl'), 'Fighter templates unchanged')
