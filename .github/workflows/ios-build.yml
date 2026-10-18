@@ -1,0 +1,76 @@
+# Builds an unsigned Waymark .ipa on a macOS runner (Capacitor 8 needs Xcode 26),
+# for sideloading with a free Apple ID (Sideloadly signs it on the PC).
+#
+# The web bundle contains the API key, and artifacts on a public repo can be
+# downloaded by any GitHub user, so the .ipa is encrypted before upload:
+#   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in Waymark.ipa.enc -out Waymark.ipa
+# Secrets: VITE_API_KEY (matches the Worker's WAYMARK_API_KEY), IPA_PASSWORD.
+name: iOS build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Check secrets
+        env:
+          VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
+          IPA_PASSWORD: ${{ secrets.IPA_PASSWORD }}
+        run: |
+          test -n "$VITE_API_KEY" || { echo "VITE_API_KEY secret missing: the app would get 401 on every call"; exit 1; }
+          test -n "$IPA_PASSWORD" || { echo "IPA_PASSWORD secret missing"; exit 1; }
+
+      - name: Build web app
+        env:
+          VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
+        run: npm run build:remote
+
+      - name: Capacitor sync
+        run: npx cap sync ios
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Build app (unsigned)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
+      - name: Package and encrypt .ipa
+        env:
+          IPA_PASSWORD: ${{ secrets.IPA_PASSWORD }}
+        run: |
+          APP=build/Build/Products/Release-iphoneos/App.app
+          test -d "$APP"
+          # The key must be in the bundle, or the app can't talk to the Worker.
+          grep -rlq "Bearer" "$APP/public" || { echo "web bundle missing"; exit 1; }
+          mkdir -p out/Payload && cp -R "$APP" out/Payload/
+          (cd out && zip -qr Waymark.ipa Payload)
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in out/Waymark.ipa -out out/Waymark.ipa.enc -pass env:IPA_PASSWORD
+          rm -rf out/Payload out/Waymark.ipa
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: waymark-ipa-encrypted
+          path: out/Waymark.ipa.enc
+          retention-days: 3
