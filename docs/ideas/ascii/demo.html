@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Waymark ASCII ideas</title>
+<style>
+  body{margin:0;padding:28px;background:#020A08;color:#c8e6d8;font-family:system-ui,sans-serif}
+  h1{color:#E8C860;font-size:22px;margin:0 0 6px}
+  p{color:#7fb8a0;max-width:760px;line-height:1.5}
+  .row{display:flex;flex-wrap:wrap;gap:24px;margin-top:18px}
+  .card small{display:block;color:#4ACAAA;letter-spacing:2px;font-size:11px;margin-bottom:6px}
+  .card div{border-radius:12px;overflow:hidden;line-height:0;box-shadow:0 0 0 2px #122E26}
+  .styles button{background:#122E26;color:#c8e6d8;border:1px solid #2D6B4F;border-radius:8px;padding:6px 12px;margin-right:6px;cursor:pointer}
+  .styles button.on{background:#E8C860;color:#081A14}
+</style>
+</head>
+<body>
+<h1>ASCII ideas for Waymark</h1>
+<p>Not a design, just a starting point. Every scene is drawn live from light and depth, then turned into text characters (the way the ASCII MMORPG in the notes does it). Open this file through any local web server (modules don't load from file://), e.g. <code>npx serve docs/ideas/ascii</code>.</p>
+<div class="styles"><button data-s="waymark" class="on">Waymark green</button><button data-s="game">Full colour</button><button data-s="term">Terminal</button></div>
+<div class="row" id="row"></div>
+<script type="module">
+import { mount } from './ascii.js';
+const scenes = [['meadow', 'EMPTY STATE / REST DAY'], ['strip', 'TIMER OR ROUND PROGRESS'], ['rain', 'OFFLINE / NOTHING LOGGED'], ['night', 'EVENING / SLEEP']];
+let style = 'waymark';
+function draw() {
+  const row = document.getElementById('row'); row.innerHTML = '';
+  for (const [s, cap] of scenes) {
+    const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<small>${cap}</small><div><canvas></canvas></div>`; row.appendChild(c);
+    mount(c.querySelector('canvas'), s, style, s === 'strip' ? { cols: 56, rows: 6 } : { cols: 52, rows: 20 });
+  }
+}
+for (const b of document.querySelectorAll('[data-s]')) b.onclick = () => { style = b.dataset.s; document.querySelectorAll('[data-s]').forEach((x) => x.classList.toggle('on', x === b)); draw(); };
+draw();
+</script>
+</body>
+</html>
