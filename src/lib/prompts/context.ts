@@ -48,7 +48,7 @@ function formatDailyLog(l: DailyLogRecord): string {
   if (l.sleepHours != null) parts.push(`sleep ${l.sleepHours}h`)
   if (l.soreness != null) parts.push(`soreness ${l.soreness}/5`)
   if (l.weedGrams != null && l.weedGrams > 0) parts.push(`cannabis ${l.weedGrams}g`)
-  if (l.alcoholScale != null && l.alcoholScale > 0) parts.push(`alcohol ${l.alcoholScale}/5`)
+  if (l.alcoholScale != null && l.alcoholScale > 0) parts.push(`alcohol ${l.alcoholScale}/10`)
   return parts.join(' | ')
 }
 

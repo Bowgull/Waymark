@@ -1,9 +1,10 @@
 // Block Zero entry assessment and transition readiness check. Sonnet with extended thinking.
-// Assessment: called once when Block Zero starts.
-// Transition: called at end of Block Zero (week 4+) to decide proceed/hold/adjust.
+// Assessment: called once when Block Zero starts. Its starting maxes and MT cap are saved.
+// Transition: called at the end of Block Zero. The rules gate (lib/blockZero/endGate)
+// sets the limits; the AI decision only moves inside them. Proceed creates Fighter Block 1.
 
 import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
-import { coachingOutputs, dailyLogs, exercises, sessions, trainingBlocks, trainingMaxes, userProfile, weekPlans } from '../../db/schema'
+import { coachingOutputs, dailyLogs, exercises, sessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekPlans } from '../../db/schema'
 import { anthropicCall, getStructuredOutput, jsonFormatFor, jsonInstructionFor, type Tool } from '../../lib/anthropic'
 import { MODELS } from '../../lib/models'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
@@ -13,6 +14,21 @@ import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt, typ
 import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from '../../lib/hrAnalysis'
 import { rolloverStaleSessions } from '../../lib/sessionRollover'
 import { getEpochDay } from '../../lib/dates'
+import {
+  backTrend,
+  extensionsUsed,
+  keySessionCompletionRate,
+  longestGapInWindow,
+  planTransition,
+  resolveCalibrationStarts,
+  retestE1rms,
+  selectMainLifts,
+  BLOCK_ZERO_BASE_WEEKS,
+  KEY_SESSION_TYPES,
+  type EndGateInput,
+  type TransitionPlan,
+} from '../../lib/blockZero'
+import { createTrainingBlock, endActiveBlocks } from '../blocks'
 import type { createDB } from '../../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -68,7 +84,7 @@ export const BLOCK_ZERO_TOOL: Tool = {
       calibrationStarts: {
         type: 'array',
         description:
-          'Starting weight estimates for main compound lifts. Conservative. Block Zero loads at 40-55% of these numbers. Based on training history and current detraining state.',
+          'Starting weight estimates for main compound lifts, saved as training maxes. Conservative. Block Zero suggests ~55% of these for sets of 8 in week 1, rising to ~65% by week 5, then autoregulates by RPE. Based on training history and current detraining state.',
         items: {
           type: 'object',
           properties: {
@@ -76,7 +92,7 @@ export const BLOCK_ZERO_TOOL: Tool = {
             startingWeightKg: {
               type: 'number',
               description:
-                'Estimated training max. Block Zero week 1 will work at 40% of this. Must be realistic given current state.',
+                'Estimated training max. Block Zero week 1 suggests about 55% of this for a set of 8 at RPE 6-7. Must be realistic given current state.',
             },
             rationale: {
               type: 'string',
@@ -106,16 +122,16 @@ function buildAssessmentPrompt(profile: UserProfileContext): string {
   const lines: string[] = [
     'Block Zero is starting. Assess this user and produce a Block Zero plan overview.',
     '',
-    'Block Zero structure:',
-    '  Weeks 1-2: Foundation, daily mobility, light loading (40% weights). No MT class.',
-    '  Weeks 3-4: MT class returns. Weights climb to 50-55%. Daily mobility continues.',
-    '  Weeks 5-6: Full schedule. Weights at 55-60%. Daily mobility continues. Ready for Block 1.',
-    '',
-    'Daily mobility runs every morning across all phases. It is the habit Block Zero is designed to build. Do not skip scheduling it. Use session type "mobility" at timeSlot "am", estimatedMin 10.',
+    'Block Zero structure (6 weeks, up to 2 extension weeks):',
+    '  Week 1: test week. Each main lift works up to a set of 8 at RPE 6-7. Run-walk at talk-test pace.',
+    '  Weeks 2-5: build. 2-3 sets of 8, RPE 6-7 then 7-8, never to failure. Week 3 adds a 3-5 rep check set.',
+    '  Week 6: consolidate and retest. Volume down 30-50%, intensity held.',
+    '  Weekly: Strength A/B/C, 3 run-walks, daily back-care mobility, durability twice a week, 1 rest day.',
+    '  No MT classes are scheduled. The athlete adds them: technique and pads only for the first 2 weeks back, light clinch from week 3, no hard sparring.',
     '',
     'User profile is in the system prompt.',
     '',
-    'For calibrationStarts: estimate training maxes for main compound lifts (squat, deadlift, bench press, overhead press, barbell row). Be conservative. If training history indicates a long gap or no strength training, use detrained intermediate baselines.',
+    'For calibrationStarts: estimate training maxes for the main compound lifts. Use these exact exercise names: Front Squat, Romanian Deadlift, Block Pull, Conventional Deadlift, Bench Press, Overhead Press, Bent Over Row. Be conservative. If training history indicates a long gap or no strength training, use detrained intermediate baselines.',
     '',
     'For mtCapPerWeek: this is the cap for the entire block. Set based on injury risk and recovery needs. The user has access to MT most evenings and will overtrain without enforcement.',
     '',
@@ -193,8 +209,43 @@ export async function runBlockZeroAssessment(
     createdAt: Math.floor(Date.now() / 1000),
   })
 
+  await persistAssessment(db, output)
+
   console.log(`[blockZero] assessment complete for block ${blockId}`)
   return output
+}
+
+// Save what the assessment decided: starting training maxes for lifts that
+// exist in the library, and the block's MT cap on the profile. training_maxes
+// has no "set by hand" marker, so a plain upsert is the honest option.
+async function persistAssessment(db: DB, output: BlockZeroAssessmentOutput): Promise<void> {
+  const nowSec = Math.floor(Date.now() / 1000)
+  const exerciseRows = await db.select({ id: exercises.id, name: exercises.name }).from(exercises)
+  const writes = resolveCalibrationStarts(output.calibrationStarts ?? [], exerciseRows)
+  await upsertTrainingMaxes(db, writes, nowSec)
+
+  if (Number.isInteger(output.mtCapPerWeek) && output.mtCapPerWeek >= 0) {
+    const [profile] = await db.select({ id: userProfile.id }).from(userProfile).where(eq(userProfile.id, 'default'))
+    if (profile) {
+      await db.update(userProfile).set({ mtCapPerWeek: output.mtCapPerWeek, updatedAt: nowSec }).where(eq(userProfile.id, 'default'))
+    } else {
+      await db.insert(userProfile).values({ id: 'default', mtCapPerWeek: output.mtCapPerWeek, createdAt: nowSec, updatedAt: nowSec })
+    }
+  }
+}
+
+async function upsertTrainingMaxes(db: DB, writes: Array<{ exerciseId: string; weightKg: number }>, nowSec: number): Promise<void> {
+  if (writes.length === 0) return
+  const known = new Set((await db.select({ id: exercises.id }).from(exercises)).map(e => e.id))
+  for (const w of writes) {
+    if (!known.has(w.exerciseId) || !(w.weightKg > 0)) continue
+    const existing = await db.select({ id: trainingMaxes.id }).from(trainingMaxes).where(eq(trainingMaxes.exerciseId, w.exerciseId))
+    if (existing.length > 0) {
+      await db.update(trainingMaxes).set({ weightKg: w.weightKg, updatedAt: nowSec }).where(eq(trainingMaxes.exerciseId, w.exerciseId))
+    } else {
+      await db.insert(trainingMaxes).values({ id: crypto.randomUUID(), exerciseId: w.exerciseId, weightKg: w.weightKg, updatedAt: nowSec })
+    }
+  }
 }
 
 export async function getStoredBlockZeroAssessment(
@@ -288,10 +339,10 @@ async function gatherTransitionData(db: DB, blockId: string): Promise<{
     .from(trainingMaxes)
   const tmMap = new Map(tmRows.map(t => [t.exerciseId, t.weightKg]))
 
+  // Match by id. Seed names are 'Front Squat', 'Conventional Deadlift',
+  // 'Bent Over Row', so a name list only ever found 2 of the 5 lifts.
   const allExercises = await db.select({ id: exercises.id, name: exercises.name }).from(exercises)
-  const MAIN_LIFT_NAMES = ['Squat', 'Deadlift', 'Bench Press', 'Overhead Press', 'Barbell Row']
-  const mainLifts = allExercises
-    .filter(e => MAIN_LIFT_NAMES.includes(e.name))
+  const mainLifts = selectMainLifts(allExercises)
     .map(e => ({ id: e.id, name: e.name, currentMaxKg: tmMap.get(e.id) ?? null }))
 
   // Adherence snapshot — feeds silent progression decisions. Roll stale
@@ -365,11 +416,68 @@ function buildTransitionPrompt(
   return lines.join('\n')
 }
 
+// Gate inputs from the block's own sessions. Back trend needs the Phase B
+// "back today" score, so it reads 'unknown' (never blocks) until that exists.
+async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
+  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
+  const weeks = await db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, blockId))
+  const weekIds = weeks.map(w => w.id)
+  const blockSessions = weekIds.length > 0
+    ? await db.select().from(sessions).where(inArray(sessions.weekPlanId, weekIds))
+    : []
+
+  const startEpochDay = Math.floor((block?.startedAt ?? 0) / 86400)
+  const completedDays = blockSessions
+    .filter(s => s.status === 'completed' && KEY_SESSION_TYPES.has(s.type) && s.scheduledDate != null)
+    .map(s => s.scheduledDate as number)
+
+  // Retest = main-lift working sets from completed week-6 strength sessions.
+  const retestSessionIds = blockSessions
+    .filter(s => s.type === 'strength' && s.status === 'completed' && s.blockWeek === BLOCK_ZERO_BASE_WEEKS)
+    .map(s => s.id)
+  const retestExercises = retestSessionIds.length > 0
+    ? await db.select().from(strengthSessionExercises).where(inArray(strengthSessionExercises.sessionId, retestSessionIds))
+    : []
+  const mainSse = retestExercises.filter(e => e.section === 'main')
+  const retestSetRows = mainSse.length > 0
+    ? await db.select().from(strengthSets).where(inArray(strengthSets.sessionExerciseId, mainSse.map(e => e.id)))
+    : []
+  const exerciseBySse = new Map(mainSse.map(e => [e.id, e.exerciseId]))
+  const e1rms = retestE1rms(retestSetRows
+    .filter(r => r.isWarmup === 0 && (r.completedAt != null || r.weightKg != null))
+    .map(r => ({ exerciseId: exerciseBySse.get(r.sessionExerciseId) ?? '', weightKg: r.weightKg, reps: r.reps })))
+
+  const totalWeeks = block?.totalWeeks ?? BLOCK_ZERO_BASE_WEEKS
+  const weeksSinceStart = Math.floor((todayEpochDay - startEpochDay) / 7)
+  const currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), totalWeeks)
+
+  const gate: EndGateInput = {
+    completionRate: keySessionCompletionRate(blockSessions, todayEpochDay),
+    longestRecentGapDays: longestGapInWindow(completedDays, todayEpochDay, startEpochDay),
+    backTrend: backTrend([], startEpochDay, todayEpochDay),
+    retestDone: e1rms.size > 0,
+    extensionsUsed: extensionsUsed(totalWeeks),
+  }
+  return { gate, e1rms, totalWeeks, atEndBoundary: currentWeekNumber >= totalWeeks }
+}
+
+export interface BlockZeroTransitionResult extends BlockTransitionOutput {
+  /** What the rules decided and why; the decision field above is the final one. */
+  rules: {
+    decision: TransitionPlan['decision']
+    aiDecision: BlockTransitionOutput['decision'] | null
+    reasons: string[]
+    extendWeeks: number
+    totalWeeks: number
+  }
+  nextBlockId: string | null
+}
+
 export async function runBlockZeroTransition(
   db: DB,
   apiKey: string,
   blockId: string,
-): Promise<BlockTransitionOutput | null> {
+): Promise<BlockZeroTransitionResult | null> {
   const [profileRow] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
 
   const tmRows = await db
@@ -406,78 +514,92 @@ export async function runBlockZeroTransition(
     messages: [{ role: 'user', content: userPrompt }],
   }, { timeoutMs: 150_000 })
 
+  // Offline or unparseable: the rules still decide. The AI is a second opinion.
+  let output: BlockTransitionOutput | null = null
   if (result.offline) {
-    console.warn('[blockZero] offline during transition check')
-    return null
+    console.warn('[blockZero] offline during transition check, rules decide alone')
+  } else {
+    output = getStructuredOutput<BlockTransitionOutput>(result)
+    if (!output) console.warn('[blockZero] no structured output from transition check, rules decide alone')
   }
 
-  const output = getStructuredOutput<BlockTransitionOutput>(result)
-  if (!output) {
-    console.warn('[blockZero] no structured output from transition check')
-    return null
-  }
+  const todayEpochDay = getEpochDay(new Date())
+  const gateData = await gatherGateData(db, blockId, todayEpochDay)
+  const plan = planTransition({
+    gate: gateData.gate,
+    aiDecision: output?.decision ?? null,
+    aiTargets: output?.calibrationTargets ?? [],
+    retestE1rms: gateData.e1rms,
+    totalWeeks: gateData.totalWeeks,
+    atEndBoundary: gateData.atEndBoundary,
+  })
 
-  // Store result
+  const nowSec = Math.floor(Date.now() / 1000)
+  const nextBlockId = await applyTransitionPlan(db, blockId, plan, nowSec)
+
+  const combined: BlockZeroTransitionResult = {
+    decision: plan.reportedDecision,
+    rationale: output?.rationale ?? plan.reasons.join(' '),
+    calibrationTargets: output?.calibrationTargets ?? [],
+    ...(output?.nextBlockNotes ? { nextBlockNotes: output.nextBlockNotes } : {}),
+    rules: {
+      decision: plan.decision,
+      aiDecision: output?.decision ?? null,
+      reasons: plan.reasons,
+      extendWeeks: plan.extendWeeks,
+      totalWeeks: plan.newTotalWeeks,
+    },
+    nextBlockId,
+  }
+  // When the rules overrode the AI, the athlete-facing line is the rules' reason.
+  if (output && output.decision !== plan.reportedDecision) combined.rationale = plan.reasons.join(' ')
+
+  const usage = result.offline ? null : result.usage
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'block_zero_transition',
-    model: result.model,
+    model: !result.offline && output ? result.model : 'rules',
     scopeWeekPlanId: null,
     scopeSessionId: null,
     inputHash: blockId,
-    outputJson: JSON.stringify(output),
-    tokensIn: result.usage.input_tokens,
-    tokensOut: result.usage.output_tokens,
-    cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
-    createdAt: Math.floor(Date.now() / 1000),
+    outputJson: JSON.stringify(combined),
+    tokensIn: usage?.input_tokens ?? 0,
+    tokensOut: usage?.output_tokens ?? 0,
+    cachedTokensIn: usage?.cache_read_input_tokens ?? 0,
+    createdAt: nowSec,
   })
 
-  // Silent block extension: if the coach held, bump totalWeeks so the
-  // calendar-driven week advancement doesn't outrun the decision. The athlete
-  // never sees this happen — next week's plan just looks like another base
-  // week, and the transition check will fire again at the new end boundary.
-  if (output.decision === 'hold') {
-    const [currentBlock] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
-    if (currentBlock) {
-      await db
-        .update(trainingBlocks)
-        .set({ totalWeeks: currentBlock.totalWeeks + 1 })
-        .where(eq(trainingBlocks.id, blockId))
-      console.log(`[blockZero] hold: extended block ${blockId} to ${currentBlock.totalWeeks + 1} weeks`)
-    }
+  console.log(`[blockZero] transition for block ${blockId}: rules=${plan.decision} ai=${output?.decision ?? 'none'}`)
+  return combined
+}
+
+/**
+ * Apply a transition plan. Calibration first, so the next block starts on the
+ * new maxes. Extend lengthens the block (the week after repeats week 5).
+ * Proceed/adjust ends Block Zero and creates the Fighter block through the
+ * same path as POST /api/blocks. Returns the new block id, if any.
+ */
+export async function applyTransitionPlan(db: DB, blockId: string, plan: TransitionPlan, nowSec: number): Promise<string | null> {
+  await upsertTrainingMaxes(db, plan.calibration, nowSec)
+
+  if (plan.decision === 'extend' && plan.extendWeeks > 0) {
+    await db.update(trainingBlocks).set({ totalWeeks: plan.newTotalWeeks }).where(eq(trainingBlocks.id, blockId))
+    console.log(`[blockZero] extend: block ${blockId} now ${plan.newTotalWeeks} weeks`)
+    return null
   }
 
-  // Apply calibration targets to training maxes regardless of decision
-  for (const target of output.calibrationTargets) {
-    if (!target.exerciseId || target.estimatedMaxKg <= 0) continue
-    const nowSec = Math.floor(Date.now() / 1000)
-    const existing = await db
-      .select({ id: trainingMaxes.id })
-      .from(trainingMaxes)
-      .where(eq(trainingMaxes.exerciseId, target.exerciseId))
-
-    if (existing.length > 0) {
-      await db
-        .update(trainingMaxes)
-        .set({ weightKg: target.estimatedMaxKg, updatedAt: nowSec })
-        .where(eq(trainingMaxes.exerciseId, target.exerciseId))
-    } else {
-      await db.insert(trainingMaxes).values({
-        id: crypto.randomUUID(),
-        exerciseId: target.exerciseId,
-        weightKg: target.estimatedMaxKg,
-        updatedAt: nowSec,
-      })
-    }
+  if (plan.nextBlock) {
+    await endActiveBlocks(db, nowSec)
+    const next = await createTrainingBlock(db, { ...plan.nextBlock, nowSec })
+    console.log(`[blockZero] ${plan.decision}: ended ${blockId}, created ${next?.id}`)
+    return next?.id ?? null
   }
-
-  console.log(`[blockZero] transition check complete for block ${blockId}: ${output.decision}`)
-  return output
+  return null
 }
 
 export async function getStoredBlockZeroTransition(
   db: DB,
-): Promise<BlockTransitionOutput | null> {
+): Promise<BlockTransitionOutput | BlockZeroTransitionResult | null> {
   const [row] = await db
     .select({ outputJson: coachingOutputs.outputJson })
     .from(coachingOutputs)

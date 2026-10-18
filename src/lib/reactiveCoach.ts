@@ -378,7 +378,7 @@ function buildPrompt(bundle: SignalBundle, rationale: string, adherenceBlock: st
     const w: string[] = []
     if (bundle.wellnessToday.sleepHours != null) w.push(`sleep ${bundle.wellnessToday.sleepHours}h`)
     if (bundle.wellnessToday.soreness != null) w.push(`soreness ${bundle.wellnessToday.soreness}/5`)
-    if (bundle.wellnessToday.alcoholScale != null) w.push(`alcohol ${bundle.wellnessToday.alcoholScale}/5`)
+    if (bundle.wellnessToday.alcoholScale != null) w.push(`alcohol ${bundle.wellnessToday.alcoholScale}/10`)
     if (w.length > 0) lines.push(`Wellness today: ${w.join(', ')}.`)
   }
 
@@ -608,7 +608,7 @@ export async function runReplaceSuggestions(
     const w: string[] = []
     if (todayLog.sleepHours != null) w.push(`sleep ${todayLog.sleepHours}h`)
     if (todayLog.soreness != null) w.push(`soreness ${todayLog.soreness}/5`)
-    if (todayLog.alcoholScale != null) w.push(`alcohol ${todayLog.alcoholScale}/5`)
+    if (todayLog.alcoholScale != null) w.push(`alcohol ${todayLog.alcoholScale}/10`)
     if (w.length > 0) lines.push(`Wellness today: ${w.join(', ')}.`)
   }
   const completed = weekSessions.filter(s => s.status === 'completed')

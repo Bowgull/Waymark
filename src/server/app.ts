@@ -11,9 +11,10 @@ import { isoToEpochDay } from '../lib/dates'
 import { adHocSessionSchema, completeSessionSchema, dailyLogSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_COOLDOWN_TEMPLATE, FR_WARMUP_TEMPLATE } from '../lib/mobilityTemplate'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
-import type { TemplateSession } from '../lib/weeklyTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
-import { WEEKLY_TEMPLATE, getBlockZeroTemplate } from '../lib/weeklyTemplate'
+import { WEEKLY_TEMPLATE, getBlockZeroTemplate, getDayTemplate, strengthBlockWeek } from '../lib/weeklyTemplate'
+import { BLOCK_ZERO_BASE_WEEKS, ageFromDob, blockZeroTrainingWeek, hrCeiling, prescribeRunWalk } from '../lib/blockZero'
+import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { analyzeWeek } from '../lib/weekAnalysis'
@@ -178,7 +179,7 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
   const dayOfWeek = new Date(dateMs).getUTCDay()
   const blockWeek = session.blockWeek ?? 1
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
-  const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType)
+  const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label)
   const wavePct = getWeekPercentage(blockWeek, blockType)
 
   const exRows = await db.select().from(exercises)
@@ -276,8 +277,73 @@ async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
   return { session, rounds: result }
 }
 
+const RUN_SESSION_TYPES = ['foundation_run', 'running']
+
+// Run history the Block Zero guards need (R7 110% single run, R8 30% weekly),
+// relative to the session's date. The session itself is left out so the
+// prescription reads the same before and after it is logged.
+async function loadRunGuardInputs(db: DrizzleDB, sessionId: string | null, weekPlanId: string | null, epochDay: number) {
+  const dow = new Date(epochDay * 86400000).getUTCDay()
+  const monday = epochDay - ((dow + 6) % 7)
+  const historyStart = Math.min(epochDay - 30, monday - 7)
+
+  const done = await db
+    .select({ sessionId: sessions.id, scheduledDate: sessions.scheduledDate, durationSec: runSessions.durationSec })
+    .from(runSessions)
+    .innerJoin(sessions, eq(runSessions.sessionId, sessions.id))
+    .where(and(eq(sessions.status, 'completed'), gte(sessions.scheduledDate, historyStart), lte(sessions.scheduledDate, monday + 6)))
+  const others = done.filter(r => r.sessionId !== sessionId && r.scheduledDate != null)
+
+  const longestLast30Sec = others
+    .filter(r => r.scheduledDate! >= epochDay - 30 && r.scheduledDate! <= epochDay)
+    .reduce((m, r) => Math.max(m, r.durationSec ?? 0), 0)
+  const lastWeekRunSec = others
+    .filter(r => r.scheduledDate! >= monday - 7 && r.scheduledDate! < monday)
+    .reduce((sum, r) => sum + (r.durationSec ?? 0), 0)
+  const thisWeekSoFarSec = others
+    .filter(r => r.scheduledDate! >= monday && r.scheduledDate! <= monday + 6)
+    .reduce((sum, r) => sum + (r.durationSec ?? 0), 0)
+
+  const upcoming = await db.select({ id: sessions.id, type: sessions.type, status: sessions.status, weekPlanId: sessions.weekPlanId })
+    .from(sessions)
+    .where(and(gte(sessions.scheduledDate, epochDay), lte(sessions.scheduledDate, monday + 6)))
+  // Only this week's plan counts, so planned runs left over from an ended block don't split the budget.
+  const laterRuns = upcoming.filter(s => s.id !== sessionId && (weekPlanId == null || s.weekPlanId === weekPlanId) && RUN_SESSION_TYPES.includes(s.type) && (s.status === 'planned' || s.status === 'in_progress'))
+
+  return {
+    longestLast30Sec,
+    weekly: { lastWeekRunSec, thisWeekSoFarSec, sessionsLeftThisWeek: laterRuns.length + 1 },
+  }
+}
+
+// Block Zero run-walk: week shape from the rules module, capped by the run
+// guards, under the talk-test / HRmax ceiling. runType stays 'zone2' so the
+// run screen keeps its easy-run framing and HR ceiling.
+async function getBlockZeroRunPrescription(db: DrizzleDB, session: { id?: string; scheduledDate?: number | null; weekPlanId: string | null }, weekNumber: number) {
+  const todayEpochDay = Math.floor(Date.now() / 86400000)
+  const epochDay = session.scheduledDate ?? todayEpochDay
+  const guards = await loadRunGuardInputs(db, session.id ?? null, session.weekPlanId, epochDay)
+  const [profile] = await db.select({ maxHr: userProfile.maxHr, dob: userProfile.dob }).from(userProfile).where(eq(userProfile.id, 'default'))
+  const ceiling = hrCeiling({
+    talkTestBpm: null, // Phase B: week-1 talk test result
+    measuredMaxHr: profile?.maxHr ?? null,
+    ageYears: ageFromDob(profile?.dob ?? null, todayEpochDay),
+    defaultBpm: zone2CeilingBpm(null),
+  })
+  const p = prescribeRunWalk({ week: weekNumber, ...guards, hrCeilingBpm: ceiling.bpm })
+  return {
+    weekNumber: blockZeroTrainingWeek(weekNumber),
+    runType: 'zone2',
+    targetDesc: p.reasons.length > 0 ? `${p.targetDesc} ${p.reasons.join(' ')}` : p.targetDesc,
+    targetDurSec: p.totalSec,
+    targetDistKm: null,
+    z2CeilingBpm: ceiling.bpm,
+    runWalk: { runSec: p.runSec, walkSec: p.walkSec, rounds: p.rounds, warmupSec: p.warmupSec, capped: p.capped },
+  }
+}
+
 // Helper: get running prescription for a session based on its block week and run category
-async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string | null; blockWeek: number | null; notes?: string | null; blockType?: string | null }) {
+async function getRunPrescription(db: DrizzleDB, session: { id?: string; scheduledDate?: number | null; weekPlanId: string | null; blockWeek: number | null; notes?: string | null; blockType?: string | null }) {
   let weekNumber: number | null = null
 
   if (session.weekPlanId) {
@@ -297,6 +363,10 @@ async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string |
   }
 
   if (weekNumber == null) return null
+
+  if (session.blockType === 'block_zero') {
+    return getBlockZeroRunPrescription(db, session, weekNumber)
+  }
 
   // Check if this is a Zone 2 run (tagged during generation)
   if (session.notes === 'zone2') {
@@ -323,15 +393,6 @@ async function getRunPrescription(db: DrizzleDB, session: { weekPlanId: string |
     targetDurSec: plan.targetDurSec,
     targetDistKm: plan.targetDistKm,
   }
-}
-
-/** Build effective template for a day, filtering MT classes based on settings. */
-function getEffectiveTemplate(dayOfWeek: number, mtClassDays: Set<number>): TemplateSession[] {
-  const base = WEEKLY_TEMPLATE[dayOfWeek] ?? []
-  return base.filter(entry => {
-    if (entry.type === 'mt_class' && !mtClassDays.has(dayOfWeek)) return false
-    return true
-  })
 }
 
 app.get('/', (c) => {
@@ -455,8 +516,11 @@ app.post('/api/sessions/generate-today', async (c) => {
     activeBlockType = block.blockType
     const startedAt = block.startedAt ?? nowSec
     const weeksSinceStart = Math.floor((nowSec - startedAt) / (7 * 86400))
-    blockWeek = (weeksSinceStart % 6) + 1
     currentWeekNumber = Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks)
+    // Fighter keeps its 6-week wave off the raw calendar; Block Zero never wraps.
+    blockWeek = block.blockType === 'block_zero'
+      ? strengthBlockWeek('block_zero', currentWeekNumber)
+      : strengthBlockWeek('fighter', weeksSinceStart + 1)
 
     // Auto-create week plan if none exists
     const existingWeeks = await db.select().from(weekPlans).where(eq(weekPlans.blockId, block.id))
@@ -476,16 +540,20 @@ app.post('/api/sessions/generate-today', async (c) => {
     }
   }
 
-  const template = getEffectiveTemplate(dayOfWeek, mtClassDays)
+  const template = getDayTemplate(activeBlockType, currentWeekNumber, dayOfWeek, mtClassDays)
+  const isBlockZero = activeBlockType === 'block_zero'
 
   for (const entry of template) {
     const id = crypto.randomUUID()
     const isStrength = entry.type === 'strength'
     // Tag running sessions with their category so start-run can determine prescription
     const runTag = entry.type === 'running' ? (entry.runCategory ?? null) : null
+    // Block Zero labels carry the strength day (A/B/C) so a moved session keeps its content
+    const label = isBlockZero ? entry.label : null
     await db.insert(sessions).values({
       id,
       type: entry.type,
+      label,
       weekPlanId,
       scheduledDate: epochDay,
       timeSlot: entry.timeSlot,
@@ -498,6 +566,7 @@ app.post('/api/sessions/generate-today', async (c) => {
     created.push({
       id,
       type: entry.type,
+      label,
       weekPlanId,
       scheduledDate: epochDay,
       timeSlot: entry.timeSlot,
@@ -560,7 +629,7 @@ app.get('/api/sessions/suggestions', async (c) => {
     const startedAt = block.startedAt ?? Math.floor(Date.now() / 1000)
     const blockStartEpochDay = Math.floor(startedAt / 86400)
     const weeksSinceStart = Math.floor((targetEpochDay - blockStartEpochDay) / 7)
-    blockWeek = ((Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks) - 1) % 6) + 1
+    blockWeek = strengthBlockWeek(block.blockType, Math.min(Math.max(weeksSinceStart + 1, 1), block.totalWeeks))
   }
 
   // This week's sessions (7-day window around target date)
@@ -620,7 +689,7 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
     const existingWeeks = await db.select().from(weekPlans).where(eq(weekPlans.blockId, block.id))
     const existingWeek = existingWeeks.find(w => w.weekNumber === currentWeekNumber)
     weekPlanId = existingWeek?.id ?? null
-    blockWeek = currentWeekNumber
+    blockWeek = block.blockType === 'block_zero' ? strengthBlockWeek('block_zero', currentWeekNumber) : currentWeekNumber
     blockType = block.blockType
   }
 
@@ -826,7 +895,7 @@ app.post('/api/adjustments/:id/accept', async (c) => {
       if (week) {
         const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, week.blockId))
         sessionBlockType = block?.blockType ?? 'fighter'
-        sessionBlockWeek = adj.sessionType === 'strength' ? ((week.weekNumber - 1) % 6) + 1 : null
+        sessionBlockWeek = adj.sessionType === 'strength' ? strengthBlockWeek(sessionBlockType, week.weekNumber) : null
       }
     }
 
@@ -903,8 +972,15 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   const blockWeek = session.blockWeek ?? 1
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
 
-  const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType)
+  const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label)
   const weekPct = getWeekPercentage(blockWeek, blockType)
+
+  // Block Zero templates use exercises from migration 0022; fail clearly if
+  // the library is behind instead of tripping a foreign key mid-insert.
+  const missingIds = await missingExerciseIds(db, [...new Set(template.exercises.map(e => e.exerciseId))])
+  if (missingIds.length > 0) {
+    return c.json({ error: 'strength exercises missing', missingExerciseIds: missingIds }, 409)
+  }
 
   // Get training maxes for weight suggestions
   const maxes = await db.select().from(trainingMaxes)
@@ -937,9 +1013,10 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
       const effective = resolveEffectiveLift(trend, stateLiftById.get(tex.exerciseId))
       const templateWeight = ts.suggestedWeightKg ?? null
       const baseWorking = computeWorkingWeightKg(trainingMax, tex.section, weekPct)
+      // Check sets (Block Zero weeks 3 and 6) run ~10% above the working load.
       const adjustedWorking = baseWorking == null
         ? null
-        : Math.round(baseWorking * effective.loadFactor * 100) / 100
+        : Math.round(baseWorking * effective.loadFactor * (ts.loadMultiplier ?? 1) * 100) / 100
       const suggestedWeight = templateWeight ?? (ts.isWarmup
         ? computeWarmupWeightKg(trainingMax)
         : adjustedWorking)
@@ -1849,18 +1926,12 @@ app.post('/api/blocks', async (c) => {
   const nowSec = Math.floor(Date.now() / 1000)
   const blockType = body.blockType === 'block_zero' ? 'block_zero' : 'fighter'
 
-  const id = crypto.randomUUID()
-  await db.insert(trainingBlocks).values({
-    id,
-    name: body.name ?? '12-Week Base Build',
+  const block = await createTrainingBlock(db, {
+    name: body.name ?? FIGHTER_DEFAULT_NAME,
     blockType,
-    totalWeeks: body.totalWeeks ?? 12,
-    startedAt: nowSec,
-    status: 'active',
-    createdAt: nowSec,
+    totalWeeks: body.totalWeeks ?? FIGHTER_DEFAULT_TOTAL_WEEKS,
+    nowSec,
   })
-
-  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, id))
   return c.json(block)
 })
 
@@ -1879,27 +1950,9 @@ app.post('/api/blocks/block-zero', async (c) => {
     await clearCollectedTrainingData(db)
   }
 
-  // End any currently active block
-  const activeBlocks = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
-  for (const active of activeBlocks) {
-    await db.update(trainingBlocks)
-      .set({ status: 'ended', endedAt: nowSec })
-      .where(eq(trainingBlocks.id, active.id))
-  }
-
-  // Create the Block Zero block
-  const id = crypto.randomUUID()
-  await db.insert(trainingBlocks).values({
-    id,
-    name: 'Block Zero',
-    blockType: 'block_zero',
-    totalWeeks: 6,
-    startedAt: nowSec,
-    status: 'active',
-    createdAt: nowSec,
-  })
-
-  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, id))
+  // End any currently active block, then create Block Zero (6 base weeks)
+  await endActiveBlocks(db, nowSec)
+  const block = await createTrainingBlock(db, { name: 'Block Zero', blockType: 'block_zero', totalWeeks: BLOCK_ZERO_BASE_WEEKS, nowSec })
   return c.json(block)
 })
 
@@ -1972,8 +2025,9 @@ app.post('/api/weeks/generate', async (c) => {
   const [blockRow] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, body.blockId))
   const blockType = blockRow?.blockType === 'block_zero' ? 'block_zero' : 'fighter'
 
-  // Block week for strength sessions (use weekNumber modulo 6)
-  const blockWeek = ((body.weekNumber - 1) % 6) + 1
+  // Block week for strength sessions. Fighter cycles every 6 weeks; Block Zero
+  // extension weeks hold week-5 levels instead of wrapping to week 1.
+  const blockWeek = strengthBlockWeek(blockType, body.weekNumber)
 
   // Pick the correct weekly template
   const weeklyTemplate = blockType === 'block_zero'
@@ -1991,9 +2045,11 @@ app.post('/api/weeks/generate', async (c) => {
     for (const entry of template) {
       const sessionId = crypto.randomUUID()
       const isStrength = entry.type === 'strength'
+      const label = blockType === 'block_zero' ? entry.label : null
       await db.insert(sessions).values({
         id: sessionId,
         type: entry.type,
+        label,
         weekPlanId: weekId,
         scheduledDate: epochDay,
         timeSlot: entry.timeSlot,
@@ -2006,6 +2062,7 @@ app.post('/api/weeks/generate', async (c) => {
       createdSessions.push({
         id: sessionId,
         type: entry.type,
+        label,
         weekPlanId: weekId,
         scheduledDate: epochDay,
         timeSlot: entry.timeSlot,
@@ -2072,8 +2129,8 @@ app.post('/api/weeks/auto-generate', async (c) => {
     createdAt: nowSec,
   })
 
-  const blockWeek = ((currentWeekNumber - 1) % 6) + 1
   const isBlockZero = block.blockType === 'block_zero'
+  const blockWeek = strengthBlockWeek(block.blockType, currentWeekNumber)
   const sessionBlockType = isBlockZero ? 'block_zero' : 'fighter'
 
   const mondayEpochDay = Math.floor(startDate.getTime() / 1000 / 86400)
@@ -2109,7 +2166,8 @@ app.post('/api/weeks/auto-generate', async (c) => {
 
       const validSessions = day.sessions.filter(s => {
         if (s.type !== 'mt_class') return true
-        if (isBlockZero && blockWeek <= 2) return false
+        // Block Zero never schedules classes; the athlete adds them (R12 ramp).
+        if (isBlockZero) return false
         return mtClassDays.has(day.dayOfWeek)
       })
 
@@ -2190,13 +2248,15 @@ app.post('/api/weeks/auto-generate', async (c) => {
     const dayOfWeek = date.getUTCDay()
     const epochDay = Math.floor(date.getTime() / 1000 / 86400)
 
-    const template = getEffectiveTemplate(dayOfWeek, mtClassDays)
+    const template = getDayTemplate(block.blockType, currentWeekNumber, dayOfWeek, mtClassDays)
     for (const entry of template) {
       const sessionId = crypto.randomUUID()
       const isStrength = entry.type === 'strength'
+      const label = isBlockZero ? entry.label : null
       await db.insert(sessions).values({
         id: sessionId,
         type: entry.type,
+        label,
         weekPlanId: weekId,
         scheduledDate: epochDay,
         timeSlot: entry.timeSlot,
@@ -2207,7 +2267,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
         createdAt: nowSec,
       })
       createdSessions.push({
-        id: sessionId, type: entry.type, weekPlanId: weekId,
+        id: sessionId, type: entry.type, label, weekPlanId: weekId,
         scheduledDate: epochDay, timeSlot: entry.timeSlot,
         blockWeek: isStrength ? blockWeek : null,
         blockType: sessionBlockType,

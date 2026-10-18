@@ -1,0 +1,296 @@
+// Run: tsx src/lib/blockZero/simulation.test.ts
+//
+// A scripted athlete runs through the Block Zero rules day by day. Nothing
+// here touches the DB: it is the rules engine alone, the way the app will
+// call it. Scenario: good weeks; a 4-day bad-sleep + high-soreness stretch in
+// week 3; a missed week 4; back at 2 for 3 days in week 5; two MT classes
+// asked for in week 3 (one is sparring). Plus a clean athlete and a
+// persistently inconsistent one for the gate.
+
+import {
+  BACK_FRIENDLY_SWAPS,
+  RESTART_SESSION_SEC,
+  RESTART_WEEKLY_SEC,
+  backFriendlyVariation,
+  backTrend,
+  defaultMainLift,
+  easeSession,
+  evaluateClassRequest,
+  evaluateReadiness,
+  getBlockZeroWeekTemplate,
+  getStrengthWeekTarget,
+  keySessionCompletionRate,
+  latestReadiness,
+  longestGapInWindow,
+  nextLoad,
+  planTransition,
+  prescribeRunWalk,
+  rebalanceDayForClass,
+  weeklyLoadFlag,
+  weeklyLoadTotals,
+  type CheckIn,
+  type MainLiftSlot,
+  type PlannedSession,
+  type TransitionPlan,
+} from './index'
+import { extensionsUsed } from './weeks'
+
+function assert(cond: unknown, msg: string): void {
+  if (!cond) throw new Error(msg)
+  console.log(`ok: ${msg}`)
+}
+
+// First Monday on or after epoch day 20000.
+let START = 20000
+while (new Date(START * 86400000).getUTCDay() !== 1) START++
+const dow = (day: number) => new Date(day * 86400000).getUTCDay()
+const weekOf = (day: number) => Math.floor((day - START) / 7) + 1
+
+interface Script {
+  name: string
+  missedWeeks?: number[]
+  badStretch?: number[] // day offsets from START
+  backFlare?: number[]
+  classes?: Array<{ offset: number; type: string }>
+  skipEveryOther?: boolean
+}
+
+interface RunLog { day: number; sec: number; longest30: number; capped: boolean }
+interface LoadStep { day: number; liftId: string; rpe: number; target: [number, number]; before: number; after: number }
+interface BackPick { day: number; picked: string; original: string }
+interface ClassLog { day: number; type: string; allowed: boolean; rampWeek: number; classType: string | null }
+
+const SLOT_BY_DAY: Record<string, MainLiftSlot> = { A: 'squat', B: 'hinge', C: 'row' }
+const REGION: Record<MainLiftSlot, 'upper' | 'lower'> = { squat: 'lower', hinge: 'lower', row: 'upper' }
+
+function topSetRpe(week: number, eased: boolean, firstBackAfterGap: boolean): number {
+  if (eased) return 8
+  if (firstBackAfterGap) return 8.5
+  return ({ 1: 6.5, 2: 6, 3: 6, 4: 7, 5: 7.5, 6: 7 } as Record<number, number>)[week] ?? 6.5
+}
+
+function simulate(script: Script) {
+  const missed = new Set(script.missedWeeks ?? [])
+  const bad = new Set((script.badStretch ?? []).map(o => START + o))
+  const flare = new Set((script.backFlare ?? []).map(o => START + o))
+  const classByDay = new Map((script.classes ?? []).map(c => [START + c.offset, c.type]))
+
+  let totalWeeks = 6
+  const checkIns: CheckIn[] = []
+  const runs: RunLog[] = []
+  const loadSteps: LoadStep[] = []
+  const backPicks: BackPick[] = []
+  const classes: ClassLog[] = []
+  const easeDays: number[] = []
+  const gateSessions: Array<{ type: string; status: string; scheduledDate: number }> = []
+  const loadEntries: Array<{ epochDay: number; rpe: number; minutes: number }> = []
+  const weights = new Map<string, number>()
+  const plans: Array<{ week: number; plan: TransitionPlan }> = []
+  let firstClassDay: number | null = null
+  let classesThisWeek = 0
+  let skipToggle = false
+  let lastTrainedWeek = 0
+
+  for (let week = 1; week <= totalWeeks; week++) {
+    classesThisWeek = 0
+    const template = getBlockZeroWeekTemplate(week)
+    for (let i = 0; i < 7; i++) {
+      const day = START + (week - 1) * 7 + i
+      const isMissed = missed.has(week)
+
+      // Daily check-in (none during the missed week).
+      if (!isMissed) {
+        const off = bad.has(day)
+        checkIns.push({
+          epochDay: day,
+          sleepHours: off ? 5 : 7.5,
+          soreness: off ? 4 : 2,
+          energy: off ? 2 : 4,
+          stress: 2,
+          mood: 4,
+          backToday: flare.has(day) ? 2 : 4,
+        })
+      }
+      const readiness = latestReadiness(checkIns.filter(c => c.epochDay <= day))
+      const easeToday = !isMissed && readiness.ease && readiness.epochDay === day
+      if (easeToday) easeDays.push(day)
+      const backToday = flare.has(day) ? 2 : 4
+
+      let sessions: PlannedSession[] = template[dow(day)].map(s => ({ type: s.type, label: s.label, timeSlot: s.timeSlot, estimatedMin: s.estimatedMin }))
+
+      // Athlete asks for a class.
+      const classType = classByDay.get(day)
+      if (classType && !isMissed) {
+        const weeksSinceFirst = firstClassDay == null ? null : Math.floor((day - firstClassDay) / 7)
+        const decision = evaluateClassRequest({ classType, weeksSinceFirstClass: weeksSinceFirst, classesThisWeek })
+        classes.push({ day, type: classType, allowed: decision.allowed, rampWeek: decision.rampWeek, classType: decision.classType })
+        if (decision.allowed) {
+          if (firstClassDay == null) firstClassDay = day
+          classesThisWeek++
+          sessions = rebalanceDayForClass(sessions, { type: 'mt_class', label: 'MT Class', timeSlot: 'pm', estimatedMin: 90, classType: decision.classType ?? 'technical' }).sessions
+        }
+      }
+
+      for (const planned of sessions) {
+        const key = planned.type !== 'mobility'
+        const eased = easeToday ? easeSession(planned, { readinessEase: true, readinessReason: readiness.reason }) : { session: planned, eased: false }
+        const s = eased.session
+        let status = 'completed'
+        if (isMissed) status = 'missed'
+        else if (script.skipEveryOther && key) { skipToggle = !skipToggle; if (skipToggle) status = 'skipped' }
+        if (key) gateSessions.push({ type: planned.type, status, scheduledDate: day })
+        if (status !== 'completed') continue
+        if (key) lastTrainedWeek = Math.max(lastTrainedWeek, week)
+
+        if (s.type === 'strength') {
+          const t = getStrengthWeekTarget(week)
+          const strengthDay = planned.label.slice(-1)
+          const slot = SLOT_BY_DAY[strengthDay]
+          const original = defaultMainLift(slot, week).exerciseId
+          const pick = backFriendlyVariation(original, backToday)
+          if (backToday <= 2) backPicks.push({ day, picked: pick.exerciseId, original })
+          const liftId = pick.exerciseId
+          const before = weights.get(liftId) ?? 40
+          const target: [number, number] = eased.eased && s.rpe ? s.rpe : t.rpe
+          const rpe = topSetRpe(week, eased.eased, week > 1 && lastTrainedWeek < week && missed.has(week - 1))
+          const next = nextLoad({ weightKg: before, reps: t.reps, rpe }, { reps: t.reps, rpe: target }, REGION[slot])
+          loadSteps.push({ day, liftId, rpe, target, before, after: next.weightKg })
+          weights.set(liftId, next.weightKg)
+          loadEntries.push({ epochDay: day, rpe: 7, minutes: s.estimatedMin })
+        } else if (s.type === 'foundation_run') {
+          const monday = START + (week - 1) * 7
+          const inWindow = runs.filter(r => r.day >= day - 30 && r.day < day)
+          const longest30 = inWindow.reduce((m, r) => Math.max(m, r.sec), 0)
+          const lastWeek = runs.filter(r => r.day >= monday - 7 && r.day < monday).reduce((n, r) => n + r.sec, 0)
+          const soFar = runs.filter(r => r.day >= monday && r.day < day).reduce((n, r) => n + r.sec, 0)
+          const left = [0, 1, 2, 3, 4, 5, 6].map(k => monday + k).filter(d => d >= day && template[dow(d)].some(x => x.type === 'foundation_run')).length
+          const p = prescribeRunWalk({ week, longestLast30Sec: longest30 || null, weekly: { lastWeekRunSec: lastWeek, thisWeekSoFarSec: soFar, sessionsLeftThisWeek: Math.max(1, left) } })
+          if (p.totalSec > 0) runs.push({ day, sec: p.totalSec, longest30, capped: p.capped })
+          loadEntries.push({ epochDay: day, rpe: 4, minutes: Math.round(p.totalSec / 60) })
+        } else if (s.type === 'mt_class') {
+          loadEntries.push({ epochDay: day, rpe: 6, minutes: s.estimatedMin })
+        } else if (key) {
+          loadEntries.push({ epochDay: day, rpe: 3, minutes: s.estimatedMin })
+        }
+      }
+    }
+
+    // End gate at the block's last week.
+    if (week === totalWeeks) {
+      const today = START + week * 7 - 1
+      const completedDays = gateSessions.filter(s => s.status === 'completed').map(s => s.scheduledDate)
+      const retestDone = gateSessions.some(s => s.type === 'strength' && s.status === 'completed' && weekOf(s.scheduledDate) === 6)
+      const plan = planTransition({
+        gate: {
+          completionRate: keySessionCompletionRate(gateSessions, today + 1),
+          longestRecentGapDays: longestGapInWindow(completedDays, today, START),
+          backTrend: backTrend(checkIns, START, today),
+          retestDone,
+          extensionsUsed: extensionsUsed(totalWeeks),
+        },
+        aiDecision: null,
+        aiTargets: [],
+        retestE1rms: new Map(),
+        totalWeeks,
+        atEndBoundary: true,
+      })
+      plans.push({ week, plan })
+      totalWeeks = plan.newTotalWeeks
+    }
+  }
+
+  return { checkIns, runs, loadSteps, backPicks, classes, easeDays, plans, totalWeeks, loadEntries }
+}
+
+// ─── Scripted athlete ───────────────────────────────────────────
+
+const W3_TUE = 15
+const scripted = simulate({
+  name: 'scripted',
+  badStretch: [W3_TUE, W3_TUE + 1, W3_TUE + 2, W3_TUE + 3], // week 3 Tue-Fri
+  missedWeeks: [4],
+  backFlare: [30, 31, 32], // week 5 Wed-Fri (Strength B and C fall inside)
+  classes: [{ offset: W3_TUE, type: 'technique' }, { offset: W3_TUE + 2, type: 'sparring' }, { offset: 29, type: 'clinch' }, { offset: 31, type: 'sparring' }, { offset: 36, type: 'sparring' }],
+})
+
+// Runs: R7 and R8 never broken.
+assert(scripted.runs.length > 10, `${scripted.runs.length} runs logged`)
+for (const r of scripted.runs) {
+  const limit = r.longest30 > 0 ? Math.floor(r.longest30 * 1.1) : RESTART_SESSION_SEC
+  assert(r.sec <= limit, `run day ${r.day - START}: ${r.sec}s within ${r.longest30 > 0 ? '110% of 30-day longest' : 'the week-1 restart'} (${limit}s)`)
+}
+const maxWeek = Math.max(...scripted.runs.map(r => weekOf(r.day)))
+const weeklyRun = (w: number) => scripted.runs.filter(r => weekOf(r.day) === w).reduce((n, r) => n + r.sec, 0)
+for (let w = 2; w <= maxWeek; w++) {
+  const prev = weeklyRun(w - 1)
+  const cur = weeklyRun(w)
+  const limit = prev > 0 ? prev * 1.3 : RESTART_WEEKLY_SEC
+  assert(cur <= limit + 1, `week ${w} run time ${cur}s within ${prev > 0 ? '+30% of last week' : 'week-1 restart volume'} (${Math.round(limit)}s)`)
+}
+assert(scripted.runs.some(r => r.capped), 'the guards actually capped something (return after the missed week)')
+
+// Readiness: ease fires on the bad stretch and nowhere else.
+const stretch = [W3_TUE, W3_TUE + 1, W3_TUE + 2, W3_TUE + 3].map(o => START + o)
+assert(scripted.easeDays.length > 0, `ease fired on ${scripted.easeDays.length} days`)
+assert(scripted.easeDays.every(d => stretch.includes(d)), 'every ease day falls inside the bad stretch')
+assert(stretch.slice(1).every(d => scripted.easeDays.includes(d)), 'ease fires from day 2 of the stretch to its end')
+assert(!scripted.easeDays.includes(stretch[0]), 'day 1 alone does not ease (needs 2 days)')
+const flareRead = evaluateReadiness(scripted.checkIns).filter(d => d.epochDay >= START + 30 && d.epochDay <= START + 32)
+assert(flareRead.every(d => !d.flagged), 'the back flare alone (one item) does not trigger ease')
+
+// Back-friendly variations when back <= 2.
+assert(scripted.backPicks.length >= 2, `${scripted.backPicks.length} strength sessions on back-2 days`)
+for (const p of scripted.backPicks) {
+  assert(!(p.picked in BACK_FRIENDLY_SWAPS), `day ${p.day - START}: ${p.original} became ${p.picked}, not a spine-loading lift`)
+}
+
+// Load never increases when the top set was at or above target RPE.
+assert(scripted.loadSteps.some(s => s.after > s.before), 'load went up at least once (easy weeks)')
+assert(scripted.loadSteps.some(s => s.after < s.before), 'load came down at least once (bad days, return from the gap)')
+for (const s of scripted.loadSteps) {
+  if (s.rpe >= s.target[0]) assert(s.after <= s.before, `day ${s.day - START} ${s.liftId}: RPE ${s.rpe} vs ${s.target.join('-')}, no increase`)
+}
+
+// MT ramp.
+const allowed = scripted.classes.filter(c => c.allowed)
+assert(allowed.length >= 2, `${allowed.length} classes allowed`)
+for (const c of scripted.classes.filter(x => x.rampWeek <= 2 && x.allowed)) {
+  assert(c.classType === 'technical' || c.classType === 'padwork', `ramp week ${c.rampWeek} class is ${c.classType}: technique/pads only`)
+}
+assert(scripted.classes.filter(c => c.type === 'sparring').length === 3 && scripted.classes.filter(c => c.type === 'sparring').every(c => !c.allowed), 'sparring refused every time (3 attempts)')
+assert(scripted.classes.some(c => c.type === 'clinch' && c.rampWeek === 3 && c.allowed), 'light clinch allowed from ramp week 3')
+
+// Load: return from the missed week trips the soft flag.
+const weeklyLoad = weeklyLoadTotals(scripted.loadEntries, START, 8)
+assert(weeklyLoad[3] === 0 && weeklyLoadFlag(weeklyLoad[3], weeklyLoad[4]).flagged, 'week 5 load after a zero week 4: soft flag')
+
+// Gate: the missed week extends, then the block moves on.
+assert(scripted.plans[0].week === 6 && scripted.plans[0].plan.decision === 'extend', 'missed-week athlete: gate extends at week 6')
+assert(scripted.plans[0].plan.reasons.some(r => r.includes('gap')), 'extension reason names the gap')
+assert(scripted.plans[scripted.plans.length - 1].plan.decision === 'proceed', 'after the extension week the gate proceeds')
+assert(scripted.plans[scripted.plans.length - 1].plan.nextBlock?.blockType === 'fighter', 'proceed hands over to a Fighter block')
+assert(scripted.totalWeeks - 6 <= 2, `extensions used: ${scripted.totalWeeks - 6} (max 2)`)
+// Extension week strength = week-5 levels, not week 1.
+assert(getStrengthWeekTarget(7).loadPct === getStrengthWeekTarget(5).loadPct, 'extension week loads at week-5 levels')
+
+// ─── Clean athlete ──────────────────────────────────────────────
+
+const clean = simulate({ name: 'clean' })
+assert(clean.plans.length === 1 && clean.plans[0].plan.decision === 'proceed' && clean.totalWeeks === 6, 'clean athlete: proceed at week 6, no extension')
+assert(clean.easeDays.length === 0, 'clean athlete: no ease days')
+for (let w = 2; w <= 6; w++) {
+  const run = (wk: number) => clean.runs.filter(r => weekOf(r.day) === wk).reduce((n, r) => n + r.sec, 0)
+  assert(run(w) <= run(w - 1) * 1.3, `clean week ${w}: run time within +30%`)
+}
+assert(clean.runs.every(r => r.longest30 === 0 || r.sec <= r.longest30 * 1.1), 'clean athlete: no run over 110%')
+
+// ─── Inconsistent athlete: extensions cap at 2 ─────────────────
+
+const flaky = simulate({ name: 'flaky', skipEveryOther: true })
+assert(flaky.plans[0].plan.decision === 'extend', 'half the sessions skipped: extend')
+assert(flaky.totalWeeks === 8, 'extended to 8 weeks at most')
+const last = flaky.plans[flaky.plans.length - 1].plan
+assert(last.decision === 'adjust' && last.gate.forced && last.nextBlock != null, 'at 8 weeks: forced move-on with conservative loads')
+assert(flaky.plans.every(p => p.plan.newTotalWeeks <= 8), 'no plan ever goes past 8 weeks')
+
+console.log('\nBlock Zero simulation passed')

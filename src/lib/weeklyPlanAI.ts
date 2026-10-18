@@ -31,10 +31,14 @@ export interface WeekPlanParams {
   prevWeekEnd: number
 }
 
+// Mirrors src/lib/blockZero/weekPlan.ts. blockWeek here is the training week
+// (extension weeks arrive as 5). MT classes are never scheduled in Block Zero;
+// the route drops any the model returns.
 function blockZeroPhaseNote(blockWeek: number): string {
-  if (blockWeek <= 2) return 'Phase 1 (weeks 1-2): no MT class. Foundation run, strength, bag work only. Daily mobility every AM.'
-  if (blockWeek <= 4) return 'Phase 2 (weeks 3-4): MT class returns Mon/Wed/Fri PM. Strength climbing to 50-55%. Daily mobility every AM.'
-  return 'Phase 3 (weeks 5-6): full schedule. Weights at 55-60%. Transition readiness building. Daily mobility every AM.'
+  const shape = 'Shape: Strength A/B/C Mon/Wed/Fri, run-walk (foundation_run) Tue/Thu/Sat, daily back-care mobility, Sunday no training. Never schedule mt_class.'
+  if (blockWeek <= 1) return `Week 1 test week: strength works up to a set of 8 at RPE 6-7, run-walk at talk-test pace, a 20-min rope piece Monday. ${shape}`
+  if (blockWeek >= 6) return `Week 6 consolidate and retest: volume down 30-50%, intensity held, retest sets of 3-5. ${shape}`
+  return `Build week ${blockWeek}: strength RPE ${blockWeek <= 2 ? '6-7' : '7-8'}, never to failure. Run-walk grows under the 110% single-run and 30% weekly caps. ${shape}`
 }
 
 interface MtLogRecord {

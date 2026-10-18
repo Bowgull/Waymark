@@ -51,7 +51,7 @@ export function serializeAthleteContext(ctx: AthleteContext): string {
       const bits: string[] = [dow(w.epochDay)]
       if (w.sleepHours != null) bits.push(`sleep ${w.sleepHours}h`)
       if (w.soreness != null) bits.push(`soreness ${w.soreness}/5`)
-      if (w.alcoholScale != null) bits.push(`alcohol ${w.alcoholScale}/5`)
+      if (w.alcoholScale != null) bits.push(`alcohol ${w.alcoholScale}/10`)
       lines.push(`  ${bits.join(', ')}`)
     }
   }

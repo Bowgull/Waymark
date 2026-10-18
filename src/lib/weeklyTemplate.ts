@@ -1,3 +1,6 @@
+import { blockZeroTrainingWeek } from './blockZero/weeks'
+import { getBlockZeroWeekTemplate } from './blockZero/weekPlan'
+
 export interface TemplateSession {
   timeSlot: 'am' | 'pm'
   type: string
@@ -63,64 +66,32 @@ export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
 // ─── Block Zero template ───────────────────────────────────────
 
 /**
- * Returns the weekly template for a given Block Zero week (1-6).
- *
- * Daily Mobility runs every day in every phase. Mobility is the foundational
- * habit Block Zero is designed to build.
- *
- * Phase 1 (weeks 1-2): No MT class. Foundation + Strength + Bag Work only.
- *   Connective tissue adaptation before adding class volume.
- * Phase 2 (weeks 3-4): MT class returns (Mon/Wed/Fri PM). Easy run added Saturday.
- * Phase 3 (weeks 5-6): Full template.
+ * Weekly template for a Block Zero week. The shape lives in the rules module
+ * (src/lib/blockZero/weekPlan.ts): 3 strength days, 3 run-walks, daily back
+ * care, no MT classes. Weeks past 6 are extensions and repeat week 5.
  */
 export function getBlockZeroTemplate(blockZeroWeek: number): Record<number, TemplateSession[]> {
-  if (blockZeroWeek <= 2) {
-    return {
-      0: [DAILY_MOBILITY],
-      1: [DAILY_MOBILITY, { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 }],
-      2: [DAILY_MOBILITY, { timeSlot: 'am', type: 'strength', label: 'Strength: Push', estimatedMin: 60 }],
-      3: [DAILY_MOBILITY, { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 }],
-      4: [DAILY_MOBILITY, { timeSlot: 'am', type: 'strength', label: 'Strength: Pull', estimatedMin: 60 }],
-      5: [DAILY_MOBILITY, { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 }],
-      6: [
-        DAILY_MOBILITY,
-        { timeSlot: 'am', type: 'bag_work', label: 'Bag Work', estimatedMin: 25 },
-        { timeSlot: 'pm', type: 'active_recovery', label: 'Reset', estimatedMin: 30 },
-      ],
-    }
-  }
+  return getBlockZeroWeekTemplate(blockZeroWeek)
+}
 
-  if (blockZeroWeek <= 4) {
-    return {
-      0: [DAILY_MOBILITY],
-      1: [
-        DAILY_MOBILITY,
-        { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
-        { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
-      ],
-      2: [DAILY_MOBILITY, { timeSlot: 'am', type: 'strength', label: 'Strength: Push', estimatedMin: 65 }],
-      3: [
-        DAILY_MOBILITY,
-        { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
-        { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
-      ],
-      4: [DAILY_MOBILITY, { timeSlot: 'am', type: 'strength', label: 'Strength: Pull', estimatedMin: 65 }],
-      5: [
-        DAILY_MOBILITY,
-        { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
-        { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
-      ],
-      6: [
-        DAILY_MOBILITY,
-        { timeSlot: 'am', type: 'bag_work', label: 'Bag Work', estimatedMin: 30 },
-        { timeSlot: 'am', type: 'running', label: 'Easy Run', estimatedMin: 20, runCategory: 'zone2' },
-        { timeSlot: 'pm', type: 'active_recovery', label: 'Reset', estimatedMin: 30 },
-      ],
-    }
-  }
+/**
+ * The strength block week stamped on sessions. Fighter waves cycle every 6
+ * weeks. Block Zero never wraps: extension weeks hold week-5 levels.
+ */
+export function strengthBlockWeek(blockType: string, weekNumber: number): number {
+  if (blockType === 'block_zero') return blockZeroTrainingWeek(weekNumber)
+  return ((weekNumber - 1) % 6) + 1
+}
 
-  // Weeks 5-6: full Fighter template
-  return WEEKLY_TEMPLATE
+/**
+ * One day's sessions for a block. Block Zero uses its week template and never
+ * schedules MT; Fighter uses the weekly template with MT only on class days.
+ * Shared by generate-today and the auto-generate fallback.
+ */
+export function getDayTemplate(blockType: string, weekNumber: number, dayOfWeek: number, mtClassDays: Set<number>): TemplateSession[] {
+  if (blockType === 'block_zero') return getBlockZeroTemplate(weekNumber)[dayOfWeek] ?? []
+  const base = WEEKLY_TEMPLATE[dayOfWeek] ?? []
+  return base.filter(entry => entry.type !== 'mt_class' || mtClassDays.has(dayOfWeek))
 }
 
 /** Get the human-readable label for a session type, optionally using day of week for disambiguation. */

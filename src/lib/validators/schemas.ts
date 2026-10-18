@@ -21,7 +21,8 @@ export const dailyLogSchema = z.object({
   sleepHours: z.number().min(0).max(24).optional().nullable(),
   weedGrams: z.number().min(0).max(100).optional().nullable(),
   alcoholScale: z.number().int().min(0).max(10).optional().nullable(),
-  soreness: z.number().int().min(0).max(10).optional().nullable(),
+  // The Today gauge sends 1-5 (Fresh .. Cooked); prompts read it as /5.
+  soreness: z.number().int().min(1).max(5).optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
 })
 

@@ -7,6 +7,7 @@ import { GoldDivider } from '@/components/ui/GoldDivider'
 import { PageBackground } from '@/components/backgrounds/PageBackground'
 import { ProgramSkeleton } from '@/components/ui/Skeleton'
 import { getWeekLabel } from '@/lib/strengthTemplates'
+import { strengthBlockWeek } from '@/lib/weeklyTemplate'
 import logoPng from '@/assets/brand/Logo.png'
 
 import { WeekView } from './WeekView'
@@ -110,10 +111,6 @@ export function ProgramPage() {
     const weeksSinceStart = Math.floor((Date.now() / 1000 - b.startedAt) / (7 * 86400))
     return Math.min(Math.max(weeksSinceStart + 1, 1), b.totalWeeks)
   }, [])
-
-  function getBlockWeek(wn: number): number {
-    return ((wn - 1) % 6) + 1
-  }
 
   const loadWeek = useCallback(async (b: Block, wn: number) => {
     let wd = await apiFetch<WeekData | null>(`/api/weeks/current?blockId=${b.id}&weekNumber=${wn}`)
@@ -478,7 +475,8 @@ export function ProgramPage() {
   }
 
   const currentWeek = getCurrentWeekNumber(block)
-  const blockWeek = getBlockWeek(weekNumber)
+  // Block Zero extension weeks hold week-5 levels; Fighter cycles every 6 weeks.
+  const blockWeek = strengthBlockWeek(block.blockType, weekNumber)
   const blockType = block.blockType === 'block_zero' ? 'block_zero' : 'fighter'
   const weekInfo = getWeekLabel(blockWeek, blockType)
   const isCurrentWeek = weekNumber === currentWeek
@@ -521,7 +519,7 @@ export function ProgramPage() {
             </h2>
             <p className="mt-0.5 text-sm text-gold">{weekInfo}</p>
             <p className="text-xs text-muted-foreground">
-              {isBlockZero ? `Block Zero week ${blockWeek} of 6` : `Block week ${blockWeek} of 6`}
+              {isBlockZero ? `Block Zero week ${weekNumber} of ${block.totalWeeks}` : `Block week ${blockWeek} of 6`}
             </p>
           </div>
           <button

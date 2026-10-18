@@ -61,7 +61,7 @@ function buildPrompt(
     if (wellness.sleepHours != null) w.push(`sleep ${wellness.sleepHours}h`)
     if (wellness.soreness != null) w.push(`soreness ${wellness.soreness}/5`)
     if (wellness.weedGrams != null) w.push(`weed ${wellness.weedGrams}g`)
-    if (wellness.alcoholScale != null) w.push(`alcohol ${wellness.alcoholScale}/5`)
+    if (wellness.alcoholScale != null) w.push(`alcohol ${wellness.alcoholScale}/10`)
     if (w.length > 0) lines.push(`Today wellness: ${w.join(', ')}.`)
   }
 
