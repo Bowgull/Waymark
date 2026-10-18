@@ -95,6 +95,8 @@ interface BagWorkRoundViewProps {
   resume?: Extract<EngineState, { kind: 'rounds' }> | null
   /** Called on every change so the session can be resumed exactly here. */
   onPersist?: (state: Extract<EngineState, { kind: 'rounds' }>) => void
+  /** A round ended: its index (0-based) and the seconds actually worked (the done summary's per-round lines). */
+  onRoundDone?: (roundIndex: number, actualSec: number) => void
 }
 
 export function BagWorkRoundView({
@@ -107,6 +109,7 @@ export function BagWorkRoundView({
   onExit,
   resume,
   onPersist,
+  onRoundDone,
 }: BagWorkRoundViewProps) {
   const roundTimer = useRestTimer()
   const restTimer = useRestTimer()
@@ -175,6 +178,7 @@ export function BagWorkRoundView({
   const handleRoundEnd = useCallback((natural = false) => {
     const endedAt = natural && roundTimer.endsAtMs > 0 ? roundTimer.endsAtMs : Date.now()
     if (!natural || !isStaleCue(endedAt, Date.now())) soundRoundEnd()
+    onRoundDone?.(roundIndex, natural ? round.durationSec : Math.max(0, Math.min(round.durationSec, round.durationSec - Math.max(0, roundTimer.secondsRemaining))))
     roundTimer.stop()
     void cancelRoundActiveCues()
     if (isLastRound) {
@@ -186,7 +190,7 @@ export function BagWorkRoundView({
       if (!natural) void scheduleRestCuesUntil(endedAt + round.restSec * 1000)
       onPhaseChange('rest')
     }
-  }, [isLastRound, onComplete, onPhaseChange, restTimer, round.restSec, roundTimer])
+  }, [isLastRound, onComplete, onPhaseChange, onRoundDone, restTimer, round.durationSec, round.restSec, roundIndex, roundTimer])
 
   const handleRestDone = useCallback((natural = false) => {
     if (natural && !isStaleCue(restTimer.endsAtMs, Date.now())) soundRoundStart()

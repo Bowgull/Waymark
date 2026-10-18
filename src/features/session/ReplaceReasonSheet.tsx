@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { REPLACE_REASONS, replaceCommit } from '@/components/ui/departures'
-import { CentredCard, FlapButton, FlapLabel } from '@/design'
+import { CentredCard, FlapButton } from '@/design'
 import '@/design/pickers.css'
 import { mediumHaptic, selectHaptic } from '@/lib/haptics'
 
@@ -12,7 +12,7 @@ interface ReplaceReasonSheetProps {
 }
 
 /**
- * Why swap (page 20 r2): a centred flap board with the six real reasons.
+ * Why swap (page 20 r2): a centred board with the six real reasons as word tiles.
  * SEE OPTIONS wakes up once one is picked.
  */
 export function ReplaceReasonSheet({ onCommit, onClose }: ReplaceReasonSheetProps) {
@@ -42,11 +42,10 @@ export function ReplaceReasonSheet({ onCommit, onClose }: ReplaceReasonSheetProp
               role="radio"
               aria-checked={on}
               aria-label={r.label}
-              className={`wm-choice${on ? ' is-on' : ''}`}
+              className={`wm-opt${on ? ' is-on' : ''}`}
               onClick={() => handleSelect(r.value)}
             >
-              {/* one size for all six, so the board reads evenly (the longest needs xs) */}
-              <FlapLabel text={r.label} size="xs" tone={on ? 'gold' : 'ink'} />
+              {r.label}
             </button>
           )
         })}

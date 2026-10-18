@@ -58,7 +58,9 @@ function isoOfEpochDay(d: number): string {
 function planDetail(s: DayBoardSession, weekNumber: number): string | null {
   const blockType = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
   if (s.type === 'strength') return getWeekLabel(s.blockWeek ?? 1, blockType).replace(/^Block Zero · /, '')
-  return `~${estimatedMinutes({ type: s.type, notes: s.notes ?? null, estimatedMin: null }, blockType, weekNumber)} min`
+  // page 33: a class reads by its type alone ("technical"); the rest by their planned minutes ("12 min")
+  if (s.type === 'mt_class') return null
+  return `${estimatedMinutes({ type: s.type, notes: s.notes ?? null, estimatedMin: null }, blockType, weekNumber)} min`
 }
 
 /** The row answers on the face (the glow is a box-shadow). */

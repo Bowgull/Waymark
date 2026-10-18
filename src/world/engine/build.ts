@@ -31,6 +31,8 @@ export interface BuiltScene {
   group: THREE.Group
   /** Surface materials (their glyph scale tracks the camera zoom). */
   surfaces: THREE.ShaderMaterial[]
+  /** Glyph-card materials (grass, moss, mist, smoke...): their size tracks the camera zoom too (uK). */
+  cards: THREE.ShaderMaterial[]
   /** Per-frame movers (the lily, the rise rings, the reflection wobble). */
   anims: Array<(t: number) => void>
   /** Materials that breathe (lit windows, the door light). */
@@ -71,7 +73,9 @@ export function buildScene(kind: SceneKind, env: BuildEnv, weeksIn?: WeekPost[])
   const add = (...o: THREE.Object3D[]) => { group.add(...o) }
   const surf = (o: Omit<SurfaceOpts, 'scale'>) => { const m = surfaceMaterial(shared, { scale: gw, ...o }); surfaces.push(m); return m }
   const m4 = new THREE.Matrix4()
-  const out: BuiltScene = { kind, group, surfaces, anims, breath: [], smoke: null, spill: null, lightFlies: null, cyanMotes: null, beams: null, pondWater: null, shrooms: null, pondFlies: null, flies: null, grass: [], mirror: null, dispose: () => {} }
+  const cards: THREE.ShaderMaterial[] = []
+  const card = (o: CardOpts) => { const m = cardMaterial(shared, o); cards.push(m); return m }
+  const out: BuiltScene = { kind, group, surfaces, cards, anims, breath: [], smoke: null, spill: null, lightFlies: null, cyanMotes: null, beams: null, pondWater: null, shrooms: null, pondFlies: null, flies: null, grass: [], mirror: null, dispose: () => {} }
 
   const POND_ON = opts.pond
   const pathEnd = opts.door ? -1.7 : -16
@@ -81,7 +85,7 @@ export function buildScene(kind: SceneKind, env: BuildEnv, weeksIn?: WeekPost[])
   // card helper: a list of glyph cards → one instanced mesh, with a bounding sphere so it culls off-screen
   function addCards(items: CardItem[], o: Partial<CardOpts>): THREE.InstancedMesh {
     const g = new THREE.PlaneGeometry(1, 1), N = Math.max(1, items.length)
-    const mesh = new THREE.InstancedMesh(g, cardMaterial(shared, { w: gw * 0.62, h: gw, ...o }), N)
+    const mesh = new THREE.InstancedMesh(g, card({ w: gw * 0.62, h: gw, ...o }), N)
     const aG = new Float32Array(N), aP = new Float32Array(N), aT = new Float32Array(N * 3), aO = new Float32Array(N * 2)
     const box = new THREE.Box3()
     items.forEach((it, i) => { m4.makeTranslation(it.x, it.y ?? 0, it.z); mesh.setMatrixAt(i, m4); aG[i] = gi(it.c)[0]; aP[i] = it.p ?? i * 1.7; aT.set(it.t, i * 3); aO.set(it.o ?? [0, 0], i * 2); box.expandByPoint(V(it.x, it.y ?? 0, it.z)) })
@@ -389,7 +393,7 @@ export function buildScene(kind: SceneKind, env: BuildEnv, weeksIn?: WeekPost[])
     }
     for (const h of halves) {
       const cnt = h.mats.length; if (!cnt) continue
-      const geo = new THREE.PlaneGeometry(1, 1), mesh = new THREE.InstancedMesh(geo, cardMaterial(shared, { w: gw * 0.62, h: gw, sway: 0.5 }), cnt)
+      const geo = new THREE.PlaneGeometry(1, 1), mesh = new THREE.InstancedMesh(geo, card({ w: gw * 0.62, h: gw, sway: 0.5 }), cnt)
       const box = new THREE.Box3()
       h.mats.forEach((m, i) => { mesh.setMatrixAt(i, m); box.expandByPoint(new THREE.Vector3().setFromMatrixPosition(m)) })
       geo.setAttribute('aGlyph', new THREE.InstancedBufferAttribute(new Float32Array(h.g), 1)); geo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(new Float32Array(h.p), 1)); geo.setAttribute('aTint', new THREE.InstancedBufferAttribute(new Float32Array(h.t), 3)); geo.setAttribute('aOff', new THREE.InstancedBufferAttribute(new Float32Array(cnt * 2), 2))

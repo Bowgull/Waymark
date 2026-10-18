@@ -55,10 +55,10 @@ are rendered the same way from `icon3d.js` (`iconImage(model, { col, set:
 | File | What it is |
 |---|---|
 | `engine/` | The page-14 glyph engine ported to TypeScript on three.js 0.160 (`materials.ts` shaders, `masks.ts` door / rune masks, `build.ts` one place per approved mockup scene, `world.ts` the renderer / camera / frame budget, `crest.ts` + `crestStage.ts` the splash suit-up and the loading crest). Loaded only through `loadEngine.ts` (a dynamic import), so three.js is its own chunk. |
-| `places.ts` | Pure: tab to place, each place's camera (from the mockup frustums), the glide, which scenes are in view. Scenes are built side by side along x: home −14, clearing 0 (the arch down its path), road 14, pond 28. |
+| `places.ts` | Pure: tab to place, each place's camera (from the mockup frustums), the glide, which scenes are in view. Scenes are built side by side along x: home −14, clearing 0 (the arch down its path), road 14, pond 28. Today is page 14's forest enlarged exactly as Today's mockups draw it (their `.stillbg`, `TODAY_ZOOM`); Library is page 14b's close-up (frustum 4.2). Each view has a glyph size: surfaces and glyph cards rescale with the zoom (`uScale`, `uK`), so the close-up never prints chunky glyphs. |
 | `timeOfDay.ts`, `useWorldTime.ts` | Clock → misty / sun / night, and the Settings override (kept on the phone). |
 | `worldStore.ts` | What screens tell the world: Today's rest-day home, the lantern (readiness), Program's weeks, offline (rain), the session entrance's blur. |
 | `WorldLayer.tsx` | The fixed canvas behind the shell. Pauses when hidden / backgrounded / on a screen with no world; Reduce Motion = one still frame per place with a quick dip between. |
-| `Splash.tsx`, `CrestLoading.tsx` | Page 38 A splash (about 9.7 s; `?nosplash` skips it for screenshots) and loading. |
+| `Splash.tsx`, `CrestLoading.tsx` | Page 38 A splash on the mockup's own timeline (unlock 0.8 s, layers home from 2.4 s, eye 6.0 s, WAYMARK 6.8 s, Today fades up 9.0–9.7 s; no skip; `?nosplash` skips it for screenshots) and loading A (full screen on the dark, "Reading your profile."). |
 
 Frame budget: 60 fps target; the engine steps down (DPR 2 → 1.5 → 30 fps → fewer grass glyphs) when frames run long and back up after 12 calm seconds. `window.__waymarkWorld.stats()` reports fps, CPU work per frame, p95 frame time, quality level and draw calls.

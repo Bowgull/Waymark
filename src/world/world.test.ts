@@ -1,7 +1,7 @@
 // The world's pure parts: tabs to places, the camera's views and glide, time of day, the store.
 import assert from 'node:assert/strict'
 
-import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, frustumFor, glideEase, mixView, placeForPath, sceneGlyphWorld, sceneLamp, sceneOf, scenesInView } from './places'
+import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, TODAY_ZOOM, frustumFor, glideEase, mixView, placeForPath, sceneGlyphWorld, sceneLamp, sceneOf, scenesInView, viewGlyphWorld } from './places'
 import { modeForClock, msUntilNextChange, parseOverride, resolveMode, TIME_OVERRIDES } from './timeOfDay'
 import { getWorldState, sameWeeks, setWorldBare, setWorldLantern, setWorldPlace, setWorldWeeks, subscribeWorld, weeksOrDefault } from './worldStore'
 
@@ -21,13 +21,16 @@ test('tabs map to places; screens with no world map to none', () => {
 })
 
 test('each place keeps its mockup framing and glyph size', () => {
-  assert.equal(PLACE_VIEWS.clearing.pxPerUnit, 844 / 11)
+  // Today: page 14's world enlarged as Today's mockups show it (the .stillbg: 150% wide, 42% down)
+  assert.ok(Math.abs(TODAY_ZOOM - 1.27174) < 1e-4)
+  assert.ok(Math.abs(PLACE_VIEWS.clearing.pxPerUnit - (844 / 11) * TODAY_ZOOM) < 1e-9 && Math.abs(PLACE_VIEWS.clearing.glyph - 9 * TODAY_ZOOM) < 1e-9)
+  assert.ok(Math.abs(PLACE_VIEWS.clearing.anchor * 844 - 410.43) < 0.01, 'the look point 410 px down, as in the still')
   assert.equal(PLACE_VIEWS.road.pxPerUnit, 50)
   assert.equal(PLACE_VIEWS.home.pxPerUnit, 844 / 7.5)
   assert.ok(Math.abs(sceneGlyphWorld('clearing') - 11 / 844 * 9) < 1e-9, 'page 14: frustum 11 on 844 px, 9 px glyphs')
-  // Program's road band: the look point sits 200 px down an 844 px screen, 8 units in 400 px
+  // Program's road band: the 400 px render drawn into the 46% band (cover), so its look point sits 194 px down
   const f = frustumFor(PLACE_VIEWS.road, 390, 844)
-  assert.ok(Math.abs(f.top - 4) < 1e-9)
+  assert.ok(Math.abs(f.top - 194 / 50) < 1e-9)
   assert.ok(Math.abs(f.top - f.bottom - 844 / 50) < 1e-9)
   assert.ok(Math.abs(f.right - f.left - 390 / 50) < 1e-9)
   // the scenes sit apart along x, one world
@@ -43,12 +46,19 @@ test('the glide eases in and out, zoom in log space, ends exactly on the target'
   assert.ok(glideEase(0.1) < 0.1 && glideEase(0.9) > 0.9)
   assert.equal(GLIDE_MS, 1100)
   const a = PLACE_VIEWS.clearing, b = PLACE_VIEWS.home
-  assert.deepEqual(mixView(a, b, 1), { ...b, pxPerUnit: mixView(a, b, 1).pxPerUnit })
+  assert.deepEqual(mixView(a, b, 1), { ...b, pxPerUnit: mixView(a, b, 1).pxPerUnit, glyph: mixView(a, b, 1).glyph })
+  assert.ok(Math.abs(mixView(a, b, 1).glyph - b.glyph) < 1e-9)
   assert.ok(Math.abs(mixView(a, b, 1).pxPerUnit - b.pxPerUnit) < 1e-9)
   const mid = mixView(a, b, 0.5)
   assert.ok(Math.abs(mid.pxPerUnit - Math.sqrt(a.pxPerUnit * b.pxPerUnit)) < 1e-9)
   assert.equal(mid.x, -7)
-  assert.equal(mixView(PLACE_VIEWS.clearing, PLACE_VIEWS.arch, 1).near, 20, 'the arch view clips the near oaks')
+  // page 14b exactly: frustum 4.2 on the phone, the look point centred, nothing clipped, a slow sway
+  const arch = PLACE_VIEWS.arch
+  assert.ok(Math.abs(arch.pxPerUnit - 844 / 4.2) < 1e-9 && arch.anchor === 0.5 && arch.near === 0.1 && arch.orbit === 0.04, "the arch view is page 14b's close-up")
+  assert.ok(Math.abs(arch.x - (0.25 + Math.sin(-7.4 * 0.42) * 0.75)) < 1e-9 && arch.lookY === 1.4 && arch.lookZ === -7.4 && arch.camY === 3.2, 'looking at the arch down the path')
+  // glyphs keep their view's size at any zoom: a card built for the clearing scales by the glyph-world ratio (world.ts uK)
+  assert.ok(Math.abs(viewGlyphWorld(arch) / sceneGlyphWorld('clearing') - 4.2 / 11) < 1e-9, "the clearing's glyph cards shrink to 4.2/11 at the arch (9 px there)")
+  assert.ok(Math.abs(viewGlyphWorld(PLACE_VIEWS.clearing) - sceneGlyphWorld('clearing')) < 1e-12, 'at its own view a scene prints at its built size')
 })
 
 test('only scenes near the camera are drawn', () => {

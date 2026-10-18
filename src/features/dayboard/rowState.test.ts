@@ -9,7 +9,13 @@ import {
   doneHeadline,
   missedAskChips,
   minutesLine,
+  plannedRowMinutes,
+  roundDiffLines,
   rowDetail,
+  shortLift,
+  strengthWeekLine,
+  topLiftsLine,
+  zone2PlanLine,
   runDiffLines,
   sessionDisplayName,
   strengthDiffLines,
@@ -46,7 +52,8 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   assert.equal(done.status, 'done')
   assert.equal(done.swipeable, false, 'a done row never swipes')
   assert.equal(done.slot, 'pm')
-  assert.equal(done.detail, '52 min · RPE 7')
+  assert.equal(done.detail, '52 min', 'no plan line: the minutes it took')
+  assert.equal(dayRowState(base({ status: 'completed', durationSec: 52 * 60, rpe: 7 }), { planDetail: '2×8 RPE 6-7' }).detail, '2×8 RPE 6-7', 'page 33: a done row keeps its plan line')
 
   const skipped = dayRowState(base({ status: 'skipped', skipReason: 'too_sore' }))
   assert.equal(skipped.variant, 'skipped')
@@ -67,7 +74,7 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   assert.equal(sessionDisplayName({ type: 'running', notes: 'zone2' }), 'Zone 2')
   assert.equal(sessionDisplayName({ type: 'running', notes: 'progression', label: null }), 'Run')
   assert.equal(sessionDisplayName({ type: 'strength', label: null }), 'Strength')
-  assert.equal(rowDetail({ id: 'x', type: 'foundation_run', status: 'planned', timeSlot: 'pm', label: 'Run-Walk' }, 'todo', { planDetail: '~35 min' }), 'run-walk · ~35 min', 'a label that says more is a detail word')
+  assert.equal(rowDetail({ id: 'x', type: 'foundation_run', status: 'planned', timeSlot: 'pm', label: 'Run-Walk' }, 'todo', { planDetail: '35 min' }), 'run-walk 35 min', 'page 33: a label that says more reads with the plan ("run-walk 30 min")')
 }
 
 // ─── changed rows: brass edge, "was X", one reason line ──
@@ -244,6 +251,38 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   assert.equal(readWeekAnalysis('not json').why, null)
   assert.deepEqual(splitWhy('Lighter this week. Two short nights.'), { lead: 'Lighter this week.', rest: 'Two short nights.' })
   assert.deepEqual(splitWhy('One line'), { lead: '', rest: 'One line' })
+}
+
+// Page 20 / 33 / 35 lines and chips (step 2 fixes)
+{
+  assert.equal(strengthWeekLine('block_zero', 3), 'Week 3: two sets of eight, about three left in the tank.', 'page 33 to-do strength line')
+  assert.equal(strengthWeekLine('fighter', 3), null)
+  assert.equal(shortLift('Back Squat'), 'Squat')
+  assert.equal(shortLift('Romanian Deadlift'), 'RDL')
+  const lifts: WorkoutExercise[] = [
+    { exerciseId: 'sq', section: 'main', name: 'Back Squat', prescription: { prescribedWeightKg: 61.2, setsReps: '2×8' } },
+    { exerciseId: 'rdl', section: 'main', name: 'Romanian Deadlift', prescription: { prescribedWeightKg: 52.2, setsReps: '2×8' } },
+    { exerciseId: 'ss', section: 'accessory', name: 'Split Squat', prescription: { prescribedWeightKg: 11.3, setsReps: '2×10' } },
+  ]
+  assert.equal(topLiftsLine(lifts), 'Squat 2×135lbs · RDL 2×115lbs', 'page 20 top lifts on Today')
+  assert.equal(topLiftsLine([]), null)
+  assert.equal(zone2PlanLine('Run-walk', 142, 35), 'Easy, conversational pace. Heart rate under 142, nasal breathing. Run-walk, 35 min.', 'page 33 Zone 2 line')
+  const sat = 20379 // a Saturday (2025-10-18)
+  const bz = plannedRowMinutes({ type: 'strength', label: 'Strength C', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null })
+  assert.ok(bz >= 30 && bz <= 75, `strength row minutes from its template: ${bz}`)
+  assert.equal(plannedRowMinutes({ type: 'mobility', label: 'Foundation', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null }), 12)
+  // done headline: Today says "effort 7" (page 35), Program "RPE 7" (page 33)
+  assert.equal(doneHeadline(52, 45, { rpe: 7, effortWord: 'effort' }).parts.map(p => p.text).join(''), 'Done · 52 min · effort 7')
+  assert.equal(doneHeadline(52, 45, { rpe: 7 }).chip, '+7 min')
+  // bag work / rope: one line per round, clay where a round ended early, and the rounds short of the plan
+  const rounds = roundDiffLines([180, 180, 130], [180, 180, 180, 180])
+  assert.deepEqual(rounds.map(l => [l.label, l.parts.map(p => p.text).join(''), l.chip, l.band]), [
+    ['ROUNDS', '3 of 4', `${MINUS}1`, 'down'],
+    ['ROUND 1', '3:00', null, null],
+    ['ROUND 2', '3:00', null, null],
+    ['ROUND 3', '2:10', `${MINUS}0:50`, 'down'],
+  ])
+  assert.deepEqual(roundDiffLines([178], [180]).map(l => l.band), [null], 'within 10 s is as planned')
 }
 
 console.log('dayboard tests passed')

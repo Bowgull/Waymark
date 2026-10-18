@@ -16,15 +16,15 @@
   color: var(--sf-label);
   -webkit-tap-highlight-color: transparent;
 }
-.wm-pk-flags { margin: -4px 0 2px; font: 600 15px/1.4 var(--font-body); color: #d8bf86; }
+.wm-pk-flags { margin: -4px 0 2px; font: 500 14.5px/1.4 var(--font-body); color: #c9b27a; }
 
 /* ── departures board: lantern-lit coach picks, ember cautions ── */
 .wm-grp {
-  padding: 8px 2px 4px;
-  font: 700 12px/1.2 var(--font-body);
+  padding: 10px 2px 4px;
+  font: 700 11px/normal var(--font-body);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(240, 230, 192, 0.62);
+  color: rgba(240, 230, 192, 0.5);
 }
 .wm-grp.is-lit { color: #e8c878; }
 .wm-deps { display: flex; flex-direction: column; }
@@ -54,7 +54,6 @@
   display: flex;
   flex: 1;
   min-width: 0;
-  min-height: 52px;
   align-items: center;
   gap: 11px;
   border: 0;
@@ -65,21 +64,20 @@
   cursor: pointer;
 }
 .wm-dep-text { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; }
-.wm-dep-why { margin-top: 4px; font: 600 15px/1.3 var(--font-body); color: #d8bf86; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7); }
+.wm-dep-why { margin-top: 3px; font: 600 13px/1.25 var(--font-body); color: #d8bf86; }
 .wm-dep-why.is-ember { color: #d9906e; }
-.wm-dep .wm-ampm { position: relative; min-height: 44px; padding: 0 2px; }
+.wm-dep .wm-ampm { position: relative; padding: 0; }
 /* a fixed slot doesn't flip: a tap on it picks the row */
 .wm-dep .wm-ampm:disabled { pointer-events: none; }
 
 /* ── numbered reason board (Why skip, Where) ── */
-.wm-brows { display: flex; flex-direction: column; }
+.wm-brows { display: flex; flex-direction: column; gap: 10px; }
 .wm-brow {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 52px;
-  padding: 7px 4px;
+  padding: 9px 4px;
   border: 0;
   border-top: 1px solid rgba(0, 0, 0, 0.55);
   border-radius: 0;
@@ -90,73 +88,45 @@
   -webkit-tap-highlight-color: transparent;
 }
 .wm-brow:first-child { border-top: 0; }
-.wm-brow.is-on { background: radial-gradient(ellipse 60% 120% at 12% 50%, rgba(255, 200, 120, 0.2), rgba(184, 152, 74, 0.08) 45%, transparent 75%); }
-.wm-brow-num { flex: none; width: 24px; font: 800 14px/1 var(--font-mono); color: rgba(240, 230, 192, 0.6); }
-.wm-brow.is-on .wm-brow-num { color: #e8c878; }
-.wm-brow-label { flex: 1; min-width: 0; }
+.wm-brow.is-on { background: radial-gradient(ellipse 60% 120% at 12% 50%, rgba(184, 152, 74, 0.22), transparent 70%); }
+.wm-brow-num { flex: none; width: 22px; font: 800 13px/normal var(--font-mono); color: rgba(240, 230, 192, 0.5); }
+.wm-brow-label { flex: none; min-width: 0; }
 .wm-lamp { flex: none; font: 800 14px/1 var(--font-mono); color: #ffd08a; text-shadow: 0 0 8px rgba(255, 200, 120, 0.9); }
 .wm-words { min-height: 64px; resize: none; }
 
-/* ── Why swap: six reasons as flap tiles ── */
-.wm-reason-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.wm-reason-grid > .wm-choice { min-height: 60px; padding: 8px 6px; }
+/* ── Why swap (page 20 r2): six reasons as plain word tiles, two to a row ── */
+.wm-reason-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wm-opt { min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 6px; border: 0; border-radius: 10px; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); font: 700 15px/1.2 var(--font-body); color: #efe6c8; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.wm-opt.is-on { background: rgba(184, 152, 74, 0.25); box-shadow: inset 0 0 0 2px #b8984a; color: #fff3cf; }
 
-/* ── the signpost: three roads on a waymark post, the crest on top ── */
-.wm-post { position: relative; padding: 66px 0 14px; }
-.wm-post-cap { position: absolute; left: 0; top: 0; z-index: 2; }
+/* ── the signpost: three roads on a waymark post, the crest on top (page 22 #rep, exactly) ──
+   The pole and the arms' wood are ASCII glyphs (pre text), like the world; arms all point right. */
+.wm-post { position: relative; height: 340px; overflow: hidden; }
 .wm-post-pole {
-  position: absolute;
-  left: 28px;
-  top: 52px;
-  bottom: 0;
-  width: 22px;
-  transform: translateX(-50%);
-  border-radius: 3px;
-  background:
-    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 7px),
-    linear-gradient(90deg, #3a2a18, #2a1e12 55%, #20170d);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 6px 14px rgba(0, 0, 0, 0.5);
+  position: absolute; left: 16%; top: 60px; bottom: 0; width: 22px; margin: 0; transform: translateX(-50%);
+  border-radius: 3px; overflow: hidden; text-align: center; white-space: pre;
+  font: 700 10px/10px var(--font-mono); color: #8a6a44;
+  background: #2a1e12; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+  user-select: none; pointer-events: none;
 }
-.wm-post-arms { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding-left: 26px; }
-.wm-arm-wrap { display: block; max-width: 100%; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5)); }
-.wm-arm-wrap.is-lit { filter: drop-shadow(0 0 10px rgba(201, 160, 80, 0.5)) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5)); }
+.wm-post-cap { position: absolute; left: 16%; top: 18px; width: 64px; height: 72px; transform: translateX(-50%); display: grid; place-items: center; }
 .wm-arm {
-  display: block;
-  max-width: 100%;
-  padding: 1px;
-  border: 0;
-  background: rgba(0, 0, 0, 0.65);
+  position: absolute; left: 16%;
+  display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 84%;
+  padding: 7px 30px 7px 10px; border: 0; white-space: nowrap; cursor: pointer; color: #f2e2c0;
+  background: linear-gradient(180deg, #5a3f24, #3f2c19);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 6px 14px rgba(0, 0, 0, 0.5);
   clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 50%, calc(100% - 22px) 100%, 0 100%);
-  cursor: pointer;
   transition: transform var(--t-tap) ease-out;
   -webkit-tap-highlight-color: transparent;
 }
+.wm-arm.is-lit { background: linear-gradient(180deg, #7a5a2e, #574022); box-shadow: inset 0 0 0 2px #c9a050, 0 0 22px rgba(201, 160, 80, 0.35), 0 6px 14px rgba(0, 0, 0, 0.5); }
+.wm-arm-wood { position: absolute; inset: 0; margin: 0; overflow: hidden; white-space: pre; font: 700 9px/9px var(--font-mono); color: rgba(0, 0, 0, 0.28); pointer-events: none; user-select: none; }
+.wm-arm > :not(.wm-arm-wood) { position: relative; }
 .wm-arm:active { transform: translateX(3px); }
-.wm-arm:focus-visible { outline: none; }
-.wm-arm-wrap:has(.wm-arm:focus-visible) { outline: 2px solid var(--sf-gold); outline-offset: 3px; border-radius: 4px; }
+.wm-arm:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: 2px; }
+.wm-arm .wm-ampm { gap: 5px; }
 .wm-arm .wm-ampm:disabled { pointer-events: none; }
-.wm-arm.is-lit { padding: 2px; background: #c9a050; }
-.wm-arm-face {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  min-height: 52px;
-  padding: 7px 32px 7px 12px;
-  color: #f2e2c0;
-  text-align: left;
-  clip-path: polygon(0 0, calc(100% - 21px) 0, 100% 50%, calc(100% - 21px) 100%, 0 100%);
-  background:
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 9px),
-    linear-gradient(180deg, #5a3f24, #3f2c19);
-}
-.wm-arm.is-lit .wm-arm-face {
-  background:
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0 2px, transparent 2px 9px),
-    linear-gradient(180deg, #7a5a2e, #574022);
-}
-/* a long name wraps at its word gaps (no label truncates) */
-.wm-arm-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px; min-width: 0; font-size: 14px; }
 
 /* ── the coach reading: the crest breathes ── */
 .wm-reading { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0 10px; text-align: center; }

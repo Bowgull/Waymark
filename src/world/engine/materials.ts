@@ -166,11 +166,11 @@ export interface CardOpts {
 // Grass, moss, mist, motes, smoke, rain: camera-facing glyph cards, rooted, swaying.
 export function cardMaterial(shared: SharedUniforms, o: CardOpts): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { ...shared, uW: { value: o.w }, uH: { value: o.h }, uSway: { value: o.sway ?? 0.18 }, uGlow: { value: o.glow ?? 0 }, uFly: { value: o.fly ?? 0 }, uRise: { value: o.rise ?? 0 }, uFall: { value: o.fall ?? 0 }, uSmoke: { value: o.smoke ?? 0 }, uGlint: { value: o.glint ?? 0 }, uSpill: { value: o.spill ?? 0 }, uThin: { value: 1 }, uExposure: { value: 1 } },
+    uniforms: { ...shared, uK: { value: 1 }, uW: { value: o.w }, uH: { value: o.h }, uSway: { value: o.sway ?? 0.18 }, uGlow: { value: o.glow ?? 0 }, uFly: { value: o.fly ?? 0 }, uRise: { value: o.rise ?? 0 }, uFall: { value: o.fall ?? 0 }, uSmoke: { value: o.smoke ?? 0 }, uGlint: { value: o.glint ?? 0 }, uSpill: { value: o.spill ?? 0 }, uThin: { value: 1 }, uExposure: { value: 1 } },
     transparent: true, depthWrite: false,
     vertexShader: `
       attribute float aGlyph; attribute float aPhase; attribute vec3 aTint; attribute vec2 aOff;
-      uniform float uW; uniform float uH; uniform float uTime; uniform float uSway; uniform float uFly; uniform float uRise; uniform float uFall; uniform float uSmoke; uniform float uWind; varying float vFade;
+      uniform float uK; uniform float uW; uniform float uH; uniform float uTime; uniform float uSway; uniform float uFly; uniform float uRise; uniform float uFall; uniform float uSmoke; uniform float uWind; varying float vFade;
       varying vec2 vUv; varying float vGlyph; varying vec3 vTint; varying vec3 vRoot; varying float vDepth; varying float vPhase;
       void main(){
         vec4 root = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
@@ -187,7 +187,8 @@ export function cardMaterial(shared: SharedUniforms, o: CardOpts): THREE.ShaderM
         vRoot = root.xyz; vec4 mv = viewMatrix * root; vDepth = -mv.z;
         float top = position.y + 0.5;
         float sway = (sin(uTime * 1.7 + aPhase + root.x * 0.6) + 0.4 * sin(uTime * 3.1 + aPhase) + uWind * 1.2) * top * uSway * (0.6 + uWind);
-        mv.xy += vec2(position.x * uW * sz + sway * uW, top * uH * sz) + aOff * sz;
+        // uK: the glyph cards keep printing at the scene's glyph size whatever the camera zoom (page 14b's close-up)
+        mv.xy += (vec2(position.x * uW * sz + sway * uW, top * uH * sz) + aOff * sz) * uK;
         gl_Position = projectionMatrix * mv;
         vUv = uv; vTint = aTint; vPhase = aPhase;
       }`,

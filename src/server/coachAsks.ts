@@ -28,6 +28,8 @@ import {
   withCoachEase,
   checkSessionChange,
   easeDetail,
+  easeBody,
+  sessionName,
   MAKE_REGULAR_COOLDOWN_DAYS,
   RAMP_LOAD_ALLOWANCE,
   type AddedSession,
@@ -90,11 +92,13 @@ export interface AutoChangeInput {
   timeSlot?: string | null
   was?: string | null
   now?: string | null
+  /** The Coach board line on Today (page 36): a bold lead ("Strength C eased") and the rest after it. */
+  lead?: string | null
+  body?: string | null
   detail?: Record<string, unknown>
   nowSec: number
 }
 
-/** One automatic change with its note (status accepted, auto = 1). */
 export async function recordAutoChange(db: DB, c: AutoChangeInput): Promise<string> {
   const id = crypto.randomUUID()
   await db.insert(weekAdjustments).values({
@@ -106,7 +110,7 @@ export async function recordAutoChange(db: DB, c: AutoChangeInput): Promise<stri
     reason: c.reason,
     targetDay: c.targetEpochDay != null ? new Date(c.targetEpochDay * DAY_SEC * 1000).getUTCDay() : null,
     targetTimeSlot: c.timeSlot ?? null,
-    sourceData: JSON.stringify({ note: c.reason, was: c.was ?? null, now: c.now ?? null, targetEpochDay: c.targetEpochDay ?? null, ...(c.detail ?? {}) }),
+    sourceData: JSON.stringify({ note: c.reason, was: c.was ?? null, now: c.now ?? null, lead: c.lead ?? null, body: c.body ?? null, targetEpochDay: c.targetEpochDay ?? null, ...(c.detail ?? {}) }),
     status: 'accepted',
     auto: 1,
     targetSessionId: c.targetSessionId ?? null,
@@ -228,6 +232,8 @@ export async function applyFeltHard(db: DB, todayDay: number, nowSec: number): P
       timeSlot: target.timeSlot,
       was: detail.was,
       now: detail.now,
+      lead: `${sessionName(toSessionLike(target))} eased`,
+      body: easeBody(detail.now, result.ease.reason),
       detail: { fromSessionId: result.fromSessionId, cause: result.cause, rpe: d.rpe, rir: d.rir, soreness: soreBy.get(d.epochDay + 1) ?? null },
       nowSec,
     })
@@ -248,6 +254,29 @@ async function mainLiftLoads(db: DB, session: { scheduledDate: number | null; bl
   return template.exercises
     .filter(e => e.section === 'main' && tms.has(e.exerciseId))
     .map(e => ({ exerciseId: e.exerciseId, name: names.get(e.exerciseId) ?? e.label, workingKg: Math.round((tms.get(e.exerciseId) as number) * pct * 100) / 100 }))
+}
+
+/**
+ * The next strength day's main lifts and planned working sets, for the +1 SET
+ * line ("Squat and RDL, 3×8"): the template's main section, short names.
+ */
+export async function nextStrengthPlan(db: DB, session: { scheduledDate: number | null; blockWeek: number | null; label: string | null }, kind: 'fighter' | 'block_zero'): Promise<{ names: string[]; sets: number; reps: number } | null> {
+  const day = session.scheduledDate ?? 0
+  const template = getStrengthTemplate(new Date(day * DAY_SEC * 1000).getUTCDay(), session.blockWeek ?? 1, kind, session.label)
+  const main = template.exercises.filter(e => e.section === 'main')
+  if (main.length === 0) return null
+  const names = new Map((await db.select({ id: exercises.id, name: exercises.name }).from(exercises)).map(e => [e.id, e.name]))
+  const work = main[0].sets.filter(st => !st.isWarmup && (st.loadMultiplier ?? 1) === 1)
+  const reps = work.find(st => st.targetReps > 0)?.targetReps ?? 0
+  return { names: main.map(e => shortLiftName(names.get(e.exerciseId) ?? e.label)), sets: work.length, reps }
+}
+
+/** "Back Squat" → "Squat", "Romanian Deadlift" → "RDL": the short names the coach screens use. */
+export function shortLiftName(name: string): string {
+  const n = name.trim()
+  if (/romanian deadlift/i.test(n)) return 'RDL'
+  if (/^back squat$/i.test(n)) return 'Squat'
+  return n
 }
 
 /** The ramp-up rule for today. Creates at most one ask a calendar week. */
@@ -272,9 +301,10 @@ export async function maybeRampUpAsk(db: DB, todayDay: number, nowSec: number): 
     .where(and(eq(sessions.status, 'planned'), gte(sessions.scheduledDate, todayDay), lte(sessions.scheduledDate, monday + 6)))
   const upcoming = upcomingRows.filter(r => r.scheduledDate != null).map(r => ({ ...toSessionLike(r), id: r.id }))
   const nextStrength = upcomingRows.filter(r => r.type === 'strength').sort((a, b) => (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0))[0]
-  const mainLifts = kind === 'fighter' && nextStrength ? await mainLiftLoads(db, nextStrength) : []
+  const mainLifts = kind === 'fighter' && nextStrength ? (await mainLiftLoads(db, nextStrength)).map(l => ({ ...l, name: shortLiftName(l.name) })) : []
+  const strengthPlan = nextStrength ? await nextStrengthPlan(db, nextStrength, kind) : null
   const signals = { todayEpochDay: todayDay, readiness, effort, liftPush, easeToday, noPush: ret.active || ret.noPush || injury != null, askedThisWeek: already != null }
-  const ask = rampUpAsk(signals, { ctx, upcoming, blockType: kind, weekNumber: ctx.weekNumber, liftPush, classDays: await mtClassDays(db), mainLifts })
+  const ask = rampUpAsk(signals, { ctx, upcoming, blockType: kind, weekNumber: ctx.weekNumber, liftPush, classDays: await mtClassDays(db), mainLifts, nextStrength: strengthPlan })
   if (!ask) return null
   return recordAsk(db, {
     weekPlanId: await weekPlanForDay(db, block, todayDay, todayDay, nowSec),
@@ -304,11 +334,13 @@ export async function maybeMakeRegularAsk(db: DB, block: Block, nextMonday: numb
   const efforts = new Map((await loadEffortReads(db, fromDay, nextMonday - 1)).map(e => [e.id, e]))
   const logs = await db.select().from(dailyLogs).where(and(gte(dailyLogs.logDate, fromDay - 10), lte(dailyLogs.logDate, nextMonday)))
   const flagged = new Set(evaluateReadiness(logs.map(checkInFromDailyLog)).filter(d => d.flagged).map(d => d.epochDay))
+  const soreBy = new Map(logs.map(l => [l.logDate, l.soreness]))
   const adds: AddedSession[] = rows.filter(r => r.scheduledDate != null).map(r => ({
     type: r.type, label: r.label, notes: r.type === 'running' ? r.notes : null,
     epochDay: r.scheduledDate as number, timeSlot: r.timeSlot === 'pm' ? 'pm' : 'am', status: r.status,
     rpe: r.rpe, rir: efforts.get(r.id)?.rir ?? null,
     readinessOff: flagged.has(r.scheduledDate as number) || flagged.has((r.scheduledDate as number) + 1),
+    nextMorningSoreness: soreBy.get((r.scheduledDate as number) + 1) ?? null,
   }))
   const candidates = makeRegularCandidates(adds, nextMonday - 7)
   if (candidates.length === 0) return null
@@ -316,9 +348,12 @@ export async function maybeMakeRegularAsk(db: DB, block: Block, nextMonday: numb
     .where(and(eq(weekAdjustments.adjustmentType, 'make_regular'), gte(weekAdjustments.createdAt, (todayDay - MAKE_REGULAR_COOLDOWN_DAYS) * DAY_SEC)))
   const askedTypes = new Set(recent.map(r => r.sessionType))
   const ctx = await loadPlacementContext(db, nextMonday, todayDay)
+  // The block's week number for each Monday it ran (the proof tiles: WK 2 ✓ · WK 3 ✓).
+  const weekNo = new Map<number, number>()
+  for (const c of candidates) for (const m of c.mondays) if (!weekNo.has(m)) weekNo.set(m, (await trainingWeekFor(db, block, m, todayDay)).week)
   for (const c of candidates) {
     if (askedTypes.has(c.type)) continue
-    const ask = makeRegularAsk(c, ctx, nextMonday)
+    const ask = makeRegularAsk(c, ctx, nextMonday, m => weekNo.get(m) ?? null)
     if (!ask) continue
     return recordAsk(db, {
       weekPlanId: await weekPlanForDay(db, block, nextMonday, todayDay, nowSec),
@@ -327,7 +362,7 @@ export async function maybeMakeRegularAsk(db: DB, block: Block, nextMonday: numb
       action: 'add',
       question: ask.question,
       options: ask.options,
-      detail: { why: ask.why, candidate: c, defaultOption: ask.defaultOption },
+      detail: { why: ask.why, proof: ask.proof, candidate: c, defaultOption: ask.defaultOption },
       expiresOnDay: ask.expiresOnDay,
       nowSec,
     })
@@ -405,7 +440,7 @@ export async function proposeTmUpdate(db: DB, block: Block, todayDay: number, no
       action: 'update_tm',
       question: proposal.question,
       options: proposal.options,
-      detail: { lifts: proposal.lifts, holds: proposal.holds, decline: proposal.decline, week },
+      detail: { lifts: proposal.lifts, holds: proposal.holds, decline: proposal.decline, week, blockName: block.name },
       // Two weeks to answer: long enough to see the next block start.
       expiresOnDay: mondayOf(todayDay) + 14,
       nowSec,

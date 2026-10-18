@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Board, Crest, FlapButton, FlapLabel, SessionIcon, showPop, type SessionIconKey } from '@/design'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { logger } from '@/lib/logger'
-import { coachCount, dateFlap, type StripDay } from './weekStrip'
+import { coachCount, dateFlap, splitLead, type StripDay } from './weekStrip'
 
 // The pieces of Today (pages 35, 36, 43), on the split-flap boards over the forest.
 
@@ -29,7 +29,7 @@ export function TodayHeader({ date }: { date: Date }) {
         onContextMenu={e => e.preventDefault()}
         onClick={() => { if (!held.current) window.scrollTo({ top: 0 }) }}
       >
-        <Crest width={40} />
+        <span className="td-crest"><Crest width={52} /></span>
         <FlapLabel text="WAYMARK" size="sm" animate={false} />
       </button>
       <FlapLabel text={dateFlap(date)} size="xs" animate={false} />
@@ -38,10 +38,10 @@ export function TodayHeader({ date }: { date: Date }) {
 }
 
 /** The week strip: seven small day tiles under the header. Tap a day to open it in Program. */
-export function WeekStrip({ days }: { days: StripDay[] }) {
+export function WeekStrip({ days, home = false }: { days: StripDay[]; home?: boolean }) {
   const navigate = useNavigate()
   return (
-    <Board className="td-strip">
+    <Board className={`td-strip${home ? ' is-home' : ''}`}>
       <div className="td-tiles7" role="list" aria-label="This week">
         {days.map(d => (
           <button
@@ -64,29 +64,31 @@ export function WeekStrip({ days }: { days: StripDay[] }) {
   )
 }
 
-export interface CoachChangeLine { id: string; line: string; was?: string | null; icon: SessionIconKey | null }
+export interface CoachChangeLine { id: string; line: string; lead?: string | null; body?: string | null; icon: SessionIconKey | null }
 export interface CoachQuestionLine { id: string; line: string; icon: SessionIconKey | null }
 
 /** The Coach board (page 36): the why line first, each change with its reason, open questions with a gold dot. */
 export function CoachBoard({ why, changes, questions, onOpen }: { why: string | null; changes: CoachChangeLine[]; questions: CoachQuestionLine[]; onOpen: (id: string) => void }) {
   if (!why && changes.length === 0 && questions.length === 0) return null
   // The first sentence of the why line is the kind of week (bold), the rest the reason.
-  const cut = (why ?? '').indexOf('. ')
-  const lead = cut > 0 ? (why ?? '').slice(0, cut + 1) : (why ?? '')
-  const rest = cut > 0 ? (why ?? '').slice(cut + 2) : ''
+  const w = splitLead(why ?? '', 'sentence')
   return (
     <Board className="td-coach" head="Coach" headRight={<span className="cnt">{coachCount(changes.length, questions.length)}</span>}>
       {why && (
         <div className="crow is-why" style={{ paddingTop: 0 }}>
-          <p>{rest ? <><b>{lead}</b> {rest}</> : why}</p>
+          <p>{w.rest ? <><b>{w.lead}</b> {w.rest}</> : why}</p>
         </div>
       )}
-      {changes.map(c => (
-        <div key={c.id} className="crow">
-          {c.icon && <SessionIcon kind={c.icon} size={30} />}
-          <p>{c.line}{c.was && <span className="was">was {c.was}</span>}</p>
-        </div>
-      ))}
+      {changes.map(c => {
+        // "Strength C eased: one set, 10% lighter. Soreness was 4 this morning." (lead in brass)
+        const parts = c.lead && c.body ? { lead: c.lead, rest: c.body } : splitLead(c.line, 'colon')
+        return (
+          <div key={c.id} className="crow">
+            {c.icon && <SessionIcon kind={c.icon} size={30} />}
+            <p>{parts.rest ? <><b>{parts.lead}</b>{parts.rest}</> : c.line}</p>
+          </div>
+        )
+      })}
       {questions.map(q => (
         <button key={q.id} type="button" className="crow is-q" onClick={() => onOpen(q.id)} aria-label={`${q.line} Open the question.`}>
           {q.icon && <SessionIcon kind={q.icon} size={30} />}
@@ -106,7 +108,7 @@ interface JournalEntryData { id: string; content: string }
  * it to open the box and SAVE, then "Saved to the Waybook." with + ADD MORE.
  * Same API as before (GET/POST /api/journal, PATCH to append).
  */
-export function WaybookLine({ today }: { today: string }) {
+export function WaybookLine({ today, variant = 'day' }: { today: string; variant?: 'day' | 'home' }) {
   const isSunday = new Date(`${today}T12:00:00`).getDay() === 0
   const entryType = isSunday ? 'weekly' : 'daily'
   const [open, setOpen] = useState(false)
@@ -147,8 +149,8 @@ export function WaybookLine({ today }: { today: string }) {
 
   if (!open) {
     return (
-      <button type="button" className="td-wline" onClick={() => setOpen(true)} aria-expanded={false}>
-        <SessionIcon kind="waybook" size={40} />
+      <button type="button" className={`td-wline is-${variant}`} onClick={() => setOpen(true)} aria-expanded={false}>
+        <SessionIcon kind="waybook" size={variant === 'home' ? 34 : 44} />
         <span className="t">Write in the Waybook</span>
         <span className="chev" aria-hidden>›</span>
       </button>
@@ -159,7 +161,7 @@ export function WaybookLine({ today }: { today: string }) {
       {saved ? (
         <div className="td-saved">
           <p>Saved to the Waybook.</p>
-          <div style={{ width: 150 }}><FlapButton label="+ ADD MORE" size="xs" onClick={() => setSaved(false)} /></div>
+          <FlapButton label="+ ADD MORE" size="xs" onClick={() => setSaved(false)} />
         </div>
       ) : (
         <>
@@ -173,7 +175,6 @@ export function WaybookLine({ today }: { today: string }) {
             autoFocus
           />
           <div className="wm-btns" style={{ marginTop: 10 }}>
-            <FlapButton label="CLOSE" onClick={() => setOpen(false)} disabled={saving} />
             <FlapButton label={saving ? 'SAVING' : 'SAVE'} primary onClick={save} disabled={saving || !draft.trim()} />
           </div>
         </>
@@ -182,14 +183,13 @@ export function WaybookLine({ today }: { today: string }) {
   )
 }
 
-/** A day not prepared yet (page 35 #2, A): NOTHING TODAY, the app's line, PREPARE THE DAY. */
-export function EmptyDayBoard({ onPrepare, preparing, onAdd }: { onPrepare: () => void; preparing: boolean; onAdd: () => void }) {
+/** A day not prepared yet (page 35 #2 A, page 43): NOTHING TODAY, the app's line, PREPARE THE DAY. */
+export function EmptyDayBoard({ onPrepare, preparing }: { onPrepare: () => void; preparing: boolean }) {
   return (
     <Board className="td-empty">
       <FlapLabel text="NOTHING TODAY" size="md" tone="gold" />
       <p>No sessions planned for today.</p>
       <FlapButton label={preparing ? 'PREPARING' : 'PREPARE THE DAY'} primary onClick={onPrepare} disabled={preparing} />
-      <FlapButton label="+ ADD SESSION" quiet size="xs" onClick={onAdd} />
     </Board>
   )
 }
@@ -209,7 +209,7 @@ export function RestDayBoards({ tomorrow, tomorrowLine }: { tomorrow: SessionIco
             <span style={{ flex: 1 }} />
             {tomorrow.map((k, i) => <SessionIcon key={`${k}-${i}`} kind={k} size={32} />)}
           </div>
-          <p className="wm-prose is-dim" style={{ marginTop: 8 }}>{tomorrowLine}</p>
+          <p className="td-nextline">{tomorrowLine}</p>
         </Board>
       )}
     </>

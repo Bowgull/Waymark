@@ -1,0 +1,24 @@
+/* Settings boards (page 37 A): solid dark boards, label + line blocks, flap chips. */
+
+.st-board.wm-board { background-color: rgba(14, 22, 18, 0.9); }
+.st-block { padding: 11px 0; }
+.st-sl { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.st-sl b { font: 700 16px/normal var(--font-body); color: #efe6c8; }
+.st-sl small { font: 600 13.5px/1.35 var(--font-body); color: #9fb2a8; }
+
+/* Time of day: two to a row; a column grows to its words, so FOLLOW THE CLOCK fits whole */
+.st-tod { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 9px; }
+.st-chip {
+  display: block;
+  padding: 9px 4px;
+  border: 0;
+  border-radius: 7px;
+  text-align: center;
+  cursor: pointer;
+  background: rgba(8, 13, 11, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18);
+  -webkit-tap-highlight-color: transparent;
+}
+.st-chip.is-on { background: rgba(184, 152, 74, 0.22); box-shadow: inset 0 0 0 2px #b8984a; }
+.st-chip:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) { .st-chip:active { transform: none; } }

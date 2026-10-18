@@ -10,7 +10,7 @@ import * as THREE from 'three'
 
 import { buildScene, POND, type BuiltScene, type SceneKind } from './build'
 import { cardMaterial, gi, glyphAtlas, makeShared, skyMaterial, surfaceMaterial, type SharedUniforms } from './materials'
-import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, frustumFor, glideEase, mixView, sceneLamp, sceneOf, scenesInView, sceneGlyphWorld, type PlaceView, type SceneKey } from '../places'
+import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, frustumFor, glideEase, mixView, sceneLamp, sceneOf, scenesInView, sceneGlyphWorld, viewGlyphWorld, type PlaceView, type SceneKey } from '../places'
 import { weeksOrDefault, type WeekPost, type WorldPlace } from '../worldStore'
 import type { WorldMode } from '../timeOfDay'
 
@@ -83,11 +83,12 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), skyMaterial(shared, GLYPH_PX * renderer.getPixelRatio()))
   sky.frustumCulled = false; sky.renderOrder = -10; scene.add(sky)
   const skyU = (sky.material as THREE.ShaderMaterial).uniforms
-  const syncSky = () => { const v = new THREE.Vector2(); renderer.getDrawingBufferSize(v); skyU.uRes.value.copy(v); skyU.uGp.value = GLYPH_PX * renderer.getPixelRatio() }
+  let skyGlyph = GLYPH_PX
+  const syncSky = () => { const v = new THREE.Vector2(); renderer.getDrawingBufferSize(v); skyU.uRes.value.copy(v); skyU.uGp.value = skyGlyph * renderer.getPixelRatio() }
   syncSky()
 
   // one forest floor under every place, with the pond's hole cut out
-  const groundMat = surfaceMaterial(shared, { set: 'soil', color: '#34502e', fill: 0.3, scale: sceneGlyphWorld('clearing', GLYPH_PX) })
+  const groundMat = surfaceMaterial(shared, { set: 'soil', color: '#34502e', fill: 0.3, scale: sceneGlyphWorld('clearing') })
   {
     const px = PLACE_ORIGIN.pond + POND.PX
     const sh = new THREE.Shape([new THREE.Vector2(-60, -58), new THREE.Vector2(70, -58), new THREE.Vector2(70, 22), new THREE.Vector2(-60, 22)])
@@ -96,9 +97,11 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   }
 
   // rain (offline): '|' glyphs falling around wherever the camera looks
+  const rainGw = sceneGlyphWorld('clearing')
+  const rainMat = cardMaterial(shared, { w: rainGw * 0.62, h: rainGw * 1.4, fall: 7.5, sway: 0 })
   const rain = (() => {
-    const N = 520, g = new THREE.PlaneGeometry(1, 1), gwv = sceneGlyphWorld('clearing', GLYPH_PX)
-    const mesh = new THREE.InstancedMesh(g, cardMaterial(shared, { w: gwv * 0.62, h: gwv * 1.4, fall: 7.5, sway: 0 }), N)
+    const N = 520, g = new THREE.PlaneGeometry(1, 1)
+    const mesh = new THREE.InstancedMesh(g, rainMat, N)
     const aG = new Float32Array(N), aP = new Float32Array(N), aT = new Float32Array(N * 3), m4 = new THREE.Matrix4()
     const r = (i: number, k: number) => { const s = Math.sin(i * 91.7 + k * 47.3) * 43758.5453; return s - Math.floor(s) }
     for (let i = 0; i < N; i++) { m4.makeTranslation((r(i, 1) - 0.5) * 9, 7.5 + r(i, 2) * 0.5, (r(i, 3) - 0.6) * 18); mesh.setMatrixAt(i, m4); aG[i] = gi('|')[0]; aP[i] = r(i, 4); const k = 0.55 + r(i, 5) * 0.3; aT.set([0.62 * k, 0.74 * k, 0.82 * k], i * 3) }
@@ -145,7 +148,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   function build(key: SceneKey): BuiltScene {
     const existing = scenes.get(key)
     if (existing) return existing
-    const b = buildScene(KIND[key], { shared, gw: sceneGlyphWorld(key, GLYPH_PX), density: 1 }, key === 'road' ? weeks : undefined)
+    const b = buildScene(KIND[key], { shared, gw: sceneGlyphWorld(key), density: 1 }, key === 'road' ? weeks : undefined)
     b.group.position.x = PLACE_ORIGIN[key]
     scene.add(b.group)
     scenes.set(key, b)
@@ -179,9 +182,18 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
     // surfaces keep printing at 9 px whatever the zoom
     if (Math.abs(view.pxPerUnit - lastPpu) > lastPpu * 0.004) {
       lastPpu = view.pxPerUnit
-      const gwNow = GLYPH_PX / view.pxPerUnit
+      const gwNow = viewGlyphWorld(view)
+      // the sky prints on the screen grid at the view's glyph size
+      skyGlyph = view.glyph
+      skyU.uGp.value = skyGlyph * renderer.getPixelRatio()
       groundMat.uniforms.uScale.value = gwNow
-      for (const b of scenes.values()) for (const m of b.surfaces) m.uniforms.uScale.value = gwNow
+      for (const [key, b] of scenes) {
+        for (const m of b.surfaces) m.uniforms.uScale.value = gwNow
+        // the glyph cards were built for their scene's own view: scale them back to 9 px at this zoom
+        const k = gwNow / sceneGlyphWorld(key)
+        for (const m of b.cards) m.uniforms.uK.value = k
+      }
+      rainMat.uniforms.uK.value = gwNow / rainGw
     }
     rain.position.set(view.x, 0, view.lookZ)
   }

@@ -14,6 +14,10 @@
 
 import { SESSION_ICON_NAME, sessionIconFor, type SessionIconKey } from '../../design/sessionIconKeys'
 import { kgToLbs } from '../../lib/units'
+import { getStrengthTemplate } from '../../lib/strengthTemplates'
+import { getStrengthWeekTarget } from '../../lib/blockZero/strength'
+import { estimatedMinutes } from '../../lib/coach/sessions'
+import { plannedStrengthMinutes } from '../../lib/plannedLength'
 
 // ─── Inputs (the shapes the existing endpoints return) ─────────
 
@@ -128,7 +132,8 @@ function labelDetail(s: Pick<DayBoardSession, 'type' | 'label' | 'notes'>): stri
   const name = sessionDisplayName(s)
   if (label.toLowerCase() === name.toLowerCase()) return null
   if (iconFor(s) === 'run') return null
-  return label.toLowerCase()
+  // "MT Technique" reads "technique" under the MT CLASS flap
+  return label.toLowerCase().replace(/^mt\s+/, '')
 }
 
 /** Minutes a done session took: its duration, else start to finish. */
@@ -283,14 +288,14 @@ export function askRequest(adjustmentId: string, chip: AskChip, todayIso: string
 export function rowDetail(session: DayBoardSession, status: RowStatus, opts: { planDetail?: string | null; was?: string | null } = {}): string {
   const parts: string[] = []
   const extra = labelDetail(session)
+  // page 33 / 36: the label word and the plan read as one ("run-walk 30 min"), then "· was X"
+  const plan = [extra, opts.planDetail].filter(Boolean).join(' ')
   if (status === 'done') {
-    const km = session.runSession?.distanceKm
-    if (km != null && km > 0) parts.push(`${round1(km)} km`)
+    // a done row keeps its plan line ("2×8 RPE 6-7", "12 min"); what was actually done is in
+    // its summary. Without a plan line, the minutes it took.
+    if (plan) return plan
     const min = actualMinutes(session)
-    if (min != null) parts.push(`${min} min`)
-    if (session.rpe != null) parts.push(`RPE ${session.rpe}`)
-    if (parts.length === 0) parts.push('done')
-    return parts.join(' · ')
+    return min != null ? `${min} min` : 'done'
   }
   if (status === 'skipped') {
     const why = session.skipReason ? SKIP_WORDS[session.skipReason] ?? session.skipReason.replace(/_/g, ' ') : null
@@ -300,8 +305,7 @@ export function rowDetail(session: DayBoardSession, status: RowStatus, opts: { p
     const day = session.scheduledDate != null ? DAY_LONG[dowOfEpochDay(session.scheduledDate)] : null
     return day ? `missed ${day}` : 'missed'
   }
-  if (extra) parts.push(extra)
-  if (opts.planDetail) parts.push(opts.planDetail)
+  if (plan) parts.push(plan)
   if (opts.was) parts.push(`was ${opts.was}`)
   return parts.join(' · ')
 }
@@ -457,7 +461,7 @@ export function strengthDiffLines(exercises: ReadonlyArray<WorkoutExercise>): Di
 }
 
 /** The headline of a done summary: "Done · 52 min (+7 min) · RPE 7 · from Strava". */
-export function doneHeadline(actualMin: number | null, plannedMin: number | null, extras: { rpe?: number | null; from?: string | null } = {}): DiffLine {
+export function doneHeadline(actualMin: number | null, plannedMin: number | null, extras: { rpe?: number | null; from?: string | null; effortWord?: 'RPE' | 'effort' } = {}): DiffLine {
   const parts: DiffPart[] = [{ text: 'Done', lifted: false }]
   let chip: string | null = null
   let band: DiffLine['band'] = null
@@ -472,7 +476,7 @@ export function doneHeadline(actualMin: number | null, plannedMin: number | null
     }
   }
   const tail: string[] = []
-  if (extras.rpe != null) tail.push(`RPE ${extras.rpe}`)
+  if (extras.rpe != null) tail.push(`${extras.effortWord ?? 'RPE'} ${extras.rpe}`)
   if (extras.from) tail.push(`from ${extras.from}`)
   if (tail.length) parts.push({ text: ` · ${tail.join(' · ')}`, lifted: false })
   return { label: '', parts, chip, band }
@@ -528,4 +532,82 @@ export function minutesLine(label: string, actualMin: number | null, plannedMin:
   const diff = plannedMin != null && plannedMin > 0 ? actualMin - plannedMin : 0
   if (Math.abs(diff) >= 2) return { label, parts: [{ text: `${actualMin} min`, lifted: true }], chip: signed(diff, ' min'), band: diff > 0 ? 'up' : 'down' }
   return plainLine(label, `${actualMin} min`)
+}
+
+// ─── Planned lines (pages 20, 33) ──────────────────────────────
+
+const NUM_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
+const word = (n: number) => NUM_WORDS[n] ?? String(n)
+
+/**
+ * About how long a to-do takes, for the row's "~45min" (page 20): strength
+ * from its template's sets and rests, everything else from the plan's own
+ * numbers (run-walk week, Foundation's routine).
+ */
+export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'label' | 'scheduledDate' | 'blockWeek' | 'blockType'>, weekNumber?: number | null): number {
+  const kind = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
+  const week = s.blockWeek ?? weekNumber ?? 1
+  if (s.type === 'strength' && s.scheduledDate != null) {
+    const t = getStrengthTemplate(dowOfEpochDay(s.scheduledDate), week, kind, s.label ?? null)
+    const min = plannedStrengthMinutes(t.exercises.flatMap(e => e.sets.map(st => ({ isWarmup: st.isWarmup, restSec: st.restSec }))))
+    if (min != null) return min
+  }
+  return estimatedMinutes({ type: s.type, notes: s.notes ?? null, estimatedMin: null }, kind, weekNumber ?? week)
+}
+
+/** Page 33's to-do strength line: "Week 3: two sets of eight, about three left in the tank." (Block Zero). */
+export function strengthWeekLine(blockType: string | null | undefined, week: number | null | undefined): string | null {
+  if (blockType !== 'block_zero' || week == null || week < 1) return null
+  const t = getStrengthWeekTarget(week)
+  const left = Math.max(0, 10 - t.rpe[0])
+  return `Week ${week}: ${word(t.mainSets)} ${t.mainSets === 1 ? 'set' : 'sets'} of ${word(t.reps)}, about ${word(left)} left in the tank.`
+}
+
+/** "Back Squat" → "Squat", "Romanian Deadlift" → "RDL" (the coach screens' short names). */
+export function shortLift(name: string): string {
+  if (/romanian deadlift/i.test(name)) return 'RDL'
+  return name.replace(/^back squat$/i, 'Squat')
+}
+
+/** Page 20's top lifts on Today: "Squat 2×135lbs · RDL 2×115lbs" (main lifts: sets × load). */
+export function topLiftsLine(exercises: ReadonlyArray<WorkoutExercise>): string | null {
+  const parts = exercises
+    .filter(ex => ex.section === 'main')
+    .map(ex => {
+      const sets = Number((ex.prescription?.setsReps ?? '').split('×')[0]) || null
+      const kg = ex.prescription?.prescribedWeightKg
+      if (!sets || kg == null || kg <= 0) return null
+      return `${shortLift(ex.label || ex.name || ex.exercise?.name || 'Lift')} ${sets}×${kgToLbs(kg)}lbs`
+    })
+    .filter((x): x is string => x != null)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/** Page 33's to-do Zone 2 line: "Easy, conversational pace. Heart rate under 142, nasal breathing. Run-walk, 35 min." */
+export function zone2PlanLine(label: string | null | undefined, capBpm: number | null | undefined, minutes: number | null | undefined): string {
+  const parts = ['Easy, conversational pace.']
+  parts.push(capBpm ? `Heart rate under ${capBpm}, nasal breathing.` : 'Nasal breathing.')
+  if (minutes) parts.push(`${label?.trim() || 'Zone 2'}, ${minutes} min.`)
+  return parts.join(' ')
+}
+
+/**
+ * Bag work and rope, done: one line per round as it went ("ROUND 3 · 2:10"),
+ * clay with the seconds short when a round ended early (−0:50), and a clay
+ * ROUNDS line when fewer rounds were done than planned. Plain when as planned.
+ */
+export function roundDiffLines(roundSecs: ReadonlyArray<number>, plannedSecs: ReadonlyArray<number>): DiffLine[] {
+  const lines: DiffLine[] = []
+  const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`
+  if (plannedSecs.length > 0 && roundSecs.length < plannedSecs.length) {
+    const short = plannedSecs.length - roundSecs.length
+    lines.push({ label: 'ROUNDS', parts: [{ text: String(roundSecs.length), lifted: true }, { text: ` of ${plannedSecs.length}`, lifted: false }], chip: `${MINUS}${short}`, band: 'down' })
+  }
+  roundSecs.forEach((sec, i) => {
+    const plan = plannedSecs[i] ?? null
+    const short = plan != null ? plan - sec : 0
+    if (short >= 10) lines.push({ label: `ROUND ${i + 1}`, parts: [{ text: mmss(sec), lifted: true }], chip: `${MINUS}${mmss(short)}`, band: 'down' })
+    else lines.push(plainLine(`ROUND ${i + 1}`, mmss(sec)))
+  })
+  return lines
 }

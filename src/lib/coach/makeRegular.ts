@@ -10,7 +10,8 @@
 
 import { checkSessionChange, type PlacementContext } from './placement'
 import { DAY_NAMES, dowOf, isoOf, mondayOf, plannedLoad, sessionName, type TimeSlot } from './sessions'
-import { effortVerdict } from './feltHard'
+import { effortVerdict, SORE_NEXT_DAY } from './feltHard'
+import type { ProofTile } from './rampUp'
 
 export const MAKE_REGULAR_MIN_WEEKS = 2
 /** After a no (or a lapse), the same type is not asked about again for this long. */
@@ -27,6 +28,8 @@ export interface AddedSession {
   rir?: number | null
   /** Check-ins were off trend (flagged) that day or the morning after. */
   readinessOff?: boolean
+  /** Check-in soreness (1-5) the morning after; null when there was no check-in. */
+  nextMorningSoreness?: number | null
 }
 
 export interface MakeRegularCandidate {
@@ -37,6 +40,10 @@ export interface MakeRegularCandidate {
   dayOfWeek: number
   timeSlot: TimeSlot
   weeks: number
+  /** The Mondays of the weeks it ran, oldest first (the proof tiles: WK 2 ✓ · WK 3 ✓). */
+  mondays: number[]
+  /** Every one of those adds had a check-in the morning after, under sore (page 36: NOT SORE). */
+  notSore: boolean
 }
 
 function wentWell(a: AddedSession): boolean {
@@ -63,9 +70,10 @@ export function makeRegularCandidates(adds: AddedSession[], lastMonday: number):
   const out: MakeRegularCandidate[] = []
   for (const list of byKey.values()) {
     let weeks = 0
+    const mondays: number[] = []
     for (let w = 0; w < MAKE_REGULAR_MIN_WEEKS; w++) {
       const mon = lastMonday - 7 * w
-      if (list.some(a => mondayOf(a.epochDay) === mon)) weeks++
+      if (list.some(a => mondayOf(a.epochDay) === mon)) { weeks++; mondays.unshift(mon) }
       else break
     }
     if (weeks < MAKE_REGULAR_MIN_WEEKS) continue
@@ -77,7 +85,9 @@ export function makeRegularCandidates(adds: AddedSession[], lastMonday: number):
     const [best] = [...counts.entries()].sort((x, y) => y[1] - x[1])
     const [dow, slot] = best[0].split(':')
     const latest = [...list].sort((x, y) => y.epochDay - x.epochDay)[0]
-    out.push({ type: latest.type, label: latest.label ?? null, notes: latest.notes ?? null, dayOfWeek: Number(dow), timeSlot: slot === 'pm' ? 'pm' : 'am', weeks })
+    const counted = list.filter(a => mondays.includes(mondayOf(a.epochDay)))
+    const notSore = counted.length > 0 && counted.every(a => a.nextMorningSoreness != null && a.nextMorningSoreness < SORE_NEXT_DAY)
+    out.push({ type: latest.type, label: latest.label ?? null, notes: latest.notes ?? null, dayOfWeek: Number(dow), timeSlot: slot === 'pm' ? 'pm' : 'am', weeks, mondays, notSore })
   }
   return out
 }
@@ -109,6 +119,8 @@ export interface MakeRegularAsk {
   question: string
   /** One line of why. */
   why: string
+  /** The facts as short teal tiles (page 36): WK 2 ✓ · WK 3 ✓ · NOT SORE. */
+  proof: ProofTile[]
   options: MakeRegularOption[]
   defaultOption: MakeRegularOption
   expiresOnDay: number
@@ -135,11 +147,28 @@ export function safeRegularSlots(c: Pick<MakeRegularCandidate, 'type' | 'label' 
   return out
 }
 
+const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six']
+
+/**
+ * The proof tiles for an added session (page 36): one per week it ran, by the
+ * block's week number ("WK 2 ✓"), then NOT SORE when every morning after was
+ * under sore. Without week numbers the weeks read as one tile ("2 WEEKS ✓").
+ */
+export function makeRegularProof(c: Pick<MakeRegularCandidate, 'weeks' | 'mondays' | 'notSore'>, weekNumberOf?: (monday: number) => number | null): ProofTile[] {
+  const nums = (c.mondays ?? []).map(m => weekNumberOf?.(m) ?? null)
+  const tiles: ProofTile[] = nums.length > 0 && nums.every(n => n != null && n > 0)
+    ? nums.map(n => ({ label: `WK ${n}`, value: '✓' }))
+    : [{ label: `${c.weeks} WEEKS`, value: '✓' }]
+  if (c.notSore) tiles.push({ label: 'NOT SORE', value: '' })
+  return tiles
+}
+
 /**
  * The ask for one candidate against next week (ctx is next week's placement
  * context, starting `nextMonday`). Null when no weekly slot passes.
+ * `weekNumberOf` names the block week of a Monday, for the proof tiles.
  */
-export function makeRegularAsk(c: MakeRegularCandidate, ctx: PlacementContext, nextMonday: number): MakeRegularAsk | null {
+export function makeRegularAsk(c: MakeRegularCandidate, ctx: PlacementContext, nextMonday: number, weekNumberOf?: (monday: number) => number | null): MakeRegularAsk | null {
   const slots = safeRegularSlots(c, ctx, nextMonday)
   if (slots.length === 0) return null
   const name = sessionName({ type: c.type, label: c.label, notes: c.notes })
@@ -149,19 +178,22 @@ export function makeRegularAsk(c: MakeRegularCandidate, ctx: PlacementContext, n
   const usual: MakeRegularOption = {
     kind: 'make_regular', id: 'usual', ...base, slot: first,
     title: DAY_PLURAL[first.dayOfWeek],
-    detail: `${name}, ${first.timeSlot.toUpperCase()}, every week`,
+    // Page 36: "Where you've been putting it" (its usual day); otherwise the safe day the coach found.
+    detail: usualIsUsual ? "Where you've been putting it" : 'Your usual day is full next week',
     label: `${name} every ${DAY_NAMES[first.dayOfWeek]} ${first.timeSlot.toUpperCase()}`,
   }
   const others = slots.slice(1)
   const options: MakeRegularOption[] = [usual]
   if (others.length > 0) {
-    options.push({ kind: 'make_regular', id: 'another_day', ...base, title: 'ANOTHER DAY', safeSlots: others, detail: `Safe days: ${others.map(s => s.label).join(', ')}`, label: `${name} on another day` })
+    options.push({ kind: 'make_regular', id: 'another_day', ...base, title: 'ANOTHER DAY', safeSlots: others, detail: 'Pick from the safe days', label: `${name} on another day` })
   }
-  options.push({ kind: 'keep_extra', id: 'keep_extra', title: "I'LL ADD IT MYSELF", detail: 'Plan stays as it is. Added sessions still count.', label: 'Keep adding it yourself' })
-  const why = `${name} was added ${c.weeks} weeks running and went well.`
+  options.push({ kind: 'keep_extra', id: 'keep_extra', title: "I'LL ADD IT MYSELF", detail: 'Not in the plan. Still counts when you add it', label: 'Keep adding it yourself' })
+  // Page 36: "You've added it two weeks running and it went well."
+  const why = `You've added it ${COUNT_WORDS[c.weeks] ?? c.weeks} weeks running and it went well.`
   return {
-    question: `${why} Make it part of the plan? Accept adds it ${DAY_NAMES[first.dayOfWeek]} ${first.timeSlot.toUpperCase()} from next week.${usualIsUsual ? '' : ' Its usual day is not safe next week.'}`,
+    question: `${name} was added ${c.weeks} weeks running and went well. Make it part of the plan? Accept adds it ${DAY_NAMES[first.dayOfWeek]} ${first.timeSlot.toUpperCase()} from next week.${usualIsUsual ? '' : ' Its usual day is not safe next week.'}`,
     why,
+    proof: makeRegularProof(c, weekNumberOf),
     options,
     defaultOption: usual,
     expiresOnDay: nextMonday + 7,

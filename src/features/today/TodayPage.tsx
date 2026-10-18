@@ -27,7 +27,7 @@ import { AskBoard } from './AskBoard'
 import { askView, isAsk, type AskRow, type AskView } from './askView'
 import { AllDoneBoard, CoachBoard, EmptyDayBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip, type CoachChangeLine, type CoachQuestionLine } from './TodayBoards'
 import { TodayDay, type TodaySession } from './TodayDay'
-import { lanternFor, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
+import { lanternFor, shortWhy, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
 import { answersFromLog, shouldOpenCheckIn } from '@/features/blockZero/checkInFlow'
 import { CHECK_IN_EVENT, checkInSkippedOn, markCheckInSkipped, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
@@ -314,7 +314,9 @@ export function TodayPage() {
   const askViews = useMemo(() => asks.map(askView).filter((v): v is AskView => v != null), [asks])
   useEffect(() => {
     if (!loaded || deck || askOpen) return
-    const first = askViews.find(v => !asksShownThisOpen.has(v.id))
+    // Page 36: an ask shows first as a centred board. A missed session asks in its row on the
+    // Program day board instead (page 36 #4), so it waits on the Coach board.
+    const first = askViews.find(v => v.kind !== 'missed_session' && !asksShownThisOpen.has(v.id))
     if (!first) return
     const t = window.setTimeout(() => { asksShownThisOpen.add(first.id); setAskOpen(first) }, 0)
     return () => window.clearTimeout(t)
@@ -323,11 +325,18 @@ export function TodayPage() {
   const typeById = useMemo(() => new Map([...weekAdjustments, ...asks].map(a => [a.id, a.sessionType ?? null])), [weekAdjustments, asks])
   const iconOf = (type: string | null | undefined): SessionIconKey | null => (type ? sessionIconFor(type) : null)
   const coachChanges: CoachChangeLine[] = [
-    ...(summary?.changeLines ?? []).filter(c => c.kind !== 'week_prepared').map(c => ({ id: c.id, line: c.line, was: c.was ?? null, icon: iconOf(typeById.get(c.id)) })),
-    ...reactiveNotes.slice(0, 2).map(n => ({ id: n.id, line: n.note, was: null, icon: null })),
+    ...(summary?.changeLines ?? []).filter(c => c.kind !== 'week_prepared').map(c => ({ id: c.id, line: c.line, lead: c.lead ?? null, body: c.body ?? null, icon: iconOf(typeById.get(c.id)) })),
+    ...reactiveNotes.slice(0, 2).map(n => ({ id: n.id, line: n.note, icon: null })),
   ]
   const coachQuestions: CoachQuestionLine[] = askViews.map(v => ({ id: v.id, line: v.rowLine, icon: v.hero ?? iconOf(typeById.get(v.id)) }))
-  const whyLine = week?.week?.whyLine ?? (summary?.changeLines ?? []).find(c => c.kind === 'week_prepared')?.line ?? null
+  // On Today the why line is the Coach board's first line, shorter (page 36 #3).
+  const whyLine = shortWhy(week?.week?.whyLine ?? (summary?.changeLines ?? []).find(c => c.kind === 'week_prepared')?.line ?? null)
+  const openQuestion = (id: string) => {
+    const v = askViews.find(a => a.id === id) ?? null
+    // A missed session is answered in its row on the Program day board (page 36 #4).
+    if (v?.kind === 'missed_session') { navigate(`/program?day=${today}`); return }
+    setAskOpen(v)
+  }
 
   async function answerAsk(view: AskView, body: Record<string, unknown> | null) {
     setAskBusy(true)
@@ -729,20 +738,22 @@ export function TodayPage() {
   if (loading) {
     // A quick load shows the world alone; only a slow one brings the crest apart (it snaps together when done).
     if (!slowLoad) return loaded ? <LoadedNow onReady={() => setLoading(false)} /> : null
-    return <CrestLoading message="" done={loaded} onDone={() => setLoading(false)} />
+    return <CrestLoading message="Reading your profile." done={loaded} onDone={() => setLoading(false)} />
   }
 
   const replaceTarget = replaceState ? sessions.find(s => s.id === replaceState.sessionId) : null
   const skipTarget = skipReasonFor ? sessions.find(s => s.id === skipReasonFor) : null
   const doneIcons = sessions.filter(s => s.status === 'completed').map(s => iconFor(s))
   const tomorrowIcons = tomorrow.map(s => iconFor({ type: s.type, notes: s.notes ?? null }))
-  const tomorrowText = tomorrowLine(tomorrow, s => sessionDisplayName({ type: s.type, label: s.label ?? null, notes: s.notes ?? null }))
+  const newWeekTomorrow = todayEpoch + 1 > mondayOf(todayEpoch) + 6 ? nextWeek?.week?.weekNumber ?? null : null
+  const tomorrowText = tomorrowLine(tomorrow, s => sessionDisplayName({ type: s.type, label: s.label ?? null, notes: s.notes ?? null }), newWeekTomorrow)
   const home = showsHome(mode)
 
   return (
     <div className="td-page">
+      <div className="td-fill">
       <TodayHeader date={todayDate} />
-      {strip && <WeekStrip days={strip} />}
+      {strip && <WeekStrip days={strip} home={showsHome(mode)} />}
 
       {mode === 'day' && (
         <>
@@ -754,7 +765,7 @@ export function TodayPage() {
             classAdded={sessions.some(s => s.type === 'mt_class' && s.status !== 'skipped')}
             onAddClass={handleAddClassTonight}
           />
-          <CoachBoard why={whyLine} changes={coachChanges} questions={coachQuestions} onOpen={id => setAskOpen(askViews.find(v => v.id === id) ?? null)} />
+          <CoachBoard why={whyLine} changes={coachChanges} questions={coachQuestions} onOpen={openQuestion} />
           <MorningReportCard
             answers={dailyLog ? answersFromLog(dailyLog) : null}
             onCheckIn={() => setDeck({ startAt: 0, firstOpen: false })}
@@ -778,15 +789,15 @@ export function TodayPage() {
 
       {home && (
         <>
-          {/* the hobbit home fills the screen behind; the boards sit low */}
-          <div className="td-spacer" style={{ minHeight: strip ? '26dvh' : '40dvh' }} />
-          {coachQuestions.length > 0 && <CoachBoard why={null} changes={[]} questions={coachQuestions} onOpen={id => setAskOpen(askViews.find(v => v.id === id) ?? null)} />}
+          {/* page 43: the hobbit home fills the screen behind; the boards sit low, the Waybook last */}
+          <div className="td-spacer" />
           {mode === 'rest' && <RestDayBoards tomorrow={tomorrowIcons} tomorrowLine={tomorrowText} />}
-          {mode === 'unprepared' && <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} onAdd={openAddPicker} />}
+          {mode === 'unprepared' && <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} />}
           {mode === 'allDone' && <AllDoneBoard icons={doneIcons} onShowDay={() => setShowDayAnyway(true)} />}
-          <WaybookLine today={today} />
+          <WaybookLine today={today} variant="home" />
         </>
       )}
+      </div>
 
       <button type="button" onClick={() => navigate('/settings')} aria-label="Settings" className="td-settings">
         <FlapLabel text="SETTINGS" size="xs" tone="dim" animate={false} />

@@ -11,9 +11,13 @@ import {
   doneHeadline,
   minutesLine,
   planLiftLine,
+  roundDiffLines,
   rowStatus,
   runDiffLines,
   strengthDiffLines,
+  strengthWeekLine,
+  topLiftsLine,
+  zone2PlanLine,
   type DayBoardSession,
   type DiffLine,
   type RunActuals,
@@ -34,7 +38,13 @@ export interface SessionSummaryProps {
   weekNumber?: number | null
   onReplace?: () => void
   onSkip?: () => void
-  /** Extra buttons after REPLACE / SKIP (Today's START). */
+  /**
+   * 'program' (page 33): the summary panel under the row, small REPLACE / SKIP.
+   * 'today' (pages 20, 35): in the row, the intent and top lifts, then
+   * full-width ENTER / REPLACE / SKIP (`actions`); a done one reads "effort 7".
+   */
+  variant?: 'program' | 'today'
+  /** Today's buttons (ENTER / REPLACE / SKIP), full width under the lines. */
   actions?: ReactNode
 }
 
@@ -43,11 +53,11 @@ interface RunPrescription extends RunPlan {
 }
 
 type SummaryData =
-  | { kind: 'strength'; exercises: WorkoutExercise[]; notes: string[] }
+  | { kind: 'strength'; exercises: WorkoutExercise[]; notes: string[]; plannedMin: number | null }
   | { kind: 'run'; plan: RunPrescription | null; run: RunActuals | null }
-  | { kind: 'mobility'; moves: Array<{ name: string; completed: boolean }> }
-  | { kind: 'bag'; rounds: number; plannedMin: number | null }
-  | { kind: 'rope'; rounds: number | null; roundSec: number | null }
+  | { kind: 'mobility'; moves: Array<{ name: string; completed: boolean }>; plannedMin: number | null }
+  | { kind: 'bag'; rounds: number; plannedMin: number | null; plannedSecs: number[]; roundSecs: number[] | null }
+  | { kind: 'rope'; rounds: number | null; roundSec: number | null; plannedMin: number | null; roundSecs: number[] | null }
   | { kind: 'mt'; plannedMin: number | null; durationMin: number | null; classType: string | null; focus: string | null }
   | { kind: 'recovery'; hip: boolean | null; foam: boolean | null }
   | { kind: 'none' }
@@ -80,8 +90,8 @@ async function loadSummary(s: DayBoardSession): Promise<SummaryData> {
   switch (s.type) {
     case 'strength': {
       // A started or finished session reads its logged rows; a planned one the preview.
-      const res = await apiFetch<{ exercises?: WorkoutExercise[] } & Record<string, unknown>>(done ? `/api/sessions/${s.id}/workout` : `/api/sessions/${s.id}/strength-preview`)
-      return { kind: 'strength', exercises: res.exercises ?? [], notes: done ? [] : coachNotes(res) }
+      const res = await apiFetch<{ exercises?: WorkoutExercise[]; plannedMin?: number | null } & Record<string, unknown>>(done ? `/api/sessions/${s.id}/workout` : `/api/sessions/${s.id}/strength-preview`)
+      return { kind: 'strength', exercises: res.exercises ?? [], notes: done ? [] : coachNotes(res), plannedMin: typeof res.plannedMin === 'number' ? res.plannedMin : null }
     }
     case 'running':
     case 'foundation_run': {
@@ -90,18 +100,17 @@ async function loadSummary(s: DayBoardSession): Promise<SummaryData> {
       return { kind: 'run', plan: res.prescription ?? null, run: res.runSession ?? s.runSession ?? null }
     }
     case 'mobility': {
-      const res = await apiFetch<{ exercises?: Array<{ completed?: number | boolean; exercise?: { name: string } | null }> }>(`/api/sessions/${s.id}/mobility-workout`)
-      return { kind: 'mobility', moves: (res.exercises ?? []).map(e => ({ name: e.exercise?.name ?? 'Move', completed: e.completed === 1 || e.completed === true })) }
+      const res = await apiFetch<{ exercises?: Array<{ completed?: number | boolean; exercise?: { name: string } | null }>; plannedMin?: number | null }>(`/api/sessions/${s.id}/mobility-workout`)
+      return { kind: 'mobility', moves: (res.exercises ?? []).map(e => ({ name: e.exercise?.name ?? 'Move', completed: e.completed === 1 || e.completed === true })), plannedMin: res.plannedMin ?? null }
     }
     case 'bag_work': {
-      const res = await apiFetch<{ rounds?: Array<{ durationSec: number; restSec: number }> }>(`/api/sessions/${s.id}/bag-workout`)
+      const res = await apiFetch<{ rounds?: Array<{ durationSec: number; restSec: number }>; plannedMin?: number | null; roundSecs?: number[] | null }>(`/api/sessions/${s.id}/bag-workout`)
       const rounds = res.rounds ?? []
-      const sec = rounds.reduce((n, r) => n + r.durationSec + r.restSec, 0)
-      return { kind: 'bag', rounds: rounds.length, plannedMin: sec > 0 ? Math.round(sec / 60) : null }
+      return { kind: 'bag', rounds: rounds.length, plannedMin: res.plannedMin ?? null, plannedSecs: rounds.map(r => r.durationSec), roundSecs: res.roundSecs ?? null }
     }
     case 'skip_rope': {
-      const res = await apiFetch<{ skipSession: { roundCount: number; roundDurSec: number } | null }>(`/api/sessions/${s.id}/skip-rope-workout`)
-      return { kind: 'rope', rounds: res.skipSession?.roundCount ?? null, roundSec: res.skipSession?.roundDurSec ?? null }
+      const res = await apiFetch<{ skipSession: { roundCount: number; roundDurSec: number } | null; plannedMin?: number | null; roundSecs?: number[] | null }>(`/api/sessions/${s.id}/skip-rope-workout`)
+      return { kind: 'rope', rounds: res.skipSession?.roundCount ?? null, roundSec: res.skipSession?.roundDurSec ?? null, plannedMin: res.plannedMin ?? null, roundSecs: res.roundSecs ?? null }
     }
     case 'mt_class': {
       const res = await apiFetch<{ mtLog: { classType: string | null; focusSkill: string | null; durationMin: number | null } | null; plannedMin?: number | null }>(`/api/sessions/${s.id}/mt-class-workout`)
@@ -118,15 +127,14 @@ async function loadSummary(s: DayBoardSession): Promise<SummaryData> {
 }
 
 /**
- * The planned length of a timed session (the run's prescription, the class,
- * the rounds): what a done headline compares against. Strength and
- * Foundation have no planned length, only the coach's rough planning
- * minutes, so their headline stays plain.
+ * The planned length a done headline compares against (page 33's "+7 min"):
+ * the run's prescription, the class, the rounds, and strength and Foundation
+ * from their own sets and routine (the server's plannedMin).
  */
 function plannedMinutes(data: SummaryData | null): number | null {
   if (data?.kind === 'run' && data.plan?.targetDurSec) return Math.round(data.plan.targetDurSec / 60)
   if (data?.kind === 'mt' && data.plannedMin) return data.plannedMin
-  if (data?.kind === 'bag' && data.plannedMin) return data.plannedMin
+  if ((data?.kind === 'bag' || data?.kind === 'rope' || data?.kind === 'strength' || data?.kind === 'mobility') && data.plannedMin) return data.plannedMin
   if (data?.kind === 'rope' && data.rounds && data.roundSec) return Math.round((data.rounds * data.roundSec) / 60)
   return null
 }
@@ -149,17 +157,22 @@ function planView(s: DayBoardSession, data: SummaryData | null, weekNumber: numb
   const prose: string[] = []
   const lines: DiffLine[] = []
   switch (data?.kind) {
-    case 'strength':
+    case 'strength': {
+      const week = strengthWeekLine(s.blockType, weekNumber ?? s.blockWeek)
+      if (week) prose.push(week)
       prose.push(...data.notes)
+      if (prose.length === 0) prose.push(getSessionIntent(s.type))
       for (const ex of data.exercises) if (ex.section !== 'warmup') lines.push(planLiftLine(ex))
       break
+    }
     case 'run': {
       const p = data.plan
+      // Page 33: one line for an easy run ("Easy, conversational pace. Heart rate under 142, ...").
+      if (isZone2(s, p)) { prose.push(zone2PlanLine(s.label, p?.z2CeilingBpm, p?.targetDurSec ? Math.round(p.targetDurSec / 60) : null)); break }
       if (p?.targetDesc) prose.push(p.targetDesc)
       else prose.push(getSessionIntent(s.type))
       if (p?.targetDurSec) lines.push(plain('TIME', `${Math.round(p.targetDurSec / 60)} min`))
       if (p?.targetDistKm) lines.push(plain('DISTANCE', `${p.targetDistKm} km`))
-      if (p?.z2CeilingBpm && isZone2(s, p)) lines.push(plain('HR CAP', `under ${p.z2CeilingBpm} bpm`))
       break
     }
     case 'mobility': {
@@ -183,19 +196,20 @@ function planView(s: DayBoardSession, data: SummaryData | null, weekNumber: numb
     default:
       prose.push(getSessionIntent(s.type))
   }
-  if (lines.length === 0 && !(data?.kind === 'run' && data.plan?.targetDurSec)) {
+  if (lines.length === 0 && data?.kind !== 'run' && data?.kind !== 'mobility') {
     lines.push(plain('ABOUT', `${aboutMinutes(s, data, weekNumber)} min`))
   }
   return { prose, lines }
 }
 
 /** The done side: the headline and plan vs actual. */
-function doneView(s: DayBoardSession, data: SummaryData | null): { head: DiffLine; lines: DiffLine[]; note: string | null } {
+function doneView(s: DayBoardSession, data: SummaryData | null, weekNumber: number | null | undefined, effortWord: 'RPE' | 'effort'): { lead: string | null; head: DiffLine; lines: DiffLine[]; note: string | null } {
   const run = data?.kind === 'run' ? data.run ?? s.runSession ?? null : s.runSession ?? null
   const actual = actualMinutes(s) ?? (run?.durationSec ? Math.round(run.durationSec / 60) : null)
-  const head = doneHeadline(actual, plannedMinutes(data), { rpe: s.rpe ?? null, from: run?.source === 'strava' ? 'Strava' : null })
+  const head = doneHeadline(actual, plannedMinutes(data), { rpe: s.rpe ?? null, from: run?.source === 'strava' ? 'Strava' : null, effortWord })
   const lines: DiffLine[] = []
   let note: string | null = null
+  let lead: string | null = null
   switch (data?.kind) {
     case 'strength':
       lines.push(...strengthDiffLines(data.exercises))
@@ -204,20 +218,22 @@ function doneView(s: DayBoardSession, data: SummaryData | null): { head: DiffLin
       if (run) lines.push(...runDiffLines(run, data.plan, { zone2: isZone2(s, data.plan) }))
       break
     case 'mobility': {
+      // Page 33: the routine line first, then the done line; a move short of the plan gets its clay band.
+      lead = `Back block, then the neck and shoulder block. Level ${foundationLevel(s.blockType === 'block_zero' ? weekNumber ?? null : null)}.`
       const total = data.moves.length
       const did = data.moves.filter(m => m.completed).length
-      if (total > 0 && did > 0) {
-        lines.push(did < total
-          ? { label: 'MOVES', parts: [{ text: `${did}`, lifted: true }, { text: ` of ${total}`, lifted: false }], chip: `−${total - did}`, band: 'down' }
-          : plain('MOVES', `${did} of ${total}`))
+      if (total > 0 && did > 0 && did < total) {
+        lines.push({ label: 'MOVES', parts: [{ text: `${did}`, lifted: true }, { text: ` of ${total}`, lifted: false }], chip: `−${total - did}`, band: 'down' })
       }
       break
     }
     case 'bag':
-      if (data.rounds > 0) lines.push(plain('ROUNDS', String(data.rounds)))
+      if (data.roundSecs && data.roundSecs.length > 0) lines.push(...roundDiffLines(data.roundSecs, data.plannedSecs))
+      else if (data.rounds > 0) lines.push(plain('ROUNDS', String(data.rounds)))
       break
     case 'rope':
-      if (data.rounds && data.roundSec) lines.push(plain('ROUNDS', `${data.rounds} × ${Math.round(data.roundSec / 60)} min`))
+      if (data.roundSecs && data.roundSecs.length > 0) lines.push(...roundDiffLines(data.roundSecs, Array.from({ length: data.rounds ?? 0 }, () => data.roundSec ?? 0)))
+      else if (data.rounds && data.roundSec) lines.push(plain('ROUNDS', `${data.rounds} × ${Math.round(data.roundSec / 60)} min`))
       break
     case 'mt': {
       const cls = minutesLine('CLASS', data.durationMin, data.plannedMin)
@@ -231,7 +247,14 @@ function doneView(s: DayBoardSession, data: SummaryData | null): { head: DiffLin
       if (data.foam != null) lines.push(plain('FOAM ROLLING', data.foam ? '✓' : '·'))
       break
   }
-  return { head, lines, note }
+  return { lead, head, lines, note }
+}
+
+/** Page 33's quiet note under a done summary with bands (Program only; Today leaves it out, page 35). */
+function bandNote(data: SummaryData | null, lines: DiffLine[]): string | null {
+  if (!lines.some(l => l.band)) return null
+  if (data?.kind === 'run' && lines.some(l => l.label === 'AVG HR' && l.band === 'down')) return "Heart rate over your Zone 2 cap shows clay: that's the miss on an easy day."
+  return 'Teal went up, clay fell short. Plain lines went as planned.'
 }
 
 function Chip({ line }: { line: DiffLine }) {
@@ -239,9 +262,13 @@ function Chip({ line }: { line: DiffLine }) {
   return <i className={`db-dv ${line.band === 'up' ? 'is-up' : 'is-dn'}`}>{line.chip}</i>
 }
 
-/** The parts, the lifted value, and its chip right after it ("52 min +7 min · RPE 7"). */
-function Parts({ line }: { line: DiffLine }) {
-  const at = line.parts.findIndex(p => p.lifted)
+/**
+ * The parts with the lifted value and its chip (page 33): on the headline the
+ * chip follows the lifted value ("52 min +7 min · RPE 7"); on a lift line it
+ * closes the line ("2×7 · 115 −1 rep").
+ */
+function Parts({ line, chipAfterLifted = false }: { line: DiffLine; chipAfterLifted?: boolean }) {
+  const at = chipAfterLifted ? line.parts.findIndex(p => p.lifted) : -1
   const chipAt = at >= 0 ? at : line.parts.length - 1
   return (
     <>
@@ -264,7 +291,7 @@ function Line({ line }: { line: DiffLine }) {
   )
 }
 
-export function SessionSummary({ session, weekNumber, onReplace, onSkip, actions }: SessionSummaryProps) {
+export function SessionSummary({ session, weekNumber, onReplace, onSkip, variant = 'program', actions }: SessionSummaryProps) {
   const key = `${session.id}:${session.status}`
   const [loaded, setLoaded] = useState<{ key: string; data: SummaryData | null } | null>(null)
 
@@ -282,21 +309,37 @@ export function SessionSummary({ session, weekNumber, onReplace, onSkip, actions
   const ready = loaded?.key === key
   const data = ready ? loaded.data : null
   const todo = status === 'todo'
+  const today = variant === 'today'
+
+  // Today, a session to do (page 20): the intent line, the top lifts, then ENTER / REPLACE / SKIP full width.
+  if (today && status !== 'done') {
+    const lifts = data?.kind === 'strength' ? topLiftsLine(data.exercises) : null
+    return (
+      <div className="db-today">
+        <p className="db-today-p">{getSessionIntent(session.type)}</p>
+        {lifts && <p className="db-today-p">{lifts}</p>}
+        {actions && <div className="wm-btns">{actions}</div>}
+      </div>
+    )
+  }
 
   return (
-    <div className="db-sum">
+    <div className={today ? 'db-sumx' : 'db-sum'}>
       {!ready ? (
         <p className="db-sum-p is-dim">Reading the plan.</p>
       ) : status === 'done' ? (
         (() => {
-          const v = doneView(session, data)
+          const v = doneView(session, data, weekNumber, today ? 'effort' : 'RPE')
+          const note = today ? null : bandNote(data, [v.head, ...v.lines])
           return (
             <>
-              <p className={`db-sum-p${v.head.band === 'up' ? ' db-band is-up' : v.head.band === 'down' ? ' db-band is-dn' : ' is-done'}`}>
-                <Parts line={v.head} />
+              {v.lead && <p className="db-sum-p">{v.lead}</p>}
+              <p className={`db-sum-p is-done${v.head.band === 'up' ? ' db-band is-up' : v.head.band === 'down' ? ' db-band is-dn' : ''}`}>
+                <Parts line={v.head} chipAfterLifted />
               </p>
               {v.lines.length > 0 && <div className="db-lifts">{v.lines.map((l, i) => <Line key={`${l.label}-${i}`} line={l} />)}</div>}
               {v.note && <p className="db-sum-p is-dim">{v.note}</p>}
+              {note && <p className="db-dimnote">{note}</p>}
             </>
           )
         })()
@@ -311,11 +354,10 @@ export function SessionSummary({ session, weekNumber, onReplace, onSkip, actions
           )
         })()
       )}
-      {((todo && (onReplace || onSkip)) || actions) && (
+      {todo && (onReplace || onSkip) && (
         <div className="db-minis">
-          {todo && onReplace && <FlapButton label="REPLACE" primary size="xs" onClick={e => { e.stopPropagation(); onReplace() }} />}
-          {todo && onSkip && <FlapButton label="SKIP" size="xs" onClick={e => { e.stopPropagation(); onSkip() }} />}
-          {actions}
+          {onReplace && <FlapButton label="REPLACE" primary size="xs" onClick={e => { e.stopPropagation(); onReplace() }} />}
+          {onSkip && <FlapButton label="SKIP" size="xs" onClick={e => { e.stopPropagation(); onSkip() }} />}
         </div>
       )}
     </div>

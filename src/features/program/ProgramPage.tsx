@@ -88,7 +88,7 @@ function ProgramHeader() {
   return (
     <header className="pg-head">
       <Link to="/today" className="pg-brand" aria-label="Today">
-        <Crest width={26} still />
+        <span className="pg-crest"><Crest width={52} /></span>
         <FlapLabel text="PROGRAM" size="sm" />
       </Link>
       <FlapLabel text={`${DAY3[now.getDay()]} ${now.getDate()} ${MON3[now.getMonth()]}`} size="xs" />
@@ -448,7 +448,7 @@ export function ProgramPage() {
               <button
                 key={w}
                 type="button"
-                className={`pg-wk${w === weekNumber ? ' is-viewed' : ''}`}
+                className={`pg-wk${w === weekNumber ? ' is-viewed' : ''}${st === 'now' ? ' is-now' : ''}`}
                 aria-label={`Week ${w}${st === 'now' ? ', this week' : st === 'done' ? ', done' : ''}`}
                 aria-current={w === weekNumber ? 'true' : undefined}
                 onClick={() => goToWeek(w)}

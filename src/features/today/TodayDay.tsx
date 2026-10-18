@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon } from '@/design'
 import { SessionSummary } from '@/features/dayboard/SessionSummary'
-import { iconFor, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
+import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
-import { getEstimatedMin } from '@/lib/weeklyTemplate'
 import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
 
 /** A run's Strava / manual row, attached by GET /api/sessions/today. */
@@ -81,7 +80,8 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, o
   const done = s.status === 'completed' && !orphan
   const skipped = s.status === 'skipped' || s.status === 'missed'
   const name = orphan ? 'UNPLANNED RUN' : sessionDisplayName(s).toUpperCase()
-  const mins = (done || orphan) && (run?.durationSec ?? s.durationSec) ? `${Math.round((run?.durationSec ?? s.durationSec ?? 0) / 60)}min` : skipped ? '—' : `~${getEstimatedMin(s.type)}min`
+  // Page 35: a done row reads ✓ in the minutes' place (a teal tick once opened); a to-do its planned length.
+  const mins = orphan && run?.durationSec ? `${Math.round(run.durationSec / 60)}min` : skipped ? '—' : `~${plannedRowMinutes(s)}min`
 
   return (
     <div ref={rowRef} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}`}>
@@ -89,7 +89,7 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, o
         <SessionIcon kind={iconFor(s)} size={40} />
         <span className="td-nm"><FlapLabel text={name} size="md" len={11} fit /></span>
         {pending && <span className="td-from"><FlapLabel text="FROM STRAVA" size="xs" tone="teal" /></span>}
-        {done ? <span className="td-tick" aria-label="done">✓</span> : <span className="td-mins">{mins}</span>}
+        {done ? <span className={open ? 'td-tick' : 'td-mins'} aria-label="done">✓</span> : <span className="td-mins">{mins}</span>}
       </div>
       {open && (
         <div className="td-sum" onClick={e => e.stopPropagation()}>
@@ -119,11 +119,12 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, o
           ) : (
             <SessionSummary
               session={s}
+              variant="today"
               actions={actionable ? (
                 <>
-                  <FlapButton label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'} primary size="xs" onClick={() => onStart(s.id)} />
-                  {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="REPLACE" size="xs" onClick={() => onReplace(s.id)} />}
-                  {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="SKIP" size="xs" onClick={() => onSkip(s.id)} />}
+                  <FlapButton label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'} primary onClick={() => onStart(s.id)} />
+                  {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="REPLACE" onClick={() => onReplace(s.id)} />}
+                  {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="SKIP" onClick={() => onSkip(s.id)} />}
                   {s.status === 'in_progress' && <EndHold onHeld={() => { mediumHaptic(); setEndOpen(true) }} />}
                 </>
               ) : undefined}

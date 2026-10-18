@@ -31,15 +31,19 @@ function NavTab({ to, tab, label, end }: { to: string; tab: TabKey; label: strin
   )
 }
 
-/** Offline: a quiet flap pill ("OFFLINE · 3 SAVED"); the world rains. */
-function OfflinePill() {
+/**
+ * Offline (design-decisions "Offline", drawn on page 31 "Offline, mid-session"):
+ * a quiet flap, "OFFLINE · 2 SAVED", low on the left; the world rains. Over
+ * the tab bar on the tab screens, 70 px off the bottom where there is none.
+ */
+export function OfflinePill({ overTabs }: { overTabs: boolean }) {
   const online = useNetworkStatus()
   const [saved, setSaved] = useState(() => pendingWrites())
   useEffect(() => onOutboxChange(setSaved), [])
   if (online) return null
   return (
-    <div className="wm-offline-pill" role="status" aria-live="polite">
-      <FlapLabel text={saved > 0 ? `OFFLINE · ${saved} SAVED` : 'OFFLINE'} size="xs" tone="dim" animate={false} />
+    <div className={`wm-offline-pill${overTabs ? ' is-over-tabs' : ''}`} role="status" aria-live="polite">
+      <FlapLabel text={saved > 0 ? `OFFLINE · ${saved} SAVED` : 'OFFLINE'} size="xs" animate={false} />
     </div>
   )
 }
@@ -48,7 +52,6 @@ export function ShellLayout() {
   return (
     <div className="waymark-preview-root relative z-[1] min-h-dvh text-foreground">
       <div className="waymark-mobile-shell mx-auto flex h-dvh w-full max-w-[430px] flex-col">
-        <OfflinePill />
         <main className="waymark-scroll min-h-0 flex-1 overflow-auto px-4 pb-4">
           <Outlet />
         </main>

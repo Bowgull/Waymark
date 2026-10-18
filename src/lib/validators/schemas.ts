@@ -10,6 +10,8 @@ export const completeSessionSchema = z.object({
   // When the athlete tapped finish (unix seconds). An outbox replay can land
   // hours later; the server keeps it between the start and now.
   completedAt: z.number().int().min(0).optional(),
+  // Bag work and rope: seconds actually worked in each round, in order (the done summary's per-round lines).
+  roundSecs: z.array(z.number().int().min(0).max(3600)).max(40).optional(),
 })
 
 export const strengthSetSchema = z.object({

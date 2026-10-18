@@ -3,7 +3,7 @@
 // pass (eases with reasons, why line, idempotency) and the morning summary.
 import { fighterTmDecision, tmAcceptValues, tmProposal, type BlockWorkingSet } from './tm'
 import { claimDecision, easeDetail, placePlannedWeek, type PlannedEntry, houseLine, STALE_CLAIM_SEC, weekRuleEases, weeklyPassKey, weeklyPassTarget, whyThisWeek, type WeekSignals } from './weeklyPass'
-import { buildCoachSummary, morningLine } from './summary'
+import { buildCoachSummary, easeBody, morningLine } from './summary'
 import { summarizeEffort } from './feltHard'
 import { MON, assert, ctx, s } from './testUtil'
 import { analyzeWeek, previousAnalysisFrom } from '../weekAnalysis'
@@ -105,7 +105,7 @@ assert(morningLine(2, 1) === '2 changes, 1 question' && morningLine(1, 0) === '1
 const since = 1000
 const now = 5000
 const summary = buildCoachSummary([
-  { id: 'a', adjustmentType: 'felt_hard', status: 'accepted', auto: 1, reason: 'Thu strength eases.', createdAt: 1500, expiresAt: null, sourceData: JSON.stringify({ was: 'Planned sets and load' }) },
+  { id: 'a', adjustmentType: 'felt_hard', status: 'accepted', auto: 1, reason: 'Thu strength eases.', createdAt: 1500, expiresAt: null, sourceData: JSON.stringify({ was: 'Planned sets and load', lead: 'Strength C eased', body: ': one set less, load 10% lower. Soreness 4 the morning after Wed strength.' }) },
   { id: 'b', adjustmentType: 'reactive', status: 'accepted', auto: 0, reason: 'Hold.', createdAt: 1600, expiresAt: null },
   { id: 'c', adjustmentType: 'felt_hard', status: 'accepted', auto: 1, reason: 'Old.', createdAt: 500, expiresAt: null },
   { id: 'd', adjustmentType: 'ramp_up', status: 'proposed', auto: 0, reason: 'Push a little this week?', createdAt: 1700, expiresAt: 9000 },
@@ -116,5 +116,9 @@ assert(summary.changes === 2 && summary.questions === 1, `counts: ${summary.chan
 assert(summary.line === '2 changes, 1 question', 'line for the alarm')
 assert(summary.changeLines.some(l => l.line === 'Week 5 is ready. 9 of 10 done.') && summary.changeLines.find(l => l.id === 'a')?.was === 'Planned sets and load', 'a prepared week and an auto change, with its "was"')
 assert(summary.questionLines[0].id === 'd', 'only open, unexpired questions; questions listed first')
+const eased = summary.changeLines.find(l => l.id === 'a')
+assert(eased?.lead === 'Strength C eased' && eased.body?.startsWith(': one set less'), 'an ease carries its bold lead and the words after it (page 36 Coach board)')
+assert(summary.changeLines.find(l => l.id === 'w')?.lead == null, 'lines without a lead stay plain')
+assert(easeBody('One set less, load 10% lower', 'Soreness 4 the morning after Wed strength. Sat strength c eases.') === ': one set less, load 10% lower. Soreness 4 the morning after Wed strength.', 'ease body: what it is now, then the cause')
 
 console.log('adaptive coach tests passed')

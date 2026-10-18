@@ -10,9 +10,11 @@ import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, 
 import { isoToEpochDay, mondayOf } from '../lib/dates'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
-import { FOUNDATION_LABEL, LEGACY_FOUNDATION_LABELS, foundationTemplate, strengthKindFromLabel, type FoundationInput } from '../lib/foundation'
+import { FOUNDATION_LABEL, LEGACY_FOUNDATION_LABELS, estimateRoutineSec, foundationTemplate, strengthKindFromLabel, type FoundationInput } from '../lib/foundation'
+import { SKIP_ROPE_REST_SEC } from '../lib/sessionResume'
 import { validateNarutoPatch } from '../lib/naruto'
 import { isLoggedWorkSet } from '../lib/loggedSets'
+import { parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes } from '../lib/plannedLength'
 import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
 import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
@@ -224,7 +226,9 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
     })
   }
 
-  return { session, exercises: result }
+  // The planned length from the session's own sets and rests (the done summary's "+N min").
+  const plannedMin = plannedStrengthMinutes(result.flatMap(r => r.sets.map(st => ({ isWarmup: st.isWarmup, restSec: st.restSec }))))
+  return { session, exercises: result, plannedMin }
 }
 
 async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
@@ -284,6 +288,8 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
     session,
     templateLabel: template.label,
     exercises: previewExercises,
+    // The planned length from the template's sets and rests (the done summary's "+N min").
+    plannedMin: plannedStrengthMinutes(template.exercises.flatMap(tex => tex.sets.map(st => ({ isWarmup: st.isWarmup, restSec: st.restSec })))),
     ...(bzPlan ? { blockZero: blockZeroPlanSummary(bzPlan) } : {}),
     coach: coachSummary(state, fighter),
   }
@@ -364,7 +370,10 @@ async function buildMobilityWorkoutResponse(db: DrizzleDB, sessionId: string) {
       }
     })
 
-  return { session, exercises: result }
+  // The routine's planned length (Foundation, about 12 min): the done summary's "+N min".
+  const routine = result.map(r => ({ exerciseId: r.exerciseId, label: r.exercise?.name ?? '', section: (r.section ?? 'dynamic') as MobilityExerciseTemplate['section'], sets: r.sets ?? 1, holdSec: r.holdSec ?? null, reps: r.reps ?? null, perSide: r.perSide }))
+  const plannedMin = routine.length > 0 ? Math.max(1, Math.round(estimateRoutineSec(routine) / 60)) : null
+  return { session, exercises: result, plannedMin }
 }
 
 async function missingExerciseIds(db: DrizzleDB, exerciseIds: string[]) {
@@ -396,7 +405,10 @@ async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
     })
   }
 
-  return { session, rounds: result }
+  // What was planned and, once done, each round as it went (seconds per round, from the finish).
+  const plannedMin = plannedRoundMinutes(rounds)
+  const roundSecs = parseRoundSecs(JSON.stringify(parseJson<{ roundSecs?: unknown }>(session?.contextJson ?? null, {}).roundSecs ?? null))
+  return { session, rounds: result, plannedMin, roundSecs }
 }
 
 const RUN_SESSION_TYPES = ['foundation_run', 'running']
@@ -1453,6 +1465,8 @@ app.post('/api/sessions/:id/complete', async (c) => {
     if (mt?.durationMin != null && mt.durationMin > 0) durationSec = mt.durationMin * 60
   }
 
+  // Bag work and rope keep the seconds of each round with the session (the done summary reads them).
+  const roundSecs = (session.type === 'bag_work' || session.type === 'skip_rope') && body.roundSecs && body.roundSecs.length > 0 ? body.roundSecs : null
   await db.update(sessions).set({
     status: 'completed',
     completedAt,
@@ -1460,6 +1474,7 @@ app.post('/api/sessions/:id/complete', async (c) => {
     rpe: body.rpe ?? null,
     difficulty: body.difficulty ?? null,
     notes: body.notes ?? null,
+    ...(roundSecs ? { contextJson: mergeContext(session.contextJson, { roundSecs }) } : {}),
   }).where(eq(sessions.id, sessionId))
 
   // TM progression is handled by POST /api/blocks/:id/progress-tm after 6-week blocks.
@@ -2134,7 +2149,10 @@ app.get('/api/sessions/:id/skip-rope-workout', async (c) => {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
   const [skip] = await db.select().from(skipRopeSessions).where(eq(skipRopeSessions.sessionId, sessionId))
-  return c.json({ session, skipSession: skip ?? null })
+  // The planned length and, once done, each round as it went (seconds per round, from the finish).
+  const plannedMin = skip ? plannedRoundMinutes(Array.from({ length: skip.roundCount }, () => ({ durationSec: skip.roundDurSec, restSec: SKIP_ROPE_REST_SEC }))) : null
+  const roundSecs = parseRoundSecs(JSON.stringify(parseJson<{ roundSecs?: unknown }>(session.contextJson, {}).roundSecs ?? null))
+  return c.json({ session, skipSession: skip ?? null, plannedMin, roundSecs })
 })
 
 // ─── Active Recovery ───────────────────────────────────────────

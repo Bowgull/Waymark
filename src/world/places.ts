@@ -20,6 +20,8 @@ export interface PlaceView {
   camY: number
   /** Screen px per world unit (the mockup frustum over its canvas height). */
   pxPerUnit: number
+  /** The px a glyph prints at in this view (9, or larger where a mockup shows the world enlarged). */
+  glyph: number
   /** Where the look point sits on screen, as a fraction from the top. */
   anchor: number
   /** How far the camera sways (the game's slow orbit). */
@@ -38,18 +40,27 @@ export type SceneKey = keyof typeof PLACE_ORIGIN
 
 const pathX = (z: number) => 0.25 + Math.sin(z * 0.42) * 0.75
 
+/**
+ * Today's mockups (pages 20, 35, 36, 42) put the page-14 forest behind the UI as a still
+ * (flap.css .stillbg: a 920×1800 capture of the page-14 phone, its screen 780 px wide with
+ * 70 px each side, drawn at 150% of the phone's width, centred, 42% down). That is the
+ * page-14 view enlarged by TODAY_ZOOM, its look point 410.4 px down: glyphs print larger too.
+ */
+export const TODAY_ZOOM = (585 / 920) * 2
+const TODAY_LOOK_Y_PX = (844 - 1800 * (585 / 920)) * 0.42 + 422 * TODAY_ZOOM
+
 export const PLACE_VIEWS: Readonly<Record<WorldPlace, PlaceView>> = {
-  // page 14: frustum 11 on a 390×844 phone, lookY 2.2
-  clearing: { x: PLACE_ORIGIN.clearing, lookY: 2.2, lookZ: 0, camY: 6.5, pxPerUnit: 844 / 11, anchor: 0.5, orbit: 0.12, near: 0.1 },
-  // page 33: frustum 8 on a 390×400 band at the top of the screen, camY 11, lookY 0.6, lookZ -2.5
-  road: { x: PLACE_ORIGIN.road, lookY: 0.6, lookZ: -2.5, camY: 11, pxPerUnit: 400 / 8, anchor: 200 / 844, orbit: 0.12, near: 0.1 },
-  // page 14b: the arch down the clearing's path (lookX = the path at the arch), a little wider than the close-up;
-  // what stands between the camera and the arch is clipped (near 20 = 2 units in front of it), like the close-up
-  arch: { x: PLACE_ORIGIN.clearing + pathX(-7.4), lookY: 1.4, lookZ: -7.4, camY: 3.2, pxPerUnit: 844 / 9, anchor: 0.34, orbit: 0.04, near: 20 },
+  // page 14's world (frustum 11, lookY 2.2) as Today's mockups show it: enlarged by TODAY_ZOOM, look point 410 px down
+  clearing: { x: PLACE_ORIGIN.clearing, lookY: 2.2, lookZ: 0, camY: 6.5, pxPerUnit: (844 / 11) * TODAY_ZOOM, glyph: 9 * TODAY_ZOOM, anchor: TODAY_LOOK_Y_PX / 844, orbit: 0.12, near: 0.1 },
+  // page 33: frustum 8 on a 390×400 render, drawn as the road band (46% of the phone, cover: 6 px off its top)
+  road: { x: PLACE_ORIGIN.road, lookY: 0.6, lookZ: -2.5, camY: 11, pxPerUnit: 400 / 8, glyph: 9, anchor: (200 - 6) / 844, orbit: 0.12, near: 0.1 },
+  // page 14b, exactly: the close-up of the arch down the clearing's path (frustum 4.2 on the phone, lookX = the
+  // path at the arch, lookY 1.4, lookZ -7.4, camY 3.2, orbit 0.04). Glyphs keep their 9 px at this zoom (world.ts).
+  arch: { x: PLACE_ORIGIN.clearing + pathX(-7.4), lookY: 1.4, lookZ: -7.4, camY: 3.2, pxPerUnit: 844 / 4.2, glyph: 9, anchor: 0.5, orbit: 0.04, near: 0.1 },
   // page 32: the pond filling the screen, camY 5.6, lookY 3.6, lookZ 7
-  pond: { x: PLACE_ORIGIN.pond, lookY: 3.6, lookZ: 7, camY: 5.6, pxPerUnit: 844 / 11, anchor: 0.5, orbit: 0.12, near: 0.1 },
+  pond: { x: PLACE_ORIGIN.pond, lookY: 3.6, lookZ: 7, camY: 5.6, pxPerUnit: 844 / 11, glyph: 9, anchor: 0.5, orbit: 0.12, near: 0.1 },
   // page 43: the hobbit home, frustum 7.5, lookY 1.3
-  home: { x: PLACE_ORIGIN.home, lookY: 1.3, lookZ: 0, camY: 6.5, pxPerUnit: 844 / 7.5, anchor: 0.5, orbit: 0.12, near: 0.1 },
+  home: { x: PLACE_ORIGIN.home, lookY: 1.3, lookZ: 0, camY: 6.5, pxPerUnit: 844 / 7.5, glyph: 9, anchor: 0.5, orbit: 0.12, near: 0.1 },
 }
 
 /** Which scene a place's view stands in (the arch is inside the clearing). */
@@ -57,9 +68,15 @@ export function sceneOf(place: WorldPlace): SceneKey {
   return place === 'arch' ? 'clearing' : place
 }
 
-/** The glyph size (world units) a scene is built with, so it prints at `glyphPx` at its own view. */
-export function sceneGlyphWorld(scene: SceneKey, glyphPx = 9): number {
-  return glyphPx / PLACE_VIEWS[scene].pxPerUnit
+/** The glyph size (world units) a scene is built with, so it prints at its own view's glyph size. */
+export function sceneGlyphWorld(scene: SceneKey): number {
+  const v = PLACE_VIEWS[scene]
+  return v.glyph / v.pxPerUnit
+}
+
+/** The glyph size (world units) for a view: what surfaces print at, and what glyph cards scale to. */
+export function viewGlyphWorld(view: PlaceView): number {
+  return view.glyph / view.pxPerUnit
 }
 
 /** The lamp each scene lights with (world coords): THE lantern, or the hobbit home's door light. */
@@ -91,7 +108,7 @@ export function mixView(a: PlaceView, b: PlaceView, k: number): PlaceView {
   const m = (p: number, q: number) => p + (q - p) * k
   return {
     x: m(a.x, b.x), lookY: m(a.lookY, b.lookY), lookZ: m(a.lookZ, b.lookZ), camY: m(a.camY, b.camY),
-    pxPerUnit: Math.exp(m(Math.log(a.pxPerUnit), Math.log(b.pxPerUnit))),
+    pxPerUnit: Math.exp(m(Math.log(a.pxPerUnit), Math.log(b.pxPerUnit))), glyph: m(a.glyph, b.glyph),
     anchor: m(a.anchor, b.anchor), orbit: m(a.orbit, b.orbit), near: m(a.near, b.near),
   }
 }

@@ -2,7 +2,7 @@
 // Ramp-up ask: fresh streak + easier sessions -> one ask with safe options;
 // never on ease days, never after a gap, at most once a week, never past caps.
 import { evaluateReadiness, type CheckIn } from '../blockZero/readiness'
-import { freshStreak, moreWeightDetail, rampUpAsk, rampUpEligibility, rampUpOptions, RAMP_DECLINE, type RampUpSignals } from './rampUp'
+import { freshStreak, joinNames, moreWeightDetail, rampUpAsk, rampUpEligibility, rampUpOptions, RAMP_DECLINE, type RampUpSignals } from './rampUp'
 import { summarizeEffort } from './feltHard'
 import { MON, assert, ctx, s } from './testUtil'
 
@@ -24,7 +24,11 @@ const easyEffort = summarizeEffort([
 const signals: RampUpSignals = { todayEpochDay: MON + 1, readiness: days, effort: easyEffort, liftPush: false, easeToday: false, noPush: false, askedThisWeek: false }
 const e = rampUpEligibility(signals)
 assert(e.eligible && e.why != null && houseVoice(e.why), `eligible with a plain why: ${e.why}`)
-assert(e.proof.some(p => p.label === 'READINESS') && e.proof.some(p => p.label === 'EFFORT'), 'proof tiles carry the readiness and effort facts')
+assert(JSON.stringify(e.proof) === JSON.stringify([{ label: 'FRESH', value: '2 DAYS' }, { label: 'EASY', value: '3 OF 3' }]), `proof tiles are short label/value pairs as page 36 (FRESH 2 DAYS, EASY 3 OF 3): ${JSON.stringify(e.proof)}`)
+assert(e.proof.every(p => p.label.length + p.value.length <= 14 && p.label === p.label.toUpperCase() && p.value === p.value.toUpperCase()), 'every proof tile fits one short flap, upper case')
+assert(e.why === "You've been fresh and sessions felt easy.", `why in the page-36 words: ${e.why}`)
+assert(JSON.stringify(rampUpEligibility({ ...signals, effort: summarizeEffort([]), liftPush: true }).proof) === JSON.stringify([{ label: 'FRESH', value: '2 DAYS' }, { label: 'LIFTS', value: 'UP 2 OF 3' }]), 'a lift-trend push shows LIFTS UP 2 OF 3, no empty EASY tile')
+assert(joinNames(['Squat', 'RDL']) === 'Squat and RDL' && joinNames(['A', 'B', 'C']) === 'A, B and C' && joinNames(['A']) === 'A', 'lift names join in plain words')
 
 const week = [
   s('strength', MON + 3, { label: null }),
@@ -39,13 +43,18 @@ const optInput = {
   liftPush: false,
   classDays: new Set([1, 3, 5]),
   mainLifts: [{ exerciseId: 'ex-squat', name: 'Squat', workingKg: 100 }, { exerciseId: 'ex-rdl', name: 'RDL', workingKg: 80 }],
+  nextStrength: { names: ['Squat', 'RDL'], sets: 2, reps: 8 },
 }
 const ask = rampUpAsk(signals, optInput)
 assert(ask != null && ask.options.length >= 2 && ask.options.length <= 3, `an ask with safe options (${ask?.options.map(o => o.id).join(', ')})`)
 assert(ask!.options[0].id === 'extra_set' && ask!.options[0].title === '+1 SET', 'first option: +1 SET on the next strength day')
+assert(ask!.options[0].detail === 'Squat and RDL, 3×8', `+1 SET sub-line as page 36: ${ask!.options[0].detail}`)
+const run = ask!.options.find(o => o.id === 'extra_run')
+assert(run == null || /^Zone 2, \d+ min$/.test(run.detail), `EXTRA RUN sub-line as page 36 ("Zone 2, 30 min"): ${run?.detail}`)
+assert(rampUpOptions({ ...optInput, nextStrength: null })[0].detail.endsWith('main lifts'), 'no plan for the strength day: a plain fallback line')
 const more = ask!.options.find(o => o.id === 'more_weight')
 assert(more != null && more.title === 'MORE WEIGHT' && more.kind === 'load_step' && more.lifts.length === 2 && more.lifts[0].toKg === 105, 'MORE WEIGHT carries per-lift new values (+5%)')
-assert(more != null && /Squat \d+ · RDL \d+/.test(more.detail) && !/load step/i.test(more.detail), `MORE WEIGHT detail in plain words: ${more?.detail}`)
+assert(more != null && /^Squat \d+ · RDL \d+(, \+\d+)? lb$/.test(more.detail) && !/load step/i.test(more.detail), `MORE WEIGHT detail as page 36 ("Squat 140 · RDL 120, +5 lb"): ${more?.detail}`)
 assert(ask!.decline.title === RAMP_DECLINE.title && ask!.decline.title === 'NOT THIS WEEK', 'decline is NOT THIS WEEK')
 assert(houseVoice(ask!.question) && ask!.expiresOnDay === MON + 7, 'question in house voice, lapses with the week')
 assert(moreWeightDetail([{ exerciseId: 'a', name: 'Squat', fromKg: 61.2, toKg: 63.5 }]).endsWith('+5 lb'), 'per-lift step shown in lb')

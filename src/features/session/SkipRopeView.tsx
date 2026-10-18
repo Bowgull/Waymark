@@ -37,9 +37,11 @@ interface SkipRopeViewProps {
   resume?: RoundsState | null
   /** Called on every change so the session can be resumed exactly here. */
   onPersist?: (state: RoundsState) => void
+  /** A round ended: its index (0-based) and the seconds actually skipped (the done summary's per-round lines). */
+  onRoundDone?: (roundIndex: number, actualSec: number) => void
 }
 
-export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersist }: SkipRopeViewProps) {
+export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersist, onRoundDone }: SkipRopeViewProps) {
   // Round is 1-based here; the saved state is 0-based like bag work.
   const [currentRound, setCurrentRound] = useState(() => (resume ? resume.round + 1 : 1))
   const [skipPhase, setSkipPhase] = useState<SkipPhase>(() =>
@@ -96,6 +98,8 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
   const endRound = useCallback((natural = false) => {
     const endedAt = natural && roundTimer.endsAtMs > 0 ? roundTimer.endsAtMs : Date.now()
     if (natural && !isStaleCue(endedAt, Date.now())) soundRoundEnd()
+    const dur = skipSession.roundDurSec
+    onRoundDone?.(currentRound - 1, natural ? dur : Math.max(0, Math.min(dur, dur - Math.max(0, roundTimer.secondsRemaining))))
     roundTimer.stop()
     void cancelRoundActiveCues()
     if (isLastRound) {
@@ -106,7 +110,7 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
       if (!natural) void scheduleRestCuesUntil(endedAt + SKIP_REST_SEC * 1000)
       setSkipPhase('rest')
     }
-  }, [isLastRound, onComplete, restTimer, roundTimer])
+  }, [currentRound, isLastRound, onComplete, onRoundDone, restTimer, roundTimer, skipSession.roundDurSec])
 
   const nextRound = useCallback((natural = false) => {
     if (natural && !isStaleCue(restTimer.endsAtMs, Date.now())) soundRoundStart()

@@ -22,6 +22,8 @@ import { blockTests, coachingOutputs, dailyLogs, sessions, settings, trainingBlo
 import type { createDB } from '../db/client'
 import {
   KEY_TYPES,
+  easeBody,
+  sessionName,
   claimDecision,
   houseLine,
   isoOf,
@@ -317,7 +319,7 @@ export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptio
       createdAt: nowSec,
     })
     if (ease) {
-      await recordAutoChange(db, { weekPlanId: weekId, adjustmentType: 'weekly_ease', sessionType: p.type, action: 'ease', reason: ease.reason, targetSessionId: id, targetEpochDay: p.epochDay, timeSlot: p.timeSlot, was: ease.was, now: ease.now, detail: { cause: ease.cause }, nowSec })
+      await recordAutoChange(db, { weekPlanId: weekId, adjustmentType: 'weekly_ease', sessionType: p.type, action: 'ease', reason: ease.reason, targetSessionId: id, targetEpochDay: p.epochDay, timeSlot: p.timeSlot, was: ease.was, now: ease.now, lead: `${sessionName(p)} eased`, body: easeBody(ease.now, ease.reason), detail: { cause: ease.cause }, nowSec })
       changes.push({ sessionId: id, epochDay: p.epochDay, type: p.type, reason: ease.reason, was: ease.was, now: ease.now, source: 'rules' })
     } else if (p.why) {
       changes.push({ sessionId: id, epochDay: p.epochDay, type: p.type, reason: p.why, was: null, now: null, source: 'ai' })

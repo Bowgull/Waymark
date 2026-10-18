@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { getItem as storageGetItem, removeItem as storageRemoveItem, setItem as storageSetItem } from '@/lib/safeStorage'
+import { parseRoundSecs, roundSecsKey, withRoundSec } from '@/lib/plannedLength'
+
 import { apiFetch, newIdempotencyKey } from '@/lib/api'
 import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
 import { EffortCard } from '@/features/blockZero/EffortCard'
@@ -430,6 +433,13 @@ export function WorkoutPage() {
   }, [id, sessionType])
 
   /** Engine views call this on every change of their own state. */
+  // Per-round seconds (bag work, rope) for the done summary, kept on the phone until the finish.
+  const recordRoundSec = useCallback((roundIndex: number, sec: number) => {
+    if (!id) return
+    const list = parseRoundSecs(storageGetItem(roundSecsKey(id))) ?? []
+    storageSetItem(roundSecsKey(id), JSON.stringify(withRoundSec(list, roundIndex, sec)))
+  }, [id])
+
   const persistEngine = useCallback((state: EngineState) => {
     engineStateRef.current = state
     writeResume()
@@ -808,10 +818,11 @@ export function WorkoutPage() {
       // Queued set saves go first, then the finish, in order. The finish has
       // one key per tap of Finish, and the server finishes a session once.
       await flushOutbox({ force: true, onlySessionId: id })
+      const roundSecs = sessionType === 'bag_work' || sessionType === 'skip_rope' ? parseRoundSecs(storageGetItem(roundSecsKey(id))) : null
       const result = await queueWrite({
         method: 'POST',
         path: `/api/sessions/${id}/complete`,
-        body: { rpe, notes, completedAt: Math.floor(Date.now() / 1000) },
+        body: { rpe, notes, completedAt: Math.floor(Date.now() / 1000), ...(roundSecs ? { roundSecs } : {}) },
         sessionId: id,
         kind: 'finish',
         key: finishKeyRef.current,
@@ -825,6 +836,7 @@ export function WorkoutPage() {
       logger.sessionEvent('session finish ok', { sessionId: id, queued: result === 'queued' })
       armedRef.current = false
       clearResume(resumeStorage(), id)
+      storageRemoveItem(roundSecsKey(id))
       void cancelAllCues()
       // Let the Live Activity show a ✓ completion frame for 4s before it
       // dismisses itself from the lock screen.
@@ -1266,6 +1278,7 @@ export function WorkoutPage() {
           onExit={leaveSession}
           resume={engineResume?.kind === 'rounds' ? engineResume : null}
           onPersist={persistEngine}
+          onRoundDone={recordRoundSec}
         />
         <ToastContainer />
       </>
@@ -1462,6 +1475,7 @@ export function WorkoutPage() {
           }}
           onComplete={handleBagWorkComplete}
           onExit={leaveSession}
+          onRoundDone={recordRoundSec}
           resume={engineResume?.kind === 'rounds' ? engineResume : null}
           onPersist={persistEngine}
         />

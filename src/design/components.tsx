@@ -106,7 +106,7 @@ export function CentredCard({ onDismiss, sub, label, head, headRight, edge, clas
     <div className="wm-scrim" onClick={e => { if (e.target === e.currentTarget) onDismiss?.() }}>
       <div role="dialog" aria-modal="true" aria-label={label} className={`wm-board is-solid wm-card ${edge && edge !== 'none' ? `is-${edge}` : ''} ${className}`}>
         {(head || headRight) && (
-          <div className="wm-board-head" style={{ marginBottom: 0 }}>
+          <div className="wm-board-head">
             <span>{head}</span>
             {headRight}
           </div>

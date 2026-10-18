@@ -24,7 +24,7 @@
   --sf-prose-dim: rgba(240, 234, 214, 0.82);
   --sf-label: rgba(240, 230, 192, 0.88);
   --sf-board: rgba(8, 13, 11, 0.46);
-  --sf-board-solid: rgba(8, 13, 11, 0.9);
+  --sf-board-solid: rgba(8, 13, 11, 0.86);
 
   /* session icon colours (page 27, 39) */
   --session-strength: #e4dcc4;
@@ -281,21 +281,21 @@
     align-items: center;
     justify-content: center;
     padding: calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px);
-    background: rgba(2, 8, 6, 0.62);
+    background: rgba(2, 8, 6, 0.55);
     animation: wm-fade-in var(--t-quick) var(--ease-out) both;
   }
   .wm-card {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     width: 100%;
     max-width: 406px;
-    max-height: 82dvh;
+    max-height: 78dvh;
     overflow-y: auto;
     overscroll-behavior: contain;
     animation: wm-card-in var(--t-move) var(--ease-out) both;
   }
-  .wm-card-sub { margin: -4px 0 2px; font: 500 15px/1.4 var(--font-body); color: rgba(240, 234, 214, 0.82); }
+  .wm-card-sub { margin: -4px 0 2px; font: 500 14.5px/1.4 var(--font-body); color: rgba(240, 234, 214, 0.78); }
 
   /* ── pop-up flap board: drops in from the top ── */
   .wm-pop-host {
@@ -390,7 +390,8 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 4px;
-    padding: 8px 8px max(env(safe-area-inset-bottom), 10px);
+    /* page 42/43: 8 px over the icons, 30 px under on an iPhone (its home bar inset less 4) */
+    padding: 8px 8px max(calc(env(safe-area-inset-bottom) - 4px), 10px);
     background: rgba(6, 10, 8, 0.72);
     -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
@@ -427,19 +428,16 @@
   }
   .wm-tab:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: 2px; border-radius: 8px; }
 
-  /* offline: a quiet flap pill at the top (the world rains behind) */
+  /* offline (page 31 "Offline, mid-session"): the quiet flap, low on the left; the world rains behind */
   .wm-offline-pill {
     position: fixed;
-    bottom: calc(max(env(safe-area-inset-bottom), 10px) + 80px);
-    left: 50%;
+    left: 16px;
+    bottom: 70px;
     z-index: 70;
-    transform: translateX(-50%);
-    padding: 5px 8px;
-    border-radius: 999px;
-    background: rgba(6, 12, 10, 0.86);
-    box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.22), 0 6px 16px rgba(0, 0, 0, 0.5);
     pointer-events: none;
   }
+  /* on the tab screens it sits the same way just over the tab bar */
+  .wm-offline-pill.is-over-tabs { bottom: calc(71px + max(calc(env(safe-area-inset-bottom) - 4px), 10px) + 12px); }
 
   /* glass over the world (buttons and charts sit on this) */
   .wm-glass {
@@ -475,8 +473,12 @@
   .wm-entrance-icon.is-sway { animation: wm-crest-turn 9s ease-in-out infinite; }
 
   /* ── splash (page 38, A): the crest suits up, WAYMARK flaps in, Today fades up ── */
-  .wm-splash { position: fixed; inset: 0; z-index: 95; background: #020a08; transition: opacity 700ms ease; }
-  .wm-splash.is-leaving { opacity: 0; pointer-events: none; }
+  .wm-splash { position: fixed; inset: 0; z-index: 95; }
+  .wm-splash.is-leaving { pointer-events: none; }
+  /* page 38 A: Today fades up over the crest (0.7 s) while WAYMARK stays on top, then the word goes */
+  .wm-splash-stage { position: absolute; inset: 0; background: #020a08; transition: opacity 700ms ease; }
+  .wm-splash.is-leaving .wm-splash-stage { opacity: 0; }
+  .wm-splash.is-gone .wm-splash-word { opacity: 0; transition-duration: 0.3s; }
   .wm-splash canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .wm-splash-flare {
     position: absolute; left: 50%; top: 40%; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%; pointer-events: none;
@@ -488,10 +490,11 @@
   .wm-splash-word.is-on { opacity: 1; }
   .wm-splash-still { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); }
 
-  /* ── loading (page 38, A): the crest taken apart while the app works ── */
-  .wm-crest-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 60dvh; }
-  .wm-crest-loading canvas { width: 240px; height: 270px; display: block; }
-  .wm-crest-loading p { margin: 0; text-align: center; font: 600 17px/1.4 var(--font-body); color: rgba(240, 234, 214, 0.9); text-shadow: 0 1px 8px #000; }
+  /* ── loading (page 38, A): the crest taken apart while the app works, on the dark, the line under it ── */
+  .wm-crest-loading { position: fixed; inset: 0; z-index: 90; background: radial-gradient(ellipse 80% 50% at 50% 42%, #101a15, #050907 70%); }
+  .wm-crest-loading canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .wm-crest-loading .wm-crest-fallback { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); }
+  .wm-crest-loading p { position: absolute; left: 24px; right: 24px; top: 71%; margin: 0; text-align: center; font: 600 17px/1.4 var(--font-body); color: rgba(240, 234, 214, 0.9); text-shadow: 0 1px 8px #000; }
 }
 
 @keyframes wm-fold { 0% { opacity: 1; transform: rotateX(0); } 100% { opacity: 1; transform: rotateX(-90deg); } }

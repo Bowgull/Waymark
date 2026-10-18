@@ -26,6 +26,11 @@ export interface AskChoice {
   slot: 'am' | 'pm' | null
   /** What accepting this choice sends. Null = decline (POST /reject). */
   body: { option: number; slot?: number } | null
+  /**
+   * ANOTHER DAY (page 36): one row, "Pick from the safe days". DONE then asks
+   * which safe day (a centred board of departure rows), unless there's one.
+   */
+  pick?: Array<{ key: string; title: string; slot: 'am' | 'pm' | null; body: { option: number; slot: number } }>
 }
 
 export interface TmLiftView {
@@ -47,8 +52,8 @@ export interface AskView {
   hero: SessionIconKey | null
   /** One line: the question / why. */
   line: string
-  /** The facts behind it: a teal flap (the label) and the plain fact beside it. */
-  proof: Array<{ label: string; value: string }>
+  /** The facts behind it, each one short teal flap ("FRESH 3 DAYS", "WK 2 ✓", "NOT SORE"). */
+  proof: string[]
   choices: AskChoice[]
   /** The primary button. */
   go: string
@@ -57,9 +62,19 @@ export interface AskView {
   /** Short line for the Coach board row on Today. */
   rowLine: string
   tm: TmLiftView[] | null
+  /** The training maxes board's heading ("Block Zero done"); null on the other asks. */
+  head: string | null
 }
 
 const ASK_KINDS = new Set(['ramp_up', 'make_regular', 'missed_session', 'tm_update'])
+
+/** One proof tile's flap: the label and its short value together, upper case. */
+function proofFlaps(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as Array<Record<string, unknown>>)
+    .map(p => [str(p.label), str(p.value)].filter(Boolean).join(' ').toUpperCase())
+    .filter(Boolean)
+}
 
 const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -89,7 +104,7 @@ export function askView(row: AskRow): AskView | null {
   const detail = row.detail ?? {}
 
   if (row.adjustmentType === 'ramp_up') {
-    const proof = Array.isArray(detail.proof) ? (detail.proof as Array<Record<string, unknown>>).map(p => ({ label: str(p.label).toUpperCase(), value: str(p.value) })).filter(p => p.label || p.value) : []
+    const proof = proofFlaps(detail.proof)
     const choices: AskChoice[] = opts.map((o, i) => ({
       key: str(o.id) || `opt-${i}`,
       title: str(o.title) || `OPTION ${i + 1}`,
@@ -102,7 +117,7 @@ export function askView(row: AskRow): AskView | null {
     return {
       id: row.id, kind: 'ramp_up', flap: 'PUSH THIS WEEK?', hero: null,
       line: str(detail.why) || row.reason, proof, choices, go: 'DO IT', decline: { title: decline || 'NOT THIS WEEK' },
-      rowLine: 'Push a little this week?', tm: null,
+      rowLine: 'Push a little this week?', tm: null, head: null,
     }
   }
 
@@ -114,10 +129,10 @@ export function askView(row: AskRow): AskView | null {
     const choices: AskChoice[] = []
     opts.forEach((o, i) => {
       if (o.id === 'another_day' && Array.isArray(o.safeSlots)) {
-        // ANOTHER DAY: one row per safe slot, each answering with that slot
-        ;(o.safeSlots as Array<Record<string, unknown>>).forEach((s, k) => choices.push({
-          key: `another-${k}`, title: str(s.label) || 'ANOTHER DAY', sub: 'Another safe day, every week', icon: hero, slot: slotOf(s.timeSlot), body: { option: i, slot: k },
-        }))
+        // ANOTHER DAY (page 36): one row; the safe days are picked after DONE.
+        const pick = (o.safeSlots as Array<Record<string, unknown>>).map((sl, k) => ({ key: `another-${k}`, title: str(sl.label) || `DAY ${k + 1}`, slot: slotOf(sl.timeSlot), body: { option: i, slot: k } }))
+        if (pick.length === 0) return
+        choices.push({ key: 'another_day', title: str(o.title) || 'ANOTHER DAY', sub: str(o.detail) || 'Pick from the safe days', icon: hero, slot: null, body: pick.length === 1 ? pick[0].body : null, pick })
         return
       }
       if (o.kind === 'keep_extra') { choices.push({ key: 'keep_extra', title: str(o.title) || "I'LL ADD IT MYSELF", sub: str(o.detail) || null, icon: null, slot: null, body: { option: i } }); return }
@@ -127,8 +142,8 @@ export function askView(row: AskRow): AskView | null {
     return {
       id: row.id, kind: 'make_regular', flap: name.toUpperCase(), hero,
       line: str(detail.why) ? `${str(detail.why)} Make it part of the plan?` : row.reason,
-      proof: num(cand.weeks) > 0 ? [{ label: `${num(cand.weeks)} WEEKS RUNNING`, value: '' }] : [], choices, go: 'DONE', decline: null,
-      rowLine: `Make ${name.toLowerCase()} part of the plan?`, tm: null,
+      proof: Array.isArray(detail.proof) ? proofFlaps(detail.proof) : num(cand.weeks) > 0 ? [`${num(cand.weeks)} WEEKS ✓`] : [], choices, go: 'DONE', decline: null,
+      rowLine: `Make ${name.toLowerCase()} part of the plan?`, tm: null, head: null,
     }
   }
 
@@ -146,7 +161,7 @@ export function askView(row: AskRow): AskView | null {
     return {
       id: row.id, kind: 'missed_session', flap: name.toUpperCase(), hero,
       line: row.reason, proof: [], choices, go: 'DONE', decline: null,
-      rowLine: `You missed ${name}. Fit it in?`, tm: null,
+      rowLine: `You missed ${name}. Fit it in?`, tm: null, head: null,
     }
   }
 
@@ -160,6 +175,7 @@ export function askView(row: AskRow): AskView | null {
     id: row.id, kind: 'tm_update', flap: 'NEW TARGETS', hero: null,
     line: row.reason, proof: [], choices: [{ key: 'approve', title: 'HOLD TO APPROVE', sub: null, icon: null, slot: null, body: { option: 0 } }],
     go: 'HOLD TO APPROVE', decline: { title: 'KEEP THE OLD ONES' }, rowLine: 'New training maxes?', tm,
+    head: `${str(detail.blockName) || 'The block'} done`,
   }
 }
 

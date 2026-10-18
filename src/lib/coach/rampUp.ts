@@ -15,7 +15,7 @@
 // Option ids and titles follow the approved coach screens ("The coach speaks").
 
 import { checkSessionChange, type PlacementContext } from './placement'
-import { DAY_NAMES, dowOf, isoOf, mondayOf, sessionName, type BlockKind, type SessionLike, type TimeSlot } from './sessions'
+import { DAY_NAMES, dowOf, estimatedMinutes, isoOf, mondayOf, sessionName, type BlockKind, type SessionLike, type TimeSlot } from './sessions'
 import { consistentlyEasier, type EffortSummary } from './feltHard'
 import type { ReadinessDay } from '../blockZero/readiness'
 
@@ -56,10 +56,19 @@ export type RampUpOption =
 /** The decline button. Rejecting the ask changes nothing. */
 export const RAMP_DECLINE = { id: 'not_this_week', title: 'NOT THIS WEEK' } as const
 
-/** One proof tile: a short label and the fact. */
+/**
+ * One proof tile: a short label and a short value, shown together on one teal
+ * flap ("FRESH 3 DAYS", "EASY 3 OF 3"; page 36). Both stay short and upper case.
+ */
 export interface ProofTile {
   label: string
   value: string
+}
+
+/** "Squat and RDL", "Squat, Bench and Row". */
+export function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
 const lb = (kg: number) => Math.round(kg * 2.20462)
@@ -117,13 +126,13 @@ export function rampUpEligibility(s: RampUpSignals): RampUpEligibility {
   const easier = consistentlyEasier(s.effort)
   if (!easier && !s.liftPush) blockers.push('sessions not easier than target')
   if (s.effort.harder + s.effort.wayHarder > 0) blockers.push('a recent session ran harder than target')
-  const proof: ProofTile[] = [{ label: 'READINESS', value: `Above your trend ${streak} days` }]
-  if (s.effort.sessions > 0) proof.push({ label: 'EFFORT', value: `${s.effort.easier} of ${s.effort.sessions} sessions under target` })
-  if (s.effort.avgRpe != null) proof.push({ label: 'AVG RPE', value: String(s.effort.avgRpe) })
-  if (s.liftPush) proof.push({ label: 'LIFTS', value: 'Beat the plan 2 of 3' })
+  // Short tiles, as page 36 shows them: FRESH 3 DAYS · EASY 3 OF 3 (· LIFTS UP 2 OF 3).
+  const proof: ProofTile[] = [{ label: 'FRESH', value: `${streak} ${streak === 1 ? 'DAY' : 'DAYS'}` }]
+  if (s.effort.sessions > 0 && s.effort.easier > 0) proof.push({ label: 'EASY', value: `${s.effort.easier} OF ${s.effort.sessions}` })
+  if (s.liftPush) proof.push({ label: 'LIFTS', value: 'UP 2 OF 3' })
   if (blockers.length > 0) return { eligible: false, why: null, proof, blockers }
-  const felt = easier ? `${s.effort.easier} recent sessions came in under target effort` : 'Lifts beat the plan in two of the last three sessions'
-  return { eligible: true, why: `Check-ins are above your 7-day trend for ${streak} days. ${felt}.`, proof, blockers: [] }
+  const felt = easier ? 'sessions felt easy' : 'your lifts beat the plan'
+  return { eligible: true, why: `You've been fresh and ${felt}.`, proof, blockers: [] }
 }
 
 export interface RampUpOptionInput {
@@ -137,6 +146,8 @@ export interface RampUpOptionInput {
   classDays: ReadonlySet<number>
   /** The next strength day's main lifts and their working loads, for MORE WEIGHT. */
   mainLifts?: Array<{ exerciseId: string; name: string; workingKg: number }>
+  /** The next strength day's main lifts and planned working sets, for +1 SET ("Squat and RDL, 3×8"). */
+  nextStrength?: { names: string[]; sets: number; reps: number } | null
 }
 
 /** The safe options, best first. Every add passes placement with the ramp allowance. */
@@ -156,12 +167,16 @@ export function rampUpOptions(input: RampUpOptionInput): RampUpOption[] {
   if (nextStrength && !bzFixedWeek) {
     const where = `${DAY_NAMES[dowOf(nextStrength.epochDay)]} ${sessionName(nextStrength).toLowerCase()}`
     const base = { epochDay: nextStrength.epochDay, date: isoOf(nextStrength.epochDay), sessionId: nextStrength.id }
-    const setDetail = `${where}, main lifts`
-    out.push({ ...base, kind: 'extra_set', id: 'extra_set', title: '+1 SET', detail: setDetail, label: `One more set: ${setDetail}` })
+    // The sub-lines read as page 36: what changes, not where ("Squat and RDL, 3×8").
+    const plan = input.nextStrength
+    const setDetail = plan && plan.names.length > 0 && plan.sets > 0 && plan.reps > 0
+      ? `${joinNames(plan.names)}, ${plan.sets + 1}×${plan.reps}`
+      : `${where}, main lifts`
+    out.push({ ...base, kind: 'extra_set', id: 'extra_set', title: '+1 SET', detail: setDetail, label: `One more set: ${where}, ${setDetail}` })
     if (input.blockType === 'fighter' && !input.liftPush) {
       const lifts: RampLift[] = (input.mainLifts ?? []).map(l => ({ exerciseId: l.exerciseId, name: l.name, fromKg: l.workingKg, toKg: Math.round(l.workingKg * RAMP_LOAD_STEP * 100) / 100 }))
-      const detail = `${where}: ${moreWeightDetail(lifts)}`
-      out.push({ ...base, kind: 'load_step', id: 'more_weight', title: 'MORE WEIGHT', detail, label: `More weight: ${detail}`, factor: RAMP_LOAD_STEP, lifts })
+      const detail = moreWeightDetail(lifts)
+      out.push({ ...base, kind: 'load_step', id: 'more_weight', title: 'MORE WEIGHT', detail, label: `More weight: ${where}: ${detail}`, factor: RAMP_LOAD_STEP, lifts })
     }
   }
 
@@ -179,8 +194,12 @@ export function rampUpOptions(input: RampUpOptionInput): RampUpOption[] {
       for (const slot of a.slots) {
         const r = checkSessionChange({ kind: 'add', type: a.type, label: a.sessionLabel, notes: null, epochDay: d, timeSlot: slot }, rampCtx, { alternatives: false })
         if (!r.ok) continue
-        const detail = `${a.what}, ${DAY_NAMES[dowOf(d)]} ${r.change.timeSlot.toUpperCase()}`
-        placed = { kind: 'add', id: a.id, title: a.title, detail, label: `Add: ${detail}`, type: a.type, sessionLabel: a.sessionLabel, notes: null, epochDay: d, date: isoOf(d), timeSlot: r.change.timeSlot }
+        const when = `${DAY_NAMES[dowOf(d)]} ${r.change.timeSlot.toUpperCase()}`
+        // EXTRA RUN reads "Zone 2, 30 min" (page 36; the AM/PM flap sits beside it); a class says its day.
+        const detail = a.id === 'extra_run'
+          ? `${a.sessionLabel}, ${estimatedMinutes({ type: a.type, notes: null, estimatedMin: null }, input.blockType, input.weekNumber)} min`
+          : `${a.sessionLabel}, ${when}`
+        placed = { kind: 'add', id: a.id, title: a.title, detail, label: `Add: ${a.what}, ${when}`, type: a.type, sessionLabel: a.sessionLabel, notes: null, epochDay: d, date: isoOf(d), timeSlot: r.change.timeSlot }
         break
       }
     }

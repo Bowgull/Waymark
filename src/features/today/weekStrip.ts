@@ -104,11 +104,12 @@ export function lanternFor(readiness: { ease?: boolean; checkedIn?: boolean } | 
 }
 
 /** The tiles for tomorrow on a rest day: icons and one plain line ("Foundation, then Strength A."). */
-export function tomorrowLine(sessions: Array<Pick<StripSession, 'type' | 'label' | 'notes' | 'timeSlot'>>, names: (s: Pick<StripSession, 'type' | 'label' | 'notes'>) => string): string | null {
+export function tomorrowLine(sessions: Array<Pick<StripSession, 'type' | 'label' | 'notes' | 'timeSlot'>>, names: (s: Pick<StripSession, 'type' | 'label' | 'notes'>) => string, weekStarts?: number | null): string | null {
   if (sessions.length === 0) return null
   const ordered = sessions.slice().sort((a, b) => (a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)).map(names)
-  if (ordered.length === 1) return `${ordered[0]}.`
-  return `${ordered.slice(0, -1).join(', ')}, then ${ordered[ordered.length - 1]}.`
+  const line = ordered.length === 1 ? `${ordered[0]}.` : `${ordered.slice(0, -1).join(', ')}, then ${ordered[ordered.length - 1]}.`
+  // page 43 B: "Foundation, then Strength A. Week 4 starts." when tomorrow opens a new week
+  return weekStarts != null ? `${line} Week ${weekStarts} starts.` : line
 }
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
@@ -123,4 +124,34 @@ export function dateFlap(d: Date): string {
 export function coachCount(changes: number, questions: number): string {
   const p = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
   return [changes > 0 ? p(changes, 'change') : null, questions > 0 ? p(questions, 'question') : null].filter(Boolean).join(' · ')
+}
+
+/**
+ * A line's bold lead (page 36). 'sentence': the first sentence ("Lighter
+ * week.") and the rest after a space. 'colon': the words before a colon
+ * ("Strength C eased") and the rest from the colon on. No lead: rest is ''.
+ */
+export function splitLead(line: string, by: 'sentence' | 'colon'): { lead: string; rest: string } {
+  if (by === 'sentence') {
+    const cut = line.indexOf('. ')
+    return cut > 0 ? { lead: line.slice(0, cut + 1), rest: line.slice(cut + 2) } : { lead: line, rest: '' }
+  }
+  const cut = line.indexOf(': ')
+  return cut > 0 && cut <= 40 ? { lead: line.slice(0, cut), rest: line.slice(cut) } : { lead: line, rest: '' }
+}
+
+/**
+ * The why line, shorter, for the first line of Today's Coach board (page 36:
+ * "Lighter week. Two short nights and a sore Thursday."): the first two
+ * sentences, the second cut before its ", so ..." consequence.
+ */
+export function shortWhy(why: string | null): string | null {
+  if (!why) return null
+  const sentences = why.split(/(?<=\.)\s+/).filter(Boolean)
+  const head = sentences.slice(0, 2)
+  if (head.length === 2) {
+    const so = head[1].search(/,\s+so\s/i)
+    if (so > 0) head[1] = `${head[1].slice(0, so)}.`
+  }
+  return head.join(' ')
 }

@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
-import { ShellLayout } from './ShellLayout'
+import { OfflinePill, ShellLayout } from './ShellLayout'
 import { WorldLayer } from '../world/WorldLayer'
 import { HistoryPage } from '../features/history/HistoryPage'
 import { LibraryPage } from '../features/library/LibraryPage'
@@ -166,6 +166,7 @@ export function AppRoutes() {
         <Route path="*" element={<Navigate to="/today" replace />} />
       </Route>
     </Routes>
+    {location.pathname !== '/design' && <OfflinePill overTabs={!/^\/(session|onboarding|settings\/logs|block-zero)(\/|$)/.test(location.pathname)} />}
     </>
   )
 }

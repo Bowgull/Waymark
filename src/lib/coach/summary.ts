@@ -30,6 +30,9 @@ export interface CoachSummaryLine {
   line: string
   /** "was X", for a changed row. */
   was?: string | null
+  /** The Coach board on Today (page 36): a bold lead ("Strength C eased") and the rest of the line after it. */
+  lead?: string | null
+  body?: string | null
   createdAt: number
 }
 
@@ -56,14 +59,25 @@ export function morningLine(changes: number, questions: number): string | null {
   return parts.length > 0 ? parts.join(', ') : null
 }
 
-function wasOf(sourceData: string | null | undefined): string | null {
+function sourceField(sourceData: string | null | undefined, key: 'was' | 'lead' | 'body'): string | null {
   if (!sourceData) return null
   try {
-    const v = (JSON.parse(sourceData) as { was?: unknown }).was
-    return typeof v === 'string' ? v : null
+    const v = (JSON.parse(sourceData) as Record<string, unknown>)[key]
+    return typeof v === 'string' && v ? v : null
   } catch {
     return null
   }
+}
+
+/**
+ * The words after an ease's bold lead, from its colon (page 36: "Strength C
+ * eased: one set, 10% lighter. Soreness was 4 this morning."): what it is
+ * now, then the cause (the first sentence of the reason).
+ */
+export function easeBody(now: string, reason: string): string {
+  const first = reason.split(/(?<=\.)\s+/)[0] ?? reason
+  const n = now.charAt(0).toLowerCase() + now.slice(1)
+  return `: ${n.replace(/\.$/, '')}. ${first}`
 }
 
 export function buildCoachSummary(adjustments: SummaryAdjustmentRow[], weeks: SummaryWeekRow[], since: number, nowSec: number): CoachSummary {
@@ -77,7 +91,7 @@ export function buildCoachSummary(adjustments: SummaryAdjustmentRow[], weeks: Su
       .map(w => ({ id: w.id, kind: 'week_prepared', line: w.whyLine ? `Week ${w.weekNumber} is ready. ${w.whyLine}` : `Week ${w.weekNumber} is ready.`, createdAt: w.preparedAt as number })),
     ...adjustments
       .filter(a => a.auto === 1 && a.status === 'accepted' && a.createdAt > since)
-      .map(a => ({ id: a.id, kind: a.adjustmentType, line: a.reason, was: wasOf(a.sourceData), createdAt: a.createdAt })),
+      .map(a => ({ id: a.id, kind: a.adjustmentType, line: a.reason, was: sourceField(a.sourceData, 'was'), lead: sourceField(a.sourceData, 'lead'), body: sourceField(a.sourceData, 'body'), createdAt: a.createdAt })),
   ].sort((a, b) => a.createdAt - b.createdAt)
   return {
     since,

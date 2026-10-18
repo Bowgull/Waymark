@@ -83,7 +83,7 @@ export function SkipReasonSheet({ onCommit, onClose, sessionName }: SkipReasonSh
       >
         <div className="wm-brows" role="radiogroup" aria-label="Where">
           {SKIP_PLACES.map((p, i) => (
-            <ReasonRow key={p} n={i} label={p} on={place === p} onPick={() => pickPlace(p)} />
+            <ReasonRow key={p} n={i} label={p} len={12} on={place === p} onPick={() => pickPlace(p)} />
           ))}
         </div>
         {wordsBox}
@@ -123,12 +123,13 @@ export function SkipReasonSheet({ onCommit, onClose, sessionName }: SkipReasonSh
   )
 }
 
-function ReasonRow({ n, label, on, onPick }: { n: number; label: string; on: boolean; onPick: () => void }) {
+// page 22: reasons pad to 14 tiles, places to 12; the lamp sits right after the label
+function ReasonRow({ n, label, on, onPick, len = 14 }: { n: number; label: string; on: boolean; onPick: () => void; len?: number }) {
   return (
     <button type="button" role="radio" aria-checked={on} aria-label={label} className={`wm-brow${on ? ' is-on' : ''}`} onClick={onPick}>
       <span className="wm-brow-num" aria-hidden>{boardNumber(n)}</span>
       <span className="wm-brow-label">
-        <FlapLabel text={label} size="md" tone={on ? 'gold' : 'ink'} len={14} fit />
+        <FlapLabel text={label} size="md" tone={on ? 'gold' : 'ink'} len={len} />
       </span>
       {on && <span className="wm-lamp" aria-hidden>◆</span>}
     </button>
