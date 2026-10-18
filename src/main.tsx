@@ -6,8 +6,10 @@ import { AppRoutes } from './app/AppRoutes'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { LoadingScreen } from './components/ui/LoadingScreen'
 import { initKeyboardHandling } from './lib/keyboard'
+import { PopFlapHost } from './design/PopFlapHost'
 import '@fontsource-variable/geist/index.css'
 import '@fontsource-variable/cinzel/index.css'
+import '@fontsource-variable/jetbrains-mono/index.css'
 import './index.css'
 
 SplashScreen.hide().catch(() => {})
@@ -22,6 +24,7 @@ function App() {
     <>
       {showLoading && <LoadingScreen onReady={handleReady} />}
       <AppRoutes />
+      <PopFlapHost />
     </>
   )
 }

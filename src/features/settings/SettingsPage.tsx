@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/Toast'
 import { PageHeader } from '@/components/PageHeader'
 import { SettingsSkeleton } from '@/components/ui/Skeleton'
 import { isBiometryAvailable, isGateEnabled, setGateEnabled } from '@/lib/waybookGate'
+import { BodyProfileBoard } from './BodyProfileBoard'
 
 interface Settings {
   mtClassDays: string | null
@@ -670,6 +671,11 @@ export function SettingsPage() {
             <path d="M9 18l6-6-6-6" />
           </svg>
         </button>
+      </section>
+
+      {/* What the coach needs: birth date / max HR, back status (onboarding isn't redesigned) */}
+      <section>
+        <BodyProfileBoard />
       </section>
 
       {/* Waybook privacy */}

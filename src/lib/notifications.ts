@@ -5,6 +5,7 @@
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { Capacitor } from '@capacitor/core'
 import { heavyHaptic } from './haptics'
+import { requestMorningCheckIn } from '@/features/blockZero/checkInTrigger'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -569,6 +570,8 @@ export async function initNotificationListeners(): Promise<void> {
   LocalNotifications.addListener('localNotificationActionPerformed', async (event) => {
     if (event.actionId === 'iAmUp') {
       await cancelAllAlarms()
+      // I'M UP opens the morning check-in cards (design-decisions.md).
+      requestMorningCheckIn()
     }
     // 'snooze' tapped — next notification is already scheduled, nothing extra needed
   })

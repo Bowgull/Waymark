@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button'
 import { ApiError, apiFetch } from '@/lib/api'
 import type { EngineState } from '@/lib/sessionResume'
 
+import { ClassTypeCard } from '@/features/blockZero/ClassTypeCard'
+import { formTypeFor } from '@/features/blockZero/classType'
+
 import { resolveMtClassMoment, type MtClassType } from './mtClassMicrocopy'
 import { SessionShell } from './SessionShell'
 
@@ -63,6 +66,20 @@ export function MtClassLogView({
   const [concept, setConcept] = useState(draft.concept ?? mtLog.concept ?? '')
   const [actionItems, setActionItems] = useState(draft.actionItems ?? mtLog.actionItems ?? '')
   const [saving, setSaving] = useState(false)
+  // Quick add ("class tonight") leaves the type open: ask it first, as a centred card.
+  const [askType, setAskType] = useState(() => mtLog.classType == null && draft.classType == null)
+
+  async function saveTypeNow(type: string): Promise<string | null> {
+    try {
+      await apiFetch(`/api/mt-class-logs/${mtLog.id}`, { method: 'PATCH', body: JSON.stringify({ classType: type }) })
+      return null
+    } catch (err) {
+      const body = err instanceof ApiError ? err.body : ''
+      let reason: string | null = null
+      try { reason = (JSON.parse(body) as { reason?: string }).reason ?? null } catch { reason = null }
+      return reason ?? "Couldn't save. Check connection and try again."
+    }
+  }
 
   useEffect(() => {
     onPersist?.({ kind: 'mt', draft: { classType, durationMin, focusSkill, weakness, concept, actionItems } })
@@ -236,6 +253,15 @@ export function MtClassLogView({
   )
 
   return (
+    <>
+    {askType && (
+      <ClassTypeCard
+        blockZero={blockType === 'block_zero'}
+        onSave={saveTypeNow}
+        onDone={(t) => { setClassType(formTypeFor(t)); setAskType(false) }}
+        onClose={() => setAskType(false)}
+      />
+    )}
     <SessionShell
       sessionType="mt_class"
       counter="Post-Class"
@@ -246,5 +272,6 @@ export function MtClassLogView({
     >
       {body}
     </SessionShell>
+    </>
   )
 }

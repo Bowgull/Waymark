@@ -1,0 +1,407 @@
+/* Waymark redesign: the split-flap design foundation (design-decisions.md).
+   Ported from the approved mockups (shared/flap.css, wm.css, pages 26, 35, 37, 38).
+   Components in src/design/*.tsx use these classes; see src/design/README.md. */
+
+:root {
+  /* split-flap palette (muted: brass, moss-teal, clay) */
+  --sf-tile: #262a26;
+  --sf-tile2: #1d201d;
+  --sf-blank: #1b1e1b;
+  --sf-blank2: #151715;
+  --sf-ink: #f0e6c0;
+  --sf-gold: #b8984a;
+  --sf-gold2: #a0823c;
+  --sf-teal: #45796a;
+  --sf-teal2: #3a6658;
+  --sf-clay: #9c5a40;
+  --sf-clay2: #864a34;
+  --sf-mark: #c9a656;
+  --sf-good-edge: #5fa08c;
+  --sf-good-ink: #8fd4b8;
+  --sf-bad-edge: #c4623f;
+  --sf-bad-ink: #f0a684;
+  --sf-prose: rgba(240, 234, 214, 0.92);
+  --sf-prose-dim: rgba(240, 234, 214, 0.82);
+  --sf-label: rgba(240, 230, 192, 0.88);
+  --sf-board: rgba(8, 13, 11, 0.46);
+  --sf-board-solid: rgba(8, 13, 11, 0.9);
+
+  /* session icon colours (page 27, 39) */
+  --session-strength: #e4dcc4;
+  --session-bag: #6c6862;
+  --session-mt: #c89848;
+  --session-zone2: #b0604a;
+  --session-run: #c8844e;
+  --session-rope: #8a6a9a;
+  --session-foundation: #6e9858;
+  --session-reset: #6a96b4;
+  --session-core: #4a8c8a;
+  --session-mobility: #a8906a;
+  --session-waybook: #8a5634;
+
+  /* motion: four speeds, three curves */
+  --t-tap: 90ms;
+  --t-quick: 180ms;
+  --t-move: 320ms;
+  --t-moment: 700ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-drop: cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@layer components {
+  /* ── the flap label: one tile per character ── */
+  .wm-flap {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: 2px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  .wm-flap .wm-cell {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 0.74em;
+    height: 1.28em;
+    border-radius: 0.12em;
+    font-weight: 800;
+    color: var(--sf-ink);
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+    background: linear-gradient(180deg, var(--sf-tile) 0 50%, var(--sf-tile2) 50% 100%);
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 3px rgba(0, 0, 0, 0.4);
+    perspective: 120px;
+  }
+  /* the hinge line sits behind the letters */
+  .wm-flap .wm-cell::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .wm-flap .wm-cell::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 50%;
+    border-radius: 0.12em 0.12em 0 0;
+    background: var(--sf-tile);
+    transform-origin: 50% 100%;
+    opacity: 0;
+  }
+  .wm-flap .wm-cell.is-tick::before { animation: wm-fold 60ms linear; }
+  /* trailing padding keeps its dark tile so rows line up */
+  .wm-flap .wm-cell.is-pad {
+    color: transparent;
+    background: linear-gradient(180deg, var(--sf-blank) 0 50%, var(--sf-blank2) 50% 100%);
+  }
+  /* a gap between words is clear space, never a dark tile */
+  .wm-flap .wm-cell.is-gap {
+    width: 0.38em;
+    background: none;
+    box-shadow: none;
+  }
+  .wm-flap .wm-cell.is-gap::before,
+  .wm-flap .wm-cell.is-gap::after { display: none; }
+
+  .wm-flap.is-gold .wm-cell:not(.is-gap):not(.is-pad) {
+    color: #1c1608;
+    text-shadow: 0 1px 0 rgba(255, 240, 200, 0.25);
+    background: linear-gradient(180deg, var(--sf-gold) 0 50%, var(--sf-gold2) 50% 100%);
+  }
+  .wm-flap.is-gold .wm-cell::before { background: var(--sf-gold); }
+  .wm-flap.is-teal .wm-cell:not(.is-gap):not(.is-pad) {
+    color: #e8e2c8;
+    background: linear-gradient(180deg, var(--sf-teal) 0 50%, var(--sf-teal2) 50% 100%);
+  }
+  .wm-flap.is-teal .wm-cell::before { background: var(--sf-teal); }
+  .wm-flap.is-clay .wm-cell:not(.is-gap):not(.is-pad) {
+    color: #f2e4d6;
+    background: linear-gradient(180deg, var(--sf-clay) 0 50%, var(--sf-clay2) 50% 100%);
+  }
+  .wm-flap.is-clay .wm-cell::before { background: var(--sf-clay); }
+  .wm-flap.is-dim .wm-cell { color: rgba(240, 230, 192, 0.74); }
+  .wm-flap.is-struck .wm-cell { color: rgba(240, 230, 192, 0.42); }
+
+  /* sizes: readable minimums (xs 14, sm 17) */
+  .wm-flap.is-xs { font-size: 14px; gap: 1px; }
+  .wm-flap.is-sm { font-size: 17px; gap: 1.5px; }
+  .wm-flap.is-md { font-size: 20px; }
+  .wm-flap.is-lg { font-size: 32px; gap: 3px; }
+  .wm-flap.is-xl { font-size: 62px; gap: 4px; }
+
+  /* a single tile (digits, icons) */
+  .wm-tile {
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    flex: none;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 7px;
+    background: linear-gradient(180deg, var(--sf-tile) 0 50%, var(--sf-tile2) 50% 100%);
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+  .wm-tile::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  /* ── boards: glass with brass rivets ── */
+  .wm-board {
+    position: relative;
+    border-radius: 10px;
+    padding: 12px;
+    background-color: var(--sf-board);
+    -webkit-backdrop-filter: blur(2px) saturate(1.1);
+    backdrop-filter: blur(2px) saturate(1.1);
+    box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.16), 0 10px 24px rgba(0, 0, 0, 0.45);
+    background-image:
+      radial-gradient(circle at 7px 7px, #6a6450 1.6px, transparent 2.2px),
+      radial-gradient(circle at calc(100% - 7px) 7px, #6a6450 1.6px, transparent 2.2px),
+      radial-gradient(circle at 7px calc(100% - 7px), #6a6450 1.6px, transparent 2.2px),
+      radial-gradient(circle at calc(100% - 7px) calc(100% - 7px), #6a6450 1.6px, transparent 2.2px);
+  }
+  .wm-board.is-solid { background-color: var(--sf-board-solid); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .wm-board.is-good { box-shadow: inset 3px 0 0 var(--sf-good-edge), inset 0 0 0 1px rgba(95, 160, 140, 0.35), 0 10px 24px rgba(0, 0, 0, 0.45); }
+  .wm-board.is-bad { box-shadow: inset 3px 0 0 var(--sf-bad-edge), inset 0 0 0 1px rgba(196, 98, 64, 0.4), 0 10px 24px rgba(0, 0, 0, 0.45); }
+  .wm-board.is-brass { box-shadow: inset 3px 0 0 var(--sf-gold), inset 0 0 0 1px rgba(232, 200, 96, 0.22), 0 10px 24px rgba(0, 0, 0, 0.45); }
+  .wm-board-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 9px;
+    font: 700 12.5px/1.2 var(--font-display);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--sf-gold);
+    text-shadow: 0 1px 6px #000;
+  }
+
+  /* text on boards (readable minimums) */
+  .wm-prose { margin: 0; font: 500 16px/1.45 var(--font-body); color: var(--sf-prose); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8); }
+  .wm-prose.is-dim { font-size: 15px; color: var(--sf-prose-dim); }
+  .wm-label { font: 700 12px/1.2 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--sf-label); text-shadow: 0 1px 4px #000; }
+  .wm-num { font: 700 15px/1.2 var(--font-mono); color: rgba(240, 230, 192, 0.9); }
+
+  .wm-rows { display: flex; flex-direction: column; }
+  .wm-rows > .wm-row { display: flex; align-items: center; gap: 10px; padding: 8px 2px; }
+  .wm-rows > .wm-row + .wm-row { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
+
+  /* ── buttons: a flap label on a board; primary is brass-edged ── */
+  .wm-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 58px;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 10px;
+    cursor: pointer;
+    background: rgba(8, 13, 11, 0.42);
+    box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.26), 0 6px 16px rgba(0, 0, 0, 0.3);
+    transition: transform var(--t-tap) ease-out, filter var(--t-tap) ease-out;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wm-btn:active { transform: scale(0.97); filter: brightness(0.92); }
+  .wm-btn:disabled { opacity: 0.45; cursor: default; transform: none; }
+  .wm-btn.is-primary { background: rgba(30, 24, 6, 0.5); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.55), 0 0 14px rgba(184, 152, 74, 0.14), 0 6px 16px rgba(0, 0, 0, 0.4); }
+  .wm-btn.is-quiet { min-height: 48px; background: transparent; box-shadow: none; }
+  .wm-btns { display: flex; gap: 8px; }
+  .wm-btns > .wm-btn { flex: 1; }
+
+  /* ── chips: one short flap word each ── */
+  .wm-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+    background: rgba(8, 13, 11, 0.4);
+    box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18);
+    transition: transform var(--t-tap) ease-out;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wm-chip:active { transform: scale(0.97); }
+
+  /* ── big choice tiles (check-in, effort, class type) ── */
+  .wm-tiles { display: grid; gap: 8px; }
+  .wm-choice {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 72px;
+    padding: 10px 4px;
+    border: 0;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2);
+    transition: transform var(--t-tap) ease-out, background var(--t-quick) ease-out, box-shadow var(--t-quick) ease-out;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wm-choice:active { transform: scale(0.97); }
+  .wm-choice.is-on { background: rgba(184, 152, 74, 0.25); box-shadow: inset 0 0 0 2px var(--sf-gold); }
+  .wm-choice.is-refused { background: rgba(156, 90, 64, 0.22); box-shadow: inset 0 0 0 2px var(--sf-clay); }
+  .wm-choice-sub { font: 600 12px/1.2 var(--font-body); letter-spacing: 0.06em; color: rgba(240, 230, 192, 0.78); }
+
+  /* ── centred card (every selection sits centre-screen; no bottom sheets) ── */
+  .wm-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px);
+    background: rgba(2, 8, 6, 0.62);
+    animation: wm-fade-in var(--t-quick) var(--ease-out) both;
+  }
+  .wm-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 406px;
+    max-height: 82dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    animation: wm-card-in var(--t-move) var(--ease-out) both;
+  }
+  .wm-card-sub { margin: -4px 0 2px; font: 500 15px/1.4 var(--font-body); color: rgba(240, 234, 214, 0.82); }
+
+  /* ── pop-up flap board: drops in from the top ── */
+  .wm-pop-host {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: calc(env(safe-area-inset-top) + 10px);
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    pointer-events: none;
+  }
+  .wm-pop {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: rgba(6, 12, 10, 0.94);
+    box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3), 0 10px 26px rgba(0, 0, 0, 0.6);
+    animation: wm-pop-drop 450ms var(--ease-drop) both;
+  }
+  .wm-pop.is-good { box-shadow: inset 0 0 0 1px rgba(95, 160, 140, 0.6), 0 10px 26px rgba(0, 0, 0, 0.6); }
+  .wm-pop.is-bad { box-shadow: inset 0 0 0 1px rgba(196, 98, 64, 0.75), 0 10px 26px rgba(0, 0, 0, 0.6); }
+  .wm-pop.is-leaving { animation: wm-pop-lift var(--t-move) ease-in both; }
+  .wm-pop-text { margin: 0; max-width: 340px; text-align: center; font: 600 15px/1.4 var(--font-body); color: #e6efe9; }
+  .wm-pop.is-bad .wm-pop-text { color: #f2e2d4; }
+
+  /* ── row glow: the row you touched answers (teal good, clay failure) ── */
+  .wm-glow-good { animation: wm-row-good 1.6s ease; }
+  .wm-glow-bad { animation: wm-row-bad 1.6s ease; }
+  .wm-row-note { width: 100%; margin-top: 4px; font: 600 14px/1.35 var(--font-body); color: var(--sf-bad-ink); }
+
+  /* ── AM / PM slot: brass sun / moon + teal AM or clay PM flap ── */
+  .wm-ampm { display: inline-flex; flex: none; align-items: center; gap: 5px; border: 0; padding: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .wm-ampm[disabled] { cursor: default; }
+  .wm-ampm svg { width: 16px; height: 16px; display: block; flex: none; }
+
+  /* ── session icons ── */
+  .wm-sicon { display: block; flex: none; object-fit: contain; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55)); -webkit-user-drag: none; user-select: none; }
+
+  /* ── the crest: slow turn, like the mockups (still under Reduce Motion) ── */
+  .wm-crest { display: block; object-fit: contain; filter: drop-shadow(0 0 6px rgba(184, 152, 74, 0.35)); animation: wm-crest-turn 9s ease-in-out infinite; }
+  .wm-crest.is-still { animation: none; }
+
+  /* ── progress strip of small flaps (6-week strip, step dots) ── */
+  .wm-strip { display: grid; gap: 4px; }
+  .wm-strip-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 5px; border-radius: 8px; background: rgba(0, 0, 0, 0.32); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.16); position: relative; }
+  .wm-strip-cell.is-now { background: rgba(184, 152, 74, 0.2); box-shadow: inset 0 0 0 2px var(--sf-gold); }
+  .wm-strip-cell.is-now::after { content: ''; position: absolute; top: -5px; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: #e8c878; box-shadow: 0 0 8px rgba(232, 200, 120, 0.8); }
+  .wm-strip-cell .wm-label { font-size: 12px; }
+
+  .wm-dots { display: flex; justify-content: center; gap: 6px; }
+  .wm-dots > i { width: 8px; height: 8px; border-radius: 50%; background: rgba(240, 230, 192, 0.18); }
+  .wm-dots > i.is-done { background: var(--sf-teal); }
+  .wm-dots > i.is-now { background: var(--sf-gold); box-shadow: 0 0 6px rgba(184, 152, 74, 0.7); }
+
+  /* ── inputs on boards ── */
+  .wm-input {
+    width: 100%;
+    min-height: 48px;
+    border: 0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.25);
+    color: #efe6c8;
+    font: 500 16px var(--font-body);
+  }
+  .wm-input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--sf-gold); }
+
+  /* "saved" box on the error screens */
+  .wm-saved { align-self: stretch; text-align: left; padding: 10px 12px; border-radius: 10px; background: rgba(95, 160, 140, 0.12); box-shadow: inset 3px 0 0 var(--sf-good-edge), inset 0 0 0 1px rgba(95, 160, 140, 0.3); }
+  .wm-saved-head { margin-bottom: 6px; font: 800 12px/1.2 var(--font-body); letter-spacing: 0.16em; color: var(--sf-good-ink); }
+  .wm-saved-line { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; font: 700 15px/1.35 var(--font-mono); color: #e6efe9; }
+  .wm-saved-line > span:first-child { text-transform: uppercase; }
+
+  /* solid dark backdrop for full-screen moments and errors */
+  .wm-dark { background: radial-gradient(ellipse 80% 50% at 50% 42%, #101a15, #050907 70%); }
+}
+
+@keyframes wm-fold { 0% { opacity: 1; transform: rotateX(0); } 100% { opacity: 1; transform: rotateX(-90deg); } }
+@keyframes wm-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wm-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes wm-card-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes wm-pop-drop { from { transform: translateY(-140%); } to { transform: none; } }
+@keyframes wm-pop-lift { from { transform: none; opacity: 1; } to { transform: translateY(-140%); opacity: 0; } }
+@keyframes wm-row-good { 0%, 100% { box-shadow: none; } 20% { box-shadow: inset 0 0 0 2px rgba(143, 212, 184, 0.8), 0 0 18px rgba(95, 160, 140, 0.45); } }
+@keyframes wm-row-bad { 0%, 100% { box-shadow: none; } 20% { box-shadow: inset 0 0 0 2px rgba(220, 130, 96, 0.85), 0 0 18px rgba(196, 98, 64, 0.45); } }
+@keyframes wm-crest-turn { 0%, 100% { transform: perspective(240px) rotateY(-20deg); } 50% { transform: perspective(240px) rotateY(20deg); } }
+@keyframes wm-settle { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Reduce Motion: flaps land at once, no drops or turns, crossfades only. */
+@media (prefers-reduced-motion: reduce) {
+  .wm-flap .wm-cell.is-tick::before,
+  .wm-crest,
+  .wm-glow-good,
+  .wm-glow-bad { animation: none !important; }
+  .wm-card,
+  .wm-pop { animation-name: wm-fade-in !important; animation-timing-function: linear !important; }
+  .wm-pop.is-leaving { animation-name: wm-fade-out !important; animation-timing-function: linear !important; }
+  .wm-btn, .wm-chip, .wm-choice { transition: none; }
+}

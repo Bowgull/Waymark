@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./design/design.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -23,9 +24,17 @@
   --ring: oklch(0.82 0.12 80);
   --radius: 0.375rem;
 
-  /* Font families */
+}
+
+/* Font families. In @theme (not :root) so Tailwind makes the utilities:
+   font-display / font-cinzel (Cinzel), font-body (Geist), font-mono
+   (JetBrains Mono, the split-flap face). All three ship with the app
+   (@fontsource in main.tsx), so the iPhone build needs no network. */
+@theme static {
   --font-display: 'Cinzel Variable', 'Cinzel', serif;
+  --font-cinzel: 'Cinzel Variable', 'Cinzel', serif;
   --font-body: 'Geist Variable', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
 }
 
 @theme inline {
@@ -63,8 +72,6 @@
   --color-surface: #0A2018;
   --color-surface-light: #122E26;
 
-  /* Heading font: 74 call sites use font-cinzel, which had no theme entry. */
-  --font-cinzel: var(--font-display);
 
   /* Chrome surfaces (bottom nav) — one step lighter than body for separation */
   --color-nav: oklch(0.15 0.025 160);

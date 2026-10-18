@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { ShellLayout } from './ShellLayout'
@@ -11,6 +11,11 @@ import { BodyMetricsPage } from '../features/metrics/BodyMetricsPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { LogsPage } from '../features/settings/LogsPage'
 import { TodayPage } from '../features/today/TodayPage'
+import { EndGatePage } from '../features/blockZero/EndGate'
+import { TestWeekPage } from '../features/blockZero/TestWeekPage'
+
+// Dev only: every new screen with sample data, for screenshots (never in a build).
+const DesignGallery = import.meta.env.DEV ? lazy(() => import('../design/DesignGallery')) : null
 import {
   initNotificationListeners,
   handleForegroundAlarmCheck,
@@ -24,6 +29,7 @@ import { getTodayISO } from '../lib/dates'
 import { startOutboxSync } from '../lib/outboxSync'
 import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
 import { Capacitor } from '@capacitor/core'
+import { CHECK_IN_EVENT } from '../features/blockZero/checkInTrigger'
 
 /**
  * The coach's "N changes, M questions" since the last open, then mark this
@@ -44,7 +50,7 @@ export function AppRoutes() {
   const location = useLocation()
 
   useEffect(() => {
-    if (location.pathname === '/onboarding') return
+    if (location.pathname === '/onboarding' || location.pathname === '/design') return
     apiFetch<{ onboardedAt: number | null } | null>('/api/user-profile')
       .then(profile => {
         if (!profile || !profile.onboardedAt) {
@@ -58,6 +64,13 @@ export function AppRoutes() {
 
   // Queued set saves and finishes retry on reconnect, foreground and resume.
   useEffect(() => startOutboxSync(), [])
+
+  // The morning alarm's I'M UP: go to Today, where the check-in cards open.
+  useEffect(() => {
+    const open = () => navigate('/today')
+    window.addEventListener(CHECK_IN_EVENT, open)
+    return () => window.removeEventListener(CHECK_IN_EVENT, open)
+  }, [navigate])
 
   useEffect(() => {
     initNotificationListeners()
@@ -134,6 +147,9 @@ export function AppRoutes() {
       <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/session/:id" element={<ErrorBoundary level="session"><WorkoutPage /></ErrorBoundary>} />
       <Route path="/settings/logs" element={<ErrorBoundary level="page"><LogsPage /></ErrorBoundary>} />
+      <Route path="/block-zero/tests" element={<ErrorBoundary level="page"><TestWeekPage /></ErrorBoundary>} />
+      <Route path="/block-zero/gate" element={<ErrorBoundary level="page"><EndGatePage /></ErrorBoundary>} />
+      {DesignGallery && <Route path="/design" element={<Suspense fallback={null}><DesignGallery /></Suspense>} />}
 
       <Route element={<ShellLayout />}>
         <Route path="/" element={<Navigate to="/today" replace />} />

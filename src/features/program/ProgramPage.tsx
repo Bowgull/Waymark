@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,8 @@ import { ProgramSkeleton } from '@/components/ui/Skeleton'
 import { getWeekLabel } from '@/lib/strengthTemplates'
 import { strengthBlockWeek } from '@/lib/weeklyTemplate'
 import logoPng from '@/assets/brand/Logo.png'
+
+import { BlockZeroProgramBoards } from '@/features/blockZero/ProgramBoards'
 
 import { WeekView } from './WeekView'
 
@@ -71,22 +73,6 @@ interface BlockZeroAssessmentOutput {
   coachNote?: string
 }
 
-interface TransitionResult {
-  decision: 'proceed' | 'hold' | 'adjust'
-  rationale: string
-  nextBlockNotes?: string
-}
-
-function getBlockZeroNarrative(blockWeek: number): string {
-  if (blockWeek <= 2) {
-    return 'Foundation. Corrective work, light loading, habit building. Skip this stretch and the next one breaks you.'
-  }
-  if (blockWeek <= 4) {
-    return 'MT returns. Weights climb past 50%. Tendons catch up to muscle.'
-  }
-  return 'Full schedule live. Six weeks of runway ends with the body ready for real load.'
-}
-
 function getMonday(weekOffset = 0): string {
   const now = new Date()
   const day = now.getDay()
@@ -97,6 +83,7 @@ function getMonday(weekOffset = 0): string {
 }
 
 export function ProgramPage() {
+  const navigate = useNavigate()
   const [block, setBlock] = useState<Block | null | undefined>(undefined)
   const [weekData, setWeekData] = useState<WeekData | null>(null)
   const [weekNumber, setWeekNumber] = useState(1)
@@ -106,8 +93,6 @@ export function ProgramPage() {
   const [startingBlockZero, setStartingBlockZero] = useState(false)
   const [assessment, setAssessment] = useState<BlockZeroAssessmentOutput | null>(null)
   const [assessmentLoading, setAssessmentLoading] = useState(false)
-  const [transitionResult, setTransitionResult] = useState<TransitionResult | null>(null)
-  const [checkingTransition, setCheckingTransition] = useState(false)
   const [confirmFreshStart, setConfirmFreshStart] = useState(false)
   const [maxHr, setMaxHr] = useState<number | null>(null)
 
@@ -194,10 +179,6 @@ export function ProgramPage() {
         setWeekNumber(wn)
         await loadWeek(existingBlock, wn)
 
-        if (existingBlock.blockType === 'block_zero') {
-          const stored = await apiFetch<TransitionResult | null>('/api/ai/block-zero-transition')
-          if (stored) setTransitionResult(stored)
-        }
       } catch (e) {
         console.error('Failed to load program:', e)
         setBlock(null)
@@ -287,18 +268,6 @@ export function ProgramPage() {
       console.error('Failed to prepare week:', e)
     } finally {
       setGenerating(false)
-    }
-  }
-
-  async function handleCheckTransition() {
-    setCheckingTransition(true)
-    try {
-      const result = await apiFetch<TransitionResult>('/api/ai/block-zero-transition', { method: 'POST' })
-      setTransitionResult(result)
-    } catch (e) {
-      console.error('Transition check failed:', e)
-    } finally {
-      setCheckingTransition(false)
     }
   }
 
@@ -480,14 +449,16 @@ export function ProgramPage() {
         <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
       </Link>
 
-      {/* Block narrative (Block Zero only; post-Block-Zero shows no narrative) */}
+      {/* Block Zero: the six-week strip, the week's line, tests and the gate */}
       {isBlockZero && (
-        <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2.5 space-y-1">
-          <p className="text-label text-teal">BLOCK ZERO</p>
-          <p className="text-sm text-foreground leading-relaxed">
-            {getBlockZeroNarrative(blockWeek)}
-          </p>
-        </div>
+        <BlockZeroProgramBoards
+          currentWeek={currentWeek}
+          viewWeek={weekNumber}
+          totalWeeks={block.totalWeeks}
+          onPickWeek={(w) => { if (w !== weekNumber) void loadWeek(block, w) }}
+          onOpenTests={(w, sheet) => navigate(`/block-zero/tests?week=${w}${sheet ? '&sheet=1' : ''}`)}
+          onOpenGate={() => navigate('/block-zero/gate')}
+        />
       )}
 
       {/* Week Navigator */}
@@ -559,52 +530,6 @@ export function ProgramPage() {
         />
       )}
 
-      {/* Block Zero transition readiness — available from week 4 onward */}
-      {isBlockZero && weekNumber >= 4 && (
-        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-          <div>
-            <p className="text-label text-gold">TRANSITION CHECK</p>
-            <p className="mt-0.5 text-sm text-foreground">
-              {transitionResult ? 'Result from last check.' : 'Block Zero nearing completion. Check readiness to advance.'}
-            </p>
-          </div>
-
-          {transitionResult ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className={`text-xs font-medium uppercase tracking-wide px-2 py-0.5 rounded ${
-                  transitionResult.decision === 'proceed'
-                    ? 'bg-teal/15 text-teal'
-                    : transitionResult.decision === 'hold'
-                    ? 'bg-clay/15 text-clay'
-                    : 'bg-gold/15 text-gold'
-                }`}>
-                  {transitionResult.decision}
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">{transitionResult.rationale}</p>
-              {transitionResult.nextBlockNotes && (
-                <p className="text-xs text-muted-foreground/70 leading-relaxed">{transitionResult.nextBlockNotes}</p>
-              )}
-              <button
-                onClick={handleCheckTransition}
-                disabled={checkingTransition}
-                className="text-xs text-muted-foreground/60 active:text-muted-foreground pt-1"
-              >
-                {checkingTransition ? 'Checking...' : 'Re-check'}
-              </button>
-            </div>
-          ) : (
-            <Button
-              onClick={handleCheckTransition}
-              disabled={checkingTransition}
-              className="w-full"
-            >
-              {checkingTransition ? 'Checking readiness...' : 'Check readiness'}
-            </Button>
-          )}
-        </div>
-      )}
 
       {/* Manual block starts */}
       <div className="space-y-2 pt-2 pb-4">

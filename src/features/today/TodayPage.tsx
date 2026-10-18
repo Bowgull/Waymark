@@ -25,7 +25,11 @@ import { GeneratePlanButton } from './GeneratePlanButton'
 import { JournalCard } from './JournalCard'
 import { ReassignRunSheet } from './ReassignRunSheet'
 import type { RunSessionSummary } from './TimelineRow'
-import { WellnessPromptCard, type WellnessData } from './WellnessPromptCard'
+import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
+import { answersFromLog, shouldOpenCheckIn } from '@/features/blockZero/checkInFlow'
+import { CHECK_IN_EVENT, checkInSkippedOn, markCheckInSkipped, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
+import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessLine'
+import { MorningNoteCard, MorningReportCard, TodayHeroCard } from '@/features/blockZero/TodayPieces'
 
 interface Session {
   id: string
@@ -48,6 +52,18 @@ interface DailyLog {
   weedGrams?: number | null
   alcoholScale?: number | null
   soreness?: number | null
+  sleepQuality?: number | null
+  energy?: number | null
+  stress?: number | null
+  mood?: number | null
+  backToday?: number | null
+  backNotes?: string | null
+}
+
+interface CurrentBlock {
+  id: string
+  blockType: string
+  currentWeek?: number
 }
 
 // Session types that have a dedicated workout engine
@@ -77,6 +93,10 @@ export function TodayPage() {
   >(null)
   const [reassignFor, setReassignFor] = useState<{ activityId: number; sessionId: string } | null>(null)
   const [maxHr, setMaxHr] = useState<number | null>(null)
+  const [readiness, setReadiness] = useState<ReadinessIn | null>(null)
+  const [block, setBlock] = useState<CurrentBlock | null>(null)
+  const [deck, setDeck] = useState<{ startAt: number; firstOpen: boolean } | null>(null)
+  const [noteOpen, setNoteOpen] = useState(false)
   const autoResumeAttempted = useRef(false)
 
   const today = getTodayISO()
@@ -94,6 +114,26 @@ export function TodayPage() {
       console.error('Failed to refresh sessions:', e)
     }
   }, [today])
+
+  const refreshReadiness = useCallback(async (): Promise<ReadinessIn | null> => {
+    try {
+      const r = await apiFetch<ReadinessIn>(`/api/readiness/today?date=${today}`)
+      setReadiness(r)
+      return r
+    } catch {
+      return null
+    }
+  }, [today])
+
+  // The morning alarm's I'M UP while Today is already open.
+  useEffect(() => {
+    const open = () => {
+      takeCheckInRequest()
+      setDeck({ startAt: 0, firstOpen: false })
+    }
+    window.addEventListener(CHECK_IN_EVENT, open)
+    return () => window.removeEventListener(CHECK_IN_EVENT, open)
+  }, [])
 
   const refreshReactive = useCallback(async () => {
     try {
@@ -125,6 +165,8 @@ export function TodayPage() {
         setSessions(sessionsData)
         setDailyLog(logData)
         setMaxHr(profile?.maxHr ?? null)
+        apiFetch<CurrentBlock | null>(`/api/blocks/current?date=${today}`).then(setBlock).catch(() => setBlock(null))
+        void refreshReadiness()
         if (!autoResumeAttempted.current) {
           autoResumeAttempted.current = true
           const suppressFromRoute = Boolean((location.state as { suppressAutoResume?: boolean } | null)?.suppressAutoResume)
@@ -155,6 +197,10 @@ export function TodayPage() {
           }
         }
         refreshReactive()
+        // First open of the day (or the alarm's I'M UP): the check-in cards.
+        if (shouldOpenCheckIn({ today, hasLogToday: logData != null, skippedOn: checkInSkippedOn(), requested: takeCheckInRequest() })) {
+          setDeck({ startAt: 0, firstOpen: logData == null })
+        }
       } catch (e) {
         console.error('Failed to load today data:', e)
         setDailyLog(null)
@@ -163,7 +209,7 @@ export function TodayPage() {
       }
     }
     load()
-  }, [today, refreshReactive, navigate, location.search, location.state])
+  }, [today, refreshReactive, refreshReadiness, navigate, location.search, location.state])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
@@ -531,16 +577,63 @@ export function TodayPage() {
     }
   }
 
-  async function handleWellnessSubmit(data: WellnessData) {
+  // The check-in cards save here; the readiness read comes back for the closing line.
+  const handleCheckInSubmit = useCallback(async (body: Record<string, unknown>): Promise<ReadinessIn | null> => {
+    const log = await apiFetch<DailyLog>('/api/daily-logs', {
+      method: 'POST',
+      headers: idempotencyHeaders(),
+      body: JSON.stringify(body),
+    })
+    setDailyLog(log)
+    return refreshReadiness()
+  }, [refreshReadiness])
+
+  const handleCheckInClose = useCallback(() => setDeck(null), [])
+
+  async function handleMorningNote(text: string): Promise<boolean> {
     try {
-      const log = await apiFetch<DailyLog>('/api/daily-logs', {
+      await apiFetch('/api/journal', {
         method: 'POST',
         headers: idempotencyHeaders(),
-        body: JSON.stringify({ date: today, ...data }),
+        body: JSON.stringify({ date: today, type: 'wellness', content: text, append: true }),
       })
-      setDailyLog(log)
+      showToast('Saved to the Waybook.', 'success', { durationMs: 2400 })
+      return true
     } catch (e) {
-      console.error('Failed to save daily log:', e)
+      console.error('Failed to save wellness note:', e)
+      showToast("Couldn't save. Check your connection.", 'warning')
+      return false
+    }
+  }
+
+  // "Class tonight": one tap adds an MT class this evening; the type is asked
+  // when it's logged. Returns the refusal line, or null when added.
+  async function handleAddClassTonight(): Promise<string | null> {
+    try {
+      const created = await apiFetch<Session & { coach?: { notes?: string[] } }>('/api/sessions/insert-ad-hoc', {
+        method: 'POST',
+        headers: idempotencyHeaders(),
+        body: JSON.stringify({
+          date: today,
+          type: 'mt_class',
+          // Block Zero ramps in through technique; the real type is asked at log time.
+          label: block?.blockType === 'block_zero' ? 'MT Technique' : 'MT Class',
+          timeSlot: 'pm',
+          today,
+        }),
+      })
+      setSessions(prev => [...prev, created].sort((a, b) => (a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)))
+      const notes = created.coach?.notes?.filter(Boolean) ?? []
+      showToast(notes.length > 0 ? notes.join(' ') : 'Class tonight. Log the type after class.', 'success', { durationMs: 4000 })
+      return null
+    } catch (e) {
+      const refusal = parseRefusal(e)
+      if (refusal) {
+        showToast(refusalMessage(refusal), 'warning', { durationMs: 7000 })
+        return refusal.reason
+      }
+      showToast("Couldn't add. Check your connection.", 'warning')
+      return "Couldn't add. Check your connection."
     }
   }
 
@@ -566,13 +659,19 @@ export function TodayPage() {
         </div>
       )}
 
-      <div>
-        <WellnessPromptCard
-          onSubmit={handleWellnessSubmit}
-          isLogged={dailyLog !== null && dailyLog !== undefined}
-          existing={dailyLog ?? null}
-        />
-      </div>
+      <TodayHeroCard
+        line={readinessLine(readiness)}
+        showClassChip={block != null}
+        classAdded={sessions.some(s => s.type === 'mt_class' && s.status !== 'skipped')}
+        onAddClass={handleAddClassTonight}
+      />
+
+      <MorningReportCard
+        answers={dailyLog ? answersFromLog(dailyLog) : null}
+        onCheckIn={() => setDeck({ startAt: 0, firstOpen: false })}
+        onEdit={(i) => setDeck({ startAt: i, firstOpen: false })}
+        onAddNote={() => setNoteOpen(true)}
+      />
 
       <JournalCard />
 
@@ -681,6 +780,19 @@ export function TodayPage() {
         onSelect={handleReassignPick}
         excludeSessionId={reassignFor?.sessionId}
       />
+
+      {deck && (
+        <CheckInDeck
+          date={today}
+          existing={dailyLog ? answersFromLog(dailyLog) : null}
+          startAt={deck.startAt}
+          onSubmit={handleCheckInSubmit}
+          onClose={handleCheckInClose}
+          onSkipToday={deck.firstOpen ? markCheckInSkipped : undefined}
+        />
+      )}
+
+      {noteOpen && <MorningNoteCard onSave={handleMorningNote} onClose={() => setNoteOpen(false)} />}
 
       <ToastContainer />
     </div>

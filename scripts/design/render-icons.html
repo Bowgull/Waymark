@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8">
+<!-- Renders the approved session icons and the crest to PNG data URLs (see src/design/README.md). Needs the mockups shared/ folder beside it and network for three.js. -->
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+</head><body><pre id="out">PENDING</pre>
+<script src="shared/logo-svg.js"></script>
+<script type="module">
+import { iconImage } from './shared/icon3d.js';
+import { SESSIONS } from './shared/session-icons.js';
+import { crestImage } from './shared/crest.js';
+const out = {};
+try {
+  for (const [k, d] of Object.entries(SESSIONS)) out['icon-' + k] = await Promise.resolve(iconImage(d.model, d, 'model', 96, { look: 'toon', tex: 'faint' }));
+  out['crest-small'] = await crestImage({ px: 240, glyphPx: 9, ascii: false });
+  out['crest-big'] = await crestImage({ px: 560, glyphPx: 9 });
+} catch (e) { out.error = String(e && e.stack || e); }
+document.getElementById('out').textContent = JSON.stringify(out);
+</script></body></html>

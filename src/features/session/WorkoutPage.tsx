@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { apiFetch, newIdempotencyKey } from '@/lib/api'
 import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
+import { EffortCard } from '@/features/blockZero/EffortCard'
+import { asksEffort, effortWrite } from '@/features/blockZero/effort'
 import { getMarkAsset, getSessionAccent } from '@/lib/markAssets'
 import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
@@ -386,6 +388,8 @@ export function WorkoutPage() {
   const [staleResume, setStaleResume] = useState<SessionResumeState | null>(null)
   const pendingRestoreRef = useRef<(() => void) | null>(null)
   const { show: showToast, ToastContainer } = useToast()
+  // Per-set effort (Block Zero Phase C): after LOG SET, the reps-left card; rest starts on the tap.
+  const [effortFor, setEffortFor] = useState<{ setId: string; label: string } | null>(null)
   // One Idempotency-Key per finish of this session: a double tap or a retry is the same write.
   const finishKeyRef = useRef(newIdempotencyKey())
 
@@ -551,7 +555,8 @@ export function WorkoutPage() {
       if (finalReps <= 0) return
       const finalWeightKg =
         weightKg != null ? weightKg : prescribed?.weightKg ?? null
-      handleSetComplete(finalWeightKg, finalReps)
+      // From the lock screen: no card to answer, so rest starts as before.
+      handleSetComplete(finalWeightKg, finalReps, { fromLockScreen: true })
     },
     onAdvance: () => {
       // "Skip →" during rest — cut the rest short and move on.
@@ -1520,7 +1525,7 @@ export function WorkoutPage() {
   const currentSection = currentExercise?.section
   const showSectionHeader = !prevExercise || prevExercise.section !== currentSection
 
-  function handleSetComplete(weightKg: number | null, reps: number) {
+  function handleSetComplete(weightKg: number | null, reps: number, opts: { fromLockScreen?: boolean } = {}) {
     if (!currentSet) return
 
     // Outbox first: the set is kept on this phone until the server has it, and
@@ -1543,10 +1548,31 @@ export function WorkoutPage() {
         : "Set didn't save. The server refused it. Check logs in Settings.", 'warning')
     })
 
-    const restSec = currentSet.restSec ?? 60
+    // Working sets ask how many reps were left (3+ / 2 / 1 / 0); one tap, then rest.
+    if (!opts.fromLockScreen && asksEffort({ isWarmup: currentSet.isWarmup, reps, section: currentExercise?.section ?? null })) {
+      setEffortFor({ setId, label: `Set ${setIdx + 1} of ${totalSetsForExercise}` })
+      return
+    }
+    startStrengthRest()
+  }
+
+  function startStrengthRest() {
+    const restSec = currentSet?.restSec ?? 60
     restTimer.start(restSec)
     void scheduleStrengthRestEnd(Date.now() + restSec * 1000)
     setPhase('rest')
+  }
+
+  function handleEffortPick(rir: number | null) {
+    const target = effortFor
+    setEffortFor(null)
+    if (target && rir != null) {
+      // Its own outbox write after the set's: ordered per session, keyed so a retry never doubles it.
+      void queueWrite(effortWrite(target.setId, rir, id ?? null)).then(result => {
+        if (result === 'rejected') logger.warn('session', 'set effort refused', { setId: target.setId, rir }, 'Server refused the RIR save.')
+      })
+    }
+    startStrengthRest()
   }
 
   function handleNextSet() {
@@ -1688,6 +1714,9 @@ export function WorkoutPage() {
         onExit={leaveSession}
         accentColor={accent}
       />
+      {effortFor && phase === 'exercise' && (
+        <EffortCard setLabel={effortFor.label} onPick={rir => handleEffortPick(rir)} onSkip={() => handleEffortPick(null)} />
+      )}
       <ToastContainer />
     </>
   )

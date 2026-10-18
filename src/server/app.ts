@@ -8,7 +8,7 @@ import { cors } from 'hono/cors'
 import { createDB } from '../db/client'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay, mondayOf } from '../lib/dates'
-import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema } from '../lib/validators/schemas'
+import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
 import { FOUNDATION_LABEL, LEGACY_FOUNDATION_LABELS, foundationTemplate, strengthKindFromLabel, type FoundationInput } from '../lib/foundation'
 import { validateNarutoPatch } from '../lib/naruto'
@@ -3808,6 +3808,28 @@ app.post('/api/user-profile', async (c) => {
   return c.json(profile)
 })
 
+
+// Partial update of the coach's inputs from Settings: birth date, max HR,
+// back / pain status. Only the keys sent are written; null clears one.
+app.patch('/api/user-profile', async (c) => {
+  const parsed = userProfilePatchSchema.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
+  const body = parsed.data
+  const db = createDB(c.env)
+  const now = Math.floor(Date.now() / 1000)
+  const updates: Record<string, unknown> = { updatedAt: now }
+  if (body.dob !== undefined) updates.dob = body.dob
+  if (body.maxHr !== undefined) updates.maxHr = body.maxHr
+  if (body.injuries !== undefined) updates.injuries = body.injuries?.trim() || null
+  const rows = await db.select({ id: userProfile.id }).from(userProfile).where(eq(userProfile.id, 'default'))
+  if (rows.length > 0) {
+    await db.update(userProfile).set(updates).where(eq(userProfile.id, 'default'))
+  } else {
+    await db.insert(userProfile).values({ id: 'default', ...updates, createdAt: now, updatedAt: now })
+  }
+  const [profile] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+  return c.json(profile)
+})
 
 // ─── AI context management ────────────────────────────────────
 

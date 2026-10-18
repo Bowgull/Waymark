@@ -87,3 +87,17 @@ export const settingsUpdateSchema = z.object({
   key: z.string().min(1).max(100),
   value: z.string().max(5000),
 })
+
+// PATCH /api/user-profile: the fields the coach reads that Settings edits.
+// Birth date gives the max-HR estimate (Tanaka) until real runs refine it;
+// injuries is the free-text back / pain status the onboarding asked for.
+export const userProfilePatchSchema = z.object({
+  dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dob is YYYY-MM-DD').refine(v => {
+    const d = new Date(`${v}T12:00:00Z`)
+    if (Number.isNaN(d.getTime())) return false
+    const year = d.getUTCFullYear()
+    return year >= 1920 && d.getTime() < Date.now()
+  }, 'dob must be a real past date').optional().nullable(),
+  maxHr: z.number().int().min(120, 'maxHr is 120-230').max(230, 'maxHr is 120-230').optional().nullable(),
+  injuries: z.string().max(1000).optional().nullable(),
+}).refine(b => b.dob !== undefined || b.maxHr !== undefined || b.injuries !== undefined, 'Nothing to update.')
