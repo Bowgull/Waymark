@@ -1,19 +1,25 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Board, Crest, FlapButton, FlapLabel } from '@/design'
+import type { DayBoardSession } from '@/features/dayboard/rowState'
 import { apiFetch } from '@/lib/api'
-import { getTodayISO } from '@/lib/dates'
-import { Button } from '@/components/ui/button'
-import { GoldDivider } from '@/components/ui/GoldDivider'
-import { PageBackground } from '@/components/backgrounds/PageBackground'
-import { ProgramSkeleton } from '@/components/ui/Skeleton'
+import { getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
 import { getWeekLabel } from '@/lib/strengthTemplates'
 import { strengthBlockWeek } from '@/lib/weeklyTemplate'
-import logoPng from '@/assets/brand/Logo.png'
+import { setWorldWeeks } from '@/world/worldStore'
 
-import { BlockZeroProgramBoards } from '@/features/blockZero/ProgramBoards'
-
+import { BlockZeroExtras } from './BlockZeroExtras'
 import { WeekView } from './WeekView'
+import { cycleWeeks, readWeekAnalysis, splitWhy, weekDays, weekForDay, weekState, worldWeekPosts } from './weekModel'
+import './program.css'
+import '@/features/dayboard/dayboard.css'
+
+// Program (page 33, approved): the road with the week wayposts is the world
+// behind this page (top band left clear), then boards on glass: the week
+// nav with six week flap tiles and the "why this week" line (page 36), the
+// seven-day strip and the open day board (WeekView). Weeks are prepared
+// and simply shown: no draft, no approval step.
 
 interface Block {
   id: string
@@ -28,50 +34,32 @@ interface Block {
   returnPlan?: { offerBlockZero: boolean; reason: string | null } | null
 }
 
-interface Session {
-  id: string
-  type: string
-  timeSlot: string | null
-  status: string
-  scheduledDate: number | null
-  blockWeek?: number | null
-  completedAt?: number | null
-  notes?: string | null
-}
-
 interface WeekPlan {
   id: string
   blockId: string
   weekNumber: number
   status: string
   analysisJson?: string | null
+  whyLine?: string | null
 }
 
 interface WeekData {
   week: WeekPlan
-  sessions: Session[]
+  sessions: DayBoardSession[]
 }
 
 type BlockZeroPrompt = 'first_launch' | 'return_from_break' | null
 
-interface BlockZeroWeekTheme {
-  weekNumber: number
-  focus: string
-}
-
-interface BlockZeroCalibrationStart {
-  exerciseName: string
-  startingWeightKg: number
-  rationale: string
-}
-
 interface BlockZeroAssessmentOutput {
   narrative: string
-  weekThemes: BlockZeroWeekTheme[]
-  calibrationStarts: BlockZeroCalibrationStart[]
+  weekThemes: Array<{ weekNumber: number; focus: string }>
+  calibrationStarts: Array<{ exerciseName: string; startingWeightKg: number; rationale: string }>
   mtCapPerWeek: number
   coachNote?: string
 }
+
+const DAY3 = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+const MON3 = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 
 function getMonday(weekOffset = 0): string {
   const now = new Date()
@@ -82,8 +70,47 @@ function getMonday(weekOffset = 0): string {
   return monday.toLocaleDateString('en-CA')
 }
 
+function currentWeekOf(b: Block): number {
+  // The server's training week pauses through gaps; the calendar is only a fallback.
+  if (b.currentWeek != null) return b.currentWeek
+  if (!b.startedAt) return 1
+  const weeksSinceStart = Math.floor((Date.now() / 1000 - b.startedAt) / (7 * 86400))
+  return Math.min(Math.max(weeksSinceStart + 1, 1), b.totalWeeks)
+}
+
+function parseDayParam(v: string | null): number | null {
+  return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? isoToEpochDay(v) : null
+}
+
+/** The header: the small crest (to Today), PROGRAM on a flap, today's date. */
+function ProgramHeader() {
+  const now = new Date()
+  return (
+    <header className="pg-head">
+      <Link to="/today" className="pg-brand" aria-label="Today">
+        <Crest width={26} still />
+        <FlapLabel text="PROGRAM" size="sm" />
+      </Link>
+      <FlapLabel text={`${DAY3[now.getDay()]} ${now.getDate()} ${MON3[now.getMonth()]}`} size="xs" />
+    </header>
+  )
+}
+
+/** The page frame: no background (the world shows through), the road band left clear. */
+function Frame({ children, road = true }: { children: ReactNode; road?: boolean }) {
+  return (
+    <div className="pg-root">
+      <ProgramHeader />
+      {road && <div className="pg-road" aria-hidden />}
+      <div className="pg-body">{children}</div>
+    </div>
+  )
+}
+
 export function ProgramPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const dayParam = parseDayParam(searchParams.get('day'))
   const [block, setBlock] = useState<Block | null | undefined>(undefined)
   const [weekData, setWeekData] = useState<WeekData | null>(null)
   const [weekNumber, setWeekNumber] = useState(1)
@@ -94,45 +121,32 @@ export function ProgramPage() {
   const [assessment, setAssessment] = useState<BlockZeroAssessmentOutput | null>(null)
   const [assessmentLoading, setAssessmentLoading] = useState(false)
   const [confirmFreshStart, setConfirmFreshStart] = useState(false)
-  const [maxHr, setMaxHr] = useState<number | null>(null)
+  const [openDay, setOpenDay] = useState<number | null>(dayParam)
+  const [pastDone, setPastDone] = useState<{ key: string; counts: Map<number, number> } | null>(null)
 
-  const getCurrentWeekNumber = useCallback((b: Block): number => {
-    // The server's training week pauses through gaps; the calendar is only a fallback.
-    if (b.currentWeek != null) return b.currentWeek
-    if (!b.startedAt) return 1
-    const weeksSinceStart = Math.floor((Date.now() / 1000 - b.startedAt) / (7 * 86400))
-    return Math.min(Math.max(weeksSinceStart + 1, 1), b.totalWeeks)
-  }, [])
+  const todayEpochDay = isoToEpochDay(getTodayISO())
 
   const loadWeek = useCallback(async (b: Block, wn: number) => {
     let wd = await apiFetch<WeekData | null>(`/api/weeks/current?blockId=${b.id}&weekNumber=${wn}`)
-
     // The current week is prepared on open if it has no plan (the same path
-    // as the Sunday weekly pass). Later weeks show "Not prepared yet" until
-    // the weekly pass prepares them.
-    const currentWn = getCurrentWeekNumber(b)
-    if (!wd && wn === currentWn) {
+    // as the Sunday weekly pass). Later weeks say "Not prepared yet".
+    if (!wd && wn === currentWeekOf(b)) {
       wd = await apiFetch<WeekData>('/api/weeks/auto-generate', {
         method: 'POST',
         body: JSON.stringify({ blockId: b.id, startDate: getMonday(0), today: getTodayISO() }),
       })
     }
-
     setWeekData(wd)
     setWeekNumber(wn)
-  }, [getCurrentWeekNumber])
+  }, [])
 
   useEffect(() => {
     async function load() {
       try {
-        const [existingBlock, profile] = await Promise.all([
-          apiFetch<Block | null>(`/api/blocks/current?date=${getTodayISO()}`),
-          apiFetch<{ maxHr: number | null } | null>('/api/user-profile').catch(() => null),
-        ])
-        setMaxHr(profile?.maxHr ?? null)
+        const existingBlock = await apiFetch<Block | null>(`/api/blocks/current?date=${getTodayISO()}`)
 
         if (!existingBlock) {
-          // First launch — no block has ever been created. Recommend Block Zero.
+          // First launch: no block has ever been created. Recommend Block Zero.
           setBlockZeroPrompt('first_launch')
           setBlock(null)
           setLoading(false)
@@ -140,26 +154,17 @@ export function ProgramPage() {
         }
 
         // Resume-after-crash: block_zero exists but week 1 was never generated.
-        // Show the stored assessment if available so the user can click Begin.
         if (existingBlock.blockType === 'block_zero') {
-          const week1 = await apiFetch<WeekData | null>(
-            `/api/weeks/current?blockId=${existingBlock.id}&weekNumber=1`,
-          )
+          const week1 = await apiFetch<WeekData | null>(`/api/weeks/current?blockId=${existingBlock.id}&weekNumber=1`)
           if (!week1) {
             setBlock(existingBlock)
-            const stored = await apiFetch<BlockZeroAssessmentOutput | null>(
-              '/api/ai/block-zero-assessment',
-            )
+            const stored = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment')
             if (stored) {
               setAssessment(stored)
             } else {
-              // Assessment missing, re-run it.
               setAssessmentLoading(true)
               setLoading(false)
-              const result = await apiFetch<BlockZeroAssessmentOutput | null>(
-                '/api/ai/block-zero-assessment',
-                { method: 'POST' },
-              ).catch(() => null)
+              const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST' }).catch(() => null)
               setAssessmentLoading(false)
               if (result) setAssessment(result)
               return
@@ -170,15 +175,14 @@ export function ProgramPage() {
         }
 
         // Return from a break: the server decides (4+ weeks off in a Fighter block).
-        if (existingBlock.returnPlan?.offerBlockZero) {
-          setBlockZeroPrompt('return_from_break')
-        }
+        if (existingBlock.returnPlan?.offerBlockZero) setBlockZeroPrompt('return_from_break')
 
         setBlock(existingBlock)
-        const wn = getCurrentWeekNumber(existingBlock)
-        setWeekNumber(wn)
+        const cw = currentWeekOf(existingBlock)
+        // A deep link (/program?day=YYYY-MM-DD) opens the week holding that day.
+        const day = parseDayParam(new URLSearchParams(window.location.search).get('day'))
+        const wn = day != null ? weekForDay(day, isoToEpochDay(getTodayISO()), cw, existingBlock.totalWeeks) : cw
         await loadWeek(existingBlock, wn)
-
       } catch (e) {
         console.error('Failed to load program:', e)
         setBlock(null)
@@ -186,11 +190,55 @@ export function ProgramPage() {
         setLoading(false)
       }
     }
-    load()
-  }, [getCurrentWeekNumber, loadWeek])
+    void load()
+  }, [loadWeek])
+
+  // A deep link while Program is open (Today's week strip): go to that day.
+  useEffect(() => {
+    if (dayParam == null || !block) return
+    let cancelled = false
+    const wn = weekForDay(dayParam, todayEpochDay, currentWeekOf(block), block.totalWeeks)
+    void (async () => {
+      if (wn !== weekNumber) await loadWeek(block, wn).catch(() => {})
+      if (!cancelled) setOpenDay(dayParam)
+    })()
+    return () => { cancelled = true }
+    // Only a new link moves the page; paging weeks by hand must not snap back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayParam, block?.id])
+
+  // The road's wayposts: sessions done in past weeks (fetched once per block window).
+  const currentWeek = block ? currentWeekOf(block) : 1
+  const windowWeeks = block ? cycleWeeks(weekNumber, block.totalWeeks, block.blockType) : []
+  const pastKey = block ? `${block.id}:${currentWeek}:${windowWeeks.join(',')}` : ''
+  useEffect(() => {
+    if (!block || !pastKey) return
+    const past = windowWeeks.filter(w => w < currentWeek)
+    let cancelled = false
+    void Promise.all(past.map(w =>
+      apiFetch<WeekData | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${w}`)
+        .then(wd => [w, wd ? wd.sessions.filter(s => s.status === 'completed').length : 0] as const)
+        .catch(() => [w, 0] as const),
+    )).then(rows => { if (!cancelled) setPastDone({ key: pastKey, counts: new Map(rows) }) })
+    return () => { cancelled = true }
+    // The key names the block, the current week and the window.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastKey])
+
+  const viewedSessions = weekData?.sessions ?? []
+  const currentDone = weekNumber === currentWeek && weekData ? viewedSessions.filter(s => s.status === 'completed').length : null
+  const doneCounts = pastDone?.key === pastKey ? pastDone.counts : null
+  useEffect(() => {
+    if (!block || windowWeeks.length === 0) return
+    const counts = new Map(doneCounts ?? [])
+    if (currentDone != null) counts.set(currentWeek, currentDone)
+    setWorldWeeks(worldWeekPosts(windowWeeks, currentWeek, counts))
+    // windowWeeks is derived from the key fields below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [block?.id, pastKey, doneCounts, currentDone, currentWeek])
 
   async function handleStartBlockZero(freshStart = false) {
-    // Fresh start clears all history, so it takes a second tap to confirm
+    // Fresh start clears all history, so it takes a second tap to confirm.
     if (freshStart && !confirmFreshStart) {
       setConfirmFreshStart(true)
       return
@@ -206,10 +254,7 @@ export function ProgramPage() {
       setStartingBlockZero(false)
       setConfirmFreshStart(false)
       setAssessmentLoading(true)
-      const result = await apiFetch<BlockZeroAssessmentOutput | null>(
-        '/api/ai/block-zero-assessment',
-        { method: 'POST' },
-      ).catch(() => null)
+      const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST' }).catch(() => null)
       setAssessmentLoading(false)
       setAssessment(result)
     } catch (e) {
@@ -223,10 +268,9 @@ export function ProgramPage() {
     if (!block) return
     setGenerating(true)
     try {
-      const monday = getMonday(0)
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: block.id, weekNumber: 1, startDate: monday }),
+        body: JSON.stringify({ blockId: block.id, weekNumber: 1, startDate: getMonday(0) }),
       })
       setAssessment(null)
       setWeekData(wd)
@@ -241,16 +285,14 @@ export function ProgramPage() {
   async function handleContinueExisting() {
     setBlockZeroPrompt(null)
     setConfirmFreshStart(false)
-    // If no block yet (first launch and dismissed), create a Fighter block
+    // No block yet (first launch, dismissed): create a Fighter block.
     if (!block) {
       const newBlock = await apiFetch<Block>('/api/blocks', {
         method: 'POST',
         body: JSON.stringify({ name: 'Fighter Block', totalWeeks: 12 }),
       })
       setBlock(newBlock)
-      const wn = getCurrentWeekNumber(newBlock)
-      setWeekNumber(wn)
-      await loadWeek(newBlock, wn)
+      await loadWeek(newBlock, currentWeekOf(newBlock))
     }
   }
 
@@ -258,7 +300,7 @@ export function ProgramPage() {
     if (!block) return
     setGenerating(true)
     try {
-      const weekOffset = weekNumber - getCurrentWeekNumber(block)
+      const weekOffset = weekNumber - currentWeekOf(block)
       const wd = await apiFetch<WeekData>('/api/weeks/auto-generate', {
         method: 'POST',
         body: JSON.stringify({ blockId: block.id, startDate: getMonday(weekOffset), today: getTodayISO() }),
@@ -271,275 +313,197 @@ export function ProgramPage() {
     }
   }
 
-  function handlePrevWeek() {
-    if (!block || weekNumber <= 1) return
-    loadWeek(block, weekNumber - 1)
-  }
-
-  function handleNextWeek() {
-    if (!block || weekNumber >= block.totalWeeks) return
-    loadWeek(block, weekNumber + 1)
+  function goToWeek(w: number) {
+    if (!block || w < 1 || w > block.totalWeeks || w === weekNumber) return
+    setOpenDay(null)
+    void loadWeek(block, w).catch(e => console.error('Failed to load week:', e))
   }
 
   if (loading) {
-    return <ProgramSkeleton />
+    return (
+      <Frame>
+        <div className="db-glass" aria-busy="true"><p className="wm-prose is-dim">Reading the plan.</p></div>
+      </Frame>
+    )
   }
 
-  // ─── Block Zero Assessment Loading ───────────────────────────
+  // ─── Block Zero: the assessment ───────────────────────────────
 
   if (assessmentLoading) {
     return (
-      <div className="space-y-4">
-        <PageBackground />
-        <Link to="/today" className="inline-block mb-1">
-          <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
-        </Link>
-        <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <p className="text-label text-teal">BLOCK ZERO</p>
-          <p className="text-sm text-muted-foreground">Reading your profile.</p>
-          <p className="text-xs text-muted-foreground/60">This takes about 20 seconds.</p>
-        </div>
-      </div>
+      <Frame road={false}>
+        <Board head="Block Zero" solid>
+          <p className="wm-prose">Reading your profile.</p>
+          <p className="wm-prose is-dim" style={{ marginTop: 4 }}>This takes about 20 seconds.</p>
+        </Board>
+      </Frame>
     )
   }
-
-  // ─── Block Zero Assessment Result ────────────────────────────
 
   if (assessment) {
     return (
-      <div className="space-y-4">
-        <PageBackground />
-        <Link to="/today" className="inline-block mb-1">
-          <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
-        </Link>
-        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-          <p className="text-label text-teal">BLOCK ZERO</p>
-          <p className="text-sm text-foreground leading-relaxed">{assessment.narrative}</p>
-
-          {assessment.coachNote && (
-            <p className="text-xs text-amber-400/80 border border-amber-400/20 rounded px-3 py-2 bg-amber-400/5">
-              {assessment.coachNote}
-            </p>
-          )}
-
-          <div className="space-y-1.5">
+      <Frame road={false}>
+        <Board head="Block Zero" solid>
+          <p className="wm-prose">{assessment.narrative}</p>
+          {assessment.coachNote && <p className="pg-why" style={{ marginTop: 10 }}>{assessment.coachNote}</p>}
+          <div className="pg-themes">
             {assessment.weekThemes.map(wt => (
-              <div key={wt.weekNumber} className="flex gap-3 text-sm">
-                <span className="text-muted-foreground/60 w-14 shrink-0 font-mono text-xs pt-0.5">
-                  WK {wt.weekNumber}
-                </span>
-                <span className="text-muted-foreground">{wt.focus}</span>
+              <div key={wt.weekNumber} className="pg-theme">
+                <FlapLabel text={`WK ${wt.weekNumber}`} size="xs" tone="gold" />
+                <span className="wm-prose is-dim">{wt.focus}</span>
               </div>
             ))}
           </div>
-
           {assessment.calibrationStarts.length > 0 && (
-            <div className="pt-1 space-y-1.5">
-              <p className="text-label text-muted-foreground/60">STARTING WEIGHTS</p>
-              {assessment.calibrationStarts.map(cs => (
-                <div key={cs.exerciseName} className="flex items-start justify-between gap-2 text-sm">
-                  <span className="text-foreground">{cs.exerciseName}</span>
-                  <span className="text-muted-foreground shrink-0">{cs.startingWeightKg}kg</span>
-                </div>
-              ))}
-              <p className="text-xs text-muted-foreground/50 pt-0.5">
-                Block Zero loads at 40-55% of these numbers.
-              </p>
+            <div style={{ marginTop: 12 }}>
+              <p className="wm-label">Starting weights</p>
+              <div className="db-lifts">
+                {assessment.calibrationStarts.map(cs => (
+                  <div key={cs.exerciseName} className="db-lift"><span>{cs.exerciseName.toUpperCase()}</span><span>{cs.startingWeightKg} kg</span></div>
+                ))}
+              </div>
+              <p className="wm-prose is-dim" style={{ marginTop: 6 }}>Block Zero loads at 40-55% of these numbers.</p>
             </div>
           )}
-
-          <Button
-            className="w-full"
-            onClick={handleBeginBlockZero}
-            disabled={generating}
-          >
-            {generating ? 'Setting up...' : 'Begin'}
-          </Button>
-        </div>
-      </div>
+          <div style={{ marginTop: 14 }}>
+            <FlapButton label={generating ? 'SETTING UP' : 'BEGIN'} primary disabled={generating} onClick={handleBeginBlockZero} />
+          </div>
+        </Board>
+      </Frame>
     )
   }
 
-  // ─── Block Zero Prompt ────────────────────────────────────────
+  // ─── Block Zero: the prompt ───────────────────────────────────
 
   if (blockZeroPrompt) {
     const isFirstLaunch = blockZeroPrompt === 'first_launch'
     return (
-      <div className="space-y-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-        <PageBackground />
-        <Link to="/today" className="inline-block mb-1">
-          <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
-        </Link>
-        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-          <div>
-            <p className="text-label text-gold mb-1">
-              {isFirstLaunch ? 'BEFORE YOU BEGIN' : 'WELCOME BACK'}
-            </p>
-            <h2 className="text-display-sm text-foreground">
-              {isFirstLaunch ? 'Start with Block Zero' : 'Time for a Reset'}
-            </h2>
-          </div>
-          <p className="text-sm text-muted-foreground leading-relaxed">
+      <Frame road={false}>
+        <Board head={isFirstLaunch ? 'Before you begin' : 'Welcome back'} solid>
+          <FlapLabel text={isFirstLaunch ? 'START WITH BLOCK ZERO' : 'TIME FOR A RESET'} size="sm" tone="gold" fit />
+          <p className="wm-prose" style={{ marginTop: 10 }}>
             {isFirstLaunch
               ? 'After time away from training, jumping straight into heavy weights risks tendon injury. Muscle memory returns faster than connective tissue adapts. Block Zero is a 6-week ramp-up that gets your body ready to train hard without breaking down.'
               : "It's been a while since your last session. Tendons and ligaments detrain faster than muscle. Block Zero resets your starting weights and volume so you can build back up safely."}
           </p>
-          <ul className="space-y-1.5">
-            {[
-              'Weeks 1–2: Foundation + light strength (40% weights). No MT class.',
-              'Weeks 3–4: MT class returns. Weights climb to 50–55%.',
-              'Weeks 5–6: Full schedule. Ready for Block 1.',
-            ].map(item => (
-              <li key={item} className="flex gap-2 text-sm text-muted-foreground">
-                <span className="text-teal mt-0.5">→</span>
-                <span>{item}</span>
-              </li>
+          <ul className="pg-list">
+            {['Weeks 1–2: Foundation + light strength (40% weights). No MT class.', 'Weeks 3–4: MT class returns. Weights climb to 50–55%.', 'Weeks 5–6: Full schedule. Ready for Block 1.'].map(item => (
+              <li key={item} className="wm-prose is-dim">{item}</li>
             ))}
           </ul>
-          <div className="space-y-2 pt-1">
-            <Button
-              className="w-full"
-              onClick={() => handleStartBlockZero()}
-              disabled={startingBlockZero}
-            >
-              {startingBlockZero && !confirmFreshStart ? 'Setting up...' : 'Start Block Zero'}
-            </Button>
-            <button
-              onClick={() => handleStartBlockZero(true)}
-              disabled={startingBlockZero}
-              className="w-full py-2 text-xs text-teal/80 active:text-teal disabled:opacity-40"
-            >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+            <FlapButton label={startingBlockZero && !confirmFreshStart ? 'SETTING UP' : 'START BLOCK ZERO'} primary disabled={startingBlockZero} onClick={() => handleStartBlockZero()} />
+            <button type="button" className="db-add" disabled={startingBlockZero} onClick={() => handleStartBlockZero(true)}>
               {startingBlockZero && confirmFreshStart ? 'Clearing history...' : confirmFreshStart ? 'Tap again to clear history and start' : 'Start Block Zero fresh (clears history)'}
             </button>
-            <button
-              onClick={handleContinueExisting}
-              className="w-full py-2 text-sm text-muted-foreground active:text-foreground"
-            >
+            <button type="button" className="db-add" onClick={handleContinueExisting}>
               {isFirstLaunch ? 'Skip. Go straight to Fighter block' : 'Continue current block'}
             </button>
           </div>
-        </div>
-      </div>
+        </Board>
+      </Frame>
     )
   }
 
   if (!block) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">Failed to load program.</p>
-      </div>
+      <Frame>
+        <div className="db-glass"><p className="wm-prose">Failed to load program.</p></div>
+      </Frame>
     )
   }
 
-  const currentWeek = getCurrentWeekNumber(block)
+  const isBlockZero = block.blockType === 'block_zero'
   // Block Zero extension weeks hold week-5 levels; Fighter cycles every 6 weeks.
   const blockWeek = strengthBlockWeek(block.blockType, weekNumber)
-  const blockType = block.blockType === 'block_zero' ? 'block_zero' : 'fighter'
-  const weekInfo = getWeekLabel(blockWeek, blockType)
-  const isCurrentWeek = weekNumber === currentWeek
-  const isBlockZero = block.blockType === 'block_zero'
-  const weekProgressPercent = (weekNumber / block.totalWeeks) * 100
+  const weekInfo = getWeekLabel(blockWeek, isBlockZero ? 'block_zero' : 'fighter')
+  const blkLine = isBlockZero
+    ? `${weekInfo} · week ${weekNumber} of ${block.totalWeeks}`
+    : `Fighter · ${weekInfo} · block week ${blockWeek} of 6`
+  const read = readWeekAnalysis(weekData?.week.analysisJson, weekData?.week.whyLine)
+  const why = read.why ? splitWhy(read.why) : null
+
+  // Monday to Sunday of the viewed week: from its sessions, else the calendar.
+  const firstDay = viewedSessions.reduce<number | null>((m, s) => (s.scheduledDate != null && (m == null || s.scheduledDate < m) ? s.scheduledDate : m), null)
+  const monday = firstDay != null ? mondayOf(firstDay) : mondayOf(todayEpochDay) + (weekNumber - currentWeek) * 7
+  const days = weekDays(monday)
+  const shownDay = openDay != null && days.includes(openDay)
+    ? openDay
+    : days.includes(todayEpochDay) ? todayEpochDay : days.find(d => viewedSessions.some(s => s.scheduledDate === d)) ?? days[0]
 
   return (
-    <div className="space-y-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-      <PageBackground />
+    <Frame>
+      {/* the week: nav, six week flap tiles, why this week */}
+      <div className="db-glass">
+        <div className="pg-nav">
+          <button type="button" className="pg-lnk" onClick={() => goToWeek(weekNumber - 1)} disabled={weekNumber <= 1} aria-label="Previous week">‹ Prev</button>
+          <FlapLabel text={`WEEK ${weekNumber}`} size="md" tone={weekNumber === currentWeek ? 'gold' : 'ink'} />
+          <button type="button" className="pg-lnk" onClick={() => goToWeek(weekNumber + 1)} disabled={weekNumber >= block.totalWeeks} aria-label="Next week">Next ›</button>
+        </div>
+        <p className="pg-blk">{blkLine}</p>
+        <div className="pg-six" role="group" aria-label="Weeks of the block">
+          {windowWeeks.map(w => {
+            const st = weekState(w, currentWeek)
+            return (
+              <button
+                key={w}
+                type="button"
+                className={`pg-wk${w === weekNumber ? ' is-viewed' : ''}`}
+                aria-label={`Week ${w}${st === 'now' ? ', this week' : st === 'done' ? ', done' : ''}`}
+                aria-current={w === weekNumber ? 'true' : undefined}
+                onClick={() => goToWeek(w)}
+              >
+                <FlapLabel text={String(w)} size="md" tone={st === 'done' ? 'teal' : st === 'now' ? 'gold' : 'ink'} />
+              </button>
+            )
+          })}
+        </div>
+        {why && (
+          <p className="pg-why">{why.lead && <b>{why.lead}</b>}{why.lead ? ' ' : ''}{why.rest}</p>
+        )}
+      </div>
 
-      {/* Logo mark */}
-      <Link to="/today" className="inline-block mb-1">
-        <img src={logoPng} alt="Waymark" className="h-8 w-8 object-contain opacity-60 active:opacity-80" style={{ mixBlendMode: 'screen' }} />
-      </Link>
-
-      {/* Block Zero: the six-week strip, the week's line, tests and the gate */}
       {isBlockZero && (
-        <BlockZeroProgramBoards
-          currentWeek={currentWeek}
+        <BlockZeroExtras
           viewWeek={weekNumber}
+          currentWeek={currentWeek}
           totalWeeks={block.totalWeeks}
-          onPickWeek={(w) => { if (w !== weekNumber) void loadWeek(block, w) }}
           onOpenTests={(w, sheet) => navigate(`/block-zero/tests?week=${w}${sheet ? '&sheet=1' : ''}`)}
           onOpenGate={() => navigate('/block-zero/gate')}
         />
       )}
 
-      {/* Week Navigator */}
-      <div className="mb-2">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={handlePrevWeek}
-            disabled={weekNumber <= 1}
-            className="px-3 py-2 text-sm font-medium text-muted-foreground disabled:opacity-30 active:text-foreground"
-          >
-            Prev
-          </button>
-          <div className="text-center">
-            <h2 className="font-cinzel text-lg font-semibold text-foreground">
-              Week {weekNumber}
-              {isCurrentWeek && <span className="ml-2 text-xs text-teal">(current)</span>}
-            </h2>
-            <p className="mt-0.5 text-sm text-gold">{weekInfo}</p>
-            <p className="text-xs text-muted-foreground">
-              {isBlockZero ? `Block Zero week ${weekNumber} of ${block.totalWeeks}` : `Block week ${blockWeek} of 6`}
-            </p>
-          </div>
-          <button
-            onClick={handleNextWeek}
-            disabled={weekNumber >= block.totalWeeks}
-            className="px-3 py-2 text-sm font-medium text-muted-foreground disabled:opacity-30 active:text-foreground"
-          >
-            Next
-          </button>
-        </div>
-
-        {/* Block progress bar */}
-        <div className="mt-3 h-1.5 rounded-full bg-border">
-          <div
-            className={`h-full rounded-full transition-all ${isBlockZero ? 'bg-teal' : 'bg-gold'}`}
-            style={{ width: `${weekProgressPercent}%` }}
-          />
-        </div>
-        <GoldDivider className="mt-3" />
-      </div>
-
-      {/* Week Content */}
       {!weekData ? (
-        <div className="flex flex-col items-center py-12">
-          <p className="mb-4 text-sm text-muted-foreground">Not prepared yet.</p>
-          <Button onClick={handleGenerateWeek} disabled={generating}>
-            {generating ? 'Preparing...' : `Prepare Week ${weekNumber}`}
-          </Button>
+        <div className="db-glass">
+          <p className="wm-prose">Not prepared yet.</p>
+          <button type="button" className="db-add" onClick={handleGenerateWeek} disabled={generating}>
+            {generating ? 'Preparing...' : `Prepare week ${weekNumber} now`}
+          </button>
         </div>
       ) : (
         <WeekView
-          sessions={weekData.sessions}
+          key={weekData.week.id}
+          sessions={viewedSessions}
           weekPlanId={weekData.week.id}
-          analysisJson={weekData.week.analysisJson}
+          changes={read.changes}
           weekNumber={weekNumber}
-          onSessionUpdate={(id, status) => {
-            setWeekData(prev => prev ? {
-              ...prev,
-              sessions: prev.sessions.map(s => s.id === id ? { ...s, status } : s),
-            } : null)
+          days={days}
+          todayEpochDay={todayEpochDay}
+          openDay={shownDay}
+          onOpenDay={setOpenDay}
+          onSessionUpdate={(id, patch) => {
+            setWeekData(prev => prev ? { ...prev, sessions: prev.sessions.map(s => (s.id === id ? { ...s, ...patch } : s)) } : null)
           }}
-          onSessionAdded={(session) => {
-            setWeekData(prev => prev ? {
-              ...prev,
-              sessions: [...prev.sessions, session],
-            } : null)
+          onSessionAdded={session => {
+            setWeekData(prev => prev ? { ...prev, sessions: [...prev.sessions.filter(s => s.id !== session.id), session] } : null)
           }}
-          maxHr={maxHr}
         />
       )}
 
-
       {/* Manual block starts */}
-      <div className="space-y-2 pt-2 pb-4">
-        <button
-          onClick={() => setBlockZeroPrompt('return_from_break')}
-          className="w-full py-2 text-xs text-muted-foreground/60 active:text-muted-foreground"
-        >
-          {isBlockZero ? 'Restart Block Zero' : 'Reset with Block Zero'}
-        </button>
-      </div>
-    </div>
+      <button type="button" className="db-add pg-reset" onClick={() => setBlockZeroPrompt('return_from_break')}>
+        {isBlockZero ? 'Restart Block Zero' : 'Reset with Block Zero'}
+      </button>
+    </Frame>
   )
 }

@@ -1,26 +1,20 @@
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { BottomSheet } from '@/components/ui/BottomSheet'
+
+import { REPLACE_REASONS, replaceCommit } from '@/components/ui/departures'
+import { CentredCard, FlapButton, FlapLabel } from '@/design'
+import '@/design/pickers.css'
 import { mediumHaptic, selectHaptic } from '@/lib/haptics'
 
-const REASONS = [
-  { value: 'too_sore', label: 'Too sore' },
-  { value: 'low_sleep', label: 'Low on sleep' },
-  { value: 'schedule', label: 'Short on time' },
-  { value: 'low_drive', label: 'Not feeling it' },
-  { value: 'illness', label: 'Body signal' },
-  { value: 'variety', label: 'Changing it up' },
-]
-
-const REASON_LABELS: Record<string, string> = Object.fromEntries(
-  REASONS.map(r => [r.value, r.label]),
-)
-
 interface ReplaceReasonSheetProps {
+  /** Receives the reason's label (what the server gets) and the fast path for "Changing it up". */
   onCommit: (reason: string, fastPath: boolean) => void
   onClose: () => void
 }
 
+/**
+ * Why swap (page 20 r2): a centred flap board with the six real reasons.
+ * SEE OPTIONS wakes up once one is picked.
+ */
 export function ReplaceReasonSheet({ onCommit, onClose }: ReplaceReasonSheetProps) {
   const [selected, setSelected] = useState<string | null>(null)
 
@@ -31,51 +25,36 @@ export function ReplaceReasonSheet({ onCommit, onClose }: ReplaceReasonSheetProp
 
   function handleContinue() {
     if (!selected) return
-    const label = REASON_LABELS[selected] ?? selected
+    const { reason, fastPath } = replaceCommit(selected)
     mediumHaptic()
-    onCommit(label, selected === 'variety')
+    onCommit(reason, fastPath)
   }
 
   return (
-    <BottomSheet open onClose={onClose} ariaLabel="Why swap">
-      <div className="mb-3">
-        <p className="font-cinzel text-display-sm text-gold">Why swap</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Coach uses this to pick the right session.
-        </p>
+    <CentredCard label="Why swap" onDismiss={onClose} head="Why swap" sub="Coach uses this to pick the right session.">
+      <div className="wm-reason-grid" role="radiogroup" aria-label="Why swap">
+        {REPLACE_REASONS.map(r => {
+          const on = selected === r.value
+          return (
+            <button
+              key={r.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              aria-label={r.label}
+              className={`wm-choice${on ? ' is-on' : ''}`}
+              onClick={() => handleSelect(r.value)}
+            >
+              {/* one size for all six, so the board reads evenly (the longest needs xs) */}
+              <FlapLabel text={r.label} size="xs" tone={on ? 'gold' : 'ink'} />
+            </button>
+          )
+        })}
       </div>
-
-      <div className="mb-3 grid grid-cols-2 gap-2">
-        {REASONS.map(r => (
-          <button
-            key={r.value}
-            onClick={() => handleSelect(r.value)}
-            className={`min-h-[44px] rounded-md border px-3 py-2.5 text-left text-sm transition-colors ${
-              selected === r.value
-                ? 'border-gold/60 bg-secondary text-foreground'
-                : 'border-border bg-secondary/50 text-muted-foreground'
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
+      <div className="wm-btns">
+        <FlapButton label="SEE OPTIONS" primary disabled={!selected} onClick={handleContinue} />
+        <FlapButton label="CLOSE" onClick={onClose} />
       </div>
-
-      <div className="flex gap-2">
-        <Button
-          onClick={handleContinue}
-          disabled={!selected}
-          className="flex-1"
-        >
-          See options
-        </Button>
-        <button
-          onClick={onClose}
-          className="min-h-[44px] px-3 py-2 text-sm text-muted-foreground active:text-foreground"
-        >
-          Close
-        </button>
-      </div>
-    </BottomSheet>
+    </CentredCard>
   )
 }

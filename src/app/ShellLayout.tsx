@@ -1,48 +1,59 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { OfflineBanner } from '../components/ui/OfflineBanner'
-import { HistoryIcon, LibraryIcon, ProgramIcon, TodayIcon } from '../components/icons/NavIcons'
 
-function NavTab({ to, label, icon, end }: { to: string; label: string; icon: React.ReactNode; end?: boolean }) {
+import { FlapLabel } from '@/design'
+import { TAB_ICON_SRC, type TabKey } from '@/design/tabIcons'
+import { useNetworkStatus } from '@/lib/network'
+import { onOutboxChange, pendingWrites } from '@/lib/outboxSync'
+
+// The tab bar (page 42, A, approved): the world's places as painted icons.
+// Active: full colour, lifted, a soft glow, a small brass light above, a gold
+// flap label. Others: dimmed, dim flap labels. The world itself sits behind
+// the whole shell (WorldLayer, mounted once in AppRoutes).
+
+const TABS: ReadonlyArray<{ to: string; key: TabKey; label: string; end?: boolean }> = [
+  { to: '/today', key: 'today', label: 'TODAY', end: true },
+  { to: '/program', key: 'program', label: 'PROGRAM' },
+  { to: '/library', key: 'library', label: 'LIBRARY' },
+  { to: '/history', key: 'ledger', label: 'LEDGER' },
+]
+
+function NavTab({ to, tab, label, end }: { to: string; tab: TabKey; label: string; end?: boolean }) {
   return (
-    <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) =>
-        `relative flex flex-1 flex-col items-center justify-center gap-0.5 pb-[max(env(safe-area-inset-bottom),0.375rem)] pt-2 text-label transition-colors ${
-          isActive ? 'text-gold' : 'text-muted-foreground'
-        }`
-      }
-    >
+    <NavLink to={to} end={end} className={({ isActive }) => `wm-tab${isActive ? ' is-on' : ''}`} aria-label={label.toLowerCase()}>
       {({ isActive }) => (
         <>
-          {isActive && <div className="absolute top-0 h-0.5 w-8 bg-gold" />}
-          <div className="relative">
-            {icon}
-          </div>
-          <span>{label}</span>
+          <img src={TAB_ICON_SRC[tab]} width={40} height={40} alt="" draggable={false} decoding="async" />
+          <FlapLabel text={label} size="xs" tone={isActive ? 'gold' : 'dim'} animate={false} />
         </>
       )}
     </NavLink>
   )
 }
 
+/** Offline: a quiet flap pill ("OFFLINE · 3 SAVED"); the world rains. */
+function OfflinePill() {
+  const online = useNetworkStatus()
+  const [saved, setSaved] = useState(() => pendingWrites())
+  useEffect(() => onOutboxChange(setSaved), [])
+  if (online) return null
+  return (
+    <div className="wm-offline-pill" role="status" aria-live="polite">
+      <FlapLabel text={saved > 0 ? `OFFLINE · ${saved} SAVED` : 'OFFLINE'} size="xs" tone="dim" animate={false} />
+    </div>
+  )
+}
+
 export function ShellLayout() {
   return (
-    <div className="waymark-preview-root min-h-dvh bg-background text-foreground">
-      <div className="waymark-mobile-shell mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
-        <OfflineBanner />
+    <div className="waymark-preview-root relative z-[1] min-h-dvh text-foreground">
+      <div className="waymark-mobile-shell mx-auto flex h-dvh w-full max-w-[430px] flex-col">
+        <OfflinePill />
         <main className="waymark-scroll min-h-0 flex-1 overflow-auto px-4 pb-4">
           <Outlet />
         </main>
-        {/* <ApiHealthDevBadge /> */}
-        <nav
-          className="z-30 flex min-h-[64px] shrink-0 border-t border-gold/10 bg-nav/90 backdrop-blur-md"
-          aria-label="Main"
-        >
-          <NavTab to="/today" label="Today" icon={<TodayIcon />} end />
-          <NavTab to="/program" label="Program" icon={<ProgramIcon />} />
-          <NavTab to="/library" label="Library" icon={<LibraryIcon />} />
-          <NavTab to="/history" label="Ledger" icon={<HistoryIcon />} />
+        <nav className="wm-tabs" aria-label="Main">
+          {TABS.map(t => <NavTab key={t.key} to={t.to} tab={t.key} label={t.label} end={t.end} />)}
         </nav>
       </div>
     </div>

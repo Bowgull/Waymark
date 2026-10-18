@@ -1,50 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
-import { getTodayISO } from '@/lib/dates'
+import { getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
 import { parseRefusal, refusalMessage } from '@/lib/refusal'
 import { clearResume, loadResume, resumeDecision } from '@/lib/sessionResume'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
 import { endAllLiveActivities } from '@/lib/liveActivity'
 
-import { TodayTexture } from '@/components/backgrounds/TodayTexture'
-import { SettingsIcon } from '@/components/icons/NavIcons'
+import { FlapLabel, glowRow, sessionIconFor, type SessionIconKey } from '@/design'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
-import { TodaySkeleton } from '@/components/ui/Skeleton'
+import { CoachSignpost } from '@/components/ui/CoachSignpost'
 import { useToast } from '@/components/ui/Toast'
 import { SkipReasonSheet, type SkipReasonCommit } from '@/features/session/SkipReasonSheet'
 import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
+import { iconFor, sessionDisplayName } from '@/features/dayboard/rowState'
 import type { ReplaceSuggestion, ReplaceSuggestionsOutput } from '@/lib/prompts/tools'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
+import type { CoachSummary } from '@/lib/coach/summary'
+import { CrestLoading } from '@/world/CrestLoading'
+import { setWorldLantern, setWorldPlace } from '@/world/worldStore'
 
-import { DateHeader } from './DateHeader'
-import { DayTimeline } from './DayTimeline'
-import { GeneratePlanButton } from './GeneratePlanButton'
-import { JournalCard } from './JournalCard'
 import { ReassignRunSheet } from './ReassignRunSheet'
-import type { RunSessionSummary } from './TimelineRow'
+import { AskBoard } from './AskBoard'
+import { askView, isAsk, type AskRow, type AskView } from './askView'
+import { AllDoneBoard, CoachBoard, EmptyDayBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip, type CoachChangeLine, type CoachQuestionLine } from './TodayBoards'
+import { TodayDay, type TodaySession } from './TodayDay'
+import { lanternFor, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
 import { answersFromLog, shouldOpenCheckIn } from '@/features/blockZero/checkInFlow'
 import { CHECK_IN_EVENT, checkInSkippedOn, markCheckInSkipped, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
 import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessLine'
 import { MorningNoteCard, MorningReportCard, TodayHeroCard } from '@/features/blockZero/TodayPieces'
+import './today.css'
 
-interface Session {
-  id: string
-  type: string
-  timeSlot: string | null
-  status: string
-  startedAt: number | null
-  completedAt: number | null
-  durationSec: number | null
-  rpe: number | null
-  scheduledDate?: number | null
-  notes: string | null
-  blockType?: string | null
-  runSession?: RunSessionSummary | null
-}
+type Session = TodaySession & { startedAt: number | null; completedAt: number | null; durationSec: number | null; rpe: number | null; notes: string | null }
 
 interface DailyLog {
   id: string
@@ -66,11 +57,18 @@ interface CurrentBlock {
   currentWeek?: number
 }
 
+interface WeekPlanRow { id: string; weekNumber: number; whyLine?: string | null }
+interface WeekPayload { week: WeekPlanRow; sessions: Array<StripSession & { label?: string | null }> }
+interface AdjustmentRow extends AskRow { sessionType?: string | null; createdAt?: number }
+
 // Session types that have a dedicated workout engine
 const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
 
 const MAX_HR_LS_KEY = 'waymark_last_seen_max_hr'
 const REPLACE_SUGGESTIONS_TIMEOUT_MS = 45_000
+
+// An ask shows itself as a centred board once per app open; "later" leaves it on the Coach board.
+const asksShownThisOpen = new Set<string>()
 
 export function TodayPage() {
   const navigate = useNavigate()
@@ -79,6 +77,7 @@ export function TodayPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [dailyLog, setDailyLog] = useState<DailyLog | null | undefined>(undefined)
   const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
@@ -92,14 +91,27 @@ export function TodayPage() {
     | null
   >(null)
   const [reassignFor, setReassignFor] = useState<{ activityId: number; sessionId: string } | null>(null)
-  const [maxHr, setMaxHr] = useState<number | null>(null)
   const [readiness, setReadiness] = useState<ReadinessIn | null>(null)
   const [block, setBlock] = useState<CurrentBlock | null>(null)
+  const [week, setWeek] = useState<WeekPayload | null | undefined>(undefined)
+  const [nextWeek, setNextWeek] = useState<WeekPayload | null>(null)
+  const [summary, setSummary] = useState<CoachSummary | null>(null)
+  const [asks, setAsks] = useState<AdjustmentRow[]>([])
+  const [weekAdjustments, setWeekAdjustments] = useState<AdjustmentRow[]>([])
+  const [askOpen, setAskOpen] = useState<AskView | null>(null)
+  const [askBusy, setAskBusy] = useState(false)
+  const [showDayAnyway, setShowDayAnyway] = useState(false)
   const [deck, setDeck] = useState<{ startAt: number; firstOpen: boolean } | null>(null)
   const [noteOpen, setNoteOpen] = useState(false)
   const autoResumeAttempted = useRef(false)
+  const [slowLoad, setSlowLoad] = useState(false)
+  useEffect(() => {
+    const t = window.setTimeout(() => setSlowLoad(true), 400)
+    return () => window.clearTimeout(t)
+  }, [])
 
   const today = getTodayISO()
+  const todayEpoch = isoToEpochDay(today)
   const todayDate = new Date(`${today}T12:00:00`)
 
   useEffect(() => {
@@ -122,6 +134,21 @@ export function TodayPage() {
       return r
     } catch {
       return null
+    }
+  }, [today])
+
+  // The coach: what changed and the open questions since the last open, then mark this open.
+  const refreshCoach = useCallback(async () => {
+    try {
+      const [s, open] = await Promise.all([
+        apiFetch<CoachSummary | null>(`/api/coach/summary?date=${today}`),
+        apiFetch<AdjustmentRow[]>('/api/adjustments').catch(() => [] as AdjustmentRow[]),
+      ])
+      setSummary(s)
+      setAsks((open ?? []).filter(isAsk).sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)))
+      apiFetch('/api/coach/seen', { method: 'POST' }).catch(() => null)
+    } catch (e) {
+      logger.warn('system', 'coach summary failed', { message: e instanceof Error ? e.message : String(e) }, 'GET /coach/summary failed. Coach board hidden.')
     }
   }, [today])
 
@@ -157,16 +184,15 @@ export function TodayPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [sessionsData, logData, profile] = await Promise.all([
+        const [sessionsData, logData] = await Promise.all([
           apiFetch<Session[]>(`/api/sessions/today?date=${today}`),
           apiFetch<DailyLog | null>(`/api/daily-logs/today?date=${today}`),
-          apiFetch<{ maxHr: number | null } | null>('/api/user-profile').catch(() => null),
         ])
         setSessions(sessionsData)
         setDailyLog(logData)
-        setMaxHr(profile?.maxHr ?? null)
-        apiFetch<CurrentBlock | null>(`/api/blocks/current?date=${today}`).then(setBlock).catch(() => setBlock(null))
+        apiFetch<CurrentBlock | null>(`/api/blocks/current?date=${today}`).then(setBlock).catch(() => { setBlock(null); setWeek(null) })
         void refreshReadiness()
+        void refreshCoach()
         if (!autoResumeAttempted.current) {
           autoResumeAttempted.current = true
           const suppressFromRoute = Boolean((location.state as { suppressAutoResume?: boolean } | null)?.suppressAutoResume)
@@ -205,15 +231,33 @@ export function TodayPage() {
         console.error('Failed to load today data:', e)
         setDailyLog(null)
       } finally {
-        setLoading(false)
+        setLoaded(true)
       }
     }
     load()
-  }, [today, refreshReactive, refreshReadiness, navigate, location.search, location.state])
+  }, [today, refreshReactive, refreshReadiness, refreshCoach, navigate, location.search, location.state])
+
+  // This week's plan: the week strip, the why line, and whether an empty day is a planned rest.
+  useEffect(() => {
+    if (!block?.id || block.currentWeek == null) return
+    let cancelled = false
+    apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${block.currentWeek}`)
+      .then(w => {
+        if (cancelled) return
+        setWeek(w)
+        if (w?.week?.id) apiFetch<AdjustmentRow[]>(`/api/adjustments?weekPlanId=${w.week.id}`).then(r => { if (!cancelled) setWeekAdjustments(r ?? []) }).catch(() => {})
+      })
+      .catch(() => { if (!cancelled) setWeek(null) })
+    // Sunday's rest points at Monday, which belongs to next week's plan.
+    if (todayEpoch + 1 > mondayOf(todayEpoch) + 6) {
+      apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${block.currentWeek + 1}`).then(w => { if (!cancelled) setNextWeek(w) }).catch(() => {})
+    }
+    return () => { cancelled = true }
+  }, [block?.id, block?.currentWeek, todayEpoch])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
-  // one-time toast.
+  // one-time pop-up.
   useEffect(() => {
     async function poll() {
       try {
@@ -236,7 +280,6 @@ export function TodayPage() {
       try {
         const profile = await apiFetch<{ maxHr: number | null } | null>('/api/user-profile')
         if (!profile || profile.maxHr == null) return
-        setMaxHr(profile.maxHr)
         const lastSeen = Number(storageGet(MAX_HR_LS_KEY) ?? '0')
         if (profile.maxHr > lastSeen) {
           storageSet(MAX_HR_LS_KEY, String(profile.maxHr))
@@ -251,6 +294,60 @@ export function TodayPage() {
     poll()
   }, [refreshSessions, showToast])
 
+  // ── what Today shows, and the world behind it ──
+  const weekSessions = week === undefined ? null : (week?.sessions ?? null)
+  const mode = !loaded ? 'loading' : todayMode({ today: sessions, weekSessions, hour: new Date().getHours(), showDayAnyway })
+  useEffect(() => {
+    if (mode === 'loading') return
+    setWorldPlace(showsHome(mode) ? 'home' : 'clearing')
+  }, [mode])
+  useEffect(() => () => setWorldPlace('clearing'), [])
+  useEffect(() => { setWorldLantern(lanternFor(readiness)) }, [readiness])
+
+  const strip = useMemo(() => (week?.sessions ? weekStripDays(week.sessions, mondayOf(todayEpoch), todayEpoch) : null), [week, todayEpoch])
+  const tomorrow = useMemo(() => {
+    const pool = [...(week?.sessions ?? []), ...(nextWeek?.sessions ?? [])].filter(s => s.scheduledDate === todayEpoch + 1)
+    return pool
+  }, [week, nextWeek, todayEpoch])
+
+  // ── the coach ──
+  const askViews = useMemo(() => asks.map(askView).filter((v): v is AskView => v != null), [asks])
+  useEffect(() => {
+    if (!loaded || deck || askOpen) return
+    const first = askViews.find(v => !asksShownThisOpen.has(v.id))
+    if (!first) return
+    const t = window.setTimeout(() => { asksShownThisOpen.add(first.id); setAskOpen(first) }, 0)
+    return () => window.clearTimeout(t)
+  }, [askViews, loaded, deck, askOpen])
+
+  const typeById = useMemo(() => new Map([...weekAdjustments, ...asks].map(a => [a.id, a.sessionType ?? null])), [weekAdjustments, asks])
+  const iconOf = (type: string | null | undefined): SessionIconKey | null => (type ? sessionIconFor(type) : null)
+  const coachChanges: CoachChangeLine[] = [
+    ...(summary?.changeLines ?? []).filter(c => c.kind !== 'week_prepared').map(c => ({ id: c.id, line: c.line, was: c.was ?? null, icon: iconOf(typeById.get(c.id)) })),
+    ...reactiveNotes.slice(0, 2).map(n => ({ id: n.id, line: n.note, was: null, icon: null })),
+  ]
+  const coachQuestions: CoachQuestionLine[] = askViews.map(v => ({ id: v.id, line: v.rowLine, icon: v.hero ?? iconOf(typeById.get(v.id)) }))
+  const whyLine = week?.week?.whyLine ?? (summary?.changeLines ?? []).find(c => c.kind === 'week_prepared')?.line ?? null
+
+  async function answerAsk(view: AskView, body: Record<string, unknown> | null) {
+    setAskBusy(true)
+    try {
+      if (body) {
+        await apiFetch(`/api/adjustments/${view.id}/accept`, { method: 'POST', body: JSON.stringify({ ...body, today }) })
+        showToast('Done.', 'success')
+      } else {
+        await apiFetch(`/api/adjustments/${view.id}/reject`, { method: 'POST' })
+      }
+      setAskOpen(null)
+      setAsks(prev => prev.filter(a => a.id !== view.id))
+      await Promise.all([refreshSessions(), refreshCoach()])
+    } catch (e) {
+      showRefusal(e, "Couldn't save. Check your connection.")
+    } finally {
+      setAskBusy(false)
+    }
+  }
+
   async function handleGenerate() {
     setGenerating(true)
     try {
@@ -261,6 +358,7 @@ export function TodayPage() {
       setSessions(created)
     } catch (e) {
       console.error('Failed to generate plan:', e)
+      showToast("Couldn't prepare the day. Check your connection.", 'warning')
     } finally {
       setGenerating(false)
     }
@@ -402,9 +500,11 @@ export function TodayPage() {
     setReplaceState({ sessionId: id, stage: 'reason' })
   }
 
-  async function handleReplaceReasonCommit(reason: string) {
+  async function handleReplaceReasonCommit(reason: string, fastPath: boolean) {
     if (!replaceState) return
     const sessionId = replaceState.sessionId
+    // "Changing it up" goes straight to the full board; the coach has nothing to read.
+    if (fastPath) { await loadPickerFallback(sessionId, reason); return }
     setReplaceState({ sessionId, stage: 'loading', reason })
     try {
       // The route wraps the coach output: { suggestions: { coachLine, suggestions[] } | null }.
@@ -445,20 +545,16 @@ export function TodayPage() {
     }
   }
 
-  async function handleReplaceAcceptSuggestion(suggestion: ReplaceSuggestion) {
-    if (!replaceState || replaceState.stage !== 'coach') return
-    const sessionId = replaceState.sessionId
-    const reason = replaceState.reason
-    setReplaceState(null)
+  async function replaceWith(sessionId: string, reason: string, pick: { type: string; label?: string | null; timeSlot?: string | null; runCategory?: string | null }) {
     try {
       const result = await apiFetch<{ original: Session; replacement: Session }>(`/api/sessions/${sessionId}/replace`, {
         method: 'POST',
         body: JSON.stringify({
           reason,
-          type: suggestion.type,
-          label: suggestion.label,
-          timeSlot: suggestion.timeSlot,
-          runCategory: suggestion.runCategory,
+          type: pick.type,
+          label: pick.label,
+          timeSlot: pick.timeSlot,
+          runCategory: pick.runCategory,
           today: getTodayISO(),
         }),
       })
@@ -474,6 +570,13 @@ export function TodayPage() {
       console.error('Failed to replace session:', e)
       showRefusal(e, "Couldn't replace. Check your connection.")
     }
+  }
+
+  async function handleReplaceAcceptSuggestion(suggestion: ReplaceSuggestion) {
+    if (!replaceState || replaceState.stage !== 'coach') return
+    const { sessionId, reason } = replaceState
+    setReplaceState(null)
+    await replaceWith(sessionId, reason, suggestion)
   }
 
   async function handleReplaceShowMore() {
@@ -483,34 +586,17 @@ export function TodayPage() {
 
   async function handleReplaceSelect(option: SessionOption) {
     if (!replaceState || replaceState.stage !== 'picker') return
-    const sessionId = replaceState.sessionId
-    const reason = replaceState.reason
+    const { sessionId, reason } = replaceState
     setReplaceState(null)
     setPickerSuggestions(null)
-    try {
-      const result = await apiFetch<{ original: Session; replacement: Session }>(`/api/sessions/${sessionId}/replace`, {
-        method: 'POST',
-        body: JSON.stringify({
-          reason,
-          type: option.type,
-          label: option.label,
-          timeSlot: option.timeSlot,
-          runCategory: option.runCategory,
-          today: getTodayISO(),
-        }),
-      })
-      setSessions(prev => {
-        const withOriginal = prev.map(s => (s.id === result.original.id ? result.original : s))
-        const next = [...withOriginal, result.replacement]
-        return next.sort((a, b) =>
-          (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0)
-          || ((a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1))
-        )
-      })
-    } catch (e) {
-      console.error('Failed to replace session:', e)
-      showRefusal(e, "Couldn't replace. Check your connection.")
-    }
+    await replaceWith(sessionId, reason, option)
+  }
+
+  function openAddPicker() {
+    setShowPicker(true)
+    apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
+      .then(setPickerSuggestions)
+      .catch(() => setPickerSuggestions(null))
   }
 
   async function handleAddSession(option: SessionOption) {
@@ -536,13 +622,16 @@ export function TodayPage() {
     }
   }
 
-  async function handleConfirmMatch(activityId: number) {
+  async function handleConfirmMatch(activityId: number, row: HTMLElement | null) {
     try {
       await apiFetch(`/api/strava/activity/${activityId}/confirm`, { method: 'POST' })
       await refreshSessions()
       showToast('Logged.', 'success')
+      glowRow(row, 'good')
     } catch (e) {
       console.error('Failed to confirm match:', e)
+      glowRow(row, 'bad')
+      showToast("Couldn't save. Check your connection.", 'warning')
     }
   }
 
@@ -638,59 +727,42 @@ export function TodayPage() {
   }
 
   if (loading) {
-    return <TodaySkeleton />
+    // A quick load shows the world alone; only a slow one brings the crest apart (it snaps together when done).
+    if (!slowLoad) return loaded ? <LoadedNow onReady={() => setLoading(false)} /> : null
+    return <CrestLoading message="" done={loaded} onDone={() => setLoading(false)} />
   }
 
+  const replaceTarget = replaceState ? sessions.find(s => s.id === replaceState.sessionId) : null
+  const skipTarget = skipReasonFor ? sessions.find(s => s.id === skipReasonFor) : null
+  const doneIcons = sessions.filter(s => s.status === 'completed').map(s => iconFor(s))
+  const tomorrowIcons = tomorrow.map(s => iconFor({ type: s.type, notes: s.notes ?? null }))
+  const tomorrowText = tomorrowLine(tomorrow, s => sessionDisplayName({ type: s.type, label: s.label ?? null, notes: s.notes ?? null }))
+  const home = showsHome(mode)
+
   return (
-    <div className="relative flex flex-col gap-5 pb-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-      <TodayTexture />
-      <DateHeader date={todayDate} />
+    <div className="td-page">
+      <TodayHeader date={todayDate} />
+      {strip && <WeekStrip days={strip} />}
 
-      {reactiveNotes.length > 0 && (
-        <div className="rounded-xl border border-gold/10 bg-card/40 p-3">
-          <p className="mb-1 font-cinzel text-[10px] uppercase tracking-[0.25em] text-gold/40">Coach</p>
-          <ul className="space-y-1">
-            {reactiveNotes.slice(0, 2).map(n => (
-              <li key={n.id} className="text-[13px] leading-relaxed text-foreground/80">
-                {n.note}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <TodayHeroCard
-        line={readinessLine(readiness)}
-        showClassChip={block != null}
-        classAdded={sessions.some(s => s.type === 'mt_class' && s.status !== 'skipped')}
-        onAddClass={handleAddClassTonight}
-      />
-
-      <MorningReportCard
-        answers={dailyLog ? answersFromLog(dailyLog) : null}
-        onCheckIn={() => setDeck({ startAt: 0, firstOpen: false })}
-        onEdit={(i) => setDeck({ startAt: i, firstOpen: false })}
-        onAddNote={() => setNoteOpen(true)}
-      />
-
-      <JournalCard />
-
-      {sessions.length === 0 ? (
-        <GeneratePlanButton
-          onGenerate={handleGenerate}
-          loading={generating}
-          onAddSession={() => {
-            setShowPicker(true)
-            apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
-              .then(setPickerSuggestions)
-              .catch(() => setPickerSuggestions(null))
-          }}
-        />
-      ) : (
+      {mode === 'day' && (
         <>
-          <DayTimeline
+          {/* the clearing and its lantern show between the strip and the boards (pages 35, 36) */}
+          <div className="td-spacer" style={{ minHeight: strip ? '22dvh' : '30dvh' }} />
+          <TodayHeroCard
+            line={readinessLine(readiness)}
+            showClassChip={block != null}
+            classAdded={sessions.some(s => s.type === 'mt_class' && s.status !== 'skipped')}
+            onAddClass={handleAddClassTonight}
+          />
+          <CoachBoard why={whyLine} changes={coachChanges} questions={coachQuestions} onOpen={id => setAskOpen(askViews.find(v => v.id === id) ?? null)} />
+          <MorningReportCard
+            answers={dailyLog ? answersFromLog(dailyLog) : null}
+            onCheckIn={() => setDeck({ startAt: 0, firstOpen: false })}
+            onEdit={(i) => setDeck({ startAt: i, firstOpen: false })}
+            onAddNote={() => setNoteOpen(true)}
+          />
+          <TodayDay
             sessions={sessions}
-            maxHr={maxHr}
             onStart={handleStart}
             onSkip={handleSkip}
             onReplace={handleReplaceStart}
@@ -698,31 +770,26 @@ export function TodayPage() {
             onConfirmMatch={handleConfirmMatch}
             onReassignMatch={handleReassignStart}
             onDismissMatch={handleDismissMatch}
+            onAdd={openAddPicker}
           />
-          <button
-            onClick={() => {
-              setShowPicker(true)
-              apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
-                .then(setPickerSuggestions)
-                .catch(() => setPickerSuggestions(null))
-            }}
-            aria-label="Add session"
-            className="mx-auto mt-4 flex min-h-[44px] items-center gap-2 font-cinzel text-[13px] uppercase tracking-widest text-gold/40 active:text-gold/70 transition-colors"
-          >
-            <span className="text-gold/25">+</span>
-            Add Session
-          </button>
+          <WaybookLine today={today} />
         </>
       )}
 
-      <button
-        type="button"
-        onClick={() => navigate('/settings')}
-        aria-label="Settings"
-        className="mx-auto mt-8 mb-2 flex min-h-[44px] items-center gap-2 font-cinzel text-[13px] uppercase tracking-widest text-gold/40 active:text-gold/70 transition-colors"
-      >
-        <span className="size-3.5"><SettingsIcon /></span>
-        Settings
+      {home && (
+        <>
+          {/* the hobbit home fills the screen behind; the boards sit low */}
+          <div className="td-spacer" style={{ minHeight: strip ? '26dvh' : '40dvh' }} />
+          {coachQuestions.length > 0 && <CoachBoard why={null} changes={[]} questions={coachQuestions} onOpen={id => setAskOpen(askViews.find(v => v.id === id) ?? null)} />}
+          {mode === 'rest' && <RestDayBoards tomorrow={tomorrowIcons} tomorrowLine={tomorrowText} />}
+          {mode === 'unprepared' && <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} onAdd={openAddPicker} />}
+          {mode === 'allDone' && <AllDoneBoard icons={doneIcons} onShowDay={() => setShowDayAnyway(true)} />}
+          <WaybookLine today={today} />
+        </>
+      )}
+
+      <button type="button" onClick={() => navigate('/settings')} aria-label="Settings" className="td-settings">
+        <FlapLabel text="SETTINGS" size="xs" tone="dim" animate={false} />
       </button>
 
       {showPicker && (
@@ -735,6 +802,7 @@ export function TodayPage() {
 
       {skipReasonFor && (
         <SkipReasonSheet
+          sessionName={skipTarget ? sessionDisplayName(skipTarget).toUpperCase() : undefined}
           onCommit={(commit) => commitSkip(skipReasonFor, commit)}
           onClose={() => setSkipReasonFor(null)}
         />
@@ -742,22 +810,18 @@ export function TodayPage() {
 
       {replaceState?.stage === 'reason' && (
         <ReplaceReasonSheet
-          onCommit={(reason) => handleReplaceReasonCommit(reason)}
+          onCommit={(reason, fastPath) => handleReplaceReasonCommit(reason, fastPath)}
           onClose={() => setReplaceState(null)}
         />
       )}
 
-      {replaceState?.stage === 'loading' && (
-        <ReplaceCoachCard
-          loading
-          onClose={() => setReplaceState(null)}
-        />
-      )}
+      {replaceState?.stage === 'loading' && <CoachSignpost loading reason={replaceState.reason} onClose={() => setReplaceState(null)} />}
 
       {replaceState?.stage === 'coach' && (
-        <ReplaceCoachCard
+        <CoachSignpost
           coachLine={replaceState.coachLine}
           suggestions={replaceState.suggestions}
+          reason={replaceState.reason}
           onAccept={handleReplaceAcceptSuggestion}
           onShowMore={handleReplaceShowMore}
           onClose={() => setReplaceState(null)}
@@ -770,7 +834,7 @@ export function TodayPage() {
           onClose={() => { setReplaceState(null); setPickerSuggestions(null) }}
           suggestions={pickerSuggestions}
           title="Replace"
-          subtitle={replaceState.reason ? `Reason: ${replaceState.reason}` : undefined}
+          subtitle={replaceState.reason ? `Reason: ${replaceState.reason}` : replaceTarget ? sessionDisplayName(replaceTarget) : undefined}
         />
       )}
 
@@ -780,6 +844,16 @@ export function TodayPage() {
         onSelect={handleReassignPick}
         excludeSessionId={reassignFor?.sessionId}
       />
+
+      {askOpen && !deck && (
+        <AskBoard
+          view={askOpen}
+          busy={askBusy}
+          onAccept={body => answerAsk(askOpen, body)}
+          onDecline={() => answerAsk(askOpen, null)}
+          onLater={() => setAskOpen(null)}
+        />
+      )}
 
       {deck && (
         <CheckInDeck
@@ -799,65 +873,8 @@ export function TodayPage() {
   )
 }
 
-type ReplaceCoachCardProps =
-  | { loading: true; onClose: () => void }
-  | {
-      loading?: false
-      coachLine: string
-      suggestions: ReplaceSuggestion[]
-      onAccept: (suggestion: ReplaceSuggestion) => void
-      onShowMore: () => void
-      onClose: () => void
-    }
-
-function ReplaceCoachCard(props: ReplaceCoachCardProps) {
-  return (
-    <div className="fixed inset-x-0 z-40 flex justify-center px-4 animate-fade-in-up" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
-      <div className="w-full max-w-md rounded-lg border border-gold/10 bg-surface p-4 shadow-lg">
-        <p className="mb-1 font-cinzel text-[11px] uppercase tracking-[0.2em] text-gold/50">Coach</p>
-        {props.loading ? (
-          <p className="mb-1 text-sm text-muted-foreground/70">Reading the signal.</p>
-        ) : (
-          <>
-            {props.coachLine && (
-              <p className="mb-3 text-sm text-foreground">{props.coachLine}</p>
-            )}
-            <ul className="mb-3 space-y-1.5">
-              {props.suggestions.map((s, idx) => (
-                <li key={`${s.type}-${s.timeSlot}-${idx}`}>
-                  <button
-                    onClick={() => props.onAccept(s)}
-                    className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                      idx === 0
-                        ? 'border-gold/20 bg-gold/10 text-gold active:bg-gold/20'
-                        : 'border-gold/10 bg-card/40 text-foreground active:bg-card/70'
-                    }`}
-                  >
-                    <span className="font-medium">{s.label}</span>
-                    <span className="font-cinzel text-[10px] uppercase tracking-[0.2em] text-gold/40">
-                      {s.timeSlot}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="flex gap-2">
-              <button
-                onClick={props.onShowMore}
-                className="flex-1 rounded-md bg-secondary px-3 py-2 text-sm text-foreground active:bg-secondary/70"
-              >
-                More options
-              </button>
-              <button
-                onClick={props.onClose}
-                className="rounded-md px-3 py-2 text-sm text-muted-foreground/60 active:text-foreground"
-              >
-                Close
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
+/** Loaded before the crest was needed: show the page on the next tick. */
+function LoadedNow({ onReady }: { onReady: () => void }) {
+  useEffect(() => { onReady() }, [onReady])
+  return null
 }

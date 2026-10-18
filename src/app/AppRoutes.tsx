@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { ShellLayout } from './ShellLayout'
+import { WorldLayer } from '../world/WorldLayer'
 import { HistoryPage } from '../features/history/HistoryPage'
 import { LibraryPage } from '../features/library/LibraryPage'
 import { OnboardingPage } from '../features/onboarding/OnboardingPage'
@@ -32,13 +33,14 @@ import { Capacitor } from '@capacitor/core'
 import { CHECK_IN_EVENT } from '../features/blockZero/checkInTrigger'
 
 /**
- * The coach's "N changes, M questions" since the last open, then mark this
- * open. Null when there is nothing or the API is unreachable.
+ * The coach's "N changes, M questions" since the last open. Null when there
+ * is nothing or the API is unreachable. Today marks the open (POST
+ * /api/coach/seen) once it has shown the Coach board, so the board and this
+ * line never race.
  */
 async function coachMorningLine(): Promise<string | null> {
   try {
     const summary = await apiFetch<{ line: string | null } | null>(`/api/coach/summary?date=${getTodayISO()}`)
-    await apiFetch('/api/coach/seen', { method: 'POST' }).catch(() => null)
     return summary?.line ?? null
   } catch {
     return null
@@ -142,6 +144,8 @@ export function AppRoutes() {
   }, [])
 
   return (
+    <>
+    <WorldLayer />
     <Routes>
       {/* Full-screen routes — no shell/nav */}
       <Route path="/onboarding" element={<OnboardingPage />} />
@@ -162,5 +166,6 @@ export function AppRoutes() {
         <Route path="*" element={<Navigate to="/today" replace />} />
       </Route>
     </Routes>
+    </>
   )
 }

@@ -1,0 +1,173 @@
+/* Pickers and flows (design-decisions.md, pages 20 and 22; shared/flap.css .dep / .grp,
+   page 22 .board2 .brow / .num / .lamp / .post / .arm). Used by SessionPicker,
+   CoachSignpost, SkipReasonSheet and ReplaceReasonSheet. Uses the --sf-* tokens
+   from design.css. Reduce Motion rules at the bottom. */
+
+/* ── card head bits ── */
+.wm-pk-cancel {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: 700 12px/1.2 var(--font-body);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sf-label);
+  -webkit-tap-highlight-color: transparent;
+}
+.wm-pk-flags { margin: -4px 0 2px; font: 600 15px/1.4 var(--font-body); color: #d8bf86; }
+
+/* ── departures board: lantern-lit coach picks, ember cautions ── */
+.wm-grp {
+  padding: 8px 2px 4px;
+  font: 700 12px/1.2 var(--font-body);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(240, 230, 192, 0.62);
+}
+.wm-grp.is-lit { color: #e8c878; }
+.wm-deps { display: flex; flex-direction: column; }
+.wm-dep {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 2px;
+  border-top: 1px solid rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: background var(--t-quick) ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.wm-grp + .wm-dep { border-top: 0; }
+.wm-dep:active { background: rgba(240, 230, 192, 0.05); }
+/* the lantern: a warm radial glow behind the pick (no gold dots) */
+.wm-dep.is-pick::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 50% 110% at 8% 50%, rgba(255, 200, 120, 0.2), transparent 70%);
+}
+.wm-dep-main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  align-items: center;
+  gap: 11px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.wm-dep-text { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; }
+.wm-dep-why { margin-top: 4px; font: 600 15px/1.3 var(--font-body); color: #d8bf86; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7); }
+.wm-dep-why.is-ember { color: #d9906e; }
+.wm-dep .wm-ampm { position: relative; min-height: 44px; padding: 0 2px; }
+/* a fixed slot doesn't flip: a tap on it picks the row */
+.wm-dep .wm-ampm:disabled { pointer-events: none; }
+
+/* ── numbered reason board (Why skip, Where) ── */
+.wm-brows { display: flex; flex-direction: column; }
+.wm-brow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 7px 4px;
+  border: 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-quick) ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.wm-brow:first-child { border-top: 0; }
+.wm-brow.is-on { background: radial-gradient(ellipse 60% 120% at 12% 50%, rgba(255, 200, 120, 0.2), rgba(184, 152, 74, 0.08) 45%, transparent 75%); }
+.wm-brow-num { flex: none; width: 24px; font: 800 14px/1 var(--font-mono); color: rgba(240, 230, 192, 0.6); }
+.wm-brow.is-on .wm-brow-num { color: #e8c878; }
+.wm-brow-label { flex: 1; min-width: 0; }
+.wm-lamp { flex: none; font: 800 14px/1 var(--font-mono); color: #ffd08a; text-shadow: 0 0 8px rgba(255, 200, 120, 0.9); }
+.wm-words { min-height: 64px; resize: none; }
+
+/* ── Why swap: six reasons as flap tiles ── */
+.wm-reason-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.wm-reason-grid > .wm-choice { min-height: 60px; padding: 8px 6px; }
+
+/* ── the signpost: three roads on a waymark post, the crest on top ── */
+.wm-post { position: relative; padding: 66px 0 14px; }
+.wm-post-cap { position: absolute; left: 0; top: 0; z-index: 2; }
+.wm-post-pole {
+  position: absolute;
+  left: 28px;
+  top: 52px;
+  bottom: 0;
+  width: 22px;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 7px),
+    linear-gradient(90deg, #3a2a18, #2a1e12 55%, #20170d);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 6px 14px rgba(0, 0, 0, 0.5);
+}
+.wm-post-arms { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding-left: 26px; }
+.wm-arm-wrap { display: block; max-width: 100%; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5)); }
+.wm-arm-wrap.is-lit { filter: drop-shadow(0 0 10px rgba(201, 160, 80, 0.5)) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5)); }
+.wm-arm {
+  display: block;
+  max-width: 100%;
+  padding: 1px;
+  border: 0;
+  background: rgba(0, 0, 0, 0.65);
+  clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 50%, calc(100% - 22px) 100%, 0 100%);
+  cursor: pointer;
+  transition: transform var(--t-tap) ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.wm-arm:active { transform: translateX(3px); }
+.wm-arm:focus-visible { outline: none; }
+.wm-arm-wrap:has(.wm-arm:focus-visible) { outline: 2px solid var(--sf-gold); outline-offset: 3px; border-radius: 4px; }
+.wm-arm .wm-ampm:disabled { pointer-events: none; }
+.wm-arm.is-lit { padding: 2px; background: #c9a050; }
+.wm-arm-face {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 52px;
+  padding: 7px 32px 7px 12px;
+  color: #f2e2c0;
+  text-align: left;
+  clip-path: polygon(0 0, calc(100% - 21px) 0, 100% 50%, calc(100% - 21px) 100%, 0 100%);
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 9px),
+    linear-gradient(180deg, #5a3f24, #3f2c19);
+}
+.wm-arm.is-lit .wm-arm-face {
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0 2px, transparent 2px 9px),
+    linear-gradient(180deg, #7a5a2e, #574022);
+}
+/* a long name wraps at its word gaps (no label truncates) */
+.wm-arm-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px; min-width: 0; font-size: 14px; }
+
+/* ── the coach reading: the crest breathes ── */
+.wm-reading { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0 10px; text-align: center; }
+.wm-breathe { animation: wm-breathe 1.6s ease-in-out infinite; }
+@keyframes wm-breathe {
+  0%, 100% { filter: brightness(1) drop-shadow(0 0 6px rgba(184, 152, 74, 0.3)); transform: scale(1); }
+  50% { filter: brightness(1.35) drop-shadow(0 0 14px rgba(232, 200, 120, 0.55)); transform: scale(1.03); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wm-breathe { animation: none; }
+  .wm-dep, .wm-brow, .wm-arm { transition: none; }
+  .wm-arm:active { transform: none; }
+}

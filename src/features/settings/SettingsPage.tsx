@@ -9,6 +9,7 @@ import { scheduleAlarms } from '@/lib/notifications'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
 import { NARUTO_ARC_NAMES, NARUTO_EPISODES, narutoArcForEp } from '@/lib/naruto'
 import { isHapticsEnabled, setHapticsEnabled, tapHaptic } from '@/lib/haptics'
+import { WorldTimeBoard } from './WorldTimeBoard'
 import { ScrollDrum, ScrollDrumList } from '@/components/ui/ScrollDrum'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { useToast } from '@/components/ui/Toast'
@@ -676,6 +677,11 @@ export function SettingsPage() {
       {/* What the coach needs: birth date / max HR, back status (onboarding isn't redesigned) */}
       <section>
         <BodyProfileBoard />
+      </section>
+
+      {/* World: the forest's light (design-decisions.md: follows the clock, with an override) */}
+      <section>
+        <WorldTimeBoard />
       </section>
 
       {/* Waybook privacy */}

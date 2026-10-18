@@ -1,69 +1,48 @@
-import corePng from '@/assets/brand/Core.png'
-import mobilityPng from '@/assets/brand/Mobility.png'
-import strengthPng from '@/assets/brand/Strength.png'
-import muayThaiPng from '@/assets/brand/MuayThai.png'
-import bagworkPng from '@/assets/brand/Bagwork.png'
-import cardioPng from '@/assets/brand/Cardio.png'
-import wellnessPng from '@/assets/brand/Wellness.png'
-import logoPng from '@/assets/brand/Logo.png'
-import waybookPng from '@/assets/brand/Waybook.png'
+// Session marks and accents, now the approved painted icon set (page 27; Library
+// categories page 39) and their colours. Kept as the old API so every screen
+// that used the PNG marks shows the new icons.
 import onePaceSvg from '@/assets/brand/OnePace.svg'
+import crestSmall from '@/design/assets/crest-small.png'
+import { SESSION_COLOURS } from '@/design/tokens'
+import { SESSION_ICON_NAME, SESSION_ICON_SRC, sessionIconFor, type SessionIconKey } from '@/design/sessionIcons'
 
 export interface MarkAsset {
   png: string
   label: string
+  key: SessionIconKey
 }
 
-const SESSION_MARK_MAP: Record<string, MarkAsset> = {
-  foundation_run: { png: cardioPng, label: 'Zone 2' },
-  mobility: { png: mobilityPng, label: 'Foundation' },
-  strength: { png: strengthPng, label: 'Strength' },
-  mt_class: { png: muayThaiPng, label: 'Muay Thai' },
-  bag_work: { png: bagworkPng, label: 'Bagwork' },
-  running: { png: cardioPng, label: 'Cardio' },
-  skip_rope: { png: cardioPng, label: 'Cardio' },
-  active_recovery: { png: wellnessPng, label: 'Reset' },
+function mark(key: SessionIconKey): MarkAsset {
+  return { png: SESSION_ICON_SRC[key], label: SESSION_ICON_NAME[key], key }
 }
 
-const FALLBACK: MarkAsset = { png: wellnessPng, label: 'Wellness' }
-
-export function getMarkAsset(sessionType: string): MarkAsset {
-  return SESSION_MARK_MAP[sessionType] ?? FALLBACK
+/** The painted icon and name for a session type (runs: Zone 2 dial vs the shoe by run category). */
+export function getMarkAsset(sessionType: string, runCategory?: string | null): MarkAsset {
+  return mark(sessionIconFor(sessionType, runCategory))
 }
 
-export function getSessionLabel(sessionType: string): string {
-  return (SESSION_MARK_MAP[sessionType] ?? FALLBACK).label
+export function getSessionLabel(sessionType: string, runCategory?: string | null): string {
+  return getMarkAsset(sessionType, runCategory).label
 }
 
-/** Accent color per session type for ring timers and progress bars */
-export function getSessionAccent(sessionType: string): string {
-  switch (sessionType) {
-    case 'strength':
-    case 'bag_work':
-      return '#E8C860'
-    case 'mobility':
-    case 'active_recovery':
-    case 'mt_class':
-      return '#4ACAAA'
-    case 'foundation_run':
-    case 'running':
-    case 'skip_rope':
-      return '#1E8A68'
-    default:
-      return '#E8C860'
-  }
+/** The session's own colour (page 27): ring timers, progress bars, accents. */
+export function getSessionAccent(sessionType: string, runCategory?: string | null): string {
+  return SESSION_COLOURS[sessionIconFor(sessionType, runCategory)]
 }
 
-/** Map exercise categories to their mark assets */
-const CATEGORY_MARK_MAP: Record<string, MarkAsset> = {
-  strength: { png: strengthPng, label: 'Strength' },
-  core: { png: corePng, label: 'Core' },
-  posture: { png: mobilityPng, label: 'Foundation' },
-  mobility: { png: mobilityPng, label: 'Mobility' },
+/** Library categories (page 39): Core is the kettlebell (slate teal), Mobility the foam roller (sand). */
+const CATEGORY_KEY: Record<string, SessionIconKey> = {
+  strength: 'strength',
+  core: 'core',
+  posture: 'foundation',
+  mobility: 'mobility',
 }
 
 export function getCategoryMark(category: string): MarkAsset {
-  return CATEGORY_MARK_MAP[category] ?? FALLBACK
+  return mark(CATEGORY_KEY[category] ?? 'foundation')
 }
 
+/** The crest (small, crisp) replaces the old logo everywhere; the Waybook is the leather journal. */
+const logoPng = crestSmall
+const waybookPng = SESSION_ICON_SRC.waybook
 export { logoPng, waybookPng, onePaceSvg }

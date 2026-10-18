@@ -18,6 +18,8 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return
+          // three.js only loads with the world engine (a dynamic import), never in the first paint.
+          if (id.includes('/node_modules/three/')) return 'three'
           if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
             return 'react'
           }

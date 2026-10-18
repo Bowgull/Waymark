@@ -65,6 +65,7 @@ interface SessionData {
   blockWeek?: number | null
   blockType?: string | null
   scheduledDate?: number | null
+  notes?: string | null
 }
 
 // ─── Strength types ────────────────────────────────────────────
@@ -365,6 +366,8 @@ export function WorkoutPage() {
   const navigate = useNavigate()
 
   const [sessionType, setSessionType] = useState<string | null>(null)
+  // Runs keep their category in notes: the entrance shows the Zone 2 dial or the shoe.
+  const [runCategory, setRunCategory] = useState<string | null>(null)
   const [strengthData, setStrengthData] = useState<StrengthWorkoutData | null>(null)
   const [mobilityData, setMobilityData] = useState<MobilityWorkoutData | null>(null)
   const [bagData, setBagData] = useState<BagWorkoutData | null>(null)
@@ -584,6 +587,7 @@ export function WorkoutPage() {
         if (!session) throw new Error('Session not found')
 
         setSessionType(session.type)
+        setRunCategory(session.type === 'running' ? session.notes ?? null : null)
         const live = session.status !== 'completed' && session.status !== 'skipped'
 
         // Fetch the engine's rows (starting them if the session has none yet).
@@ -903,6 +907,7 @@ export function WorkoutPage() {
     return (
       <RitualEntrance
         sessionType={sessionType}
+        runCategory={runCategory}
         onComplete={handleEntranceComplete}
       />
     )

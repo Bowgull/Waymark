@@ -46,6 +46,19 @@ http, open the page in a browser (headless Chrome with
 prints into `src/design/assets/` (names: `session-<key>.png`,
 `crest-small.png`, `crest-big.webp`).
 
-The animated crest moments (assembling on the splash, the taken-apart
-loading crest, the close / PR moment) need the live 3D engine; they belong
-to the world work (step 2).
+The tab bar's place icons (`tab-lantern/waypost/arch/lilypond.png`, page 42 A)
+are rendered the same way from `icon3d.js` (`iconImage(model, { col, set:
+"#%=+:'" }, 'model', 96, { look: 'toon', tex: 'faint' })`); see `tabIcons.ts`.
+
+## The world (step 2): `src/world/`
+
+| File | What it is |
+|---|---|
+| `engine/` | The page-14 glyph engine ported to TypeScript on three.js 0.160 (`materials.ts` shaders, `masks.ts` door / rune masks, `build.ts` one place per approved mockup scene, `world.ts` the renderer / camera / frame budget, `crest.ts` + `crestStage.ts` the splash suit-up and the loading crest). Loaded only through `loadEngine.ts` (a dynamic import), so three.js is its own chunk. |
+| `places.ts` | Pure: tab to place, each place's camera (from the mockup frustums), the glide, which scenes are in view. Scenes are built side by side along x: home −14, clearing 0 (the arch down its path), road 14, pond 28. |
+| `timeOfDay.ts`, `useWorldTime.ts` | Clock → misty / sun / night, and the Settings override (kept on the phone). |
+| `worldStore.ts` | What screens tell the world: Today's rest-day home, the lantern (readiness), Program's weeks, offline (rain), the session entrance's blur. |
+| `WorldLayer.tsx` | The fixed canvas behind the shell. Pauses when hidden / backgrounded / on a screen with no world; Reduce Motion = one still frame per place with a quick dip between. |
+| `Splash.tsx`, `CrestLoading.tsx` | Page 38 A splash (about 9.7 s; `?nosplash` skips it for screenshots) and loading. |
+
+Frame budget: 60 fps target; the engine steps down (DPR 2 → 1.5 → 30 fps → fewer grass glyphs) when frames run long and back up after 12 calm seconds. `window.__waymarkWorld.stats()` reports fps, CPU work per frame, p95 frame time, quality level and draw calls.

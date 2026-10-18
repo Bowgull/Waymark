@@ -1,0 +1,50 @@
+/* The world layer: a fixed canvas behind the shell, faded in once drawn.
+   Scrims darken only where boards sit, per place (mockups: flap.css .scrim on
+   Today; page 33's road band fading to dark under the Program boards). */
+
+.wm-world {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: #020a08;
+}
+.wm-world-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 0;
+  transition: opacity 700ms ease-out, filter 400ms ease-out;
+}
+.wm-world.is-ready .wm-world-canvas { opacity: 1; }
+.wm-world.is-dip .wm-world-canvas { opacity: 0; transition-duration: 160ms; }
+/* the session entrance: the forest dimmed and blurred behind the session's icon */
+.wm-world.is-bare .wm-world-canvas { filter: blur(7px) brightness(0.45); }
+
+.wm-world-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 400ms ease-out;
+}
+/* Today, the rest-day home, the Ledger pond: the mockups' scrim (darker top and bottom, clear in the middle) */
+.wm-world[data-place='clearing'] .wm-world-scrim,
+.wm-world[data-place='home'] .wm-world-scrim,
+.wm-world[data-place='pond'] .wm-world-scrim {
+  background: linear-gradient(rgba(2, 10, 8, 0.55), rgba(2, 10, 8, 0.12) 26%, rgba(2, 10, 8, 0.35) 55%, rgba(2, 10, 8, 0.85));
+}
+/* Program: the road band up top, then dark under the boards (page 33 .roadfade) */
+.wm-world[data-place='road'] .wm-world-scrim {
+  background: linear-gradient(rgba(2, 10, 8, 0.4), transparent 9%, transparent 30%, rgba(4, 9, 7, 0.9) 47%, #050b09 64%);
+}
+/* Library: the arch up top, the reading area below kept dark */
+.wm-world[data-place='arch'] .wm-world-scrim {
+  background: linear-gradient(rgba(2, 10, 8, 0.45), transparent 12%, transparent 30%, rgba(4, 9, 7, 0.9) 50%, #050b09 66%);
+}
+.wm-world.is-bare .wm-world-scrim { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wm-world-canvas { transition: opacity 160ms linear; }
+}

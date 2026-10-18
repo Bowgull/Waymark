@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import logoPng from '@/assets/brand/Logo.png'
+import { Crest } from '@/design'
 import { GoldDivider } from '@/components/ui/GoldDivider'
 
 interface PageHeaderProps {
@@ -62,15 +62,7 @@ export function PageHeader({ title, children, onLogoLongPress }: PageHeaderProps
           onPointerLeave={endPress}
           onClick={handleClick}
         >
-          <img
-            src={logoPng}
-            alt="Waymark"
-            width={40}
-            height={40}
-            className="h-10 w-10 object-contain opacity-60 transition-opacity active:opacity-90"
-            style={{ mixBlendMode: 'screen' }}
-            draggable={false}
-          />
+          <Crest width={36} />
         </Link>
         <h2 className="min-w-0 flex-1 truncate text-display-sm text-foreground">
           <span className="text-gold">{firstChar}</span>

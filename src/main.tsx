@@ -4,7 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { SplashScreen } from '@capacitor/splash-screen'
 import { AppRoutes } from './app/AppRoutes'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
-import { LoadingScreen } from './components/ui/LoadingScreen'
+import { Splash } from './world/Splash'
 import { initKeyboardHandling } from './lib/keyboard'
 import { PopFlapHost } from './design/PopFlapHost'
 import '@fontsource-variable/geist/index.css'
@@ -12,17 +12,19 @@ import '@fontsource-variable/cinzel/index.css'
 import '@fontsource-variable/jetbrains-mono/index.css'
 import './index.css'
 
-SplashScreen.hide().catch(() => {})
+// The web splash hides the native still crest on its first frame; this is the safety net.
+setTimeout(() => { SplashScreen.hide().catch(() => {}) }, 4000)
 initKeyboardHandling()
 
 // eslint-disable-next-line react-refresh/only-export-components
 function App() {
-  const [showLoading, setShowLoading] = useState(true)
+  // The design gallery and ?nosplash (screenshots, dev) open straight onto the app.
+  const [showLoading, setShowLoading] = useState(() => !(window.location.pathname === '/design' || new URLSearchParams(window.location.search).has('nosplash')))
   const handleReady = useCallback(() => setShowLoading(false), [])
 
   return (
     <>
-      {showLoading && <LoadingScreen onReady={handleReady} />}
+      {showLoading && <Splash onDone={handleReady} />}
       <AppRoutes />
       <PopFlapHost />
     </>

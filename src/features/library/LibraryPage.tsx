@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { apiFetch } from '@/lib/api'
-import { getCategoryMark, waybookPng } from '@/lib/markAssets'
-import bagworkPng from '@/assets/brand/Bagwork.png'
+import { getCategoryMark, getMarkAsset, waybookPng } from '@/lib/markAssets'
 import { FormVideoLink } from '@/components/FormVideoLink'
 import { PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +11,9 @@ import { LibrarySkeleton } from '@/components/ui/Skeleton'
 import { JournalEntry } from '@/features/today/JournalCard'
 import { WaybookGate } from '@/features/library/WaybookGate'
 import { isGateEnabled, isUnlocked, requireUnlock, subscribe } from '@/lib/waybookGate'
+
+// Library icons (page 39): Bagwork and the Waybook reuse their approved painted icons.
+const bagworkPng = getMarkAsset('bag_work').png
 
 interface Exercise {
   id: string
@@ -335,8 +337,7 @@ export function LibraryPage() {
               <img
                 src={getCategoryMark(cat).png}
                 alt=""
-                className="h-8 w-8 object-contain opacity-50"
-                style={{ mixBlendMode: 'screen' }}
+                className="h-8 w-8 object-contain"
               />
               <span className="text-label text-muted-foreground">
                 {CATEGORY_LABELS[cat] ?? cat}
@@ -420,8 +421,7 @@ export function LibraryPage() {
           <img
             src={bagworkPng}
             alt=""
-            className="h-8 w-8 object-contain opacity-50"
-            style={{ mixBlendMode: 'screen' }}
+            className="h-8 w-8 object-contain"
           />
           <span className="text-label text-muted-foreground">Bagwork</span>
           <Badge variant="muted" className="ml-1 text-[13px]">
@@ -538,7 +538,7 @@ export function LibraryPage() {
       {isSearching && filteredCombos.length > 0 && (
         <div className="mb-4">
           <div className="flex items-center gap-3 px-1 py-2">
-            <img src={bagworkPng} alt="" className="h-8 w-8 object-contain opacity-50" style={{ mixBlendMode: 'screen' }} />
+            <img src={bagworkPng} alt="" className="h-8 w-8 object-contain" />
             <span className="text-label text-muted-foreground">Bagwork</span>
             <Badge variant="muted" className="ml-1 text-[13px]">{filteredCombos.length}</Badge>
           </div>
@@ -561,7 +561,7 @@ export function LibraryPage() {
         <WaybookGate reason="Unlock Waybook to search entries">
         <div className="mb-4">
           <div className="flex items-center gap-3 px-1 py-2">
-            <img src={waybookPng} alt="" className="h-8 w-8 object-contain opacity-50" style={{ mixBlendMode: 'screen' }} />
+            <img src={waybookPng} alt="" className="h-8 w-8 object-contain" />
             <span className="text-label text-gold/70">Waybook</span>
             <Badge variant="muted" className="ml-1 text-[13px]">
               {filteredJournal.length}
@@ -599,7 +599,7 @@ export function LibraryPage() {
           className="flex w-full items-center gap-3 px-1 py-2"
         >
           <ChevronIcon open={journalOpen} />
-          <img src={waybookPng} alt="" className="h-8 w-8 object-contain opacity-50" style={{ mixBlendMode: 'screen' }} />
+          <img src={waybookPng} alt="" className="h-8 w-8 object-contain" />
           <span className="text-label text-gold/70">Waybook</span>
         </button>
 

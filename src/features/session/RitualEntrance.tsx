@@ -1,61 +1,53 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import { getMarkAsset, getSessionLabel } from '@/lib/markAssets'
+import { FlapLabel, SESSION_ICON_NAME, SessionIcon, sessionIconFor, useReducedMotion } from '@/design'
+import { setWorldBare } from '@/world/worldStore'
 
 interface RitualEntranceProps {
   sessionType: string
+  runCategory?: string | null
   onComplete: () => void
 }
 
-export function RitualEntrance({ sessionType, onComplete }: RitualEntranceProps) {
-  const [phase, setPhase] = useState<'drawing' | 'holding' | 'fading'>('drawing')
-  const mark = getMarkAsset(sessionType)
-  const label = getSessionLabel(sessionType)
+// The session entrance (design-decisions.md "Session icons"): the session's own
+// painted icon over the dimmed, blurred forest, swaying slowly like the crest,
+// with the session name (never WAYMARK). Fade in 0.4 s, hold about 1.2 s, fade
+// out 0.4 s. Tap skips.
+export const ENTRANCE_MS = { fadeIn: 400, hold: 1200, fadeOut: 400 } as const
+
+export function RitualEntrance({ sessionType, runCategory, onComplete }: RitualEntranceProps) {
+  const reduced = useReducedMotion()
+  const [phase, setPhase] = useState<'in' | 'hold' | 'out'>('in')
+  const doneRef = useRef(false)
+  const icon = sessionIconFor(sessionType, runCategory)
+  const name = SESSION_ICON_NAME[icon].toUpperCase()
+
+  const finish = useRef(onComplete)
+  useEffect(() => { finish.current = onComplete }, [onComplete])
 
   useEffect(() => {
-    const holdTimer = setTimeout(() => setPhase('holding'), 1200)
-    const fadeTimer = setTimeout(() => setPhase('fading'), 1800)
-    const doneTimer = setTimeout(onComplete, 2200)
-    return () => {
-      clearTimeout(holdTimer)
-      clearTimeout(fadeTimer)
-      clearTimeout(doneTimer)
-    }
-  }, [onComplete])
+    setWorldBare(true)
+    const t1 = window.setTimeout(() => setPhase('hold'), ENTRANCE_MS.fadeIn)
+    const t2 = window.setTimeout(() => setPhase('out'), ENTRANCE_MS.fadeIn + ENTRANCE_MS.hold)
+    const t3 = window.setTimeout(() => { if (!doneRef.current) { doneRef.current = true; finish.current() } }, ENTRANCE_MS.fadeIn + ENTRANCE_MS.hold + ENTRANCE_MS.fadeOut)
+    return () => { window.clearTimeout(t1); window.clearTimeout(t2); window.clearTimeout(t3); setWorldBare(false) }
+  }, [])
+
+  const skip = () => { if (doneRef.current) return; doneRef.current = true; finish.current() }
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-near-black transition-opacity duration-400 ${
-        phase === 'fading' ? 'opacity-0' : 'opacity-100'
-      }`}
-      onClick={onComplete}
+      className={`wm-entrance is-${phase}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`${SESSION_ICON_NAME[icon]}. Tap to skip.`}
+      onClick={skip}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') skip() }}
     >
-      <div
-        className={`ritual-mark ${phase === 'drawing' ? 'ritual-mark-drawing' : 'ritual-mark-visible'}`}
-      >
-        {mark && (
-          <img
-            src={mark.png}
-            alt={label}
-            width={192}
-            height={192}
-            className="h-48 w-48 object-contain"
-            draggable={false}
-          />
-        )}
+      <div className={`wm-entrance-icon${reduced ? '' : ' is-sway'}`}>
+        <SessionIcon kind={icon} size={168} />
       </div>
-
-      <p
-        className={`mt-6 text-display-sm tracking-[0.25em] text-gold transition-opacity duration-500 ${
-          phase === 'drawing' ? 'opacity-0' : 'opacity-100'
-        }`}
-      >
-        {label}
-      </p>
-
-      <p className="absolute bottom-12 text-xs text-muted-foreground">
-        Tap to skip
-      </p>
+      <FlapLabel text={name} size="lg" tone="gold" animate={reduced ? false : 'mount'} />
     </div>
   )
 }

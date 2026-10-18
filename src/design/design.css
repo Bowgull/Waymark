@@ -381,6 +381,117 @@
 
   /* solid dark backdrop for full-screen moments and errors */
   .wm-dark { background: radial-gradient(ellipse 80% 50% at 50% 42%, #101a15, #050907 70%); }
+
+  /* ── tab bar (page 42, A): painted place icons; the lit one lifted with a brass light ── */
+  .wm-tabs {
+    position: relative;
+    z-index: 30;
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    padding: 8px 8px max(env(safe-area-inset-bottom), 10px);
+    background: rgba(6, 10, 8, 0.72);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    border-top: 1px solid rgba(232, 200, 96, 0.2);
+  }
+  .wm-tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-height: 60px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wm-tab img {
+    width: 40px;
+    height: 40px;
+    filter: saturate(0.35) brightness(0.7);
+    opacity: 0.7;
+    transition: transform var(--t-move) var(--ease-out), opacity var(--t-move), filter var(--t-move);
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+  .wm-tab.is-on img { opacity: 1; filter: drop-shadow(0 0 8px rgba(255, 214, 140, 0.45)); transform: translateY(-2px) scale(1.08); }
+  .wm-tab.is-on::after {
+    content: '';
+    position: absolute;
+    top: -8px;
+    width: 26px;
+    height: 2px;
+    border-radius: 2px;
+    background: #e8c878;
+    box-shadow: 0 0 8px #e8c878;
+  }
+  .wm-tab:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: 2px; border-radius: 8px; }
+
+  /* offline: a quiet flap pill at the top (the world rains behind) */
+  .wm-offline-pill {
+    position: fixed;
+    bottom: calc(max(env(safe-area-inset-bottom), 10px) + 80px);
+    left: 50%;
+    z-index: 70;
+    transform: translateX(-50%);
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: rgba(6, 12, 10, 0.86);
+    box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.22), 0 6px 16px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+  }
+
+  /* glass over the world (buttons and charts sit on this) */
+  .wm-glass {
+    border-radius: 14px;
+    padding: 10px 12px;
+    background: rgba(6, 12, 10, 0.74);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.16), 0 0 30px rgba(0, 0, 0, 0.55);
+  }
+  /* headers sitting straight on the world carry a soft shadow so they read at any time of day */
+  .wm-on-world { text-shadow: 0 1px 8px #000, 0 0 2px #000; }
+
+  /* ── session entrance: the session's icon over the blurred forest ── */
+  .wm-entrance {
+    position: fixed;
+    inset: 0;
+    z-index: 85;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    background: radial-gradient(ellipse 70% 45% at 50% 46%, rgba(2, 10, 8, 0.15), rgba(2, 10, 8, 0.6));
+    opacity: 0;
+    transition: opacity 400ms ease-out;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wm-entrance.is-hold { opacity: 1; }
+  .wm-entrance.is-in { animation: wm-fade-in 400ms ease-out both; }
+  .wm-entrance.is-out { opacity: 0; transition-timing-function: ease-in; }
+  .wm-entrance-icon { filter: drop-shadow(0 0 18px rgba(255, 214, 140, 0.25)); }
+  .wm-entrance-icon.is-sway { animation: wm-crest-turn 9s ease-in-out infinite; }
+
+  /* ── splash (page 38, A): the crest suits up, WAYMARK flaps in, Today fades up ── */
+  .wm-splash { position: fixed; inset: 0; z-index: 95; background: #020a08; transition: opacity 700ms ease; }
+  .wm-splash.is-leaving { opacity: 0; pointer-events: none; }
+  .wm-splash canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .wm-splash-flare {
+    position: absolute; left: 50%; top: 40%; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%; pointer-events: none;
+    opacity: 0; transform: scale(0.4); transition: opacity 0.9s ease, transform 1.4s ease;
+    background: radial-gradient(circle, rgba(255, 220, 150, 0.42), rgba(255, 190, 110, 0.12) 40%, transparent 70%);
+  }
+  .wm-splash-flare.is-on { opacity: 1; transform: scale(1); }
+  .wm-splash-word { position: absolute; left: 0; right: 0; top: 72%; display: flex; justify-content: center; opacity: 0; transition: opacity 0.5s; }
+  .wm-splash-word.is-on { opacity: 1; }
+  .wm-splash-still { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); }
+
+  /* ── loading (page 38, A): the crest taken apart while the app works ── */
+  .wm-crest-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 60dvh; }
+  .wm-crest-loading canvas { width: 240px; height: 270px; display: block; }
+  .wm-crest-loading p { margin: 0; text-align: center; font: 600 17px/1.4 var(--font-body); color: rgba(240, 234, 214, 0.9); text-shadow: 0 1px 8px #000; }
 }
 
 @keyframes wm-fold { 0% { opacity: 1; transform: rotateX(0); } 100% { opacity: 1; transform: rotateX(-90deg); } }
@@ -404,4 +515,7 @@
   .wm-pop { animation-name: wm-fade-in !important; animation-timing-function: linear !important; }
   .wm-pop.is-leaving { animation-name: wm-fade-out !important; animation-timing-function: linear !important; }
   .wm-btn, .wm-chip, .wm-choice { transition: none; }
+  .wm-tab img { transition: none; }
+  .wm-entrance.is-in { animation-name: wm-fade-in; }
+  .wm-splash-flare { transition: opacity 0.4s linear; transform: none; }
 }
