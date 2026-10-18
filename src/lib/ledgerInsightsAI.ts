@@ -11,6 +11,7 @@ import { TOOL_INSIGHT, type InsightOutput } from './prompts/tools'
 import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
 import type { createDB } from '../db/client'
 import type { RoadBootcampMetrics } from './roadBootcampMetrics'
+import { MODELS } from './models'
 
 type DB = ReturnType<typeof createDB>
 
@@ -185,7 +186,7 @@ export async function runLedgerInsights(
   const prompt = buildLedgerInsightPrompt(data)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-haiku-4-5-20251001',
+    model: MODELS.fast,
     max_tokens: 1024,
     system: systemBlocks,
     messages: [{ role: 'user', content: prompt }],
@@ -207,7 +208,7 @@ export async function runLedgerInsights(
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'ledger_insights',
-    model: 'claude-haiku-4-5-20251001',
+    model: MODELS.fast,
     scopeWeekPlanId: null,
     scopeSessionId: null,
     inputHash: null,

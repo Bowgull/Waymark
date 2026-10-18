@@ -6,6 +6,7 @@ import { coachingOutputs, dailyLogs, sessions, trainingBlocks, weekPlans } from 
 import { anthropicCall, cachedSystem, getToolInput } from '../anthropic'
 import type { Tool } from '../anthropic'
 import { createDB } from '../../db/client'
+import { MODELS } from '../models'
 
 const RECENT_WEEKS = 4
 
@@ -20,7 +21,7 @@ export interface WeekSummaryOutput {
   narrative: string
 }
 
-const WEEK_SUMMARY_TOOL: Tool = {
+export const WEEK_SUMMARY_TOOL: Tool = {
   name: 'week_summary',
   description: 'Compact factual summary of a training week. Used as AI context in subsequent calls.',
   input_schema: {
@@ -152,7 +153,7 @@ export async function summarizeOldWeeks(
     const prompt = buildWeekPrompt(week.weekNumber, sessionRows, logRows, week.notes)
 
     const result = await anthropicCall(apiKey, {
-      model: 'claude-haiku-4-5-20251001',
+      model: MODELS.fast,
       max_tokens: 512,
       system: [cachedSystem(SUMMARIZER_SYSTEM)],
       messages: [{ role: 'user', content: prompt }],
@@ -174,7 +175,7 @@ export async function summarizeOldWeeks(
     await db.insert(coachingOutputs).values({
       id: crypto.randomUUID(),
       kind: 'week_summary',
-      model: 'claude-haiku-4-5-20251001',
+      model: MODELS.fast,
       scopeWeekPlanId: week.id,
       inputHash: null,
       outputJson: JSON.stringify(output),

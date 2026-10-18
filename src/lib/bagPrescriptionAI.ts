@@ -9,6 +9,7 @@ import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_BAG_PRESCRIPTION, type BagPrescriptionOutput } from './prompts/tools'
 import type { createDB } from '../db/client'
+import { MODELS } from './models'
 
 type DB = ReturnType<typeof createDB>
 
@@ -155,7 +156,7 @@ export async function runBagPrescription(
   const prompt = buildPrompt(available, wellness, recentMtNotes)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-haiku-4-5-20251001',
+    model: MODELS.fast,
     max_tokens: 1024,
     system: systemBlocks,
     messages: [{ role: 'user', content: prompt }],
@@ -193,7 +194,7 @@ export async function runBagPrescription(
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'bag_prescription',
-    model: 'claude-haiku-4-5-20251001',
+    model: MODELS.fast,
     scopeWeekPlanId: null,
     scopeSessionId: input.sessionId,
     inputHash: null,

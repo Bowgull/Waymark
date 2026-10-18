@@ -14,6 +14,7 @@ import { computeHrSnapshot, loadProfileMaxHrForHr, loadRecentRunsForHr, serializ
 import { rolloverStaleSessions } from './sessionRollover'
 import { getEpochDay } from './dates'
 import type { createDB } from '../db/client'
+import { MODELS } from './models'
 
 type DB = ReturnType<typeof createDB>
 
@@ -341,7 +342,7 @@ export async function generateWeekPlan(
   const prompt = buildPrompt(params, prevSessions, prevLogs, compressedNote, prevMtLogs, prevJournal, trackedIssues, adherenceBlock, hrBlock)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-haiku-4-5-20251001',
+    model: MODELS.fast,
     max_tokens: 2048,
     system: systemBlocks,
     messages: [{ role: 'user', content: prompt }],
@@ -365,7 +366,7 @@ export async function generateWeekPlan(
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'week_plan',
-    model: 'claude-haiku-4-5-20251001',
+    model: MODELS.fast,
     scopeWeekPlanId: params.weekId,
     scopeSessionId: null,
     inputHash: null,
@@ -381,7 +382,7 @@ export async function generateWeekPlan(
     await db.insert(coachingOutputs).values({
       id: crypto.randomUUID(),
       kind: 'body_issues',
-      model: 'claude-haiku-4-5-20251001',
+      model: MODELS.fast,
       scopeWeekPlanId: params.weekId,
       scopeSessionId: null,
       inputHash: null,

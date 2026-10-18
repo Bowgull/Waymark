@@ -4,7 +4,8 @@
 
 import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, sessions, trainingBlocks, trainingMaxes, userProfile, weekPlans } from '../../db/schema'
-import { anthropicCall, getToolInput, type Tool } from '../../lib/anthropic'
+import { anthropicCall, getStructuredOutput, jsonFormatFor, jsonInstructionFor, type Tool } from '../../lib/anthropic'
+import { MODELS } from '../../lib/models'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
 import { getLatestBodyweightKg } from '../../lib/bodyMetrics'
 import { TOOL_BLOCK_TRANSITION, type BlockTransitionOutput } from '../../lib/prompts/tools'
@@ -35,7 +36,7 @@ export interface BlockZeroAssessmentOutput {
   coachNote?: string
 }
 
-const BLOCK_ZERO_TOOL: Tool = {
+export const BLOCK_ZERO_TOOL: Tool = {
   name: 'blockZeroAssessment',
   description:
     'Block Zero entry assessment. Reads onboarding answers and produces a 6-week plan overview with starting weight estimates. Voice canon applies to all user-facing strings: short sentences, no exclamation marks, no congratulations, observation before instruction.',
@@ -118,7 +119,7 @@ function buildAssessmentPrompt(profile: UserProfileContext): string {
     '',
     'For mtCapPerWeek: this is the cap for the entire block. Set based on injury risk and recovery needs. The user has access to MT most evenings and will overtrain without enforcement.',
     '',
-    'Call blockZeroAssessment.',
+    jsonInstructionFor(BLOCK_ZERO_TOOL),
   ]
 
   if (!profile.trainingHistory && !profile.goals) {
@@ -158,30 +159,30 @@ export async function runBlockZeroAssessment(
   const systemBlocks = buildSystemPrompt(profile, null)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-sonnet-4-6',
-    max_tokens: 12000,
-    thinking: { type: 'enabled', budget_tokens: 8000 },
+    model: MODELS.reasoning,
+    max_tokens: 16000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'high', format: jsonFormatFor(BLOCK_ZERO_TOOL) },
+    fallbacks: 'default',
     system: systemBlocks,
     messages: [{ role: 'user', content: buildAssessmentPrompt(profile) }],
-    tools: [BLOCK_ZERO_TOOL],
-    tool_choice: { type: 'tool', name: 'blockZeroAssessment' },
-  })
+  }, { timeoutMs: 150_000 })
 
   if (result.offline) {
     console.warn('[blockZero] offline during assessment')
     return null
   }
 
-  const output = getToolInput<BlockZeroAssessmentOutput>(result, 'blockZeroAssessment')
+  const output = getStructuredOutput<BlockZeroAssessmentOutput>(result)
   if (!output) {
-    console.warn('[blockZero] no tool output from assessment')
+    console.warn('[blockZero] no structured output from assessment')
     return null
   }
 
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'block_zero_assessment',
-    model: 'claude-sonnet-4-6',
+    model: result.model,
     scopeWeekPlanId: null,
     scopeSessionId: null,
     inputHash: blockId,
@@ -359,7 +360,7 @@ function buildTransitionPrompt(
   lines.push('Set calibrationTargets with updated training max estimates based on observed Block Zero performance. Use the exact exercise IDs from above. If adherence was poor, keep estimates conservative (low confidence).')
   lines.push('Voice canon applies to rationale and nextBlockNotes: short sentences, no exclamation marks, no congratulations.')
   lines.push('')
-  lines.push('Call blockTransition.')
+  lines.push(jsonInstructionFor(TOOL_BLOCK_TRANSITION))
 
   return lines.join('\n')
 }
@@ -396,23 +397,23 @@ export async function runBlockZeroTransition(
   const userPrompt = buildTransitionPrompt(transitionData)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
-    thinking: { type: 'enabled', budget_tokens: 5000 },
+    model: MODELS.reasoning,
+    max_tokens: 16000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'high', format: jsonFormatFor(TOOL_BLOCK_TRANSITION) },
+    fallbacks: 'default',
     system: systemBlocks,
     messages: [{ role: 'user', content: userPrompt }],
-    tools: [TOOL_BLOCK_TRANSITION],
-    tool_choice: { type: 'tool', name: 'blockTransition' },
-  })
+  }, { timeoutMs: 150_000 })
 
   if (result.offline) {
     console.warn('[blockZero] offline during transition check')
     return null
   }
 
-  const output = getToolInput<BlockTransitionOutput>(result, 'blockTransition')
+  const output = getStructuredOutput<BlockTransitionOutput>(result)
   if (!output) {
-    console.warn('[blockZero] no tool output from transition check')
+    console.warn('[blockZero] no structured output from transition check')
     return null
   }
 
@@ -420,7 +421,7 @@ export async function runBlockZeroTransition(
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'block_zero_transition',
-    model: 'claude-sonnet-4-6',
+    model: result.model,
     scopeWeekPlanId: null,
     scopeSessionId: null,
     inputHash: blockId,

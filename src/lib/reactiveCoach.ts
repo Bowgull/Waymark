@@ -21,7 +21,8 @@
 
 import { and, desc, eq, gte, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, sessions, trainingMaxes, userProfile, weekAdjustments, weekPlans } from '../db/schema'
-import { anthropicCall, getToolInput } from './anthropic'
+import { anthropicCall, getStructuredOutput, jsonFormatFor, jsonInstructionFor } from './anthropic'
+import { MODELS } from './models'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type ReactiveReplanOutput, type ReplaceSuggestionsOutput } from './prompts/tools'
@@ -400,7 +401,7 @@ function buildPrompt(bundle: SignalBundle, rationale: string, adherenceBlock: st
   }
 
   lines.push('')
-  lines.push('Decide one adjustment using the reactiveReplan tool.')
+  lines.push('Decide one adjustment.', jsonInstructionFor(TOOL_REACTIVE_REPLAN))
   lines.push('Stay silent: no "missed" labels, no scolding, no second person. Pick the smallest shift that honors the signal.')
   lines.push(`Valid targetDay values: ${bundle.todayDow}..6 (today through end of week).`)
 
@@ -495,12 +496,13 @@ export async function runReactiveReplan(
   const prompt = buildPrompt(bundle, g.rationale, adherenceBlock, hrBlock, weekSessions)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-sonnet-4-6',
-    max_tokens: 512,
+    model: MODELS.reasoning,
+    max_tokens: 4000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'low', format: jsonFormatFor(TOOL_REACTIVE_REPLAN) },
+    fallbacks: 'default',
     system: systemBlocks,
     messages: [{ role: 'user', content: prompt }],
-    tools: [TOOL_REACTIVE_REPLAN],
-    tool_choice: { type: 'tool', name: 'reactiveReplan' },
   })
 
   if (result.offline) {
@@ -508,9 +510,9 @@ export async function runReactiveReplan(
     return null
   }
 
-  const output = getToolInput<ReactiveReplanOutput>(result, 'reactiveReplan')
+  const output = getStructuredOutput<ReactiveReplanOutput>(result)
   if (!output) {
-    console.warn('[reactiveCoach] no tool output; skipping')
+    console.warn('[reactiveCoach] no structured output; skipping')
     return null
   }
 
@@ -520,7 +522,7 @@ export async function runReactiveReplan(
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'reactive_replan',
-    model: 'claude-sonnet-4-6',
+    model: result.model,
     scopeWeekPlanId: weekPlanId,
     scopeSessionId: ctx.sessionId ?? null,
     inputHash: null,
@@ -621,7 +623,7 @@ export async function runReplaceSuggestions(
   }
   if (adherenceBlock) lines.push('', adherenceBlock)
   if (hrBlock) lines.push('', hrBlock)
-  lines.push('', 'Call replaceSuggestions with exactly three options ranked best to worst. coachLine explains only the top pick. Voice canon.')
+  lines.push('', 'Give exactly three options ranked best to worst. coachLine explains only the top pick. Voice canon.', jsonInstructionFor(TOOL_REPLACE_SUGGESTIONS))
 
   const profile = await loadProfile(db)
   const starter = await computeStarterStatus(db, todayEpochDay, profile.trainingHistory, profile.constraints)
@@ -629,12 +631,13 @@ export async function runReplaceSuggestions(
   const systemBlocks = buildSystemPrompt(profile, null, starterBlock || null)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-sonnet-4-6',
-    max_tokens: 512,
+    model: MODELS.reasoning,
+    max_tokens: 4000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'low', format: jsonFormatFor(TOOL_REPLACE_SUGGESTIONS) },
+    fallbacks: 'default',
     system: systemBlocks,
     messages: [{ role: 'user', content: lines.join('\n') }],
-    tools: [TOOL_REPLACE_SUGGESTIONS],
-    tool_choice: { type: 'tool', name: 'replaceSuggestions' },
   })
 
   if (result.offline) {
@@ -642,16 +645,18 @@ export async function runReplaceSuggestions(
     return null
   }
 
-  const output = getToolInput<ReplaceSuggestionsOutput>(result, 'replaceSuggestions')
-  if (!output) {
-    console.warn('[replaceSuggestions] no tool output')
+  const output = getStructuredOutput<ReplaceSuggestionsOutput>(result)
+  // The JSON format can't enforce "exactly three", so check it here.
+  if (!output || !Array.isArray(output.suggestions) || output.suggestions.length === 0) {
+    console.warn('[replaceSuggestions] no usable structured output')
     return null
   }
+  output.suggestions = output.suggestions.slice(0, 3)
 
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'replace_suggestions',
-    model: 'claude-sonnet-4-6',
+    model: result.model,
     scopeWeekPlanId: weekPlanId,
     scopeSessionId: sessionId,
     inputHash: null,
@@ -665,7 +670,7 @@ export async function runReplaceSuggestions(
   return { ...output, coachLine: sanitizeVoice(output.coachLine) }
 }
 
-// Voice canon: strip em dashes in case Haiku slips. Cheap insurance.
+// Voice canon: strip em dashes in case the model slips. Cheap insurance.
 function sanitizeVoice(s: string): string {
   return s.replace(/[\u2014\u2013]/g, ',').replace(/\s{2,}/g, ' ').trim()
 }

@@ -20,6 +20,7 @@ import { TOOL_SESSION_REVIEW, type SessionReviewOutput } from './prompts/tools'
 import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
 import { getSessionTargetHr } from './sessionIntent'
 import type { createDB } from '../db/client'
+import { MODELS } from './models'
 
 type DB = ReturnType<typeof createDB>
 
@@ -391,7 +392,7 @@ export async function runSessionReview(
   const prompt = buildSessionReviewPrompt(session, recentOther, reviewContext)
 
   const result = await anthropicCall(apiKey, {
-    model: 'claude-haiku-4-5-20251001',
+    model: MODELS.fast,
     max_tokens: 256,
     system: systemBlocks,
     messages: [{ role: 'user', content: prompt }],
@@ -413,7 +414,7 @@ export async function runSessionReview(
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'session_review',
-    model: 'claude-haiku-4-5-20251001',
+    model: MODELS.fast,
     scopeWeekPlanId: null,
     scopeSessionId: session.id,
     inputHash: null,
