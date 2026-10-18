@@ -57,17 +57,26 @@ app.use('/api/*', cors({
 
 // Auth: all /api/* routes require Bearer token except health check and Strava webhook
 app.use('/api/*', async (c, next) => {
-  const path = new URL(c.req.url).pathname
-  if (path === '/api/health' || path.startsWith('/api/strava/webhook')) {
+  const path = new URL(c.req.url).pathname.replace(/\/+$/, '')
+  if (path === '/api/health' || path === '/api/strava/webhook') {
     return next()
   }
   const key = c.env.WAYMARK_API_KEY
   const auth = c.req.header('Authorization')
-  if (!key || !auth || auth !== `Bearer ${key}`) {
+  if (!key || !auth || !timingSafeEqualStr(auth, `Bearer ${key}`)) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
   return next()
 })
+
+// Constant-time string compare so the key can't be recovered byte by byte from response timing.
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const ea = new TextEncoder().encode(a)
+  const eb = new TextEncoder().encode(b)
+  let diff = ea.length ^ eb.length
+  for (let i = 0; i < Math.max(ea.length, eb.length); i++) diff |= (ea[i] ?? 0) ^ (eb[i] ?? 0)
+  return diff === 0
+}
 
 app.route('/api/strava', strava)
 app.route('/api/logs', logs)
