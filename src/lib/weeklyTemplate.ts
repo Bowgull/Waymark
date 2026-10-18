@@ -141,3 +141,34 @@ export function getTypeAccentColor(type: string): string {
     default: return 'border-l-muted-foreground'
   }
 }
+
+const VOLUME_TYPE_LABELS: Record<string, string> = {
+  strength: 'Strength',
+  foundation_run: 'Zone 2',
+  mobility: FOUNDATION_LABEL,
+  mt_class: 'MT Class',
+  bag_work: 'Bag Work',
+  running: 'Run',
+  skip_rope: 'Skip Rope',
+  active_recovery: 'Reset',
+}
+
+const RUN_CATEGORY_LABELS: Record<string, string> = {
+  zone2: 'Zone 2 Run',
+  progression: 'Progression Run',
+}
+
+/**
+ * Human label for a week-volume key ("strength", "running:progression").
+ * Week Intelligence chips used to print the raw type code.
+ */
+export function volumeKeyLabel(key: string): string {
+  const [type, category] = key.split(':')
+  if (category) {
+    const known = RUN_CATEGORY_LABELS[category]
+    if (known) return known
+    const base = VOLUME_TYPE_LABELS[type] ?? getSessionLabel(type)
+    return `${base} (${category.replace(/_/g, ' ')})`
+  }
+  return VOLUME_TYPE_LABELS[type] ?? getSessionLabel(type)
+}

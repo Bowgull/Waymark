@@ -139,10 +139,11 @@ export function CompletionRings({ data }: CompletionRingsProps) {
                   strokeDasharray={circumference}
                   strokeDashoffset={dashOffset}
                   transform={`rotate(-90 ${CENTER} ${CENTER})`}
-                  className="ring-fill-animate"
+                  className="ring-fill-animate ring-fill-draw"
                   style={{
+                    '--ring-circumference': `${circumference}`,
                     animationDelay: `${i * 0.15}s`,
-                  }}
+                  } as React.CSSProperties}
                 />
                 {/* Glow on full ring */}
                 {progress >= 1 && (

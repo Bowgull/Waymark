@@ -378,114 +378,151 @@ export async function scheduleRedeployReminders(buildTime: number): Promise<void
 // ─── Round cue notifications ─────────────────────────────────────────────────
 // These fire via the OS when the screen is locked so headphone audio
 // still signals the right training moment.
+//
+// Every cue is scheduled at an absolute wall-clock time (the timer's stored
+// end), so a cue scheduled after a resume lands on the real end, not on
+// "now + duration". All cues are `silent`: with the app in the foreground the
+// plugin then shows nothing and plays nothing (the app plays its own cue), so
+// a cue no longer plays twice with the app open. In the background the OS
+// presents them as usual, sound included.
 
-function addSeconds(date: Date, seconds: number): Date {
-  return new Date(date.getTime() + seconds * 1000)
+const CUE_IDS = new Set([CUE_FINISH_WARN, CUE_ROUND_END, CUE_REST_WARN, CUE_REST_END, CUE_STRENGTH_REST_END])
+
+export function isCueNotificationId(id: number): boolean {
+  return CUE_IDS.has(id)
+}
+
+interface CueSpec {
+  id: number
+  body: string
+  sound: string
+  at: Date
+}
+
+function cue(spec: CueSpec) {
+  return {
+    id: spec.id,
+    title: 'Waymark',
+    body: spec.body,
+    schedule: { at: spec.at },
+    sound: spec.sound,
+    silent: true,
+    interruptionLevel: 'timeSensitive' as const,
+  }
+}
+
+/** The round's cues (finish warning, round end) ending at `roundEndsAtMs`. */
+export function roundCueSpecs(roundEndsAtMs: number, nowMs: number): CueSpec[] {
+  const out: CueSpec[] = []
+  const finishAt = roundEndsAtMs - 10_000
+  if (finishAt > nowMs) out.push({ id: CUE_FINISH_WARN, body: 'Finish.', sound: 'finish_warning.caf', at: new Date(finishAt) })
+  if (roundEndsAtMs > nowMs) out.push({ id: CUE_ROUND_END, body: 'Rest.', sound: 'round_end.caf', at: new Date(roundEndsAtMs) })
+  return out
+}
+
+/** The rest's cues (get ready, go) ending at `restEndsAtMs`. */
+export function restCueSpecs(restEndsAtMs: number, nowMs: number): CueSpec[] {
+  const out: CueSpec[] = []
+  const warnAt = restEndsAtMs - 10_000
+  if (warnAt > nowMs) out.push({ id: CUE_REST_WARN, body: 'Get ready.', sound: 'rest_warning.caf', at: new Date(warnAt) })
+  if (restEndsAtMs > nowMs) out.push({ id: CUE_REST_END, body: 'Go.', sound: 'round_start.caf', at: new Date(restEndsAtMs) })
+  return out
+}
+
+async function scheduleCues(specs: CueSpec[]): Promise<void> {
+  if (!isNative || specs.length === 0) return
+  try {
+    await LocalNotifications.schedule({ notifications: specs.map(cue) })
+  } catch (err) {
+    console.warn('[notifications] cue schedule failed', err)
+  }
+}
+
+/**
+ * Schedule a round and, when there is one, the rest after it in one go. JS is
+ * suspended while the screen is locked, so the rest's "Get ready." and "Go."
+ * must already be scheduled when the round starts.
+ */
+export async function scheduleRoundCuesUntil(roundEndsAtMs: number, restSec: number | null): Promise<void> {
+  if (!isNative) return
+  const now = Date.now()
+  await cancelRoundActiveCues()
+  await cancelRestCues()
+  const specs = roundCueSpecs(roundEndsAtMs, now)
+  if (restSec != null && restSec > 0) specs.push(...restCueSpecs(roundEndsAtMs + restSec * 1000, now))
+  await scheduleCues(specs)
+}
+
+/** Schedule the rest cues for a rest that ends at `restEndsAtMs`. */
+export async function scheduleRestCuesUntil(restEndsAtMs: number): Promise<void> {
+  if (!isNative) return
+  await cancelRestCues()
+  await scheduleCues(restCueSpecs(restEndsAtMs, Date.now()))
 }
 
 // Schedule cues for an active round (finish warning + round end).
 // Call when a round starts. durationSec is the round length.
 export async function scheduleRoundActiveCues(durationSec: number): Promise<void> {
   if (!isNative) return
-  const now = new Date()
-  const notifications = []
-
-  const finishAt = addSeconds(now, durationSec - 10)
-  const roundEndAt = addSeconds(now, durationSec)
-
-  if (durationSec > 10 && finishAt > now) {
-    notifications.push({
-      id: CUE_FINISH_WARN,
-      title: 'Waymark',
-      body: 'Finish.',
-      schedule: { at: finishAt },
-      sound: 'finish_warning.caf',
-      interruptionLevel: 'timeSensitive' as const,
-    })
-  }
-  notifications.push({
-    id: CUE_ROUND_END,
-    title: 'Waymark',
-    body: 'Rest.',
-    schedule: { at: roundEndAt },
-    sound: 'round_end.caf',
-    interruptionLevel: 'timeSensitive' as const,
-  })
-
-  if (notifications.length > 0) {
-    await LocalNotifications.schedule({ notifications })
-  }
+  await scheduleCues(roundCueSpecs(Date.now() + durationSec * 1000, Date.now()))
 }
 
 // Cancel round active cues (finish warning + round end).
 // Call when a round ends — naturally or early — before scheduling rest cues.
 export async function cancelRoundActiveCues(): Promise<void> {
   if (!isNative) return
-  await LocalNotifications.cancel({
-    notifications: [{ id: CUE_FINISH_WARN }, { id: CUE_ROUND_END }],
-  })
+  try {
+    await LocalNotifications.cancel({
+      notifications: [{ id: CUE_FINISH_WARN }, { id: CUE_ROUND_END }],
+    })
+  } catch {
+    // nothing pending
+  }
 }
 
 // Schedule cues for the rest period (rest warning + rest end).
 // Call when rest starts. restSec is the rest duration.
 export async function scheduleRestCues(restSec: number): Promise<void> {
   if (!isNative) return
-  const now = new Date()
-  const notifications = []
-
-  const restWarnAt = addSeconds(now, restSec - 10)
-  const restEndAt = addSeconds(now, restSec)
-
-  if (restSec > 10 && restWarnAt > now) {
-    notifications.push({
-      id: CUE_REST_WARN,
-      title: 'Waymark',
-      body: 'Get ready.',
-      schedule: { at: restWarnAt },
-      sound: 'rest_warning.caf',
-      interruptionLevel: 'timeSensitive' as const,
-    })
-  }
-  notifications.push({
-    id: CUE_REST_END,
-    title: 'Waymark',
-    body: 'Go.',
-    schedule: { at: restEndAt },
-    sound: 'round_start.caf',
-    interruptionLevel: 'timeSensitive' as const,
-  })
-
-  if (notifications.length > 0) {
-    await LocalNotifications.schedule({ notifications })
-  }
+  await scheduleRestCuesUntil(Date.now() + restSec * 1000)
 }
 
 // Cancel rest cues. Call when rest ends or is skipped.
 export async function cancelRestCues(): Promise<void> {
   if (!isNative) return
-  await LocalNotifications.cancel({
-    notifications: [{ id: CUE_REST_WARN }, { id: CUE_REST_END }],
-  })
+  try {
+    await LocalNotifications.cancel({
+      notifications: [{ id: CUE_REST_WARN }, { id: CUE_REST_END }],
+    })
+  } catch {
+    // nothing pending
+  }
+}
+
+/** Cancel every timer cue (leaving a session, or before a resume re-sync). */
+export async function cancelAllCues(): Promise<void> {
+  if (!isNative) return
+  try {
+    await LocalNotifications.cancel({ notifications: [...CUE_IDS].map(id => ({ id })) })
+  } catch {
+    // nothing pending
+  }
 }
 
 // Single cue for strength set rest — fires at the precise wall-clock ms when rest ends.
 export async function scheduleStrengthRestEnd(endsAtMs: number): Promise<void> {
   if (!isNative) return
-  await LocalNotifications.schedule({
-    notifications: [{
-      id: CUE_STRENGTH_REST_END,
-      title: 'Waymark',
-      body: 'Next set.',
-      schedule: { at: new Date(endsAtMs) },
-      sound: 'round_start.caf',
-      interruptionLevel: 'timeSensitive' as const,
-    }],
-  })
+  if (endsAtMs <= Date.now()) return
+  await scheduleCues([{ id: CUE_STRENGTH_REST_END, body: 'Next set.', sound: 'round_start.caf', at: new Date(endsAtMs) }])
 }
 
 export async function cancelStrengthRestEnd(): Promise<void> {
   if (!isNative) return
-  await LocalNotifications.cancel({ notifications: [{ id: CUE_STRENGTH_REST_END }] })
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: CUE_STRENGTH_REST_END }] })
+  } catch {
+    // nothing pending
+  }
 }
 
 // Register action types + listen for "I'm Up" taps
@@ -511,7 +548,10 @@ export async function initNotificationListeners(): Promise<void> {
     ],
   })
 
-  LocalNotifications.addListener('localNotificationReceived', () => {
+  LocalNotifications.addListener('localNotificationReceived', (notification) => {
+    // Timer cues arrive here only in the foreground, where the session
+    // already played its own cue and haptic. Buzzing again doubled it.
+    if (isCueNotificationId(notification.id)) return
     heavyHaptic()
   })
 

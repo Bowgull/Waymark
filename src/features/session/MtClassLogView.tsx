@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { ApiError, apiFetch } from '@/lib/api'
+import type { EngineState } from '@/lib/sessionResume'
 
 import { resolveMtClassMoment, type MtClassType } from './mtClassMicrocopy'
 import { SessionShell } from './SessionShell'
@@ -24,6 +25,10 @@ interface MtClassLogViewProps {
   blockType?: string | null
   onComplete: () => void
   onExit?: () => void
+  /** Unsaved form (session resume). */
+  resume?: Extract<EngineState, { kind: 'mt' }> | null
+  /** Called on every change so a reload keeps what was typed. */
+  onPersist?: (state: Extract<EngineState, { kind: 'mt' }>) => void
 }
 
 const CLASS_TYPES: MtClassType[] = [
@@ -42,19 +47,26 @@ export function MtClassLogView({
   blockType,
   onComplete,
   onExit,
+  resume,
+  onPersist,
 }: MtClassLogViewProps) {
+  const draft = resume?.draft ?? {}
   const [classType, setClassType] = useState<MtClassType>(
-    (mtLog.classType as MtClassType) ?? (blockType === 'block_zero' ? 'technical' : 'general'),
+    (draft.classType as MtClassType | undefined) ?? (mtLog.classType as MtClassType) ?? (blockType === 'block_zero' ? 'technical' : 'general'),
   )
   // Class minutes drive the session load (minutes x RPE), so the class length
   // is sent, not the time spent on this screen.
-  const [durationMin, setDurationMin] = useState(String(mtLog.durationMin ?? plannedMin ?? 60))
+  const [durationMin, setDurationMin] = useState(draft.durationMin ?? String(mtLog.durationMin ?? plannedMin ?? 60))
   const [error, setError] = useState<string | null>(null)
-  const [focusSkill, setFocusSkill] = useState(mtLog.focusSkill ?? '')
-  const [weakness, setWeakness] = useState(mtLog.weakness ?? '')
-  const [concept, setConcept] = useState(mtLog.concept ?? '')
-  const [actionItems, setActionItems] = useState(mtLog.actionItems ?? '')
+  const [focusSkill, setFocusSkill] = useState(draft.focusSkill ?? mtLog.focusSkill ?? '')
+  const [weakness, setWeakness] = useState(draft.weakness ?? mtLog.weakness ?? '')
+  const [concept, setConcept] = useState(draft.concept ?? mtLog.concept ?? '')
+  const [actionItems, setActionItems] = useState(draft.actionItems ?? mtLog.actionItems ?? '')
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    onPersist?.({ kind: 'mt', draft: { classType, durationMin, focusSkill, weakness, concept, actionItems } })
+  }, [onPersist, classType, durationMin, focusSkill, weakness, concept, actionItems])
 
   async function handleSave(e?: React.FormEvent) {
     e?.preventDefault()

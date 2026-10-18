@@ -487,7 +487,7 @@ export function ProgramPage() {
   const weekProgressPercent = (weekNumber / block.totalWeeks) * 100
 
   return (
-    <div data-tour="program-page" className="space-y-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+    <div className="space-y-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       <PageBackground />
 
       {/* Logo mark */}

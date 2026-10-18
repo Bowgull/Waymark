@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
+import { parseRefusal, refusalMessage } from '@/lib/refusal'
+import { clearResume, loadResume, resumeDecision } from '@/lib/sessionResume'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
 import { endAllLiveActivities } from '@/lib/liveActivity'
@@ -52,6 +54,7 @@ interface DailyLog {
 const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
 
 const MAX_HR_LS_KEY = 'waymark_last_seen_max_hr'
+const REPLACE_SUGGESTIONS_TIMEOUT_MS = 45_000
 
 export function TodayPage() {
   const navigate = useNavigate()
@@ -132,12 +135,22 @@ export function TodayPage() {
           } catch {
             suppressUntil = 0
           }
-          const activeStrength = sessionsData.find(session =>
-            session.type === 'strength' &&
-            session.status === 'in_progress'
+          // Reopened mid-session (app killed, reload): straight back into it.
+          // Any engine with a fresh save on this phone, and strength as
+          // before. An older save waits for a tap on Resume (the session
+          // screen then asks: resume or end).
+          let storage: Storage | null = null
+          try { storage = window.localStorage } catch { storage = null }
+          const activeSession = sessionsData.find(session =>
+            session.status === 'in_progress' &&
+            WORKOUT_SESSION_TYPES.includes(session.type) &&
+            (() => {
+              const saved = loadResume(storage, session.id)
+              return saved ? resumeDecision(saved, Date.now()) === 'resume' : session.type === 'strength'
+            })()
           )
-          if (activeStrength && !suppressFromRoute && !suppressFromSearch && (!Number.isFinite(suppressUntil) || Date.now() > suppressUntil)) {
-            navigate(`/session/${activeStrength.id}`, { replace: true })
+          if (activeSession && !suppressFromRoute && !suppressFromSearch && (!Number.isFinite(suppressUntil) || Date.now() > suppressUntil)) {
+            navigate(`/session/${activeSession.id}`, { replace: true })
             return
           }
         }
@@ -219,6 +232,12 @@ export function TodayPage() {
 
     // Sessions with dedicated workout engines
     if (WORKOUT_SESSION_TYPES.includes(session.type)) {
+      // Resume: the session screen loads its rows and saved step itself.
+      // (A start call here could be refused by a red flag set since.)
+      if (session.status === 'in_progress') {
+        navigate(`/session/${id}`)
+        return
+      }
       try {
         const typeEndpoints: Record<string, string> = {
           foundation_run: `/api/sessions/${id}/start-foundation-run`,
@@ -237,7 +256,7 @@ export function TodayPage() {
         const message = e instanceof Error ? e.message : String(e)
         console.error('Failed to start session:', e)
         logger.error('session', 'start-session failed', { sessionId: id, type: session.type, message }, 'POST /sessions/:id/start failed. Session not entered.')
-        showToast("Couldn't start. Check logs in Settings.", 'warning')
+        showRefusal(e, "Couldn't start. Check logs in Settings.")
       }
       return
     }
@@ -270,6 +289,8 @@ export function TodayPage() {
 
   async function handleEndEarly(id: string, action: 'completed' | 'reset') {
     const nowSec = Math.floor(Date.now() / 1000)
+    // Ended on purpose (held x, then a choice): the saved step goes with it.
+    try { clearResume(window.localStorage, id) } catch { /* storage unavailable */ }
     const prevSessions = sessions
     if (action === 'completed') {
       setSessions((prev) =>
@@ -324,6 +345,13 @@ export function TodayPage() {
     }
   }
 
+  // A 409 from the placement rules carries the reason and safe options: show them.
+  function showRefusal(e: unknown, fallback: string) {
+    const refusal = parseRefusal(e)
+    if (refusal) showToast(refusalMessage(refusal), 'warning', { durationMs: 7000 })
+    else showToast(fallback, 'warning')
+  }
+
   function handleReplaceStart(id: string) {
     setReplaceState({ sessionId: id, stage: 'reason' })
   }
@@ -333,20 +361,24 @@ export function TodayPage() {
     const sessionId = replaceState.sessionId
     setReplaceState({ sessionId, stage: 'loading', reason })
     try {
-      const result = await apiFetch<ReplaceSuggestionsOutput>(
+      // The route wraps the coach output: { suggestions: { coachLine, suggestions[] } | null }.
+      const result = await apiFetch<{ suggestions: ReplaceSuggestionsOutput | null }>(
         `/api/sessions/${sessionId}/replace-suggestions`,
         {
           method: 'POST',
           body: JSON.stringify({ reason }),
+          // The coach thinks before it answers: 10 s cut it off every time.
+          timeoutMs: REPLACE_SUGGESTIONS_TIMEOUT_MS,
         }
       )
-      if (result.suggestions && result.suggestions.length > 0) {
+      const coach = result?.suggestions ?? null
+      if (coach && Array.isArray(coach.suggestions) && coach.suggestions.length > 0) {
         setReplaceState({
           sessionId,
           stage: 'coach',
           reason,
-          coachLine: result.coachLine ?? '',
-          suggestions: result.suggestions,
+          coachLine: coach.coachLine ?? '',
+          suggestions: coach.suggestions,
         })
       } else {
         await loadPickerFallback(sessionId, reason)
@@ -380,6 +412,8 @@ export function TodayPage() {
           type: suggestion.type,
           label: suggestion.label,
           timeSlot: suggestion.timeSlot,
+          runCategory: suggestion.runCategory,
+          today: getTodayISO(),
         }),
       })
       setSessions(prev => {
@@ -392,6 +426,7 @@ export function TodayPage() {
       })
     } catch (e) {
       console.error('Failed to replace session:', e)
+      showRefusal(e, "Couldn't replace. Check your connection.")
     }
   }
 
@@ -428,6 +463,7 @@ export function TodayPage() {
       })
     } catch (e) {
       console.error('Failed to replace session:', e)
+      showRefusal(e, "Couldn't replace. Check your connection.")
     }
   }
 
@@ -450,6 +486,7 @@ export function TodayPage() {
       ))
     } catch (e) {
       console.error('Failed to add session:', e)
+      showRefusal(e, "Couldn't add. Check your connection.")
     }
   }
 
@@ -529,7 +566,7 @@ export function TodayPage() {
         </div>
       )}
 
-      <div data-tour="wellness-card">
+      <div>
         <WellnessPromptCard
           onSubmit={handleWellnessSubmit}
           isLogged={dailyLog !== null && dailyLog !== undefined}

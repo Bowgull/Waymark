@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { FormVideoLink } from '@/components/FormVideoLink'
 import { mobilitySteps, type MobilityStep } from '@/lib/foundation'
@@ -10,6 +10,9 @@ import {
   MOBILITY_SECTION_LABELS,
   type MobilitySection,
 } from '@/lib/mobilityTemplate'
+
+import type { EngineState } from '@/lib/sessionResume'
+import { useWakeLock } from '@/lib/wakeLock'
 
 import { SessionShell } from './SessionShell'
 import { resolveMobilityMoment } from './mobilityMicrocopy'
@@ -78,6 +81,10 @@ interface MobilityExerciseViewProps extends MobilityExerciseBodyProps {
    * Used by Foundation Run which provides its own outer frame.
    */
   inline?: boolean
+  /** Saved step + hold (session resume) for this exercise and set. */
+  resume?: Extract<EngineState, { kind: 'hold' }> | null
+  /** Called on every change so the session can be resumed exactly here. */
+  onPersist?: (state: Extract<EngineState, { kind: 'hold' }>) => void
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -247,17 +254,38 @@ export function MobilityExerciseView({
   onExit,
   onSkip,
   inline = false,
+  resume,
+  onPersist,
 }: MobilityExerciseViewProps) {
   const totalSets = exercise.sets ?? 1
   // One set can be several timed steps: both sides of a per-side hold, or one
   // hold per rep (prone cobra 10 x 3s). The set is done after the last step.
   const steps = mobilitySteps(exercise)
-  const [stepIdx, setStepIdx] = useState(0)
+  const [stepIdx, setStepIdx] = useState(() =>
+    resume ? Math.min(Math.max(0, resume.stepIdx), Math.max(0, steps.length - 1)) : 0,
+  )
   const step = steps[Math.min(stepIdx, steps.length - 1)]
   const isHoldExercise = step.kind === 'hold'
   const holdTimer = useHoldTimer(step.holdSec ?? 0)
   const [activityReadyAtMs] = useState(() => Date.now())
   const [autoStartNext, setAutoStartNext] = useState(false)
+
+  // Resume: put the saved hold back. A hold whose time ran out while away
+  // reaches its target at once and advances one step (the effect below).
+  const restoredRef = useRef(false)
+  const restoreHold = holdTimer.restore
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+    if (resume?.timer && isHoldExercise) restoreHold(resume.timer)
+  }, [isHoldExercise, restoreHold, resume])
+
+  const holdSnapshot = holdTimer.snapshot
+  useEffect(() => {
+    onPersist?.({ kind: 'hold', stepIdx, timer: holdSnapshot() })
+  }, [onPersist, stepIdx, holdSnapshot, holdTimer.running, holdTimer.isPaused, holdTimer.endsAtMs])
+
+  useWakeLock(isHoldExercise && holdTimer.running && !holdTimer.isPaused && !holdTimer.reachedTarget)
 
   const stopHold = holdTimer.stop
   const advanceStep = useCallback(() => {
@@ -371,11 +399,11 @@ export function MobilityExerciseView({
   })()
 
   useSessionLiveActivity(mobilityActivityConfig, {
-    onPause: () => {
-      if (holdTimer.running && !holdTimer.isPaused) holdTimer.pause()
+    onPause: (pausedRemainingMs) => {
+      if (holdTimer.running && !holdTimer.isPaused) holdTimer.pause(pausedRemainingMs)
     },
-    onResume: () => {
-      if (holdTimer.running && holdTimer.isPaused) holdTimer.resume()
+    onResume: (newEndsAtMs) => {
+      if (holdTimer.running && holdTimer.isPaused) holdTimer.resume(newEndsAtMs)
     },
     onRestart: () => {
       if (isHoldExercise) {
@@ -384,7 +412,7 @@ export function MobilityExerciseView({
       }
     },
     onEnd: () => {
-      holdTimer.stop()
+      // Lock-screen End leaves the session (still in progress, resumable).
       onExit?.()
     },
     onStartHold: () => {

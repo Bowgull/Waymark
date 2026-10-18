@@ -99,13 +99,15 @@ export function BottomSheet({
       aria-label={ariaLabel}
     >
       <div
-        className="absolute inset-0 bg-black/60 transition-opacity duration-200"
+        className="absolute inset-0 bg-black/60 transition-opacity duration-200 animate-fade-in"
         style={{ opacity: backdropOpacity }}
         onClick={handleBackdropClick}
       />
       <div
         ref={sheetRef}
-        className="relative w-full max-w-md rounded-t-xl border-t border-gold/10 bg-surface shadow-2xl"
+        // Slides up from below on open (fill-mode backwards, so a drag's
+        // inline transform still wins once the entrance has played).
+        className={`relative w-full max-w-md rounded-t-xl border-t border-gold/10 bg-surface shadow-2xl ${open ? 'animate-sheet-up' : ''}`}
         style={{
           transform: `translateY(${translate}px)`,
           transition: dragging ? 'none' : 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',

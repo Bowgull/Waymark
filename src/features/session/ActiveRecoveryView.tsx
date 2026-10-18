@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,17 @@ import {
   type HipMobilityMovement,
 } from '@/lib/activeRecoveryTemplate'
 import { logger } from '@/lib/logger'
+import {
+  advanceRoll,
+  timerPause,
+  timerRemainingMs,
+  timerResume,
+  timerStart,
+  type EngineState,
+  type RecoveryPhase,
+  type TimerSnap,
+} from '@/lib/sessionResume'
+import { useWakeLock } from '@/lib/wakeLock'
 
 import { resolveActiveRecoveryMoment } from './activeRecoveryMicrocopy'
 import { SessionShell } from './SessionShell'
@@ -21,13 +32,19 @@ interface RecoverySession {
   foamRolling: number
 }
 
+type RecoveryState = Extract<EngineState, { kind: 'recovery' }>
+
 interface ActiveRecoveryViewProps {
   recoverySession: RecoverySession
   onComplete: () => void
   onExit?: () => void
+  /** Saved block, step and timers (session resume). */
+  resume?: RecoveryState | null
+  /** Called on every change so the session can be resumed exactly here. */
+  onPersist?: (state: RecoveryState) => void
 }
 
-type Phase = 'intro' | 'hip' | 'roll-intro' | 'roll' | 'done'
+type Phase = RecoveryPhase
 
 const ACCENT = '#4ACAAA'
 
@@ -96,129 +113,106 @@ export function ActiveRecoveryView({
   recoverySession,
   onComplete,
   onExit,
+  resume,
+  onPersist,
 }: ActiveRecoveryViewProps) {
   const hipDonePersisted = recoverySession.hipMobility === 1
   const foamDonePersisted = recoverySession.foamRolling === 1
 
-  const [phase, setPhase] = useState<Phase>(
-    hipDonePersisted && foamDonePersisted
-      ? 'done'
-      : hipDonePersisted
-        ? 'roll-intro'
-        : 'intro',
+  const [phase, setPhase] = useState<Phase>(() =>
+    resume
+      ? resume.phase
+      : hipDonePersisted && foamDonePersisted
+        ? 'done'
+        : hipDonePersisted
+          ? 'roll-intro'
+          : 'intro',
   )
 
-  // Hip mobility state
+  // Both blocks' timers are wall-clock anchored (end time stored), not
+  // decremented by an interval: they used to freeze while locked and drift
+  // from the Live Activity.
   const hipSteps = useMemo(() => buildHipSteps(), [])
-  const [hipIdx, setHipIdx] = useState(0)
-  const [hipRunning, setHipRunning] = useState(false)
-  const [hipPaused, setHipPaused] = useState(false)
-  const [hipSecondsLeft, setHipSecondsLeft] = useState(
-    hipSteps[0]?.movement.holdSec ?? 0,
-  )
-  const [hipStartedAtMs, setHipStartedAtMs] = useState(0)
-  const [hipPausedAtMs, setHipPausedAtMs] = useState(0)
-  const hipIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const rollSteps = useMemo(() => buildRollSteps(), [])
+  const rollSecs = useMemo(() => rollSteps.map(st => st.area.sec), [rollSteps])
+  const [hipIdx, setHipIdx] = useState(() => Math.min(resume?.hipIdx ?? 0, hipSteps.length - 1))
+  const [hipTimer, setHipTimer] = useState<TimerSnap | null>(() => resume?.hipTimer ?? null)
+  const [baseRollIdx, setRollIdx] = useState(() => Math.min(resume?.rollIdx ?? 0, rollSteps.length - 1))
+  const [baseRollTimer, setRollTimer] = useState<TimerSnap | null>(() => resume?.rollTimer ?? null)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  // Foam rolling: zone to zone; each zone starts when the last one ended,
+  // so a locked phone or a reload lands on the right zone. Derived from the
+  // stored zone + timer and the clock, so nothing ticks.
+  const rollNow = phase === 'roll'
+    ? advanceRoll(rollSecs, baseRollIdx, baseRollTimer, nowMs)
+    : { rollIdx: baseRollIdx, timer: baseRollTimer, finished: false }
+  const rollIdx = rollNow.rollIdx
+  const rollTimer = rollNow.timer
 
   const currentHipStep = hipSteps[hipIdx]
-
-  // Reset hip timer when step changes — render-phase reset (no effect needed).
-  // Setting hipRunning to false triggers the tick effect's cleanup, which
-  // handles clearing the interval.
-  const [prevHipIdx, setPrevHipIdx] = useState(hipIdx)
-  if (prevHipIdx !== hipIdx) {
-    setPrevHipIdx(hipIdx)
-    setHipRunning(false)
-    setHipPaused(false)
-    setHipSecondsLeft(currentHipStep?.movement.holdSec ?? 0)
-  }
-
-  // Clear hip interval on unmount
-  useEffect(() => {
-    return () => {
-      if (hipIntervalRef.current) clearInterval(hipIntervalRef.current)
-    }
-  }, [])
-
-  // Tick hip timer
-  useEffect(() => {
-    if (!hipRunning) return
-    if (hipPaused) return
-    hipIntervalRef.current = setInterval(() => {
-      setHipSecondsLeft((s) => {
-        if (s <= 1) {
-          if (hipIntervalRef.current) clearInterval(hipIntervalRef.current)
-          setHipRunning(false)
-          return 0
-        }
-        return s - 1
-      })
-    }, 1000)
-    return () => {
-      if (hipIntervalRef.current) clearInterval(hipIntervalRef.current)
-    }
-  }, [hipRunning, hipPaused])
-
-  const hipReachedTarget =
-    currentHipStep?.movement.mode === 'hold'
-      ? !hipRunning &&
-        hipSecondsLeft === 0 &&
-        (currentHipStep.movement.holdSec ?? 0) > 0
-      : false
-
-  // Foam rolling state
-  const rollSteps = useMemo(() => buildRollSteps(), [])
-  const [rollIdx, setRollIdx] = useState(0)
-  const [rollSecondsLeft, setRollSecondsLeft] = useState(
-    rollSteps[0]?.area.sec ?? 0,
-  )
-  const [rollPaused, setRollPaused] = useState(false)
-  const rollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
   const currentRollStep = rollSteps[rollIdx]
 
-  // Reset roll timer when step changes — render-phase reset
-  const [prevRollIdx, setPrevRollIdx] = useState(rollIdx)
-  const [rollAnchorMs, setRollAnchorMs] = useState(0)
-  const [rollPausedAtMs, setRollPausedAtMs] = useState(0)
-  if (prevRollIdx !== rollIdx) {
-    setPrevRollIdx(rollIdx)
-    setRollSecondsLeft(currentRollStep?.area.sec ?? 0)
-    setRollAnchorMs(0)
-  }
-
-  // Tick roll timer — only while in 'roll' phase
+  const ticking = hipTimer?.state === 'running' || rollTimer?.state === 'running'
   useEffect(() => {
-    if (phase !== 'roll') return
-    if (rollPaused || !currentRollStep || rollAnchorMs === 0) return
-    rollIntervalRef.current = setInterval(() => {
-      setRollSecondsLeft((s) => {
-        if (s <= 1) {
-          if (rollIntervalRef.current) clearInterval(rollIntervalRef.current)
-          setRollIdx((i) => (i >= rollSteps.length - 1 ? i : i + 1))
-          return 0
-        }
-        return s - 1
-      })
-    }, 1000)
-    return () => {
-      if (rollIntervalRef.current) clearInterval(rollIntervalRef.current)
+    if (!ticking) return
+    const id = setInterval(() => setNowMs(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [ticking])
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible') setNowMs(Date.now())
     }
-  }, [phase, rollPaused, rollIdx, currentRollStep, rollSteps.length, rollAnchorMs])
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
 
+  // Hip hold
+  const hipHoldSec = currentHipStep?.movement.holdSec ?? 0
+  const hipRunning = hipTimer != null
+  const hipPaused = hipTimer?.state === 'paused'
+  const hipRemainingMs = hipTimer ? Math.max(0, timerRemainingMs(hipTimer, nowMs)) : hipHoldSec * 1000
+  const hipSecondsLeft = Math.ceil(hipRemainingMs / 1000)
+  const hipReachedTarget =
+    currentHipStep?.movement.mode === 'hold' && hipHoldSec > 0 && hipRunning && hipRemainingMs <= 0
+
+  const rollPaused = rollTimer?.state === 'paused'
+  const rollRemainingMs = rollTimer ? Math.max(0, timerRemainingMs(rollTimer, nowMs)) : (currentRollStep?.area.sec ?? 0) * 1000
+  const rollSecondsLeft = Math.ceil(rollRemainingMs / 1000)
   const isLastRollStep = rollIdx >= rollSteps.length - 1
-  const rollReachedTarget = rollSecondsLeft === 0 && isLastRollStep
+  const rollReachedTarget = rollRemainingMs <= 0 && isLastRollStep && rollTimer != null
+
+  // Save on every change.
+  useEffect(() => {
+    onPersist?.({ kind: 'recovery', phase, hipIdx, hipTimer, rollIdx, rollTimer })
+  }, [onPersist, phase, hipIdx, hipTimer, rollIdx, rollTimer])
+
+  useWakeLock(
+    (phase === 'hip' && hipRunning && !hipPaused && !hipReachedTarget) ||
+    (phase === 'roll' && rollTimer != null && !rollPaused && !rollReachedTarget),
+  )
 
   // ───── Handlers ─────
 
   function startHipBlock() {
     setPhase('hip')
     setHipIdx(0)
+    setHipTimer(null)
+  }
+
+  function startHipHold() {
+    setNowMs(Date.now())
+    setHipTimer(timerStart(hipHoldSec, Date.now()))
+  }
+
+  function toggleHipPause(pausedRemainingMs?: number) {
+    const now = Date.now()
+    setNowMs(now)
+    setHipTimer(t => (!t ? t : t.state === 'paused' ? timerResume(t, now) : timerPause(t, now, pausedRemainingMs)))
   }
 
   function advanceHip() {
-    if (hipIntervalRef.current) clearInterval(hipIntervalRef.current)
-    setHipRunning(false)
+    setHipTimer(null)
     if (hipIdx >= hipSteps.length - 1) {
       logger.sessionEvent('recovery hip mobility complete', {
         recoveryId: recoverySession.id,
@@ -230,13 +224,40 @@ export function ActiveRecoveryView({
     setHipIdx((i) => i + 1)
   }
 
+  function startRolling() {
+    setNowMs(Date.now())
+    setRollIdx(0)
+    setRollTimer(timerStart(rollSteps[0]?.area.sec ?? 0, Date.now()))
+    setPhase('roll')
+  }
+
+  const toggleRollPause = useCallback((pausedRemainingMs?: number) => {
+    const now = Date.now()
+    // Commit the derived zone first: pausing freezes the zone it is on now.
+    const cur = advanceRoll(rollSecs, baseRollIdx, baseRollTimer, now)
+    setNowMs(now)
+    setRollIdx(cur.rollIdx)
+    setRollTimer(!cur.timer ? cur.timer : cur.timer.state === 'paused' ? timerResume(cur.timer, now) : timerPause(cur.timer, now, pausedRemainingMs))
+  }, [baseRollIdx, baseRollTimer, rollSecs])
+
   function finishFoam() {
-    if (rollIntervalRef.current) clearInterval(rollIntervalRef.current)
     logger.sessionEvent('recovery foam rolling complete', {
       recoveryId: recoverySession.id,
     })
     void persistBlockComplete(recoverySession.id, 'foamRolling')
+    setRollTimer(null)
     setPhase('done')
+  }
+
+  function skipRollZone() {
+    if (isLastRollStep) {
+      finishFoam()
+      return
+    }
+    const next = Math.min(rollIdx + 1, rollSteps.length - 1)
+    setNowMs(Date.now())
+    setRollIdx(next)
+    setRollTimer(timerStart(rollSteps[next].area.sec, Date.now()))
   }
 
   // ───── Render helpers ─────
@@ -275,15 +296,13 @@ export function ActiveRecoveryView({
     active:
       phase === 'intro' || phase === 'hip'
         ? 0
-        : phase === 'roll-intro' || phase === 'roll'
-          ? 1
-          : 1,
+        : 1,
     total: 2,
   }
 
-  // Live Activity for recovery timers.
+  // Live Activity for recovery timers: the same end times the app uses.
   const hipLiveConfig: LiveActivityConfig | null =
-    phase === 'hip' && hipRunning && currentHipStep && hipStartedAtMs > 0
+    phase === 'hip' && hipTimer && !hipReachedTarget && currentHipStep
       ? {
           sessionType: 'recovery',
           sessionLabel: 'Recovery',
@@ -293,10 +312,8 @@ export function ActiveRecoveryView({
             detail: currentHipStep.side
               ? currentHipStep.side === 'left' ? 'Left side' : 'Right side'
               : undefined,
-            startedAt: hipStartedAtMs,
-            endsAt: hipPaused
-              ? hipPausedAtMs + hipSecondsLeft * 1000
-              : hipStartedAtMs + (currentHipStep.movement.holdSec ?? 0) * 1000,
+            startedAt: hipTimer.state === 'running' ? hipTimer.startedAtMs : nowMs + hipTimer.remainingMs - hipHoldSec * 1000,
+            endsAt: hipTimer.state === 'running' ? hipTimer.endsAtMs : nowMs + hipTimer.remainingMs,
             isPaused: hipPaused,
             pausedRemaining: hipPaused ? hipSecondsLeft : undefined,
           },
@@ -304,7 +321,7 @@ export function ActiveRecoveryView({
       : null
 
   const rollLiveConfig: LiveActivityConfig | null =
-    phase === 'roll' && currentRollStep && rollAnchorMs > 0
+    phase === 'roll' && currentRollStep && rollTimer
       ? {
           sessionType: 'recovery',
           sessionLabel: 'Recovery',
@@ -314,10 +331,8 @@ export function ActiveRecoveryView({
             detail: currentRollStep.side
               ? currentRollStep.side === 'left' ? 'Left side' : 'Right side'
               : undefined,
-            startedAt: rollAnchorMs,
-            endsAt: rollPaused
-              ? rollPausedAtMs + rollSecondsLeft * 1000
-              : rollAnchorMs + currentRollStep.area.sec * 1000,
+            startedAt: rollTimer.state === 'running' ? rollTimer.startedAtMs : nowMs + rollTimer.remainingMs - currentRollStep.area.sec * 1000,
+            endsAt: rollTimer.state === 'running' ? rollTimer.endsAtMs : nowMs + rollTimer.remainingMs,
             isPaused: rollPaused,
             pausedRemaining: rollPaused ? rollSecondsLeft : undefined,
           },
@@ -325,56 +340,35 @@ export function ActiveRecoveryView({
       : null
 
   useSessionLiveActivity(hipLiveConfig ?? rollLiveConfig, {
-    onPause: () => {
-      if (phase === 'roll') {
-        setRollPausedAtMs(Date.now())
-        setRollPaused(true)
-      } else if (phase === 'hip') {
-        setHipPausedAtMs(Date.now())
-        setHipPaused(true)
-      }
+    onPause: (pausedRemainingMs) => {
+      if (phase === 'roll' && rollTimer?.state === 'running') toggleRollPause(pausedRemainingMs)
+      else if (phase === 'hip' && hipTimer?.state === 'running') toggleHipPause(pausedRemainingMs)
     },
     onResume: (newEndsAtMs) => {
-      if (phase === 'roll') {
-        setRollPaused(false)
-        if (newEndsAtMs) {
-          const remaining = Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
-          setRollSecondsLeft(remaining)
-          setRollAnchorMs(Date.now())
-        }
-      } else if (phase === 'hip') {
-        setHipPaused(false)
-      }
+      const now = Date.now()
+      setNowMs(now)
+      if (phase === 'roll') setRollTimer(rollTimer && rollTimer.state === 'paused' ? timerResume(rollTimer, now, newEndsAtMs) : rollTimer)
+      else if (phase === 'hip') setHipTimer(t => (t && t.state === 'paused' ? timerResume(t, now, newEndsAtMs) : t))
     },
     onRestart: () => {
       if (phase === 'hip' && currentHipStep) {
-        const holdSec = currentHipStep.movement.holdSec ?? 0
-        setHipStartedAtMs(Date.now())
-        setHipSecondsLeft(holdSec)
-        setHipPaused(false)
+        startHipHold()
       } else if (phase === 'roll' && currentRollStep) {
-        setRollAnchorMs(Date.now())
-        setRollSecondsLeft(currentRollStep.area.sec)
-        setRollPaused(false)
+        setNowMs(Date.now())
+        setRollIdx(rollIdx)
+        setRollTimer(timerStart(currentRollStep.area.sec, Date.now()))
       }
     },
     onEnd: () => {
+      // Lock-screen End leaves the session (still in progress, resumable).
       onExit?.()
     },
     // "Next →" / "Skip →" from the lock screen.
     // hip → advance to next hip step (or roll-intro);
     // roll → skip zone, or finish on last.
     onAdvance: () => {
-      if (phase === 'hip') {
-        advanceHip()
-      } else if (phase === 'roll') {
-        if (rollIntervalRef.current) clearInterval(rollIntervalRef.current)
-        if (isLastRollStep) {
-          finishFoam()
-        } else {
-          setRollIdx((i) => Math.min(i + 1, rollSteps.length - 1))
-        }
-      }
+      if (phase === 'hip') advanceHip()
+      else if (phase === 'roll') skipRollZone()
     },
   })
 
@@ -432,10 +426,7 @@ export function ActiveRecoveryView({
     )
     footer = (
       <Button
-        onClick={() => {
-          setHipStartedAtMs(0)
-          startHipBlock()
-        }}
+        onClick={startHipBlock}
         size="lg"
         className="w-full"
         style={{ backgroundColor: ACCENT, color: '#020A08' }}
@@ -478,7 +469,7 @@ export function ActiveRecoveryView({
                 isPaused={hipPaused}
                 onTogglePause={
                   hipRunning && !hipReachedTarget
-                    ? () => setHipPaused((p) => !p)
+                    ? () => toggleHipPause()
                     : undefined
                 }
               />
@@ -505,13 +496,10 @@ export function ActiveRecoveryView({
 
     if (movement.mode === 'hold') {
       const holdSec = movement.holdSec ?? 0
-      if (!hipRunning && hipSecondsLeft === holdSec) {
+      if (!hipRunning && holdSec > 0) {
         footer = (
           <Button
-            onClick={() => {
-              setHipStartedAtMs(Date.now())
-              setHipRunning(true)
-            }}
+            onClick={startHipHold}
             size="lg"
             className="w-full"
             style={{
@@ -577,10 +565,7 @@ export function ActiveRecoveryView({
     )
     footer = (
       <Button
-        onClick={() => {
-          setRollAnchorMs(Date.now())
-          setPhase('roll')
-        }}
+        onClick={startRolling}
         size="lg"
         className="w-full"
         style={{ backgroundColor: ACCENT, color: '#020A08' }}
@@ -616,7 +601,7 @@ export function ActiveRecoveryView({
             isComplete={rollReachedTarget}
             isPaused={rollPaused}
             onTogglePause={
-              rollReachedTarget ? undefined : () => setRollPaused((p) => !p)
+              rollReachedTarget ? undefined : () => toggleRollPause()
             }
           />
         </div>
@@ -625,7 +610,7 @@ export function ActiveRecoveryView({
     footer = (
       <div className="flex w-full gap-2">
         <Button
-          onClick={() => setRollPaused((p) => !p)}
+          onClick={() => toggleRollPause()}
           size="lg"
           variant="secondary"
           className="flex-1"
@@ -633,14 +618,7 @@ export function ActiveRecoveryView({
           {rollPaused ? 'Resume' : 'Pause'}
         </Button>
         <Button
-          onClick={() => {
-            if (rollIntervalRef.current) clearInterval(rollIntervalRef.current)
-            if (isLastRollStep) {
-              finishFoam()
-            } else {
-              setRollIdx((i) => Math.min(i + 1, rollSteps.length - 1))
-            }
-          }}
+          onClick={skipRollZone}
           size="lg"
           className="flex-1"
           style={{ backgroundColor: ACCENT, color: '#020A08' }}

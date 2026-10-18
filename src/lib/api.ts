@@ -33,11 +33,17 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
   }
 }
 
-export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+export interface ApiFetchOptions extends RequestInit {
+  /** Per-call timeout. Defaults to 10 s; the AI calls that think need longer. */
+  timeoutMs?: number
+}
+
+export async function apiFetch<T>(path: string, options?: ApiFetchOptions): Promise<T> {
   const url = `${getApiBaseUrl()}${path}`
   const method = (options?.method ?? 'GET').toUpperCase()
+  const { timeoutMs = TIMEOUT_MS, ...requestOptions } = options ?? {}
   const init: RequestInit = {
-    ...options,
+    ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
       ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
@@ -57,7 +63,7 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const res = await fetchWithTimeout(url, init, TIMEOUT_MS)
+      const res = await fetchWithTimeout(url, init, timeoutMs)
 
       if (res.ok) {
         let parsed: T

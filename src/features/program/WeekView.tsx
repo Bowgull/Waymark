@@ -4,9 +4,12 @@ import { getTodayISO } from '@/lib/dates'
 import { Button } from '@/components/ui/button'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { SkipReasonSheet, type SkipReasonCommit } from '@/features/session/SkipReasonSheet'
+import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
+import { useToast } from '@/components/ui/Toast'
+import { parseRefusal, refusalMessage } from '@/lib/refusal'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import type { WeekAnalysis } from '@/lib/weekAnalysis'
-import { getSessionLabel } from '@/lib/weeklyTemplate'
+import { getSessionLabel, volumeKeyLabel } from '@/lib/weeklyTemplate'
 import { getMarkAsset } from '@/lib/markAssets'
 import { getStrengthTemplate, getWeekLabel, getDeadliftExerciseId } from '@/lib/strengthTemplates'
 import { getRunPlanForWeek } from '@/lib/runningPlanTemplate'
@@ -400,7 +403,16 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
   const [actionTraySessionId, setActionTraySessionId] = useState<string | null>(null)
   const [replacingSession, setReplacingSession] = useState<SessionSummary | null>(null)
   const [replaceReason, setReplaceReason] = useState<string | null>(null)
-  const [skipReasonFor, setSkipReasonFor] = useState<{ id: string; replace: boolean } | null>(null)
+  const [skipReasonFor, setSkipReasonFor] = useState<string | null>(null)
+  const [replaceReasonFor, setReplaceReasonFor] = useState<string | null>(null)
+  const { show: showToast, ToastContainer } = useToast()
+
+  // A 409 from the placement rules carries the reason and safe options: show them.
+  function showRefusal(e: unknown, fallback: string) {
+    const refusal = parseRefusal(e)
+    if (refusal) showToast(refusalMessage(refusal), 'warning', { durationMs: 7000 })
+    else showToast(fallback, 'warning')
+  }
   const [showAllChanges, setShowAllChanges] = useState(false)
 
   // Parse analysis from JSON
@@ -473,6 +485,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
         onSessionAdded?.(result.replacement)
       } catch (e) {
         console.error('Failed to replace session:', e)
+        showRefusal(e, "Couldn't replace. Check your connection.")
       }
       return
     }
@@ -492,31 +505,36 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
       onSessionAdded?.(created)
     } catch (e) {
       console.error('Failed to add session:', e)
+      showRefusal(e, "Couldn't add. Check your connection.")
     }
   }
 
   function handleSkip(sessionId: string) {
     setActionTraySessionId(null)
-    setSkipReasonFor({ id: sessionId, replace: false })
+    setSkipReasonFor(sessionId)
   }
 
+  // Replace asks "Why swap" (the same sheet as Today) and sends its label,
+  // not a skip-reason code.
   function handleReplace(session: SessionSummary) {
     setActionTraySessionId(null)
     setReplacingSession(session)
-    setSkipReasonFor({ id: session.id, replace: true })
+    setReplaceReasonFor(session.id)
+  }
+
+  function commitReplaceReason(reason: string) {
+    const id = replaceReasonFor
+    setReplaceReasonFor(null)
+    if (!id) return
+    setReplaceReason(reason)
+    const target = sessions.find(s => s.id === id)
+    openPicker(target?.scheduledDate ?? 0)
   }
 
   async function commitSkip(commit: SkipReasonCommit) {
     if (!skipReasonFor) return
-    const { id, replace } = skipReasonFor
+    const id = skipReasonFor
     setSkipReasonFor(null)
-
-    if (replace) {
-      setReplaceReason(commit.reason)
-      const target = sessions.find(s => s.id === id)
-      openPicker(target?.scheduledDate ?? 0)
-      return
-    }
 
     try {
       await apiFetch(`/api/sessions/${id}`, {
@@ -537,15 +555,20 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
     setReplacingSession(null)
     setReplaceReason(null)
     setSkipReasonFor(null)
+    setReplaceReasonFor(null)
   }
 
   async function handleAcceptAdjustment(adjId: string) {
     try {
-      const result = await apiFetch<{ adjustment: WeekAdjustment; session?: SessionSummary }>(`/api/adjustments/${adjId}/accept`, { method: 'POST' })
+      const result = await apiFetch<{ adjustment: WeekAdjustment; session?: SessionSummary }>(`/api/adjustments/${adjId}/accept`, {
+        method: 'POST',
+        body: JSON.stringify({ today: getTodayISO() }),
+      })
       setAdjustments(prev => prev.map(a => a.id === adjId ? { ...a, status: 'accepted' } : a))
       if (result.session) onSessionAdded?.(result.session)
     } catch (e) {
       console.error('Failed to accept adjustment:', e)
+      showRefusal(e, "Couldn't accept. Check your connection.")
     }
   }
 
@@ -606,7 +629,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
                           : 'border-forest/30 bg-forest/5 text-forest-light/80'
                       }`}
                     >
-                      {key.split(':')[0]} {v.completed}/{v.target}
+                      {volumeKeyLabel(key)} {v.completed}/{v.target}
                     </span>
                   )
                 })}
@@ -799,6 +822,13 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
         />
       )}
 
+      {replaceReasonFor && (
+        <ReplaceReasonSheet
+          onCommit={(reason) => commitReplaceReason(reason)}
+          onClose={cancelSkip}
+        />
+      )}
+
       {/* Session Picker modal */}
       {pickerDate && (
         <SessionPicker
@@ -816,6 +846,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
           }
         />
       )}
+      <ToastContainer />
     </div>
   )
 }

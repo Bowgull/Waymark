@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
@@ -10,13 +10,15 @@ import {
   soundFinishWarning,
   soundRestWarning,
 } from '@/lib/sounds'
-import { activateSessionAudio, deactivateSessionAudio } from '@/lib/sessionAudio'
+import { deactivateSessionAudio } from '@/lib/sessionAudio'
 import {
-  scheduleRoundActiveCues,
+  scheduleRoundCuesUntil,
+  scheduleRestCuesUntil,
   cancelRoundActiveCues,
-  scheduleRestCues,
   cancelRestCues,
 } from '@/lib/notifications'
+import { isStaleCue, type EngineState } from '@/lib/sessionResume'
+import { useWakeLock } from '@/lib/wakeLock'
 
 import { SessionShell } from './SessionShell'
 import {
@@ -89,6 +91,10 @@ interface BagWorkRoundViewProps {
   onNextRound: () => void
   onComplete: () => void
   onExit?: () => void
+  /** Saved state to come back to (session resume), already brought up to now. */
+  resume?: Extract<EngineState, { kind: 'rounds' }> | null
+  /** Called on every change so the session can be resumed exactly here. */
+  onPersist?: (state: Extract<EngineState, { kind: 'rounds' }>) => void
 }
 
 export function BagWorkRoundView({
@@ -99,53 +105,102 @@ export function BagWorkRoundView({
   onNextRound,
   onComplete,
   onExit,
+  resume,
+  onPersist,
 }: BagWorkRoundViewProps) {
   const roundTimer = useRestTimer()
   const restTimer = useRestTimer()
 
   const isLastRound = round.roundNumber >= totalRounds
+  const roundIndex = round.roundNumber - 1
 
-  // Activate the native AVAudioSession so in-session cues duck Spotify / other
-  // apps' audio. Deactivates with .notifyOthersOnDeactivation on unmount so the
-  // music returns to full volume immediately when the user leaves the view.
+  // Cues duck other audio only while they play (lib/sessionAudio); make sure
+  // nothing is left ducked when the view goes.
   useEffect(() => {
-    void activateSessionAudio()
     return () => { void deactivateSessionAudio() }
   }, [])
+
+  // Resume: put the saved timer back and re-sync the scheduled cues to its
+  // real end time (stale ones cancelled, the rest rescheduled).
+  const restoredRef = useRef(false)
+  const restoreRound = roundTimer.restore
+  const restoreRest = restTimer.restore
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+    if (!resume || resume.round !== roundIndex || !resume.timer) return
+    const t = resume.timer
+    if (resume.sub === 'fighting') {
+      restoreRound(t)
+      if (t.state === 'running') void scheduleRoundCuesUntil(t.endsAtMs, isLastRound ? null : round.restSec)
+      else { void cancelRoundActiveCues(); void cancelRestCues() }
+    } else if (resume.sub === 'rest') {
+      restoreRest(t)
+      void cancelRoundActiveCues()
+      if (t.state === 'running') void scheduleRestCuesUntil(t.endsAtMs)
+      else void cancelRestCues()
+    }
+  }, [isLastRound, restoreRest, restoreRound, resume, round.restSec, roundIndex])
+
+  // Save on every change: phase and the running timer's end (or what is left).
+  const roundSnapshot = roundTimer.snapshot
+  const restSnapshot = restTimer.snapshot
+  useEffect(() => {
+    onPersist?.({
+      kind: 'rounds',
+      round: roundIndex,
+      sub: phase,
+      timer: phase === 'fighting' ? roundSnapshot() : phase === 'rest' ? restSnapshot() : null,
+    })
+  }, [onPersist, phase, roundIndex, roundSnapshot, restSnapshot, roundTimer.isRunning, roundTimer.isPaused, roundTimer.endsAtMs, restTimer.isRunning, restTimer.isPaused, restTimer.endsAtMs])
+
+  useWakeLock(
+    (phase === 'fighting' && roundTimer.isRunning && !roundTimer.isPaused) ||
+    (phase === 'rest' && restTimer.isRunning && !restTimer.isPaused),
+  )
 
   function handleStartRound() {
     heavyHaptic()
     soundRoundStart()
     roundTimer.start(round.durationSec)
-    scheduleRoundActiveCues(round.durationSec)
+    // The whole round + rest timeline at once: JS sleeps while locked.
+    void scheduleRoundCuesUntil(Date.now() + round.durationSec * 1000, isLastRound ? null : round.restSec)
     onPhaseChange('fighting')
   }
 
-  const handleRoundEnd = useCallback(() => {
-    soundRoundEnd()
+  /**
+   * `natural`: the round's time ran out. Its rest then starts at the round's
+   * real end (not when JS woke up), and a cue that is long past is not played.
+   */
+  const handleRoundEnd = useCallback((natural = false) => {
+    const endedAt = natural && roundTimer.endsAtMs > 0 ? roundTimer.endsAtMs : Date.now()
+    if (!natural || !isStaleCue(endedAt, Date.now())) soundRoundEnd()
     roundTimer.stop()
-    cancelRoundActiveCues()
+    void cancelRoundActiveCues()
     if (isLastRound) {
+      void cancelRestCues()
       onComplete()
     } else {
-      restTimer.start(round.restSec)
-      scheduleRestCues(round.restSec)
+      restTimer.startFrom(endedAt, round.restSec)
+      // Ended early: the rest cues scheduled at round start are now wrong.
+      if (!natural) void scheduleRestCuesUntil(endedAt + round.restSec * 1000)
       onPhaseChange('rest')
     }
   }, [isLastRound, onComplete, onPhaseChange, restTimer, round.restSec, roundTimer])
 
-  const handleRestDone = useCallback(() => {
+  const handleRestDone = useCallback((natural = false) => {
+    if (natural && !isStaleCue(restTimer.endsAtMs, Date.now())) soundRoundStart()
     restTimer.stop()
-    cancelRestCues()
+    void cancelRestCues()
     onNextRound()
   }, [onNextRound, restTimer])
 
   useEffect(() => {
     // Use <= 0 so a locked-screen jump past zero still fires
-    if (phase === 'fighting' && roundTimer.secondsRemaining <= 0 && roundTimer.isRunning) {
-      handleRoundEnd()
+    if (phase === 'fighting' && roundTimer.secondsRemaining <= 0 && roundTimer.isRunning && !roundTimer.isPaused) {
+      handleRoundEnd(true)
     }
-  }, [handleRoundEnd, roundTimer.secondsRemaining, roundTimer.isRunning, phase])
+  }, [handleRoundEnd, roundTimer.secondsRemaining, roundTimer.isRunning, roundTimer.isPaused, phase])
 
   // Last 10 seconds of round — finish warning (screen on only; notification handles locked)
   useEffect(() => {
@@ -156,10 +211,10 @@ export function BagWorkRoundView({
 
   // Auto-advance rest timer
   useEffect(() => {
-    if (phase === 'rest' && restTimer.secondsRemaining <= 0 && restTimer.isRunning) {
-      handleRestDone()
+    if (phase === 'rest' && restTimer.secondsRemaining <= 0 && restTimer.isRunning && !restTimer.isPaused) {
+      handleRestDone(true)
     }
-  }, [handleRestDone, restTimer.secondsRemaining, restTimer.isRunning, phase])
+  }, [handleRestDone, restTimer.secondsRemaining, restTimer.isRunning, restTimer.isPaused, phase])
 
   // 10 seconds left in rest — heads up (screen on only; notification handles locked)
   useEffect(() => {
@@ -205,45 +260,38 @@ export function BagWorkRoundView({
           }
         : null
 
-  function pauseRound() {
-    cancelRoundActiveCues()
-    roundTimer.pause()
+  function pauseRound(pausedRemainingMs?: number) {
+    void cancelRoundActiveCues()
+    void cancelRestCues()
+    roundTimer.pause(pausedRemainingMs)
   }
   function resumeRound(newEndsAtMs?: number) {
-    roundTimer.resume(newEndsAtMs)
-    const remaining = newEndsAtMs
-      ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
-      : roundTimer.secondsRemaining
-    if (remaining > 0) scheduleRoundActiveCues(remaining)
+    const endsAt = roundTimer.resume(newEndsAtMs)
+    if (endsAt > Date.now()) void scheduleRoundCuesUntil(endsAt, isLastRound ? null : round.restSec)
   }
-  function pauseRest() {
-    cancelRestCues()
-    restTimer.pause()
+  function pauseRest(pausedRemainingMs?: number) {
+    void cancelRestCues()
+    restTimer.pause(pausedRemainingMs)
   }
   function resumeRest(newEndsAtMs?: number) {
-    restTimer.resume(newEndsAtMs)
-    const remaining = newEndsAtMs
-      ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
-      : restTimer.secondsRemaining
-    if (remaining > 0) scheduleRestCues(remaining)
+    const endsAt = restTimer.resume(newEndsAtMs)
+    if (endsAt > Date.now()) void scheduleRestCuesUntil(endsAt)
   }
 
   function restartCurrentPhase() {
     if (phase === 'fighting') {
-      cancelRoundActiveCues()
       roundTimer.start(round.durationSec)
-      scheduleRoundActiveCues(round.durationSec)
+      void scheduleRoundCuesUntil(Date.now() + round.durationSec * 1000, isLastRound ? null : round.restSec)
     } else if (phase === 'rest') {
-      cancelRestCues()
       restTimer.start(round.restSec)
-      scheduleRestCues(round.restSec)
+      void scheduleRestCuesUntil(Date.now() + round.restSec * 1000)
     }
   }
 
   useSessionLiveActivity(activityConfig, {
-    onPause: () => {
-      if (phase === 'fighting') pauseRound()
-      else if (phase === 'rest') pauseRest()
+    onPause: (pausedRemainingMs) => {
+      if (phase === 'fighting') pauseRound(pausedRemainingMs)
+      else if (phase === 'rest') pauseRest(pausedRemainingMs)
     },
     onResume: (newEndsAtMs) => {
       if (phase === 'fighting') resumeRound(newEndsAtMs)
@@ -251,10 +299,7 @@ export function BagWorkRoundView({
     },
     onRestart: restartCurrentPhase,
     onEnd: () => {
-      cancelRoundActiveCues()
-      cancelRestCues()
-      roundTimer.stop()
-      restTimer.stop()
+      // Lock-screen End leaves the session (still in progress, resumable).
       onExit?.()
     },
     // "Next →" from the lock screen: fighting → end round early, rest →
@@ -312,12 +357,12 @@ export function BagWorkRoundView({
         Start Round
       </Button>
     ) : phase === 'fighting' ? (
-      <Button onClick={handleRoundEnd} variant="secondary" size="lg" className="w-full">
+      <Button onClick={() => handleRoundEnd()} variant="secondary" size="lg" className="w-full">
         End Round Early
       </Button>
     ) : (
       <Button
-        onClick={handleRestDone}
+        onClick={() => handleRestDone()}
         size="lg"
         className="w-full"
         style={{ backgroundColor: '#E8C860', color: '#020A08' }}

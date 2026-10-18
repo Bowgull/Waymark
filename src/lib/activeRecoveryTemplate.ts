@@ -108,3 +108,8 @@ export const FOAM_ROLLING_AREAS: FoamRollingArea[] = [
 export function totalFoamRollingSeconds(): number {
   return FOAM_ROLLING_AREAS.reduce((acc, a) => acc + (a.bilateral ? a.sec * 2 : a.sec), 0)
 }
+
+/** Seconds per foam-rolling step, both sides of a bilateral area in turn (the view's step list). */
+export function rollStepSecs(): number[] {
+  return FOAM_ROLLING_AREAS.flatMap(area => (area.bilateral ? [area.sec, area.sec] : [area.sec]))
+}

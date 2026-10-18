@@ -1,13 +1,16 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { RingTimer } from '@/components/RingTimer'
 import { Button } from '@/components/ui/button'
 import {
-  scheduleRoundActiveCues,
+  scheduleRoundCuesUntil,
+  scheduleRestCuesUntil,
   cancelRoundActiveCues,
-  scheduleRestCues,
   cancelRestCues,
 } from '@/lib/notifications'
+import { soundRoundEnd, soundRoundStart } from '@/lib/sounds'
+import { SKIP_ROPE_REST_SEC, isStaleCue, type EngineState } from '@/lib/sessionResume'
+import { useWakeLock } from '@/lib/wakeLock'
 
 import { SessionShell } from './SessionShell'
 import { resolveSkipRopeMoment } from './skipRopeMicrocopy'
@@ -22,15 +25,26 @@ interface SkipSession {
 
 type SkipPhase = 'ready' | 'skipping' | 'rest'
 
+const SKIP_REST_SEC = SKIP_ROPE_REST_SEC
+
+type RoundsState = Extract<EngineState, { kind: 'rounds' }>
+
 interface SkipRopeViewProps {
   skipSession: SkipSession
   onComplete: () => void
   onExit?: () => void
+  /** Saved state (session resume), already brought up to now. */
+  resume?: RoundsState | null
+  /** Called on every change so the session can be resumed exactly here. */
+  onPersist?: (state: RoundsState) => void
 }
 
-export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewProps) {
-  const [currentRound, setCurrentRound] = useState(1)
-  const [skipPhase, setSkipPhase] = useState<SkipPhase>('ready')
+export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersist }: SkipRopeViewProps) {
+  // Round is 1-based here; the saved state is 0-based like bag work.
+  const [currentRound, setCurrentRound] = useState(() => (resume ? resume.round + 1 : 1))
+  const [skipPhase, setSkipPhase] = useState<SkipPhase>(() =>
+    resume ? (resume.sub === 'fighting' ? 'skipping' : resume.sub) : 'ready',
+  )
   const roundTimer = useRestTimer()
   const restTimer = useRestTimer()
 
@@ -38,34 +52,78 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
   const isLastRound = currentRound >= totalRounds
   const accent = '#1E8A68'
 
+  // Resume: put the saved timer back and re-sync cues to its real end.
+  const restoredRef = useRef(false)
+  const restoreRound = roundTimer.restore
+  const restoreRest = restTimer.restore
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+    if (!resume?.timer) return
+    const t = resume.timer
+    if (resume.sub === 'fighting') {
+      restoreRound(t)
+      if (t.state === 'running') void scheduleRoundCuesUntil(t.endsAtMs, resume.round + 1 >= totalRounds ? null : SKIP_REST_SEC)
+    } else if (resume.sub === 'rest') {
+      restoreRest(t)
+      if (t.state === 'running') void scheduleRestCuesUntil(t.endsAtMs)
+    }
+  }, [resume, restoreRest, restoreRound, totalRounds])
+
+  const roundSnapshot = roundTimer.snapshot
+  const restSnapshot = restTimer.snapshot
+  useEffect(() => {
+    onPersist?.({
+      kind: 'rounds',
+      round: currentRound - 1,
+      sub: skipPhase === 'skipping' ? 'fighting' : skipPhase,
+      timer: skipPhase === 'skipping' ? roundSnapshot() : skipPhase === 'rest' ? restSnapshot() : null,
+    })
+  }, [onPersist, currentRound, skipPhase, roundSnapshot, restSnapshot, roundTimer.isRunning, roundTimer.isPaused, roundTimer.endsAtMs, restTimer.isRunning, restTimer.isPaused, restTimer.endsAtMs])
+
+  useWakeLock(
+    (skipPhase === 'skipping' && roundTimer.isRunning && !roundTimer.isPaused) ||
+    (skipPhase === 'rest' && restTimer.isRunning && !restTimer.isPaused),
+  )
+
   function startRound() {
+    soundRoundStart()
     roundTimer.start(skipSession.roundDurSec)
-    scheduleRoundActiveCues(skipSession.roundDurSec)
+    void scheduleRoundCuesUntil(Date.now() + skipSession.roundDurSec * 1000, isLastRound ? null : SKIP_REST_SEC)
     setSkipPhase('skipping')
   }
 
-  function endRound() {
+  const endRound = useCallback((natural = false) => {
+    const endedAt = natural && roundTimer.endsAtMs > 0 ? roundTimer.endsAtMs : Date.now()
+    if (natural && !isStaleCue(endedAt, Date.now())) soundRoundEnd()
     roundTimer.stop()
-    cancelRoundActiveCues()
+    void cancelRoundActiveCues()
     if (isLastRound) {
+      void cancelRestCues()
       onComplete()
     } else {
-      restTimer.start(60)
-      scheduleRestCues(60)
+      restTimer.startFrom(endedAt, SKIP_REST_SEC)
+      if (!natural) void scheduleRestCuesUntil(endedAt + SKIP_REST_SEC * 1000)
       setSkipPhase('rest')
     }
-  }
+  }, [isLastRound, onComplete, restTimer, roundTimer])
 
-  function nextRound() {
+  const nextRound = useCallback((natural = false) => {
+    if (natural && !isStaleCue(restTimer.endsAtMs, Date.now())) soundRoundStart()
     restTimer.stop()
-    cancelRestCues()
-    setCurrentRound(currentRound + 1)
+    void cancelRestCues()
+    setCurrentRound(r => r + 1)
     setSkipPhase('ready')
-  }
+  }, [restTimer])
 
-  if (skipPhase === 'skipping' && roundTimer.secondsRemaining <= 0 && roundTimer.isRunning) {
-    endRound()
-  }
+  // Time ran out (also after a lock: <= 0 catches a jump past zero).
+  useEffect(() => {
+    if (!(skipPhase === 'skipping' && roundTimer.isRunning && !roundTimer.isPaused && roundTimer.secondsRemaining <= 0)) return
+    const t = setTimeout(() => endRound(true), 0)
+    return () => clearTimeout(t)
+  }, [endRound, roundTimer.isPaused, roundTimer.isRunning, roundTimer.secondsRemaining, skipPhase])
+
+  // Rest runs into overtime ("Over") until Next Round is tapped, as before.
 
   // Live Activity for skip rope timer.
   const skipActivityConfig: LiveActivityConfig | null =
@@ -102,45 +160,38 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
           }
         : null
 
-  function pauseRound() {
-    cancelRoundActiveCues()
-    roundTimer.pause()
+  function pauseRound(pausedRemainingMs?: number) {
+    void cancelRoundActiveCues()
+    void cancelRestCues()
+    roundTimer.pause(pausedRemainingMs)
   }
   function resumeRound(newEndsAtMs?: number) {
-    roundTimer.resume(newEndsAtMs)
-    const remaining = newEndsAtMs
-      ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
-      : roundTimer.secondsRemaining
-    if (remaining > 0) scheduleRoundActiveCues(remaining)
+    const endsAt = roundTimer.resume(newEndsAtMs)
+    if (endsAt > Date.now()) void scheduleRoundCuesUntil(endsAt, isLastRound ? null : SKIP_REST_SEC)
   }
-  function pauseRest() {
-    cancelRestCues()
-    restTimer.pause()
+  function pauseRest(pausedRemainingMs?: number) {
+    void cancelRestCues()
+    restTimer.pause(pausedRemainingMs)
   }
   function resumeRest(newEndsAtMs?: number) {
-    restTimer.resume(newEndsAtMs)
-    const remaining = newEndsAtMs
-      ? Math.max(0, Math.round((newEndsAtMs - Date.now()) / 1000))
-      : restTimer.secondsRemaining
-    if (remaining > 0) scheduleRestCues(remaining)
+    const endsAt = restTimer.resume(newEndsAtMs)
+    if (endsAt > Date.now()) void scheduleRestCuesUntil(endsAt)
   }
 
   function restartCurrentPhase() {
     if (skipPhase === 'skipping') {
-      cancelRoundActiveCues()
       roundTimer.start(skipSession.roundDurSec)
-      scheduleRoundActiveCues(skipSession.roundDurSec)
+      void scheduleRoundCuesUntil(Date.now() + skipSession.roundDurSec * 1000, isLastRound ? null : SKIP_REST_SEC)
     } else if (skipPhase === 'rest') {
-      cancelRestCues()
-      restTimer.start(60)
-      scheduleRestCues(60)
+      restTimer.start(SKIP_REST_SEC)
+      void scheduleRestCuesUntil(Date.now() + SKIP_REST_SEC * 1000)
     }
   }
 
   useSessionLiveActivity(skipActivityConfig, {
-    onPause: () => {
-      if (skipPhase === 'skipping') pauseRound()
-      else if (skipPhase === 'rest') pauseRest()
+    onPause: (pausedRemainingMs) => {
+      if (skipPhase === 'skipping') pauseRound(pausedRemainingMs)
+      else if (skipPhase === 'rest') pauseRest(pausedRemainingMs)
     },
     onResume: (newEndsAtMs) => {
       if (skipPhase === 'skipping') resumeRound(newEndsAtMs)
@@ -148,10 +199,7 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
     },
     onRestart: restartCurrentPhase,
     onEnd: () => {
-      cancelRoundActiveCues()
-      cancelRestCues()
-      roundTimer.stop()
-      restTimer.stop()
+      // Lock-screen End leaves the session (still in progress, resumable).
       onExit?.()
     },
     // "Next →" from the lock screen: skipping → end round early, rest →
@@ -200,12 +248,12 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
         Start Round
       </Button>
     ) : skipPhase === 'skipping' ? (
-      <Button onClick={endRound} variant="secondary" size="lg" className="w-full">
+      <Button onClick={() => endRound()} variant="secondary" size="lg" className="w-full">
         End Round Early
       </Button>
     ) : (
       <Button
-        onClick={nextRound}
+        onClick={() => nextRound()}
         size="lg"
         className="w-full"
         style={{ backgroundColor: accent, color: '#020A08' }}
@@ -223,7 +271,7 @@ export function SkipRopeView({ skipSession, onComplete, onExit }: SkipRopeViewPr
         <h2 className="mt-1 text-display-lg text-foreground">Recover</h2>
         <div className="mt-8 rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
           <RingTimer
-            totalSeconds={60}
+            totalSeconds={SKIP_REST_SEC}
             secondsRemaining={restTimer.secondsRemaining}
             isOvertime={restTimer.isOvertime}
             label={restTimer.isOvertime ? 'Over' : 'Rest'}

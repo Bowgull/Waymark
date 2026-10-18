@@ -26,28 +26,32 @@ public struct PauseTimerIntent: LiveActivityIntent {
     public init() {}
 
     public func perform() async throws -> some IntentResult {
+        // What was left at the tap, for JS: the WebView is often suspended
+        // and hears about the pause only on unlock, when endsAt - now is 0.
+        var pausedRemainingMs: Double?
         for activity in Activity<WaymarkActivityAttributes>.activities {
             let state = activity.content.state
-            guard !state.isPaused, state.phase != "complete" else { continue }
+            // Pause only applies to a running timer (not the exercise card or a complete frame).
+            guard !state.isPaused, state.phase != "complete", state.phase != "exercise" else { continue }
 
             let remaining = max(0, state.endsAt.timeIntervalSince(Date()))
-            let newState = WaymarkActivityAttributes.ContentState(
-                phase: state.phase,
-                label: state.label,
-                detail: state.detail,
-                endsAt: state.endsAt,
-                startedAt: state.startedAt,
-                isPaused: true,
-                pausedRemaining: remaining,
-                completeMessage: state.completeMessage,
-                endPending: false
-            )
+            pausedRemainingMs = remaining * 1000.0
+            // Copy the state and change only what pause changes, so fields such
+            // as exerciseName survive.
+            var newState = state
+            newState.isPaused = true
+            newState.pausedRemaining = remaining
+            newState.endPending = false
             let content = ActivityContent(state: newState, staleDate: nil)
             await activity.update(content)
         }
 
+        let pausedAtMs = Date().timeIntervalSince1970 * 1000.0
+        let reportedRemainingMs = pausedRemainingMs
         await MainActor.run {
-            NotificationCenter.default.post(name: .waymarkTimerPauseRequested, object: nil)
+            var info: [String: Any] = ["pausedAtMs": pausedAtMs]
+            if let ms = reportedRemainingMs { info["pausedRemainingMs"] = ms }
+            NotificationCenter.default.post(name: .waymarkTimerPauseRequested, object: nil, userInfo: info)
         }
         return .result()
     }
@@ -70,17 +74,12 @@ public struct ResumeTimerIntent: LiveActivityIntent {
             let now = Date()
             let newEndsAt = now.addingTimeInterval(remaining)
             resumedEndsAt = newEndsAt
-            let newState = WaymarkActivityAttributes.ContentState(
-                phase: state.phase,
-                label: state.label,
-                detail: state.detail,
-                endsAt: newEndsAt,
-                startedAt: now,
-                isPaused: false,
-                pausedRemaining: nil,
-                completeMessage: state.completeMessage,
-                endPending: false
-            )
+            var newState = state
+            newState.endsAt = newEndsAt
+            newState.startedAt = now
+            newState.isPaused = false
+            newState.pausedRemaining = nil
+            newState.endPending = false
             let content = ActivityContent(state: newState, staleDate: nil)
             await activity.update(content)
         }
@@ -113,17 +112,8 @@ public struct RestartPhaseIntent: LiveActivityIntent {
         for activity in Activity<WaymarkActivityAttributes>.activities {
             let state = activity.content.state
             guard state.endPending else { continue }
-            let newState = WaymarkActivityAttributes.ContentState(
-                phase: state.phase,
-                label: state.label,
-                detail: state.detail,
-                endsAt: state.endsAt,
-                startedAt: state.startedAt,
-                isPaused: state.isPaused,
-                pausedRemaining: state.pausedRemaining,
-                completeMessage: state.completeMessage,
-                endPending: false
-            )
+            var newState = state
+            newState.endPending = false
             await activity.update(ActivityContent(state: newState, staleDate: nil))
         }
 
@@ -148,17 +138,8 @@ public struct RequestEndIntent: LiveActivityIntent {
         for activity in Activity<WaymarkActivityAttributes>.activities {
             let state = activity.content.state
             guard !state.endPending, state.phase != "complete" else { continue }
-            let newState = WaymarkActivityAttributes.ContentState(
-                phase: state.phase,
-                label: state.label,
-                detail: state.detail,
-                endsAt: state.endsAt,
-                startedAt: state.startedAt,
-                isPaused: state.isPaused,
-                pausedRemaining: state.pausedRemaining,
-                completeMessage: state.completeMessage,
-                endPending: true
-            )
+            var newState = state
+            newState.endPending = true
             await activity.update(ActivityContent(state: newState, staleDate: nil))
         }
 
@@ -168,17 +149,8 @@ public struct RequestEndIntent: LiveActivityIntent {
             for activity in Activity<WaymarkActivityAttributes>.activities {
                 let state = activity.content.state
                 guard state.endPending else { continue }
-                let newState = WaymarkActivityAttributes.ContentState(
-                    phase: state.phase,
-                    label: state.label,
-                    detail: state.detail,
-                    endsAt: state.endsAt,
-                    startedAt: state.startedAt,
-                    isPaused: state.isPaused,
-                    pausedRemaining: state.pausedRemaining,
-                    completeMessage: state.completeMessage,
-                    endPending: false
-                )
+                var newState = state
+                newState.endPending = false
                 await activity.update(ActivityContent(state: newState, staleDate: nil))
             }
         }

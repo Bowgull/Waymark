@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { heavyHaptic } from '@/lib/haptics'
+import {
+  timerPause,
+  timerRemainingMs,
+  timerResume,
+  timerStart,
+  type TimerSnap,
+} from '@/lib/sessionResume'
 
 export interface HoldTimerState {
   /** Seconds elapsed since start. */
@@ -24,83 +31,77 @@ export interface HoldTimerActions {
   start: () => void
   /** Stop the countdown (use before unmounting). */
   stop: () => void
-  /** Pause the countdown. Elapsed freezes until resume. */
-  pause: () => void
-  /** Resume a paused countdown. */
-  resume: () => void
+  /** Pause the countdown. `pausedRemainingMs` (lock screen) wins over endsAt - now. */
+  pause: (pausedRemainingMs?: number) => void
+  /** Resume a paused countdown (an explicit end time from the Live Activity wins). */
+  resume: (newEndsAtMs?: number) => void
+  /** Put a saved hold back (session resume). */
+  restore: (snap: TimerSnap | null) => void
+  /** The hold as it stands, for saving. */
+  snapshot: () => TimerSnap | null
 }
 
 /**
  * Hold timer state + actions, split out of HoldTimer so the ring can live in
  * a session body while its Start/Done action button sits in the footer slot.
+ * Wall-clock anchored (the end time is stored), never tick counted.
  */
 export function useHoldTimer(targetSec: number): HoldTimerState & HoldTimerActions {
-  const [elapsed, setElapsed] = useState(0)
-  const [running, setRunning] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
-  const [startedAtMs, setStartedAtMs] = useState(0)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const startedAtRef = useRef<number>(0)
-  const pausedElapsedRef = useRef<number>(0)
+  const [snap, setSnap] = useState<TimerSnap | null>(null)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  const snapRef = useRef<TimerSnap | null>(null)
 
-  const reachedTarget = elapsed >= targetSec
-  const secondsRemaining = Math.max(0, targetSec - elapsed)
-  const endsAtMs = startedAtMs > 0 ? startedAtMs + targetSec * 1000 : 0
+  const apply = useCallback((next: TimerSnap | null) => {
+    snapRef.current = next
+    setSnap(next)
+    setNowMs(Date.now())
+  }, [])
 
-  const startTicking = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    intervalRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
-    }, 500)
+  const ticking = snap?.state === 'running'
+  useEffect(() => {
+    if (!ticking) return
+    const id = setInterval(() => setNowMs(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [ticking])
+
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible') setNowMs(Date.now())
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   const start = useCallback(() => {
-    if (intervalRef.current) return
-    const now = Date.now()
-    startedAtRef.current = now
-    setStartedAtMs(now)
-    setRunning(true)
-    setIsPaused(false)
-    pausedElapsedRef.current = 0
-    startTicking()
-  }, [startTicking])
+    if (snapRef.current) return
+    apply(timerStart(targetSec, Date.now()))
+  }, [apply, targetSec])
 
-  const stop = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-    setRunning(false)
-    setElapsed(0)
-    setIsPaused(false)
-    setStartedAtMs(0)
-    startedAtRef.current = 0
-    pausedElapsedRef.current = 0
-  }, [])
+  const stop = useCallback(() => apply(null), [apply])
 
-  const pause = useCallback(() => {
-    if (!running || isPaused) return
-    pausedElapsedRef.current = Math.floor((Date.now() - startedAtRef.current) / 1000)
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-    setIsPaused(true)
-  }, [running, isPaused])
+  const pause = useCallback((pausedRemainingMs?: number) => {
+    const cur = snapRef.current
+    if (!cur || cur.state !== 'running') return
+    apply(timerPause(cur, Date.now(), pausedRemainingMs))
+  }, [apply])
 
-  const resume = useCallback(() => {
-    if (!running || !isPaused) return
-    startedAtRef.current = Date.now() - pausedElapsedRef.current * 1000
-    setStartedAtMs(startedAtRef.current)
-    setIsPaused(false)
-    startTicking()
-  }, [running, isPaused, startTicking])
+  const resume = useCallback((newEndsAtMs?: number) => {
+    const cur = snapRef.current
+    if (!cur || cur.state !== 'paused') return
+    apply(timerResume(cur, Date.now(), newEndsAtMs))
+  }, [apply])
 
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [])
+  const restore = useCallback((next: TimerSnap | null) => apply(next), [apply])
+  const snapshot = useCallback(() => snapRef.current, [])
+
+  const remainingMs = snap ? Math.max(0, timerRemainingMs(snap, nowMs)) : targetSec * 1000
+  const secondsRemaining = snap ? Math.ceil(remainingMs / 1000) : 0
+  const elapsed = snap ? Math.max(0, Math.floor((targetSec * 1000 - remainingMs) / 1000)) : 0
+  const running = snap != null
+  const isPaused = snap?.state === 'paused'
+  const reachedTarget = snap ? remainingMs <= 0 : elapsed >= targetSec
+  const endsAtMs = !snap ? 0 : snap.state === 'running' ? snap.endsAtMs : nowMs + snap.remainingMs
+  const startedAtMs = !snap ? 0 : snap.state === 'running' ? snap.startedAtMs : endsAtMs - targetSec * 1000
 
   useEffect(() => {
     if (reachedTarget && running && !isPaused) heavyHaptic()
@@ -118,5 +119,7 @@ export function useHoldTimer(targetSec: number): HoldTimerState & HoldTimerActio
     stop,
     pause,
     resume,
+    restore,
+    snapshot,
   }
 }

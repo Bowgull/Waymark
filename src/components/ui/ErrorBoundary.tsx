@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 import logoPng from '@/assets/brand/Logo.png'
 import { logger } from '@/lib/logger'
 import { apiFetch } from '@/lib/api'
-import { clearWorkoutRecovery } from '@/lib/workoutRecovery'
+import { clearResume } from '@/lib/sessionResume'
 
 interface Props {
   children: ReactNode
@@ -36,14 +36,32 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.reload()
   }
 
+  /** The session id in the URL, when the crash was on a workout screen. */
+  private sessionIdFromPath(): string | null {
+    const match = typeof window !== 'undefined' ? window.location.pathname.match(/\/session\/([^/]+)/) : null
+    return match?.[1] ?? null
+  }
+
+  private clearSessionResume() {
+    const sessionId = this.sessionIdFromPath()
+    if (!sessionId) return
+    try {
+      clearResume(window.localStorage, sessionId)
+    } catch {
+      // storage unavailable
+    }
+  }
+
   handleRetry = () => {
-    clearWorkoutRecovery()
+    // The saved step may be what crashed the render: retry from the server's view.
+    this.clearSessionResume()
     this.setState({ hasError: false, error: null })
   }
 
   handleAbandonSession = () => {
     const match = typeof window !== 'undefined' ? window.location.pathname.match(/\/session\/([^/]+)/) : null
     const sessionId = match?.[1]
+    this.clearSessionResume()
     if (sessionId) {
       logger.warn('session', 'session abandoned via error boundary', { sessionId }, 'Session abandoned via error-boundary Back button. POST /abandon fired.')
       apiFetch(`/api/sessions/${sessionId}/abandon`, { method: 'POST' }).catch(() => {})

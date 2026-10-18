@@ -62,7 +62,7 @@ interface WaymarkLiveActivityPlugin {
   getCurrent(): Promise<GetCurrentResult>
   addListener(
     eventName: 'pauseRequested',
-    listener: () => void,
+    listener: (event: { pausedRemainingMs?: number; pausedAtMs?: number }) => void,
   ): Promise<PluginListenerHandle>
   addListener(
     eventName: 'resumeRequested',
@@ -160,7 +160,25 @@ export async function isLiveActivitySupported(): Promise<boolean> {
   }
 }
 
-export async function startLiveActivity(
+// One native call at a time. An update sent while start() was still in
+// flight used to be dropped (no id yet), and two engines mounting together
+// could each start an activity. Queued calls run in order.
+let queue: Promise<unknown> = Promise.resolve()
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn, fn)
+  queue = run.catch(() => null)
+  return run
+}
+
+export function startLiveActivity(
+  sessionType: SessionType,
+  sessionLabel: string,
+  state: ActivityState,
+): Promise<string | null> {
+  return serialized(() => startLiveActivityNow(sessionType, sessionLabel, state))
+}
+
+async function startLiveActivityNow(
   sessionType: SessionType,
   sessionLabel: string,
   state: ActivityState,
@@ -215,7 +233,11 @@ export async function startLiveActivity(
   }
 }
 
-export async function updateLiveActivity(state: ActivityState): Promise<void> {
+export function updateLiveActivity(state: ActivityState): Promise<void> {
+  return serialized(() => updateLiveActivityNow(state))
+}
+
+async function updateLiveActivityNow(state: ActivityState): Promise<void> {
   if (!(await isLiveActivitySupported())) return
   await ensureAdopted()
   if (!currentActivityId) return
@@ -226,9 +248,16 @@ export async function updateLiveActivity(state: ActivityState): Promise<void> {
   }
 }
 
-export async function endLiveActivity(
+export function endLiveActivity(
   finalState?: ActivityState,
   dismissAfterMs = 0,
+): Promise<void> {
+  return serialized(() => endLiveActivityNow(finalState, dismissAfterMs))
+}
+
+async function endLiveActivityNow(
+  finalState: ActivityState | undefined,
+  dismissAfterMs: number,
 ): Promise<void> {
   if (!(await isLiveActivitySupported())) return
   await ensureAdopted()
@@ -243,7 +272,11 @@ export async function endLiveActivity(
   }
 }
 
-export async function endAllLiveActivities(): Promise<void> {
+export function endAllLiveActivities(): Promise<void> {
+  return serialized(endAllLiveActivitiesNow)
+}
+
+async function endAllLiveActivitiesNow(): Promise<void> {
   if (!(await isLiveActivitySupported())) return
   try {
     await native.endAll()
@@ -259,12 +292,21 @@ export function getCurrentLiveActivityId(): string | null {
   return currentActivityId
 }
 
+/**
+ * Lock-screen Pause. The WebView is often suspended when the tap happens and
+ * hears about it only on unlock, so `endsAt - now` would be wrong (often 0).
+ * The native intent reports what was left at the tap (`pausedRemainingMs`);
+ * the handler gets it when present.
+ */
 export async function onPauseRequested(
-  handler: () => void,
+  handler: (pausedRemainingMs: number | undefined) => void,
 ): Promise<PluginListenerHandle | null> {
   if (!isNative) return null
   try {
-    return await native.addListener('pauseRequested', handler)
+    return await native.addListener('pauseRequested', (event) => {
+      const ms = event?.pausedRemainingMs
+      handler(typeof ms === 'number' && Number.isFinite(ms) ? Math.max(0, ms) : undefined)
+    })
   } catch {
     return null
   }

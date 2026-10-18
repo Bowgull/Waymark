@@ -2,8 +2,8 @@
 // as a coach would, with typed rounds and per-round rationale. Falls back
 // to null on AI offline so the caller applies a deterministic template.
 
-import { eq } from 'drizzle-orm'
-import { coachingOutputs, combos as combosTable, dailyLogs, exercises, mtClassLogs, settings, trainingMaxes, userProfile } from '../db/schema'
+import { desc, eq } from 'drizzle-orm'
+import { coachingOutputs, combos as combosTable, dailyLogs, exercises, mtClassLogs, sessions, settings, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
@@ -21,7 +21,7 @@ interface BagPrescriptionInput {
   rules?: BagRules
 }
 
-interface AvailableCombo {
+export interface AvailableCombo {
   id: string
   text: string
   tier: string
@@ -31,11 +31,36 @@ interface AvailableCombo {
   formTips: string | null
 }
 
-function summarizeCombo(c: AvailableCombo): string {
+/** Mastery is the sum of the last five ratings (1-3 each), so it tops out at 15. */
+export const MASTERY_MAX = 15
+
+export function summarizeCombo(c: AvailableCombo): string {
   const tips = (c.formTips ?? '').slice(0, 180)
   const tags = c.techniques || '-'
   const fav = c.isFavourite ? ' fav' : ''
-  return `  - ${c.id} [${c.tier}, ${tags}, mastery ${c.masteryScore}/10${fav}]: ${c.text}${tips ? ` — tips: ${tips}` : ''}`
+  return `  - ${c.id} [${c.tier}, ${tags}, mastery ${c.masteryScore}/${MASTERY_MAX}${fav}]: ${c.text}${tips ? ` — tips: ${tips}` : ''}`
+}
+
+interface MtNoteRow {
+  focusSkill: string | null
+  weakness: string | null
+  concept: string | null
+  actionItems: string | null
+}
+
+/** One line per class, newest first (rows arrive newest first), at most five with content. */
+export function recentMtNoteLines(rows: MtNoteRow[]): string[] {
+  return rows
+    .map(l => {
+      const parts: string[] = []
+      if (l.focusSkill) parts.push(`focus: ${l.focusSkill}`)
+      if (l.weakness) parts.push(`weakness: ${l.weakness}`)
+      if (l.concept) parts.push(`concept: ${l.concept}`)
+      if (l.actionItems) parts.push(`action: ${l.actionItems}`)
+      return parts.join(' | ').slice(0, 240)
+    })
+    .filter(s => s.length > 0)
+    .slice(0, 5)
 }
 
 function buildPrompt(
@@ -100,7 +125,13 @@ export async function runBagPrescription(
       weakness: mtClassLogs.weakness,
       concept: mtClassLogs.concept,
       actionItems: mtClassLogs.actionItems,
-    }).from(mtClassLogs).limit(10),
+    })
+      .from(mtClassLogs)
+      .innerJoin(sessions, eq(mtClassLogs.sessionId, sessions.id))
+      // Newest class first: the notes have no date of their own, so the
+      // session's day (then its finish time) orders them.
+      .orderBy(desc(sessions.scheduledDate), desc(sessions.completedAt))
+      .limit(10),
     db.select().from(combosTable).where(eq(combosTable.unlocked, 1)),
   ])
 
@@ -122,17 +153,7 @@ export async function runBagPrescription(
 
   if (available.length === 0) return null
 
-  const recentMtNotes: string[] = mtLogs
-    .slice(-5)
-    .map(l => {
-      const parts: string[] = []
-      if (l.focusSkill) parts.push(`focus: ${l.focusSkill}`)
-      if (l.weakness) parts.push(`weakness: ${l.weakness}`)
-      if (l.concept) parts.push(`concept: ${l.concept}`)
-      if (l.actionItems) parts.push(`action: ${l.actionItems}`)
-      return parts.join(' | ').slice(0, 240)
-    })
-    .filter(s => s.length > 0)
+  const recentMtNotes = recentMtNoteLines(mtLogs)
 
   const latestBodyweightKg = await getLatestBodyweightKg(db)
 

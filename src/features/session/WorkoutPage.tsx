@@ -1,13 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import { ApiError, apiFetch, newIdempotencyKey } from '@/lib/api'
+import { apiFetch, newIdempotencyKey } from '@/lib/api'
 import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
 import { getMarkAsset, getSessionAccent } from '@/lib/markAssets'
 import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
-import { scheduleStrengthRestEnd, cancelStrengthRestEnd } from '@/lib/notifications'
-import { saveWorkoutProgress, getWorkoutRecovery, clearWorkoutRecovery, validateWorkoutRecovery } from '@/lib/workoutRecovery'
+import { scheduleStrengthRestEnd, cancelStrengthRestEnd, cancelAllCues } from '@/lib/notifications'
+import { loadOutbox } from '@/lib/outbox'
+import { rollStepSecs } from '@/lib/activeRecoveryTemplate'
+import { soundRoundStart } from '@/lib/sounds'
+import { useWakeLock } from '@/lib/wakeLock'
+import {
+  SKIP_ROPE_REST_SEC as SKIP_REST_SEC,
+  clampStrengthPosition,
+  clearResume,
+  deriveMobilityPosition,
+  deriveStrengthPosition,
+  engineForType,
+  isResumablePhase,
+  isStaleCue,
+  loadResume,
+  nextStrengthPosition,
+  restoreForNow,
+  resumeDecision,
+  saveResume,
+  type EngineState,
+  type RoundSpec,
+  type SessionResumeState,
+  type StorageLike,
+  type TimerSnap,
+} from '@/lib/sessionResume'
 import { logger } from '@/lib/logger'
 import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { Button } from '@/components/ui/button'
@@ -221,17 +244,35 @@ interface MtClassWorkoutData {
 type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-warmup' | 'fr-run'
 type RoundPhase = 'ready' | 'fighting' | 'rest'
 
-function SkipWarmupTimer({ durationSec, onComplete, description }: {
+function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersist }: {
   durationSec: number
   onComplete: () => void
   description?: string
+  resume?: TimerSnap | null
+  onPersist?: (state: EngineState) => void
 }) {
   const timer = useRestTimer()
-  const [started, setStarted] = useState(false)
+  const [started, setStarted] = useState(() => resume != null)
   const warmupIsOvertime = timer.isOvertime
   const warmupIsRunning = timer.isRunning
   const warmupSecondsRemaining = timer.secondsRemaining
   const stopWarmupTimer = timer.stop
+
+  // Resume: the warm-up clock carries on from its saved end time.
+  const restoredRef = useRef(false)
+  const restoreTimer = timer.restore
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+    if (resume) restoreTimer(resume)
+  }, [restoreTimer, resume])
+
+  const warmupSnapshot = timer.snapshot
+  useEffect(() => {
+    onPersist?.({ kind: 'warmup', timer: warmupSnapshot() })
+  }, [onPersist, warmupSnapshot, timer.isRunning, timer.isPaused, timer.endsAtMs])
+
+  useWakeLock(started && timer.isRunning && !timer.isPaused)
 
   function handleStart() {
     timer.start(durationSec)
@@ -239,11 +280,11 @@ function SkipWarmupTimer({ durationSec, onComplete, description }: {
   }
 
   useEffect(() => {
-    if (started && warmupIsRunning && warmupSecondsRemaining <= 0 && !warmupIsOvertime) {
+    if (started && warmupIsRunning && !timer.isPaused && warmupSecondsRemaining <= 0 && !warmupIsOvertime) {
       stopWarmupTimer()
       onComplete()
     }
-  }, [onComplete, started, stopWarmupTimer, warmupIsOvertime, warmupIsRunning, warmupSecondsRemaining])
+  }, [onComplete, started, stopWarmupTimer, timer.isPaused, warmupIsOvertime, warmupIsRunning, warmupSecondsRemaining])
 
   return (
     <div className="animate-fade-in flex flex-col items-center py-8">
@@ -278,6 +319,45 @@ function SkipWarmupTimer({ durationSec, onComplete, description }: {
   )
 }
 
+/** The phases each engine can render. Anything else (an old save) is mapped onto one. */
+function normalizePhase(type: string, phase: string): Phase {
+  if (phase === 'mark-earned' || phase === 'combo-unlock') return 'complete'
+  if (phase === 'complete') return 'complete'
+  switch (type) {
+    case 'foundation_run':
+      return phase === 'fr-run' ? 'fr-run' : 'fr-warmup'
+    case 'bag_work':
+      return phase === 'bag-preview' || phase === 'bag-warmup' || phase === 'combo-rating' ? phase : 'exercise'
+    case 'strength':
+      return phase === 'strength-warmup-skip' || phase === 'rest' ? phase : 'exercise'
+    default:
+      return 'exercise'
+  }
+}
+
+function resumeStorage(): StorageLike | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
+/** Set ids whose log is still waiting in this phone's outbox (count as logged). */
+function locallyLoggedSetIds(sessionId: string): Set<string> {
+  const ids = new Set<string>()
+  try {
+    for (const entry of loadOutbox(resumeStorage())) {
+      if (entry.sessionId !== sessionId || entry.kind !== 'set') continue
+      const m = entry.path.match(/\/api\/strength-sets\/([^/?]+)/)
+      if (m) ids.add(m[1])
+    }
+  } catch {
+    // no outbox
+  }
+  return ids
+}
+
 export function WorkoutPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -300,20 +380,76 @@ export function WorkoutPage() {
   const [phase, setPhase] = useState<Phase>('entrance')
   const [submitting, setSubmitting] = useState(false)
   const [unlockSuggestions, setUnlockSuggestions] = useState<{ suggestions: UnlockSuggestion[]; message: string } | null>(null)
+  // Saved engine state handed to the engine view that mounts first after a resume.
+  const [engineResume, setEngineResume] = useState<EngineState | null>(null)
+  // A session saved more than RESUME_AUTO_MAX_MS ago: ask resume or end.
+  const [staleResume, setStaleResume] = useState<SessionResumeState | null>(null)
+  const pendingRestoreRef = useRef<(() => void) | null>(null)
   const { show: showToast, ToastContainer } = useToast()
   // One Idempotency-Key per finish of this session: a double tap or a retry is the same write.
   const finishKeyRef = useRef(newIdempotencyKey())
 
   const restTimer = useRestTimer()
 
-  function exitToToday() {
+  // ─── Resume persistence ─────────────────────────────────────
+  // Saved on every step: WorkoutPage's position plus the engine view's own
+  // state (timer end times, sub-phase, drafts). Armed once the load (and any
+  // restore) is done, so defaults never overwrite a saved session.
+  const armedRef = useRef(false)
+  const posRef = useRef({ phase: 'entrance' as Phase, exerciseIdx: 0, setIdx: 0, roundIdx: 0 })
+  const engineStateRef = useRef<EngineState | null>(null)
+
+  const writeResume = useCallback(() => {
+    if (!id || !sessionType || !armedRef.current) return
+    const pos = posRef.current
+    if (!isResumablePhase(pos.phase)) return
+    let { phase: savedPhase, exerciseIdx: savedEx, setIdx: savedSet } = pos
+    // The 3 s breathe interstitial resumes on the exercise it leads to.
+    if (savedPhase === 'breathe') {
+      savedPhase = sessionType === 'foundation_run' ? 'fr-warmup' : 'exercise'
+      savedEx += 1
+      savedSet = 0
+    }
+    if (savedPhase === 'mark-earned' || savedPhase === 'combo-unlock') savedPhase = 'complete'
+    saveResume(resumeStorage(), {
+      sessionId: id,
+      engine: engineForType(sessionType),
+      phase: savedPhase,
+      exerciseIdx: savedEx,
+      setIdx: savedSet,
+      roundIdx: pos.roundIdx,
+      engineState: engineStateRef.current,
+    }, Date.now())
+  }, [id, sessionType])
+
+  /** Engine views call this on every change of their own state. */
+  const persistEngine = useCallback((state: EngineState) => {
+    engineStateRef.current = state
+    writeResume()
+  }, [writeResume])
+
+  // The engine has taken its saved state; later mounts start fresh.
+  useEffect(() => {
+    if (!engineResume) return
+    const t = setTimeout(() => setEngineResume(null), 0)
+    return () => clearTimeout(t)
+  }, [engineResume, phase, exerciseIdx, setIdx, roundIdx])
+
+  /**
+   * Back / x: leave the session. It stays in progress with everything saved;
+   * Today shows it with Resume. Ending is a deliberate act (hold the x on
+   * Today, then choose), never a plain tap here.
+   */
+  function leaveSession() {
+    writeResume()
     try {
       sessionStorage.setItem('waymark_suppress_auto_resume_until', String(Date.now() + 2 * 60 * 1000))
     } catch {
       // sessionStorage can be unavailable in private contexts.
     }
-    cancelStrengthRestEnd()
-    restTimer.stop()
+    // Cues and the lock screen belong to the open session screen; resume
+    // re-syncs both from the saved end times.
+    void cancelAllCues()
     void endAllLiveActivities()
     navigate('/today?resume=0', { state: { suppressAutoResume: true } })
   }
@@ -343,6 +479,10 @@ export function WorkoutPage() {
     pendingSetValuesRef.current = { weightKg, reps }
   }, [])
 
+  // The exercise card's timestamps are ignored by the widget; one stable
+  // value keeps the payload from changing on every render.
+  const [exerciseCardAtMs] = useState(() => Date.now())
+
   let strengthActivityConfig: LiveActivityConfig | null = null
   if (isStrengthSession && strengthActiveName) {
     if (phase === 'rest' && restTimer.isRunning) {
@@ -353,6 +493,8 @@ export function WorkoutPage() {
           phase: 'rest',
           label: 'Rest',
           detail: strengthActiveName,
+          // Kept on the rest card too, so the lock screen never loses the lift.
+          exerciseName: strengthActiveName,
           startedAt: restTimer.startedAtMs,
           endsAt: restTimer.endsAtMs,
           isPaused: restTimer.isPaused,
@@ -362,7 +504,6 @@ export function WorkoutPage() {
         },
       }
     } else if (phase === 'exercise' && strengthActiveTotalSets > 0) {
-      const now = Date.now()
       strengthActivityConfig = {
         sessionType: 'strength',
         sessionLabel: 'Strength',
@@ -373,8 +514,8 @@ export function WorkoutPage() {
           exerciseName: strengthActiveName,
           // Timer fields ignored by the widget in exercise phase, but the
           // payload shape requires them.
-          startedAt: now,
-          endsAt: now,
+          startedAt: exerciseCardAtMs,
+          endsAt: exerciseCardAtMs,
           isPaused: false,
         },
       }
@@ -382,9 +523,9 @@ export function WorkoutPage() {
   }
 
   useSessionLiveActivity(strengthActivityConfig, {
-    onPause: () => {
-      cancelStrengthRestEnd()
-      restTimer.pause()
+    onPause: (pausedRemainingMs) => {
+      void cancelStrengthRestEnd()
+      restTimer.pause(pausedRemainingMs)
     },
     onResume: (newEndsAtMs) => {
       const endsAt = restTimer.resume(newEndsAtMs)
@@ -394,12 +535,13 @@ export function WorkoutPage() {
       if (!isStrengthSession || phase !== 'rest') return
       const currentSet = strengthData?.exercises[exerciseIdx]?.sets[setIdx]
       const restSec = currentSet?.restSec ?? 60
-      cancelStrengthRestEnd()
+      void cancelStrengthRestEnd()
       restTimer.start(restSec)
       void scheduleStrengthRestEnd(Date.now() + restSec * 1000)
     },
     onEnd: () => {
-      exitToToday()
+      // Lock-screen End leaves the session (still in progress, resumable).
+      leaveSession()
     },
     onCompleteSet: () => {
       if (phase !== 'exercise') return
@@ -414,17 +556,20 @@ export function WorkoutPage() {
     onAdvance: () => {
       // "Skip →" during rest — cut the rest short and move on.
       if (phase === 'rest') {
-        cancelStrengthRestEnd()
+        void cancelStrengthRestEnd()
         handleNextSet()
       }
     },
   })
+
+  useWakeLock(phase === 'rest' && restTimer.isRunning && !restTimer.isPaused)
 
   useEffect(() => {
     if (id) logger.setSessionId(id)
     return () => logger.setSessionId(undefined)
   }, [id])
 
+  const restoreRest = restTimer.restore
   useEffect(() => {
     if (!id) return
     async function load() {
@@ -434,66 +579,79 @@ export function WorkoutPage() {
         if (!session) throw new Error('Session not found')
 
         setSessionType(session.type)
+        const live = session.status !== 'completed' && session.status !== 'skipped'
 
-        // Skip entrance for in-progress non-strength sessions.
-        // Strength recovery is validated after workout rows are loaded.
-        if (session.status === 'in_progress' && session.type !== 'strength') {
-          const recovery = getWorkoutRecovery(id!)
-          if (recovery) {
-            setExerciseIdx(recovery.exerciseIdx)
-            setSetIdx(recovery.setIdx)
-            setRoundIdx(recovery.roundIdx)
-            setPhase(recovery.phase as Phase)
-          } else {
-            setPhase(session.type === 'foundation_run' ? 'fr-warmup' : 'exercise')
-          }
-        }
+        // Fetch the engine's rows (starting them if the session has none yet).
+        let setCounts: number[] = []
+        let rounds: RoundSpec[] | undefined
+        let restAutoEnds = true
+        let serverPosition: { phase: Phase; exerciseIdx: number; setIdx: number } = { phase: 'exercise', exerciseIdx: 0, setIdx: 0 }
 
         if (session.type === 'foundation_run') {
           let data = await apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/foundation-run-workout`)
-          if (session.status !== 'completed' && session.status !== 'skipped' && (!data.runSession || data.postureExercises.length === 0)) {
+          if (live && (!data.runSession || data.postureExercises.length === 0)) {
             data = await apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/start-foundation-run`, { method: 'POST' })
           }
           setFoundationRunData(data)
+          setCounts = data.postureExercises.map(e => Math.max(1, e.sets ?? 1))
+          const next = deriveMobilityPosition(data.postureExercises)
+          serverPosition = next === 'done'
+            ? { phase: 'fr-run', exerciseIdx: 0, setIdx: 0 }
+            : { phase: 'fr-warmup', exerciseIdx: next, setIdx: 0 }
         } else if (session.type === 'mobility') {
           let data = await apiFetch<MobilityWorkoutData>(`/api/sessions/${id}/mobility-workout`)
-          if (session.status !== 'completed' && session.status !== 'skipped' && data.exercises.length === 0) {
+          if (live && data.exercises.length === 0) {
             data = await apiFetch<MobilityWorkoutData>(`/api/sessions/${id}/start-mobility`, { method: 'POST' })
           }
           setMobilityData(data)
+          setCounts = data.exercises.map(e => Math.max(1, e.sets ?? 1))
+          const next = deriveMobilityPosition(data.exercises)
+          serverPosition = next === 'done'
+            ? { phase: 'complete', exerciseIdx: Math.max(0, data.exercises.length - 1), setIdx: 0 }
+            : { phase: 'exercise', exerciseIdx: next, setIdx: 0 }
         } else if (session.type === 'bag_work') {
           let data = await apiFetch<BagWorkoutData>(`/api/sessions/${id}/bag-workout`)
-          if (session.status !== 'completed' && session.status !== 'skipped' && data.rounds.length === 0) {
+          if (live && data.rounds.length === 0) {
             data = await apiFetch<BagWorkoutData>(`/api/sessions/${id}/start-bag-work`, { method: 'POST' })
           }
           setBagData(data)
+          rounds = data.rounds.map(r => ({ durationSec: r.durationSec, restSec: r.restSec }))
         } else if (session.type === 'running') {
           let data = await apiFetch<RunWorkoutData>(`/api/sessions/${id}/run-workout`)
-          if (session.status !== 'completed' && session.status !== 'skipped' && !data.runSession) {
+          if (live && !data.runSession) {
             data = await apiFetch<RunWorkoutData>(`/api/sessions/${id}/start-run`, { method: 'POST' })
           }
           setRunData(data)
         } else if (session.type === 'skip_rope') {
           let data = await apiFetch<SkipWorkoutData>(`/api/sessions/${id}/skip-rope-workout`)
-          if (session.status !== 'completed' && session.status !== 'skipped' && !data.skipSession) {
+          if (live && !data.skipSession) {
             data = await apiFetch<SkipWorkoutData>(`/api/sessions/${id}/start-skip-rope`, { method: 'POST' })
           }
           setSkipData(data)
+          if (data.skipSession) {
+            rounds = Array.from({ length: data.skipSession.roundCount }, () => ({ durationSec: data.skipSession!.roundDurSec, restSec: SKIP_REST_SEC }))
+            restAutoEnds = false
+          }
         } else if (session.type === 'active_recovery') {
           let data = await apiFetch<RecoveryWorkoutData>(`/api/sessions/${id}/recovery-workout`)
-          if (session.status !== 'completed' && session.status !== 'skipped' && !data.recoverySession) {
+          if (live && !data.recoverySession) {
             data = await apiFetch<RecoveryWorkoutData>(`/api/sessions/${id}/start-recovery`, { method: 'POST' })
           }
           setRecoveryData(data)
         } else if (session.type === 'mt_class') {
           let data = await apiFetch<MtClassWorkoutData>(`/api/sessions/${id}/mt-class-workout`)
-          if (session.status !== 'completed' && session.status !== 'skipped' && !data.mtLog) {
+          if (live && !data.mtLog) {
             data = await apiFetch<MtClassWorkoutData>(`/api/sessions/${id}/start-mt-class`, { method: 'POST' })
           }
           setMtData(data)
         } else {
           const data = await apiFetch<StrengthWorkoutData>(`/api/sessions/${id}/workout`)
           setStrengthData(data)
+          setCounts = data.exercises.map(e => e.sets.length)
+          const next = deriveStrengthPosition(data.exercises, locallyLoggedSetIds(id!))
+          serverPosition = next === 'done'
+            ? { phase: 'complete', exerciseIdx: Math.max(0, data.exercises.length - 1), setIdx: 0 }
+            : { phase: 'exercise', ...next }
 
           // Fetch exercise histories for weight prescription context
           const uniqueExercises = new Map(data.exercises.map(e => [e.exerciseId, e.section ?? 'main']))
@@ -507,75 +665,121 @@ export function WorkoutPage() {
             })
           )
           setExerciseHistories(histories)
-
-          if (session.status === 'in_progress') {
-            const recovery = getWorkoutRecovery(id!)
-            const validRecovery = recovery
-              ? validateWorkoutRecovery(recovery, {
-                sessionId: id!,
-                exerciseSetCounts: data.exercises.map(exercise => exercise.sets.length),
-              })
-              : null
-            if (validRecovery) {
-              setExerciseIdx(validRecovery.exerciseIdx)
-              setSetIdx(validRecovery.setIdx)
-              setRoundIdx(validRecovery.roundIdx)
-              setPhase(validRecovery.phase === 'rest' ? 'exercise' : validRecovery.phase as Phase)
-            } else {
-              clearWorkoutRecovery()
-              setExerciseIdx(0)
-              setSetIdx(0)
-              setRoundIdx(0)
-              setPhase('exercise')
-            }
-          }
         }
+
+        if (session.status !== 'in_progress') {
+          // Not started (or already closed): no resume. Clear any leftover save.
+          if (!live) clearResume(resumeStorage(), id!)
+          return
+        }
+
+        const saved = loadResume(resumeStorage(), id!)
+        if (saved && saved.engine === engineForType(session.type)) {
+          const restore = () => applyResume(session.type, saved, { rounds, restAutoEnds, setCounts })
+          if (resumeDecision(saved, Date.now()) === 'ask') {
+            setStaleResume(saved)
+            pendingRestoreRef.current = restore
+          } else {
+            restore()
+          }
+          return
+        }
+
+        // No save on this phone (another device, cleared storage): pick up
+        // from what the server knows. Strength: the first unlogged set.
+        // Foundation: the first exercise not marked done.
+        setExerciseIdx(serverPosition.exerciseIdx)
+        setSetIdx(serverPosition.setIdx)
+        setRoundIdx(0)
+        setPhase(serverPosition.phase)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         console.error('Failed to load workout:', e)
         logger.error('session', 'workout load failed', { sessionId: id, message }, 'GET /sessions/:id failed or 404. Workout screen has no data.')
         showToast("Couldn't load workout. Check logs in Settings.", 'warning')
       } finally {
+        armedRef.current = true
         setLoading(false)
       }
     }
+
+    /** Bring the save up to now (elapsed phases advance) and put it back. */
+    function applyResume(type: string, saved: SessionResumeState, ctx: { rounds?: RoundSpec[]; restAutoEnds: boolean; setCounts: number[] }) {
+      const now = Date.now()
+      const rollSecs = type === 'active_recovery' ? rollStepSecs() : undefined
+      const { state, completed } = restoreForNow(saved, now, { rounds: ctx.rounds, restAutoEnds: ctx.restAutoEnds, setCounts: ctx.setCounts, rollSecs })
+      let nextPhase = normalizePhase(type, state.phase)
+      let ex = state.exerciseIdx
+      let set = state.setIdx
+      if (type === 'strength' || engineForType(type) === 'strength') {
+        // Clamp to the workout as it is now; never an "expired" dead end.
+        const pos = clampStrengthPosition({ exerciseIdx: ex, setIdx: set }, ctx.setCounts)
+        ex = pos.exerciseIdx
+        set = pos.setIdx
+      } else if (ctx.setCounts.length > 0) {
+        ex = Math.min(Math.max(0, ex), ctx.setCounts.length - 1)
+        set = Math.min(Math.max(0, set), (ctx.setCounts[ex] ?? 1) - 1)
+      }
+      const es = state.engineState
+      if (completed) {
+        nextPhase = type === 'bag_work' ? 'combo-rating' : 'complete'
+      }
+      if (es?.kind === 'strength' && nextPhase === 'rest' && es.restTimer) {
+        restoreRest(es.restTimer)
+        if (es.restTimer.state === 'running') void scheduleStrengthRestEnd(es.restTimer.endsAtMs)
+        else void cancelStrengthRestEnd()
+      } else if (nextPhase === 'rest') {
+        // A rest with no saved timer: back to the set card.
+        nextPhase = 'exercise'
+      }
+      if (es?.kind === 'rounds' && !completed) setRoundPhase(es.sub)
+      setExerciseIdx(ex)
+      setSetIdx(set)
+      setRoundIdx(state.roundIdx)
+      engineStateRef.current = es
+      setEngineResume(es)
+      setPhase(nextPhase)
+      logger.sessionEvent('session resumed', { sessionId: saved.sessionId, phase: nextPhase, ageMs: now - saved.savedAt })
+    }
+
     load()
+  }, [id, showToast, restoreRest])
 
-  }, [id, showToast])
-
-  // Auto-save workout progress for crash recovery
+  // Auto-save workout progress on every step (position; engine views add theirs).
+  const restSnapshot = restTimer.snapshot
   useEffect(() => {
-    if (!id || phase === 'entrance' || phase === 'complete' || phase === 'mark-earned') return
-    saveWorkoutProgress({ sessionId: id, exerciseIdx, setIdx, roundIdx, phase })
-  }, [id, exerciseIdx, setIdx, roundIdx, phase])
+    posRef.current = { phase, exerciseIdx, setIdx, roundIdx }
+    if (sessionType && engineForType(sessionType) === 'strength' && (phase === 'exercise' || phase === 'rest')) {
+      engineStateRef.current = { kind: 'strength', restTimer: phase === 'rest' ? restSnapshot() : null }
+    }
+    writeResume()
+  }, [writeResume, sessionType, phase, exerciseIdx, setIdx, roundIdx, restSnapshot, restTimer.isRunning, restTimer.isPaused, restTimer.endsAtMs])
 
+  // Strength rest ran out (also after a lock or a reload: <= 0 catches a jump past zero).
   useEffect(() => {
-    if (phase !== 'rest' || !restTimer.isRunning || restTimer.secondsRemaining > 0 || !strengthData) return
+    if (phase !== 'rest' || !restTimer.isRunning || restTimer.isPaused || restTimer.secondsRemaining > 0 || !strengthData) return
 
+    // The in-app "next set" cue (the lock-screen one is silent in the foreground).
+    if (!isStaleCue(restTimer.endsAtMs, Date.now())) soundRoundStart()
     restTimer.stop()
-    cancelStrengthRestEnd()
+    void cancelStrengthRestEnd()
 
-    const totalStrengthExercises = strengthData.exercises.length
-    const activeExercise = strengthData.exercises[exerciseIdx]
-    const activeSetCount = activeExercise?.sets.length ?? 0
-    const isLastSet = setIdx >= activeSetCount - 1
-    const isLastExercise = exerciseIdx >= totalStrengthExercises - 1
-
-    if (isLastSet && isLastExercise) {
+    const next = nextStrengthPosition({ exerciseIdx, setIdx }, strengthData.exercises.map(e => e.sets.length))
+    if (next === 'done') {
       setPhase('mark-earned')
-    } else if (isLastSet) {
-      setExerciseIdx(exerciseIdx + 1)
-      setSetIdx(0)
-      setPhase('exercise')
     } else {
-      setSetIdx(setIdx + 1)
+      setExerciseIdx(next.exerciseIdx)
+      setSetIdx(next.setIdx)
       setPhase('exercise')
     }
-  }, [phase, restTimer, restTimer.isRunning, restTimer.secondsRemaining, strengthData, exerciseIdx, setIdx])
+  }, [phase, restTimer, restTimer.isRunning, restTimer.isPaused, restTimer.secondsRemaining, strengthData, exerciseIdx, setIdx])
 
   const handleEntranceComplete = useCallback(() => {
     if (sessionType === 'bag_work') {
       setPhase('bag-preview')
+    } else if (sessionType === 'foundation_run') {
+      // The Zone 2 engine has no 'exercise' phase: it rendered blank here.
+      setPhase('fr-warmup')
     } else if (strengthData) {
       setPhase('strength-warmup-skip')
     } else {
@@ -610,7 +814,9 @@ export function WorkoutPage() {
         showToast("No connection. Session saved on this phone. It syncs when you're back online.", 'warning')
       }
       logger.sessionEvent('session finish ok', { sessionId: id, queued: result === 'queued' })
-      clearWorkoutRecovery()
+      armedRef.current = false
+      clearResume(resumeStorage(), id)
+      void cancelAllCues()
       // Let the Live Activity show a ✓ completion frame for 4s before it
       // dismisses itself from the lock screen.
       const now = Date.now()
@@ -641,6 +847,47 @@ export function WorkoutPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-near-black">
         <p className="text-sm text-muted-foreground">Loading workout...</p>
+      </div>
+    )
+  }
+
+  // ─── Old save: resume or end (never silently dropped) ─────
+
+  if (staleResume) {
+    const savedAt = new Date(staleResume.savedAt)
+    const when = savedAt.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    return (
+      <div className="relative flex min-h-screen flex-col items-center justify-center gap-4 bg-near-black px-6 text-center">
+        <SessionBackground />
+        <p className="relative z-10 font-cinzel text-xl tracking-wider text-foreground">Session in progress</p>
+        <p className="relative z-10 max-w-xs text-sm text-muted-foreground">
+          Last saved {when}. Pick up where you left off, or end it and log what you did.
+        </p>
+        <div className="relative z-10 flex w-full max-w-xs flex-col gap-2">
+          <Button
+            size="lg"
+            onClick={() => {
+              const restore = pendingRestoreRef.current
+              pendingRestoreRef.current = null
+              setStaleResume(null)
+              restore?.()
+            }}
+          >
+            Resume
+          </Button>
+          <Button
+            size="lg"
+            variant="secondary"
+            onClick={() => {
+              pendingRestoreRef.current = null
+              setStaleResume(null)
+              setPhase('complete')
+            }}
+          >
+            End and Log
+          </Button>
+        </div>
+        <ToastContainer />
       </div>
     )
   }
@@ -711,13 +958,9 @@ export function WorkoutPage() {
       >
         <a
           href="/today?resume=0"
-          onPointerUp={(event) => {
-            event.preventDefault()
-            exitToToday()
-          }}
           onClick={(event) => {
             event.preventDefault()
-            exitToToday()
+            leaveSession()
           }}
           className="-ml-2 inline-flex min-h-[44px] min-w-[44px] items-center px-3 text-sm font-medium text-muted-foreground active:text-teal"
         >
@@ -823,7 +1066,15 @@ export function WorkoutPage() {
               currentSet={setIdx}
               showSectionHeader={frShowSectionHeader}
               onSetDone={handleFrWarmupSetDone}
+              resume={engineResume?.kind === 'hold' ? engineResume : null}
+              onPersist={persistEngine}
             />
+          )}
+          {phase === 'fr-warmup' && !frCurrentExercise && frTotalExercises === 0 && foundationRunData.runSession && (
+            // No warm-up rows: straight to the run instead of a blank screen.
+            <div className="flex flex-col items-center gap-4 py-12">
+              <Button size="lg" onClick={() => setPhase('fr-run')}>Start Run</Button>
+            </div>
           )}
           {phase === 'fr-run' && foundationRunData.runSession && (
             <RunSessionView
@@ -831,7 +1082,13 @@ export function WorkoutPage() {
               runSession={foundationRunData.runSession}
               prescription={foundationRunData.prescription}
               onComplete={() => setPhase('mark-earned')}
+              onExit={leaveSession}
+              resume={engineResume?.kind === 'run' ? engineResume : null}
+              onPersist={persistEngine}
             />
+          )}
+          {phase === 'fr-run' && !foundationRunData.runSession && (
+            <p className="py-12 text-center text-sm text-muted-foreground">Run not ready. Go back and enter again.</p>
           )}
         </main>
         <ProgressBar value={frProgress} />
@@ -905,7 +1162,9 @@ export function WorkoutPage() {
         currentSet={setIdx + 1}
         showSectionHeader={showSectionHeader}
         onSetDone={handleMobilitySetDone}
-        onExit={() => navigate('/today')}
+        onExit={leaveSession}
+        resume={engineResume?.kind === 'hold' ? engineResume : null}
+        onPersist={persistEngine}
       />
     )
   }
@@ -933,6 +1192,9 @@ export function WorkoutPage() {
           plannedMin={mtData.plannedMin ?? null}
           blockType={mtData.session.blockType ?? null}
           onComplete={() => setPhase('mark-earned')}
+          onExit={leaveSession}
+          resume={engineResume?.kind === 'mt' ? engineResume : null}
+          onPersist={persistEngine}
         />
         <ToastContainer />
       </>
@@ -961,6 +1223,9 @@ export function WorkoutPage() {
           runSession={runData.runSession}
           prescription={runData.prescription}
           onComplete={() => setPhase('mark-earned')}
+          onExit={leaveSession}
+          resume={engineResume?.kind === 'run' ? engineResume : null}
+          onPersist={persistEngine}
         />
         <ToastContainer />
       </>
@@ -985,7 +1250,13 @@ export function WorkoutPage() {
     }
     return (
       <>
-        <SkipRopeView skipSession={skipData.skipSession} onComplete={() => setPhase('mark-earned')} />
+        <SkipRopeView
+          skipSession={skipData.skipSession}
+          onComplete={() => setPhase('mark-earned')}
+          onExit={leaveSession}
+          resume={engineResume?.kind === 'rounds' ? engineResume : null}
+          onPersist={persistEngine}
+        />
         <ToastContainer />
       </>
     )
@@ -1012,6 +1283,9 @@ export function WorkoutPage() {
         <ActiveRecoveryView
           recoverySession={recoveryData.recoverySession}
           onComplete={() => setPhase('mark-earned')}
+          onExit={leaveSession}
+          resume={engineResume?.kind === 'recovery' ? engineResume : null}
+          onPersist={persistEngine}
         />
         <ToastContainer />
       </>
@@ -1104,6 +1378,8 @@ export function WorkoutPage() {
               durationSec={300}
               onComplete={() => setPhase('exercise')}
               description="Light and easy. Get the blood flowing before you hit the bag."
+              resume={engineResume?.kind === 'warmup' ? engineResume.timer : null}
+              onPersist={persistEngine}
             />
           </main>
           <ProgressBar value={5} />
@@ -1175,6 +1451,9 @@ export function WorkoutPage() {
             setRoundPhase('ready')
           }}
           onComplete={handleBagWorkComplete}
+          onExit={leaveSession}
+          resume={engineResume?.kind === 'rounds' ? engineResume : null}
+          onPersist={persistEngine}
         />
         <ToastContainer />
       </>
@@ -1202,6 +1481,8 @@ export function WorkoutPage() {
             durationSec={180}
             onComplete={() => setPhase('exercise')}
             description="Light and easy. Loosen up before you lift."
+            resume={engineResume?.kind === 'warmup' ? engineResume.timer : null}
+            onPersist={persistEngine}
           />
         </main>
         <ProgressBar value={2} />
@@ -1212,15 +1493,18 @@ export function WorkoutPage() {
   const currentExercise = strengthData.exercises[exerciseIdx]
 
   if (!currentExercise) {
+    // A saved position past the end of the workout (rows changed since).
+    // Resume clamps positions on load, so this is only a workout with no
+    // exercises at all: offer the close instead of a dead end.
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-near-black px-6 text-center">
-        <p className="text-sm text-muted-foreground">Workout state expired.</p>
+        <p className="text-sm text-muted-foreground">No exercises left in this workout.</p>
+        <Button size="lg" onClick={() => setPhase('complete')}>
+          Finish Session
+        </Button>
         <button
-          onClick={() => {
-            clearWorkoutRecovery()
-            exitToToday()
-          }}
-          className="rounded-md border border-gold/20 bg-gold/10 px-5 py-3 text-sm text-gold"
+          onClick={leaveSession}
+          className="min-h-[44px] px-3 text-sm text-muted-foreground active:text-foreground"
         >
           Back to Today
         </button>
@@ -1265,38 +1549,16 @@ export function WorkoutPage() {
     setPhase('rest')
   }
 
-  // Missing equipment: the server picks a same-pattern swap and rewrites this
-  // exercise's unlogged sets. Only offered before the first set is logged.
-  async function handleSwapExercise() {
-    if (!currentExercise) return
-    try {
-      const data = await apiFetch<StrengthWorkoutData & { swap?: { label: string } }>(`/api/strength-session-exercises/${currentExercise.id}/swap`, { method: 'POST' })
-      setStrengthData(data)
-      setSetIdx(0)
-      showToast(data.swap ? `Swapped to ${data.swap.label}.` : 'Exercise swapped.', 'info')
-    } catch (e) {
-      const body = e instanceof ApiError ? e.body : ''
-      let reason: string | null = null
-      try { reason = (JSON.parse(body) as { error?: string }).error ?? null } catch { reason = null }
-      showToast(reason ?? "Couldn't swap. Check connection and try again.", 'warning')
-    }
-  }
-
   function handleNextSet() {
     restTimer.stop()
-    cancelStrengthRestEnd()
+    void cancelStrengthRestEnd()
 
-    const isLastSet = setIdx >= totalSetsForExercise - 1
-    const isLastExercise = exerciseIdx >= totalExercises - 1
-
-    if (isLastSet && isLastExercise) {
+    const next = nextStrengthPosition({ exerciseIdx, setIdx }, strengthData!.exercises.map(e => e.sets.length))
+    if (next === 'done') {
       setPhase('mark-earned')
-    } else if (isLastSet) {
-      setExerciseIdx(exerciseIdx + 1)
-      setSetIdx(0)
-      setPhase('exercise')
     } else {
-      setSetIdx(setIdx + 1)
+      setExerciseIdx(next.exerciseIdx)
+      setSetIdx(next.setIdx)
       setPhase('exercise')
     }
   }
@@ -1415,7 +1677,7 @@ export function WorkoutPage() {
               const endsAt = restTimer.resume()
               if (endsAt > Date.now()) void scheduleStrengthRestEnd(endsAt)
             } else {
-              cancelStrengthRestEnd()
+              void cancelStrengthRestEnd()
               restTimer.pause()
             }
           },
@@ -1423,8 +1685,7 @@ export function WorkoutPage() {
         onSetComplete={handleSetComplete}
         onLiveValuesChange={handleLiveValuesChange}
         onNextSet={handleNextSet}
-        onSwap={setIdx === 0 ? handleSwapExercise : undefined}
-        onExit={exitToToday}
+        onExit={leaveSession}
         accentColor={accent}
       />
       <ToastContainer />

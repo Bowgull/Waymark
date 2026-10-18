@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { tapHaptic, mediumHaptic } from '@/lib/haptics'
 import { apiFetch } from '@/lib/api'
 import { kgToLbs } from '@/lib/units'
-import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
 
 export interface RunSessionSummary {
@@ -83,6 +83,8 @@ function markStyle(status: string): string {
   }
 }
 
+const END_HOLD_MS = 1500
+
 export function TimelineRow({
   session,
   maxHr,
@@ -98,6 +100,32 @@ export function TimelineRow({
   label,
 }: TimelineRowProps) {
   const [endSheetOpen, setEndSheetOpen] = useState(false)
+  // Ending an in-progress session: hold the x for 1.5 s. A plain tap only
+  // says so, so a stray tap can't end (or reset) a live session.
+  const [endHolding, setEndHolding] = useState(false)
+  const [endHint, setEndHint] = useState(false)
+  const endHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function startEndHold() {
+    if (endHoldTimer.current) clearTimeout(endHoldTimer.current)
+    setEndHolding(true)
+    endHoldTimer.current = setTimeout(() => {
+      endHoldTimer.current = null
+      setEndHolding(false)
+      setEndHint(false)
+      mediumHaptic()
+      setEndSheetOpen(true)
+    }, END_HOLD_MS)
+  }
+  function cancelEndHold() {
+    if (!endHoldTimer.current) return
+    clearTimeout(endHoldTimer.current)
+    endHoldTimer.current = null
+    setEndHolding(false)
+    setEndHint(true)
+  }
+  useEffect(() => () => {
+    if (endHoldTimer.current) clearTimeout(endHoldTimer.current)
+  }, [])
   const mark = getMarkAsset(session.type)
   const estMin = getEstimatedMin(session.type)
   const run = session.runSession ?? null
@@ -119,7 +147,7 @@ export function TimelineRow({
   }
 
   return (
-    <div data-tour="session-row" className={`rounded-lg ${statusBg(session.status, isAutoPending)} transition-colors`}>
+    <div className={`rounded-lg ${statusBg(session.status, isAutoPending)} transition-colors`}>
       {/* Collapsed row — always visible */}
       <div
         role="button"
@@ -227,7 +255,6 @@ export function TimelineRow({
                   <>
                     <button
                       type="button"
-                      data-tour="replace-button"
                       className="inline-flex min-h-[44px] items-center rounded-full border border-border/50 px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground/80 active:bg-surface/30 active:text-foreground"
                       onClick={() => onReplace(session.id)}
                     >
@@ -235,7 +262,6 @@ export function TimelineRow({
                     </button>
                     <button
                       type="button"
-                      data-tour="skip-button"
                       className="inline-flex min-h-[44px] items-center rounded-full border border-border/30 px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground/60 active:bg-surface/30 active:text-foreground"
                       onClick={() => onSkip(session.id)}
                     >
@@ -244,14 +270,26 @@ export function TimelineRow({
                   </>
                 )}
                 {session.status === 'in_progress' && onEndEarly && (
-                  <button
-                    type="button"
-                    aria-label="End early"
-                    className="ml-auto inline-flex h-[44px] w-[44px] items-center justify-center rounded-full border border-border/40 text-muted-foreground/80 active:bg-surface/30 active:text-foreground"
-                    onClick={() => setEndSheetOpen(true)}
-                  >
-                    <span className="text-base leading-none">×</span>
-                  </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    {endHint && (
+                      <span className="text-[12px] text-muted-foreground/70">Hold to end</span>
+                    )}
+                    <button
+                      type="button"
+                      aria-label="Hold to end early"
+                      className={`inline-flex h-[44px] w-[44px] items-center justify-center rounded-full border text-muted-foreground/80 transition-colors ${
+                        endHolding ? 'border-clay/70 bg-clay/10 text-foreground' : 'border-border/40'
+                      }`}
+                      style={{ transitionDuration: endHolding ? `${END_HOLD_MS}ms` : undefined, touchAction: 'none' }}
+                      onPointerDown={startEndHold}
+                      onPointerUp={cancelEndHold}
+                      onPointerLeave={cancelEndHold}
+                      onPointerCancel={cancelEndHold}
+                      onContextMenu={(e) => e.preventDefault()}
+                    >
+                      <span className="text-base leading-none">×</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </>
@@ -273,12 +311,12 @@ export function TimelineRow({
       )}
       {endSheetOpen && onEndEarly && (
         <div
-          className="fixed inset-0 z-[150] flex items-end justify-center"
+          className="fixed inset-0 z-[150] flex items-end justify-center animate-fade-in"
           style={{ background: 'rgba(0,0,0,0.6)' }}
           onClick={() => setEndSheetOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-t-2xl border-t border-gold/15 bg-card p-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
+            className="w-full max-w-md rounded-t-2xl border-t border-gold/15 bg-card p-5 pb-[calc(env(safe-area-inset-bottom)+1rem)] animate-sheet-up"
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-sm font-medium text-foreground">End early.</p>
@@ -330,8 +368,12 @@ export function TimelineRow({
 
 interface PreviewExercise {
   exerciseId: string
-  name: string
-  label: string
+  // The preview of a not-started session has name/label; a started one is
+  // the workout rows (exercise.name). Reading only label/name crashed Today
+  // for every in-progress strength session.
+  name?: string
+  label?: string
+  exercise?: { name: string } | null
   section: 'warmup' | 'main' | 'accessory' | 'core'
   orderIndex: number
   prescription: {
@@ -347,7 +389,7 @@ function stripLiftSuffix(label: string): string {
 }
 
 function shortLiftSummary(ex: PreviewExercise): string {
-  const name = stripLiftSuffix(ex.label || ex.name)
+  const name = stripLiftSuffix(ex.label || ex.name || ex.exercise?.name || 'Lift')
   const weightKg = ex.prescription.prescribedWeightKg
   const setsMatch = ex.prescription.setsReps.match(/^(\d+)×/)
   const sets = setsMatch ? setsMatch[1] : null
@@ -410,7 +452,7 @@ function StrengthLiftPreview({ sessionId }: { sessionId: string }) {
         <ul className="mt-2 space-y-1 text-[12px] text-muted-foreground/80 tabular-nums">
           {mainLifts.map(ex => (
             <li key={ex.exerciseId} className="flex justify-between gap-3">
-              <span>{stripLiftSuffix(ex.label || ex.name)}</span>
+              <span>{stripLiftSuffix(ex.label || ex.name || ex.exercise?.name || 'Lift')}</span>
               <span className="text-foreground/70">
                 {ex.prescription.setsReps}{ex.prescription.prescribedWeightKg != null ? ` · ${kgToLbs(ex.prescription.prescribedWeightKg)}lbs` : ''}
               </span>

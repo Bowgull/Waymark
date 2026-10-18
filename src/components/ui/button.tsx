@@ -30,6 +30,14 @@ export function Button({
   ...props
 }: ButtonProps) {
   const isDisplay = variant === 'default'
+  // The gold gradient is a background-image, so a caller's backgroundColor
+  // (teal, clay) sat under it and teal buttons rendered gold. Any caller
+  // background, inline or a bg- class, replaces the gradient.
+  const hasCustomBackground =
+    style?.background != null ||
+    style?.backgroundColor != null ||
+    style?.backgroundImage != null ||
+    /(^|\s)!?bg-/.test(className ?? '')
   return (
     <button
       className={cn(
@@ -41,7 +49,7 @@ export function Button({
       )}
       style={{
         fontFamily: isDisplay ? "var(--font-display)" : undefined,
-        ...(isDisplay ? { background: 'linear-gradient(180deg, #C8A030 0%, #A07820 100%)' } : undefined),
+        ...(isDisplay && !hasCustomBackground ? { background: 'linear-gradient(180deg, #C8A030 0%, #A07820 100%)' } : undefined),
         ...style,
       }}
       disabled={disabled}

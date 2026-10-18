@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import {
+  timerPause,
+  timerRemainingMs,
+  timerResume,
+  timerStart,
+  timerStartAt,
+  type TimerSnap,
+} from '@/lib/sessionResume'
+
 interface RestTimerState {
   secondsRemaining: number
   isOvertime: boolean
@@ -7,101 +16,103 @@ interface RestTimerState {
   isPaused: boolean
   startedAtMs: number
   endsAtMs: number
+  /** Length of the current countdown (for the ring). */
+  durationSec: number
   start: (durationSec: number) => void
+  /** Start a countdown that began at `startMs` (e.g. a rest that starts when the round ended). */
+  startFrom: (startMs: number, durationSec: number) => void
   stop: () => void
-  pause: () => void
+  /** Pause. `pausedRemainingMs` (from the lock screen) wins over endsAt - now. */
+  pause: (pausedRemainingMs?: number) => void
   /** Resume with remaining time from pause (or an explicit new endsAt from Live Activity).
    *  Returns the wall-clock ms when the timer will expire, for precise notification scheduling. */
   resume: (newEndsAtMs?: number) => number
+  /** Put a saved timer back (session resume). */
+  restore: (snap: TimerSnap | null) => void
+  /** The timer as it stands, for saving. */
+  snapshot: () => TimerSnap | null
 }
 
-// Timestamp-based timer — survives screen lock.
-// Instead of decrementing a counter, we record when the timer ends and
-// calculate remaining time from the wall clock on every tick.
-// When iOS unsuspends the JS thread after the screen unlocks,
-// the next tick immediately snaps to the correct time.
+// Timestamp-based timer: the snapshot holds the END time (or, paused, what is
+// left), and the remaining time is computed from the wall clock on every
+// tick and on every return to the foreground. No tick counting, so a locked
+// screen or a suspended WebView never drifts.
 export function useRestTimer(): RestTimerState {
-  const [secondsRemaining, setSecondsRemaining] = useState(0)
-  const [isRunning, setIsRunning] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
-  const [startedAtMs, setStartedAtMs] = useState(0)
-  const [endsAtMs, setEndsAtMs] = useState(0)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const endsAtRef = useRef<number>(0) // wall-clock ms when timer expires
-  const pausedRemainingRef = useRef<number>(0)
+  const [snap, setSnap] = useState<TimerSnap | null>(null)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  const snapRef = useRef<TimerSnap | null>(null)
 
+  const apply = useCallback((next: TimerSnap | null) => {
+    snapRef.current = next
+    setSnap(next)
+    setNowMs(Date.now())
+  }, [])
+
+  const running = snap?.state === 'running'
   useEffect(() => {
+    if (!running) return
+    const id = setInterval(() => setNowMs(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [running])
+
+  // Back from the background or a lock: snap to the real time at once.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible') setNowMs(Date.now())
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
     }
   }, [])
 
-  const startTicking = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    intervalRef.current = setInterval(() => {
-      const remaining = Math.round((endsAtRef.current - Date.now()) / 1000)
-      setSecondsRemaining(remaining)
-    }, 500)
-  }, [])
-
   const start = useCallback((durationSec: number) => {
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    const now = Date.now()
-    const endsAt = now + durationSec * 1000
-    endsAtRef.current = endsAt
-    setStartedAtMs(now)
-    setEndsAtMs(endsAt)
-    setSecondsRemaining(durationSec)
-    setIsRunning(true)
-    setIsPaused(false)
-    startTicking()
-  }, [startTicking])
+    apply(timerStart(durationSec, Date.now()))
+  }, [apply])
 
-  const stop = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    intervalRef.current = null
-    setIsRunning(false)
-    setIsPaused(false)
-    setSecondsRemaining(0)
-    setStartedAtMs(0)
-    setEndsAtMs(0)
-    endsAtRef.current = 0
-    pausedRemainingRef.current = 0
-  }, [])
+  const startFrom = useCallback((startMs: number, durationSec: number) => {
+    apply(timerStartAt(startMs, durationSec))
+  }, [apply])
 
-  const pause = useCallback(() => {
-    if (!isRunning || isPaused) return
-    const remainingMs = Math.max(0, endsAtRef.current - Date.now())
-    pausedRemainingRef.current = remainingMs
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    intervalRef.current = null
-    setIsPaused(true)
-    setSecondsRemaining(Math.round(remainingMs / 1000))
-  }, [isRunning, isPaused])
+  const stop = useCallback(() => apply(null), [apply])
+
+  const pause = useCallback((pausedRemainingMs?: number) => {
+    const cur = snapRef.current
+    if (!cur || cur.state !== 'running') return
+    apply(timerPause(cur, Date.now(), pausedRemainingMs))
+  }, [apply])
 
   const resume = useCallback((newEndsAtMs?: number): number => {
-    if (!isRunning) return 0
-    const now = Date.now()
-    const endsAt = newEndsAtMs ?? now + pausedRemainingRef.current
-    endsAtRef.current = endsAt
-    setStartedAtMs(now)
-    setEndsAtMs(endsAt)
-    setIsPaused(false)
-    setSecondsRemaining(Math.round((endsAt - now) / 1000))
-    startTicking()
-    return endsAt
-  }, [isRunning, startTicking])
+    const cur = snapRef.current
+    if (!cur) return 0
+    const next = timerResume(cur, Date.now(), newEndsAtMs)
+    apply(next)
+    return next.state === 'running' ? next.endsAtMs : 0
+  }, [apply])
+
+  const restore = useCallback((next: TimerSnap | null) => apply(next), [apply])
+  const snapshot = useCallback(() => snapRef.current, [])
+
+  const secondsRemaining = snap ? Math.round(timerRemainingMs(snap, nowMs) / 1000) : 0
 
   return {
     secondsRemaining,
     isOvertime: secondsRemaining < 0,
-    isRunning,
-    isPaused,
-    startedAtMs,
-    endsAtMs,
+    isRunning: snap != null,
+    isPaused: snap?.state === 'paused',
+    // Paused: the end the clock would reach if resumed at the moment of pause
+    // (stable, since nothing ticks while paused). The Live Activity needs a date.
+    startedAtMs: !snap ? 0 : snap.state === 'running' ? snap.startedAtMs : nowMs + snap.remainingMs - snap.durationSec * 1000,
+    endsAtMs: !snap ? 0 : snap.state === 'running' ? snap.endsAtMs : nowMs + snap.remainingMs,
+    durationSec: snap?.durationSec ?? 0,
     start,
+    startFrom,
     stop,
     pause,
     resume,
+    restore,
+    snapshot,
   }
 }

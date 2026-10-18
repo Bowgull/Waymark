@@ -5,6 +5,8 @@ type ToastVariant = 'success' | 'info' | 'warning'
 interface ToastOptions {
   actionLabel?: string
   onAction?: () => void
+  /** How long the toast stays up. Longer for refusals that list options. */
+  durationMs?: number
 }
 
 interface ToastState {
@@ -38,7 +40,7 @@ export function useToast() {
       const timer = setTimeout(() => {
         setToasts(prev => prev.filter(t => t.id !== id))
         timersRef.current.delete(id)
-      }, options?.actionLabel ? 6000 : 3500)
+      }, options?.durationMs ?? (options?.actionLabel ? 6000 : 3500))
 
       timersRef.current.set(id, timer)
     },

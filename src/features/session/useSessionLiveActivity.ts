@@ -22,7 +22,8 @@ export interface LiveActivityConfig {
 }
 
 interface Handlers {
-  onPause?: () => void
+  /** `pausedRemainingMs`: what the lock screen showed at the tap, when known. */
+  onPause?: (pausedRemainingMs: number | undefined) => void
   onResume?: (newEndsAtMs: number | undefined) => void
   /** Fired when the user taps Restart on the Live Activity. Restart the
    *  current phase (round, rest, hold, interval) from full duration. */
@@ -91,52 +92,42 @@ export function useSessionLiveActivity(
     }
   }, [config])
 
-  // Register pause/resume/restart/end listeners once per mount.
+  // Register pause/resume/restart/end listeners once per mount. A handle
+  // that resolves after unmount is removed at once (it used to leak).
   useEffect(() => {
-    let pauseHandle: PluginListenerHandle | null = null
-    let resumeHandle: PluginListenerHandle | null = null
-    let restartHandle: PluginListenerHandle | null = null
-    let endHandle: PluginListenerHandle | null = null
-    let completeSetHandle: PluginListenerHandle | null = null
-    let startHoldHandle: PluginListenerHandle | null = null
-    let advanceHandle: PluginListenerHandle | null = null
+    let cancelled = false
+    const handles: PluginListenerHandle[] = []
+    const keep = (h: PluginListenerHandle | null) => {
+      if (!h) return
+      if (cancelled) void h.remove()
+      else handles.push(h)
+    }
 
-    void onPauseRequested(() => {
-      handlersRef.current.onPause?.()
-    }).then(h => { pauseHandle = h })
-
+    void onPauseRequested((pausedRemainingMs) => {
+      handlersRef.current.onPause?.(pausedRemainingMs)
+    }).then(keep)
     void onResumeRequested((endsAtMs) => {
       handlersRef.current.onResume?.(endsAtMs)
-    }).then(h => { resumeHandle = h })
-
+    }).then(keep)
     void onRestartRequested(() => {
       handlersRef.current.onRestart?.()
-    }).then(h => { restartHandle = h })
-
+    }).then(keep)
     void onEndRequested(() => {
       handlersRef.current.onEnd?.()
-    }).then(h => { endHandle = h })
-
+    }).then(keep)
     void onCompleteSetRequested(() => {
       handlersRef.current.onCompleteSet?.()
-    }).then(h => { completeSetHandle = h })
-
+    }).then(keep)
     void onStartHoldRequested(() => {
       handlersRef.current.onStartHold?.()
-    }).then(h => { startHoldHandle = h })
-
+    }).then(keep)
     void onAdvanceRequested(() => {
       handlersRef.current.onAdvance?.()
-    }).then(h => { advanceHandle = h })
+    }).then(keep)
 
     return () => {
-      void pauseHandle?.remove()
-      void resumeHandle?.remove()
-      void restartHandle?.remove()
-      void endHandle?.remove()
-      void completeSetHandle?.remove()
-      void startHoldHandle?.remove()
-      void advanceHandle?.remove()
+      cancelled = true
+      for (const h of handles) void h.remove()
     }
   }, [])
 }

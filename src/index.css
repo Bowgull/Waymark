@@ -63,6 +63,9 @@
   --color-surface: #0A2018;
   --color-surface-light: #122E26;
 
+  /* Heading font: 74 call sites use font-cinzel, which had no theme entry. */
+  --font-cinzel: var(--font-display);
+
   /* Chrome surfaces (bottom nav) — one step lighter than body for separation */
   --color-nav: oklch(0.15 0.025 160);
 }
@@ -250,6 +253,11 @@
   to { stroke-dashoffset: 0; }
 }
 
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
 @keyframes fade-out-down {
   from { opacity: 1; transform: translateY(0); }
   to { opacity: 0; transform: translateY(12px); }
@@ -318,6 +326,13 @@
   }
   .ring-fill-animate {
     transition: stroke-dashoffset 0.8s ease-out;
+  }
+  /* Draw-in on mount: from an empty ring (--ring-circumference) to the value. */
+  .ring-fill-draw {
+    animation: ring-fill 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-sheet-up {
+    animation: sheet-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }
   .sparkline-draw {
     stroke-dasharray: 200;
@@ -411,54 +426,4 @@
 }
 ::view-transition-new(root) {
   animation: fade-in-up 200ms ease-out;
-}
-
-/* ─── Driver.js tour popover (Waymark theme) ──────────── */
-.driver-popover.wm-tour-popover {
-  background: hsl(var(--card, 0 0% 8%));
-  color: hsl(var(--foreground, 0 0% 98%));
-  border: 1px solid rgba(193,158,90,0.18);
-  border-radius: 14px;
-  box-shadow: 0 12px 32px rgba(0,0,0,0.65);
-  max-width: 380px;
-  padding: 18px 18px 14px;
-}
-.wm-tour-popover .driver-popover-title {
-  color: hsl(var(--foreground, 0 0% 98%));
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.wm-tour-popover .wm-tour-counter {
-  display: inline-block;
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 11px;
-  color: hsl(var(--gold, 41 50% 60%));
-  margin-right: 8px;
-  letter-spacing: 0.05em;
-}
-.wm-tour-popover .driver-popover-description {
-  color: hsl(var(--muted-foreground, 0 0% 70%));
-  font-size: 13px;
-  line-height: 1.55;
-}
-.wm-tour-popover .driver-popover-footer {
-  margin-top: 14px;
-}
-.wm-tour-popover .driver-popover-next-btn,
-.wm-tour-popover .driver-popover-close-btn {
-  background: transparent;
-  color: hsl(var(--muted-foreground, 0 0% 70%));
-  border: 1px solid rgba(193,158,90,0.25);
-  border-radius: 9999px;
-  padding: 6px 14px;
-  font-size: 12px;
-  font-weight: 500;
-  text-shadow: none;
-  transition: color 150ms, border-color 150ms;
-}
-.wm-tour-popover .driver-popover-next-btn:hover,
-.wm-tour-popover .driver-popover-close-btn:hover {
-  color: hsl(var(--gold, 41 50% 60%));
-  border-color: hsl(var(--gold, 41 50% 60%));
 }

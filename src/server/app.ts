@@ -11,9 +11,8 @@ import { isoToEpochDay, mondayOf } from '../lib/dates'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
 import { FOUNDATION_LABEL, LEGACY_FOUNDATION_LABELS, foundationTemplate, strengthKindFromLabel, type FoundationInput } from '../lib/foundation'
-import { isLoggedSet, isLoggedWorkSet } from '../lib/loggedSets'
+import { isLoggedWorkSet } from '../lib/loggedSets'
 import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
-import { swapForMissingEquipment } from '../lib/exerciseSwaps'
 import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
@@ -1396,50 +1395,6 @@ app.patch('/api/strength-sets/:id', async (c) => {
   // Block Zero week-3/6 check set with weight, reps and RIR → e1RM test row (R4).
   const e1rmTest = await recordCheckSetE1rm(db, setId)
   return c.json(e1rmTest ? { ...row, e1rmTest } : row)
-})
-
-// Missing equipment: swap an exercise for a same-pattern one that needs less
-// kit (lib/exerciseSwaps, then the back-friendly table). Only before any set
-// of it is logged. The new exercise's sets keep their reps; loads come from
-// its training max when there is one (accessory share for non-main rows),
-// else the athlete enters the weight. Warm-up ramp sets go with the old lift.
-app.post('/api/strength-session-exercises/:id/swap', async (c) => {
-  const sseId = c.req.param('id')
-  const db = createDB(c.env)
-  const [sse] = await db.select().from(strengthSessionExercises).where(eq(strengthSessionExercises.id, sseId))
-  if (!sse) return c.json({ error: 'exercise not found' }, 404)
-  const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, sseId))
-  if (sets.some(isLoggedSet)) return c.json({ error: 'Sets are already logged for this exercise. Finish it or skip it.', code: 'already_logged' }, 409)
-
-  const library = await db.select({ id: exercises.id, name: exercises.name, equipment: exercises.equipment }).from(exercises)
-  const pick = swapForMissingEquipment(sse.exerciseId, new Set(library.map(e => e.id)))
-  if (!pick) return c.json({ error: 'No swap for this exercise. Skip it instead.', code: 'no_swap' }, 409)
-
-  const [session] = await db.select().from(sessions).where(eq(sessions.id, sse.sessionId))
-  const [tm] = await db.select().from(trainingMaxes).where(eq(trainingMaxes.exerciseId, pick.exerciseId))
-  const blockType = session?.blockType === 'block_zero' ? 'block_zero' : 'fighter'
-  const raw = computeWorkingWeightKg(tm?.weightKg ?? null, sse.section, getWeekPercentage(session?.blockWeek ?? 1, blockType))
-  const equipment = loadEquipment(library.find(e => e.id === pick.exerciseId)?.equipment)
-  const weightKg = raw != null ? snapLoadKg(raw, equipment) : null
-  const fromName = library.find(e => e.id === sse.exerciseId)?.name ?? 'the planned lift'
-
-  const working = sets.filter(st => st.isWarmup === 0).sort((a, b) => a.setNumber - b.setNumber)
-  const ramp = sse.section === 'main' ? sets.filter(st => st.isWarmup === 1) : []
-  await db.batch([
-    db.update(strengthSessionExercises).set({
-      exerciseId: pick.exerciseId,
-      notes: `Swapped from ${fromName}: equipment. ${sse.notes ?? ''}`.trim(),
-    }).where(eq(strengthSessionExercises.id, sseId)),
-    ...ramp.map(st => db.delete(strengthSets).where(eq(strengthSets.id, st.id))),
-    ...working.map((st, i) => db.update(strengthSets).set({
-      setNumber: (sets.length - ramp.length - working.length) + i + 1,
-      weightKg,
-      plannedWeightKg: weightKg,
-      inferredStatus: 'normal',
-    }).where(eq(strengthSets.id, st.id))),
-  ] as unknown as Parameters<typeof db.batch>[0])
-
-  return c.json({ ...(await buildWorkoutResponse(db, sse.sessionId)), swap: { from: sse.exerciseId, to: pick.exerciseId, label: pick.label } })
 })
 
 app.post('/api/sessions/:id/complete', async (c) => {

@@ -7,6 +7,7 @@ import { Capacitor } from '@capacitor/core'
 import { apiFetch } from '@/lib/api'
 import { scheduleAlarms } from '@/lib/notifications'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
+import { isHapticsEnabled, setHapticsEnabled, tapHaptic } from '@/lib/haptics'
 import { ScrollDrum, ScrollDrumList } from '@/components/ui/ScrollDrum'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { useToast } from '@/components/ui/Toast'
@@ -137,6 +138,14 @@ export function SettingsPage() {
     })
     return () => { cancelled = true }
   }, [])
+
+  const [hapticsOn, setHapticsOn] = useState<boolean>(() => isHapticsEnabled())
+  function handleHapticsToggle() {
+    const next = !hapticsOn
+    setHapticsEnabled(next)
+    setHapticsOn(next)
+    if (next) void tapHaptic()
+  }
 
   function handleWaybookAuthToggle() {
     const next = !waybookAuth
@@ -372,7 +381,7 @@ export function SettingsPage() {
         </p>
 
         {/* Morning Alarm */}
-        <div data-tour="alarm-section" className="space-y-2">
+        <div className="space-y-2">
           <NotificationToggle
             label="Morning Alarm"
             enabled={amEnabled}
@@ -599,6 +608,33 @@ export function SettingsPage() {
             <span
               className={`inline-block h-5 w-5 transform rounded-full bg-background transition-transform ${
                 waybookAuth ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </span>
+        </button>
+      </section>
+
+      {/* Haptics */}
+      <section>
+        <p className="mb-2 text-sm font-medium text-foreground">Haptics</p>
+        <button
+          type="button"
+          onClick={handleHapticsToggle}
+          className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-md border border-border bg-border/30 px-3 py-2.5"
+        >
+          <div className="min-w-0 text-left">
+            <p className="text-sm text-foreground">Vibration feedback</p>
+            <p className="text-xs text-muted-foreground">Taps, timer ends and cues. Off keeps the phone still.</p>
+          </div>
+          <span
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+              hapticsOn ? 'bg-gold' : 'bg-border'
+            }`}
+            aria-hidden
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-background transition-transform ${
+                hapticsOn ? 'translate-x-5' : 'translate-x-0.5'
               }`}
             />
           </span>

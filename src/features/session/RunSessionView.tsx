@@ -11,6 +11,16 @@ import { onePaceSvg } from '@/lib/markAssets'
 import { soundRoundEnd } from '@/lib/sounds'
 import { assessRunCompletion, shouldShowRunRealityMark } from '@/lib/trainingReality'
 import { parseDurationToSec } from '@/lib/duration'
+import { NARUTO_NETFLIX_URL, ONEPACE_URL, type IndoorMedia } from '@/lib/onePace'
+import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
+import {
+  stopwatchElapsedMs,
+  stopwatchPause,
+  stopwatchResume,
+  type EngineState,
+  type StopwatchSnap,
+} from '@/lib/sessionResume'
+import { useWakeLock } from '@/lib/wakeLock'
 
 import { SessionShell } from './SessionShell'
 import { resolveRunMoment, type RunType } from './runMicrocopy'
@@ -94,6 +104,13 @@ interface RunPrescription {
 }
 
 type RunPhase = 'ready' | 'running' | 'logging'
+type RunState = Extract<EngineState, { kind: 'run' }>
+
+const INDOOR_MEDIA_KEY = 'waymark_indoor_media'
+
+function storedIndoorMedia(): IndoorMedia {
+  return storageGet(INDOOR_MEDIA_KEY) === 'naruto' ? 'naruto' : 'one_pace'
+}
 
 const RUN_TYPE_LABELS: Record<string, string> = {
   zone2: 'Zone 2 Run',
@@ -115,6 +132,10 @@ interface RunSessionViewProps {
    * Used by Foundation Run which provides its own outer frame.
    */
   inline?: boolean
+  /** Saved phase, clock and log draft (session resume). */
+  resume?: RunState | null
+  /** Called on every change so the session can be resumed exactly here. */
+  onPersist?: (state: RunState) => void
 }
 
 export function RunSessionView({
@@ -123,21 +144,27 @@ export function RunSessionView({
   onComplete,
   onExit,
   inline = false,
+  resume,
+  onPersist,
 }: RunSessionViewProps) {
-  const [phase, setPhase] = useState<RunPhase>('ready')
-  const [isIndoor, setIsIndoor] = useState(runSession.isIndoor === 1)
-  const [elapsed, setElapsed] = useState(0)
-  const [runPaused, setRunPaused] = useState(false)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const startedAtRef = useRef<number>(0)
-  const pausedElapsedRef = useRef<number>(0)
+  const draft = resume?.draft ?? {}
+  const [phase, setPhase] = useState<RunPhase>(() => resume?.sub ?? 'ready')
+  const [isIndoor, setIsIndoor] = useState(() => resume ? resume.isIndoor : runSession.isIndoor === 1)
+  const [media, setMedia] = useState<IndoorMedia>(() => resume?.media ?? storedIndoorMedia())
+  // The run clock: wall-clock anchored (virtual start time, or elapsed when
+  // paused), so a lock, a reload or a kill keeps the right time.
+  const [stopwatch, setStopwatch] = useState<StopwatchSnap | null>(() => resume?.stopwatch ?? null)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  const runPaused = stopwatch?.state === 'paused'
+  const elapsed = stopwatch ? Math.floor(stopwatchElapsedMs(stopwatch, nowMs) / 1000) : 0
+  const runStartedAtMs = !stopwatch ? 0 : stopwatch.state === 'running' ? stopwatch.startedAtMs : nowMs - stopwatch.elapsedMs
 
-  const [distance, setDistance] = useState('')
-  const [duration, setDuration] = useState('')
-  const [avgHr, setAvgHr] = useState('')
-  const [maxHr, setMaxHr] = useState('')
-  const [onePaceArc, setOnePaceArc] = useState(runSession.onePaceArc ?? '')
-  const [onePaceEp, setOnePaceEp] = useState(runSession.onePaceEp ?? '')
+  const [distance, setDistance] = useState(draft.distance ?? '')
+  const [duration, setDuration] = useState(draft.duration ?? '')
+  const [avgHr, setAvgHr] = useState(draft.avgHr ?? '')
+  const [maxHr, setMaxHr] = useState(draft.maxHr ?? '')
+  const [onePaceArc, setOnePaceArc] = useState(draft.onePaceArc ?? runSession.onePaceArc ?? '')
+  const [onePaceEp, setOnePaceEp] = useState(draft.onePaceEp ?? runSession.onePaceEp ?? '')
   const [saving, setSaving] = useState(false)
   const [stravaActivityId, setStravaActivityId] = useState<number | null>(
     runSession.stravaActivityId ?? null,
@@ -148,11 +175,38 @@ export function RunSessionView({
   const phaseRef = useRef<RunPhase>('ready')
   useEffect(() => { phaseRef.current = phase }, [phase])
 
+  const ticking = phase === 'running' && stopwatch?.state === 'running'
   useEffect(() => {
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+    if (!ticking) return
+    const id = setInterval(() => setNowMs(Date.now()), 500)
+    return () => clearInterval(id)
+  }, [ticking])
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible') setNowMs(Date.now())
     }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
+
+  // Save on every change: phase, clock, indoor choice and the log draft.
+  useEffect(() => {
+    onPersist?.({
+      kind: 'run',
+      sub: phase,
+      stopwatch,
+      isIndoor,
+      media,
+      draft: { distance, duration, avgHr, maxHr, onePaceArc, onePaceEp },
+    })
+  }, [onPersist, phase, stopwatch, isIndoor, media, distance, duration, avgHr, maxHr, onePaceArc, onePaceEp])
+
+  useWakeLock(ticking)
+
+  function chooseMedia(next: IndoorMedia) {
+    setMedia(next)
+    storageSet(INDOOR_MEDIA_KEY, next)
+  }
 
   // Auto-fill One Pace arc/ep from settings if not already set
   useEffect(() => {
@@ -207,7 +261,7 @@ export function RunSessionView({
       setStravaActivityId(r.stravaActivityId)
       setFromStrava(true)
       if (phaseRef.current === 'running') {
-        if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
+        setStopwatch(sw => (sw ? stopwatchPause(sw, Date.now()) : sw))
         setPhase('logging')
       }
       logger.sessionEvent('strava activity linked', {
@@ -272,13 +326,10 @@ export function RunSessionView({
   }, [isIndoor, checkForStravaActivity])
 
   const startRun = useCallback(() => {
-    startedAtRef.current = Date.now()
-    pausedElapsedRef.current = 0
-    setRunPaused(false)
+    const now = Date.now()
+    setStopwatch({ state: 'running', startedAtMs: now })
+    setNowMs(now)
     setPhase('running')
-    intervalRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
-    }, 500)
     if (!isIndoor) {
       logger.sessionEvent('strava launch attempt', { runSessionId: runSession.id })
       tryOpenStrava(() => {
@@ -292,9 +343,11 @@ export function RunSessionView({
   }, [isIndoor, runSession.id, showToast])
 
   function finishRun() {
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    const mins = Math.floor(elapsed / 60)
-    const secs = elapsed % 60
+    const now = Date.now()
+    const finalSec = stopwatch ? Math.floor(stopwatchElapsedMs(stopwatch, now) / 1000) : elapsed
+    setStopwatch(sw => (sw ? stopwatchPause(sw, now) : sw))
+    const mins = Math.floor(finalSec / 60)
+    const secs = finalSec % 60
     setDuration(secs > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : String(mins))
     setPhase('logging')
   }
@@ -316,8 +369,8 @@ export function RunSessionView({
         body: JSON.stringify({
           distanceKm, durationSec, paceSecKm,
           isIndoor: isIndoor ? 1 : 0,
-          onePaceArc: isIndoor && onePaceArc ? onePaceArc : undefined,
-          onePaceEp: isIndoor && onePaceEp ? onePaceEp : undefined,
+          onePaceArc: isIndoor && media === 'one_pace' && onePaceArc ? onePaceArc : undefined,
+          onePaceEp: isIndoor && media === 'one_pace' && onePaceEp ? onePaceEp : undefined,
           avgHr: Number.isFinite(avgHrNum) ? avgHrNum : undefined,
           maxHr: Number.isFinite(maxHrNum) ? maxHrNum : undefined,
         }),
@@ -335,7 +388,7 @@ export function RunSessionView({
         })
       }
 
-      if (isIndoor && onePaceEp) {
+      if (isIndoor && media === 'one_pace' && onePaceEp) {
         const oldEp = onePaceEp
         const newEp = String(Number(oldEp) + 1)
         apiFetch('/api/settings', {
@@ -396,59 +449,50 @@ export function RunSessionView({
 
   const toggleRunPause = useCallback(() => {
     if (phase !== 'running') return
-    if (runPaused) {
-      startedAtRef.current = Date.now() - pausedElapsedRef.current * 1000
-      setRunPaused(false)
-      if (intervalRef.current) clearInterval(intervalRef.current)
-      intervalRef.current = setInterval(() => {
-        setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000))
-      }, 500)
-    } else {
-      pausedElapsedRef.current = Math.floor((Date.now() - startedAtRef.current) / 1000)
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
-      setRunPaused(true)
-    }
-  }, [phase, runPaused])
+    const now = Date.now()
+    setNowMs(now)
+    setStopwatch(sw => (!sw ? sw : sw.state === 'paused' ? stopwatchResume(sw, now) : stopwatchPause(sw, now)))
+  }, [phase])
 
   // Live Activity for run. Indoor surfaces the One Piece arc/episode so a
   // glance at the Dynamic Island shows what's playing. Arc + Ep must live
   // together in `detail` — the Dynamic Island expanded view only renders
   // detail, not label, so "Ep 3" alone would be meaningless without the arc.
-  const indoorDetail = isIndoor
+  const indoorLabel = media === 'naruto' ? 'Naruto' : 'One Piece'
+  const indoorDetail = isIndoor && media === 'naruto'
+    ? 'Netflix'
+    : isIndoor
     ? (onePaceArc && onePaceEp
         ? `${onePaceArc} · Ep ${onePaceEp}`
         : onePaceArc || (onePaceEp ? `Ep ${onePaceEp}` : undefined))
     : 'Outdoor'
   const runLiveConfig: LiveActivityConfig | null =
-    phase === 'running' && startedAtRef.current > 0
+    phase === 'running' && runStartedAtMs > 0
       ? {
           sessionType: 'run',
-          sessionLabel: isIndoor ? 'One Piece' : 'Run',
+          sessionLabel: isIndoor ? indoorLabel : 'Run',
           state: {
             phase: 'active',
-            label: isIndoor ? 'One Piece' : runTypeLabel,
+            label: isIndoor ? indoorLabel : runTypeLabel,
             detail: indoorDetail,
-            startedAt: startedAtRef.current,
+            startedAt: runStartedAtMs,
             endsAt: runPaused
-              ? Date.now() + remaining * 1000
-              : startedAtRef.current + timerEstimate * 1000,
+              ? nowMs + remaining * 1000
+              : runStartedAtMs + timerEstimate * 1000,
             isPaused: runPaused,
             pausedRemaining: runPaused ? remaining : undefined,
           },
         }
-      : phase === 'logging' && startedAtRef.current > 0
+      : phase === 'logging' && runStartedAtMs > 0
         ? {
             sessionType: 'run',
-            sessionLabel: isIndoor ? 'One Piece' : 'Run',
+            sessionLabel: isIndoor ? indoorLabel : 'Run',
             state: {
               phase: 'complete',
               label: runTypeLabel,
               detail: indoorDetail,
-              startedAt: startedAtRef.current,
-              endsAt: Date.now(),
+              startedAt: runStartedAtMs,
+              endsAt: nowMs,
               isPaused: false,
               completeMessage: 'Log your run',
             },
@@ -463,10 +507,7 @@ export function RunSessionView({
       if (phase === 'running' && runPaused) toggleRunPause()
     },
     onEnd: () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
+      // Lock-screen End leaves the session (still in progress, resumable).
       onExit?.()
     },
     // "Next →" from the lock screen: running → finish run (go to log).
@@ -529,6 +570,41 @@ export function RunSessionView({
         </div>
 
         {isIndoor && (
+          <div className="mt-6 flex items-center gap-3">
+            <button
+              onClick={() => chooseMedia('one_pace')}
+              className={`flex-1 rounded-md py-3 text-sm font-medium ${
+                media === 'one_pace' ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
+              }`}
+            >
+              One Pace
+            </button>
+            <button
+              onClick={() => chooseMedia('naruto')}
+              className={`flex-1 rounded-md py-3 text-sm font-medium ${
+                media === 'naruto' ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
+              }`}
+            >
+              Naruto
+            </button>
+          </div>
+        )}
+
+        {isIndoor && media === 'naruto' && (
+          <div className="mt-6 flex flex-col items-center gap-4">
+            <button
+              onClick={() => window.open(NARUTO_NETFLIX_URL, '_blank')}
+              className="flex w-full flex-col items-center gap-2 rounded-md border border-gold/15 bg-deep-forest px-6 py-8"
+            >
+              <span className="font-cinzel text-display-lg text-gold">Naruto</span>
+              <span className="font-cinzel text-sm tracking-wider text-gold/70">
+                Open in Netflix
+              </span>
+            </button>
+          </div>
+        )}
+
+        {isIndoor && media === 'one_pace' && (
           <div className="mt-8 flex flex-col items-center gap-4">
             {(onePaceArc || onePaceEp) && (
               <p className="font-cinzel text-display-lg text-gold text-center">
@@ -536,7 +612,7 @@ export function RunSessionView({
               </p>
             )}
             <button
-              onClick={() => window.open('https://onepace.net', '_blank')}
+              onClick={() => window.open(ONEPACE_URL, '_blank')}
               className="flex w-full flex-col items-center gap-4 rounded-md border border-gold/15 bg-deep-forest px-6 py-8"
             >
               <img
@@ -653,7 +729,7 @@ export function RunSessionView({
           </div>
         </div>
 
-        {isIndoor && (
+        {isIndoor && media === 'one_pace' && (
           <div className="rounded-md border border-border bg-deep-forest p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -661,7 +737,7 @@ export function RunSessionView({
                 <p className="text-sm font-medium text-teal">One Pace</p>
               </div>
               <a
-                href="https://onepace.net"
+                href={ONEPACE_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-teal/70 underline decoration-teal/30 active:text-teal"

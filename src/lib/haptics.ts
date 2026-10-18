@@ -3,6 +3,26 @@ import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
 
 const isNative = Capacitor.isNativePlatform()
 
+// Settings → Haptics. A device preference, so it lives on the phone; every
+// haptic in the app goes through this module and checks it.
+const HAPTICS_KEY = 'waymark_haptics_enabled'
+
+export function isHapticsEnabled(): boolean {
+  try {
+    return typeof window === 'undefined' || window.localStorage.getItem(HAPTICS_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+export function setHapticsEnabled(enabled: boolean): void {
+  try {
+    if (typeof window !== 'undefined') window.localStorage.setItem(HAPTICS_KEY, enabled ? '1' : '0')
+  } catch {
+    // storage unavailable: the default (on) stays
+  }
+}
+
 function webVibrate(ms: number | number[]): void {
   if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
     navigator.vibrate(ms)
@@ -10,6 +30,7 @@ function webVibrate(ms: number | number[]): void {
 }
 
 export async function tapHaptic() {
+  if (!isHapticsEnabled()) return
   if (isNative) {
     await Haptics.impact({ style: ImpactStyle.Light })
     return
@@ -18,6 +39,7 @@ export async function tapHaptic() {
 }
 
 export async function completeHaptic() {
+  if (!isHapticsEnabled()) return
   if (isNative) {
     await Haptics.notification({ type: NotificationType.Success })
     return
@@ -26,6 +48,7 @@ export async function completeHaptic() {
 }
 
 export async function heavyHaptic() {
+  if (!isHapticsEnabled()) return
   if (isNative) {
     await Haptics.impact({ style: ImpactStyle.Heavy })
     return
@@ -34,6 +57,7 @@ export async function heavyHaptic() {
 }
 
 export async function mediumHaptic() {
+  if (!isHapticsEnabled()) return
   if (isNative) {
     await Haptics.impact({ style: ImpactStyle.Medium })
     return
@@ -42,6 +66,7 @@ export async function mediumHaptic() {
 }
 
 export async function selectHaptic() {
+  if (!isHapticsEnabled()) return
   if (isNative) {
     await Haptics.selectionChanged()
     return

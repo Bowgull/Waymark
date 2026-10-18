@@ -99,8 +99,13 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             forName: .waymarkTimerPauseRequested,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.notifyListeners("pauseRequested", data: [:])
+        ) { [weak self] notification in
+            var data: [String: Any] = [:]
+            if let userInfo = notification.userInfo {
+                if let ms = userInfo["pausedRemainingMs"] as? Double { data["pausedRemainingMs"] = ms }
+                if let at = userInfo["pausedAtMs"] as? Double { data["pausedAtMs"] = at }
+            }
+            self?.notifyListeners("pauseRequested", data: data)
         }
 
         NotificationCenter.default.addObserver(

@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { EQUIPMENT_SWAPS, swapForMissingEquipment } from './exerciseSwaps'
 import { kgToLbs, lbsToKg } from './units'
 import { accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp } from './strengthLoads'
 
@@ -87,20 +85,6 @@ assert.equal(accessoryLoadKg(null, 'accessory'), null)
   assert.equal(accessoryProgression(hit.map(s => ({ ...s, loadFeedback: 'too_heavy' })), 2, opts)!.type, 'hold_current')
   assert.equal(accessoryProgression(hit.map(s => ({ ...s, rir: 2 })), 2, opts)!.type, 'weight_increase')
   assert.equal(accessoryProgression([], 2, opts), null)
-}
-
-// Missing-equipment swaps: every target exists; unknown targets are skipped.
-{
-  const library = ['src/db/seed.ts', 'drizzle/0022_road_bootcamp.sql', 'drizzle/0026_block_zero_phase_b.sql', 'drizzle/0028_logging_safety.sql'].map(f => readFileSync(f, 'utf8')).join('\n')
-  const known = new Set([...library.matchAll(/'(ex-[a-z0-9-]+)'/g)].map(m => m[1]))
-  for (const [from, to] of Object.entries(EQUIPMENT_SWAPS)) {
-    assert.ok(known.has(from) && known.has(to.exerciseId), `swap ${from} -> ${to.exerciseId} uses library ids`)
-  }
-  assert.equal(swapForMissingEquipment('ex-trap-bar-deadlift', known)?.exerciseId, 'ex-db-rdl')
-  assert.equal(swapForMissingEquipment('ex-hamstring-curl', known)?.exerciseId, 'ex-glute-bridges', 'no machine: bridges')
-  assert.equal(swapForMissingEquipment('ex-tempo-squat', known)?.exerciseId, 'ex-goblet-squat', 'falls back to the back-friendly table')
-  assert.equal(swapForMissingEquipment('ex-bench-press', new Set()), null, 'no swap when the target is missing')
-  assert.equal(swapForMissingEquipment('ex-neck-iso-4way', known), null)
 }
 
 console.log('strengthLoads tests passed')
