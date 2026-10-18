@@ -5,7 +5,6 @@ import { Browser } from '@capacitor/browser'
 import { Capacitor } from '@capacitor/core'
 
 import { apiFetch } from '@/lib/api'
-import { getApiBaseUrl } from '@/lib/apiBase'
 import { scheduleAlarms } from '@/lib/notifications'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
 import { ScrollDrum, ScrollDrumList } from '@/components/ui/ScrollDrum'
@@ -231,7 +230,7 @@ export function SettingsPage() {
         return
       }
 
-      const url = `${getApiBaseUrl()}/api/strava/authorize`
+      const { url } = await apiFetch<{ url: string }>('/api/strava/link-start', { method: 'POST' })
       if (Capacitor.isNativePlatform()) {
         await Browser.open({ url, presentationStyle: 'popover' })
       } else {

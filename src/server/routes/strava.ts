@@ -25,6 +25,7 @@ type Bindings = {
   STRAVA_CLIENT_ID: string
   STRAVA_CLIENT_SECRET: string
   STRAVA_WEBHOOK_VERIFY_TOKEN: string
+  STRAVA_SUBSCRIPTION_ID?: string
   DEMO_MODE?: string
 }
 
@@ -38,10 +39,29 @@ const POLL_WINDOW_SEC = 14 * 24 * 60 * 60 // 14 days — webhook is the real-tim
 
 const strava = new Hono<{ Bindings: Bindings }>()
 
-strava.get('/authorize', (c) => {
+// Linking starts here (behind the API key): returns a signed, short-lived OAuth
+// `state`. /authorize and /callback are public (a browser can't send the key),
+// so they only proceed with a valid state. Stops anyone else from linking
+// their Strava account in place of ours.
+strava.post('/link-start', async (c) => {
+  if (!c.env.STRAVA_CLIENT_ID || !c.env.STRAVA_CLIENT_SECRET) {
+    return c.json({ error: 'Strava client not configured' }, 500)
+  }
+  const state = await signOAuthState(c.env.STRAVA_CLIENT_SECRET)
+  const url = new URL('/api/strava/authorize', c.req.url)
+  url.searchParams.set('state', state)
+  return c.json({ url: url.toString() })
+})
+
+strava.get('/authorize', async (c) => {
   const clientId = c.env.STRAVA_CLIENT_ID
   if (!clientId) return c.json({ error: 'STRAVA_CLIENT_ID not configured' }, 500)
+  const state = c.req.query('state')
+  if (!state || !(await verifyOAuthState(state, c.env.STRAVA_CLIENT_SECRET))) {
+    return c.redirect(`/api/strava/error?reason=bad_state`)
+  }
   const url = new URL(AUTH_URL)
+  url.searchParams.set('state', state)
   url.searchParams.set('client_id', clientId)
   url.searchParams.set('redirect_uri', getRedirectUri(c.req.url))
   url.searchParams.set('response_type', 'code')
@@ -55,6 +75,10 @@ strava.get('/callback', async (c) => {
   const error = c.req.query('error')
   if (error) return c.redirect(`/api/strava/error?reason=denied`)
   if (!code) return c.redirect(`/api/strava/error?reason=missing_code`)
+  const state = c.req.query('state')
+  if (!state || !(await verifyOAuthState(state, c.env.STRAVA_CLIENT_SECRET))) {
+    return c.redirect(`/api/strava/error?reason=bad_state`)
+  }
 
   const clientId = c.env.STRAVA_CLIENT_ID
   const clientSecret = c.env.STRAVA_CLIENT_SECRET
@@ -88,7 +112,8 @@ strava.get('/callback', async (c) => {
   // missing, something is deeply wrong. Fail loudly rather than storing a
   // bogus athleteId=0 that would collide with real user 0 and break ingest.
   if (!data.athlete || typeof data.athlete.id !== 'number') {
-    console.error('[strava] token exchange missing athlete', data)
+    // Never log `data` itself: it carries the access and refresh tokens.
+    console.error('[strava] token exchange missing athlete', { fields: Object.keys(data) })
     return c.redirect(`/api/strava/error?reason=token_exchange_failed`)
   }
 
@@ -192,6 +217,12 @@ strava.post('/webhook', async (c) => {
     body = await c.req.json<StravaWebhookEvent>()
   } catch {
     // Ping or malformed — ack so Strava doesn't retry.
+  }
+  // Only act on events for our linked athlete (and our subscription, once
+  // STRAVA_SUBSCRIPTION_ID is set). Anything else is acked and ignored.
+  if (body && !(await isOurWebhookEvent(body, c.env))) {
+    console.warn('[strava-webhook] ignored event for unknown owner/subscription')
+    return c.json({ ok: true })
   }
   if (body && body.object_type === 'activity' && body.aspect_type === 'create') {
     c.executionCtx.waitUntil(
@@ -458,6 +489,50 @@ const STRAVA_ERROR_COPY: Record<string, string> = {
   missing_code: 'Strava did not return an authorization code.',
   token_exchange_failed: 'Strava would not exchange the code for a token.',
   not_configured: 'Waymark is missing its Strava client secrets. Check Worker config.',
+  bad_state: 'This link expired or did not come from Waymark. Start again from Settings.',
+}
+
+// ─── OAuth state + webhook checks ─────────────────────────────
+
+const STATE_TTL_SEC = 10 * 60
+
+function b64url(bytes: Uint8Array): string {
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+async function hmac(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`strava-oauth-state:${message}`))
+  return b64url(new Uint8Array(sig))
+}
+
+// state = <nonce>.<expiresAtSec>.<hmac>, signed with the Strava client secret.
+async function signOAuthState(secret: string): Promise<string> {
+  const nonce = b64url(crypto.getRandomValues(new Uint8Array(16)))
+  const payload = `${nonce}.${Math.floor(Date.now() / 1000) + STATE_TTL_SEC}`
+  return `${payload}.${await hmac(secret, payload)}`
+}
+
+async function verifyOAuthState(state: string, secret: string | undefined): Promise<boolean> {
+  if (!secret) return false
+  const parts = state.split('.')
+  if (parts.length !== 3) return false
+  const [nonce, exp, sig] = parts
+  const expected = await hmac(secret, `${nonce}.${exp}`)
+  let diff = expected.length ^ sig.length
+  for (let i = 0; i < Math.max(expected.length, sig.length); i++) diff |= (expected.charCodeAt(i) || 0) ^ (sig.charCodeAt(i) || 0)
+  if (diff !== 0) return false
+  const expSec = Number(exp)
+  return Number.isFinite(expSec) && expSec >= Math.floor(Date.now() / 1000)
+}
+
+async function isOurWebhookEvent(event: StravaWebhookEvent, env: Bindings): Promise<boolean> {
+  if (env.STRAVA_SUBSCRIPTION_ID && String(event.subscription_id) !== env.STRAVA_SUBSCRIPTION_ID) return false
+  const db = createDB(env)
+  const [row] = await db.select({ athleteId: stravaTokens.athleteId }).from(stravaTokens).where(eq(stravaTokens.id, 'default'))
+  return Boolean(row) && event.owner_id === row.athleteId
 }
 
 function safeParseJson(text: string): unknown {
@@ -569,6 +644,7 @@ type StravaWebhookEvent = {
   object_id: number
   aspect_type: 'create' | 'update' | 'delete'
   owner_id: number
+  subscription_id?: number
   updates?: Record<string, string>
 }
 

@@ -58,7 +58,7 @@ app.use('/api/*', cors({
 // Auth: all /api/* routes require Bearer token except health check and Strava webhook
 app.use('/api/*', async (c, next) => {
   const path = new URL(c.req.url).pathname.replace(/\/+$/, '')
-  if (path === '/api/health' || path === '/api/strava/webhook') {
+  if (PUBLIC_API_PATHS.has(path)) {
     return next()
   }
   const key = c.env.WAYMARK_API_KEY
@@ -68,6 +68,17 @@ app.use('/api/*', async (c, next) => {
   }
   return next()
 })
+
+// Strava calls the webhook; the OAuth pages are opened in a browser, which can't send the key.
+// /authorize and /callback check a signed `state` instead (see routes/strava.ts).
+const PUBLIC_API_PATHS = new Set([
+  '/api/health',
+  '/api/strava/webhook',
+  '/api/strava/authorize',
+  '/api/strava/callback',
+  '/api/strava/success',
+  '/api/strava/error',
+])
 
 // Constant-time string compare so the key can't be recovered byte by byte from response timing.
 function timingSafeEqualStr(a: string, b: string): boolean {
