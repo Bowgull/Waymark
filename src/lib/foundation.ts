@@ -23,6 +23,11 @@
 // shoulder rolls in the neck block. A red flag (back or neck) is breathing only
 // and one line to a clinician. Once the muay thai ramp allows clinch, Wednesday
 // adds light neck isometrics for clinch tolerance (not concussion prevention).
+// The Fighter phase (no Block Zero week) runs level 3 plus two moves the
+// research keeps for kicks and punching volume: the world's greatest stretch
+// (hip and upper back) and band external rotations (rotator cuff, skipped on
+// push and pull days, which have face pulls). To stay near 15 minutes it holds
+// the pec stretch once per side and runs the Y-T at 2 x 6.
 // Every exercise is one row of FOUNDATION_ROWS: that table is the content.
 // Pure.
 
@@ -81,6 +86,8 @@ export interface FoundationRow {
   perSide?: boolean
   /** Levels 1-3. */
   levels: [Slot, Slot, Slot]
+  /** Fighter phase (no Block Zero week). Defaults to the level 3 slot. */
+  fighter?: Slot
   /** Back today <= 2. */
   badBack: Slot
   /** Neck flag. Neck-block rows only; when set it wins over badBack. */
@@ -145,6 +152,13 @@ export const FOUNDATION_ROWS: readonly FoundationRow[] = [
     skipOn: ['B', 'pull'],
     note: '{reps} slow reps. Dowel touches head, upper back and tailbone the whole way. Hips back, then squeeze to stand.',
   },
+  {
+    exerciseId: 'ex-worlds-greatest-stretch', label: "World's Greatest Stretch", section: 'lower', block: 'back', perSide: true,
+    levels: all('skip'),
+    fighter: d(1, null, 3),
+    badBack: 'skip',
+    note: '{reps} slow reps each side. Long lunge, same-side hand down inside the front foot, then turn the top arm up to the ceiling and follow it with your eyes. Back knee down if you like. An easy stretch through the hip and upper back, nothing forced. Kick prep.',
+  },
   // Neck & shoulders block (~5 min)
   {
     exerciseId: 'ex-chin-tucks', label: 'Chin Tuck', section: 'upper', block: 'neck',
@@ -174,6 +188,7 @@ export const FOUNDATION_ROWS: readonly FoundationRow[] = [
   {
     exerciseId: 'ex-doorway-pec-stretch', label: 'Doorway Pec Stretch', section: 'upper', block: 'neck', perSide: true,
     levels: all(d(1, 30, 2)),
+    fighter: d(1, 30, 1),
     badBack: d(1, 30, 2),
     badNeck: d(1, 30, 2),
     note: '{reps} x {hold}s each side. Forearm on the door frame, elbow at or just above shoulder height. Step through gently until you feel the front of the chest.',
@@ -188,10 +203,20 @@ export const FOUNDATION_ROWS: readonly FoundationRow[] = [
   {
     exerciseId: 'ex-ytw-raises', label: 'Prone Y-T Raise', section: 'upper', block: 'neck',
     levels: [d(2, null, 8), d(2, null, 10), d(2, null, 8, { note: '{reps} slow reps per set with a 1s pause at the top, thumbs up. Alternate sets: Y, then T. Add 0.5-1 kg when it is easy.' })],
+    fighter: d(2, null, 6, { note: '{reps} slow reps per set with a 1s pause at the top, thumbs up. Alternate sets: Y, then T. Add 0.5-1 kg when it is easy.' }),
     badBack: 'skip',
     badNeck: 'skip',
     skipOn: ANY_STRENGTH,
     note: '{reps} slow reps per set, thumbs up. Alternate sets: Y (arms overhead at 45 degrees), then T (arms out to the sides). Wall slides work too.',
+  },
+  {
+    exerciseId: 'ex-band-external-rotation', label: 'Band External Rotations', section: 'upper', block: 'neck', perSide: true,
+    levels: all('skip'),
+    fighter: d(1, null, 8),
+    badBack: 'skip',
+    badNeck: 'skip',
+    skipOn: ANY_STRENGTH,
+    note: '{reps} slow reps each arm, light band. Elbow tucked to your side (a rolled towel helps), turn the forearm out and back with control. You should feel it at the back of the shoulder, never a pinch. Rotator cuff work for punching volume.',
   },
   // Clinch-phase add-on (Wednesday, once the ramp allows clinch)
   {
@@ -238,12 +263,13 @@ export function foundationTemplate(input: FoundationInput, rows: readonly Founda
   const badBack = isBadBackDay(input.backToday)
   const badNeck = input.neckFlag === true
   const level = foundationLevel(input.week)
+  const fighter = input.week == null
   const clinchDay = input.clinchAllowed === true && input.dayOfWeek === CLINCH_NECK_DOW
   const out: MobilityExerciseTemplate[] = []
   for (const row of rows) {
     if (row.clinchAddOn && !clinchDay) continue
     if (input.strengthDay && row.skipOn?.includes(input.strengthDay)) continue
-    let dose: Slot = row.levels[level - 1]
+    let dose: Slot = fighter && row.fighter !== undefined ? row.fighter : row.levels[level - 1]
     if (badNeck && row.block === 'neck' && row.badNeck !== undefined) dose = row.badNeck
     else if (badBack) dose = row.badBack
     if (dose === 'skip') continue

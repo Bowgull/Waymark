@@ -47,7 +47,31 @@ assert.equal(foundationLevel(null), 3, 'Fighter default: level 3')
 assert.deepEqual(foundationTemplate({ week: 2 }), w1, 'week 2 is level 1')
 assert.deepEqual(foundationTemplate({ week: 4 }), w3, 'week 4 is level 2')
 assert.deepEqual(foundationTemplate({ week: 7 }), w5, 'extension weeks hold level 3')
-assert.deepEqual(foundationTemplate({}), w5, 'Fighter phase runs level 3')
+// Fighter phase (no week): level 3 plus the world's greatest stretch and band
+// external rotations; Block Zero never gets them.
+const fighter = foundationTemplate({})
+const fighterOnly = ['ex-worlds-greatest-stretch', 'ex-band-external-rotation']
+assert.deepEqual(ids(fighter).filter(id => !fighterOnly.includes(id)), ids(w5), 'Fighter phase runs the level 3 moves')
+for (const id of fighterOnly) {
+  assert.ok(ids(fighter).includes(id), `Fighter has ${id}`)
+  for (const w of [1, 2, 3, 4, 5, 6, 7, 8]) for (const s of [null, 'A', 'B', 'C'] as const) assert.ok(!ids(foundationTemplate({ week: w, strengthDay: s })).includes(id), `Block Zero week ${w} ${s ?? 'rest'}: no ${id}`)
+}
+assert.ok(ids(fighter).indexOf('ex-worlds-greatest-stretch') < ids(fighter).indexOf('ex-chin-tucks'), 'stretch closes the back block')
+assert.ok(ids(fighter).indexOf('ex-band-external-rotation') > ids(fighter).indexOf('ex-ytw-raises'), 'rotations close the neck block')
+assert.deepEqual([row(fighter, 'ex-worlds-greatest-stretch')!.reps, row(fighter, 'ex-worlds-greatest-stretch')!.perSide], [3, true], "world's greatest stretch 3 each side")
+assert.deepEqual([row(fighter, 'ex-band-external-rotation')!.sets, row(fighter, 'ex-band-external-rotation')!.reps, row(fighter, 'ex-band-external-rotation')!.perSide], [1, 8, true], 'external rotations 1 x 8 each arm')
+for (const s of ['push', 'pull'] as const) {
+  const f = ids(foundationTemplate({ strengthDay: s }))
+  assert.ok(!f.includes('ex-band-external-rotation') && !f.includes('ex-ytw-raises'), `Fighter ${s} (face pulls): no rotations, no Y-T`)
+  assert.ok(f.includes('ex-worlds-greatest-stretch'), `Fighter ${s}: the stretch stays`)
+}
+assert.ok(!ids(foundationTemplate({ backToday: 2 })).some(id => fighterOnly.includes(id)), 'Fighter bad-back day: neither')
+assert.deepEqual(foundationTemplate({ backToday: 2 }), foundationTemplate({ week: 5, backToday: 2 }), 'Fighter bad-back day is the usual short version')
+assert.ok(!ids(foundationTemplate({ neckFlag: true })).includes('ex-band-external-rotation'), 'Fighter bad-neck day: no rotations')
+assert.equal(row(fighter, 'ex-doorway-pec-stretch')!.reps, 1, 'Fighter: pec stretch once per side to make room')
+assert.equal(row(fighter, 'ex-ytw-raises')!.reps, 6, 'Fighter: Y-T 2 x 6')
+assert.ok(minutes({}) <= 16, `Fighter rest day is at most 16 min (got ${minutes({}).toFixed(1)})`)
+for (const s of ['push', 'pull'] as const) assert.ok(minutes({ strengthDay: s }) <= 14, `Fighter ${s} day is shorter`)
 assert.ok(row(w1, 'ex-side-plank-knees') && !row(w1, 'ex-side-plank'), 'L1 side plank from the knees')
 assert.ok(row(w3, 'ex-side-plank-knees')!.holdSec! > row(w1, 'ex-side-plank-knees')!.holdSec!, 'L2 knees hold rises')
 assert.ok(row(w5, 'ex-side-plank') && !row(w5, 'ex-side-plank-knees'), 'L3 full side plank')
@@ -222,6 +246,32 @@ const copy = [...FOUNDATION_ROWS.map(r => r.note), ...DAILY_MOBILITY_TEMPLATE.ma
 for (const claim of [/desk kyphosis/i, /resets the diaphragm/i, /switch(?:es)? off/i, /weak from forward head/i, /turn off/i, /pull shoulders back/i]) {
   assert.ok(!claim.test(copy), `no over-claim: ${claim}`)
 }
+// Library cues (0029 and 0030): what to do and how it should feel, no posture
+// fixes, nothing sitting "locks" or "closes off", no APT counters. seed.ts,
+// seed.sql and the migrations carry the same text.
+const seedTs = readFileSync('src/db/seed.ts', 'utf8')
+const seedSql = readFileSync('src/db/seed.sql', 'utf8')
+const migration30 = readFileSync('drizzle/0030_honest_cues.sql', 'utf8')
+const cueClaims = [/posture/i, /desk/i, /sitting/i, /\bAPT\b/, /counter/i, /\bfights?\b/i, /locked/i, /\blost\b/i, /closes off/i, /\bopens\b|flexor open/i, /non-negotiable/i, /lengthens/i, /releases\b|release (?:the|tight|tension)/i, /\bfix/i, /\bcure/i]
+/** The formCues string of each seed.ts entry with this id (seed.ts writes \' for an apostrophe). */
+const seedCues = (id: string) => seedTs.split(`id: '${id}',`).slice(1).map(chunk => {
+  const m = chunk.match(/formCues: (['"])((?:\\.|(?!\1).)*)\1/)
+  assert.ok(m, `${id} has formCues`)
+  return m[2].replace(/\\'/g, "'")
+})
+for (const id of ['ex-bent-over-row', 'ex-face-pulls', 'ex-pullup', 'ex-pigeon-stretch', 'ex-90-90-hip-switches', 'ex-walking-knee-hugs', 'ex-butterfly-stretch', 'ex-standing-quad-stretch']) {
+  const cues = seedCues(id)
+  assert.equal(cues.length, 1, `${id}: one entry in seed.ts`)
+  const cue = cues[0]
+  for (const claim of cueClaims) assert.ok(!claim.test(cue), `${id} cue, no over-claim: ${claim}`)
+  const sql = cue.replace(/'/g, "''")
+  assert.ok(migration30.includes(`UPDATE exercises SET form_cues = '${sql}' WHERE id = '${id}';`), `0030 updates ${id} to the seed.ts cue`)
+  const sqlRows = seedSql.split('\n').filter(l => l.includes(`VALUES ('${id}', `))
+  assert.equal(sqlRows.length, 1, `${id}: one row in seed.sql`)
+  assert.ok(sqlRows[0].includes(`'${sql}'`), `seed.sql carries the ${id} cue`)
+}
+assert.ok(!/^\s*(?:UPDATE|DELETE)\s+(?!exercises\b)/im.test(migration30), '0030 only touches library rows')
+assert.ok(!/^\s*(?:DELETE|DROP|ALTER|INSERT|CREATE)/im.test(migration30), '0030 is cue UPDATEs only')
 const migration = readFileSync('drizzle/0029_foundation_track.sql', 'utf8')
 assert.ok(!/^\s*(?:UPDATE|DELETE)\s+(?!exercises\b)/im.test(migration), '0029 only touches library rows')
 for (const claim of [/desk kyphosis/i, /weak from forward head/i, /"turn off"/i, /compressed from sitting/i, /main driver of pelvic tilt/i, /brace harder/i]) {

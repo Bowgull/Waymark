@@ -60,7 +60,7 @@ const exercises: Exercise[] = [
     category: 'strength',
     muscleGroups: 'back,biceps,rear_delts',
     equipment: 'barbell',
-    formCues: 'Hinge at hips, flat back. Pull to lower chest and squeeze shoulder blades together at the top. This directly fights the forward-shoulder posture from desk work.',
+    formCues: 'Hinge at the hips, flat back, brace. Pull the weight to the lower chest, squeeze the shoulder blades together at the top, then lower under control. You should feel the upper and middle back working, not the low back. Builds upper-back strength.',
     formVideoUrl: 'https://www.youtube.com/watch?v=G8l_8chR5BE',
   },
   {
@@ -161,7 +161,7 @@ const exercises: Exercise[] = [
     category: 'strength',
     muscleGroups: 'rear_delts,rotator_cuff,traps',
     equipment: 'cable,band',
-    formCues: 'Pull to your face, pinkies rotate back. This external rotation strengthens the rotator cuff and pulls your shoulders back. Non-negotiable for desk posture recovery.',
+    formCues: 'Rope at about face height. Pull toward your face with the elbows high, and turn the hands out so they finish beside the ears, pinkies back. Light and controlled. You should feel the back of the shoulders and between the shoulder blades. Trains the rear delts and rotator cuff.',
     formVideoUrl: 'https://www.youtube.com/watch?v=rep-qVOkqgk',
   },
   {
@@ -199,7 +199,7 @@ const exercises: Exercise[] = [
     category: 'strength',
     muscleGroups: 'back,biceps,core',
     equipment: 'pull-up bar',
-    formCues: 'Dead hang, shoulder-width grip. Pull until chin clears bar. This builds the back strength that powers clinch work and counters desk posture. Control the descent.',
+    formCues: 'Dead hang, shoulder-width grip. Pull until your chin clears the bar, then lower under control to a full hang. You should feel the lats and upper back doing the work, not just the arms. Builds back and grip strength for clinch work.',
     formVideoUrl: 'https://www.youtube.com/watch?v=eGo4IYlbE5g',
   },
 
@@ -396,7 +396,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'glutes,hip_flexors',
     equipment: 'bodyweight',
-    formCues: 'Front leg bent, back leg extended. Sink hips down and breathe. This opens the deep hip rotators that get locked from sitting. Hold 45s each side. Don\'t force it.',
+    formCues: 'Front leg bent across in front of you, back leg extended behind. Sink the hips down only as far as is comfortable and breathe. You should feel a stretch in the outside of the front hip and glute, nothing in the knee. Hold 45s each side. Don\'t force it.',
     formVideoUrl: 'https://www.youtube.com/watch?v=Ms6VMXPq2uU',
   },
   {
@@ -414,7 +414,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'hips,glutes',
     equipment: 'bodyweight',
-    formCues: 'Both legs at 90 degrees, rotate knees to switch sides, smooth and controlled. This opens both internal and external hip rotation, which most desk workers have lost.',
+    formCues: 'Sit with both legs bent at 90 degrees, one in front and one to the side. Rotate the knees over to switch sides, smooth and controlled, hands behind you if needed. You should feel the hips turning in and out, nothing pinching. Hip rotation range for kicks.',
     formVideoUrl: 'https://www.youtube.com/watch?v=qq_Z7sAmVrA',
   },
   {
@@ -522,7 +522,7 @@ const exercises: Exercise[] = [
     category: 'mobility',
     muscleGroups: 'hip_flexors,glutes',
     equipment: 'bodyweight',
-    formCues: 'Step forward, pull opposite knee to chest for a beat, release and walk through. 6 per side. Dynamic hip flexor open, counters sitting-driven APT.',
+    formCues: 'Step forward, lift one knee and hug it to your chest for a beat while standing tall on the other leg, then release and walk through. 6 per side. You should feel a stretch in the glute and back of the hugged leg. A dynamic hip warm-up.',
     formVideoUrl: 'https://www.youtube.com/watch?v=GVU4paANHoE',
   },
   {
@@ -578,7 +578,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'adductors,hips',
     equipment: 'bodyweight',
-    formCues: 'Soles together, knees fall open, fold forward from the hips. 60s. Adductor and inner-hip length sitting closes off.',
+    formCues: 'Sit with the soles of the feet together and let the knees fall open. Sit tall, then fold forward gently from the hips. You should feel a stretch along the inner thighs. 60s, breathing easy.',
     formVideoUrl: 'https://www.youtube.com/watch?v=b2DBNGlZfpo',
   },
   {
@@ -587,7 +587,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'quads,hip_flexors',
     equipment: 'bodyweight',
-    formCues: 'Stand, grab the ankle behind you, knees together, squeeze the back glute. 30s each side. Rectus femoris and hip flexor, direct counter to APT.',
+    formCues: 'Stand tall, a hand on a wall if needed. Grab the ankle behind you, knees together, and squeeze the back glute. You should feel a stretch in the front of the thigh and hip. 30s each side.',
     formVideoUrl: 'https://www.youtube.com/watch?v=UGEpQ1BRx-4',
   },
   {
