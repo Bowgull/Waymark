@@ -9,7 +9,6 @@ import { getSessionLabel } from '@/lib/weeklyTemplate'
 import { getMarkAsset } from '@/lib/markAssets'
 import { getStrengthTemplate, getWeekLabel, getDeadliftExerciseId } from '@/lib/strengthTemplates'
 import { getRunPlanForWeek } from '@/lib/runningPlanTemplate'
-import { getRoadBootcampWeekLabel } from '@/lib/roadBootcampTemplate'
 import { getSessionTargetHr } from '@/lib/sessionIntent'
 
 interface SessionSummary {
@@ -79,19 +78,12 @@ function getRoutineOverview(
   dayOfWeek: number,
   blockWeek: number,
   weekNumber: number,
-  blockType: 'fighter' | 'block_zero' | 'road_bootcamp' = 'fighter',
+  blockType: 'fighter' | 'block_zero' = 'fighter',
   runCategory: string | null = null,
   maxHr: number | null = null,
 ): RoutineOverview | null {
   switch (type) {
     case 'strength': {
-      if (blockType === 'road_bootcamp') {
-        return {
-          headline: dayOfWeek === 2 ? 'Squat · push · row' : 'Hinge · press · pull',
-          detail: 'Pick time and equipment when you start.',
-          intensityBadge: getRoadBootcampWeekLabel(weekNumber),
-        }
-      }
       const template = getStrengthTemplate(dayOfWeek, blockWeek, blockType)
       const mainLifts = template.exercises
         .filter(e => e.section === 'main')
@@ -118,13 +110,10 @@ function getRoutineOverview(
     }
 
     case 'foundation_run': {
-      const duration = blockType === 'road_bootcamp'
-        ? weekNumber === 4 ? '25 min' : weekNumber >= 5 ? '40 min' : '35 min'
-        : '15-20 min'
       const hr = compactTargetHr(getSessionTargetHr('foundation_run', runCategory, maxHr))
       return {
         headline: 'Zone 2 easy, conversational pace',
-        detail: `${duration} · ${hr ?? 'talk test'} · nasal breathing`,
+        detail: `15-20 min · ${hr ?? 'talk test'} · nasal breathing`,
       }
     }
 
@@ -272,17 +261,12 @@ function SessionRow({
   const longPressFired = useRef(false)
   const date = new Date(epochDay * 86400 * 1000)
   const dayOfWeek = date.getUTCDay()
-  const isRoadBootcamp = session.blockType === 'road_bootcamp'
-  const label = isRoadBootcamp && session.type === 'strength'
-    ? dayOfWeek === 2 ? 'Road Strength A' : 'Road Strength B'
-    : isRoadBootcamp && session.type === 'foundation_run'
-      ? 'Easy Run'
-      : getSessionLabel(session.type, dayOfWeek)
+  const label = getSessionLabel(session.type, dayOfWeek)
   const mark = getMarkAsset(session.type)
   const isSkippable = session.status === 'planned' || session.status === 'in_progress'
   const isPassed = session.status === 'skipped' || session.status === 'missed'
   const blockWeek = session.blockWeek ?? 1
-  const blockType = (session.blockType === 'block_zero' ? 'block_zero' : session.blockType === 'road_bootcamp' ? 'road_bootcamp' : 'fighter') as 'fighter' | 'block_zero' | 'road_bootcamp'
+  const blockType = session.blockType === 'block_zero' ? 'block_zero' : 'fighter'
   const overview = showOverview && !isPassed
     ? getRoutineOverview(session.type, dayOfWeek, blockWeek, weekNumber, blockType, session.notes ?? null, maxHr ?? null)
     : null

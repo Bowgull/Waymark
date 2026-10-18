@@ -41,7 +41,6 @@ export interface LiftVerdictResult {
 export interface ExerciseSessionPoint {
   epochDay: number
   signal: SessionSignal
-  bandColor: string | null
 }
 
 const STATUS_SCORE: Record<string, number> = {
@@ -114,8 +113,8 @@ export async function loadLiftTrendData(
   const exerciseBySseId = new Map(allExercises.map(e => [e.id, e]))
   const nameById = new Map(exerciseRows.map(e => [e.id, e.name]))
 
-  // exerciseId -> sessionId -> { epochDay, statuses[], lastBand }
-  const byExercise = new Map<string, Map<string, { epochDay: number; statuses: Array<string | null>; bandColor: string | null }>>()
+  // exerciseId -> sessionId -> { epochDay, statuses[] }
+  const byExercise = new Map<string, Map<string, { epochDay: number; statuses: Array<string | null> }>>()
 
   for (const set of allSets) {
     if (set.isWarmup === 1) continue
@@ -131,9 +130,8 @@ export async function loadLiftTrendData(
       perSession = new Map()
       byExercise.set(sse.exerciseId, perSession)
     }
-    const entry = perSession.get(sse.sessionId) ?? { epochDay, statuses: [], bandColor: null }
+    const entry = perSession.get(sse.sessionId) ?? { epochDay, statuses: [] }
     entry.statuses.push(set.inferredStatus)
-    if (set.bandColor) entry.bandColor = set.bandColor
     perSession.set(sse.sessionId, entry)
   }
 
@@ -141,23 +139,21 @@ export async function loadLiftTrendData(
   for (const [exerciseId, perSession] of byExercise) {
     const points: ExerciseSessionPoint[] = Array.from(perSession.values())
       .sort((a, b) => b.epochDay - a.epochDay)
-      .map(e => ({ epochDay: e.epochDay, signal: sessionSignalFromStatuses(e.statuses), bandColor: e.bandColor }))
+      .map(e => ({ epochDay: e.epochDay, signal: sessionSignalFromStatuses(e.statuses) }))
     details.push({ exerciseId, exerciseName: nameById.get(exerciseId) ?? exerciseId, points })
   }
   return details
 }
 
-// Thin verdict map used by the prescription nudge: per exerciseId, the trend
-// verdict + the most recent actual band color (anchors band adjustments).
+// Thin verdict map used by the prescription nudge: per exerciseId, the trend verdict.
 export async function loadLiftTrends(
   db: DB,
   todayEpochDay: number,
-): Promise<Map<string, LiftVerdictResult & { bandColor: string | null }>> {
+): Promise<Map<string, LiftVerdictResult>> {
   const details = await loadLiftTrendData(db, todayEpochDay)
-  const result = new Map<string, LiftVerdictResult & { bandColor: string | null }>()
+  const result = new Map<string, LiftVerdictResult>()
   for (const d of details) {
-    const verdict = computeLiftVerdict(d.points)
-    result.set(d.exerciseId, { ...verdict, bandColor: d.points[0]?.bandColor ?? null })
+    result.set(d.exerciseId, computeLiftVerdict(d.points))
   }
   return result
 }

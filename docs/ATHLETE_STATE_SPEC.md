@@ -66,7 +66,7 @@ context slices. It produces a recent-window snapshot. **Trends, not last-reading
 
 | Block | Source | Shape |
 |---|---|---|
-| **Strength trends** | `strength_sets` ⨝ `strength_session_exercises` ⨝ `sessions` | per `exerciseId`: last N working sets with `weightKg`, `reps`, `plannedWeightKg`, `plannedReps`, `inferredStatus`, `bandColor`, session date. **Computed trend** = direction over the window, not the latest row. |
+| **Strength trends** | `strength_sets` ⨝ `strength_session_exercises` ⨝ `sessions` | per `exerciseId`: last N working sets with `weightKg`, `reps`, `plannedWeightKg`, `plannedReps`, `inferredStatus`, session date. **Computed trend** = direction over the window, not the latest row. |
 | **Effort trajectory** | `sessions.rpe`, `difficulty` | last N sessions, ordered |
 | **Wellness trend** | `daily_logs` | sleepHours, soreness, alcoholScale over window |
 | **Notes corpus** | `sessions.notes`, `daily_logs.notes` | concatenated, for pain/mood mining |
@@ -85,7 +85,7 @@ interface LiftTrend {
   exerciseId: string
   exerciseName: string
   sessions: Array<{ date: number; topWeightKg: number | null; totalReps: number;
-                    avgInferred: string; bandColor: string | null }>
+                    avgInferred: string }>
   direction: 'progressing' | 'stalling' | 'regressing' | 'insufficient_data'
 }
 async function loadLiftTrends(db, windowDays = 21): Promise<LiftTrend[]>
@@ -200,7 +200,6 @@ the closed loop (§7).
 | Consumer | Today | After |
 |---|---|---|
 | Next strength weight | `adjustSuggestedStrengthWeight` fixed ×0.9/×1.05 (`app.ts:384`) | read `lifts[].loadFactor`; **clamp to the deterministic floor** (e.g. never deload below program min, never push >5%/session) |
-| Next band color | `adjustBandColorFromReality` (`trainingReality.ts:85`) | drive off `lifts[].verdict` instead of last-reading inferredStatus |
 | Week plan shape | `generateWeekPlan` recomputes from adherence/HR | seed with `weekShape` + `weekShapeRationale` |
 | Reactive replan | `runReactiveReplan` rebuilds its own context | consume `AthleteState` directly; it becomes a thin renderer of `weekShape` |
 | Session review | `runSessionReview` ("Load change noted.") | quote `note` + relevant `lifts[].rationale` |
@@ -222,7 +221,7 @@ verdict was right"). Add this as a prompt instruction in Phase 2+; no new infra.
 ## 8. Files: reuse vs new vs gut
 
 **Reuse:** `anthropic.ts` (add Opus), `prompts/system.ts`, `prompts/context.ts`,
-`coaching_outputs`, `computeBlockAdherence`, `hrAnalysis`, `assessStrengthSet`/`assessBandSet`
+`coaching_outputs`, `computeBlockAdherence`, `hrAnalysis`, `assessStrengthSet`
 (now feed the trend loader, not the live nudge).
 
 **New:** `src/lib/athleteState/{types,assembleContext,loadLiftTrends,runAthleteState}.ts`,

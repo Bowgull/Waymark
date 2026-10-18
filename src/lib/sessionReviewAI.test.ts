@@ -54,19 +54,13 @@ const strengthPrompt = buildSessionReviewPrompt(
   {
     type: 'strength',
     rpe: 8,
-    notes: 'Hotel gym. Kept it tight.',
+    notes: 'Kept it tight.',
     durationSec: 1800,
   },
   [],
   {
     run: null,
     strength: {
-      roadBootcamp: {
-        timeAvailable: '30',
-        prescribedTime: '30',
-        equipment: 'hotel_gym',
-        adaptationLine: '30 minutes. Hotel gym. Main work stays, accessories drop.',
-      },
       exercises: [
         {
           name: 'DB Romanian Deadlift',
@@ -76,7 +70,6 @@ const strengthPrompt = buildSessionReviewPrompt(
           topWeightKg: 24,
           totalReps: 24,
           changedSets: 1,
-          bandColors: [],
         },
         {
           name: 'Dead Bug',
@@ -86,7 +79,6 @@ const strengthPrompt = buildSessionReviewPrompt(
           topWeightKg: null,
           totalReps: 20,
           changedSets: 0,
-          bandColors: [],
         },
       ],
     },
@@ -94,8 +86,6 @@ const strengthPrompt = buildSessionReviewPrompt(
 )
 
 assertMatch(strengthPrompt, /Strength evidence:/)
-assertMatch(strengthPrompt, /Road Bootcamp context: time 30, equipment hotel_gym\./)
-assertMatch(strengthPrompt, /Adaptation: 30 minutes\. Hotel gym\. Main work stays, accessories drop\./)
 assertMatch(strengthPrompt, /DB Romanian Deadlift \(main\): 3 working sets, 1 warmup, 24 reps, top 53 lb\. 1 changed set\./)
 assertMatch(strengthPrompt, /Dead Bug \(core\): 2 working sets, 0 warmups, 20 reps, top bodyweight or unloaded\./)
 
@@ -130,49 +120,20 @@ if (mismatchReview.line !== 'Prescribed easy. Heart said hard. Easier next time.
   throw new Error(`Unexpected local mismatch line: ${mismatchReview.line}`)
 }
 
-const roadStrengthReview = buildLocalSessionReview(
+const strengthReview = buildLocalSessionReview(
   { type: 'strength', rpe: 8, durationSec: 1800 },
   {
     run: null,
     strength: {
-      roadBootcamp: {
-        timeAvailable: '45_plus',
-        prescribedTime: '30',
-        equipment: 'no_gym',
-        adaptationLine: 'HR drift is high. Main work stays, accessories drop.',
-      },
       exercises: [
-        { name: 'Split Squat', section: 'main', workingSets: 3, warmupSets: 1, topWeightKg: null, totalReps: 24, changedSets: 0, bandColors: ['red'] },
-        { name: 'Push-Up', section: 'main', workingSets: 3, warmupSets: 0, topWeightKg: null, totalReps: 24, changedSets: 0, bandColors: [] },
+        { name: 'Back Squat', section: 'main', workingSets: 3, warmupSets: 1, topWeightKg: 80, totalReps: 15, changedSets: 0 },
       ],
     },
   },
 )
 
-if (roadStrengthReview.line !== '30 minutes. No gym. 2 movements logged.') {
-  throw new Error(`Unexpected local strength line: ${roadStrengthReview.line}`)
-}
-
-const adjustedRoadStrengthReview = buildLocalSessionReview(
-  { type: 'strength', rpe: 8, durationSec: 1800 },
-  {
-    run: null,
-    strength: {
-      roadBootcamp: {
-        timeAvailable: '30',
-        prescribedTime: '30',
-        equipment: 'no_gym',
-        adaptationLine: null,
-      },
-      exercises: [
-        { name: 'Band Row', section: 'main', workingSets: 3, warmupSets: 1, topWeightKg: null, totalReps: 24, changedSets: 1, bandColors: ['yellow'] },
-      ],
-    },
-  },
-)
-
-if (adjustedRoadStrengthReview.line !== '30 minutes. No gym. 1 movement logged. Load change noted.') {
-  throw new Error(`Unexpected adjusted local strength line: ${adjustedRoadStrengthReview.line}`)
+if (strengthReview.line !== 'Strength logged. Effort 8/10.') {
+  throw new Error(`Unexpected local strength line: ${strengthReview.line}`)
 }
 
 console.info('sessionReviewAI tests passed')

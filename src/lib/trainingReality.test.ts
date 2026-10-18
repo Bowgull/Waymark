@@ -1,6 +1,4 @@
 import {
-  adjustBandColorFromReality,
-  assessBandSet,
   assessRunCompletion,
   assessStrengthSet,
   shouldShowRunRealityMark,
@@ -53,35 +51,7 @@ function testStrengthSetStatus() {
   )
 }
 
-function testBandSetStatus() {
-  assert(
-    assessBandSet({ plannedBandColor: 'blue', actualBandColor: 'red', plannedReps: 10, actualReps: 10 }) === 'lighter',
-    'choosing an easier band is lighter',
-  )
-  assert(
-    assessBandSet({ plannedBandColor: 'red', actualBandColor: 'blue', plannedReps: 10, actualReps: 10 }) === 'heavier',
-    'choosing a harder band is heavier',
-  )
-  assert(
-    assessBandSet({ plannedBandColor: 'red', actualBandColor: 'red', plannedReps: 10, actualReps: 6 }) === 'rep_shortfall',
-    'band rep miss is shortfall',
-  )
-  assert(
-    adjustBandColorFromReality('blue', { inferredStatus: 'rep_shortfall', bandColor: 'blue' }) === 'red',
-    'rep shortfall walks prescribed band down',
-  )
-  assert(
-    adjustBandColorFromReality('red', { inferredStatus: 'rep_surplus', bandColor: 'red' }) === 'blue',
-    'rep surplus walks prescribed band up',
-  )
-  assert(
-    adjustBandColorFromReality('blue', { inferredStatus: 'lighter', bandColor: 'red' }) === 'red',
-    'manual lighter band becomes next prescription',
-  )
-}
-
 testRunCompletionStatus()
 testStrengthSetStatus()
-testBandSetStatus()
 
 console.log('trainingReality tests passed')

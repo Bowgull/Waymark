@@ -7,7 +7,6 @@ import { GoldDivider } from '@/components/ui/GoldDivider'
 import { PageBackground } from '@/components/backgrounds/PageBackground'
 import { ProgramSkeleton } from '@/components/ui/Skeleton'
 import { getWeekLabel } from '@/lib/strengthTemplates'
-import { getRoadBootcampWeekLabel } from '@/lib/roadBootcampTemplate'
 import logoPng from '@/assets/brand/Logo.png'
 
 import { WeekView } from './WeekView'
@@ -91,23 +90,6 @@ function getMonday(weekOffset = 0): string {
   return monday.toLocaleDateString('en-CA')
 }
 
-function getTomorrow(): string {
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  return tomorrow.toLocaleDateString('en-CA')
-}
-
-function getBlockStartDate(block: Block): string {
-  if (!block.startedAt) return getMonday(0)
-  return new Date(block.startedAt * 1000).toLocaleDateString('en-CA')
-}
-
-function getRoadBootcampWeekStart(block: Block, targetWeekNumber: number): string {
-  const date = new Date(getBlockStartDate(block))
-  date.setDate(date.getDate() + (targetWeekNumber - 1) * 7)
-  return date.toLocaleDateString('en-CA')
-}
-
 export function ProgramPage() {
   const [block, setBlock] = useState<Block | null | undefined>(undefined)
   const [weekData, setWeekData] = useState<WeekData | null>(null)
@@ -120,7 +102,7 @@ export function ProgramPage() {
   const [assessmentLoading, setAssessmentLoading] = useState(false)
   const [transitionResult, setTransitionResult] = useState<TransitionResult | null>(null)
   const [checkingTransition, setCheckingTransition] = useState(false)
-  const [confirmRoadBootcamp, setConfirmRoadBootcamp] = useState(false)
+  const [confirmFreshStart, setConfirmFreshStart] = useState(false)
   const [maxHr, setMaxHr] = useState<number | null>(null)
 
   const getCurrentWeekNumber = useCallback((b: Block): number => {
@@ -140,12 +122,9 @@ export function ProgramPage() {
     const currentWn = getCurrentWeekNumber(b)
     if (!wd && (wn === currentWn || wn === currentWn + 1)) {
       const weekOffset = wn - currentWn
-      const startDate = b.blockType === 'road_bootcamp'
-        ? getRoadBootcampWeekStart(b, wn)
-        : getMonday(weekOffset)
       wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: b.id, weekNumber: wn, startDate }),
+        body: JSON.stringify({ blockId: b.id, weekNumber: wn, startDate: getMonday(weekOffset) }),
       })
     }
 
@@ -228,13 +207,22 @@ export function ProgramPage() {
     load()
   }, [getCurrentWeekNumber, loadWeek])
 
-  async function handleStartBlockZero() {
+  async function handleStartBlockZero(freshStart = false) {
+    // Fresh start clears all history, so it takes a second tap to confirm
+    if (freshStart && !confirmFreshStart) {
+      setConfirmFreshStart(true)
+      return
+    }
     setStartingBlockZero(true)
     try {
-      const newBlock = await apiFetch<Block>('/api/blocks/block-zero', { method: 'POST' })
+      const newBlock = await apiFetch<Block>('/api/blocks/block-zero', {
+        method: 'POST',
+        body: JSON.stringify(freshStart ? { freshStart: true, confirmReset: true } : {}),
+      })
       setBlock(newBlock)
       setBlockZeroPrompt(null)
       setStartingBlockZero(false)
+      setConfirmFreshStart(false)
       setAssessmentLoading(true)
       const result = await apiFetch<BlockZeroAssessmentOutput | null>(
         '/api/ai/block-zero-assessment',
@@ -270,6 +258,7 @@ export function ProgramPage() {
 
   async function handleContinueExisting() {
     setBlockZeroPrompt(null)
+    setConfirmFreshStart(false)
     // If no block yet (first launch and dismissed), create a Fighter block
     if (!block) {
       const newBlock = await apiFetch<Block>('/api/blocks', {
@@ -288,12 +277,9 @@ export function ProgramPage() {
     setGenerating(true)
     try {
       const weekOffset = weekNumber - getCurrentWeekNumber(block)
-      const startDate = block.blockType === 'road_bootcamp'
-        ? getRoadBootcampWeekStart(block, weekNumber)
-        : getMonday(weekOffset)
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: block.id, weekNumber, startDate }),
+        body: JSON.stringify({ blockId: block.id, weekNumber, startDate: getMonday(weekOffset) }),
       })
       setWeekData(wd)
     } catch (e) {
@@ -459,11 +445,18 @@ export function ProgramPage() {
           <div className="space-y-2 pt-1">
             <Button
               className="w-full"
-              onClick={handleStartBlockZero}
+              onClick={() => handleStartBlockZero()}
               disabled={startingBlockZero}
             >
-              {startingBlockZero ? 'Setting up...' : 'Start Block Zero'}
+              {startingBlockZero && !confirmFreshStart ? 'Setting up...' : 'Start Block Zero'}
             </Button>
+            <button
+              onClick={() => handleStartBlockZero(true)}
+              disabled={startingBlockZero}
+              className="w-full py-2 text-xs text-teal/80 active:text-teal disabled:opacity-40"
+            >
+              {startingBlockZero && confirmFreshStart ? 'Clearing history...' : confirmFreshStart ? 'Tap again to clear history and start' : 'Start Block Zero fresh (clears history)'}
+            </button>
             <button
               onClick={handleContinueExisting}
               className="w-full py-2 text-sm text-muted-foreground active:text-foreground"
@@ -487,38 +480,10 @@ export function ProgramPage() {
   const currentWeek = getCurrentWeekNumber(block)
   const blockWeek = getBlockWeek(weekNumber)
   const blockType = block.blockType === 'block_zero' ? 'block_zero' : 'fighter'
-  const isRoadBootcamp = block.blockType === 'road_bootcamp'
-  const weekInfo = isRoadBootcamp ? getRoadBootcampWeekLabel(weekNumber) : getWeekLabel(blockWeek, blockType)
+  const weekInfo = getWeekLabel(blockWeek, blockType)
   const isCurrentWeek = weekNumber === currentWeek
   const isBlockZero = block.blockType === 'block_zero'
   const weekProgressPercent = (weekNumber / block.totalWeeks) * 100
-
-  async function handleStartRoadBootcamp() {
-    if (!confirmRoadBootcamp) {
-      setConfirmRoadBootcamp(true)
-      return
-    }
-    setGenerating(true)
-    try {
-      const startDate = getTomorrow()
-      const newBlock = await apiFetch<Block>('/api/blocks/road-bootcamp', {
-        method: 'POST',
-        body: JSON.stringify({ confirmReset: true, startDate }),
-      })
-      setBlock(newBlock)
-      const wd = await apiFetch<WeekData>('/api/weeks/generate', {
-        method: 'POST',
-        body: JSON.stringify({ blockId: newBlock.id, weekNumber: 1, startDate }),
-      })
-      setWeekData(wd)
-      setWeekNumber(1)
-      setConfirmRoadBootcamp(false)
-    } catch (e) {
-      console.error('Failed to start Road Bootcamp:', e)
-    } finally {
-      setGenerating(false)
-    }
-  }
 
   return (
     <div data-tour="program-page" className="space-y-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
@@ -539,109 +504,42 @@ export function ProgramPage() {
         </div>
       )}
 
-      {isRoadBootcamp && (
-        <section className="border-y border-gold/10 py-3">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-label text-muted-foreground/60">PROGRAM</p>
-              <h1 className="mt-1 font-cinzel text-[22px] leading-none tracking-[0.08em] text-gold">
-                Road Bootcamp
-              </h1>
-            </div>
-            <div className="shrink-0 text-right">
-              <p className="font-cinzel text-sm tracking-[0.16em] text-foreground">
-                {weekNumber}/8
-              </p>
-              <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-teal/70">
-                {isCurrentWeek ? 'current' : 'selected'}
-              </p>
-            </div>
-          </div>
-
-          <p className="mt-3 text-sm leading-relaxed text-foreground">
-            {weekInfo}
-          </p>
-
-          <div className="mt-3 grid grid-cols-3 divide-x divide-gold/10 border-y border-gold/10 py-2">
-            <div className="pr-2">
-              <p className="font-cinzel text-base leading-none text-gold">3</p>
-              <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">runs</p>
-            </div>
-            <div className="px-2 text-center">
-              <p className="font-cinzel text-base leading-none text-gold">2</p>
-              <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">strength</p>
-            </div>
-            <div className="pl-2 text-right">
-              <p className="font-cinzel text-base leading-none text-gold">daily</p>
-              <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">mobility</p>
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* Week Navigator */}
       <div className="mb-2">
-        {isRoadBootcamp ? (
-          <div className="flex items-center gap-3 py-1">
-            <button
-              onClick={handlePrevWeek}
-              disabled={weekNumber <= 1}
-              className="min-h-[36px] px-1 font-cinzel text-[11px] uppercase tracking-[0.18em] text-muted-foreground disabled:opacity-30 active:text-foreground"
-            >
-              Prev
-            </button>
-            <div className="h-1.5 flex-1 rounded-full bg-border">
-              <div
-                className="h-full rounded-full bg-teal transition-all"
-                style={{ width: `${weekProgressPercent}%` }}
-              />
-            </div>
-            <button
-              onClick={handleNextWeek}
-              disabled={weekNumber >= block.totalWeeks}
-              className="min-h-[36px] px-1 font-cinzel text-[11px] uppercase tracking-[0.18em] text-muted-foreground disabled:opacity-30 active:text-foreground"
-            >
-              Next
-            </button>
+        <div className="flex items-center justify-between">
+          <button
+            onClick={handlePrevWeek}
+            disabled={weekNumber <= 1}
+            className="px-3 py-2 text-sm font-medium text-muted-foreground disabled:opacity-30 active:text-foreground"
+          >
+            Prev
+          </button>
+          <div className="text-center">
+            <h2 className="font-cinzel text-lg font-semibold text-foreground">
+              Week {weekNumber}
+              {isCurrentWeek && <span className="ml-2 text-xs text-teal">(current)</span>}
+            </h2>
+            <p className="mt-0.5 text-sm text-gold">{weekInfo}</p>
+            <p className="text-xs text-muted-foreground">
+              {isBlockZero ? `Block Zero week ${blockWeek} of 6` : `Block week ${blockWeek} of 6`}
+            </p>
           </div>
-        ) : (
-          <>
-            <div className="flex items-center justify-between">
-              <button
-                onClick={handlePrevWeek}
-                disabled={weekNumber <= 1}
-                className="px-3 py-2 text-sm font-medium text-muted-foreground disabled:opacity-30 active:text-foreground"
-              >
-                Prev
-              </button>
-              <div className="text-center">
-                <h2 className="font-cinzel text-lg font-semibold text-foreground">
-                  Week {weekNumber}
-                  {isCurrentWeek && <span className="ml-2 text-xs text-teal">(current)</span>}
-                </h2>
-                <p className="mt-0.5 text-sm text-gold">{weekInfo}</p>
-                <p className="text-xs text-muted-foreground">
-                  {isBlockZero ? `Block Zero week ${blockWeek} of 6` : `Block week ${blockWeek} of 6`}
-                </p>
-              </div>
-              <button
-                onClick={handleNextWeek}
-                disabled={weekNumber >= block.totalWeeks}
-                className="px-3 py-2 text-sm font-medium text-muted-foreground disabled:opacity-30 active:text-foreground"
-              >
-                Next
-              </button>
-            </div>
+          <button
+            onClick={handleNextWeek}
+            disabled={weekNumber >= block.totalWeeks}
+            className="px-3 py-2 text-sm font-medium text-muted-foreground disabled:opacity-30 active:text-foreground"
+          >
+            Next
+          </button>
+        </div>
 
-            {/* Block progress bar */}
-            <div className="mt-3 h-1.5 rounded-full bg-border">
-              <div
-                className={`h-full rounded-full transition-all ${isBlockZero ? 'bg-teal' : 'bg-gold'}`}
-                style={{ width: `${weekProgressPercent}%` }}
-              />
-            </div>
-          </>
-        )}
+        {/* Block progress bar */}
+        <div className="mt-3 h-1.5 rounded-full bg-border">
+          <div
+            className={`h-full rounded-full transition-all ${isBlockZero ? 'bg-teal' : 'bg-gold'}`}
+            style={{ width: `${weekProgressPercent}%` }}
+          />
+        </div>
         <GoldDivider className="mt-3" />
       </div>
 
@@ -726,23 +624,12 @@ export function ProgramPage() {
 
       {/* Manual block starts */}
       <div className="space-y-2 pt-2 pb-4">
-        {!isRoadBootcamp && (
-          <button
-            onClick={handleStartRoadBootcamp}
-            disabled={generating}
-            className="w-full py-2 text-xs text-teal/80 active:text-teal disabled:opacity-40"
-          >
-            {generating ? 'Starting Road Bootcamp...' : confirmRoadBootcamp ? 'Tap again to clear history and start' : 'Start Road Bootcamp fresh'}
-          </button>
-        )}
-        {!isBlockZero && (
-          <button
-            onClick={() => setBlockZeroPrompt('return_from_break')}
-            className="w-full py-2 text-xs text-muted-foreground/60 active:text-muted-foreground"
-          >
-            Reset with Block Zero
-          </button>
-        )}
+        <button
+          onClick={() => setBlockZeroPrompt('return_from_break')}
+          className="w-full py-2 text-xs text-muted-foreground/60 active:text-muted-foreground"
+        >
+          {isBlockZero ? 'Restart Block Zero' : 'Reset with Block Zero'}
+        </button>
       </div>
     </div>
   )

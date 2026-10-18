@@ -6,11 +6,10 @@ Waymark runs on React, Vite, Capacitor, Cloudflare Workers, D1, Drizzle, and Hon
 
 ## Current Build
 
-- Road Bootcamp is the active build slice.
-- Road Bootcamp uses fixed 8-week rails.
-- Strength generation is bounded to 18 approved variants.
+- Block Zero is the entry point: a 6-week return-to-training ramp before the Fighter block.
+- Block Zero can start fresh, which clears collected training history first.
 - Strava run data is mapped into run evidence for coaching and Ledger context.
-- AI is bounded. It can summarize, adapt inside rails, and explain changes. It does not invent Road Bootcamp workouts.
+- AI is bounded. It can summarize, adapt inside rails, and explain changes.
 
 ## Local Setup
 
@@ -46,18 +45,13 @@ npm run build
 npm run preview:remote
 ```
 
-Road Bootcamp smoke checks:
+Block Zero fresh-start smoke check (local `wrangler dev` only):
 
 ```bash
-npm run smoke:road-reset
-npm run smoke:road-week
-npm run smoke:road-strength
-npm run smoke:road-strength-complete
-npm run smoke:road-run
-npm run smoke:road-remote
+npm run smoke:block-zero-reset
 ```
 
-Remote reset is guarded. Do not run a destructive production Road Bootcamp reset unless that is the explicit task.
+Do not run a destructive production fresh start unless that is the explicit task.
 
 Targeted D1 migrations:
 
@@ -120,8 +114,8 @@ Native Capacitor builds fall back to this API when the configured API origin is 
 
 ## Data Rules
 
-- Production Road Bootcamp fresh start requires `confirmReset: true`.
-- Local Road Bootcamp smoke scripts reset local D1 state by design.
+- Block Zero fresh start (`POST /api/blocks/block-zero` with `freshStart: true`) clears all collected training history and requires `confirmReset: true`.
+- The Block Zero reset smoke resets local D1 state by design and refuses non-local API targets.
 - Remote smoke scripts are non-destructive unless explicitly allowed.
 - Foundation-run and offline-review smokes write ad-hoc sessions. They refuse non-local API targets unless `WAYMARK_ALLOW_REMOTE_SMOKE=1` is set.
 - No live AI smoke runs unless `WAYMARK_LIVE_AI_SMOKE=1` is set.

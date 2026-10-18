@@ -53,7 +53,6 @@ export interface StrengthSetInput {
   isWarmup: boolean
   suggestedWeightKg: number | null
   targetReps: number
-  bandColor?: string | null
   restSec: number
 }
 
@@ -87,7 +86,7 @@ interface StrengthExerciseViewProps {
     isPaused?: boolean
     onTogglePause?: () => void
   }
-  onSetComplete: (weightKg: number | null, reps: number, meta?: { bandColor?: string | null }) => void
+  onSetComplete: (weightKg: number | null, reps: number) => void
   onLiveValuesChange?: (weightKg: number | null, reps: number) => void
   onNextSet: () => void
   onSkip?: () => void
@@ -272,7 +271,7 @@ interface ExerciseBodyProps {
   currentSet?: StrengthSetInput
   lastSessionData?: { weightLbs: number; reps: number }
   suggestion?: { weightLbs: number; message: string }
-  onSetComplete: (weightKg: number | null, reps: number, meta?: { bandColor?: string | null }) => void
+  onSetComplete: (weightKg: number | null, reps: number) => void
   onLiveValuesChange?: (weightKg: number | null, reps: number) => void
 }
 
@@ -406,13 +405,12 @@ function ExerciseBody({
       {/* Set tracker — stays inline because the Done button sits next to the inputs. */}
       {currentSet && (
         <SetTracker
-          key={`${exerciseName}-${currentSet.setNumber}-${currentSet.bandColor ?? ''}`}
+          key={`${exerciseName}-${currentSet.setNumber}`}
           setNumber={currentSet.setNumber}
           totalSets={currentSet.totalSets}
           isWarmup={currentSet.isWarmup}
           suggestedWeightKg={currentSet.suggestedWeightKg}
           targetReps={currentSet.targetReps}
-          prescribedBandColor={currentSet.bandColor}
           equipment={equipment}
           lastSessionData={lastSessionData}
           suggestion={suggestion}

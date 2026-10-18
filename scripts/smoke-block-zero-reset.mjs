@@ -1,10 +1,18 @@
+// Local-only smoke for the Block Zero fresh start. Wipes the target database's
+// training history, so it refuses anything other than a local wrangler dev API.
 const API_BASE = process.env.WAYMARK_API_BASE ?? 'http://127.0.0.1:8787'
+const API_KEY = process.env.WAYMARK_API_KEY ?? ''
+
+if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(API_BASE).hostname)) {
+  throw new Error('Block Zero reset smoke wipes training history. Point WAYMARK_API_BASE at a local wrangler dev API.')
+}
 
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
       ...(options.headers ?? {}),
     },
   })
@@ -21,6 +29,7 @@ async function apiStatus(path, options = {}) {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
       ...(options.headers ?? {}),
     },
   })
@@ -35,8 +44,8 @@ function countVideos(exercises) {
   return exercises.filter(ex => typeof ex.formVideoUrl === 'string' && ex.formVideoUrl.startsWith('http')).length
 }
 
-const sentinelGoals = ['Road Bootcamp reset smoke']
-const sentinelTrainingHistory = 'Smoke test profile should survive Road Bootcamp fresh start.'
+const sentinelGoals = ['Block Zero reset smoke']
+const sentinelTrainingHistory = 'Smoke test profile should survive Block Zero fresh start.'
 const sentinelMtDays = '2,4'
 
 const profile = await api('/api/user-profile', {
@@ -68,7 +77,7 @@ await api('/api/daily-logs', {
     date: todayIso(),
     sleepHours: 6,
     soreness: 4,
-    notes: 'Road Bootcamp reset smoke.',
+    notes: 'Block Zero reset smoke.',
   }),
 })
 
@@ -77,7 +86,7 @@ await api('/api/body-metrics', {
   body: JSON.stringify({
     weightKg: 80,
     restingHr: 60,
-    notes: 'Road Bootcamp reset smoke.',
+    notes: 'Block Zero reset smoke.',
   }),
 })
 
@@ -91,45 +100,50 @@ await api('/api/sessions/insert-ad-hoc', {
   }),
 })
 
-const unconfirmedStatus = await apiStatus('/api/blocks/road-bootcamp', { method: 'POST' })
+const unconfirmedStatus = await apiStatus('/api/blocks/block-zero', { method: 'POST', body: JSON.stringify({ freshStart: true }) })
 if (unconfirmedStatus !== 400) {
-  throw new Error(`Road Bootcamp reset without confirmReset should return 400, got ${unconfirmedStatus}`)
+  throw new Error(`Block Zero fresh start without confirmReset should return 400, got ${unconfirmedStatus}`)
 }
 
-const block = await api('/api/blocks/road-bootcamp', { method: 'POST', body: JSON.stringify({ confirmReset: true }) })
-if (block.blockType !== 'road_bootcamp') {
-  throw new Error(`expected road_bootcamp block, got ${block.blockType}`)
+const sessionsBeforeReset = await api('/api/sessions')
+if (sessionsBeforeReset.length === 0) {
+  throw new Error('unconfirmed fresh start cleared session history')
 }
-if (block.totalWeeks !== 8 || block.status !== 'active') {
-  throw new Error(`unexpected Road Bootcamp block shape: ${JSON.stringify(block)}`)
+
+const block = await api('/api/blocks/block-zero', { method: 'POST', body: JSON.stringify({ freshStart: true, confirmReset: true }) })
+if (block.blockType !== 'block_zero') {
+  throw new Error(`expected block_zero block, got ${block.blockType}`)
+}
+if (block.totalWeeks !== 6 || block.status !== 'active') {
+  throw new Error(`unexpected Block Zero block shape: ${JSON.stringify(block)}`)
 }
 
 const currentBlock = await api('/api/blocks/current')
 if (currentBlock?.id !== block.id) {
-  throw new Error('Road Bootcamp block is not the active current block')
+  throw new Error('Block Zero block is not the active current block')
 }
 
 const profileAfter = await api('/api/user-profile')
 if (profileAfter?.id !== profile.id || profileAfter.trainingHistory !== sentinelTrainingHistory) {
-  throw new Error('user profile was not preserved by Road Bootcamp reset')
+  throw new Error('user profile was not preserved by Block Zero fresh start')
 }
 
 const settingsAfter = await api('/api/settings')
 if (settingsBefore && settingsAfter?.mtClassDays !== sentinelMtDays) {
-  throw new Error('settings were not preserved by Road Bootcamp reset')
+  throw new Error('settings were not preserved by Block Zero fresh start')
 }
 
 const exercisesAfter = await api('/api/exercises')
 if (exercisesAfter.length !== exercisesBefore.length || countVideos(exercisesAfter) !== countVideos(exercisesBefore)) {
-  throw new Error('exercise library or form videos changed during Road Bootcamp reset')
+  throw new Error('exercise library or form videos changed during Block Zero fresh start')
 }
 
 const stravaAfter = await api('/api/strava/status')
 if (stravaAfter.connected !== stravaBefore.connected) {
-  throw new Error('Strava connection state changed during Road Bootcamp reset')
+  throw new Error('Strava connection state changed during Block Zero fresh start')
 }
 if (stravaBefore.connected && stravaAfter.athleteId !== stravaBefore.athleteId) {
-  throw new Error('Strava athlete changed during Road Bootcamp reset')
+  throw new Error('Strava athlete changed during Block Zero fresh start')
 }
 
 const sessionsAfter = await api('/api/sessions')
@@ -139,12 +153,12 @@ if (sessionsAfter.length !== 0) {
 
 const bodyMetricsAfter = await api('/api/body-metrics')
 if ((bodyMetricsAfter.entries ?? []).length !== 0) {
-  throw new Error('body metrics were not cleared by Road Bootcamp reset')
+  throw new Error('body metrics were not cleared by Block Zero fresh start')
 }
 
 const dailyLogAfter = await api(`/api/daily-logs/today?date=${todayIso()}`)
 if (dailyLogAfter) {
-  throw new Error('daily logs were not cleared by Road Bootcamp reset')
+  throw new Error('daily logs were not cleared by Block Zero fresh start')
 }
 
 console.log(JSON.stringify({
@@ -152,7 +166,7 @@ console.log(JSON.stringify({
   blockId: block.id,
   blockType: block.blockType,
   profilePreserved: true,
-  settingsPreserved: Boolean(settingsBefore),
+  settingsPreserved: settingsBefore ? true : 'not checked (no settings row)',
   stravaConnectedPreserved: stravaAfter.connected,
   exerciseCount: exercisesAfter.length,
   formVideoCount: countVideos(exercisesAfter),

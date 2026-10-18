@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { apiFetch } from '@/lib/api'
 import { getMarkAsset, getSessionAccent } from '@/lib/markAssets'
-import { getRoadBootcampAdaptationLine } from '@/lib/roadBootcampStrengthTemplates'
 import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd } from '@/lib/notifications'
@@ -13,7 +12,6 @@ import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { Button } from '@/components/ui/button'
 import { RingTimer } from '@/components/RingTimer'
 import { useToast } from '@/components/ui/Toast'
-import { SessionShell } from './SessionShell'
 
 import { ActiveRecoveryView } from './ActiveRecoveryView'
 import { BagWorkRoundView } from './BagWorkRoundView'
@@ -40,7 +38,6 @@ interface SessionData {
   status: string
   blockWeek?: number | null
   blockType?: string | null
-  contextJson?: string | null
   scheduledDate?: number | null
 }
 
@@ -54,7 +51,6 @@ interface SetData {
   plannedWeightKg?: number | null
   plannedReps?: number | null
   inferredStatus?: string | null
-  bandColor?: string | null
   isWarmup: number
   restSec: number | null
 }
@@ -219,10 +215,8 @@ interface MtClassWorkoutData {
 
 // ─── Phases ────────────────────────────────────────────────────
 
-type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-ready' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-warmup' | 'fr-run'
+type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-warmup' | 'fr-run'
 type RoundPhase = 'ready' | 'fighting' | 'rest'
-type RoadBootcampTime = '15' | '30' | '45_plus'
-type RoadBootcampEquipment = 'no_gym' | 'hotel_gym' | 'full_gym'
 
 function SkipWarmupTimer({ durationSec, onComplete, description }: {
   durationSec: number
@@ -303,8 +297,6 @@ export function WorkoutPage() {
   const [phase, setPhase] = useState<Phase>('entrance')
   const [submitting, setSubmitting] = useState(false)
   const [unlockSuggestions, setUnlockSuggestions] = useState<{ suggestions: UnlockSuggestion[]; message: string } | null>(null)
-  const [roadTime, setRoadTime] = useState<RoadBootcampTime>('30')
-  const [roadEquipment, setRoadEquipment] = useState<RoadBootcampEquipment>('no_gym')
   const { show: showToast, ToastContainer } = useToast()
 
   const restTimer = useRestTimer()
@@ -498,12 +490,6 @@ export function WorkoutPage() {
           const data = await apiFetch<StrengthWorkoutData>(`/api/sessions/${id}/workout`)
           setStrengthData(data)
 
-          if (data.session.blockType === 'road_bootcamp' && data.exercises.length === 0) {
-            setPhase('strength-ready')
-            setLoading(false)
-            return
-          }
-
           // Fetch exercise histories for weight prescription context
           const uniqueExercises = new Map(data.exercises.map(e => [e.exerciseId, e.section ?? 'main']))
           const histories = new Map<string, ExerciseHistoryData>()
@@ -585,8 +571,6 @@ export function WorkoutPage() {
   const handleEntranceComplete = useCallback(() => {
     if (sessionType === 'bag_work') {
       setPhase('bag-preview')
-    } else if (strengthData && strengthData.session.blockType === 'road_bootcamp' && strengthData.exercises.length === 0) {
-      setPhase('strength-ready')
     } else if (strengthData) {
       setPhase('strength-warmup-skip')
     } else {
@@ -629,39 +613,6 @@ export function WorkoutPage() {
       console.error('Failed to complete session:', e)
       logger.error('session', 'session finish failed', { sessionId: id, message }, 'POST /sessions/:id/complete failed. Session state stuck in-progress.')
       showToast("Couldn't save. Check connection and try again.", 'warning')
-      setSubmitting(false)
-    }
-  }
-
-  async function startRoadStrength() {
-    if (!id) return
-    setSubmitting(true)
-    try {
-      const data = await apiFetch<StrengthWorkoutData>(`/api/sessions/${id}/start-strength`, {
-        method: 'POST',
-        body: JSON.stringify({ timeAvailable: roadTime, equipment: roadEquipment }),
-      })
-      setStrengthData(data)
-
-      const uniqueExercises = new Map(data.exercises.map(e => [e.exerciseId, e.section ?? 'main']))
-      const histories = new Map<string, ExerciseHistoryData>()
-      await Promise.all(
-        Array.from(uniqueExercises).map(async ([exId, section]) => {
-          try {
-            const h = await apiFetch<ExerciseHistoryData>(`/api/exercises/${exId}/history?section=${section}`)
-            if (h) histories.set(exId, h)
-          } catch { /* no history yet */ }
-        })
-      )
-      setExerciseHistories(histories)
-      setExerciseIdx(0)
-      setSetIdx(0)
-      setPhase('strength-warmup-skip')
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      logger.error('session', 'road strength start failed', { sessionId: id, message }, 'Road Bootcamp strength did not start.')
-      showToast("Couldn't start strength. Check logs in Settings.", 'warning')
-    } finally {
       setSubmitting(false)
     }
   }
@@ -1219,91 +1170,6 @@ export function WorkoutPage() {
     )
   }
 
-  if (phase === 'strength-ready' && strengthData.session.blockType === 'road_bootcamp') {
-    const adaptationLine = getRoadBootcampAdaptationLine(roadTime, roadEquipment)
-
-    const timeOptions: Array<{ value: RoadBootcampTime; label: string }> = [
-      { value: '15', label: '15m' },
-      { value: '30', label: '30m' },
-      { value: '45_plus', label: '45+' },
-    ]
-    const equipmentOptions: Array<{ value: RoadBootcampEquipment; label: string; detail: string }> = [
-      { value: 'no_gym', label: 'No gym', detail: 'Bands + bodyweight' },
-      { value: 'hotel_gym', label: 'Hotel gym', detail: 'DBs and bench' },
-      { value: 'full_gym', label: 'Full gym', detail: 'Barbell and rack' },
-    ]
-
-    return (
-      <>
-        <SessionShell
-          sessionType="strength"
-          title="Strength"
-          counter="Ready"
-          moment="Pick the version you can do now."
-          footer={
-            <Button onClick={startRoadStrength} disabled={submitting} size="lg" className="w-full">
-              {submitting ? 'Starting...' : 'Start Strength'}
-            </Button>
-          }
-        >
-          <div className="mx-auto max-w-md animate-fade-in">
-            <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/50">
-              Road Strength
-            </p>
-            <h2 className="mt-1 text-display-lg text-foreground">
-              Build today&apos;s session
-            </h2>
-            <p className="mt-3 text-sm leading-relaxed text-foreground/85">
-              Choose the time and equipment you actually have.
-            </p>
-
-            <div className="mt-6">
-              <p className="text-label mb-2 text-muted-foreground">Time</p>
-              <div className="flex items-center gap-3">
-                {timeOptions.map(option => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setRoadTime(option.value)}
-                    className={`min-h-[44px] flex-1 rounded-md py-3 text-sm font-medium ${
-                      roadTime === option.value ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <p className="text-label mb-2 text-muted-foreground">Equipment</p>
-              <div className="space-y-3">
-                {equipmentOptions.map(option => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setRoadEquipment(option.value)}
-                    className={`min-h-[56px] w-full rounded-md px-4 py-3 text-left ${
-                      roadEquipment === option.value ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
-                    }`}
-                  >
-                    <span className="block text-sm font-medium">{option.label}</span>
-                    <span className="mt-0.5 block text-xs opacity-75">{option.detail}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <p className="mt-6 text-sm leading-relaxed text-foreground/80">
-              {adaptationLine}
-            </p>
-          </div>
-        </SessionShell>
-        <ToastContainer />
-      </>
-    )
-  }
-
   // Skip rope warmup before strength exercises
   if (phase === 'strength-warmup-skip') {
     return (
@@ -1349,7 +1215,7 @@ export function WorkoutPage() {
   const currentSection = currentExercise?.section
   const showSectionHeader = !prevExercise || prevExercise.section !== currentSection
 
-  function handleSetComplete(weightKg: number | null, reps: number, meta?: { bandColor?: string | null }) {
+  function handleSetComplete(weightKg: number | null, reps: number) {
     if (!currentSet) return
 
     apiFetch(`/api/strength-sets/${currentSet.id}`, {
@@ -1357,7 +1223,6 @@ export function WorkoutPage() {
       body: JSON.stringify({
         weightKg,
         reps,
-        bandColor: meta?.bandColor,
         completedAt: Math.floor(Date.now() / 1000),
       }),
     }).catch((e) => {
@@ -1489,7 +1354,6 @@ export function WorkoutPage() {
           isWarmup: currentSet.isWarmup === 1,
           suggestedWeightKg: currentSet.weightKg,
           targetReps: currentSet.plannedReps ?? currentSet.reps,
-          bandColor: currentSet.bandColor,
           restSec: currentSet.restSec ?? 60,
         } : undefined}
         prescription={prescriptionDisplay}

@@ -138,11 +138,11 @@ Status legend: `TODO` · `DOING` · `DONE` · `BLOCKED`
 ### Current Status
 
 - v2 Strava, HR, coaching, and Ledger work is complete as of 2026-05-17.
-- Road Bootcamp now remains the active build track.
+- Road Bootcamp and the band colour picker were removed. Block Zero is the entry point and owns the fresh start.
 - Remaining gates require explicit approval:
   - opt-in live AI smoke.
   - remote Strava poll, because it can ingest real activities.
-  - production Road Bootcamp fresh start, because it clears collected training history.
+  - production Block Zero fresh start, because it clears collected training history.
   - final Xcode sync/install for phone proof.
 
 ### Phase 1: Strava ingestion pipeline
@@ -211,8 +211,8 @@ Append one entry per session. Keep under 5 lines each.
 
 ### Out-of-plan (2026-04-18) · Mobility refactor
 - Did: Renamed session type `posture_corrective` -> `mobility` across DB/routes/UI/AI; added Daily Mobility session every AM (7/wk, ~10min) via weeklyTemplate; split old 19-ex posture block into DAILY_MOBILITY_TEMPLATE (7) + FR_COOLDOWN_TEMPLATE (8) with zero overlap; Foundation Run estMin 45 -> 35.
-- Migration: `drizzle/0016_mobility_rename.sql` is historical and no longer a pending production gate. Current remote readiness is tracked by `npm run smoke:road-remote`.
+- Migration: `drizzle/0016_mobility_rename.sql` is historical and no longer a pending production gate.
 - AI prompts updated: blockZero/weeklyPlanAI know daily mobility runs every AM across all three phases; skipResponseAI and sessionReviewAI use new session label.
 - Recovery ring target: 2 -> 9 (7 daily mobility + 2 active_recovery).
 - Driver: user directive to make mobility visible every AM and respect Block Zero phases, kept short to avoid bailing.
-- Next: follow the current gates above: opt-in live AI smoke, approved remote Strava poll, approved production Road Bootcamp fresh start, and final Xcode sync/install.
+- Next: follow the current gates above: opt-in live AI smoke, approved remote Strava poll, approved production Block Zero fresh start, and final Xcode sync/install.

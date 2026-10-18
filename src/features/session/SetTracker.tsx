@@ -5,7 +5,6 @@ import { kgToLbs, lbsToKg } from '@/lib/units'
 import { mediumHaptic } from '@/lib/haptics'
 import { calculatePlates } from '@/lib/plateMath'
 import { assessStrengthSet, shouldShowStrengthRealityMark } from '@/lib/trainingReality'
-import { BAND_COLORS, getBandSelectionLine } from './bandSelector'
 
 interface SetTrackerProps {
   setNumber: number
@@ -13,11 +12,10 @@ interface SetTrackerProps {
   isWarmup: boolean
   suggestedWeightKg: number | null
   targetReps: number
-  prescribedBandColor?: string | null
   equipment?: string | null
   lastSessionData?: { weightLbs: number; reps: number }
   suggestion?: { weightLbs: number; message: string }
-  onComplete: (weightKg: number | null, reps: number, meta?: { bandColor?: string | null }) => void
+  onComplete: (weightKg: number | null, reps: number) => void
   /** Emits the current input values (kg + reps) whenever they change.
    *  WorkoutPage uses this to push live values into the Live Activity
    *  so a lock-screen "Complete Set" tap logs what the user sees. */
@@ -34,7 +32,6 @@ export function SetTracker({
   isWarmup,
   suggestedWeightKg,
   targetReps,
-  prescribedBandColor,
   equipment,
   lastSessionData,
   suggestion,
@@ -44,7 +41,6 @@ export function SetTracker({
   const suggestedLbs = suggestedWeightKg != null ? kgToLbs(suggestedWeightKg) : ''
   const [weight, setWeight] = useState(String(suggestedLbs))
   const [reps, setReps] = useState(targetReps > 0 ? String(targetReps) : '')
-  const [bandColor, setBandColor] = useState<string | null>(prescribedBandColor ?? null)
 
   useEffect(() => {
     const w = weight ? parseFloat(weight) : NaN
@@ -54,8 +50,6 @@ export function SetTracker({
   }, [weight, reps, onLiveValuesChange])
 
   const isBarbell = equipment?.toLowerCase().includes('barbell') ?? false
-  const isBand = equipment?.toLowerCase().includes('band') ?? false
-  const selectedBand = BAND_COLORS.find(band => band.value === bandColor)
   const actualWeight = weight ? lbsToKg(parseFloat(weight)) : null
   const actualReps = parseInt(reps) || 0
   const inferredStatus = assessStrengthSet({
@@ -80,7 +74,7 @@ export function SetTracker({
     if (actualReps <= 0) return
     const actualWeightKg = weight ? lbsToKg(parseFloat(weight)) : null
     mediumHaptic()
-    onComplete(actualWeightKg, actualReps, { bandColor })
+    onComplete(actualWeightKg, actualReps)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -118,61 +112,19 @@ export function SetTracker({
       )}
 
       <div className="flex items-end gap-3">
-        {isBand ? (
-          <div className="min-w-0 flex-1">
-            <label className="text-label mb-1 block text-muted-foreground">Band</label>
-            <div className="min-h-[70px] rounded-md border border-gold/10 bg-deep-forest px-3 py-2 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
-              <div className="flex min-h-[30px] items-center justify-between gap-2">
-                {BAND_COLORS.map((band) => {
-                  const selected = bandColor === band.value
-                  return (
-                    <button
-                      key={band.value}
-                      type="button"
-                      aria-label={`${band.label} band`}
-                      aria-pressed={selected}
-                      onClick={() => setBandColor(band.value)}
-                      className={`relative h-5 w-5 rounded-full border transition ${
-                        selected
-                          ? 'scale-110 border-gold shadow-[0_0_0_3px_rgba(232,200,96,0.16),0_0_14px_rgba(232,200,96,0.16)]'
-                          : 'border-gold/20 opacity-35 saturate-75'
-                      }`}
-                      style={{ backgroundColor: band.color }}
-                    >
-                      {selected && (
-                        <span className="pointer-events-none absolute -inset-1.5 rounded-full border border-gold/25" />
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="mt-2 text-center text-[12px] leading-tight text-muted-foreground">
-                {selectedBand ? (
-                  <>
-                    <span className="font-medium text-foreground/90">{selectedBand.label}.</span>{' '}
-                    {bandColor === prescribedBandColor ? 'Working band.' : 'Adjusted.'}
-                  </>
-                ) : (
-                  getBandSelectionLine(bandColor, prescribedBandColor)
-                )}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1">
-            <label className="text-label mb-1 block text-muted-foreground">Weight (lbs)</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={weight}
-              onChange={(e) => setWeight(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="-"
-              className="min-h-[44px] w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-gold/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(232,200,96,0.15)] focus:outline-none"
-            />
-          </div>
-        )}
-        <div className={isBand ? 'w-16 shrink-0' : 'flex-1'}>
+        <div className="flex-1">
+          <label className="text-label mb-1 block text-muted-foreground">Weight (lbs)</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="-"
+            className="min-h-[44px] w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-center text-stat text-foreground placeholder-muted-foreground shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-gold/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(232,200,96,0.15)] focus:outline-none"
+          />
+        </div>
+        <div className="flex-1">
           <label className="text-label mb-1 block text-muted-foreground">
             Reps{targetReps === 0 ? ' (max)' : ''}
           </label>

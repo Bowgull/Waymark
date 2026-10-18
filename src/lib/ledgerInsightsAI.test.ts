@@ -12,7 +12,6 @@ const prompt = buildLedgerInsightPrompt({
   prs: [],
   correlations: [],
   runSummary: { totalRuns: 2, totalDistanceKm: 10.7, avgPaceSecKm: 391, bestPaceSecKm: 370 },
-  roadBootcampMetrics: null,
   categoryCompletion: null,
   recentRunEvidence: [
     {

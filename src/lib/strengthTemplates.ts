@@ -3,7 +3,6 @@ export interface TemplateSet {
   targetReps: number // 0 = max reps
   restSec: number
   suggestedWeightKg?: number | null
-  bandColor?: string | null
 }
 
 export type ExerciseSection = 'warmup' | 'main' | 'accessory' | 'core'
@@ -237,5 +236,3 @@ export function getStrengthTemplate(
   }
   return dayOfWeek === 2 ? buildStrengthA(blockWeek) : buildStrengthB(blockWeek)
 }
-
-export { buildStrengthA as STRENGTH_A_BUILDER, buildStrengthB as STRENGTH_B_BUILDER }

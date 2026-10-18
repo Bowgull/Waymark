@@ -57,59 +57,6 @@ export interface SuggestionsResponse {
   deficits: { type: string; label: string; completed: number; target: number }[]
 }
 
-const ROAD_BOOTCAMP_TARGETS: SessionTarget[] = [
-  {
-    type: 'strength',
-    label: 'Strength',
-    weeklyTarget: 2,
-    priority: 'high',
-    flexibleTimeSlot: true,
-    defaultTimeSlot: 'am',
-    carryForwardWeight: 0.8,
-  },
-  {
-    type: 'foundation_run',
-    label: 'Easy Run',
-    weeklyTarget: 2,
-    priority: 'high',
-    flexibleTimeSlot: true,
-    defaultTimeSlot: 'am',
-    carryForwardWeight: 0.6,
-  },
-  {
-    type: 'running',
-    label: 'Quality Run',
-    weeklyTarget: 1,
-    priority: 'high',
-    flexibleTimeSlot: true,
-    defaultTimeSlot: 'am',
-    carryForwardWeight: 0.6,
-    runCategory: 'progression',
-  },
-  {
-    type: 'skip_rope',
-    label: 'Rope Primer',
-    weeklyTarget: 2,
-    priority: 'medium',
-    flexibleTimeSlot: true,
-    defaultTimeSlot: 'pm',
-    carryForwardWeight: 0.2,
-  },
-  {
-    type: 'mobility',
-    label: 'Mobility',
-    weeklyTarget: 7,
-    priority: 'low',
-    flexibleTimeSlot: false,
-    defaultTimeSlot: 'am',
-    carryForwardWeight: 0.1,
-  },
-]
-
-function targetsForBlock(blockType?: string | null): SessionTarget[] {
-  return blockType === 'road_bootcamp' ? ROAD_BOOTCAMP_TARGETS : TRAINING_TARGETS
-}
-
 function optionsForTargets(targets: SessionTarget[]): Omit<SessionSuggestion, 'reason' | 'priority'>[] {
   return targets
   .filter(t => t.type !== 'mt_class') // MT class not available for ad-hoc
@@ -127,7 +74,7 @@ const INTENSE_TYPES = new Set(['bag_work', 'skip_rope'])
 
 export function computeSuggestions(input: SuggestionInput): SuggestionsResponse {
   const { todayWellness, recentWellness, weekSessions, existingSessionsOnDate } = input
-  const targets = targetsForBlock(input.blockType)
+  const targets = TRAINING_TARGETS
   const allOptions = optionsForTargets(targets)
 
   const flags: string[] = []

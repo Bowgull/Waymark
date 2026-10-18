@@ -18,7 +18,7 @@ function check(label: string, cond: boolean) {
 
 function pts(...signals: Array<ExerciseSessionPoint['signal']>): ExerciseSessionPoint[] {
   // newest first; epochDay descending
-  return signals.map((signal, i) => ({ epochDay: 1000 - i, signal, bandColor: null }))
+  return signals.map((signal, i) => ({ epochDay: 1000 - i, signal }))
 }
 
 // ── sessionSignalFromStatuses ──────────────────────────────

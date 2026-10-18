@@ -54,12 +54,6 @@ interface RunReviewContext {
 }
 
 interface StrengthReviewContext {
-  roadBootcamp: {
-    timeAvailable?: string | null
-    prescribedTime?: string | null
-    equipment?: string | null
-    adaptationLine?: string | null
-  } | null
   exercises: Array<{
     name: string
     section: string | null
@@ -68,25 +62,12 @@ interface StrengthReviewContext {
     topWeightKg: number | null
     totalReps: number
     changedSets: number
-    bandColors: string[]
   }>
 }
 
 interface SessionReviewContext {
   run: RunReviewContext | null
   strength: StrengthReviewContext | null
-}
-
-function parseRoadContext(value: string | null): StrengthReviewContext['roadBootcamp'] {
-  if (!value) return null
-  try {
-    const parsed = JSON.parse(value) as {
-      roadBootcamp?: StrengthReviewContext['roadBootcamp']
-    }
-    return parsed.roadBootcamp ?? null
-  } catch {
-    return null
-  }
 }
 
 function formatRunContext(run: RunReviewContext): string[] {
@@ -129,13 +110,6 @@ function formatRunContext(run: RunReviewContext): string[] {
 
 function formatStrengthContext(strength: StrengthReviewContext): string[] {
   const lines = ['', 'Strength evidence:']
-  if (strength.roadBootcamp) {
-    const ctx = strength.roadBootcamp
-    const time = ctx.prescribedTime ?? ctx.timeAvailable ?? 'not recorded'
-    const equipment = ctx.equipment ?? 'not recorded'
-    lines.push(`  Road Bootcamp context: time ${time}, equipment ${equipment}.`)
-    if (ctx.adaptationLine) lines.push(`  Adaptation: ${ctx.adaptationLine}`)
-  }
 
   if (strength.exercises.length === 0) {
     lines.push('  No strength sets recorded.')
@@ -148,8 +122,7 @@ function formatStrengthContext(strength: StrengthReviewContext): string[] {
     const workingSets = `${ex.workingSets} ${ex.workingSets === 1 ? 'working set' : 'working sets'}`
     const warmupSets = `${ex.warmupSets} ${ex.warmupSets === 1 ? 'warmup' : 'warmups'}`
     const changed = ex.changedSets > 0 ? ` ${ex.changedSets} changed set${ex.changedSets === 1 ? '' : 's'}.` : ''
-    const bands = ex.bandColors.length > 0 ? ` Bands: ${ex.bandColors.join(', ')}.` : ''
-    lines.push(`  ${ex.name}${section}: ${workingSets}, ${warmupSets}, ${ex.totalReps} reps, top ${top}.${changed}${bands}`)
+    lines.push(`  ${ex.name}${section}: ${workingSets}, ${warmupSets}, ${ex.totalReps} reps, top ${top}.${changed}`)
   }
 
   return lines
@@ -159,13 +132,6 @@ function parseTargetHighBpm(targetHrLine: string | null): number | null {
   if (!targetHrLine) return null
   const match = targetHrLine.match(/to (\d+) bpm/)
   return match ? Number(match[1]) : null
-}
-
-function readableRoadEquipment(value: string | null | undefined): string {
-  if (value === 'no_gym') return 'No gym'
-  if (value === 'hotel_gym') return 'Hotel gym'
-  if (value === 'full_gym') return 'Full gym'
-  return 'Equipment not recorded'
 }
 
 export function buildLocalSessionReview(
@@ -199,22 +165,6 @@ export function buildLocalSessionReview(
     }
   }
 
-  if (context.strength) {
-    const road = context.strength.roadBootcamp
-    if (road) {
-      const time = road.prescribedTime ?? road.timeAvailable ?? 'time not recorded'
-      const timeLabel = time === '45_plus' ? '45+ minutes' : `${time} minutes`
-      const movementCount = context.strength.exercises.length
-      const movementLabel = movementCount === 1 ? 'movement' : 'movements'
-      const changedSets = context.strength.exercises.reduce((sum, exercise) => sum + exercise.changedSets, 0)
-      const adjustment = changedSets > 0 ? ' Load change noted.' : ''
-      return {
-        line: `${timeLabel}. ${readableRoadEquipment(road.equipment)}. ${movementCount} ${movementLabel} logged.${adjustment}`,
-        flag: 'none',
-      }
-    }
-  }
-
   const label = SESSION_LABEL[session.type] ?? 'Session'
   return {
     line: `${label[0].toUpperCase()}${label.slice(1)} logged. Effort ${session.rpe ?? 'not recorded'}/10.`,
@@ -224,7 +174,7 @@ export function buildLocalSessionReview(
 
 async function loadSessionReviewContext(
   db: DB,
-  session: { id: string; type: string; notes: string | null; contextJson?: string | null },
+  session: { id: string; type: string; notes: string | null },
   maxHr: number | null,
 ): Promise<SessionReviewContext> {
   let run: RunReviewContext | null = null
@@ -290,12 +240,10 @@ async function loadSessionReviewContext(
         }, null),
         totalReps: workingSets.reduce((sum, s) => sum + s.reps, 0),
         changedSets: workingSets.filter(s => s.inferredStatus != null && s.inferredStatus !== 'normal').length,
-        bandColors: Array.from(new Set(workingSets.map(s => s.bandColor).filter((v): v is string => !!v))),
       })
     }
 
     strength = {
-      roadBootcamp: parseRoadContext(session.contextJson ?? null),
       exercises: rows.sort((a, b) => a.orderIndex - b.orderIndex).map(row => ({
         name: row.name,
         section: row.section,
@@ -304,7 +252,6 @@ async function loadSessionReviewContext(
         topWeightKg: row.topWeightKg,
         totalReps: row.totalReps,
         changedSets: row.changedSets,
-        bandColors: row.bandColors,
       })),
     }
   }
@@ -385,7 +332,6 @@ export async function runSessionReview(
     id: session.id,
     type: session.type,
     notes: sessionRow?.notes ?? session.notes,
-    contextJson: sessionRow?.contextJson ?? null,
   }, profileRow?.maxHr ?? null)
 
   const systemBlocks = buildSystemPrompt(profile, null)

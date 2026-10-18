@@ -14,7 +14,6 @@ import { InsightCallout } from './InsightCallout'
 import { LifestyleCorrelations } from './LifestyleCorrelations'
 import { MomentumGrid } from './MomentumGrid'
 import { PRList } from './PRList'
-import { RoadBootcampSummary } from './RoadBootcampSummary'
 import { RunningProgressChart } from './RunningProgressChart'
 import { SessionList } from './SessionList'
 import { VolumeChart } from './VolumeChart'
@@ -66,19 +65,6 @@ interface RecentRunEvidence {
   elevationGainM: number | null
   zoneSeconds: string | null
   reviewFlag: string | null
-}
-
-interface RoadBootcampMetrics {
-  runMinutes: number
-  easyRunMinutes: number
-  qualityRunMinutes: number
-  strengthCompleted: number
-  strengthTimeDistribution: Record<string, number>
-  equipmentDistribution: Record<string, number>
-  ropeCompleted: number
-  avgSleep: number | null
-  avgSoreness: number | null
-  completionRate: number
 }
 
 interface WeeklyZonePoint {
@@ -165,7 +151,6 @@ export function HistoryPage() {
   const [weeklyZonesSummary, setWeeklyZonesSummary] = useState<WeeklyZonesSummary | null>(null)
   const [aerobicData, setAerobicData] = useState<AerobicFitnessPoint[]>([])
   const [aerobicSummary, setAerobicSummary] = useState<AerobicFitnessSummary | null>(null)
-  const [roadBootcampMetrics, setRoadBootcampMetrics] = useState<RoadBootcampMetrics | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [consistency, setConsistency] = useState<ConsistencyData | null>(null)
   const [volumeData, setVolumeData] = useState<VolumePoint[]>([])
@@ -186,7 +171,6 @@ export function HistoryPage() {
           runProgressData,
           weeklyZonesData,
           aerobicFitnessData,
-          roadData,
           sessionsData,
           consistencyData,
           volumeRes,
@@ -199,7 +183,6 @@ export function HistoryPage() {
           apiFetch<{ dataPoints: RunDataPoint[]; summary: RunSummary; recentRunEvidence?: RecentRunEvidence[] }>(`/api/history/running-progress?days=${period}`),
           apiFetch<{ weeks: WeeklyZonePoint[]; summary: WeeklyZonesSummary }>(`/api/history/weekly-zones?weeks=${weeks}`),
           apiFetch<{ dataPoints: AerobicFitnessPoint[]; summary: AerobicFitnessSummary }>(`/api/history/aerobic-fitness?days=${period}`),
-          apiFetch<RoadBootcampMetrics>(`/api/history/road-bootcamp?days=${period}`),
           apiFetch<Session[]>('/api/history/sessions?limit=30'),
           apiFetch<ConsistencyData>(`/api/history/consistency?weeks=${weeks}`),
           apiFetch<{ dataPoints: VolumePoint[] }>(`/api/history/volume-trends?days=${period}`),
@@ -216,7 +199,6 @@ export function HistoryPage() {
         setWeeklyZonesSummary(weeklyZonesData.summary)
         setAerobicData(aerobicFitnessData.dataPoints)
         setAerobicSummary(aerobicFitnessData.summary)
-        setRoadBootcampMetrics(roadData)
         setSessions(sessionsData)
         setConsistency(consistencyData)
         setVolumeData(volumeRes.dataPoints)
@@ -249,7 +231,7 @@ export function HistoryPage() {
   useEffect(() => {
     if (!dashboard) return
     let cancelled = false
-    const payload = { dashboard, consistency, prs, correlations, runSummary, recentRunEvidence, roadBootcampMetrics, categoryCompletion }
+    const payload = { dashboard, consistency, prs, correlations, runSummary, recentRunEvidence, categoryCompletion }
     apiFetch<{ insights: string[] | null }>('/api/ai/ledger-insights', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -263,7 +245,7 @@ export function HistoryPage() {
         if (!cancelled) setAiInsights(null)
       })
     return () => { cancelled = true }
-  }, [dashboard, consistency, prs, correlations, runSummary, recentRunEvidence, roadBootcampMetrics, categoryCompletion])
+  }, [dashboard, consistency, prs, correlations, runSummary, recentRunEvidence, categoryCompletion])
 
   const insights = aiInsights ?? localInsights
 
@@ -417,12 +399,6 @@ export function HistoryPage() {
             sparklineColor="#4ACAAA"
           >
             <AerobicFitnessChart data={aerobicData} summary={aerobicSummary} />
-          </ChartCard>
-        )}
-
-        {roadBootcampMetrics && (
-          <ChartCard title="Road Bootcamp" headline={`${roadBootcampMetrics.completionRate}% complete`}>
-            <RoadBootcampSummary metrics={roadBootcampMetrics} />
           </ChartCard>
         )}
 
