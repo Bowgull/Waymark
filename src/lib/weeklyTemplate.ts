@@ -1,5 +1,6 @@
 import { blockZeroTrainingWeek } from './blockZero/weeks'
 import { getBlockZeroWeekTemplate } from './blockZero/weekPlan'
+import { FOUNDATION_LABEL } from './foundation'
 
 export interface TemplateSession {
   timeSlot: 'am' | 'pm'
@@ -9,54 +10,54 @@ export interface TemplateSession {
   runCategory?: 'zone2' | 'progression'
 }
 
-const DAILY_MOBILITY: TemplateSession = {
+const DAILY_FOUNDATION: TemplateSession = {
   timeSlot: 'am',
   type: 'mobility',
-  label: 'Mobility',
-  estimatedMin: 10,
+  label: FOUNDATION_LABEL,
+  estimatedMin: 12,
 }
 
 /**
  * Weekly training template. Keys are JS day-of-week (0=Sun, 1=Mon, ..., 6=Sat).
  *
- * Daily AM Mobility runs every day (7 exercises, ~8-10 min). This is the
- * micro-dose that actually remodels posture. Then on top of that:
+ * Foundation runs every AM (the daily back-and-neck session, ~12 min, level 3
+ * in the Fighter phase; lib/foundation). Then on top of that:
  * - M/W/F AM: Zone 2 (5-move pre-run stretch + easy Zone 2 run)
- * - T/Th AM: Strength (Mobility runs first, acts as pre-lift activation)
+ * - T/Th AM: Strength (Foundation runs first)
  * - Sat AM: Bag Work + progression run
  * - PM evenings: MT Class (M/W/F), Reset (Th/Sat)
- * - Sun: Mobility only, otherwise rest
+ * - Sun: Foundation only, otherwise rest
  */
 export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
   0: [ // Sunday
-    DAILY_MOBILITY,
+    DAILY_FOUNDATION,
   ],
   1: [ // Monday
-    DAILY_MOBILITY,
+    DAILY_FOUNDATION,
     { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
   ],
   2: [ // Tuesday
-    DAILY_MOBILITY,
+    DAILY_FOUNDATION,
     { timeSlot: 'am', type: 'strength', label: 'Strength: Push', estimatedMin: 75 },
   ],
   3: [ // Wednesday
-    DAILY_MOBILITY,
+    DAILY_FOUNDATION,
     { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
   ],
   4: [ // Thursday
-    DAILY_MOBILITY,
+    DAILY_FOUNDATION,
     { timeSlot: 'am', type: 'strength', label: 'Strength: Pull', estimatedMin: 75 },
     { timeSlot: 'pm', type: 'active_recovery', label: 'Reset', estimatedMin: 20 },
   ],
   5: [ // Friday
-    DAILY_MOBILITY,
+    DAILY_FOUNDATION,
     { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
   ],
   6: [ // Saturday
-    DAILY_MOBILITY,
+    DAILY_FOUNDATION,
     { timeSlot: 'am', type: 'bag_work', label: 'Bag Work', estimatedMin: 30 },
     { timeSlot: 'am', type: 'running', label: 'Progression Run', estimatedMin: 30, runCategory: 'progression' },
     { timeSlot: 'pm', type: 'active_recovery', label: 'Reset', estimatedMin: 30 },

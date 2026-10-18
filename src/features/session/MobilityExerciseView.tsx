@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { FormVideoLink } from '@/components/FormVideoLink'
-import { mobilitySteps, type MobilityStep } from '@/lib/backCare'
+import { mobilitySteps, type MobilityStep } from '@/lib/foundation'
 import { RingTimer } from '@/components/RingTimer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -320,7 +320,7 @@ export function MobilityExerciseView({
     if (holdTimer.running && !holdTimer.reachedTarget) {
       return {
         sessionType: 'mobility',
-        sessionLabel: 'Mobility',
+        sessionLabel: 'Foundation',
         state: {
           phase: 'hold',
           label: exerciseName,
@@ -338,7 +338,7 @@ export function MobilityExerciseView({
       const now = holdTimer.endsAtMs || activityReadyAtMs
       return {
         sessionType: 'mobility',
-        sessionLabel: 'Mobility',
+        sessionLabel: 'Foundation',
         state: {
           phase: 'complete',
           label: exerciseName,
@@ -355,7 +355,7 @@ export function MobilityExerciseView({
       const now = activityReadyAtMs
       return {
         sessionType: 'mobility',
-        sessionLabel: 'Mobility',
+        sessionLabel: 'Foundation',
         state: {
           phase: 'ready',
           label: detail ?? 'Next Hold',
@@ -487,7 +487,7 @@ export function MobilityExerciseView({
   return (
     <SessionShell
       sessionType="mobility"
-      title="Mobility"
+      title="Foundation"
       counter={`${exerciseIndex + 1} of ${totalExercises}`}
       progress={{
         completed: completedSteps,

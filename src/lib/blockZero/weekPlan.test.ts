@@ -37,7 +37,7 @@ for (const w of [1, 2, 3, 4, 5, 6, 7, 8]) {
   assert(!types.includes('mt_class'), `week ${w}: no MT class scheduled`)
   assert(types.filter(t => t === 'strength').length === 3, `week ${w}: 3 strength days`)
   assert(types.filter(t => t === 'foundation_run').length === 3, `week ${w}: 3 run-walk days`)
-  assert(ALL_DAYS.every(d => getBlockZeroWeekTemplate(w)[d].some(s => s.type === 'mobility' && s.label === 'Back Care')), `week ${w}: back care every day`)
+  assert(ALL_DAYS.every(d => getBlockZeroWeekTemplate(w)[d].some(s => s.type === 'mobility' && s.label === 'Foundation')), `week ${w}: Foundation every day`)
   assert(ALL_DAYS.every(d => strengthBeforeRunning(getBlockZeroWeekTemplate(w)[d])), `week ${w}: strength before running on shared days`)
   const trainingDays = ALL_DAYS.filter(d => getBlockZeroWeekTemplate(w)[d].some(s => s.type !== 'mobility'))
   assert(trainingDays.length === 6, `week ${w}: 6 training days, 1 rest day`)

@@ -151,7 +151,7 @@ export function serializeBlockZeroContext(input: BlockZeroAiContextInput): strin
     'no mt_class',
     'Strength A Mon, B Wed, C Fri, labels kept, before any run',
     'run-walk Tue/Thu/Sat (rope ok Tue/Thu)',
-    'back care daily',
+    'Foundation daily',
     'Sunday rest',
     `runs <= ${Math.min(caps.single, plannedRun)} min`,
     'loads set by the rules',

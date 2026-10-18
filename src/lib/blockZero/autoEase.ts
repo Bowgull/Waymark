@@ -82,6 +82,6 @@ export function easeSession(planned: PlannedSession, triggers: EaseTriggers): Ea
     }
   }
 
-  // Mobility, back care and recovery stay as planned. They help.
+  // Foundation and recovery stay as planned. They help.
   return { session: planned, eased: false, reason: null }
 }

@@ -147,8 +147,8 @@ function getRoutineOverview(
 
     case 'mobility': {
       return {
-        headline: 'Breathing, upper release, lower mobility',
-        detail: '7 exercises · ~10 min',
+        headline: 'Back and neck: trunk endurance, neck and upper back',
+        detail: '~12 min · every day',
       }
     }
 

@@ -10,7 +10,7 @@ import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, 
 import { isoToEpochDay, mondayOf } from '../lib/dates'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
-import { BACK_CARE_LABEL, backCareTemplate } from '../lib/backCare'
+import { FOUNDATION_LABEL, LEGACY_FOUNDATION_LABELS, foundationTemplate, strengthKindFromLabel, type FoundationInput } from '../lib/foundation'
 import { isLoggedSet, isLoggedWorkSet } from '../lib/loggedSets'
 import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
 import { swapForMissingEquipment } from '../lib/exerciseSwaps'
@@ -18,7 +18,7 @@ import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { WEEKLY_TEMPLATE, getBlockZeroTemplate, getDayTemplate } from '../lib/weeklyTemplate'
-import { BLOCK_ZERO_BASE_WEEKS, blockZeroTrainingWeek, getRunWalkWeek, liftRegion, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
+import { BLOCK_ZERO_BASE_WEEKS, allowedClassTypes, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, liftRegion, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
 import { KNOWN_SESSION_TYPES, bagRules, estimatedMinutes, fallbackRoundTypes, fighterTmDecision, governBagRounds, mergeContext, type BlockWorkingSet, type SafeAlternative, type SessionChange } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
@@ -35,7 +35,7 @@ import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsights
 import { runReactiveReplan, runReplaceSuggestions } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { clearCollectedTrainingData } from './trainingReset'
-import { checkMtClassForBlockZero, easeForReadiness, getActiveBlock, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, todayEpochDayUtc, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
+import { checkMtClassForBlockZero, easeForReadiness, getActiveBlock, loadMtRamp, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, todayEpochDayUtc, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
 import { logs } from './routes/logs'
 import {
   checkChange,
@@ -1660,18 +1660,37 @@ app.post('/api/sessions/:id/start-mobility', async (c) => {
     return c.json(await buildMobilityWorkoutResponse(db, sessionId))
   }
 
-  // Block Zero's daily session is Back Care: progressed by block week, gentler
-  // when back today is 2 or less, no loaded moves on a back red flag.
-  const isBackCare = session.label === BACK_CARE_LABEL || session.blockType === 'block_zero'
+  // The daily session is Foundation (lib/foundation): levelled by Block Zero
+  // week (Fighter: level 3), de-duplicated against the day's strength session,
+  // a bad-back version when back today is 2 or less, a bad-neck version on a
+  // neck injury flag, breathing only on a back or neck red flag, and the
+  // clinch neck add-on once the muay thai ramp allows clinch. Older sessions
+  // labelled "Mobility" outside Block Zero keep the legacy daily routine.
+  const isFoundation = session.blockType === 'block_zero' || session.label === FOUNDATION_LABEL || LEGACY_FOUNDATION_LABELS.includes(session.label ?? '')
   let rows: MobilityExerciseTemplate[] = DAILY_MOBILITY_TEMPLATE
-  let backCare: { week: number; backToday: number | null; redFlag: boolean } | null = null
-  if (isBackCare) {
+  let foundation: FoundationInput | null = null
+  if (isFoundation) {
     const day = session.scheduledDate ?? Math.floor(nowSec / 86400)
-    const week = await blockWeekForSession(db, session, day)
+    const dayOfWeek = new Date(day * 86400000).getUTCDay()
+    const blockZero = session.blockType === 'block_zero'
+    const week = blockZero ? await blockWeekForSession(db, session, day) : null
     const [log] = await db.select({ backToday: dailyLogs.backToday }).from(dailyLogs).where(eq(dailyLogs.logDate, day))
     const state = await loadSessionCoachState(db, session, day)
-    backCare = { week, backToday: log?.backToday ?? null, redFlag: state.injury?.redFlag === true }
-    rows = backCareTemplate(backCare)
+    const [strength] = await db.select({ label: sessions.label }).from(sessions)
+      .where(and(eq(sessions.scheduledDate, day), eq(sessions.type, 'strength'), inArray(sessions.status, ['planned', 'in_progress', 'completed'])))
+    const strengthDay = strength ? (blockZero ? strengthDayFor(dayOfWeek, strength.label) : strengthKindFromLabel(strength.label)) : null
+    const ramp = await loadMtRamp(db, day)
+    const clinchAllowed = ramp.weeksSinceFirstClass != null && allowedClassTypes(mtRampWeek(ramp.weeksSinceFirstClass)).includes('clinch')
+    foundation = {
+      week,
+      backToday: log?.backToday ?? null,
+      neckFlag: state.injury?.region === 'neck' && !state.injury.redFlag,
+      redFlag: state.injury?.redFlag ? (state.injury.region === 'neck' ? 'neck' : 'back') : false,
+      strengthDay,
+      dayOfWeek,
+      clinchAllowed,
+    }
+    rows = foundationTemplate(foundation)
   }
   const missingIds = await missingExerciseIds(db, rows.map(r => r.exerciseId))
   if (missingIds.length > 0) {
@@ -1682,7 +1701,7 @@ app.post('/api/sessions/:id/start-mobility', async (c) => {
   await db.update(sessions).set({
     status: 'in_progress',
     startedAt: nowSec,
-    ...(backCare ? { contextJson: mergeContext(session.contextJson, { backCare }) } : {}),
+    ...(foundation ? { contextJson: mergeContext(session.contextJson, { foundation }) } : {}),
   }).where(eq(sessions.id, sessionId))
   return c.json(await buildMobilityWorkoutResponse(db, sessionId))
 })

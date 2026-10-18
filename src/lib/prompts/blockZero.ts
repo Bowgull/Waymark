@@ -149,7 +149,7 @@ export function buildAssessmentPrompt(
     '  Week 1: test week. Each main lift works up to a set of 8 at RPE 6-7. Run-walk at talk-test pace.',
     '  Weeks 2-5: build. 2-3 sets of 8, RPE 6-7 then 7-8, never to failure. Week 3 adds a 3-5 rep check set.',
     '  Week 6: consolidate and retest. Volume down 30-50%, intensity held.',
-    '  Weekly: Strength A/B/C, 3 run-walks, daily back-care mobility, durability twice a week, 1 rest day.',
+    '  Weekly: Strength A/B/C, 3 run-walks, daily Foundation (type mobility: back and neck, ~12 min), durability twice a week, 1 rest day.',
     '  No MT classes are scheduled. The athlete adds them: technique and pads only for the first 2 weeks back, light clinch from week 3, no hard sparring.',
     '',
     'User profile is in the system prompt.',

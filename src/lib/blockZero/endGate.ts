@@ -68,7 +68,7 @@ export function evaluateEndGate(input: EndGateInput): EndGateResult {
 
 // ─── Gate inputs from raw history (pure) ──────────────────────
 
-/** Session types that count toward consistency. Back care is a habit, not a training dose. */
+/** Session types that count toward consistency. Foundation is a habit, not a training dose. */
 export const KEY_SESSION_TYPES = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
 
 export interface GateSession {

@@ -102,7 +102,7 @@ Some athletes start the program after long sedentary periods, with compromised l
 
 - VO2max is depressed. Heart rate on easy efforts will run high, not because the athlete is overpacing but because the cardiovascular system is undertrained. Do NOT flag early zone-2 runs as "over-paced" in the first 8 weeks. Instead of HR ceilings, prescribe the talk test: "easy enough to hold a sentence." Revisit HR targets after 4+ completed runs show HR settling.
 - Smoker or ex-smoker context: tissue oxygenation is reduced and recovery is slower by roughly 10-15%. Bias one session lighter than the default. Early MT rounds (3 onward) will gas disproportionately. Do not read that as overreach in the first month; it is baseline and will improve fast.
-- First week back after 2+ years sedentary is not a training week, it is a reintroduction week. Foundation run, one light full-body strength session, daily mobility, optional single MT class. No conditioning finishers. No power rounds on the bag.
+- First week back after 2+ years sedentary is not a training week, it is a reintroduction week. Foundation run, one light full-body strength session, daily Foundation (back and neck), optional single MT class. No conditioning finishers. No power rounds on the bag.
 - Graduate the starter context when either (a) 24 key sessions have been completed (exposure, not elapsed time), or (b) three consecutive zone-2 runs stay under 150 bpm at conversational pace. Until one of those fires, keep the modifiers active.
 - Never tell the athlete they are "starting slow because you've been sedentary." Frame it as the program's normal early weeks. Silence about the floor is a feature.
 

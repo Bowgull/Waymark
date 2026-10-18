@@ -14,19 +14,16 @@ export interface MobilityExerciseTemplate {
 }
 
 /**
- * Daily Mobility. Runs every day AM, ~8-10 min.
- *
- * Science-backed sequence:
- * - Breathing first (diaphragm reset sequences the ribcage correctly).
- * - Band pull-aparts + external rotations train scapular retraction and rotator cuff.
- * - Prone cobra reinforces mid/lower trap and posterior-chain posture.
- * - Dead bugs train ribs-down trunk control for lower-back position.
- * - Couch stretch lengthens rectus femoris (direct APT driver).
- * - World's greatest stretch is a compound hip + thoracic opener.
- * - Ankle CARs maintain dorsiflexion (squat depth, kick mechanics, gait).
- *
- * The Fighter daily routine. Block Zero's daily session is Back Care
- * (lib/backCare), not this.
+ * Legacy daily routine (~8-10 min), kept for sessions labelled "Mobility"
+ * before the Foundation rename. New daily sessions in both phases run
+ * Foundation (lib/foundation).
+ * - Breathing first: a calm start.
+ * - Band pull-aparts and external rotations: upper back and rotator cuff.
+ * - Prone cobra: upper-back endurance.
+ * - Dead bugs: trunk control.
+ * - Couch stretch: optional hip flexor stretch.
+ * - World's greatest stretch: hip and thoracic range.
+ * - Ankle CARs: ankle range for squats, running and kicks.
  */
 export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
   {
@@ -36,7 +33,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 1,
     holdSec: 120,
     reps: null,
-    notes: 'Face down, forehead on hands. Breathe into your lower back and ribs, not your chest. Resets the diaphragm that shallow chest breathing has parked.',
+    notes: 'Face down, forehead on hands. Breathe into your lower back and ribs, not your chest. A calm start.',
   },
   {
     exerciseId: 'ex-band-pull-aparts',
@@ -54,7 +51,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 2,
     holdSec: 3,
     reps: 10,
-    notes: 'Lie face down, lift chest and arms, thumbs up. Hold 3s. Activates the entire posterior chain the desk switches off.',
+    notes: 'Lie face down, lift chest and arms, thumbs up. Hold 3s. Upper-back endurance.',
   },
   {
     exerciseId: 'ex-band-external-rotation',
@@ -64,7 +61,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     holdSec: null,
     reps: 10,
     perSide: true,
-    notes: 'Elbow tucked to side, rotate forearm outward against band. 10 each arm. Rear delt and rotator cuff, the muscles that pull shoulders back.',
+    notes: 'Elbow tucked to side, rotate forearm outward against band. 10 each arm. Rotator cuff (infraspinatus and teres minor).',
   },
   {
     exerciseId: 'ex-dead-bugs',
@@ -84,7 +81,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     holdSec: 30,
     reps: null,
     perSide: true,
-    notes: 'Back foot on couch, front knee forward, tuck tailbone and squeeze back glute. 30s each side. Deep hip flexor lengthening that a standing stretch can not reach.',
+    notes: 'Back foot on couch, front knee forward, tuck tailbone and squeeze back glute. 30s each side. A strong hip flexor stretch, optional.',
   },
   {
     exerciseId: 'ex-worlds-greatest-stretch',
@@ -246,7 +243,7 @@ export const LEGACY_FR_STATIC_WARMUP_TEMPLATE: MobilityExerciseTemplate[] = [
 /**
  * Legacy Foundation Run cooldown block. Kept as a named export for any
  * historical references; the active Zone 2 flow now uses FR_WARMUP_TEMPLATE
- * before the run and skips post-run mobility (Daily Mobility covers it).
+ * before the run and skips post-run mobility (Foundation covers it).
  */
 export const FR_COOLDOWN_TEMPLATE: MobilityExerciseTemplate[] = [
   {

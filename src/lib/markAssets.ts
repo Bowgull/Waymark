@@ -16,7 +16,7 @@ export interface MarkAsset {
 
 const SESSION_MARK_MAP: Record<string, MarkAsset> = {
   foundation_run: { png: cardioPng, label: 'Zone 2' },
-  mobility: { png: mobilityPng, label: 'Mobility' },
+  mobility: { png: mobilityPng, label: 'Foundation' },
   strength: { png: strengthPng, label: 'Strength' },
   mt_class: { png: muayThaiPng, label: 'Muay Thai' },
   bag_work: { png: bagworkPng, label: 'Bagwork' },

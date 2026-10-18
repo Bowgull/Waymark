@@ -5,7 +5,7 @@
 // Rules, in order:
 // - Known session types only. No past days. A move stays in its own week.
 // - Back red flags (F17) stop loading. An injury flag keeps hard work off that region.
-// - Block Zero Sunday is rest (back care only).
+// - Block Zero Sunday is rest (Foundation only).
 // - Ease and load-flag days get no hard sessions; the eased version is offered (R10, R5).
 // - No two hard sessions on one day (F6, F14).
 // - Heavy-leg strength sits 24 h or more from sparring/hard muay thai and long runs (F6).
@@ -27,6 +27,7 @@ import {
   mtRampWeek,
   singleRunCap,
 } from '../blockZero'
+import { FOUNDATION_LABEL } from '../foundation'
 import {
   DAY_NAMES,
   KEY_TYPES,
@@ -130,7 +131,7 @@ const MAX_DAY_ALTERNATIVES = 6
 const LOWER_BODY = /back|spine|lumbar|hip|groin|knee|ankle|foot|shin|calf|achilles|hamstring|quad|leg/i
 const UPPER_BODY = /shoulder|neck|elbow|wrist|hand|finger|knuckle|rib|chest/i
 
-/** Does a session load the flagged region? Back care and recovery never count. */
+/** Does a session load the flagged region? Foundation and recovery never count. */
 export function touchesRegion(type: string, region: string): boolean {
   if (RECOVERY_TYPES.has(type)) return false
   if (type === 'strength' || type === 'mt_class' || type === 'bag_work') return true
@@ -159,7 +160,7 @@ function weekBounds(epochDay: number): [number, number] {
 export function easierOptions(c: Pick<SessionChange, 'type' | 'label' | 'notes'>, blockType: BlockKind): Array<{ type: string; label: string; notes?: string | null }> {
   const walk = { type: 'active_recovery', label: 'Easy Walk or Bike' }
   switch (c.type) {
-    case 'strength': return [walk, { type: 'mobility', label: 'Back Care' }]
+    case 'strength': return [walk, { type: 'mobility', label: FOUNDATION_LABEL }]
     case 'mt_class': return classTypeFromLabel(c.label) === 'technical' ? [walk] : [{ type: 'mt_class', label: 'MT Technique' }, walk]
     case 'bag_work': return [{ type: 'skip_rope', label: 'Easy Rope' }, walk]
     case 'running':
@@ -212,7 +213,7 @@ function evaluate(change: SessionChange, ctx: PlacementContext): { refusal: Refu
   }
 
   if (ctx.blockType === 'block_zero' && key && isBlockZeroRestDay(ctx.weekNumber, dow)) {
-    return { refusal: refuse('rest_day', 'Sunday is the rest day. Back care only.') }
+    return { refusal: refuse('rest_day', 'Sunday is the rest day. Foundation only.') }
   }
 
   // R10 / R5: an ease day takes the eased version, never added hard work.

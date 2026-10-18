@@ -72,7 +72,7 @@ export const TRAINING_TARGETS: SessionTarget[] = [
   },
   {
     type: 'mobility',
-    label: 'Mobility',
+    label: 'Foundation',
     weeklyTarget: 7, // daily AM habit
     priority: 'low',
     flexibleTimeSlot: false,

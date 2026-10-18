@@ -21,7 +21,7 @@ export const KNOWN_SESSION_TYPES: ReadonlySet<string> = new Set([
   'active_recovery',
 ])
 
-/** Sessions that count as training exposure (F15). Back care and recovery are habits, not doses. */
+/** Sessions that count as training exposure (F15). Foundation and recovery are habits, not doses. */
 export const KEY_TYPES: ReadonlySet<string> = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
 
 export const RUN_TYPES: ReadonlySet<string> = new Set(['foundation_run', 'running'])
@@ -61,7 +61,7 @@ const TYPE_NAME: Record<string, string> = {
   mt_class: 'Muay thai',
   bag_work: 'Bag work',
   skip_rope: 'Rope',
-  mobility: 'Back care',
+  mobility: 'Foundation',
   active_recovery: 'Recovery',
 }
 
@@ -89,7 +89,7 @@ export function isSparring(label: string | null | undefined): boolean {
 /**
  * Hard sessions for the "no two hard sessions on one day" rule (F6, F14):
  * strength, muay thai (classes are hard interval work, F1; a technique class
- * is not), bag work and long runs. Easy runs, rope, back care and recovery are not.
+ * is not), bag work and long runs. Easy runs, rope, Foundation and recovery are not.
  */
 export function isHard(s: Pick<SessionLike, 'type' | 'label' | 'notes' | 'estimatedMin'>): boolean {
   if (s.type === 'strength' || s.type === 'bag_work') return true

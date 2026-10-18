@@ -286,7 +286,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'chest',
     equipment: 'lacrosse ball,wall',
-    formCues: 'Ball against wall, lean into chest. Find the tight spots and breathe into them. This releases the chest tightness that pulls your shoulders forward from desk work.',
+    formCues: 'Ball against a wall, lean into the front of the chest. Roll slowly over tender spots and breathe. Short-term comfort and range, not a posture fix.',
     formVideoUrl: 'https://www.youtube.com/watch?v=a8KjvtbkM8E',
   },
   {
@@ -295,7 +295,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'traps,neck',
     equipment: 'lacrosse ball,wall',
-    formCues: 'Ball between wall and upper traps, lean in and roll slowly. These muscles get rock-hard from stress and desk posture. Release them to drop your shoulders away from your ears.',
+    formCues: 'Ball between the wall and the top of the shoulder, lean in and roll slowly with easy pressure. It can ease tension for a while; it does not change the muscle.',
     formVideoUrl: 'https://www.youtube.com/watch?v=RcwfX-YKnIw',
   },
   {
@@ -304,7 +304,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'hip_flexors,quads',
     equipment: 'foam roller',
-    formCues: 'Face down, roller on front of hip. Roll slowly from hip crease to mid-thigh. These muscles shorten from sitting all day and pull your pelvis into tilt. Release before stretching.',
+    formCues: 'Face down, roller on the front of the hip. Roll slowly from the hip crease to mid-thigh. Short-term comfort before a stretch.',
     formVideoUrl: 'https://www.youtube.com/watch?v=z4JbDQHJ_2M',
   },
   {
@@ -313,7 +313,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'chest,front_delts',
     equipment: 'doorway',
-    formCues: 'Forearm on doorframe at 90 degrees, step through gently. This opens the chest that desk posture closes down. Hold 30s each side. Breathe into the stretch.',
+    formCues: 'Forearm on the door frame, elbow at or just above shoulder height. One side at a time. Step through gently until you feel the front of the chest, nothing sharp in the shoulder. Hold 30s and breathe.',
     formVideoUrl: 'https://www.youtube.com/watch?v=wwKWBwj-05U',
   },
   {
@@ -322,7 +322,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'hip_flexors,psoas',
     equipment: 'bodyweight',
-    formCues: 'Back knee down, squeeze that glute and tuck your tailbone under. This lengthens the hip flexors that pull your pelvis forward from sitting. You should feel it in the front of the back hip.',
+    formCues: 'Back knee down, squeeze that glute and tuck your tailbone under. You should feel a gentle stretch in the front of the back hip. Optional after long sitting; nice, not a back-pain fix.',
     formVideoUrl: 'https://www.youtube.com/watch?v=YQmpO9VT2X4',
   },
   {
@@ -331,7 +331,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'lower_traps,rear_delts,rotator_cuff',
     equipment: 'bodyweight',
-    formCues: 'Face down or standing bent over. Make Y, T, and W shapes with arms. Squeeze shoulder blades together each time. This activates the muscles that pull your shoulders back and down.',
+    formCues: 'Face down or bent over. Make Y, T and W shapes with the arms, thumbs up, shoulder blades back and down. Slow and light. Trains the middle and lower trapezius.',
     formVideoUrl: 'https://www.youtube.com/watch?v=VCPp1DUypo0',
   },
   {
@@ -340,7 +340,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'deep_neck_flexors',
     equipment: 'bodyweight',
-    formCues: 'Pull chin straight back like making a double chin. Hold 5 seconds. This strengthens the deep neck flexors that are weak from forward head posture. Think "tall spine."',
+    formCues: 'Start lying on your back, head on the floor or a folded towel. Nod gently, as if saying "yes", so the back of the neck lengthens. Not a hard double chin. Hold 10s, 10 times. Trains the deep neck flexors. Progress to sitting against a wall.',
     formVideoUrl: 'https://www.youtube.com/watch?v=wQylqaCl8Zo',
   },
   {
@@ -349,7 +349,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'thoracic_spine,shoulders',
     equipment: 'wall',
-    formCues: 'Back against wall, arms in goalpost position. Slide up and down keeping everything touching the wall. If your back arches, brace harder. This restores overhead mobility.',
+    formCues: 'Back against the wall, arms in goalpost position. Slide up and down, and only go as high as you can keep contact with the wall. Gentle shoulder and upper-back range.',
     formVideoUrl: 'https://www.youtube.com/watch?v=M_ooIhKYs7c',
   },
 
@@ -360,7 +360,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'glutes,core',
     equipment: 'bodyweight',
-    formCues: 'Squeeze glutes at the top, don\'t push through your lower back. This activates the glutes that "turn off" from sitting all day. Tuck tailbone slightly. Hold 2 seconds at top.',
+    formCues: 'Squeeze the glutes to lift, don\'t push through your lower back. Ribs down, tuck the tailbone slightly. Hold 2 seconds at the top. Builds hip extension strength.',
     formVideoUrl: 'https://www.youtube.com/watch?v=tl6xvm4-Qk0',
   },
   {
@@ -423,7 +423,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'psoas,hip_flexors',
     equipment: 'bodyweight',
-    formCues: 'Supine, band around feet. Slow marching motion with core braced. The psoas is the deepest hip flexor and the main driver of pelvic tilt from sitting. This lengthens and activates it.',
+    formCues: 'On your back, band around the feet. Slow marching with the trunk braced, one knee toward the chest at a time. Hip flexor control and range.',
     formVideoUrl: 'https://www.youtube.com/watch?v=vHIJgPO3p9Q',
   },
   {
@@ -441,7 +441,7 @@ const exercises: Exercise[] = [
     category: 'posture',
     muscleGroups: 'sciatic_nerve,hamstrings',
     equipment: 'bodyweight',
-    formCues: 'Seated, extend one leg while flexing foot. Gently rock between pointed and flexed toe. This mobilizes the sciatic nerve that gets compressed from sitting. Never push into pain.',
+    formCues: 'Seated, straighten one leg and gently rock the foot between pointed and flexed. Small, easy range, never into pain. If pain or tingling runs down the leg, stop and see a clinician.',
     formVideoUrl: 'https://www.youtube.com/watch?v=OMbKv94Bu_U',
   },
 
@@ -452,7 +452,7 @@ const exercises: Exercise[] = [
     category: 'mobility',
     muscleGroups: 'diaphragm,ribcage',
     equipment: 'bodyweight',
-    formCues: 'Face down, forehead on hands. Breathe into your lower back and ribs, not your chest. Resets the diaphragm that shallow chest breathing has parked.',
+    formCues: 'Face down, forehead on your hands. Slow breaths into the low back and sides. A calm way to start; it eases tension rather than fixing anything.',
     formVideoUrl: 'https://www.youtube.com/watch?v=2ibSb6jQ3Ec',
   },
   {
@@ -461,7 +461,7 @@ const exercises: Exercise[] = [
     category: 'mobility',
     muscleGroups: 'thoracic_spine,upper_back',
     equipment: 'foam roller',
-    formCues: 'Roller under mid-back, hands behind head. Let the spine extend backwards. This is the single best move against desk kyphosis.',
+    formCues: 'Roller across the upper back, hands behind the head. Let the upper back extend over the roller, ribs down, low back stays out of it. Try 2-3 spots. Builds upper-back extension range and feels good; it does not fix posture on its own.',
     formVideoUrl: 'https://www.youtube.com/watch?v=WTwJNj1IjXI',
   },
   {
@@ -470,7 +470,7 @@ const exercises: Exercise[] = [
     category: 'mobility',
     muscleGroups: 'posterior_chain,lower_traps,rear_delts',
     equipment: 'bodyweight',
-    formCues: 'Lie face down, lift chest and arms, thumbs up. Hold 3s. Activates the entire posterior chain the desk switches off.',
+    formCues: 'Lie face down, lift the chest and arms, thumbs up, shoulder blades back and down. Hold 3s. Trains the upper-back muscles.',
     formVideoUrl: 'https://www.youtube.com/watch?v=LWDUyq4TRMU',
   },
   {
@@ -479,7 +479,7 @@ const exercises: Exercise[] = [
     category: 'mobility',
     muscleGroups: 'rear_delts,rotator_cuff',
     equipment: 'band',
-    formCues: 'Elbow tucked to side, rotate forearm outward against band. 10 each arm. Rear delt and rotator cuff, the muscles that pull shoulders back.',
+    formCues: 'Elbow tucked to your side, rotate the forearm outward against the band. Slow. Trains the rotator cuff (infraspinatus and teres minor).',
     formVideoUrl: 'https://www.youtube.com/watch?v=lw5jkvrLwVw',
   },
   {
@@ -488,7 +488,7 @@ const exercises: Exercise[] = [
     category: 'mobility',
     muscleGroups: 'hip_flexors,quads',
     equipment: 'bodyweight,couch',
-    formCues: 'Back foot on couch, front knee forward, tuck tailbone and squeeze back glute. 30s each side. Deep hip flexor lengthening that a standing stretch can not reach.',
+    formCues: 'Back foot on the couch, front knee forward, tuck the tailbone and squeeze the back glute. 30s each side. A strong hip flexor stretch; optional.',
     formVideoUrl: 'https://www.youtube.com/shorts/TML8Vqy-ACQ',
   },
   {

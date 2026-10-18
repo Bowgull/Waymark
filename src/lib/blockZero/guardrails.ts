@@ -21,6 +21,7 @@ import { RESTART_WEEKLY_SEC, WEEKLY_RUN_CAP_RATIO, getRunWalkWeek, runWalkTotalS
 import type { NextLoad, WorkingLoad } from './strength'
 import { getBlockZeroWeekTemplate, type BlockZeroTemplateSession } from './weekPlan'
 import { BLOCK_ZERO_BASE_WEEKS, blockZeroPhase } from './weeks'
+import { FOUNDATION_LABEL } from '../foundation'
 
 export const GUARDRAIL_TAG = '[bz-guardrail]'
 
@@ -115,7 +116,7 @@ function clampMin(type: string, min: number, upper?: number): number {
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-/** Sunday in the Block Zero template: back care only. */
+/** Sunday in the Block Zero template: Foundation only. */
 export function isBlockZeroRestDay(weekNumber: number, dow: number): boolean {
   const day = getBlockZeroWeekTemplate(weekNumber)[dow] ?? []
   return day.every(s => s.type === 'mobility')
@@ -152,7 +153,7 @@ const STRENGTH_FIRST: Record<string, number> = { mobility: 0, strength: 1 }
 /**
  * Clamp a Block Zero week plan to the rules' week: no classes, Strength A/B/C
  * on Mon/Wed/Fri with their labels, run-walk on Tue/Thu/Sat (rope allowed where
- * the template allows it), back care daily, Sunday rest, minutes inside the
+ * the template allows it), Foundation daily, Sunday rest, minutes inside the
  * plan and the run caps. The AI may drop or soften a session; it may not add
  * one or move one to another day. Test weeks keep every test session.
  */
@@ -221,7 +222,7 @@ export function guardWeekPlan(plan: WeekPlanOutput, input: WeekPlanGuardInput): 
         continue
       }
       if (isBlockZeroRestDay(input.weekNumber, dow)) {
-        clamps.push({ code: 'rest_day', detail: `dow=${dow} type=${s.type}`, reason: 'Sunday is the rest day. Back care only.' })
+        clamps.push({ code: 'rest_day', detail: `dow=${dow} type=${s.type}`, reason: 'Sunday is the rest day. Foundation only.' })
       } else if (s.type === 'strength') {
         clamps.push({ code: 'strength_day', detail: `dow=${dow}`, reason: 'Strength stays on Mon, Wed and Fri. Never two days in a row.' })
       } else {
@@ -229,12 +230,12 @@ export function guardWeekPlan(plan: WeekPlanOutput, input: WeekPlanGuardInput): 
       }
     }
 
-    // Back care is the daily habit; test weeks keep every test session.
+    // Foundation is the daily habit; test weeks keep every test session.
     for (const x of slots) {
       if (x.used) continue
       if (x.t.type === 'mobility') {
         kept.unshift(toAiSession(x.t))
-        clamps.push({ code: 'back_care', detail: `dow=${dow}`, reason: 'Back care stays every day.' })
+        clamps.push({ code: 'back_care', detail: `dow=${dow}`, reason: 'Foundation stays every day.' })
       } else if (testWeek) {
         kept.push(toAiSession(x.t))
         clamps.push({ code: 'test_week', detail: `dow=${dow} type=${x.t.type}`, reason: 'Test week. Every test session stays in.' })
@@ -388,7 +389,7 @@ export function checkPlacement(p: Placement, ctx: BlockZeroGuardContext): Placem
   const sameDay = around.filter(s => s.epochDay === p.epochDay)
   const hard = HARD_TYPES.has(p.type)
 
-  if (hard && isBlockZeroRestDay(ctx.weekNumber, dow)) return refuse('rest_day', 'Sunday is the rest day. Back care only.')
+  if (hard && isBlockZeroRestDay(ctx.weekNumber, dow)) return refuse('rest_day', 'Sunday is the rest day. Foundation only.')
 
   // Overreach: the rules' auto-ease wins over any added hard work.
   const easeToday = ctx.readinessEase && p.epochDay === ctx.todayEpochDay
@@ -550,7 +551,7 @@ function safeReplan(output: ReactiveReplanOutput, ctx: BlockZeroGuardContext, cl
     shiftAction: 'hold',
     shiftReason: clamp.reason,
     targetSessionType: (original?.type ?? (output.targetSessionType === 'mt_class' ? 'mobility' : output.targetSessionType)) as SessionType,
-    targetLabel: original?.label ?? (output.targetSessionType === 'mt_class' ? 'Back Care' : output.targetLabel),
+    targetLabel: original?.label ?? (output.targetSessionType === 'mt_class' ? FOUNDATION_LABEL : output.targetLabel),
     targetDay: Number.isInteger(output.targetDay) && dayInPlanWeek(ctx.todayEpochDay, output.targetDay) != null ? output.targetDay : dowOf(ctx.todayEpochDay),
     targetTimeSlot: output.targetTimeSlot === 'pm' ? 'pm' : 'am',
     ...(original?.id ? { originalSessionId: original.id } : {}),
@@ -640,9 +641,9 @@ export interface ReplacedSession {
 
 /** Rules-made safe options when nothing the AI offered fits. */
 export function safeReplaceOptions(replaced: Pick<ReplacedSession, 'type'>): ReplaceSuggestion[] {
-  const backCare: ReplaceSuggestion = { type: 'mobility', label: 'Back Care', timeSlot: 'am', estimatedMin: 12 }
+  const foundation: ReplaceSuggestion = { type: 'mobility', label: FOUNDATION_LABEL, timeSlot: 'am', estimatedMin: 12 }
   const walk: ReplaceSuggestion = { type: 'active_recovery', label: 'Easy Walk', timeSlot: 'am', estimatedMin: 20 }
-  return replaced.type === 'mobility' ? [walk] : [backCare, walk]
+  return replaced.type === 'mobility' ? [walk] : [foundation, walk]
 }
 
 /**
@@ -688,8 +689,8 @@ export function guardReplaceSuggestions(
   if (kept.length === 0) {
     const reason = (topRefusal as Clamp | null)?.reason ?? 'Nothing offered fits the rules today.'
     const fallback = safeReplaceOptions(replaced)
-    clamps.push({ code: 'suggestion_fallback', detail: `replaced=${replaced.type} options=${fallback.map(f => f.type).join(',')}`, reason: `${reason} Back care or an easy walk instead.` })
-    return { output: { coachLine: `${reason} Back care or an easy walk instead.`, suggestions: fallback }, clamps }
+    clamps.push({ code: 'suggestion_fallback', detail: `replaced=${replaced.type} options=${fallback.map(f => f.type).join(',')}`, reason: `${reason} Foundation or an easy walk instead.` })
+    return { output: { coachLine: `${reason} Foundation or an easy walk instead.`, suggestions: fallback }, clamps }
   }
 
   const first = topRefusal as Clamp | null

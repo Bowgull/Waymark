@@ -374,7 +374,7 @@ export function buildReactivePrompt(bundle: SignalBundle, rationale: string, adh
   }
   if (bundle.injury) {
     lines.push(bundle.injury.redFlag
-      ? `Back red flag in the notes. The rules stop all loading. Only hold or add_recovery.`
+      ? `${bundle.injury.region === 'neck' ? 'Neck' : 'Back'} red flag in the notes. The rules stop all loading. Only hold or add_recovery.`
       : `Rules flag: ${bundle.injury.reason} Sessions on that region are eased or swapped by the rules. Do not load it.`)
   }
 

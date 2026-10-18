@@ -37,7 +37,7 @@ export interface WeekPlanParams {
 // (extension weeks arrive as 5). MT classes are never scheduled in Block Zero;
 // the route drops any the model returns.
 function blockZeroPhaseNote(blockWeek: number): string {
-  const shape = 'Shape: Strength A/B/C Mon/Wed/Fri, run-walk (foundation_run) Tue/Thu/Sat, daily back-care mobility, Sunday no training. Never schedule mt_class.'
+  const shape = 'Shape: Strength A/B/C Mon/Wed/Fri, run-walk (foundation_run) Tue/Thu/Sat, daily Foundation (type mobility, label "Foundation"), Sunday no training. Never schedule mt_class.'
   if (blockWeek <= 1) return `Week 1 test week: strength works up to a set of 8 at RPE 6-7, run-walk at talk-test pace, a 20-min rope piece Monday. ${shape}`
   if (blockWeek >= 6) return `Week 6 consolidate and retest: volume down 30-50%, intensity held, retest sets of 3-5. ${shape}`
   return `Build week ${blockWeek}: strength RPE ${blockWeek <= 2 ? '6-7' : '7-8'}, never to failure. Run-walk grows under the 110% single-run and 30% weekly caps. ${shape}`

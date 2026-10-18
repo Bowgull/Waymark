@@ -98,7 +98,7 @@ const RUN_TYPES = new Set(['foundation_run', 'running'])
 /**
  * A class lands on a day. The day's run moves off (class is the conditioning),
  * strength stays but comes first in the AM, one set lighter with an RPE 7 cap.
- * Back care stays. Pure: returns the new day plus what to move.
+ * Foundation stays. Pure: returns the new day plus what to move.
  */
 export function rebalanceDayForClass(day: PlannedSession[], mtClass: PlannedSession): RebalancedDay {
   const kept: PlannedSession[] = []

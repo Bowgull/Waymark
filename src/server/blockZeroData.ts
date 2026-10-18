@@ -436,7 +436,7 @@ export async function loadRunHistory(db: DB, epochDay: number): Promise<Required
 }
 
 /** Ramp inputs for the class rules: ramp start (after the last 14+ day class gap), classes this week, profile cap. */
-async function loadMtRamp(db: DB, epochDay: number) {
+export async function loadMtRamp(db: DB, epochDay: number) {
   const monday = mondayOf(epochDay)
   const classes = await db.select({ scheduledDate: sessions.scheduledDate, status: sessions.status })
     .from(sessions)

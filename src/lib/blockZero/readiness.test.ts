@@ -58,7 +58,7 @@ assert(!latestReadiness(base).ease && latestReadiness([]).epochDay === null, 'no
 
 const strength: PlannedSession = { type: 'strength', label: 'Strength A', timeSlot: 'am', estimatedMin: 60, sets: 3, rpe: [7, 8] }
 const run: PlannedSession = { type: 'foundation_run', label: 'Run-Walk', timeSlot: 'am', estimatedMin: 30 }
-const mob: PlannedSession = { type: 'mobility', label: 'Back Care', timeSlot: 'am', estimatedMin: 12 }
+const mob: PlannedSession = { type: 'mobility', label: 'Foundation', timeSlot: 'am', estimatedMin: 12 }
 
 assert(!easeSession(strength, {}).eased, 'no trigger: untouched')
 const es = easeSession(strength, { readinessEase: true, readinessReason: latest.reason })

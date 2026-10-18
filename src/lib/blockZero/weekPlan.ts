@@ -4,13 +4,14 @@
 // - 3 full-body strength days, A/B/C on Mon/Wed/Fri (R2: 2-3 sessions/wk).
 // - 3 run-walk days on Tue/Thu/Sat. The day after a heavy-leg day (A squat,
 //   B hinge) may swap to rope (R15: non-running aerobic next to leg days).
-// - Back-care mobility every day, ~12 min.
+// - Foundation (the daily back-and-neck session, type mobility) every day, ~12 min.
 // - Durability (neck, wrist/forearm, grip) inside Strength A and C, so twice a week.
-// - Sunday has no training load. Back care stays daily, it is the habit.
+// - Sunday has no training load. Foundation stays daily, it is the habit.
 // - Strength sits before any other piece on a shared day (R15).
 // - No muay thai classes. The athlete adds them; see muayThai.ts for the ramp.
 
 import type { TemplateSession } from '../weeklyTemplate'
+import { FOUNDATION_LABEL } from '../foundation'
 import { getRunWalkWeek, runWalkTotalSec } from './running'
 import { BLOCK_ZERO_BASE_WEEKS, blockZeroPhase, blockZeroTrainingWeek, type BlockZeroPhase } from './weeks'
 
@@ -39,7 +40,7 @@ export function strengthDayFor(dayOfWeek: number, label?: string | null): Streng
   return 'C'
 }
 
-const BACK_CARE: BlockZeroTemplateSession = { timeSlot: 'am', type: 'mobility', label: 'Back Care', estimatedMin: 12 }
+const FOUNDATION: BlockZeroTemplateSession = { timeSlot: 'am', type: 'mobility', label: FOUNDATION_LABEL, estimatedMin: 12 }
 
 const STRENGTH_MIN: Record<BlockZeroPhase, number> = { test: 55, build: 60, consolidate: 45, extension: 60 }
 
@@ -66,17 +67,17 @@ export function getBlockZeroWeekTemplate(weekNumber: number): Record<number, Blo
   const week = blockZeroTrainingWeek(weekNumber)
   const phase = blockZeroPhase(weekNumber)
   const isTestWeek = phase !== 'extension' && (week === 1 || week === BLOCK_ZERO_BASE_WEEKS)
-  const monday = [BACK_CARE, strength('A', phase)]
+  const monday = [FOUNDATION, strength('A', phase)]
   if (isTestWeek) monday.push(ROPE_TEST)
 
   return {
-    0: [BACK_CARE],
+    0: [FOUNDATION],
     1: monday,
-    2: [BACK_CARE, runWalk(weekNumber, true)],
-    3: [BACK_CARE, strength('B', phase)],
-    4: [BACK_CARE, runWalk(weekNumber, true)],
-    5: [BACK_CARE, strength('C', phase)],
-    6: [BACK_CARE, runWalk(weekNumber, false)],
+    2: [FOUNDATION, runWalk(weekNumber, true)],
+    3: [FOUNDATION, strength('B', phase)],
+    4: [FOUNDATION, runWalk(weekNumber, true)],
+    5: [FOUNDATION, strength('C', phase)],
+    6: [FOUNDATION, runWalk(weekNumber, false)],
   }
 }
 

@@ -487,7 +487,7 @@ export const TOOL_REACTIVE_REPLAN: Tool = {
       },
       targetLabel: {
         type: 'string',
-        description: 'Short human label for the target session (e.g. "Reset", "Zone 2", "Mobility").',
+        description: 'Short human label for the target session (e.g. "Reset", "Zone 2", "Foundation").',
       },
       targetDay: { type: 'integer', description: '0=Sun..6=Sat. Today or later this week.' },
       targetTimeSlot: { type: 'string', enum: ['am', 'pm'] },
@@ -522,7 +522,7 @@ export const TOOL_REPLACE_SUGGESTIONS: Tool = {
             type: { type: 'string', enum: SESSION_TYPE_ENUM },
             label: {
               type: 'string',
-              description: 'Short human label (e.g. "Reset", "Zone 2", "Mobility").',
+              description: 'Short human label (e.g. "Reset", "Zone 2", "Foundation").',
             },
             timeSlot: { type: 'string', enum: ['am', 'pm'] },
             estimatedMin: { type: 'integer' },

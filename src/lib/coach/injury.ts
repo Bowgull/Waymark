@@ -1,13 +1,21 @@
-// Injury skips and back red flags become rules (F16, F17), not AI opinions.
+// Injury skips and red flags become rules (F16, F17), not AI opinions.
 // - A skip with reason "injury" flags its region for 10 days: the next
 //   sessions touching it are eased or swapped (back: the back-friendly lifts;
-//   other regions: a conservative ease).
+//   other regions: a conservative ease). A neck flag also turns the daily
+//   Foundation session into its bad-neck version (lib/foundation).
 // - Back red-flag words in skip notes or back notes stop all loading and
 //   point to a clinician (F17: saddle numbness, bladder or bowel change,
 //   progressive leg weakness, fever, unexplained weight loss, cancer history,
 //   major trauma, night pain unrelieved by position; plus the plan's stop
-//   line: sharp back pain, or pain or tingling down a leg). Back care stays
-//   on the plan but drops its loaded moves (lib/backCare).
+//   line: sharp back pain, or pain or tingling down a leg).
+// - Neck red flags do the same (the same F17 stop, region "neck"): arm
+//   symptoms (pain, numbness or tingling down an arm, arm or hand weakness),
+//   cord signs (clumsy hands, unsteady walking), vascular signs (dizziness,
+//   double vision, slurred speech, trouble swallowing, a sudden severe or
+//   unusual headache) and neck trauma (a fall, impact or whiplash). Sources:
+//   the cervical red-flag consensus framework (IFOMPT) and standard
+//   radiculopathy / myelopathy screening.
+// Foundation stays on the plan but drops to breathing only on a red flag.
 // Pure. Not medical advice: the rule only stops the app loading.
 
 import { DAY_NAMES, RUN_TYPES, dowOf } from './sessions'
@@ -31,11 +39,36 @@ const RED_FLAGS: RegExp[] = [
   /sciatica|shooting pain/i,
 ]
 
+const NECK_RED_FLAGS: RegExp[] = [
+  // Arm symptoms (radiculopathy).
+  /(?:pain|tingl\w*|numb\w*|pins and needles|burning|shooting|electric)\s+(?:\w+\s+){0,3}(?:down|into|through)\s+(?:my |the |one |both |an? )?(?:left |right )?(?:arms?|forearms?|hands?|fingers?|thumbs?)/i,
+  /(?:arms?|hands?) (?:\w+ ){0,2}(?:weak|weakness|giving (?:way|out))|weak(?:ness)? in (?:my |the |one |both )?(?:left |right )?(?:arms?|hands?)|(?:arms?|hands?|fingers) (?:went |go |are |is |feel |feels )?numb|numb (?:left |right )?(?:arms?|hands?|fingers)/i,
+  // Cord signs (myelopathy).
+  /clumsy (?:hands?|fingers)|(?:hands?|fingers) (?:\w+ ){0,2}clumsy|trouble (?:with )?(?:buttons|writing)|keep dropping things|unsteady (?:walking|on my feet|gait)|walking (?:is |feels )?unsteady|(?:balance|walking) (?:is |feels )?(?:off|wobbly)/i,
+  // Vascular signs.
+  /dizz\w*|vertigo|double vision|seeing double|slurr\w*|(?:trouble|difficulty|hard|can'?t) swallow\w*|drop attack|face (?:went |is |feels )?numb|facial numbness/i,
+  /(?:sudden|severe|worst|thunderclap|unusual)\s+(?:\w+\s+){0,2}head ?aches?/i,
+  // Neck trauma: a fall, impact or whiplash.
+  /whiplash|\bneck\b(?:\s+\w+){0,6}\s+(?:fall|fell(?! asleep)|impact|crash|takedown|landed|knock(?:ed)?)\b|\b(?:fall|fell(?! asleep)|impact|crash|takedown|landed|knock(?:ed)?)\b(?:\s+\w+){0,6}\s+neck\b/i,
+]
+
 export const RED_FLAG_NOTE = 'Back red flag in your notes. Loading stops. See a clinician before training again.'
+export const NECK_RED_FLAG_NOTE = 'Neck red flag in your notes. Loading stops. See a clinician before training again.'
+
+/** Which red-flag list a note hits: the back list first, then the neck list. */
+export function redFlagRegion(text: string | null | undefined): 'back' | 'neck' | null {
+  if (!text) return null
+  if (RED_FLAGS.some(r => r.test(text))) return 'back'
+  if (NECK_RED_FLAGS.some(r => r.test(text))) return 'neck'
+  return null
+}
 
 export function hasRedFlag(text: string | null | undefined): boolean {
-  if (!text) return false
-  return RED_FLAGS.some(r => r.test(text))
+  return redFlagRegion(text) != null
+}
+
+export function hasNeckRedFlag(text: string | null | undefined): boolean {
+  return !!text && NECK_RED_FLAGS.some(r => r.test(text))
 }
 
 /** Region from the skip sheet's body part or free text. */
@@ -75,14 +108,20 @@ const REGION_NAME: Record<string, string> = { back: 'Back', knee: 'Knee', hip: '
 
 /**
  * The active flag on `day`, from skips and back notes in the last 10 days.
- * A red flag wins over a region flag.
+ * A red flag (back or neck list) wins over a region flag.
  */
 export function injuryFlag(skips: SkipSignal[], backNotes: Array<{ epochDay: number; text: string | null }>, day: number): InjuryFlag | null {
   const inWindow = <T extends { epochDay: number }>(r: T) => r.epochDay <= day && r.epochDay > day - INJURY_WINDOW_DAYS
   const recentSkips = skips.filter(inWindow).sort((a, b) => b.epochDay - a.epochDay)
-  const red = recentSkips.find(s => hasRedFlag(s.detail) || hasRedFlag(s.notes))
-    ?? backNotes.filter(inWindow).find(n => hasRedFlag(n.text))
-  if (red) return { region: 'back', since: red.epochDay, redFlag: true, reason: RED_FLAG_NOTE }
+  const redSkip = recentSkips.find(s => hasRedFlag(s.detail) || hasRedFlag(s.notes))
+  const redNote = redSkip ? null : backNotes.filter(inWindow).find(n => hasRedFlag(n.text))
+  if (redSkip || redNote) {
+    const since = (redSkip ?? redNote)!.epochDay
+    const region = redSkip ? (redFlagRegion(redSkip.detail) ?? redFlagRegion(redSkip.notes)) : redFlagRegion(redNote!.text)
+    return region === 'neck'
+      ? { region: 'neck', since, redFlag: true, reason: NECK_RED_FLAG_NOTE }
+      : { region: 'back', since, redFlag: true, reason: RED_FLAG_NOTE }
+  }
 
   const injury = recentSkips.find(s => s.skipReason === 'injury')
   if (!injury) return null
