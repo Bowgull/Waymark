@@ -341,7 +341,7 @@ async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
     : []
   const exerciseBySse = new Map(mainSse.map(e => [e.id, e.exerciseId]))
   const setE1rms = retestE1rms(retestSetRows
-    .filter(r => r.isWarmup === 0 && (r.completedAt != null || r.weightKg != null))
+    .filter(r => r.isWarmup === 0 && r.completedAt != null)
     .map(r => ({ exerciseId: exerciseBySse.get(r.sessionExerciseId) ?? '', weightKg: r.weightKg, reps: r.reps })))
   // Retest rows (week 6 and extension weeks) win per lift: they come from the
   // RIR-adjusted check set or the athlete's own entry. Sets fill the rest.

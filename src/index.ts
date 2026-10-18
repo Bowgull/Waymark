@@ -7,6 +7,7 @@ import { createDB } from './db/client'
 import { runReactiveReplan } from './lib/reactiveCoach'
 import { rolloverStaleSessionIds } from './lib/sessionRollover'
 import { backfillCurrentWeek, createMissedAsks, expireAsks } from './server/coachData'
+import { pruneIdempotencyKeys } from './server/idempotency'
 import { isoToEpochDay } from './lib/dates'
 import { installDemoFetchGuard } from './lib/demoFetch'
 import { generateDemoSql, DEMO_WIPE_STATEMENTS } from './db/demoSeed'
@@ -68,7 +69,8 @@ async function runDemoReset(env: Env): Promise<void> {
 // 1. days of this week never opened get their template sessions,
 // 2. stale planned sessions roll over to missed,
 // 3. last week's open questions lapse, then each missed session gets one,
-// 4. the reactive coach runs on the real state.
+// 4. the reactive coach runs on the real state,
+// 5. stored Idempotency-Key replies older than 7 days are pruned.
 async function runNightlyReplan(env: Env): Promise<void> {
   const db = createDB(env)
   const todayEpochDay = isoToEpochDay(new Date().toISOString().split('T')[0])
@@ -89,5 +91,10 @@ async function runNightlyReplan(env: Env): Promise<void> {
     })
   } catch (err) {
     console.warn('[cron] nightly reactive replan failed', err)
+  }
+  try {
+    await pruneIdempotencyKeys(db, nowSec)
+  } catch (err) {
+    console.warn('[cron] idempotency key prune failed', err)
   }
 }

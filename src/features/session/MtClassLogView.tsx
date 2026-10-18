@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { apiFetch } from '@/lib/api'
+import { ApiError, apiFetch } from '@/lib/api'
 
 import { resolveMtClassMoment, type MtClassType } from './mtClassMicrocopy'
 import { SessionShell } from './SessionShell'
@@ -9,6 +9,7 @@ import { SessionShell } from './SessionShell'
 interface MtLog {
   id: string
   classType: string | null
+  durationMin?: number | null
   focusSkill: string | null
   weakness: string | null
   concept: string | null
@@ -17,6 +18,10 @@ interface MtLog {
 
 interface MtClassLogViewProps {
   mtLog: MtLog
+  /** Planned class length in minutes: the field's default. */
+  plannedMin?: number | null
+  /** Block Zero ramp weeks refuse 'general', so the default there is technique. */
+  blockType?: string | null
   onComplete: () => void
   onExit?: () => void
 }
@@ -33,12 +38,18 @@ const ACCENT = '#4ACAAA'
 
 export function MtClassLogView({
   mtLog,
+  plannedMin,
+  blockType,
   onComplete,
   onExit,
 }: MtClassLogViewProps) {
   const [classType, setClassType] = useState<MtClassType>(
-    (mtLog.classType as MtClassType) ?? 'general',
+    (mtLog.classType as MtClassType) ?? (blockType === 'block_zero' ? 'technical' : 'general'),
   )
+  // Class minutes drive the session load (minutes x RPE), so the class length
+  // is sent, not the time spent on this screen.
+  const [durationMin, setDurationMin] = useState(String(mtLog.durationMin ?? plannedMin ?? 60))
+  const [error, setError] = useState<string | null>(null)
   const [focusSkill, setFocusSkill] = useState(mtLog.focusSkill ?? '')
   const [weakness, setWeakness] = useState(mtLog.weakness ?? '')
   const [concept, setConcept] = useState(mtLog.concept ?? '')
@@ -49,11 +60,14 @@ export function MtClassLogView({
     e?.preventDefault()
     if (saving) return
     setSaving(true)
+    setError(null)
+    const minutes = parseInt(durationMin, 10)
     try {
       await apiFetch(`/api/mt-class-logs/${mtLog.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
           classType,
+          ...(Number.isFinite(minutes) && minutes >= 1 && minutes <= 300 ? { durationMin: minutes } : {}),
           focusSkill: focusSkill || undefined,
           weakness: weakness || undefined,
           concept: concept || undefined,
@@ -63,6 +77,11 @@ export function MtClassLogView({
       onComplete()
     } catch (err) {
       console.error('Failed to save MT class log:', err)
+      // The Block Zero ramp refuses some class types with a reason; show it.
+      const body = err instanceof ApiError ? err.body : ''
+      let reason: string | null = null
+      try { reason = (JSON.parse(body) as { reason?: string; error?: string }).reason ?? null } catch { reason = null }
+      setError(reason ?? "Couldn't save. Check connection and try again.")
       setSaving(false)
     }
   }
@@ -122,6 +141,21 @@ export function MtClassLogView({
 
       <div>
         <label className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
+          Class Length (min)
+        </label>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={300}
+          value={durationMin}
+          onChange={(e) => setDurationMin(e.target.value)}
+          className="mt-2 min-h-[44px] w-full rounded-md border border-gold/15 bg-deep-forest/60 px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
+        />
+      </div>
+
+      <div>
+        <label className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
           Focus / Skill
         </label>
         <input
@@ -171,6 +205,8 @@ export function MtClassLogView({
           className="mt-2 min-h-[44px] w-full rounded-md border border-gold/15 bg-deep-forest/60 px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
         />
       </div>
+
+      {error && <p className="text-sm text-[#C45A3C]">{error}</p>}
     </form>
   )
 

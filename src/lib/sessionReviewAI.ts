@@ -21,6 +21,7 @@ import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
 import { getSessionTargetHr } from './sessionIntent'
 import type { createDB } from '../db/client'
 import { MODELS } from './models'
+import { isLoggedWorkSet } from './loggedSets'
 
 type DB = ReturnType<typeof createDB>
 
@@ -227,13 +228,14 @@ async function loadSessionReviewContext(
     const rows = []
     for (const ex of sessionExercises) {
       const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, ex.id))
-      const workingSets = sets.filter(s => s.isWarmup === 0)
+      // Logged working sets only; sets left untouched (ended early) aren't work done.
+      const workingSets = sets.filter(isLoggedWorkSet)
       rows.push({
         name: ex.exerciseName,
         section: ex.section,
         orderIndex: ex.orderIndex,
         workingSets: workingSets.length,
-        warmupSets: sets.length - workingSets.length,
+        warmupSets: sets.filter(s => s.isWarmup === 1).length,
         topWeightKg: workingSets.reduce<number | null>((max, s) => {
           if (s.weightKg == null) return max
           return max == null ? s.weightKg : Math.max(max, s.weightKg)

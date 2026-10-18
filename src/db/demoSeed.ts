@@ -234,8 +234,9 @@ for (const s of sessions) {
       for (let n = 1; n <= ex.sets; n++) {
         const weight = workKg > 0 ? workKg : null
         const weightVal = weight != null ? weight : 'NULL'
+        // completed_at marks a logged set; stats only count logged sets.
         lines.push(
-          `INSERT INTO strength_sets (id, session_exercise_id, set_number, weight_kg, reps, is_warmup, rest_sec, created_at) VALUES ('demo-set-${++setCount}', '${sseId}', ${n + (workKg > 0 ? 1 : 0)}, ${weightVal}, ${ex.reps}, 0, 120, ${createdAt});`
+          `INSERT INTO strength_sets (id, session_exercise_id, set_number, weight_kg, reps, is_warmup, rest_sec, completed_at, created_at) VALUES ('demo-set-${++setCount}', '${sseId}', ${n + (workKg > 0 ? 1 : 0)}, ${weightVal}, ${ex.reps}, 0, 120, ${createdAt}, ${createdAt});`
         )
       }
     })

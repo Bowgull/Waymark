@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { apiFetch } from '@/lib/api'
+import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/Toast'
 import { logger } from '@/lib/logger'
@@ -46,7 +46,7 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
 
       const result = await apiFetch<{ success: boolean; newFavourites: string[] }>(
         `/api/sessions/${sessionId}/rate-combos`,
-        { method: 'POST', body: JSON.stringify({ ratings: ratingData }) }
+        { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify({ ratings: ratingData }) }
       )
 
       logger.sessionEvent('combo ratings saved', {

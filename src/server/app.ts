@@ -9,12 +9,17 @@ import { createDB } from '../db/client'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay, mondayOf } from '../lib/dates'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema } from '../lib/validators/schemas'
-import { DAILY_MOBILITY_TEMPLATE, FR_COOLDOWN_TEMPLATE, FR_WARMUP_TEMPLATE } from '../lib/mobilityTemplate'
+import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
+import { BACK_CARE_LABEL, backCareTemplate } from '../lib/backCare'
+import { isLoggedSet, isLoggedWorkSet } from '../lib/loggedSets'
+import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
+import { swapForMissingEquipment } from '../lib/exerciseSwaps'
+import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { WEEKLY_TEMPLATE, getBlockZeroTemplate, getDayTemplate } from '../lib/weeklyTemplate'
 import { BLOCK_ZERO_BASE_WEEKS, blockZeroTrainingWeek, getRunWalkWeek, liftRegion, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
-import { KNOWN_SESSION_TYPES, bagRules, fallbackRoundTypes, fighterTmDecision, governBagRounds, mergeContext, type BlockWorkingSet, type SafeAlternative, type SessionChange } from '../lib/coach'
+import { KNOWN_SESSION_TYPES, bagRules, estimatedMinutes, fallbackRoundTypes, fighterTmDecision, governBagRounds, mergeContext, type BlockWorkingSet, type SafeAlternative, type SessionChange } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { computeSuggestions } from '../lib/sessionSuggestions'
@@ -101,6 +106,20 @@ function timingSafeEqualStr(a: string, b: string): boolean {
 app.route('/api/strava', strava)
 app.route('/api/logs', logs)
 
+// Writes the client retries carry an Idempotency-Key: a replay returns the
+// first response and writes nothing (lib/idempotency). Must sit before the routes.
+for (const path of [
+  '/api/strength-sets/:id',
+  '/api/sessions/:id/complete',
+  '/api/sessions/:id/rate-combos',
+  '/api/sessions/insert-ad-hoc',
+  '/api/body-metrics',
+  '/api/daily-logs',
+  '/api/journal',
+]) {
+  app.use(path, idempotent())
+}
+
 app.onError((err, c) => {
   console.error('[Waymark API Error]', err.message, err.stack)
   const status = 'status' in err && typeof err.status === 'number' ? err.status : 500
@@ -128,7 +147,13 @@ function computeWorkingWeightKg(
   if (section === 'main') {
     return Math.round(trainingMaxKg * wavePct * 100) / 100
   }
-  return trainingMaxKg
+  // Accessories ~60% of TM, core and durability no load: never 100% of a max.
+  return accessoryLoadKg(trainingMaxKg, section)
+}
+
+/** Loading kind per exercise id, for plate snapping. */
+function equipmentMap(rows: Array<{ id: string; equipment: string | null }>): Map<string, LoadEquipment> {
+  return new Map(rows.map(r => [r.id, loadEquipment(r.equipment)]))
 }
 
 function computeWarmupWeightKg(trainingMaxKg: number | null): number | null {
@@ -175,11 +200,11 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
     const workingSets = sets.filter(s => s.isWarmup === 0)
     const setsCount = workingSets.length
     const targetReps = workingSets[0]?.reps ?? 0
-    // Block Zero loads were written per set at start (RIR rules or TM x %);
-    // the last working set is the working load (a check set may lead).
-    const prescribedWeightKg = blockType === 'block_zero' && se.section === 'main' && workingSets.length > 0
-      ? workingSets[workingSets.length - 1].plannedWeightKg
-      : computeWorkingWeightKg(tmKg, se.section, wavePct)
+    // Loads were written per set at start (RIR rules or TM x %, snapped to
+    // plates); the last working set is the working load (a check set may lead).
+    const written = workingSets.length > 0 ? workingSets[workingSets.length - 1].plannedWeightKg : null
+    const fallback = computeWorkingWeightKg(tmKg, se.section, wavePct)
+    const prescribedWeightKg = written ?? (fallback != null ? snapLoadKg(fallback, loadEquipment(exercise?.equipment)) : null)
 
     result.push({
       id: se.id,
@@ -233,7 +258,9 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
     const targetReps = workingSets[0]?.targetReps ?? 0
     const bzLoad = tex.section === 'main' ? bzPlan?.loads.get(tex.exerciseId) : undefined
     const base = computeWorkingWeightKg(tmKg, tex.section, wavePct)
-    const prescribedWeightKg = bzLoad ? bzLoad.weightKg : base != null && fighter && tex.section === 'main' ? Math.round(base * fighter.loadMultiplier * 100) / 100 : base
+    const raw = bzLoad ? bzLoad.weightKg : base != null && fighter && tex.section === 'main' ? Math.round(base * fighter.loadMultiplier * 100) / 100 : base
+    // Same plate snapping as start-strength, so the preview matches the bar.
+    const prescribedWeightKg = raw != null ? snapForChangeKg(raw, loadEquipment(ex?.equipment), bzLoad?.change, bzLoad?.fromKg) : null
 
     return {
       exerciseId: tex.exerciseId,
@@ -274,6 +301,36 @@ function coachSummary(state: SessionCoachState, fighter: { loadMultiplier: numbe
   }
 }
 
+/** Mobility rows with their own prescription (reps, sides, notes, section). */
+async function insertMobilityRows(db: DrizzleDB, sessionId: string, rows: MobilityExerciseTemplate[]) {
+  for (let i = 0; i < rows.length; i++) {
+    const t = rows[i]
+    await db.insert(postureSessionExercises).values({
+      id: crypto.randomUUID(),
+      sessionId,
+      exerciseId: t.exerciseId,
+      orderIndex: i,
+      holdSec: t.holdSec ?? null,
+      sets: t.sets,
+      completed: 0,
+      reps: t.reps ?? null,
+      perSide: t.perSide ? 1 : 0,
+      notes: t.notes ?? null,
+      section: t.section,
+    })
+  }
+}
+
+/** Block week for a session without a strength week: its week plan, else the active block's training week. */
+async function blockWeekForSession(db: DrizzleDB, session: { weekPlanId: string | null }, epochDay: number): Promise<number> {
+  if (session.weekPlanId) {
+    const [wp] = await db.select({ weekNumber: weekPlans.weekNumber }).from(weekPlans).where(eq(weekPlans.id, session.weekPlanId))
+    if (wp) return wp.weekNumber
+  }
+  const block = await getActiveBlock(db)
+  return block ? (await trainingWeekFor(db, block, epochDay, epochDay)).week : 1
+}
+
 async function buildMobilityWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const pExercises = await db.select().from(postureSessionExercises)
@@ -282,24 +339,25 @@ async function buildMobilityWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const exRows = await db.select().from(exercises)
   const exMap = new Map(exRows.map(e => [e.id, e]))
 
-  // Template notes/sections/reps come from whichever template this exercise lives in.
-  // Daily Mobility, FR Warmup, and legacy FR Cooldown use disjoint exerciseIds,
-  // so one merged lookup covers them all.
-  const templateMap = new Map(
-    [...DAILY_MOBILITY_TEMPLATE, ...FR_WARMUP_TEMPLATE, ...FR_COOLDOWN_TEMPLATE].map(t => [t.exerciseId, { notes: t.notes ?? null, section: t.section, reps: t.reps ?? null }]),
-  )
+  // Rows written from 0028 carry their own reps, sides, notes and section.
+  // Older rows fall back to the template the session type used (first match
+  // wins), so a shared exercise (dead bugs, pigeon) shows its own cues.
+  const templateMap = new Map<string, MobilityExerciseTemplate>()
+  for (const t of legacyMobilityTemplates(session?.type)) if (!templateMap.has(t.exerciseId)) templateMap.set(t.exerciseId, t)
 
   const result = pExercises
     .sort((a, b) => a.orderIndex - b.orderIndex)
     .map(pe => {
       const exercise = exMap.get(pe.exerciseId)
-      const tmpl = templateMap.get(pe.exerciseId)
+      const stored = pe.notes != null || pe.reps != null || pe.section != null
+      const tmpl = stored ? null : templateMap.get(pe.exerciseId)
       return {
         ...pe,
-        section: tmpl?.section ?? null,
-        reps: tmpl?.reps ?? null,
+        section: stored ? pe.section : tmpl?.section ?? null,
+        reps: stored ? pe.reps : tmpl?.reps ?? null,
+        perSide: stored ? pe.perSide === 1 : tmpl?.perSide === true,
         exercise: exercise ? { name: exercise.name, formCues: exercise.formCues, equipment: exercise.equipment, formVideoUrl: exercise.formVideoUrl } : null,
-        notes: tmpl?.notes ?? null,
+        notes: stored ? pe.notes : tmpl?.notes ?? null,
       }
     })
 
@@ -824,50 +882,61 @@ app.post('/api/sessions/:id/replace', async (c) => {
   const priorNotes = (original.notes ?? '').trim()
   const updatedNotes = priorNotes ? `${skipLine}\n${priorNotes}` : skipLine
 
-  await db.update(sessions)
-    .set({ status: 'skipped', notes: updatedNotes })
-    .where(eq(sessions.id, id))
-
   const runTag = body.type === 'running' ? (body.runCategory ?? null) : null
   const scheduledDate = original.scheduledDate ?? isoToEpochDay(new Date().toISOString().split('T')[0])
 
-  const adjustmentId = crypto.randomUUID()
-  await db.insert(weekAdjustments).values({
-    id: adjustmentId,
-    weekPlanId: original.weekPlanId ?? '',
-    adjustmentType: 'skip_reschedule',
-    sessionType: body.type,
-    action: 'swap',
-    reason: reasonText || 'Replaced.',
-    targetDay: new Date(scheduledDate * 86400000).getUTCDay(),
-    targetTimeSlot: check.change.timeSlot,
-    sourceData: JSON.stringify({
-      userSkipReason: reasonText || null,
-      originalSessionId: id,
-      targetEpochDay: scheduledDate,
-      originalType: original.type,
-      swapToLabel: body.label ?? null,
-    }),
-    status: 'accepted',
-    createdAt: nowSec,
-  })
-
+  // The adjustment row needs a week plan (week_plan_id is NOT NULL and a real
+  // FK). An ad-hoc original without one gets this week's plan of the active
+  // block; with no block at all the swap is kept on the replacement's context
+  // instead. Never an empty-string FK.
+  const weekPlanId = original.weekPlanId
+    ?? (await stampsForDay(db, scheduledDate, localToday(body.today, scheduledDate), nowSec)).weekPlanId
+  const swapSource = {
+    userSkipReason: reasonText || null,
+    originalSessionId: id,
+    targetEpochDay: scheduledDate,
+    originalType: original.type,
+    swapToLabel: body.label ?? null,
+  }
+  const adjustmentId = weekPlanId ? crypto.randomUUID() : null
   const newId = crypto.randomUUID()
-  await db.insert(sessions).values({
-    id: newId,
-    type: body.type,
-    label: body.label ?? null,
-    weekPlanId: original.weekPlanId,
-    scheduledDate,
-    timeSlot: check.change.timeSlot,
-    blockWeek: body.type === 'strength' ? original.blockWeek : null,
-    blockType: original.blockType,
-    status: 'planned',
-    notes: runTag,
-    adjustmentId,
-    source: 'replace',
-    createdAt: nowSec,
-  })
+
+  // One batch: the original is skipped only if the replacement lands too.
+  const writes = [
+    db.update(sessions)
+      .set({ status: 'skipped', notes: updatedNotes })
+      .where(eq(sessions.id, id)),
+    ...(adjustmentId && weekPlanId ? [db.insert(weekAdjustments).values({
+      id: adjustmentId,
+      weekPlanId,
+      adjustmentType: 'skip_reschedule',
+      sessionType: body.type,
+      action: 'swap',
+      reason: reasonText || 'Replaced.',
+      targetDay: new Date(scheduledDate * 86400000).getUTCDay(),
+      targetTimeSlot: check.change.timeSlot,
+      sourceData: JSON.stringify(swapSource),
+      status: 'accepted',
+      createdAt: nowSec,
+    })] : []),
+    db.insert(sessions).values({
+      id: newId,
+      type: body.type,
+      label: body.label ?? null,
+      weekPlanId: original.weekPlanId ?? weekPlanId,
+      scheduledDate,
+      timeSlot: check.change.timeSlot,
+      blockWeek: body.type === 'strength' ? original.blockWeek : null,
+      blockType: original.blockType,
+      status: 'planned',
+      notes: runTag,
+      adjustmentId,
+      source: 'replace',
+      contextJson: JSON.stringify({ replaced: swapSource }),
+      createdAt: nowSec,
+    }),
+  ]
+  await db.batch(writes as unknown as Parameters<typeof db.batch>[0])
 
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
   const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
@@ -1171,6 +1240,7 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   // Get training maxes for weight suggestions
   const maxes = await db.select().from(trainingMaxes)
   const maxMap = new Map(maxes.map(m => [m.exerciseId, m.weightKg]))
+  const equipmentById = equipmentMap(await db.select({ id: exercises.id, equipment: exercises.equipment }).from(exercises))
   const liftTrends = await loadLiftTrends(db, Math.floor(Date.now() / 86400000))
   // Phase 3: the AI verdict from the latest AthleteState wins per-lift; fall back
   // to the deterministic trend when no state has assessed that lift.
@@ -1192,37 +1262,53 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
     })
 
     const trainingMax = maxMap.get(tex.exerciseId) ?? null
+    const equipment = equipmentById.get(tex.exerciseId) ?? 'none'
+    const trend = liftTrends.get(tex.exerciseId)
+    const effective = resolveEffectiveLift(trend, stateLiftById.get(tex.exerciseId))
+    // Right after a gap, or on an eased day, the trend / AI factor may not push.
+    const trendFactor = fighter?.noPush ? Math.min(1, effective.loadFactor) : effective.loadFactor
+    const coachFactor = fighter && tex.section === 'main' ? fighter.loadMultiplier : 1
+    const baseWorking = computeWorkingWeightKg(trainingMax, tex.section, weekPct)
+    // Block Zero: the last RIR-logged top set sets the load; TM x % only until one exists.
+    const bzLoad = tex.section === 'main' ? bzPlan?.loads.get(tex.exerciseId) : undefined
 
-    for (let setIdx = 0; setIdx < tex.sets.length; setIdx++) {
-      const ts = tex.sets[setIdx]
-      const trend = liftTrends.get(tex.exerciseId)
-      const effective = resolveEffectiveLift(trend, stateLiftById.get(tex.exerciseId))
-      // Right after a gap, or on an eased day, the trend / AI factor may not push.
-      const trendFactor = fighter?.noPush ? Math.min(1, effective.loadFactor) : effective.loadFactor
-      const coachFactor = fighter && tex.section === 'main' ? fighter.loadMultiplier : 1
+    const planned = tex.sets.map(ts => {
       const templateWeight = ts.suggestedWeightKg ?? null
-      const baseWorking = computeWorkingWeightKg(trainingMax, tex.section, weekPct)
       // Check sets (Block Zero weeks 3 and 6) run ~10% above the working load.
       const adjustedWorking = baseWorking == null
         ? null
         : Math.round(baseWorking * trendFactor * coachFactor * (ts.loadMultiplier ?? 1) * 100) / 100
-      // Block Zero: the last RIR-logged top set sets the load; TM x % only until one exists.
-      const bzLoad = tex.section === 'main' && !ts.isWarmup ? bzPlan?.loads.get(tex.exerciseId) : undefined
-      const suggestedWeight = templateWeight ?? (ts.isWarmup
+      const raw = templateWeight ?? (ts.isWarmup
         ? computeWarmupWeightKg(trainingMax)
         : bzLoad ? planSetWeightKg(bzLoad, ts) : adjustedWorking)
+      // Snap to what the bar or rack can load. An increase takes the next
+      // loadable step, so a small upper-body step still moves the bar.
+      const weightKg = raw == null || templateWeight != null || ts.isWarmup
+        ? raw
+        : snapForChangeKg(raw, equipment, ts.loadMultiplier == null ? bzLoad?.change : 'hold', bzLoad?.fromKg)
+      return { isWarmup: ts.isWarmup, reps: ts.targetReps, restSec: ts.restSec, weightKg }
+    })
 
+    // Main lifts: a warm-up ramp up to the first heavy set (check set or work set).
+    const firstHeavy = planned.find(p => !p.isWarmup)
+    const ramp = tex.section === 'main' && !planned.some(p => p.isWarmup)
+      ? warmupRamp(firstHeavy?.weightKg ?? null, equipment).map(r => ({ isWarmup: true, reps: r.reps, restSec: RAMP_REST_SEC, weightKg: r.weightKg as number | null }))
+      : []
+
+    const rows = [...ramp, ...planned]
+    for (let setIdx = 0; setIdx < rows.length; setIdx++) {
+      const r = rows[setIdx]
       await db.insert(strengthSets).values({
         id: crypto.randomUUID(),
         sessionExerciseId: exId,
         setNumber: setIdx + 1,
-        weightKg: suggestedWeight,
-        reps: ts.targetReps,
-        plannedWeightKg: suggestedWeight,
-        plannedReps: ts.targetReps,
+        weightKg: r.weightKg,
+        reps: r.reps,
+        plannedWeightKg: r.weightKg,
+        plannedReps: r.reps,
         inferredStatus: 'normal',
-        isWarmup: ts.isWarmup ? 1 : 0,
-        restSec: ts.restSec,
+        isWarmup: r.isWarmup ? 1 : 0,
+        restSec: r.restSec,
         createdAt: nowSec,
       })
     }
@@ -1312,6 +1398,50 @@ app.patch('/api/strength-sets/:id', async (c) => {
   return c.json(e1rmTest ? { ...row, e1rmTest } : row)
 })
 
+// Missing equipment: swap an exercise for a same-pattern one that needs less
+// kit (lib/exerciseSwaps, then the back-friendly table). Only before any set
+// of it is logged. The new exercise's sets keep their reps; loads come from
+// its training max when there is one (accessory share for non-main rows),
+// else the athlete enters the weight. Warm-up ramp sets go with the old lift.
+app.post('/api/strength-session-exercises/:id/swap', async (c) => {
+  const sseId = c.req.param('id')
+  const db = createDB(c.env)
+  const [sse] = await db.select().from(strengthSessionExercises).where(eq(strengthSessionExercises.id, sseId))
+  if (!sse) return c.json({ error: 'exercise not found' }, 404)
+  const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, sseId))
+  if (sets.some(isLoggedSet)) return c.json({ error: 'Sets are already logged for this exercise. Finish it or skip it.', code: 'already_logged' }, 409)
+
+  const library = await db.select({ id: exercises.id, name: exercises.name, equipment: exercises.equipment }).from(exercises)
+  const pick = swapForMissingEquipment(sse.exerciseId, new Set(library.map(e => e.id)))
+  if (!pick) return c.json({ error: 'No swap for this exercise. Skip it instead.', code: 'no_swap' }, 409)
+
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, sse.sessionId))
+  const [tm] = await db.select().from(trainingMaxes).where(eq(trainingMaxes.exerciseId, pick.exerciseId))
+  const blockType = session?.blockType === 'block_zero' ? 'block_zero' : 'fighter'
+  const raw = computeWorkingWeightKg(tm?.weightKg ?? null, sse.section, getWeekPercentage(session?.blockWeek ?? 1, blockType))
+  const equipment = loadEquipment(library.find(e => e.id === pick.exerciseId)?.equipment)
+  const weightKg = raw != null ? snapLoadKg(raw, equipment) : null
+  const fromName = library.find(e => e.id === sse.exerciseId)?.name ?? 'the planned lift'
+
+  const working = sets.filter(st => st.isWarmup === 0).sort((a, b) => a.setNumber - b.setNumber)
+  const ramp = sse.section === 'main' ? sets.filter(st => st.isWarmup === 1) : []
+  await db.batch([
+    db.update(strengthSessionExercises).set({
+      exerciseId: pick.exerciseId,
+      notes: `Swapped from ${fromName}: equipment. ${sse.notes ?? ''}`.trim(),
+    }).where(eq(strengthSessionExercises.id, sseId)),
+    ...ramp.map(st => db.delete(strengthSets).where(eq(strengthSets.id, st.id))),
+    ...working.map((st, i) => db.update(strengthSets).set({
+      setNumber: (sets.length - ramp.length - working.length) + i + 1,
+      weightKg,
+      plannedWeightKg: weightKg,
+      inferredStatus: 'normal',
+    }).where(eq(strengthSets.id, st.id))),
+  ] as unknown as Parameters<typeof db.batch>[0])
+
+  return c.json({ ...(await buildWorkoutResponse(db, sse.sessionId)), swap: { from: sse.exerciseId, to: pick.exerciseId, label: pick.label } })
+})
+
 app.post('/api/sessions/:id/complete', async (c) => {
   const sessionId = c.req.param('id')
   const raw = await c.req.json()
@@ -1325,11 +1455,30 @@ app.post('/api/sessions/:id/complete', async (c) => {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
 
-  const durationSec = session.startedAt ? nowSec - session.startedAt : null
+  // Idempotent per session: a second finish (retry, double tap, an outbox
+  // replay with a new key) returns the first result. No second review, no
+  // second replan, completion time untouched.
+  const prior = parseJson<{ completeResult?: { reviewSource?: string } }>(session.contextJson, {})
+  if (session.status === 'completed' && prior.completeResult) {
+    return c.json({ ...session, reviewSource: prior.completeResult.reviewSource ?? 'none', replayed: true })
+  }
+
+  // The phone's finish time when it sent one (an outbox replay can arrive
+  // hours later), kept between the start and now.
+  const floorSec = session.startedAt ?? 0
+  const completedAt = body.completedAt != null && body.completedAt >= floorSec && body.completedAt <= nowSec + 300
+    ? Math.min(body.completedAt, nowSec)
+    : nowSec
+  let durationSec = session.startedAt ? completedAt - session.startedAt : null
+  // MT class: the class length the athlete entered beats the logging-screen wall clock.
+  if (session.type === 'mt_class') {
+    const [mt] = await db.select({ durationMin: mtClassLogs.durationMin }).from(mtClassLogs).where(eq(mtClassLogs.sessionId, sessionId))
+    if (mt?.durationMin != null && mt.durationMin > 0) durationSec = mt.durationMin * 60
+  }
 
   await db.update(sessions).set({
     status: 'completed',
-    completedAt: nowSec,
+    completedAt,
     durationSec,
     rpe: body.rpe ?? null,
     difficulty: body.difficulty ?? null,
@@ -1368,6 +1517,12 @@ app.post('/api/sessions/:id/complete', async (c) => {
   const reviewSource = reviewOutput
     ? reviewRowsAfter.length > reviewRowsBefore.length ? 'ai' : 'local'
     : 'none'
+
+  // Mark the finish as done, so a repeat returns this result.
+  const [afterReview] = await db.select({ contextJson: sessions.contextJson }).from(sessions).where(eq(sessions.id, sessionId))
+  await db.update(sessions).set({
+    contextJson: mergeContext(afterReview?.contextJson ?? null, { completeResult: { reviewSource, at: nowSec } }),
+  }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
 
@@ -1461,19 +1616,8 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
     isIndoor: 0,
   })
 
-  // Create Zone 2 warmup exercises (standing dynamic, runs before the run)
-  for (let i = 0; i < FR_WARMUP_TEMPLATE.length; i++) {
-    const tmpl = FR_WARMUP_TEMPLATE[i]
-    await db.insert(postureSessionExercises).values({
-      id: crypto.randomUUID(),
-      sessionId,
-      exerciseId: tmpl.exerciseId,
-      orderIndex: i,
-      holdSec: tmpl.holdSec ?? null,
-      sets: tmpl.sets,
-      completed: 0,
-    })
-  }
+  // Dynamic warm-up (walk, swings, ankle rocks, hip circles, march), before the run.
+  await insertMobilityRows(db, sessionId, FR_WARMUP_TEMPLATE)
 
   await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
 
@@ -1516,20 +1660,30 @@ app.post('/api/sessions/:id/start-mobility', async (c) => {
     return c.json(await buildMobilityWorkoutResponse(db, sessionId))
   }
 
-  for (let i = 0; i < DAILY_MOBILITY_TEMPLATE.length; i++) {
-    const tmpl = DAILY_MOBILITY_TEMPLATE[i]
-    await db.insert(postureSessionExercises).values({
-      id: crypto.randomUUID(),
-      sessionId,
-      exerciseId: tmpl.exerciseId,
-      orderIndex: i,
-      holdSec: tmpl.holdSec ?? null,
-      sets: tmpl.sets,
-      completed: 0,
-    })
+  // Block Zero's daily session is Back Care: progressed by block week, gentler
+  // when back today is 2 or less, no loaded moves on a back red flag.
+  const isBackCare = session.label === BACK_CARE_LABEL || session.blockType === 'block_zero'
+  let rows: MobilityExerciseTemplate[] = DAILY_MOBILITY_TEMPLATE
+  let backCare: { week: number; backToday: number | null; redFlag: boolean } | null = null
+  if (isBackCare) {
+    const day = session.scheduledDate ?? Math.floor(nowSec / 86400)
+    const week = await blockWeekForSession(db, session, day)
+    const [log] = await db.select({ backToday: dailyLogs.backToday }).from(dailyLogs).where(eq(dailyLogs.logDate, day))
+    const state = await loadSessionCoachState(db, session, day)
+    backCare = { week, backToday: log?.backToday ?? null, redFlag: state.injury?.redFlag === true }
+    rows = backCareTemplate(backCare)
   }
+  const missingIds = await missingExerciseIds(db, rows.map(r => r.exerciseId))
+  if (missingIds.length > 0) {
+    return c.json({ error: 'mobility exercises missing', missingExerciseIds: missingIds, recovery: 'Run the D1 migrations (npm run db:migrate:local).' }, 409)
+  }
+  await insertMobilityRows(db, sessionId, rows)
 
-  await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
+  await db.update(sessions).set({
+    status: 'in_progress',
+    startedAt: nowSec,
+    ...(backCare ? { contextJson: mergeContext(session.contextJson, { backCare }) } : {}),
+  }).where(eq(sessions.id, sessionId))
   return c.json(await buildMobilityWorkoutResponse(db, sessionId))
 })
 
@@ -2023,6 +2177,14 @@ app.patch('/api/recovery-sessions/:id', async (c) => {
 
 // ─── MT Class Logging ──────────────────────────────────────────
 
+/** Planned class length: what placement stored on the session, else the usual class (90 min). */
+function plannedClassMin(session: { contextJson: string | null; blockType: string | null }): number {
+  const ctx = parseJson<{ placement?: { estimatedMin?: number | null } }>(session.contextJson, {})
+  const stored = ctx.placement?.estimatedMin
+  if (stored != null && stored > 0) return stored
+  return estimatedMinutes({ type: 'mt_class', notes: null }, session.blockType === 'block_zero' ? 'block_zero' : 'fighter', 1)
+}
+
 app.post('/api/sessions/:id/start-mt-class', async (c) => {
   const sessionId = c.req.param('id')
   const db = createDB(c.env)
@@ -2033,7 +2195,7 @@ app.post('/api/sessions/:id/start-mt-class', async (c) => {
 
   const existing = await db.select().from(mtClassLogs).where(eq(mtClassLogs.sessionId, sessionId))
   if (existing.length > 0) {
-    return c.json({ session, mtLog: existing[0] })
+    return c.json({ session, mtLog: existing[0], plannedMin: plannedClassMin(session) })
   }
   const stop = await redFlagStop(db, session)
   if (stop) return c.json(stop, 409)
@@ -2059,7 +2221,7 @@ app.post('/api/sessions/:id/start-mt-class', async (c) => {
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const [mt] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
-  return c.json({ session: updated, mtLog: mt, ...(mtNote ? { coach: { note: mtNote, classType: 'technical' } } : {}) })
+  return c.json({ session: updated, mtLog: mt, plannedMin: plannedClassMin(updated ?? session), ...(mtNote ? { coach: { note: mtNote, classType: 'technical' } } : {}) })
 })
 
 app.get('/api/sessions/:id/mt-class-workout', async (c) => {
@@ -2068,7 +2230,7 @@ app.get('/api/sessions/:id/mt-class-workout', async (c) => {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
   const [mt] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.sessionId, sessionId))
-  return c.json({ session, mtLog: mt ?? null })
+  return c.json({ session, mtLog: mt ?? null, plannedMin: plannedClassMin(session) })
 })
 
 app.patch('/api/mt-class-logs/:id', async (c) => {
@@ -2799,7 +2961,7 @@ app.get('/api/journal', async (c) => {
 })
 
 app.post('/api/journal', async (c) => {
-  const body = await c.req.json<{ date: string; type: string; content: string }>()
+  const body = await c.req.json<{ date: string; type: string; content: string; append?: boolean }>()
   if (!body.date || !body.content || !body.type) return c.json({ error: 'date, type, and content required' }, 400)
 
   const epochDay = isoToEpochDay(body.date)
@@ -2810,7 +2972,11 @@ app.post('/api/journal', async (c) => {
   const existing = await db.select().from(journalEntries).where(eq(journalEntries.date, epochDay))
   const match = existing.find((r) => r.type === body.type)
   if (match) {
-    await db.update(journalEntries).set({ content: body.content }).where(eq(journalEntries.id, match.id))
+    // append: a second wellness note that day adds to the first instead of replacing it.
+    const content = body.append && match.content.trim() ? `${match.content}
+
+${body.content}` : body.content
+    await db.update(journalEntries).set({ content }).where(eq(journalEntries.id, match.id))
     const [updated] = await db.select().from(journalEntries).where(eq(journalEntries.id, match.id))
     return c.json(updated)
   }
@@ -2955,7 +3121,8 @@ app.get('/api/exercises/:id/last-session', async (c) => {
 
     const sets = await db.select().from(strengthSets)
       .where(eq(strengthSets.sessionExerciseId, se.id))
-    const workingSets = sets.filter(s => s.isWarmup === 0 && s.weightKg != null && s.weightKg > 0)
+    // Only sets the athlete logged: pre-filled, untouched sets never count.
+    const workingSets = sets.filter(s => isLoggedWorkSet(s) && s.weightKg != null && s.weightKg > 0)
     if (workingSets.length === 0) continue
 
     const maxSet = workingSets.reduce((best, s) => (s.weightKg! > best.weightKg! ? s : best))
@@ -2975,7 +3142,7 @@ app.get('/api/exercises/:id/last-session', async (c) => {
     lastWeight: bestMatch.weight,
     lastReps: bestMatch.reps,
     lastDate: bestMatch.date,
-    suggestedWeight: Math.round((bestMatch.weight + incrementKg) * 100) / 100,
+    suggestedWeight: snapIncreaseKg(bestMatch.weight, bestMatch.weight + incrementKg, loadEquipment(exercise?.equipment)),
   })
 })
 
@@ -3000,7 +3167,16 @@ app.get('/api/exercises/:id/history', async (c) => {
   )
 
   // Collect per-session data
-  type SessionRecord = { date: string; epoch: number; maxWeightKg: number; avgReps: number; totalSets: number; allSets: { weightKg: number; reps: number }[] }
+  type SessionRecord = {
+    date: string
+    epoch: number
+    maxWeightKg: number
+    avgReps: number
+    totalSets: number
+    /** Working sets that session planned, logged or not. */
+    plannedSets: number
+    allSets: { weightKg: number; reps: number; plannedReps: number | null; rir: number | null; loadFeedback: string | null }[]
+  }
   const sessionRecords: SessionRecord[] = []
   let prRecord: { weightKg: number; reps: number; date: string } | null = null
 
@@ -3010,8 +3186,9 @@ app.get('/api/exercises/:id/history', async (c) => {
 
     const sets = await db.select().from(strengthSets)
       .where(eq(strengthSets.sessionExerciseId, se.id))
-    const workingSets = sets.filter(s => s.isWarmup === 0 && s.weightKg != null && s.weightKg > 0)
+    const workingSets = sets.filter(s => isLoggedWorkSet(s) && s.weightKg != null && s.weightKg > 0)
     if (workingSets.length === 0) continue
+    const plannedSets = sets.filter(s => s.isWarmup === 0).length
 
     const epoch = session.completedAt ?? session.createdAt
     const date = new Date(epoch * 1000).toISOString().split('T')[0]
@@ -3024,7 +3201,8 @@ app.get('/api/exercises/:id/history', async (c) => {
       maxWeightKg: maxWeight,
       avgReps,
       totalSets: workingSets.length,
-      allSets: workingSets.map(s => ({ weightKg: s.weightKg!, reps: s.reps })),
+      plannedSets,
+      allSets: workingSets.map(s => ({ weightKg: s.weightKg!, reps: s.reps, plannedReps: s.plannedReps, rir: s.rir, loadFeedback: s.loadFeedback })),
     })
 
     // Track PR (heaviest weight ever)
@@ -3046,24 +3224,9 @@ app.get('/api/exercises/:id/history', async (c) => {
   if (section === 'main') {
     suggestion = { type: 'follow_prescription', message: 'Follow prescribed weight', suggestedWeightKg: null }
   } else if (section === 'accessory' && lastSession) {
-    const lastSets = lastSession.allSets
-    const targetReps = lastSets[0]?.reps ?? 10
-    const minReps = Math.min(...lastSets.map(s => s.reps))
-    // Double progression: if all sets hit target reps or above, bump weight
-    if (minReps >= targetReps && lastSets.length >= 3) {
-      const newWeight = Math.round((lastSession.maxWeightKg + incrementKg) * 100) / 100
-      suggestion = {
-        type: 'weight_increase',
-        message: `All sets hit ${targetReps} reps. Increase weight`,
-        suggestedWeightKg: newWeight,
-      }
-    } else {
-      suggestion = {
-        type: 'rep_increase',
-        message: `Build to ${lastSets.length}×${targetReps}, then increase`,
-        suggestedWeightKg: lastSession.maxWeightKg,
-      }
-    }
+    // Double progression against the planned reps and set count: weight goes
+    // up only after every planned set hit its reps at or under target effort.
+    suggestion = accessoryProgression(lastSession.allSets, lastSession.plannedSets, { incrementKg, equipment: loadEquipment(exercise?.equipment) })
   } else if (section === 'core' && lastSession) {
     const recentCount = sessionRecords.filter(r => r.avgReps >= (lastSession.allSets[0]?.reps ?? 10)).length
     if (recentCount >= 2) {
@@ -3126,7 +3289,8 @@ app.post('/api/blocks/:id/progress-tm', async (c) => {
       if (se.section !== 'main') continue
       const sets = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, se.id))
       const list = setsByLift.get(se.exerciseId) ?? []
-      for (const s of sets.filter(x => x.isWarmup === 0)) {
+      // Logged working sets only: a set never lifted can't make a block "clean".
+      for (const s of sets.filter(isLoggedWorkSet)) {
         list.push({ week: planWeek.get(session.weekPlanId ?? '') ?? 1, weightKg: s.weightKg, reps: s.reps, plannedWeightKg: s.plannedWeightKg, plannedReps: s.plannedReps })
       }
       setsByLift.set(se.exerciseId, list)
@@ -3229,7 +3393,8 @@ app.get('/api/history/weight-progression', async (c) => {
     const sets = await db.select().from(strengthSets)
       .where(eq(strengthSets.sessionExerciseId, se.id))
 
-    const completedSets = sets.filter(s => s.weightKg != null && s.weightKg > 0)
+    // Logged working sets only (warm-ups and untouched pre-filled sets excluded).
+    const completedSets = sets.filter(s => isLoggedWorkSet(s) && s.weightKg != null && s.weightKg > 0)
     if (completedSets.length === 0) continue
 
     const maxWeight = Math.max(...completedSets.map(s => s.weightKg!))
@@ -3400,7 +3565,7 @@ app.get('/api/history/prs', async (c) => {
     if (se.section === 'warmup') continue
 
     const sets = setsByExerciseId.get(se.id) ?? []
-    const weights = sets.filter(s => s.weightKg != null && s.weightKg > 0 && s.isWarmup === 0).map(s => s.weightKg!)
+    const weights = sets.filter(s => isLoggedWorkSet(s) && s.weightKg != null && s.weightKg > 0 && s.reps >= 1).map(s => s.weightKg!)
     if (weights.length === 0) continue
 
     const maxW = Math.max(...weights)
@@ -3674,7 +3839,7 @@ app.get('/api/history/dashboard', async (c) => {
     if (!session) continue
     if (se.section === 'warmup') continue
     const sets = setsByExerciseId.get(se.id) ?? []
-    const weights = sets.filter(s => s.weightKg != null && s.weightKg > 0 && s.isWarmup === 0).map(s => s.weightKg!)
+    const weights = sets.filter(s => isLoggedWorkSet(s) && s.weightKg != null && s.weightKg > 0 && s.reps >= 1).map(s => s.weightKg!)
     if (weights.length === 0) continue
     const maxW = Math.max(...weights)
     const entries = exerciseMaxes.get(se.exerciseId) ?? []

@@ -10,6 +10,7 @@ import { logger } from '@/lib/logger'
 import { onePaceSvg } from '@/lib/markAssets'
 import { soundRoundEnd } from '@/lib/sounds'
 import { assessRunCompletion, shouldShowRunRealityMark } from '@/lib/trainingReality'
+import { parseDurationToSec } from '@/lib/duration'
 
 import { SessionShell } from './SessionShell'
 import { resolveRunMoment, type RunType } from './runMicrocopy'
@@ -103,13 +104,6 @@ const RUN_TYPE_LABELS: Record<string, string> = {
   '5k_test': '5K Test',
 }
 
-function parseDurationToSec(value: string): number | null {
-  if (!value.trim()) return null
-  const parts = value.split(':').map(part => parseInt(part, 10))
-  if (parts.some(part => !Number.isFinite(part))) return null
-  if (parts.length === 2) return parts[0] * 60 + parts[1]
-  return parts[0] * 60
-}
 
 interface RunSessionViewProps {
   runSession: RunSession

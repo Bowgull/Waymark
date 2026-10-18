@@ -2,7 +2,7 @@
 // Rules stay pure in lib/blockZero; this file only loads rows and applies the
 // results (readiness, auto-ease, RIR loads, back swaps, MT class checks, tests).
 
-import { and, asc, eq, gte, inArray, lte, ne } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNotNull, lte, ne } from 'drizzle-orm'
 import { blockTests, dailyLogs, exercises, mtClassLogs, runSessions, sessions, strengthSessionExercises, strengthSets, trainingBlocks, userProfile, weekPlans } from '../db/schema'
 import {
   BLOCK_ZERO_BASE_WEEKS,
@@ -156,6 +156,8 @@ async function loadMainSetHistory(db: DB, blockStart: number, excludeSessionId: 
       ne(sessions.id, excludeSessionId),
       eq(strengthSessionExercises.section, 'main'),
       eq(strengthSets.isWarmup, 0),
+      // Logged sets only: pre-filled sets the athlete never lifted don't set loads.
+      isNotNull(strengthSets.completedAt),
       inArray(strengthSessionExercises.exerciseId, exerciseIds),
     ))
   for (const r of rows) {
@@ -252,7 +254,7 @@ export async function planBlockZeroStrength(
       // F12/F13: after a gap the last top set is scaled down, never pushed.
       const top = latestRirTopSet(hist, target.reps)
       const from = top?.weightKg ?? load.weightKg
-      loads.set(id, { weightKg: Math.min(load.weightKg, scaleLoadKg(from, ramp.loadFactor)), source: 'rir', change: 'decrease', reason: ramp.reason ?? 'Back from a break. Load down.' })
+      loads.set(id, { weightKg: Math.min(load.weightKg, scaleLoadKg(from, ramp.loadFactor)), source: 'rir', change: 'decrease', reason: ramp.reason ?? 'Back from a break. Load down.', fromKg: from })
     } else if (load) {
       loads.set(id, load)
     }
@@ -489,6 +491,7 @@ async function loadBlockMainSets(db: DB, blockStart: number, weeks?: number[]): 
     gte(sessions.scheduledDate, blockStart),
     eq(strengthSessionExercises.section, 'main'),
     eq(strengthSets.isWarmup, 0),
+    isNotNull(strengthSets.completedAt),
   ]
   if (weeks) filters.push(inArray(sessions.blockWeek, weeks))
   return db

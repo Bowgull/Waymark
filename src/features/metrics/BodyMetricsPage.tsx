@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { apiFetch } from '@/lib/api'
+import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { kgToLbsDisplay } from '@/lib/chartTheme'
 import { logger } from '@/lib/logger'
 import { PageHeader } from '@/components/PageHeader'
@@ -63,6 +63,7 @@ export function BodyMetricsPage() {
 
       await apiFetch<{ entry: BodyMetricEntry }>('/api/body-metrics', {
         method: 'POST',
+        headers: idempotencyHeaders(),
         body: JSON.stringify(payload),
       })
 

@@ -173,6 +173,9 @@ export const runSessions = sqliteTable('run_sessions', {
   source: text('source').notNull().default('manual'),
   stravaActivityId: integer('strava_activity_id'),
   attachmentStatus: text('attachment_status'),
+  // Strava activity start and end, unix seconds (0028). Null for manual runs.
+  activityStartAt: integer('activity_start_at'),
+  activityEndAt: integer('activity_end_at'),
 }, (t) => [
   uniqueIndex('idx_run_session').on(t.sessionId),
   uniqueIndex('idx_run_strava').on(t.stravaActivityId),
@@ -199,6 +202,11 @@ export const postureSessionExercises = sqliteTable('posture_session_exercises', 
   holdSec: integer('hold_sec'),
   sets: integer('sets').default(1),
   completed: integer('completed').notNull().default(0),
+  // The row's own prescription (0028). Null on older rows: the template lookup fills in.
+  reps: integer('reps'),
+  perSide: integer('per_side').notNull().default(0),
+  notes: text('notes'),
+  section: text('section'),
 }, (t) => [
   index('idx_pse_session').on(t.sessionId),
 ])
@@ -463,3 +471,24 @@ export const coachingOutputs = sqliteTable('coaching_outputs', {
   index('idx_coaching_week').on(t.scopeWeekPlanId),
   index('idx_coaching_session').on(t.scopeSessionId),
 ])
+
+// ─── Idempotent writes (0028) ──────────────────────────────────
+
+// One row per Idempotency-Key. status 0 = in flight; otherwise the HTTP status
+// of the stored response. Pruned after 7 days by the nightly cron.
+export const idempotencyKeys = sqliteTable('idempotency_keys', {
+  key: text('key').primaryKey(),
+  route: text('route').notNull(),
+  status: integer('status').notNull().default(0),
+  responseBody: text('response_body'),
+  createdAt: integer('created_at').notNull(),
+  completedAt: integer('completed_at'),
+}, (t) => [
+  index('idx_idem_created').on(t.createdAt),
+])
+
+// Strava activities the athlete dismissed as "not training" (0028).
+export const stravaDismissed = sqliteTable('strava_dismissed', {
+  activityId: integer('activity_id').primaryKey(),
+  dismissedAt: integer('dismissed_at').notNull(),
+})

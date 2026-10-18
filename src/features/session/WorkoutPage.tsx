@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import { apiFetch } from '@/lib/api'
+import { ApiError, apiFetch, newIdempotencyKey } from '@/lib/api'
+import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
 import { getMarkAsset, getSessionAccent } from '@/lib/markAssets'
 import { kgToLbs } from '@/lib/units'
 import { calculatePlates } from '@/lib/plateMath'
@@ -211,6 +212,8 @@ interface MtLogData {
 interface MtClassWorkoutData {
   session: SessionData
   mtLog: MtLogData | null
+  /** Planned class length (min), the default for the class-length field. */
+  plannedMin?: number | null
 }
 
 // ─── Phases ────────────────────────────────────────────────────
@@ -298,6 +301,8 @@ export function WorkoutPage() {
   const [submitting, setSubmitting] = useState(false)
   const [unlockSuggestions, setUnlockSuggestions] = useState<{ suggestions: UnlockSuggestion[]; message: string } | null>(null)
   const { show: showToast, ToastContainer } = useToast()
+  // One Idempotency-Key per finish of this session: a double tap or a retry is the same write.
+  const finishKeyRef = useRef(newIdempotencyKey())
 
   const restTimer = useRestTimer()
 
@@ -587,11 +592,24 @@ export function WorkoutPage() {
     setSubmitting(true)
     logger.sessionEvent('session finish attempt', { sessionId: id, rpe, hasNotes: notes.length > 0 })
     try {
-      await apiFetch(`/api/sessions/${id}/complete`, {
+      // Queued set saves go first, then the finish, in order. The finish has
+      // one key per tap of Finish, and the server finishes a session once.
+      await flushOutbox({ force: true, onlySessionId: id })
+      const result = await queueWrite({
         method: 'POST',
-        body: JSON.stringify({ rpe, notes }),
+        path: `/api/sessions/${id}/complete`,
+        body: { rpe, notes, completedAt: Math.floor(Date.now() / 1000) },
+        sessionId: id,
+        kind: 'finish',
+        key: finishKeyRef.current,
       })
-      logger.sessionEvent('session finish ok', { sessionId: id })
+      if (result === 'rejected') throw new Error('finish refused by the server')
+      if (result === 'queued') {
+        const pending = pendingWrites(id)
+        logger.warn('session', 'session finish queued', { sessionId: id, pending }, 'Finish kept on this phone, retrying.')
+        showToast("No connection. Session saved on this phone. It syncs when you're back online.", 'warning')
+      }
+      logger.sessionEvent('session finish ok', { sessionId: id, queued: result === 'queued' })
       clearWorkoutRecovery()
       // Let the Live Activity show a ✓ completion frame for 4s before it
       // dismisses itself from the lock screen.
@@ -797,6 +815,7 @@ export function WorkoutPage() {
           )}
           {phase === 'fr-warmup' && frCurrentExercise && (
             <MobilityExerciseView
+              key={`fr-${exerciseIdx}-${setIdx}`}
               inline
               exercise={frCurrentExercise}
               exerciseIndex={exerciseIdx}
@@ -911,6 +930,8 @@ export function WorkoutPage() {
       <>
         <MtClassLogView
           mtLog={mtData.mtLog}
+          plannedMin={mtData.plannedMin ?? null}
+          blockType={mtData.session.blockType ?? null}
           onComplete={() => setPhase('mark-earned')}
         />
         <ToastContainer />
@@ -1218,23 +1239,47 @@ export function WorkoutPage() {
   function handleSetComplete(weightKg: number | null, reps: number) {
     if (!currentSet) return
 
-    apiFetch(`/api/strength-sets/${currentSet.id}`, {
+    // Outbox first: the set is kept on this phone until the server has it, and
+    // retries on reconnect, foreground and before finishing. One key per log,
+    // so a retry never writes it twice.
+    const setId = currentSet.id
+    const completedAt = Math.floor(Date.now() / 1000)
+    void queueWrite({
       method: 'PATCH',
-      body: JSON.stringify({
-        weightKg,
-        reps,
-        completedAt: Math.floor(Date.now() / 1000),
-      }),
-    }).catch((e) => {
-      const message = e instanceof Error ? e.message : String(e)
-      logger.error('session', 'strength set persist failed', { setId: currentSet.id, message }, 'PATCH /sets/:id failed. Set cached locally, not synced.')
-      showToast("Set didn't save. Keep training — we'll retry at finish.", 'warning')
+      path: `/api/strength-sets/${setId}`,
+      body: { weightKg, reps, completedAt },
+      sessionId: id ?? null,
+      kind: 'set',
+      key: `set-${setId}-${completedAt}`,
+    }).then(result => {
+      if (result === 'sent') return
+      logger.warn('session', 'strength set queued', { setId, result }, result === 'queued' ? 'Set save failed. Kept on this phone, retrying.' : 'Server refused the set save.')
+      showToast(result === 'queued'
+        ? "No connection. Set saved on this phone. It syncs when you're back online."
+        : "Set didn't save. The server refused it. Check logs in Settings.", 'warning')
     })
 
     const restSec = currentSet.restSec ?? 60
     restTimer.start(restSec)
     void scheduleStrengthRestEnd(Date.now() + restSec * 1000)
     setPhase('rest')
+  }
+
+  // Missing equipment: the server picks a same-pattern swap and rewrites this
+  // exercise's unlogged sets. Only offered before the first set is logged.
+  async function handleSwapExercise() {
+    if (!currentExercise) return
+    try {
+      const data = await apiFetch<StrengthWorkoutData & { swap?: { label: string } }>(`/api/strength-session-exercises/${currentExercise.id}/swap`, { method: 'POST' })
+      setStrengthData(data)
+      setSetIdx(0)
+      showToast(data.swap ? `Swapped to ${data.swap.label}.` : 'Exercise swapped.', 'info')
+    } catch (e) {
+      const body = e instanceof ApiError ? e.body : ''
+      let reason: string | null = null
+      try { reason = (JSON.parse(body) as { error?: string }).error ?? null } catch { reason = null }
+      showToast(reason ?? "Couldn't swap. Check connection and try again.", 'warning')
+    }
   }
 
   function handleNextSet() {
@@ -1378,6 +1423,7 @@ export function WorkoutPage() {
         onSetComplete={handleSetComplete}
         onLiveValuesChange={handleLiveValuesChange}
         onNextSet={handleNextSet}
+        onSwap={setIdx === 0 ? handleSwapExercise : undefined}
         onExit={exitToToday}
         accentColor={accent}
       />

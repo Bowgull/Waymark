@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Moon, Leaf, Wine, Activity } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { Button } from '@/components/ui/button'
 import { ScrollDrum } from '@/components/ui/ScrollDrum'
@@ -30,10 +30,18 @@ interface WellnessPromptCardProps {
 const SORENESS_LABELS = ['Fresh', 'Loose', 'Normal', 'Sore', 'Cooked']
 
 export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPromptCardProps) {
-  const [sleep, setSleep] = useState(existing?.sleepHours ?? 7)
-  const [weed, setWeed] = useState(existing?.weedGrams ?? 0)
-  const [alcohol, setAlcohol] = useState(existing?.alcoholScale ?? 0)
-  const [soreness, setSoreness] = useState<number | null>(existing?.soreness ?? null)
+  // Nothing is recorded unless the athlete touches it: an untouched field is
+  // left out of the log (sleep stays empty, not a pre-filled 7 h).
+  const [sleep, setSleepValue] = useState<number | null>(existing?.sleepHours ?? null)
+  const [weed, setWeedValue] = useState(existing?.weedGrams ?? 0)
+  const [alcohol, setAlcoholValue] = useState(existing?.alcoholScale ?? 0)
+  const [soreness, setSorenessValue] = useState<number | null>(existing?.soreness ?? null)
+  const [touched, setTouched] = useState<Set<keyof WellnessData>>(() => new Set())
+  const touch = (field: keyof WellnessData) => setTouched(prev => (prev.has(field) ? prev : new Set(prev).add(field)))
+  const setSleep = (v: number) => { touch('sleepHours'); setSleepValue(v) }
+  const setWeed = (v: number) => { touch('weedGrams'); setWeedValue(v) }
+  const setAlcohol = (v: number) => { touch('alcoholScale'); setAlcoholValue(v) }
+  const setSoreness = (v: number | null) => { touch('soreness'); setSorenessValue(v) }
   const [notes, setNotes] = useState('')
   const [showNotes, setShowNotes] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -55,19 +63,22 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
 
   async function handleSubmit() {
     setSubmitting(true)
-    // Save structured wellness data
-    onSubmit({
-      sleepHours: sleep,
-      weedGrams: weed,
-      alcoholScale: alcohol,
-      soreness: soreness ?? undefined,
-    })
-    // Save notes as a wellness journal entry if provided
+    // Save only the fields the athlete set this time.
+    const data: WellnessData = {}
+    if (touched.has('sleepHours') && sleep != null) data.sleepHours = sleep
+    if (touched.has('weedGrams')) data.weedGrams = weed
+    if (touched.has('alcoholScale')) data.alcoholScale = alcohol
+    if (touched.has('soreness') && soreness != null) data.soreness = soreness
+    if (Object.keys(data).length > 0) onSubmit(data)
+    setTouched(new Set())
+    // Save notes as a wellness journal entry if provided. A second note that
+    // day is added to the first, not written over it.
     if (notes.trim()) {
       try {
         await apiFetch('/api/journal', {
           method: 'POST',
-          body: JSON.stringify({ date: getTodayISO(), type: 'wellness', content: notes.trim() }),
+          headers: idempotencyHeaders(),
+          body: JSON.stringify({ date: getTodayISO(), type: 'wellness', content: notes.trim(), append: true }),
         })
       } catch (e) {
         console.error('Failed to save wellness note:', e)
@@ -78,7 +89,7 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
     setShowNotes(false)
   }
 
-  const hasAnyData = sleep > 0 || weed > 0 || alcohol > 0 || soreness != null
+  const hasAnyData = touched.size > 0 || notes.trim().length > 0
 
   function openDrum(name: string) {
     setActiveDrum(activeDrum === name ? '' : name)
@@ -115,14 +126,18 @@ export function WellnessPromptCard({ onSubmit, isLogged, existing }: WellnessPro
           <span className="text-sm text-foreground flex-1">Sleep</span>
           {activeDrum === 'sleep' ? (
             <div data-drum-body="true" className="w-24 rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
-              <ScrollDrum min={0} max={12} step={0.5} value={sleep} onChange={setSleep} suffix="hrs" />
+              <ScrollDrum min={0} max={12} step={0.5} value={sleep ?? 7} onChange={setSleep} suffix="hrs" />
             </div>
           ) : (
             <button
-              onClick={() => openDrum('sleep')}
+              onClick={() => {
+                // Opening the drum is the touch: it starts at 7 h, and that is what's logged.
+                if (sleep == null) setSleep(7)
+                openDrum('sleep')
+              }}
               className="min-w-[64px] rounded-md border border-gold/10 bg-deep-forest px-3 py-1.5 text-center text-sm text-foreground"
             >
-              {sleep} <span className="text-xs text-muted-foreground">hrs</span>
+              {sleep ?? '—'} <span className="text-xs text-muted-foreground">hrs</span>
             </button>
           )}
         </div>

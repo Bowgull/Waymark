@@ -20,6 +20,7 @@ import {
   syncAlarmsFromSettings,
 } from '../lib/notifications'
 import { apiFetch } from '../lib/api'
+import { startOutboxSync } from '../lib/outboxSync'
 import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
 import { Capacitor } from '@capacitor/core'
 
@@ -39,6 +40,9 @@ export function AppRoutes() {
         // API unavailable, skip redirect
       })
   }, [location.pathname, navigate])
+
+  // Queued set saves and finishes retry on reconnect, foreground and resume.
+  useEffect(() => startOutboxSync(), [])
 
   useEffect(() => {
     initNotificationListeners()

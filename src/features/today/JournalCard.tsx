@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { apiFetch } from '@/lib/api'
+import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { logger } from '@/lib/logger'
 import { Button } from '@/components/ui/button'
@@ -113,6 +113,7 @@ export function JournalCard() {
       } else {
         const created = await apiFetch<JournalEntryData>('/api/journal', {
           method: 'POST',
+          headers: idempotencyHeaders(),
           body: JSON.stringify({ date: today, type: entryType, content: draft }),
         })
         setEntryId(created.id)

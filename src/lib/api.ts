@@ -1,5 +1,6 @@
 import { getApiBaseUrl } from './apiBase'
 import { logger } from './logger'
+import { maxAttemptsFor } from './retryPolicy'
 
 const API_KEY = import.meta.env.VITE_API_KEY as string | undefined
 
@@ -20,6 +21,7 @@ export class ApiError extends Error {
 const TIMEOUT_MS = 10_000
 const RETRY_DELAY_MS = 1_000
 const RETRYABLE_STATUSES = new Set([500, 502, 503, 504])
+export { IDEMPOTENCY_HEADER, idempotencyHeaders, newIdempotencyKey } from './retryPolicy'
 
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController()
@@ -45,11 +47,15 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 
   // Don't self-log the logger endpoint or we'd loop.
   const shouldLog = !path.startsWith('/api/logs')
+  // Only retry what is safe to send twice: reads, and writes carrying an
+  // Idempotency-Key (the server applies those once). A plain POST that timed
+  // out may have landed; sending it again could finish a session twice.
+  const maxAttempts = maxAttemptsFor(method, options?.headers)
   const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
 
   let lastError: unknown
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const res = await fetchWithTimeout(url, init, TIMEOUT_MS)
 
@@ -83,7 +89,7 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
       const body = await res.text().catch(() => '')
       const type = res.status >= 500 ? 'server' : 'client'
 
-      if (RETRYABLE_STATUSES.has(res.status) && attempt === 0) {
+      if (RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts - 1) {
         lastError = new ApiError(res.status, body, type)
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
         continue
@@ -98,7 +104,7 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     } catch (err) {
       if (err instanceof ApiError) throw err
 
-      if (attempt === 0) {
+      if (attempt < maxAttempts - 1) {
         lastError = err
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
         continue

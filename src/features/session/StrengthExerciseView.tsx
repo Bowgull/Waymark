@@ -90,6 +90,8 @@ interface StrengthExerciseViewProps {
   onLiveValuesChange?: (weightKg: number | null, reps: number) => void
   onNextSet: () => void
   onSkip?: () => void
+  /** Missing equipment: swap for a same-pattern exercise. Omit to hide. */
+  onSwap?: () => void
   onExit?: () => void
   /** Ring accent (defaults to gold). */
   accentColor?: string
@@ -120,6 +122,7 @@ export function StrengthExerciseView({
   onLiveValuesChange,
   onNextSet,
   onSkip,
+  onSwap,
   onExit,
   accentColor = '#E8C860',
 }: StrengthExerciseViewProps) {
@@ -191,13 +194,25 @@ export function StrengthExerciseView({
       >
         Next Set
       </Button>
-    ) : onSkip ? (
-      <button
-        onClick={onSkip}
-        className="min-h-[44px] w-full text-center text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/70 active:text-muted-foreground"
-      >
-        Skip Exercise
-      </button>
+    ) : onSkip || onSwap ? (
+      <div className="flex flex-col">
+        {onSwap && (
+          <button
+            onClick={onSwap}
+            className="min-h-[44px] w-full text-center text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/70 active:text-muted-foreground"
+          >
+            Swap Exercise (No Equipment)
+          </button>
+        )}
+        {onSkip && (
+          <button
+            onClick={onSkip}
+            className="min-h-[44px] w-full text-center text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/70 active:text-muted-foreground"
+          >
+            Skip Exercise
+          </button>
+        )}
+      </div>
     ) : undefined
 
   return (

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { FormVideoLink } from '@/components/FormVideoLink'
+import { mobilitySteps, type MobilityStep } from '@/lib/backCare'
 import { RingTimer } from '@/components/RingTimer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -22,6 +23,8 @@ interface MobilityExercise {
   holdSec: number | null
   sets: number | null
   reps?: number | null
+  /** Timed or counted on each side in turn. */
+  perSide?: boolean | null
   completed: number
   section?: string | null
   exercise: {
@@ -46,9 +49,20 @@ interface SharedBodyProps {
   showSectionHeader: boolean
   holdTimer: HoldTimerState & HoldTimerActions
   isHoldExercise: boolean
+  /** The step this set is on: side and rep for per-side holds and rep holds. */
+  step?: MobilityStep
 }
 
-interface MobilityExerciseBodyProps extends Omit<SharedBodyProps, 'holdTimer' | 'isHoldExercise'> {
+/** "Left side · Rep 3 of 10", or null when the set is one plain step. */
+function stepLabel(step: MobilityStep | undefined): string | null {
+  if (!step) return null
+  const parts: string[] = []
+  if (step.side) parts.push(`${step.side} side`)
+  if (step.rep != null && step.reps != null) parts.push(`Rep ${step.rep} of ${step.reps}`)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+interface MobilityExerciseBodyProps extends Omit<SharedBodyProps, 'holdTimer' | 'isHoldExercise' | 'step'> {
   onSetDone: () => void
 }
 
@@ -77,10 +91,13 @@ export function MobilityExerciseBody({
   showSectionHeader,
   holdTimer,
   isHoldExercise,
+  step,
 }: SharedBodyProps) {
   const [breakdownOpen, setBreakdownOpen] = useState(false)
   const totalSets = exercise.sets ?? 1
   const totalReps = exercise.reps ?? null
+  const holdSec = step?.holdSec ?? exercise.holdSec
+  const currentStep = stepLabel(step)
   const sectionLabel = exercise.section
     ? MOBILITY_SECTION_LABELS[exercise.section as MobilitySection]
     : null
@@ -115,6 +132,11 @@ export function MobilityExerciseBody({
           {totalSets > 1 && (
             <span className="font-cinzel uppercase tracking-[0.18em] text-gold/50">
               Set {currentSet} of {totalSets}
+            </span>
+          )}
+          {currentStep && (
+            <span className="font-cinzel uppercase tracking-[0.18em] text-gold/50">
+              {currentStep}
             </span>
           )}
         </div>
@@ -160,12 +182,12 @@ export function MobilityExerciseBody({
 
       {/* Ring or rep card — fills remaining vertical space, centered */}
       <div className="flex flex-1 items-center justify-center py-6">
-        {isHoldExercise && exercise.holdSec ? (
+        {isHoldExercise && holdSec ? (
           <div className="rounded-2xl border border-teal/20 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(74,202,170,0.08)]">
             <RingTimer
-              totalSeconds={exercise.holdSec}
+              totalSeconds={holdSec}
               secondsRemaining={
-                holdTimer.running ? holdTimer.secondsRemaining : exercise.holdSec
+                holdTimer.running ? holdTimer.secondsRemaining : holdSec
               }
               label={
                 holdTimer.reachedTarget
@@ -196,6 +218,7 @@ export function MobilityExerciseBody({
               {totalReps ?? (totalSets > 1 ? `${currentSet}/${totalSets}` : '\u2014')}
             </p>
             <p className="text-xs text-muted-foreground">
+              {totalReps && exercise.perSide ? 'Each side. ' : ''}
               {totalReps
                 ? totalSets > 1
                   ? `Set ${currentSet} of ${totalSets}. Tap done when finished.`
@@ -226,9 +249,38 @@ export function MobilityExerciseView({
   inline = false,
 }: MobilityExerciseViewProps) {
   const totalSets = exercise.sets ?? 1
-  const isHoldExercise = exercise.holdSec != null && exercise.holdSec > 0
-  const holdTimer = useHoldTimer(exercise.holdSec ?? 0)
+  // One set can be several timed steps: both sides of a per-side hold, or one
+  // hold per rep (prone cobra 10 x 3s). The set is done after the last step.
+  const steps = mobilitySteps(exercise)
+  const [stepIdx, setStepIdx] = useState(0)
+  const step = steps[Math.min(stepIdx, steps.length - 1)]
+  const isHoldExercise = step.kind === 'hold'
+  const holdTimer = useHoldTimer(step.holdSec ?? 0)
   const [activityReadyAtMs] = useState(() => Date.now())
+  const [autoStartNext, setAutoStartNext] = useState(false)
+
+  const stopHold = holdTimer.stop
+  const advanceStep = useCallback(() => {
+    stopHold()
+    if (stepIdx < steps.length - 1) {
+      const next = steps[stepIdx + 1]
+      // Next rep on the same side starts by itself; a side switch waits for a tap.
+      setAutoStartNext(next.side === step.side && next.rep != null)
+      setStepIdx(stepIdx + 1)
+      return
+    }
+    onSetDone()
+  }, [onSetDone, step.side, stepIdx, steps, stopHold])
+
+  const startHold = holdTimer.start
+  useEffect(() => {
+    if (!autoStartNext) return
+    const handle = setTimeout(() => {
+      setAutoStartNext(false)
+      startHold()
+    }, 1500)
+    return () => clearTimeout(handle)
+  }, [autoStartNext, startHold])
 
   // Tap-Enter/Space for rep-based exercises
   useEffect(() => {
@@ -344,10 +396,7 @@ export function MobilityExerciseView({
     // advance. This is the manual escape hatch when JS is frozen and the
     // auto-advance on reachedTarget can't fire.
     onAdvance: () => {
-      if (isHoldExercise && holdTimer.running) {
-        holdTimer.stop()
-        onSetDone()
-      }
+      if (isHoldExercise && holdTimer.running) advanceStep()
     },
   })
 
@@ -356,16 +405,12 @@ export function MobilityExerciseView({
   // registers visually before we flip to the next exercise's ready state.
   const holdReachedTarget = holdTimer.reachedTarget
   const holdRunning = holdTimer.running
-  const stopHoldTimer = holdTimer.stop
   useEffect(() => {
     if (!isHoldExercise) return
     if (!holdReachedTarget || !holdRunning) return
-    const handle = setTimeout(() => {
-      stopHoldTimer()
-      onSetDone()
-    }, 600)
+    const handle = setTimeout(advanceStep, 600)
     return () => clearTimeout(handle)
-  }, [holdReachedTarget, holdRunning, isHoldExercise, onSetDone, stopHoldTimer])
+  }, [holdReachedTarget, holdRunning, isHoldExercise, advanceStep])
 
   const footerAction = (() => {
     if (isHoldExercise) {
@@ -380,16 +425,13 @@ export function MobilityExerciseView({
               color: '#020A08',
             }}
           >
-            Start Hold
+            {step.side && step.rep == null ? `Start ${step.side} Side` : step.rep != null && step.rep > 1 ? 'Start Next Rep' : 'Start Hold'}
           </Button>
         )
       }
       return (
         <Button
-          onClick={() => {
-            holdTimer.stop()
-            onSetDone()
-          }}
+          onClick={advanceStep}
           size="lg"
           className="w-full"
           variant={holdTimer.reachedTarget ? 'default' : 'secondary'}
@@ -435,6 +477,7 @@ export function MobilityExerciseView({
           showSectionHeader={showSectionHeader}
           holdTimer={holdTimer}
           isHoldExercise={isHoldExercise}
+          step={step}
         />
         <div className="mx-auto w-full max-w-md">{footerAction}</div>
       </div>
@@ -461,6 +504,7 @@ export function MobilityExerciseView({
         showSectionHeader={showSectionHeader}
         holdTimer={holdTimer}
         isHoldExercise={isHoldExercise}
+        step={step}
       />
     </SessionShell>
   )

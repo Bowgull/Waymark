@@ -34,6 +34,9 @@ assert(run.isIndoor === 0, 'maps outdoor trainer flag')
 assert(run.avgHr === 143, 'rounds average HR')
 assert(run.maxHr === 160, 'rounds max HR')
 assert(run.elevationGainM === 6, 'rounds elevation gain')
+assert(run.startAt === Date.parse('2026-05-16T12:04:00Z') / 1000, 'keeps the activity start')
+assert(run.completedAt === run.startAt + 1086, 'completed at the end of the run (moving time when no elapsed time)')
+assert(mapStravaActivityToRunData({ ...activity, elapsed_time: 1300 }).endAt === run.startAt + 1300, 'end uses elapsed time')
 
 const zeroDistance = mapStravaActivityToRunData({
   ...activity,
@@ -52,7 +55,8 @@ assert(splits[0].avgHr === 140, 'rounds split average HR')
 assert(splits[1].avgHr === 147, 'rounds split average HR upward')
 assert(splits[1].elevationGainM === 4, 'rounds split elevation')
 
-const zones = bucketZones([110, 125, 145, 165, 180], [0, 60, 120, 180, 240], 188)
+// 60 s between samples: the moving stream says the athlete kept moving.
+const zones = bucketZones([110, 125, 145, 165, 180], [0, 60, 120, 180, 240], 188, [true, true, true, true, true])
 assert(zones.z1 === 60, 'buckets Z1 dwell')
 assert(zones.z2 === 60, 'buckets Z2 dwell')
 assert(zones.z3 === 60, 'buckets Z3 dwell')

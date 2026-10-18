@@ -1,12 +1,15 @@
-export type MobilitySection = 'upper' | 'lower' | 'breathing'
+export type MobilitySection = 'upper' | 'lower' | 'breathing' | 'dynamic'
 
 export interface MobilityExerciseTemplate {
   exerciseId: string
   label: string
   section: MobilitySection
   sets: number
+  /** Seconds per hold. With reps, each rep is held this long. */
   holdSec: number | null
   reps: number | null
+  /** Timed or counted on each side in turn (left, then right). */
+  perSide?: boolean
   notes?: string
 }
 
@@ -22,8 +25,8 @@ export interface MobilityExerciseTemplate {
  * - World's greatest stretch is a compound hip + thoracic opener.
  * - Ankle CARs maintain dorsiflexion (squat depth, kick mechanics, gait).
  *
- * Zero overlap with FR_WARMUP_TEMPLATE so daily + Zone 2 on same morning
- * don't double up.
+ * The Fighter daily routine. Block Zero's daily session is Back Care
+ * (lib/backCare), not this.
  */
 export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
   {
@@ -42,7 +45,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 2,
     holdSec: null,
     reps: 12,
-    notes: 'Yellow HAPBEAR band. Arms straight, pull to chest height, shoulder blades move first. Posture work, not a max set.',
+    notes: 'Light band. Arms straight, pull to chest height, shoulder blades move first. Posture work, not a max set.',
   },
   {
     exerciseId: 'ex-prone-cobra',
@@ -60,6 +63,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 2,
     holdSec: null,
     reps: 10,
+    perSide: true,
     notes: 'Elbow tucked to side, rotate forearm outward against band. 10 each arm. Rear delt and rotator cuff, the muscles that pull shoulders back.',
   },
   {
@@ -69,6 +73,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 2,
     holdSec: null,
     reps: 8,
+    perSide: true,
     notes: '8 each side. Low back stays quiet. Ribs down. This is the brace you need before running or hinging.',
   },
   {
@@ -78,6 +83,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 1,
     holdSec: 30,
     reps: null,
+    perSide: true,
     notes: 'Back foot on couch, front knee forward, tuck tailbone and squeeze back glute. 30s each side. Deep hip flexor lengthening that a standing stretch can not reach.',
   },
   {
@@ -87,6 +93,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 1,
     holdSec: 30,
     reps: null,
+    perSide: true,
     notes: 'Lunge, hand inside front foot, rotate top arm to ceiling. 30s each side. Opens hip, groin, and thoracic spine in one move.',
   },
   {
@@ -101,7 +108,78 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
 ]
 
 /**
- * Zone 2 pre-run stretch block. Runs M/W/F AM before the Zone 2 run.
+ * Run-walk warm-up: ~5 min of dynamic work before every Block Zero run-walk
+ * and every Zone 2 foundation run. Warm-ups that raise temperature and move
+ * joints through the running range beat static holds before running (the
+ * evidence file's warm-up guidance favours dynamic or ramp work); long static
+ * holds and a loaded toe-touch fold first thing in the morning are the wrong
+ * default for a stiff back. Static stretching is optional after the run.
+ */
+export const FR_WARMUP_TEMPLATE: MobilityExerciseTemplate[] = [
+  {
+    exerciseId: 'ex-brisk-walk',
+    label: 'Brisk Walk',
+    section: 'dynamic',
+    sets: 1,
+    holdSec: 120,
+    reps: null,
+    notes: 'Two minutes at a brisk walk. Breathing up, still able to talk.',
+  },
+  {
+    exerciseId: 'ex-leg-swings',
+    label: 'Leg Swings',
+    section: 'dynamic',
+    sets: 1,
+    holdSec: null,
+    reps: 10,
+    perSide: true,
+    notes: '10 each leg, forward and back, growing a little each swing. Hand on a wall. The swing comes from the hip.',
+  },
+  {
+    exerciseId: 'ex-ankle-rocks',
+    label: 'Ankle Rocks',
+    section: 'dynamic',
+    sets: 1,
+    holdSec: null,
+    reps: 10,
+    perSide: true,
+    notes: '10 each ankle. Knee forward over the toes and back, heel stays down.',
+  },
+  {
+    exerciseId: 'ex-hip-circles',
+    label: 'Standing Hip Circles',
+    section: 'dynamic',
+    sets: 1,
+    holdSec: null,
+    reps: 6,
+    perSide: true,
+    notes: '6 each way, each leg. Slow circles, trunk still.',
+  },
+  {
+    exerciseId: 'ex-high-knee-march',
+    label: 'High-Knee March',
+    section: 'dynamic',
+    sets: 1,
+    holdSec: 30,
+    reps: null,
+    notes: '30s. Knee to hip height, opposite arm swings, tall posture.',
+  },
+  {
+    exerciseId: 'ex-a-skips',
+    label: 'A-Skips',
+    section: 'dynamic',
+    sets: 1,
+    holdSec: 20,
+    reps: null,
+    notes: '20s, light and bouncy. If skipping feels rough today, march again instead. Stretch after the run if you like, not before.',
+  },
+]
+
+/**
+ * Legacy pre-run static stretch block (before 0028). No longer prescribed:
+ * kept so mobility rows written by it still show their cues.
+ *
+ * Old rationale, superseded by the dynamic warm-up above:
  *
  * Static holds. The sports-med consensus is that pre-run static stretching
  * drops power output a few percent on the session that follows — a real
@@ -114,7 +192,7 @@ export const DAILY_MOBILITY_TEMPLATE: MobilityExerciseTemplate[] = [
  * Zero overlap with DAILY_MOBILITY_TEMPLATE so both on the same morning don't
  * double up.
  */
-export const FR_WARMUP_TEMPLATE: MobilityExerciseTemplate[] = [
+export const LEGACY_FR_STATIC_WARMUP_TEMPLATE: MobilityExerciseTemplate[] = [
   {
     exerciseId: 'ex-toe-touch-forward-fold',
     label: 'Toe-Touch Forward Fold',
@@ -140,6 +218,7 @@ export const FR_WARMUP_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 1,
     holdSec: 45,
     reps: null,
+    perSide: true,
     notes: 'Front shin across, back leg extended, fold over. 45s each side. Deep glute and external rotator, the lengths runners lose.',
   },
   {
@@ -149,6 +228,7 @@ export const FR_WARMUP_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 1,
     holdSec: 30,
     reps: null,
+    perSide: true,
     notes: 'Stand, grab the ankle behind you, knees together, squeeze the back glute. 30s each side. Rectus femoris and hip flexor, direct counter to APT.',
   },
   {
@@ -158,6 +238,7 @@ export const FR_WARMUP_TEMPLATE: MobilityExerciseTemplate[] = [
     sets: 1,
     holdSec: 30,
     reps: null,
+    perSide: true,
     notes: 'Hands on wall, back leg straight, press the heel down. 30s each side. Gastrocnemius and Achilles, the chain that takes every step of impact.',
   },
 ]
@@ -246,4 +327,16 @@ export const MOBILITY_SECTION_LABELS: Record<MobilitySection, string> = {
   breathing: 'Breathing',
   upper: 'Upper Body',
   lower: 'Lower Body',
+  dynamic: 'Dynamic Warm-Up',
+}
+
+/**
+ * Template rows for mobility rows written before 0028 (no stored reps or
+ * notes), in priority order for the session type. First match wins, so an
+ * exercise shared by two templates reads from the one the session used.
+ */
+export function legacyMobilityTemplates(sessionType: string | null | undefined): MobilityExerciseTemplate[] {
+  return sessionType === 'foundation_run'
+    ? [...LEGACY_FR_STATIC_WARMUP_TEMPLATE, ...FR_WARMUP_TEMPLATE, ...FR_COOLDOWN_TEMPLATE]
+    : [...DAILY_MOBILITY_TEMPLATE, ...FR_WARMUP_TEMPLATE, ...LEGACY_FR_STATIC_WARMUP_TEMPLATE, ...FR_COOLDOWN_TEMPLATE]
 }

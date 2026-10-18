@@ -7,6 +7,9 @@ export const completeSessionSchema = z.object({
   // historical data.
   difficulty: z.number().min(1).max(5).optional(),
   notes: z.string().max(1000).default(''),
+  // When the athlete tapped finish (unix seconds). An outbox replay can land
+  // hours later; the server keeps it between the start and now.
+  completedAt: z.number().int().min(0).optional(),
 })
 
 export const strengthSetSchema = z.object({

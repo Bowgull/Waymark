@@ -9,16 +9,24 @@
 //
 // Match logic: new activity → look for planned running session on same local date
 // with no existing strava link. Found → attachment_status='auto_pending' (user confirms
-// inline on Today). None → create a new sessions row + run_sessions with
+// inline on Today). Else a run already logged by hand that day whose time and
+// duration line up (lib/stravaMatch) → Strava enriches that row ('confirmed'), no
+// second run. None → create a new sessions row + run_sessions with
 // attachment_status='orphan'. Confirm/reassign/dismiss routes finalize the state.
+// A dismissed activity is remembered (strava_dismissed) and never re-ingested.
 
 import { Hono } from 'hono'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 
 import { createDB } from '../../db/client'
-import { runSessions, runSplits, sessions, stravaTokens, trainingBlocks, userProfile } from '../../db/schema'
+import { runSessions, runSplits, sessions, stravaDismissed, stravaTokens, trainingBlocks, userProfile } from '../../db/schema'
 import { isoToEpochDay } from '../../lib/dates'
 import { assessRunCompletion } from '../../lib/trainingReality'
+import { ageFromDob } from '../../lib/blockZero/running'
+import { bucketZones, maxHrAfterRun, sustainedMaxHr } from '../../lib/hrZones'
+import { confirmedRunTimes, matchManualRun } from '../../lib/stravaMatch'
+
+export { bucketZones }
 
 type Bindings = {
   DB: D1Database
@@ -285,10 +293,13 @@ strava.post('/activity/:activityId/confirm', async (c) => {
     .set({ attachmentStatus: 'confirmed' })
     .where(eq(runSessions.stravaActivityId, activityId))
 
+  // The run's own time, not the tap time (a Monday run confirmed Wednesday stays Monday).
+  const times = confirmedRunTimes(run, nowSec)
   await db.update(sessions)
     .set({
       status: 'completed',
-      completedAt: nowSec,
+      ...(times.startedAt != null ? { startedAt: times.startedAt } : {}),
+      completedAt: times.completedAt,
       durationSec: run.durationSec,
     })
     .where(eq(sessions.id, run.sessionId))
@@ -315,10 +326,12 @@ strava.post('/activity/:activityId/reassign', async (c) => {
     .set({ sessionId: newSessionId, attachmentStatus: 'confirmed' })
     .where(eq(runSessions.stravaActivityId, activityId))
 
+  const times = confirmedRunTimes(run, nowSec)
   await db.update(sessions)
     .set({
       status: 'completed',
-      completedAt: nowSec,
+      ...(times.startedAt != null ? { startedAt: times.startedAt } : {}),
+      completedAt: times.completedAt,
       durationSec: run.durationSec,
     })
     .where(eq(sessions.id, newSessionId))
@@ -341,6 +354,8 @@ strava.post('/activity/:activityId/dismiss', async (c) => {
   const activityId = Number(c.req.param('activityId'))
   if (!Number.isFinite(activityId)) return c.json({ error: 'bad_activity_id' }, 400)
   const db = createDB(c.env)
+  // Remember the dismissal first, so the next poll doesn't bring it back.
+  await db.insert(stravaDismissed).values({ activityId, dismissedAt: Math.floor(Date.now() / 1000) }).onConflictDoNothing()
   const [run] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
   if (!run) return c.json({ ok: true })
 
@@ -657,6 +672,7 @@ export type StravaActivity = {
   start_date_local: string     // ISO local (Z-suffixed but represents local wall time)
   distance: number             // meters
   moving_time: number          // seconds
+  elapsed_time?: number        // seconds, pauses included
   total_elevation_gain?: number
   average_heartrate?: number
   max_heartrate?: number
@@ -672,6 +688,7 @@ export type StravaActivity = {
 type StravaStreams = {
   heartrate?: { data: number[] }
   time?: { data: number[] }
+  moving?: { data: boolean[] }
 }
 
 type StravaSplit = NonNullable<StravaActivity['splits_metric']>[number]
@@ -679,6 +696,9 @@ type StravaSplit = NonNullable<StravaActivity['splits_metric']>[number]
 export type StravaRunData = {
   localISO: string
   epochDay: number
+  /** Activity start and end, unix seconds. completedAt is the end. */
+  startAt: number
+  endAt: number
   completedAt: number
   distanceKm: number | null
   durationSec: number
@@ -697,8 +717,9 @@ export type StravaSplitData = {
 }
 
 type IngestResult =
-  | { status: 'ingested'; runSessionId: string; attachmentStatus: 'auto_pending' | 'orphan'; maxHrBumped: null | { from: number | null; to: number } }
+  | { status: 'ingested'; runSessionId: string; attachmentStatus: 'auto_pending' | 'orphan' | 'confirmed'; maxHrBumped: null | { from: number | null; to: number } }
   | { status: 'duplicate' }
+  | { status: 'dismissed' }
   | { status: 'non_run' }
   | { status: 'no_token' }
   | { status: 'fetch_failed'; code: number }
@@ -716,6 +737,9 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
 
   const [existing] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
   if (existing) return { status: 'duplicate' }
+  // The athlete said "not training": stays gone.
+  const [dismissed] = await db.select().from(stravaDismissed).where(eq(stravaDismissed.activityId, activityId))
+  if (dismissed) return { status: 'dismissed' }
 
   const token = await getStravaAccessToken(env)
   if (!token) return { status: 'no_token' }
@@ -768,11 +792,27 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     !stravaLinkedSessionIds.has(s.id),
   )
 
+  // A run already logged by hand that day (completed, no Strava link) whose
+  // time and duration line up is this same run: enrich it, don't add another.
+  const manualMatch = candidate ? null : matchManualRun(
+    { startSec: runData.startAt, movingSec: act.moving_time ?? null, elapsedSec: act.elapsed_time ?? null },
+    planned
+      .filter(s => s.status === 'completed')
+      .flatMap(s => {
+        const run = runsForPlanned.find(r => r.sessionId === s.id && r.stravaActivityId == null)
+        return run ? [{ sessionId: s.id, runSessionId: run.id, completedAt: s.completedAt, durationSec: run.durationSec ?? s.durationSec }] : []
+      }),
+  )
+
   let parentSessionId: string
-  let attachmentStatus: 'auto_pending' | 'orphan'
+  let attachmentStatus: 'auto_pending' | 'orphan' | 'confirmed'
   if (candidate) {
     parentSessionId = candidate.id
     attachmentStatus = 'auto_pending'
+  } else if (manualMatch) {
+    // Already confirmed by the athlete's own log: no review card, no second run.
+    parentSessionId = manualMatch.sessionId
+    attachmentStatus = 'confirmed'
   } else {
     const [activeBlock] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.status, 'active'))
     parentSessionId = crypto.randomUUID()
@@ -786,6 +826,7 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
       blockWeek: null,
       source: 'ad_hoc',
       status: 'completed',
+      startedAt: runData.startAt,
       completedAt: runData.completedAt,
       durationSec: runData.durationSec,
       createdAt: nowSec,
@@ -815,11 +856,11 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
   }
 
   let zoneSeconds: { z1: number; z2: number; z3: number; z4: number; z5: number } | null = null
-  if (effectiveMaxHr && act.average_heartrate != null) {
-    const streams = await fetchStreams(activityId, token).catch(() => null)
-    if (streams?.heartrate?.data && streams.time?.data) {
-      zoneSeconds = bucketZones(streams.heartrate.data, streams.time.data, effectiveMaxHr)
-    }
+  const streams = act.average_heartrate != null ? await fetchStreams(activityId, token).catch(() => null) : null
+  const hrStream = streams?.heartrate?.data && streams.time?.data ? { hr: streams.heartrate.data, time: streams.time.data, moving: streams.moving?.data ?? null } : null
+  if (effectiveMaxHr && hrStream) {
+    // Moving time only: an auto-pause doesn't pour minutes into one zone.
+    zoneSeconds = bucketZones(hrStream.hr, hrStream.time, effectiveMaxHr, hrStream.moving)
   }
 
   let runSessionId: string
@@ -844,6 +885,8 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
         source: 'strava',
         stravaActivityId: activityId,
         attachmentStatus,
+        activityStartAt: runData.startAt,
+        activityEndAt: runData.endAt,
       }).where(eq(runSessions.id, runSessionId))
     } catch (error) {
       const [duplicate] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
@@ -870,6 +913,8 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
         source: 'strava',
         stravaActivityId: activityId,
         attachmentStatus,
+        activityStartAt: runData.startAt,
+        activityEndAt: runData.endAt,
       })
     } catch (error) {
       const [duplicate] = await db.select().from(runSessions).where(eq(runSessions.stravaActivityId, activityId))
@@ -898,19 +943,22 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
     }
   }
 
-  // Spike clamp: strap contact loss / static can produce false reads in the
-  // 220-250 range. Reject obvious noise. 215 is above any realistic trained-
-  // human max and well below typical strap glitch values.
+  // Max HR moves only on a sustained value (10 s+ across the stream), never
+  // past 220 - age + 15 or the strap-noise clamp. One spike can't shift the
+  // zones; no stream, no bump. A manual profile entry is the way past the cap.
   let maxHrBumped: { from: number | null; to: number } | null = null
-  if (act.max_heartrate && profile) {
-    const observed = Math.round(act.max_heartrate)
-    const current = effectiveMaxHr ?? profile.maxHr ?? 0
-    const isNoise = observed > 215
-    if (!isNoise && observed > current) {
+  if (hrStream && profile) {
+    const current = effectiveMaxHr ?? profile.maxHr ?? null
+    const next = maxHrAfterRun({
+      currentMaxHr: current,
+      sustainedHr: sustainedMaxHr(hrStream.hr, hrStream.time, { moving: hrStream.moving }),
+      ageYears: ageFromDob(profile.dob ?? null, Math.floor(nowSec / 86400)),
+    })
+    if (next != null) {
       await db.update(userProfile)
-        .set({ maxHr: observed, updatedAt: Date.now() })
+        .set({ maxHr: next, updatedAt: nowSec })
         .where(eq(userProfile.id, 'default'))
-      maxHrBumped = { from: profile.maxHr ?? null, to: observed }
+      maxHrBumped = { from: profile.maxHr ?? null, to: next }
     }
   }
 
@@ -918,7 +966,7 @@ export async function ingestStravaActivity(activityId: number, env: Bindings): P
 }
 
 async function fetchStreams(activityId: number, token: string): Promise<StravaStreams | null> {
-  const url = `${ACTIVITY_URL}/${activityId}/streams?keys=heartrate,time&key_by_type=true`
+  const url = `${ACTIVITY_URL}/${activityId}/streams?keys=heartrate,time,moving&key_by_type=true`
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) return null
   return await res.json() as StravaStreams
@@ -934,10 +982,14 @@ export function mapStravaActivityToRunData(act: StravaActivity): StravaRunData {
     ? Math.round(act.moving_time / distanceKm)
     : null
 
+  const startAt = Math.floor(new Date(act.start_date).getTime() / 1000)
+  const endAt = startAt + (act.elapsed_time ?? act.moving_time ?? 0)
   return {
     localISO,
     epochDay: isoToEpochDay(localISO),
-    completedAt: Math.floor(new Date(act.start_date).getTime() / 1000),
+    startAt,
+    endAt,
+    completedAt: endAt,
     distanceKm,
     durationSec: act.moving_time,
     paceSecKm,
@@ -968,19 +1020,4 @@ export function tanakaMaxHrFromDob(dob: string): number | null {
   return Math.round(208 - 0.7 * age)
 }
 
-// Bucket HR samples into Z1-Z5 by % of max HR. Z1 <60, Z2 60-70, Z3 70-80,
-// Z4 80-90, Z5 >=90. Each sample's dwell is the gap to the next time point.
-export function bucketZones(hr: number[], time: number[], maxHr: number): { z1: number; z2: number; z3: number; z4: number; z5: number } {
-  const zones = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 }
-  const n = Math.min(hr.length, time.length)
-  for (let i = 0; i < n; i++) {
-    const dt = i < n - 1 ? Math.max(0, time[i + 1] - time[i]) : 1
-    const pct = hr[i] / maxHr
-    if (pct < 0.6) zones.z1 += dt
-    else if (pct < 0.7) zones.z2 += dt
-    else if (pct < 0.8) zones.z3 += dt
-    else if (pct < 0.9) zones.z4 += dt
-    else zones.z5 += dt
-  }
-  return zones
-}
+// Zone bucketing lives in lib/hrZones (inclusive zone-2 ceiling, moving time only).

@@ -5,7 +5,9 @@
 // - Back red-flag words in skip notes or back notes stop all loading and
 //   point to a clinician (F17: saddle numbness, bladder or bowel change,
 //   progressive leg weakness, fever, unexplained weight loss, cancer history,
-//   major trauma, night pain unrelieved by position).
+//   major trauma, night pain unrelieved by position; plus the plan's stop
+//   line: sharp back pain, or pain or tingling down a leg). Back care stays
+//   on the plan but drops its loaded moves (lib/backCare).
 // Pure. Not medical advice: the rule only stops the app loading.
 
 import { DAY_NAMES, RUN_TYPES, dowOf } from './sessions'
@@ -22,6 +24,11 @@ const RED_FLAGS: RegExp[] = [
   /cancer|tumou?r/i,
   /car (?:crash|accident)|major trauma|fell from/i,
   /night pain|pain at night|wakes? me (?:up )?at night/i,
+  // The plan's own stop line: the back turns sharp, or pain or tingling runs
+  // down a leg (radicular signs change the picture; see a clinician).
+  /sharp (?:\w+ ){0,2}pain|pain (?:is |was |went |turned |got )?sharp|back (?:went|turned|is|feels|got) sharp/i,
+  /(?:pain|tingl\w*|numb\w*|pins and needles|burning|shooting|electric)\s+(?:\w+\s+){0,3}(?:down|into|through)\s+(?:my |the |one |both |a )?(?:left |right |back of (?:my |the )?)?(?:legs?|foot|feet|calf|calves|thigh|knee|toes?|buttocks?)/i,
+  /sciatica|shooting pain/i,
 ]
 
 export const RED_FLAG_NOTE = 'Back red flag in your notes. Loading stops. See a clinician before training again.'

@@ -304,6 +304,8 @@ export interface WorkingLoad {
   source: 'rir'
   change: LoadChange
   reason: string
+  /** The top set the step was taken from. Plate snapping uses it so an increase moves one loadable step. */
+  fromKg?: number
 }
 
 /**
@@ -327,7 +329,7 @@ export function blockZeroWorkingLoad(input: {
     liftRegion(input.exerciseId),
   )
   if (input.eased && next.weightKg > top.weightKg) {
-    return { weightKg: top.weightKg, source: 'rir', change: 'hold', reason: 'Easy day. Load holds.' }
+    return { weightKg: top.weightKg, source: 'rir', change: 'hold', reason: 'Easy day. Load holds.', fromKg: top.weightKg }
   }
-  return { weightKg: next.weightKg, source: 'rir', change: next.change, reason: next.reason }
+  return { weightKg: next.weightKg, source: 'rir', change: next.change, reason: next.reason, fromKg: top.weightKg }
 }

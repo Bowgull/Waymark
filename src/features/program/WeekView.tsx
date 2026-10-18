@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { Button } from '@/components/ui/button'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
@@ -480,6 +480,7 @@ export function WeekView({ sessions, weekStatus, weekPlanId, analysisJson, weekN
     try {
       const created = await apiFetch<SessionSummary>('/api/sessions/insert-ad-hoc', {
         method: 'POST',
+        headers: idempotencyHeaders(),
         body: JSON.stringify({
           date,
           type: option.type,

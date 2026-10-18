@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { apiFetch } from '@/lib/api'
+import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
@@ -436,6 +436,7 @@ export function TodayPage() {
     try {
       const created = await apiFetch<Session>('/api/sessions/insert-ad-hoc', {
         method: 'POST',
+        headers: idempotencyHeaders(),
         body: JSON.stringify({
           date: getTodayISO(),
           type: option.type,
@@ -497,6 +498,7 @@ export function TodayPage() {
     try {
       const log = await apiFetch<DailyLog>('/api/daily-logs', {
         method: 'POST',
+        headers: idempotencyHeaders(),
         body: JSON.stringify({ date: today, ...data }),
       })
       setDailyLog(log)

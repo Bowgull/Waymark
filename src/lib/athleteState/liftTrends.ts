@@ -13,6 +13,7 @@
 import { and, eq } from 'drizzle-orm'
 import { exercises, sessions, strengthSessionExercises, strengthSets } from '../../db/schema'
 import type { createDB } from '../../db/client'
+import { isLoggedWorkSet } from '../loggedSets'
 
 type DB = ReturnType<typeof createDB>
 
@@ -117,7 +118,8 @@ export async function loadLiftTrendData(
   const byExercise = new Map<string, Map<string, { epochDay: number; statuses: Array<string | null> }>>()
 
   for (const set of allSets) {
-    if (set.isWarmup === 1) continue
+    // Logged working sets only: an untouched pre-filled set reads 'normal' and would mask a short session.
+    if (!isLoggedWorkSet(set)) continue
     const sse = exerciseBySseId.get(set.sessionExerciseId)
     if (!sse) continue
     const session = sessionById.get(sse.sessionId)
