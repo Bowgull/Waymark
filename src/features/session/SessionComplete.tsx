@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { ScrollDrum } from '@/components/ui/ScrollDrum'
-import { getMarkAsset } from '@/lib/markAssets'
+import { FlapLabel } from '@/design'
+import { SessionButton } from '@/components/timers'
 import { completeHaptic } from '@/lib/haptics'
-import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { endLiveActivity } from '@/lib/liveActivity'
+import { effortWord } from '@/lib/timers/timerLook'
 
-const EFFORT_EXPLAINER_KEY = 'waymark.effort_explainer_seen'
+import './session.css'
 
 interface SessionCompleteProps {
   sessionType: string
@@ -15,17 +14,14 @@ interface SessionCompleteProps {
   submitting: boolean
 }
 
-const EFFORT_LABELS: Record<number, string> = {
-  1: 'Very Light', 2: 'Light', 3: 'Light-Moderate', 4: 'Moderate',
-  5: 'Moderate', 6: 'Moderate-Hard', 7: 'Hard', 8: 'Very Hard',
-  9: 'Near Max', 10: 'Max Effort',
-}
-
-export function SessionComplete({ sessionType, onFinish, submitting }: SessionCompleteProps) {
+/**
+ * Closing, effort (page 19 #6 "Effort · ten flap tiles"): SESSION CLOSED and
+ * "How was it?" on the dark, then a centred card: Effort with its word on a
+ * gold flap (HARD), ten 64 px flap tiles (the pick gold), Very light … Max
+ * effort, CLOSE SESSION. One tap, with wraps on. The moment follows the save.
+ */
+export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) {
   const [rpe, setRpe] = useState(7)
-  const [notes, setNotes] = useState('')
-  const [showExplainer, setShowExplainer] = useState(() => !storageGet(EFFORT_EXPLAINER_KEY))
-  const mark = getMarkAsset(sessionType)
 
   useEffect(() => {
     const now = Date.now()
@@ -42,79 +38,42 @@ export function SessionComplete({ sessionType, onFinish, submitting }: SessionCo
     )
   }, [])
 
-  function dismissExplainer() {
-    setShowExplainer(false)
-    storageSet(EFFORT_EXPLAINER_KEY, '1')
-  }
-
   function handleFinish() {
     completeHaptic()
-    onFinish(rpe, notes)
+    onFinish(rpe, '')
   }
 
   return (
-    <div className="space-y-6 py-4">
-      <div className="flex flex-col items-center text-center animate-fade-in-up">
-        <img
-          src={mark.png}
-          alt={mark.label}
-          width={64}
-          height={64}
-          className="mb-4 h-16 w-16 object-contain animate-glow-pulse"
-          draggable={false}
-        />
-        <p className="text-display-lg text-gold">Session Closed</p>
-        <p className="mt-1 text-sm text-muted-foreground">How was it?</p>
-      </div>
-
-      <div className="animate-fade-in-up animation-delay-100">
-        <label className="mb-2 block text-sm font-medium text-foreground">
-          Effort: {rpe} · {EFFORT_LABELS[rpe]}
-        </label>
-        {showExplainer && (
-          <div className="mb-2 rounded-md border border-gold/20 bg-gold/5 px-3 py-2 text-xs text-muted-foreground leading-relaxed animate-fade-in">
-            <p className="text-foreground">How hard you worked. 1 is a warm-up. 10 is all you had.</p>
-            <p className="mt-1 text-muted-foreground/70">Honest numbers make the next week fit. Guess high and the load stays stuck.</p>
-            <button
-              onClick={dismissExplainer}
-              className="mt-2 text-[13px] text-gold/70 active:text-gold"
-            >
-              Got it
-            </button>
-          </div>
-        )}
-        <div className="rounded-md bg-deep-forest border border-gold/10 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
-          <ScrollDrum min={1} max={10} step={1} value={rpe} onChange={setRpe} />
+    <div className="tm-screen ss-close">
+      <div className="tm-ground" aria-hidden />
+      <div className="tm-ui">
+        <div className="ss-close-top">
+          <FlapLabel text="SESSION CLOSED" size="md" tone="gold" />
+          <p className="wm-prose" style={{ marginTop: 10 }}>How was it?</p>
         </div>
       </div>
-
-      <div className="animate-fade-in-up animation-delay-300">
-        <label className="mb-2 block text-sm font-medium text-foreground">
-          Notes
-        </label>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !submitting) {
-              e.preventDefault()
-              handleFinish()
-            }
-          }}
-          rows={3}
-          placeholder="Hip, shoulder, sleep, mood, anything off. Or just how it felt."
-          className="w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2 text-base text-foreground italic placeholder-muted-foreground/50 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] focus:border-teal/40 focus:shadow-[inset_0_1px_3px_rgba(0,0,0,0.3),0_0_0_1px_rgba(74,202,170,0.15)] focus:outline-none"
-        />
+      <div className="ss-veil" aria-hidden />
+      <div className="wm-board is-solid ss-ccard" role="dialog" aria-modal="true" aria-label="Effort">
+        <div className="wm-board-head">
+          <span>Effort</span>
+          <FlapLabel text={effortWord(rpe)} size="xs" tone="gold" len={11} />
+        </div>
+        <div className="ss-etiles" role="radiogroup" aria-label="Effort, 1 to 10">
+          {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
+            <button key={n} type="button" role="radio" aria-checked={rpe === n} aria-label={`${n}, ${effortWord(n).toLowerCase()}`} className="ss-etile" onClick={() => setRpe(n)}>
+              <FlapLabel text={String(n)} size="md" len={2} tone={rpe === n ? 'gold' : 'ink'} />
+            </button>
+          ))}
+        </div>
+        <div className="ss-row" style={{ marginTop: 10 }}>
+          <span className="wm-label">Very light</span>
+          <span className="ss-grow" />
+          <span className="wm-label">Max effort</span>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <SessionButton label={submitting ? 'SAVING' : 'CLOSE SESSION'} primary disabled={submitting} onClick={handleFinish} />
+        </div>
       </div>
-
-      <Button
-        onClick={handleFinish}
-        disabled={submitting}
-        size="lg"
-        className="w-full animate-fade-in-up animation-delay-400"
-      >
-        {submitting ? 'Saving...' : 'Close Session'}
-      </Button>
     </div>
   )
 }

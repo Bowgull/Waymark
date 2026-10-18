@@ -4,19 +4,20 @@ import { App as CapacitorApp } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
 import { Capacitor } from '@capacitor/core'
 
+import { Board, FlapButton, FlapLabel, FlapSwitch } from '@/design'
 import { apiFetch } from '@/lib/api'
 import { scheduleAlarms } from '@/lib/notifications'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
 import { NARUTO_ARC_NAMES, NARUTO_EPISODES, narutoArcForEp } from '@/lib/naruto'
 import { isHapticsEnabled, setHapticsEnabled, tapHaptic } from '@/lib/haptics'
-import { WorldTimeBoard } from './WorldTimeBoard'
-import { ScrollDrum, ScrollDrumList } from '@/components/ui/ScrollDrum'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { useToast } from '@/components/ui/Toast'
-import { PageHeader } from '@/components/PageHeader'
-import { SettingsSkeleton } from '@/components/ui/Skeleton'
-import { isBiometryAvailable, isGateEnabled, setGateEnabled } from '@/lib/waybookGate'
+import { isGateEnabled, setGateEnabled } from '@/lib/waybookGate'
+import { WorldTimeBoard } from './WorldTimeBoard'
 import { BodyProfileBoard } from './BodyProfileBoard'
+import { ArcCard, NumberCard, TimeCard } from './SettingsCards'
+import { ChevValue, SBlock, SRow, SettingsScreen, TimeValue } from './settingsParts'
+import { daysUntilRedeploy, leadFlap, splitTime, timeFlap } from './settingsModel'
 
 interface Settings {
   mtClassDays: string | null
@@ -34,13 +35,6 @@ interface Settings {
   cascade?: { removed: number; freedDays?: string[] } | null
 }
 
-/** A typed Naruto episode the API accepts: whole number 1..220. */
-function narutoEpValid(v: string): boolean {
-  if (!/^\d+$/.test(v.trim())) return false
-  const n = Number(v)
-  return n >= 1 && n <= NARUTO_EPISODES
-}
-
 interface StravaStatus {
   connected: boolean
   athleteId?: number
@@ -54,64 +48,37 @@ interface StravaStatus {
   syncStatus?: 'ready' | 'refresh_failed'
 }
 
-const TECHNIQUE_OPTIONS = [
-  { key: 'boxing', label: 'Boxing' },
-  { key: 'kicks', label: 'Kicks' },
-  { key: 'defensive', label: 'Defensive' },
-  { key: 'knees', label: 'Knees' },
-  { key: 'elbows', label: 'Elbows' },
+const TECHNIQUES = [
+  { key: 'boxing', label: 'BOXING' },
+  { key: 'kicks', label: 'KICKS' },
+  { key: 'defensive', label: 'DEFENSIVE' },
+  { key: 'knees', label: 'KNEES' },
+  { key: 'elbows', label: 'ELBOWS' },
 ]
 
-const DAY_LABELS = [
-  { key: '1', label: 'Mon' },
-  { key: '2', label: 'Tue' },
-  { key: '3', label: 'Wed' },
-  { key: '4', label: 'Thu' },
-  { key: '5', label: 'Fri' },
-  { key: '6', label: 'Sat' },
-  { key: '0', label: 'Sun' },
+// The stored day keys (0 = Sunday), Monday first as page 37 draws them.
+const DAYS = [
+  { key: '1', label: 'MO' }, { key: '2', label: 'TU' }, { key: '3', label: 'WE' }, { key: '4', label: 'TH' },
+  { key: '5', label: 'FR' }, { key: '6', label: 'SA' }, { key: '0', label: 'SU' },
 ]
+const DAY_NAMES: Record<string, string> = { '0': 'Sunday', '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday' }
 
-function formatTime12(hhmm: string): string {
-  const [hh, mm] = hhmm.split(':').map(Number)
-  const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
-  return `${is12}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}`
-}
+type Card = 'am' | 'pm' | 'lead' | 'opArc' | 'opEp' | 'nArc' | 'nEp' | null
 
-interface NotificationToggleProps {
-  label: string
-  enabled: boolean
-  onToggle: () => void
-}
-
-function NotificationToggle({ label, enabled, onToggle }: NotificationToggleProps) {
-  return (
-    <div className="flex items-center justify-between">
-      <p className="text-sm font-medium text-foreground">{label}</p>
-      <button
-        type="button"
-        onClick={onToggle}
-        className={`rounded-md px-3 py-1.5 text-xs font-medium uppercase tracking-[0.14em] transition-colors ${
-          enabled
-            ? 'bg-gold/15 text-gold ring-1 ring-gold/40'
-            : 'bg-border text-muted-foreground'
-        }`}
-      >
-        {enabled ? 'On' : 'Off'}
-      </button>
-    </div>
-  )
-}
-
+/**
+ * Settings, page 37 A (approved): five grouped boards on the solid dark, no
+ * world behind them: Training, Alarms, Body, World, Connections, with the
+ * "5D until redeploy" badge on top. Every switch is an ON / OFF flap; times
+ * open the centred time card. Hold the crest for Logs.
+ */
 export function SettingsPage() {
   const navigate = useNavigate()
-  const [, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
-  const { show: showToast, ToastContainer } = useToast()
+  const { show: showToast } = useToast()
   const [showReplacementPicker, setShowReplacementPicker] = useState(false)
   const hydratedRef = useRef(false)
+  const [card, setCard] = useState<Card>(null)
 
-  // Form state
   const [mtDays, setMtDays] = useState<Set<string>>(new Set())
   const [amReminder, setAmReminder] = useState('06:30')
   const [amEnabled, setAmEnabled] = useState(true)
@@ -123,46 +90,21 @@ export function SettingsPage() {
   const [narutoArc, setNarutoArc] = useState('')
   const [narutoEp, setNarutoEp] = useState('')
   const [enabledTechniques, setEnabledTechniques] = useState<Set<string>>(new Set(['boxing', 'kicks', 'defensive']))
-  const [activeDrum, setActiveDrum] = useState<'am' | 'pmTime' | 'pmLead' | 'arc' | 'narutoArc' | null>(null)
 
-  // Close drum on any pointerdown that lands outside the drum body
-  useEffect(() => {
-    if (!activeDrum) return
-    function handleOutside(e: PointerEvent) {
-      const target = e.target as HTMLElement
-      if (target.closest('[data-drum-body="true"]')) return
-      setActiveDrum(null)
-    }
-    document.addEventListener('pointerdown', handleOutside)
-    return () => document.removeEventListener('pointerdown', handleOutside)
-  }, [activeDrum])
-
-  // Strava
   const [strava, setStrava] = useState<StravaStatus | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
   const [connecting, setConnecting] = useState(false)
 
   const [waybookAuth, setWaybookAuth] = useState<boolean>(() => isGateEnabled())
-  const [biometryAvailable, setBiometryAvailable] = useState<boolean>(true)
-
-  useEffect(() => {
-    let cancelled = false
-    isBiometryAvailable().then((avail) => {
-      if (!cancelled) setBiometryAvailable(avail)
-    })
-    return () => { cancelled = true }
-  }, [])
-
   const [hapticsOn, setHapticsOn] = useState<boolean>(() => isHapticsEnabled())
-  function handleHapticsToggle() {
-    const next = !hapticsOn
+
+  function handleHaptics(next: boolean) {
     setHapticsEnabled(next)
     setHapticsOn(next)
     if (next) void tapHaptic()
   }
 
-  function handleWaybookAuthToggle() {
-    const next = !waybookAuth
+  function handleWaybookAuth(next: boolean) {
     setWaybookAuth(next)
     setGateEnabled(next)
   }
@@ -172,7 +114,6 @@ export function SettingsPage() {
       try {
         const s = await apiFetch<Settings | null>('/api/settings')
         if (s) {
-          setSettings(s)
           setMtDays(new Set((s.mtClassDays ?? '').split(',').filter(Boolean)))
           setAmReminder(s.amReminder ?? '06:30')
           setAmEnabled(s.amEnabled !== 0)
@@ -189,7 +130,7 @@ export function SettingsPage() {
         console.error('Failed to load settings:', e)
       } finally {
         setLoading(false)
-        // Defer hydration flag so the form-state effect's first run (post-load) is skipped
+        // Defer hydration so the save effect's first run (post-load) is skipped
         requestAnimationFrame(() => { hydratedRef.current = true })
       }
     }
@@ -297,8 +238,7 @@ export function SettingsPage() {
             onePaceArc: onePaceArc || null,
             onePaceEp: onePaceEp || null,
             narutoArc: narutoArc || null,
-            // Half-typed or out-of-range text is not saved (and not cleared).
-            narutoEp: narutoEp === '' ? null : narutoEpValid(narutoEp) ? Number(narutoEp) : undefined,
+            narutoEp: narutoEp === '' ? null : Number(narutoEp),
             enabledTechniques: Array.from(enabledTechniques).join(','),
             amEnabled,
             pmEnabled,
@@ -306,7 +246,6 @@ export function SettingsPage() {
           signal: controller.signal,
         })
         if (controller.signal.aborted) return
-        setSettings(updated)
 
         scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, { amEnabled, pmEnabled }).catch(() => {})
 
@@ -328,13 +267,6 @@ export function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mtDays, amReminder, amEnabled, pmLeadMin, pmSessionTime, pmEnabled, onePaceArc, onePaceEp, narutoArc, narutoEp, enabledTechniques])
 
-  function stepNarutoEp(delta: number) {
-    const cur = Number(narutoEp) || 0
-    const n = Math.min(NARUTO_EPISODES, Math.max(1, cur + delta))
-    setNarutoEp(String(n))
-    setNarutoArc(narutoArcForEp(n) ?? '')
-  }
-
   function toggleDay(day: string) {
     const next = new Set(mtDays)
     if (next.has(day)) next.delete(day)
@@ -342,448 +274,148 @@ export function SettingsPage() {
     setMtDays(next)
   }
 
-  function toggleTechnique(tech: string) {
+  function setTechnique(tech: string, on: boolean) {
     const next = new Set(enabledTechniques)
-    if (next.has(tech)) next.delete(tech)
-    else next.add(tech)
+    if (on) next.add(tech)
+    else next.delete(tech)
     setEnabledTechniques(next)
   }
 
+  const back = () => navigate('/today')
+  const hold = () => navigate('/settings/logs')
+
   if (loading) {
-    return <SettingsSkeleton />
+    return <SettingsScreen title="SETTINGS" onBack={back} onHold={hold}><div aria-busy="true" aria-label="Loading settings" /></SettingsScreen>
   }
 
-  const buildTime = Number(import.meta.env.VITE_BUILD_TIME)
-  const daysLeft = Number.isFinite(buildTime) && buildTime > 0
-    ? Math.max(0, 7 - Math.floor((Date.now() - buildTime) / 86400000))
-    : null
-  const daysColor =
-    daysLeft === null ? 'text-foreground'
-    : daysLeft <= 1 ? 'text-destructive'
-    : daysLeft === 2 ? 'text-gold'
-    : 'text-foreground'
+  const daysLeft = daysUntilRedeploy(Number(import.meta.env.VITE_BUILD_TIME), Date.now())
+  const am = splitTime(amReminder)
+  const pm = splitTime(pmSessionTime)
+  const stravaLine = !strava?.connected ? 'Not connected.'
+    : strava.clientConfigured === false ? 'Add Strava client credentials locally.'
+    : strava.requiredScopesGranted === false ? `Reconnect Strava with ${strava.missingScopes?.join(', ') ?? 'required scopes'}.`
+    : strava.syncStatus === 'refresh_failed' ? 'Reconnect Strava. Token refresh is failing.'
+    : 'Connected. Runs log themselves.'
+  const stravaOk = !!strava?.connected && stravaLine.startsWith('Connected')
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Settings" onLogoLongPress={() => navigate('/settings/logs')} />
-
+    <SettingsScreen title="SETTINGS" onBack={back} onHold={hold}>
       {daysLeft !== null && (
-        <section
-          aria-label="Days until redeploy"
-          className="flex w-fit items-baseline gap-1.5 rounded-md border border-gold/10 bg-near-black/40 px-3 py-1.5"
-        >
-          <span className={`font-[family-name:var(--font-display)] text-base leading-none ${daysColor}`}>
-            {daysLeft}d
-          </span>
-          <span className="text-label text-muted-foreground">until redeploy</span>
-        </section>
+        <div className="st-badge" aria-label={`${daysLeft} days until redeploy`}>
+          <FlapLabel text={`${daysLeft}D`} size="sm" tone="gold" animate={false} />
+          until redeploy
+        </div>
       )}
 
-      {/* MT Class Schedule */}
-      <section>
-        <p className="mb-2 text-sm font-medium text-foreground">MT Class Days</p>
-        <div className="flex gap-1.5">
-          {DAY_LABELS.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => toggleDay(key)}
-              className={`min-h-[44px] flex-1 rounded-md py-2 text-xs font-medium transition-colors ${
-                mtDays.has(key)
-                  ? 'bg-teal/20 text-teal ring-1 ring-teal/40'
-                  : 'bg-border text-muted-foreground active:bg-muted'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Reminders */}
-      <section className="space-y-4">
-        <p className="text-sm font-medium text-foreground">Reminders</p>
-        <p className="-mt-2 text-xs leading-relaxed text-muted-foreground">
-          Silent switch on? Alarms go silent. Flip to ring on training mornings, or keep Vibrate on Silent on in iOS Sounds &amp; Haptics.
-        </p>
-
-        {/* Morning Alarm */}
-        <div className="space-y-2">
-          <NotificationToggle
-            label="Morning Alarm"
-            enabled={amEnabled}
-            onToggle={() => setAmEnabled(e => !e)}
-          />
-          {amEnabled && (
-            activeDrum === 'am' ? (() => {
-              const [hh, mm] = amReminder.split(':').map(Number)
-              const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
-              const isPm = hh >= 12
+      <Board head="Training" solid className="st-board">
+        <SBlock label="MT class days" sub="Classes are booked outside the app. The plan works around these.">
+          <div className="st-days" role="group" aria-label="MT class days">
+            {DAYS.map(({ key, label }) => {
+              const on = mtDays.has(key)
               return (
-                <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
-                        const h24 = isPm ? (v === 12 ? 12 : v + 12) : (v === 12 ? 0 : v)
-                        setAmReminder(`${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
-                      }} />
-                    </div>
-                    <div className="flex-1">
-                      <ScrollDrum min={0} max={59} step={1} value={mm} pad={2} onChange={(v) => {
-                        setAmReminder(`${String(hh).padStart(2, '0')}:${String(v).padStart(2, '0')}`)
-                      }} />
-                    </div>
-                  </div>
-                  <div className="mt-2 flex gap-1">
-                    <button onClick={() => { if (isPm) { const h24 = hh - 12; setAmReminder(`${String(h24 < 0 ? h24 + 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${!isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>AM</button>
-                    <button onClick={() => { if (!isPm) { const h24 = hh + 12; setAmReminder(`${String(h24 >= 24 ? h24 - 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>PM</button>
-                  </div>
-                  <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
+                <button key={key} type="button" aria-pressed={on} aria-label={DAY_NAMES[key]} className={`st-day${on ? ' is-on' : ''}`} onClick={() => toggleDay(key)}>
+                  <FlapLabel text={label} size="xs" tone={on ? 'teal' : 'ink'} />
+                </button>
+              )
+            })}
+          </div>
+        </SBlock>
+        <SBlock label="Bag work techniques" sub="Combos using a technique that's off won't appear in sessions.">
+          <div className="st-techs">
+            {TECHNIQUES.map(({ key, label }) => {
+              const on = enabledTechniques.has(key)
+              return (
+                <div key={key} className="st-tech" onClick={() => setTechnique(key, !on)}>
+                  <FlapLabel text={label} size="xs" />
+                  <FlapSwitch on={on} onChange={v => setTechnique(key, v)} label={label.toLowerCase()} />
                 </div>
               )
-            })() : (
-              <button onClick={() => setActiveDrum('am')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
-                {formatTime12(amReminder)}
-              </button>
-            )
+            })}
+          </div>
+        </SBlock>
+      </Board>
+
+      <Board head="Alarms" solid className="st-board">
+        <SRow label="Morning alarm" sub="The morning report. I'M UP opens Today.">
+          <FlapSwitch on={amEnabled} onChange={setAmEnabled} label="Morning alarm" />
+        </SRow>
+        <SRow label="Time" onClick={() => setCard('am')} ariaLabel={`Morning alarm time, ${timeFlap(amReminder)} ${am.slot.toUpperCase()}. Change`}>
+          <TimeValue text={timeFlap(amReminder)} slot={am.slot} />
+        </SRow>
+        <SRow label="Evening session" sub="A reminder before your PM session.">
+          <FlapSwitch on={pmEnabled} onChange={setPmEnabled} label="Evening session" />
+        </SRow>
+        <SRow label="Session time" onClick={() => setCard('pm')} ariaLabel={`Session time, ${timeFlap(pmSessionTime)} ${pm.slot.toUpperCase()}. Change`}>
+          <TimeValue text={timeFlap(pmSessionTime)} slot={pm.slot} />
+        </SRow>
+        <SRow label="Remind me" onClick={() => setCard('lead')} ariaLabel={`Remind me ${pmLeadMin} minutes before. Change`}>
+          <span className="st-val"><FlapLabel text={leadFlap(pmLeadMin)} size="sm" /></span>
+        </SRow>
+        <p className="st-note">Silent switch on? Alarms go silent. Flip it to ring on training mornings, or turn on Vibrate on Silent in iOS Sounds &amp; Haptics.</p>
+      </Board>
+
+      <BodyProfileBoard />
+
+      <WorldTimeBoard>
+        <SRow label="Haptics" sub="Taps, timer ends and cues. Off keeps the phone still.">
+          <FlapSwitch on={hapticsOn} onChange={handleHaptics} label="Haptics" />
+        </SRow>
+        <SRow label="Face ID for the Waybook" sub="Asks for Face ID before the Waybook opens.">
+          <FlapSwitch on={waybookAuth} onChange={handleWaybookAuth} label="Face ID for the Waybook" />
+        </SRow>
+      </WorldTimeBoard>
+
+      <Board head="Connections" solid className="st-board">
+        <div className="st-row">
+          <div className="st-sl">
+            <b className="st-strava">Strava{stravaOk && <span className="st-dot" aria-hidden />}</b>
+            <small>{stravaLine}</small>
+          </div>
+          {strava?.connected ? (
+            <FlapButton label={disconnecting ? 'DISCONNECTING' : 'DISCONNECT'} size="xs" className="st-sbtn" disabled={disconnecting} onClick={() => void handleDisconnectStrava()} />
+          ) : (
+            <FlapButton label={connecting ? 'OPENING' : 'CONNECT'} size="xs" className="st-sbtn" disabled={connecting || strava == null} onClick={() => void handleConnectStrava()} />
           )}
         </div>
+        <SRow label="One Pace arc" sub="Indoor runs." onClick={() => setCard('opArc')} ariaLabel={`One Pace arc, ${onePaceArc || 'not set'}. Change`}>
+          <ChevValue text={onePaceArc.toUpperCase()} emptyCells={4} />
+        </SRow>
+        <SRow label="Episode" onClick={() => setCard('opEp')} ariaLabel={`One Pace episode, ${onePaceEp || 'not set'}. Change`}>
+          <ChevValue text={onePaceEp} />
+        </SRow>
+        <SRow label="Naruto arc" sub="Indoor runs. Opens Netflix on this episode." onClick={() => setCard('nArc')} ariaLabel={`Naruto arc, ${narutoArc || 'not set'}. Change`}>
+          <ChevValue text={narutoArc.toUpperCase()} emptyCells={4} />
+        </SRow>
+        <SRow label="Episode" onClick={() => setCard('nEp')} ariaLabel={`Naruto episode, ${narutoEp || 'not set'}. Change`}>
+          <ChevValue text={narutoEp} />
+        </SRow>
+      </Board>
 
-        {/* Evening Session */}
-        <div className="space-y-2">
-          <NotificationToggle
-            label="Evening Session"
-            enabled={pmEnabled}
-            onToggle={() => setPmEnabled(e => !e)}
-          />
-          {pmEnabled && (
-            <div className="space-y-2">
-              {activeDrum === 'pmTime' ? (() => {
-                const [hh, mm] = pmSessionTime.split(':').map(Number)
-                const is12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
-                const isPm = hh >= 12
-                return (
-                  <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
-                    <div className="flex gap-3">
-                      <div className="flex-1">
-                        <ScrollDrum min={1} max={12} step={1} value={is12} onChange={(v) => {
-                          const h24 = isPm ? (v === 12 ? 12 : v + 12) : (v === 12 ? 0 : v)
-                          setPmSessionTime(`${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
-                        }} />
-                      </div>
-                      <div className="flex-1">
-                        <ScrollDrum min={0} max={59} step={1} value={mm} pad={2} onChange={(v) => {
-                          setPmSessionTime(`${String(hh).padStart(2, '0')}:${String(v).padStart(2, '0')}`)
-                        }} />
-                      </div>
-                    </div>
-                    <div className="mt-2 flex gap-1">
-                      <button onClick={() => { if (isPm) { const h24 = hh - 12; setPmSessionTime(`${String(h24 < 0 ? h24 + 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${!isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>AM</button>
-                      <button onClick={() => { if (!isPm) { const h24 = hh + 12; setPmSessionTime(`${String(h24 >= 24 ? h24 - 24 : h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`) } }} className={`min-h-[44px] flex-1 rounded py-2 text-sm font-medium ${isPm ? 'bg-gold/20 text-gold' : 'bg-border text-muted-foreground'}`}>PM</button>
-                    </div>
-                    <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
-                  </div>
-                )
-              })() : (
-                <button onClick={() => setActiveDrum('pmTime')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
-                  {formatTime12(pmSessionTime)}
-                </button>
-              )}
-
-              {activeDrum === 'pmLead' ? (
-                <div data-drum-body="true" className="rounded-md bg-deep-forest border border-gold/30 animate-fade-in">
-                  <ScrollDrum min={15} max={120} step={15} value={pmLeadMin} onChange={setPmLeadMin} suffix="min" />
-                  <button onClick={() => setActiveDrum(null)} className="min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
-                </div>
-              ) : (
-                <button onClick={() => setActiveDrum('pmLead')} className="min-h-[44px] w-full rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground">
-                  {pmLeadMin} min leave-by reminder
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* One Piece */}
-      <section>
-        <p className="mb-2 text-sm font-medium text-foreground">One Piece Progress</p>
-        <div className="flex items-end gap-3">
-          <div className="min-w-0 flex-1">
-            <label className="mb-1 block text-xs text-muted-foreground">Current Arc</label>
-            {activeDrum === 'arc' ? (
-              <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
-                <ScrollDrumList
-                  items={ONE_PACE_ARCS}
-                  value={ONE_PACE_ARCS.includes(onePaceArc as typeof ONE_PACE_ARCS[number]) ? onePaceArc : ONE_PACE_ARCS[0]}
-                  onChange={setOnePaceArc}
-                  onTap={() => setActiveDrum(null)}
-                />
-                <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  if (!onePaceArc) setOnePaceArc(ONE_PACE_ARCS[0])
-                  setActiveDrum('arc')
-                }}
-                className="min-h-[44px] w-full truncate rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground"
-                style={{ fontFamily: 'var(--font-display)' }}
-              >
-                {onePaceArc || 'Select arc'}
-              </button>
-            )}
-          </div>
-          <div className="w-28 shrink-0">
-            <label className="mb-1 block text-xs text-muted-foreground">Episode</label>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  const n = Math.max(0, (Number(onePaceEp) || 0) - 1)
-                  setOnePaceEp(String(n))
-                }}
-                className="min-h-[44px] w-8 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
-              >
-                -
-              </button>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={onePaceEp}
-                onChange={(e) => setOnePaceEp(e.target.value)}
-                placeholder="0"
-                className="min-h-[44px] w-full min-w-0 flex-1 rounded-md border border-border bg-border px-1 py-2 text-center text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const n = (Number(onePaceEp) || 0) + 1
-                  setOnePaceEp(String(n))
-                }}
-                className="min-h-[44px] w-8 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
-              >
-                +
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Naruto */}
-      <section>
-        <p className="mb-2 text-sm font-medium text-foreground">Naruto Progress</p>
-        <div className="flex items-end gap-3">
-          <div className="min-w-0 flex-1">
-            <label className="mb-1 block text-xs text-muted-foreground">Current Arc</label>
-            {activeDrum === 'narutoArc' ? (
-              <div data-drum-body="true" className="animate-fade-in rounded-md border border-gold/30 bg-deep-forest p-3">
-                <ScrollDrumList
-                  items={NARUTO_ARC_NAMES}
-                  value={NARUTO_ARC_NAMES.includes(narutoArc) ? narutoArc : NARUTO_ARC_NAMES[0]}
-                  onChange={setNarutoArc}
-                  onTap={() => setActiveDrum(null)}
-                />
-                <button onClick={() => setActiveDrum(null)} className="mt-3 min-h-[44px] w-full rounded text-center text-sm font-medium text-gold active:text-gold/70">Done</button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  if (!narutoArc) setNarutoArc(narutoArcForEp(Number(narutoEp)) ?? NARUTO_ARC_NAMES[0])
-                  setActiveDrum('narutoArc')
-                }}
-                className="min-h-[44px] w-full truncate rounded-md border border-border bg-border px-3 py-2 text-center text-sm text-foreground"
-                style={{ fontFamily: 'var(--font-display)' }}
-              >
-                {narutoArc || 'Select arc'}
-              </button>
-            )}
-          </div>
-          <div className="w-28 shrink-0">
-            <label className="mb-1 block text-xs text-muted-foreground">Episode</label>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => stepNarutoEp(-1)}
-                className="min-h-[44px] w-8 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
-              >
-                -
-              </button>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={narutoEp}
-                onChange={(e) => {
-                  const v = e.target.value
-                  setNarutoEp(v)
-                  if (narutoEpValid(v)) setNarutoArc(narutoArcForEp(Number(v)) ?? '')
-                }}
-                placeholder="1"
-                className="min-h-[44px] w-full min-w-0 flex-1 rounded-md border border-border bg-border px-1 py-2 text-center text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => stepNarutoEp(1)}
-                className="min-h-[44px] w-8 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
-              >
-                +
-              </button>
-            </div>
-          </div>
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">Arc follows the episode (approximate). Netflix resumes the episode itself.</p>
-      </section>
-
-      {/* Bag Work Techniques */}
-      <section>
-        <p className="mb-2 text-sm font-medium text-foreground">Bag Work Techniques</p>
-        <p className="mb-2 text-xs text-muted-foreground">Combos using disabled techniques won't appear in sessions.</p>
-        <div className="flex flex-wrap gap-2">
-          {TECHNIQUE_OPTIONS.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => toggleTechnique(key)}
-              className={`min-h-[44px] rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-                enabledTechniques.has(key)
-                  ? 'bg-gold/15 text-gold ring-1 ring-gold/40'
-                  : 'bg-border text-muted-foreground active:bg-muted'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Body Metrics */}
-      <section>
-        <p className="mb-2 text-sm font-medium text-foreground">Body metrics</p>
-        <button
-          type="button"
-          onClick={() => navigate('/metrics')}
-          className="flex min-h-[44px] w-full items-center justify-between rounded-md border border-border bg-border/30 px-3 py-2.5 text-left active:bg-border/50"
-        >
-          <div className="min-w-0">
-            <p className="text-sm text-foreground">Weight, resting HR, bodyfat</p>
-            <p className="text-xs text-muted-foreground">Manual log. Used for trend context only.</p>
-          </div>
-          <svg className="h-4 w-4 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-        </button>
-      </section>
-
-      {/* What the coach needs: birth date / max HR, back status (onboarding isn't redesigned) */}
-      <section>
-        <BodyProfileBoard />
-      </section>
-
-      {/* World: the forest's light (design-decisions.md: follows the clock, with an override) */}
-      <section>
-        <WorldTimeBoard />
-      </section>
-
-      {/* Waybook privacy */}
-      <section>
-        <p className="mb-2 text-sm font-medium text-foreground">Waybook</p>
-        <button
-          type="button"
-          onClick={handleWaybookAuthToggle}
-          className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-md border border-border bg-border/30 px-3 py-2.5"
-        >
-          <div className="min-w-0 text-left">
-            <p className="text-sm text-foreground">Require Face ID to open Waybook</p>
-            <p className="text-xs text-muted-foreground">
-              {biometryAvailable
-                ? 'Face ID or passcode. Re-locks after 3 minutes in background.'
-                : 'Web preview: no biometry, but the gate still toggles for testing.'}
-            </p>
-          </div>
-          <span
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-              waybookAuth ? 'bg-gold' : 'bg-border'
-            }`}
-            aria-hidden
-          >
-            <span
-              className={`inline-block h-5 w-5 transform rounded-full bg-background transition-transform ${
-                waybookAuth ? 'translate-x-5' : 'translate-x-0.5'
-              }`}
-            />
-          </span>
-        </button>
-      </section>
-
-      {/* Haptics */}
-      <section>
-        <p className="mb-2 text-sm font-medium text-foreground">Haptics</p>
-        <button
-          type="button"
-          onClick={handleHapticsToggle}
-          className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-md border border-border bg-border/30 px-3 py-2.5"
-        >
-          <div className="min-w-0 text-left">
-            <p className="text-sm text-foreground">Vibration feedback</p>
-            <p className="text-xs text-muted-foreground">Taps, timer ends and cues. Off keeps the phone still.</p>
-          </div>
-          <span
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-              hapticsOn ? 'bg-gold' : 'bg-border'
-            }`}
-            aria-hidden
-          >
-            <span
-              className={`inline-block h-5 w-5 transform rounded-full bg-background transition-transform ${
-                hapticsOn ? 'translate-x-5' : 'translate-x-0.5'
-              }`}
-            />
-          </span>
-        </button>
-      </section>
-
-      {/* Strava */}
-      <section>
-        <p className="mb-2 text-sm font-medium text-foreground">Strava</p>
-        {strava?.connected ? (
-          <div className="rounded-md border border-border bg-border/30 px-3 py-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm text-foreground">
-                  {strava.athleteName ?? `Athlete ${strava.athleteId}`}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {strava.clientConfigured === false
-                    ? 'Add Strava client credentials locally.'
-                    : strava.requiredScopesGranted === false
-                      ? `Reconnect Strava with ${strava.missingScopes?.join(', ') ?? 'required scopes'}.`
-                      : strava.syncStatus === 'refresh_failed'
-                        ? 'Reconnect Strava. Token refresh is failing.'
-                        : 'Runs log themselves.'}
-                </p>
-              </div>
-              <button
-                onClick={handleDisconnectStrava}
-                disabled={disconnecting}
-                className="shrink-0 rounded-md border border-border bg-deep-forest px-3 py-1.5 text-xs text-muted-foreground active:text-foreground disabled:opacity-50"
-              >
-                {disconnecting ? 'Disconnecting...' : 'Disconnect'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={handleConnectStrava}
-            disabled={connecting}
-            className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-gold/15 px-3 py-2 text-sm font-medium text-gold ring-1 ring-gold/40 active:bg-gold/25 disabled:opacity-50"
-          >
-            {connecting ? 'Opening Strava…' : 'Connect Strava'}
-          </button>
-        )}
-      </section>
-
-      <ToastContainer />
+      {card === 'am' && <TimeCard title="Morning alarm" value={amReminder} onCancel={() => setCard(null)} onDone={v => { setAmReminder(v); setCard(null) }} />}
+      {card === 'pm' && <TimeCard title="Evening session" value={pmSessionTime} onCancel={() => setCard(null)} onDone={v => { setPmSessionTime(v); setCard(null) }} />}
+      {card === 'lead' && (
+        <NumberCard title="Remind me" sub="Minutes before your PM session." value={pmLeadMin} min={15} max={120} step={15} unit="MIN BEFORE" onCancel={() => setCard(null)} onDone={v => { setPmLeadMin(v); setCard(null) }} />
+      )}
+      {card === 'opArc' && (
+        <ArcCard title="One Pace arc" arcs={ONE_PACE_ARCS} value={(ONE_PACE_ARCS as readonly string[]).includes(onePaceArc) ? onePaceArc : ONE_PACE_ARCS[0]} onCancel={() => setCard(null)} onDone={a => { setOnePaceArc(a); setCard(null) }} />
+      )}
+      {card === 'opEp' && (
+        <NumberCard title="One Pace episode" value={Number(onePaceEp) || 0} min={0} max={999} onCancel={() => setCard(null)} onDone={v => { setOnePaceEp(String(v)); setCard(null) }} />
+      )}
+      {card === 'nArc' && (
+        <ArcCard title="Naruto arc" arcs={NARUTO_ARC_NAMES} value={NARUTO_ARC_NAMES.includes(narutoArc) ? narutoArc : (narutoArcForEp(Number(narutoEp)) ?? NARUTO_ARC_NAMES[0])} onCancel={() => setCard(null)} onDone={a => { setNarutoArc(a); setCard(null) }} />
+      )}
+      {card === 'nEp' && (
+        <NumberCard
+          title="Naruto episode"
+          sub="The arc follows the episode (approximate). Netflix resumes the episode itself."
+          value={Number(narutoEp) || 1}
+          min={1}
+          max={NARUTO_EPISODES}
+          onCancel={() => setCard(null)}
+          onDone={v => { setNarutoEp(String(v)); setNarutoArc(narutoArcForEp(v) ?? ''); setCard(null) }}
+        />
+      )}
 
       {showReplacementPicker && (
         <SessionPicker
@@ -795,6 +427,6 @@ export function SettingsPage() {
           filter={(opt: SessionOption) => opt.timeSlot === 'pm'}
         />
       )}
-    </div>
+    </SettingsScreen>
   )
 }

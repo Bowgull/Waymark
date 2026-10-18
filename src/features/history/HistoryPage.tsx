@@ -1,423 +1,113 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 
+import { Crest, FlapLabel } from '@/design'
 import { apiFetch } from '@/lib/api'
-import { paceToMinSec } from '@/lib/chartTheme'
-import { generateInsights } from '@/lib/insightEngine'
-import { PageHeader } from '@/components/PageHeader'
-import { HistorySkeleton } from '@/components/ui/Skeleton'
+import { getTodayISO } from '@/lib/dates'
+import { logger } from '@/lib/logger'
+import { pondReaction, type LedgerRange, type LedgerRing, type LiftSeries, type SleepDay, type WeeklyPoint } from '@/lib/ledger'
+import { setWorldPond } from '@/world/worldStore'
 
-import { AerobicFitnessChart } from './AerobicFitnessChart'
-import { ChartCard } from './ChartCard'
-import { CompletionRings } from './CompletionRings'
-import { ConsistencyChart } from './ConsistencyChart'
-import { InsightCallout } from './InsightCallout'
-import { LifestyleCorrelations } from './LifestyleCorrelations'
-import { MomentumGrid } from './MomentumGrid'
-import { PRList } from './PRList'
-import { RunningProgressChart } from './RunningProgressChart'
-import { SessionList } from './SessionList'
-import { VolumeChart } from './VolumeChart'
-import { WeightProgressionChart } from './WeightProgressionChart'
-import { WeeklyZonesChart } from './WeeklyZonesChart'
+import { AerobicBoard, BodyWeightBoard, ConsistencyBoard, RingBoard, SleepBoard, StrengthBoard } from './LedgerBoards'
+import { PondRings } from './PondRings'
+import './ledger.css'
 
-interface DashboardData {
-  currentStreak: number
-  prsThisMonth: number
-  completionRate: number
-  topLift: { name: string; weightLbs: number } | null
-  totalRuns: number
-  thisWeek: { durationMin: number; sessions: number; avgRpe: number | null; avgSleep: number | null; distanceKm: number }
-  lastWeek: { durationMin: number; sessions: number; avgRpe: number | null; avgSleep: number | null; distanceKm: number }
+// The Ledger (page 32, "The Ledger · together"): the pond fills the screen, the boards sit on glass
+// up top. WEEK / MONTH / SEASON, the week's flap-segment rings (the same rings rest on the pond),
+// Aerobic Base, Strength, Sleep + soreness, Body weight, Consistency. The app's older Ledger cards
+// (time training, running, weekly zones, marks earned, recent sessions) are dropped from this
+// screen; their endpoints stay for the coach.
+
+export interface LedgerData {
+  range: LedgerRange
+  weeks: number
+  rings: LedgerRing[]
+  aerobic: { points: WeeklyPoint[]; runs: number }
+  strength: { lifts: LiftSeries[]; sets: number }
+  sleep: { days: SleepDay[]; avg: number | null }
+  weight: { points: WeeklyPoint[]; weighIns: number }
+  streak: number
 }
 
-interface CorrelationDataPoint {
-  date: string
-  sleepHours: number | null
-  soreness: number | null
-  weedGrams: number | null
-  alcoholScale: number | null
-  avgRpe: number | null
-  sessionCount: number
-}
+const RANGES: { key: LedgerRange; label: string; title: string }[] = [
+  { key: 'week', label: 'WEEK', title: 'This week' },
+  { key: 'month', label: 'MONTH', title: 'This month' },
+  { key: 'season', label: 'SEASON', title: 'This season' },
+]
 
-interface RunDataPoint {
-  date: string
-  distanceKm: number
-  paceSecKm: number
-  type: string
+function LedgerHeader({ week }: { week: number | null }) {
+  return (
+    <header className="lg-hd">
+      <Link to="/today" className="lg-brand" aria-label="Today">
+        <span className="lg-crest"><Crest width={52} /></span>
+        <FlapLabel text="LEDGER" size="sm" />
+      </Link>
+      {week != null && <FlapLabel text={`WEEK ${week}`} size="xs" />}
+    </header>
+  )
 }
-
-interface RunSummary {
-  totalRuns: number
-  totalDistanceKm: number
-  avgPaceSecKm: number | null
-  bestPaceSecKm: number | null
-}
-
-interface RecentRunEvidence {
-  date: string
-  runType: string | null
-  source: string | null
-  distanceKm: number | null
-  paceSecKm: number | null
-  avgHr: number | null
-  maxHr: number | null
-  elevationGainM: number | null
-  zoneSeconds: string | null
-  reviewFlag: string | null
-}
-
-interface WeeklyZonePoint {
-  weekStart: string
-  z1: number
-  z2: number
-  z3: number
-  z4: number
-  z5: number
-  totalSec: number
-}
-
-interface AerobicFitnessPoint {
-  sessionId: string
-  date: string
-  distanceKm: number
-  paceSecKm: number
-  avgHr: number
-  runType: string | null
-}
-
-interface AerobicFitnessSummary {
-  sampleCount: number
-  avgPaceSecKm: number | null
-  bestPaceSecKm: number | null
-  avgHr: number | null
-}
-
-interface WeeklyZonesSummary {
-  sampleCount: number
-}
-
-interface Session {
-  id: string
-  type: string
-  status: string
-  completedAt: number | null
-  durationSec: number | null
-  rpe: number | null
-  scheduledDate: number | null
-  review: string | null
-  reviewFlag: string | null
-}
-
-interface ConsistencyData {
-  weeks: { weekStart: string; sessionsPlanned: number; sessionsCompleted: number; totalMinutes: number }[]
-  currentStreak: number
-  longestStreak: number
-}
-
-interface VolumePoint {
-  date: string
-  totalDurationMin: number
-  sessionCount: number
-}
-
-interface PR {
-  exerciseId: string
-  exerciseName: string
-  maxWeightKg: number
-  date: string
-  previousMaxKg: number | null
-}
-
-interface Exercise {
-  id: string
-  name: string
-}
-
-interface CategoryCompletion {
-  [key: string]: { completed: number; target: number }
-}
-
-type Period = 7 | 30 | 90
 
 export function HistoryPage() {
-  const [period, setPeriod] = useState<Period>(7)
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null)
-  const [correlations, setCorrelations] = useState<CorrelationDataPoint[]>([])
-  const [runData, setRunData] = useState<RunDataPoint[]>([])
-  const [runSummary, setRunSummary] = useState<RunSummary | null>(null)
-  const [recentRunEvidence, setRecentRunEvidence] = useState<RecentRunEvidence[]>([])
-  const [weeklyZones, setWeeklyZones] = useState<WeeklyZonePoint[]>([])
-  const [weeklyZonesSummary, setWeeklyZonesSummary] = useState<WeeklyZonesSummary | null>(null)
-  const [aerobicData, setAerobicData] = useState<AerobicFitnessPoint[]>([])
-  const [aerobicSummary, setAerobicSummary] = useState<AerobicFitnessSummary | null>(null)
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [consistency, setConsistency] = useState<ConsistencyData | null>(null)
-  const [volumeData, setVolumeData] = useState<VolumePoint[]>([])
-  const [prs, setPrs] = useState<PR[]>([])
-  const [exercises, setExercises] = useState<Exercise[]>([])
-  const [categoryCompletion, setCategoryCompletion] = useState<CategoryCompletion | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [aiInsights, setAiInsights] = useState<string[] | null>(null)
+  const [range, setRange] = useState<LedgerRange>('week')
+  const [data, setData] = useState<LedgerData | null>(null)
+  const [week, setWeek] = useState<number | null>(null)
 
   useEffect(() => {
-    async function load() {
-      setLoading(true)
-      try {
-        const weeks = period === 7 ? 4 : period === 30 ? 8 : 12
-        const [
-          dashboardData,
-          correlationData,
-          runProgressData,
-          weeklyZonesData,
-          aerobicFitnessData,
-          sessionsData,
-          consistencyData,
-          volumeRes,
-          prsData,
-          exercisesData,
-          categoryData,
-        ] = await Promise.all([
-          apiFetch<DashboardData>(`/api/history/dashboard?days=${period}`),
-          apiFetch<{ dataPoints: CorrelationDataPoint[] }>(`/api/history/correlations?days=${period}`),
-          apiFetch<{ dataPoints: RunDataPoint[]; summary: RunSummary; recentRunEvidence?: RecentRunEvidence[] }>(`/api/history/running-progress?days=${period}`),
-          apiFetch<{ weeks: WeeklyZonePoint[]; summary: WeeklyZonesSummary }>(`/api/history/weekly-zones?weeks=${weeks}`),
-          apiFetch<{ dataPoints: AerobicFitnessPoint[]; summary: AerobicFitnessSummary }>(`/api/history/aerobic-fitness?days=${period}`),
-          apiFetch<Session[]>('/api/history/sessions?limit=30'),
-          apiFetch<ConsistencyData>(`/api/history/consistency?weeks=${weeks}`),
-          apiFetch<{ dataPoints: VolumePoint[] }>(`/api/history/volume-trends?days=${period}`),
-          apiFetch<{ prs: PR[] }>('/api/history/prs'),
-          apiFetch<Exercise[]>('/api/exercises'),
-          apiFetch<CategoryCompletion>(`/api/history/category-completion?days=${period}`),
-        ])
-        setDashboard(dashboardData)
-        setCorrelations(correlationData.dataPoints)
-        setRunData(runProgressData.dataPoints)
-        setRunSummary(runProgressData.summary)
-        setRecentRunEvidence(runProgressData.recentRunEvidence ?? [])
-        setWeeklyZones(weeklyZonesData.weeks)
-        setWeeklyZonesSummary(weeklyZonesData.summary)
-        setAerobicData(aerobicFitnessData.dataPoints)
-        setAerobicSummary(aerobicFitnessData.summary)
-        setSessions(sessionsData)
-        setConsistency(consistencyData)
-        setVolumeData(volumeRes.dataPoints)
-        setPrs(prsData.prs)
-        const prExIds = new Set(prsData.prs.map(p => p.exerciseId))
-        setExercises(exercisesData.filter(e => prExIds.has(e.id)))
-        setCategoryCompletion(categoryData)
-      } catch (e) {
-        console.error('Failed to load history:', e)
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [period])
-
-  // Local rule-based insights, used as offline fallback.
-  const localInsights = useMemo(() => {
-    if (!dashboard) return []
-    return generateInsights({
-      dashboard,
-      consistency,
-      prs,
-      correlations,
-      runSummary,
-      categoryCompletion,
-    })
-  }, [dashboard, consistency, prs, correlations, runSummary, categoryCompletion])
-
-  useEffect(() => {
-    if (!dashboard) return
     let cancelled = false
-    const payload = { dashboard, consistency, prs, correlations, runSummary, recentRunEvidence, categoryCompletion }
-    apiFetch<{ insights: string[] | null }>('/api/ai/ledger-insights', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-      .then(res => {
-        if (cancelled) return
-        setAiInsights(res.insights && res.insights.length > 0 ? res.insights : null)
-      })
-      .catch(() => {
-        if (!cancelled) setAiInsights(null)
-      })
+    apiFetch<LedgerData>(`/api/history/ledger?range=${range}&today=${getTodayISO()}`)
+      .then(d => { if (!cancelled) setData(d) })
+      .catch(e => logger.error('api', 'Ledger failed to load', { error: String(e) }))
     return () => { cancelled = true }
-  }, [dashboard, consistency, prs, correlations, runSummary, recentRunEvidence, categoryCompletion])
+  }, [range])
 
-  const insights = aiInsights ?? localInsights
+  useEffect(() => {
+    apiFetch<{ currentWeek?: number | null } | null>(`/api/blocks/current?date=${getTodayISO()}`)
+      .then(b => setWeek(b?.currentWeek ?? null))
+      .catch(() => setWeek(null))
+  }, [])
 
-  // Sparkline data derivations
-  const consistencySparkline = consistency
-    ? consistency.weeks.map(w => w.sessionsCompleted)
-    : []
+  // the water reacts to the week (page 32): brighter and more fireflies when it has gone well
+  useEffect(() => {
+    if (data) setWorldPond(pondReaction(data.rings))
+  }, [data])
+  useEffect(() => () => setWorldPond(null), [])
 
-  const volumeSparkline = volumeData.map(v => v.totalDurationMin)
-
-  const runSparkline = runData.map(r => r.paceSecKm)
-
-  if (loading) {
-    return <HistorySkeleton />
-  }
-
-  // Headline stats for chart cards
-  const streakHeadline = consistency
-    ? `${consistency.currentStreak}d streak`
-    : undefined
-
-  const volumeHeadline = dashboard && dashboard.thisWeek.durationMin > 0
-    ? (() => {
-        const min = dashboard.thisWeek.durationMin
-        return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`
-      })()
-    : undefined
-
-  const runHeadline = runSummary?.avgPaceSecKm
-    ? `${paceToMinSec(runSummary.avgPaceSecKm)}/km avg`
-    : undefined
-
-  const zoneMinutes = weeklyZones.reduce((sum, week) => sum + Math.round(week.totalSec / 60), 0)
-  const zoneHeadline = zoneMinutes > 0 ? `${zoneMinutes}m logged` : undefined
-
-  const aerobicHeadline = aerobicSummary?.avgPaceSecKm
-    ? `${paceToMinSec(aerobicSummary.avgPaceSecKm)}/km near ${aerobicSummary.avgHr ?? '-'} bpm`
-    : undefined
-
-  const prHeadline = prs.length > 0
-    ? `${prs.length} mark${prs.length === 1 ? '' : 's'}`
-    : undefined
-
-  const sleepAvg = correlations.length > 0
-    ? correlations.filter(c => c.sleepHours != null).reduce((s, c) => s + c.sleepHours!, 0) /
-      (correlations.filter(c => c.sleepHours != null).length || 1)
-    : null
-  const lifestyleHeadline = sleepAvg
-    ? `${sleepAvg.toFixed(1)}h avg sleep`
-    : undefined
+  const title = RANGES.find(r => r.key === range)!.title
 
   return (
-    <div className="pb-4">
-      <PageHeader title="Ledger">
-        <div className="flex gap-1">
-          {([7, 30, 90] as Period[]).map((p) => {
-            const label = { 7: 'Week', 30: 'Month', 90: 'Season' }[p]
-            return (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`rounded-md px-3 py-1 text-xs font-display uppercase tracking-wider ${
-                  period === p
-                    ? 'bg-gold text-near-black'
-                    : 'bg-secondary text-muted-foreground'
-                }`}
-              >
-                {label}
+    <div className="lg-root">
+      {data && <PondRings rings={data.rings} />}
+      <LedgerHeader week={week} />
+      {/* page 32: the boards scroll under the header in screens (the top of the Ledger, then
+          "scrolled down"), each leaving the still water open below it */}
+      <div className="lg-body">
+        <div className="lg-page">
+          <div className="lg-segl" role="tablist" aria-label="Range">
+            {RANGES.map(r => (
+              <button key={r.key} type="button" role="tab" aria-selected={range === r.key} className="lg-segb" onClick={() => setRange(r.key)}>
+                <FlapLabel text={r.label} size="xs" tone={range === r.key ? 'gold' : 'ink'} />
               </button>
-            )
-          })}
+            ))}
+          </div>
+          {data && (
+            <>
+              <RingBoard rings={data.rings} title={title} />
+              <AerobicBoard points={data.aerobic.points} runs={data.aerobic.runs} />
+            </>
+          )}
         </div>
-      </PageHeader>
-
-      {/* ZONE A: Hero */}
-      <CompletionRings data={categoryCompletion} />
-      <InsightCallout insights={insights} />
-
-      {/* ZONE B: Momentum */}
-      {dashboard && (
-        <MomentumGrid
-          thisWeek={dashboard.thisWeek}
-          lastWeek={dashboard.lastWeek}
-          period={period}
-        />
-      )}
-
-      {/* ZONE C: Detail Cards */}
-      <div className="space-y-3 px-4">
-        {consistency && (
-          <ChartCard
-            title="Consistency"
-            headline={streakHeadline}
-            sparklineData={consistencySparkline}
-            sparklineColor="#E8C860"
-          >
-            <ConsistencyChart
-              weeks={consistency.weeks}
-              currentStreak={consistency.currentStreak}
-              longestStreak={consistency.longestStreak}
-              period={period}
-            />
-          </ChartCard>
+        {data && (
+          <>
+            <div className="lg-page">
+              <StrengthBoard lifts={data.strength.lifts} sets={data.strength.sets} />
+              <SleepBoard days={data.sleep.days} avg={data.sleep.avg} />
+            </div>
+            <div className="lg-page">
+              <BodyWeightBoard points={data.weight.points} weighIns={data.weight.weighIns} />
+              <ConsistencyBoard streak={data.streak} />
+            </div>
+          </>
         )}
-
-        {exercises.length > 0 && (
-          <ChartCard
-            title="Iron Log"
-            headline={dashboard?.topLift ? `${dashboard.topLift.name} ${dashboard.topLift.weightLbs} lb` : undefined}
-          >
-            <WeightProgressionChart exercises={exercises} days={period} />
-          </ChartCard>
-        )}
-
-        {volumeData.length > 0 && (
-          <ChartCard
-            title="Time Training"
-            headline={volumeHeadline}
-            sparklineData={volumeSparkline}
-            sparklineColor="#1E8A68"
-          >
-            <VolumeChart data={volumeData} />
-          </ChartCard>
-        )}
-
-        {runSummary && runSummary.totalRuns > 0 && (
-          <ChartCard
-            title="Running"
-            headline={runHeadline}
-            sparklineData={runSparkline}
-            sparklineColor="#C45A3C"
-          >
-            <RunningProgressChart data={runData} summary={runSummary} />
-          </ChartCard>
-        )}
-
-        {weeklyZonesSummary && weeklyZonesSummary.sampleCount >= 3 && weeklyZones.length > 0 && (
-          <ChartCard
-            title="Weekly Zones"
-            headline={zoneHeadline}
-          >
-            <WeeklyZonesChart weeks={weeklyZones} />
-          </ChartCard>
-        )}
-
-        {aerobicSummary && aerobicSummary.sampleCount >= 3 && (
-          <ChartCard
-            title="Aerobic Base"
-            headline={aerobicHeadline}
-            sparklineData={aerobicData.map(point => point.paceSecKm)}
-            sparklineColor="#4ACAAA"
-          >
-            <AerobicFitnessChart data={aerobicData} summary={aerobicSummary} />
-          </ChartCard>
-        )}
-
-        <ChartCard title="Readiness" headline={lifestyleHeadline} sparklineColor="#4ABA8A">
-          <LifestyleCorrelations data={correlations} />
-        </ChartCard>
-
-        {prs.length > 0 && (
-          <ChartCard
-            title="Marks Earned"
-            headline={prHeadline}
-          >
-            <PRList prs={prs} />
-          </ChartCard>
-        )}
-
-        <ChartCard title="Recent Sessions">
-          <SessionList sessions={sessions} />
-        </ChartCard>
       </div>
     </div>
   )

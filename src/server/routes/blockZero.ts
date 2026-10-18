@@ -42,7 +42,9 @@ import {
   planTransition,
   resolveLiftId,
   retestCeilingKg,
+  retestDoneFrom,
   retestE1rms,
+  isRetestSetWeek,
   selectMainLifts,
   type Clamp,
   BLOCK_ZERO_BASE_WEEKS,
@@ -328,9 +330,10 @@ async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
     .filter(s => s.status === 'completed' && KEY_SESSION_TYPES.has(s.type) && s.scheduledDate != null)
     .map(s => s.scheduledDate as number)
 
-  // Retest = main-lift working sets from completed week-6 strength sessions.
+  // Retest = main-lift sets logged in completed week-5 and week-6 strength
+  // sessions (and the extension weeks): no test week, the numbers come from training.
   const retestSessionIds = blockSessions
-    .filter(s => s.type === 'strength' && s.status === 'completed' && s.blockWeek === BLOCK_ZERO_BASE_WEEKS)
+    .filter(s => s.type === 'strength' && s.status === 'completed' && isRetestSetWeek(s.blockWeek))
     .map(s => s.id)
   const retestExercises = retestSessionIds.length > 0
     ? await db.select().from(strengthSessionExercises).where(inArray(strengthSessionExercises.sessionId, retestSessionIds))
@@ -342,7 +345,7 @@ async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
   const exerciseBySse = new Map(mainSse.map(e => [e.id, e.exerciseId]))
   const setE1rms = retestE1rms(retestSetRows
     .filter(r => r.isWarmup === 0 && r.completedAt != null)
-    .map(r => ({ exerciseId: exerciseBySse.get(r.sessionExerciseId) ?? '', weightKg: r.weightKg, reps: r.reps })))
+    .map(r => ({ exerciseId: exerciseBySse.get(r.sessionExerciseId) ?? '', weightKg: r.weightKg, reps: r.reps, rir: r.rir })))
   // Retest rows (week 6 and extension weeks) win per lift: they come from the
   // RIR-adjusted check set or the athlete's own entry. Sets fill the rest.
   const testRows = await db.select().from(blockTests).where(eq(blockTests.blockId, blockId))
@@ -356,7 +359,8 @@ async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
     completionRate: keySessionCompletionRate(blockSessions, todayEpochDay),
     longestRecentGapDays: longestGapInWindow(completedDays, todayEpochDay, startEpochDay),
     backTrend: backTrend(await loadBackScores(db, startEpochDay, todayEpochDay), startEpochDay, todayEpochDay),
-    retestDone: e1rms.size > 0,
+    // The two numbers (2026-10-18): the front squat estimate and/or the week-6 talk test.
+    retestDone: retestDoneFrom(e1rms, testRows.filter(r => r.testKey === 'talk_test_hr').map(r => r.week)),
     extensionsUsed: extensionsUsed(totalWeeks),
   }
   return { gate, e1rms, totalWeeks, atEndBoundary: currentWeekNumber >= totalWeeks }

@@ -6,10 +6,7 @@ import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
 import { MtClassLogCard } from '@/features/blockZero/ClassTypeCard'
 import { EffortCard } from '@/features/blockZero/EffortCard'
 import { EndGateView } from '@/features/blockZero/EndGate'
-import { BlockZeroProgramBoards } from '@/features/blockZero/ProgramBoards'
-import { GuidedTestView, ResultsSheetCard, TestEntryCard } from '@/features/blockZero/TestWeekPage'
 import { MorningReportRow } from '@/features/blockZero/TodayPieces'
-import { GUIDED_TESTS, initialGuided } from '@/features/blockZero/testWeek'
 import { BodyProfileBoard } from '@/features/settings/BodyProfileBoard'
 
 import {
@@ -37,16 +34,9 @@ const ICONS: SessionIconKey[] = ['strength', 'bag', 'mt', 'zone2', 'run', 'rope'
 
 const TEST_ROWS = [
   { week: 1, testKey: 'talk_test_hr', value: 142, unit: 'bpm' },
-  { week: 1, testKey: 'pushups_max', value: 18, unit: 'reps' },
-  { week: 1, testKey: 'side_plank_sec_l', value: 45, unit: 's' },
-  { week: 1, testKey: 'side_plank_sec_r', value: 40, unit: 's' },
-  { week: 1, testKey: 'fixed_effort_hr', value: 151, unit: 'bpm' },
-  { week: 1, testKey: 'e1rm:ex-back-squat', value: 77, unit: 'kg' },
+  { week: 1, testKey: 'e1rm:ex-front-squat', value: 77, unit: 'kg' },
   { week: 6, testKey: 'talk_test_hr', value: 146, unit: 'bpm' },
-  { week: 6, testKey: 'pushups_max', value: 27, unit: 'reps' },
-  { week: 6, testKey: 'fixed_effort_hr', value: 139, unit: 'bpm' },
-  { week: 6, testKey: 'side_plank_sec_l', value: 40, unit: 's' },
-  { week: 6, testKey: 'e1rm:ex-back-squat', value: 88.5, unit: 'kg' },
+  { week: 6, testKey: 'e1rm:ex-front-squat', value: 88.5, unit: 'kg' },
 ]
 
 const READY_EASE = { checkedIn: true, ease: true, worseItems: ['sleepHours', 'backToday'], reason: 'Sleep and your back are off your 7-day trend for 2 days.', items: [] }
@@ -145,25 +135,6 @@ function Gallery({ screen }: { screen: string }) {
       return <Phone><MtClassLogCard classType="technical" minutes={60} note="" refused={null} error={null} saving={false} onType={noop} onMinutes={noop} onNote={noop} onSave={noop} /></Phone>
     case 'class-refused':
       return <Phone><MtClassLogCard classType="technical" minutes={60} note="" refused={{ type: 'sparring', reason: 'No hard sparring in Block Zero. Take the technique class or work pads.' }} error={null} saving={false} onType={noop} onMinutes={noop} onNote={noop} onSave={noop} /></Phone>
-    case 'tests':
-      return <GuidedTestView week={1} tests={GUIDED_TESTS} state={{ ...initialGuided(GUIDED_TESTS), index: 2, saved: { talk_test_hr: 142, fixed_effort_hr: 151 } }} saving={false} onDial={noop} onNext={noop} onSkip={noop} onBack={noop} onExit={noop} onOpenSheet={noop} />
-    case 'tests-score':
-      return <GuidedTestView week={1} tests={GUIDED_TESTS} state={{ ...initialGuided(GUIDED_TESTS), index: 7 }} saving={false} onDial={noop} onNext={noop} onSkip={noop} onBack={noop} onExit={noop} onOpenSheet={noop} />
-    case 'tests-done':
-      return <GuidedTestView week={1} tests={GUIDED_TESTS} state={{ ...initialGuided(GUIDED_TESTS), index: GUIDED_TESTS.length, done: true, saved: { talk_test_hr: 142, fixed_effort_hr: 151, pushups_max: 18, side_plank_sec_l: 45, side_plank_sec_r: 40, calf_raise_reps_l: 16, calf_raise_reps_r: 14 } }} saving={false} onDial={noop} onNext={noop} onSkip={noop} onBack={noop} onExit={noop} onOpenSheet={noop} />
-    case 'sheet':
-      return <Phone><ResultsSheetCard week={1} totalWeeks={6} rows={TEST_ROWS} onEnter={noop} onClose={noop} /></Phone>
-    case 'entry':
-      return <Phone><TestEntryCard spec={GUIDED_TESTS[3]} start={45} saving={false} onSave={noop} onClose={noop} /></Phone>
-    case 'program':
-      return (
-        <Phone>
-          <BlockZeroProgramBoards currentWeek={2} viewWeek={2} totalWeeks={6} onPickWeek={noop} onOpenTests={noop} onOpenGate={noop} />
-          <BlockZeroProgramBoards currentWeek={1} viewWeek={1} totalWeeks={6} onPickWeek={noop} onOpenTests={noop} onOpenGate={noop} />
-        </Phone>
-      )
-    case 'program-6':
-      return <Phone><BlockZeroProgramBoards currentWeek={6} viewWeek={6} totalWeeks={6} onPickWeek={noop} onOpenTests={noop} onOpenGate={noop} /></Phone>
     case 'gate':
       return (
         <EndGateView
@@ -189,7 +160,7 @@ function Gallery({ screen }: { screen: string }) {
     case 'gate-check':
       return <EndGateView rows={TEST_ROWS} result={null} checking={false} onCheck={noop} onPrimary={noop} onBack={noop} />
     case 'error-session':
-      return <SessionInterruptedScreen sessionId="demo" onResume={noop} onBack={noop} preview={[{ name: 'Back Squat', detail: '2×8 · 140' }, { name: 'RDL', detail: '2×7 · 115' }, { name: 'Split Squat', detail: '1 of 2 sets' }]} />
+      return <SessionInterruptedScreen sessionId="demo" onResume={noop} onBack={noop} preview={[{ name: 'Front Squat', detail: '2×8 · 140' }, { name: 'RDL', detail: '2×7 · 115' }, { name: 'Split Squat', detail: '1 of 2 sets' }]} />
     case 'error-page':
       return <PageErrorScreen pathname="/history" onReload={noop} onBack={noop} />
     case 'settings':
@@ -198,7 +169,7 @@ function Gallery({ screen }: { screen: string }) {
       return (
         <Phone>
           <Board head="Design gallery">
-            <p className="wm-prose">?screen= foundation, checkin, checkin-back, checkin-done, today, effort, class, class-refused, tests, tests-score, tests-done, sheet, entry, program, program-6, gate, gate-extend, gate-check, error-session, error-page, settings</p>
+            <p className="wm-prose">?screen= foundation, checkin, checkin-back, checkin-done, today, effort, class, class-refused, gate, gate-extend, gate-check, error-session, error-page, settings</p>
           </Board>
         </Phone>
       )

@@ -81,7 +81,6 @@ const PAGE_NAMES: Record<string, string> = {
   '/settings': 'SETTINGS',
   '/settings/logs': 'THE LOGS',
   '/metrics': 'BODY METRICS',
-  '/block-zero/tests': 'THE TESTS',
   '/block-zero/gate': 'THE GATE',
 }
 

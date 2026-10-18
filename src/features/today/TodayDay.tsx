@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon, glowRow } from '@/design'
+import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon } from '@/design'
 import { SessionSummary } from '@/features/dayboard/SessionSummary'
 import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
+import { overCapBpm, stravaReadouts } from '@/lib/stravaMatch'
 import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
 
 /** A run's Strava / manual row, attached by GET /api/sessions/today. */
@@ -18,6 +19,10 @@ export interface RunSessionSummary {
   avgHr: number | null
   maxHr: number | null
   elevationGainM: number | null
+  /** A run waiting for CONFIRM on a Zone 2 day: the cap its average heart rate is read against (page 40). */
+  zone2CapBpm?: number | null
+  /** A run waiting for CONFIRM: the plan line ("Zone 2. 114 to 133 bpm."). */
+  planLine?: string | null
 }
 
 // Today's day board (pages 20, 35, 40): the AM / PM groups (sun / moon mark and
@@ -35,20 +40,31 @@ export interface TodayDayProps {
   onSkip: (id: string) => void
   onReplace: (id: string) => void
   onEndEarly: (id: string, action: 'completed' | 'reset') => void
-  onConfirmMatch: (activityId: number, row: HTMLElement | null) => void
+  /** CONFIRM on a matched run: the session it lands on, and the card (it glows clay on a failure). */
+  onConfirmMatch: (activityId: number, sessionId: string, card: HTMLElement | null) => void
   onReassignMatch: (activityId: number) => void
   onDismissMatch: (activityId: number) => void
   onAdd: () => void
-  /** Block Zero's quick "class tonight" add (no approved mockup places it; it sits under + ADD SESSION). */
-  classTonight?: { added: boolean; onAdd: () => Promise<string | null> } | null
+}
+
+/** Strava's run matched this planned run and waits for CONFIRM (page 40, phone 1). */
+function stravaPending(s: TodaySession): boolean {
+  return s.runSession?.attachmentStatus === 'auto_pending' && s.runSession.stravaActivityId != null
+}
+
+/** Strava's run matched nothing: UNPLANNED RUN under the day (page 40, phone 4). */
+function stravaOrphan(s: TodaySession): boolean {
+  return s.runSession?.attachmentStatus === 'orphan' && s.runSession.stravaActivityId != null
 }
 
 export function TodayDay(props: TodayDayProps) {
   const [openId, setOpenId] = useState<string | null>(null)
+  const day = props.sessions.filter(s => !stravaOrphan(s))
+  const unplanned = props.sessions.filter(stravaOrphan)
   const groups: Array<['am' | 'pm' | null, TodaySession[]]> = [
-    ['am', props.sessions.filter(s => s.timeSlot === 'am')],
-    ['pm', props.sessions.filter(s => s.timeSlot === 'pm')],
-    [null, props.sessions.filter(s => s.timeSlot !== 'am' && s.timeSlot !== 'pm')],
+    ['am', day.filter(s => s.timeSlot === 'am')],
+    ['pm', day.filter(s => s.timeSlot === 'pm')],
+    [null, day.filter(s => s.timeSlot !== 'am' && s.timeSlot !== 'pm')],
   ]
   return (
     <>
@@ -57,107 +73,56 @@ export function TodayDay(props: TodayDayProps) {
           <div key={slot ?? 'any'}>
             {slot && <AmPmHeader slot={slot} />}
             <div className="td-rows">
-              {list.map(s => (
+              {list.map(s => stravaPending(s) ? (
+                <StravaCard key={s.id} s={s} kind="matched" {...props} />
+              ) : (
                 <TodayRow key={s.id} s={s} open={openId === s.id} onToggle={() => { tapHaptic(); setOpenId(openId === s.id ? null : s.id) }} {...props} />
               ))}
             </div>
           </div>
         ))}
+        {unplanned.map((s, i) => <StravaCard key={s.id} s={s} kind="unplanned" ruled={i > 0 || day.length > 0} {...props} />)}
       </Board>
       <FlapButton label="+ ADD SESSION" onClick={props.onAdd} />
-      {props.classTonight && <ClassTonightButton {...props.classTonight} />}
     </>
   )
 }
 
-/** One tap adds an MT class this evening (the type is asked when it's logged). A refusal glows clay with its line under it. */
-function ClassTonightButton({ added, onAdd }: { added: boolean; onAdd: () => Promise<string | null> }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [busy, setBusy] = useState(false)
-  const [refusal, setRefusal] = useState<string | null>(null)
-  return (
-    <div ref={ref}>
-      <FlapButton
-        label={added ? '✓ CLASS TONIGHT' : '+ CLASS TONIGHT'}
-        tone={added ? 'teal' : undefined}
-        disabled={added || busy}
-        onClick={async () => {
-          setBusy(true)
-          setRefusal(null)
-          const refused = await onAdd()
-          setBusy(false)
-          setRefusal(refused)
-          glowRow(ref.current, refused ? 'bad' : 'good')
-        }}
-      />
-      {refusal && <p className="wm-row-note" role="alert">{refusal}</p>}
-    </div>
-  )
-}
-
-function fmtKm(km: number) { return km >= 10 ? km.toFixed(1) : km.toFixed(2) }
-function fmtPace(sec: number) { return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}` }
-
-function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, onConfirmMatch, onReassignMatch, onDismissMatch }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
+function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
   const rowRef = useRef<HTMLDivElement>(null)
   const [endOpen, setEndOpen] = useState(false)
-  const run = s.runSession ?? null
-  const pending = run?.attachmentStatus === 'auto_pending' && run.stravaActivityId != null
-  const orphan = run?.attachmentStatus === 'orphan' && run.stravaActivityId != null
-  const actionable = isActionableTodaySession(s.status, pending)
-  const done = s.status === 'completed' && !orphan
+  const actionable = isActionableTodaySession(s.status, false)
+  const done = s.status === 'completed'
   const skipped = s.status === 'skipped' || s.status === 'missed'
-  const name = orphan ? 'UNPLANNED RUN' : sessionDisplayName(s).toUpperCase()
+  const name = sessionDisplayName(s).toUpperCase()
   // Page 35: a done row reads ✓ in the minutes' place (a teal tick once opened); a to-do its planned length.
-  const mins = orphan && run?.durationSec ? `${Math.round(run.durationSec / 60)}min` : skipped ? '—' : `~${plannedRowMinutes(s)}min`
+  // Page 40: a run confirmed from Strava reads its minutes and ✓ ("35min ✓").
+  const mins = skipped ? '—' : `~${plannedRowMinutes(s)}min`
+  const stravaMin = done && s.runSession?.stravaActivityId != null ? stravaMinutes(s) : null
 
   return (
-    <div ref={rowRef} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}`}>
+    <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}`}>
       <div role="button" tabIndex={0} aria-expanded={open} style={{ display: 'contents' }} onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}>
         <SessionIcon kind={iconFor(s)} size={40} />
         <span className="td-nm"><FlapLabel text={name} size="md" len={11} fit /></span>
-        {pending && <span className="td-from"><FlapLabel text="FROM STRAVA" size="xs" tone="teal" /></span>}
-        {done ? <span className={open ? 'td-tick' : 'td-mins'} aria-label="done">✓</span> : <span className="td-mins">{mins}</span>}
+        {stravaMin != null ? (
+          <><span className="td-mins">{stravaMin}min</span><span className="td-stick" aria-label="done">✓</span></>
+        ) : done ? <span className={open ? 'td-tick' : 'td-mins'} aria-label="done">✓</span> : <span className="td-mins">{mins}</span>}
       </div>
       {open && (
         <div className="td-sum" onClick={e => e.stopPropagation()}>
-          {(pending || orphan) && run ? (
-            <>
-              <div className="td-readouts">
-                {run.distanceKm != null && <Readout label="Distance" value={`${fmtKm(run.distanceKm)} km`} />}
-                {run.paceSecKm != null && <Readout label="Pace" value={`${fmtPace(run.paceSecKm)} /km`} />}
-                {run.avgHr != null && <Readout label="Avg HR" value={`${run.avgHr}`} />}
-                {run.maxHr != null && <Readout label="Max HR" value={`${run.maxHr}`} />}
-              </div>
-              {pending ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-                  <FlapButton label="CONFIRM" primary onClick={() => { mediumHaptic(); onConfirmMatch(run.stravaActivityId!, rowRef.current) }} />
-                  <div className="wm-btns">
-                    <FlapButton label="CHANGE" onClick={() => onReassignMatch(run.stravaActivityId!)} />
-                    <FlapButton label="NOT TRAINING" size="xs" onClick={() => onDismissMatch(run.stravaActivityId!)} />
-                  </div>
-                </div>
-              ) : (
-                <div className="wm-btns" style={{ marginTop: 10 }}>
-                  <FlapButton label="ASSIGN" primary onClick={() => onReassignMatch(run.stravaActivityId!)} />
-                  <FlapButton label="NOT TRAINING" size="xs" onClick={() => onDismissMatch(run.stravaActivityId!)} />
-                </div>
-              )}
-            </>
-          ) : (
-            <SessionSummary
-              session={s}
-              variant="today"
-              actions={actionable ? (
-                <>
-                  <FlapButton label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'} primary onClick={() => onStart(s.id)} />
-                  {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="REPLACE" onClick={() => onReplace(s.id)} />}
-                  {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="SKIP" onClick={() => onSkip(s.id)} />}
-                  {s.status === 'in_progress' && <EndHold onHeld={() => { mediumHaptic(); setEndOpen(true) }} />}
-                </>
-              ) : undefined}
-            />
-          )}
+          <SessionSummary
+            session={s}
+            variant="today"
+            actions={actionable ? (
+              <>
+                <FlapButton label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'} primary onClick={() => onStart(s.id)} />
+                {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="REPLACE" onClick={() => onReplace(s.id)} />}
+                {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="SKIP" onClick={() => onSkip(s.id)} />}
+                {s.status === 'in_progress' && <EndHold onHeld={() => { mediumHaptic(); setEndOpen(true) }} />}
+              </>
+            ) : undefined}
+          />
         </div>
       )}
       {endOpen && (
@@ -172,11 +137,65 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, o
   )
 }
 
-function Readout({ label, value }: { label: string; value: string }) {
+/** The run's own minutes (the confirmed session's, else Strava's). */
+function stravaMinutes(s: TodaySession): number | null {
+  const sec = s.durationSec ?? s.runSession?.durationSec ?? null
+  return sec != null && sec > 0 ? Math.round(sec / 60) : null
+}
+
+/**
+ * Page 40: a Strava run on Today. Matched (phone 1): the session icon, its
+ * name on a flap, FROM STRAVA in teal, the plan line, four flap readouts (an
+ * average heart rate over the Zone 2 cap gets the clay band and chip), then
+ * CONFIRM full width with CHANGE and NOT TRAINING under it. Unplanned
+ * (phone 4): UNPLANNED RUN under the day with its readouts, then ASSIGN and
+ * NOT TRAINING. Nothing truncates.
+ */
+function StravaCard({ s, kind, ruled = false, onConfirmMatch, onReassignMatch, onDismissMatch }: TodayDayProps & { s: TodaySession; kind: 'matched' | 'unplanned'; ruled?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const run = s.runSession!
+  const id = run.stravaActivityId!
+  const matched = kind === 'matched'
+  const over = matched ? overCapBpm(run.avgHr, run.zone2CapBpm ?? null) : null
   return (
-    <div className="td-readout">
-      <span className="wm-label">{label}</span>
-      <FlapLabel text={value} size="sm" fit />
+    <div ref={ref} data-sid={s.id} className={`td-strava${ruled ? ' is-ruled' : ''}`}>
+      <div className="top">
+        <SessionIcon kind={matched ? iconFor(s) : 'run'} size={48} />
+        <div className="grow">
+          <FlapLabel text={matched ? sessionDisplayName(s).toUpperCase() : 'UNPLANNED RUN'} size="md" fit />
+          <FlapLabel text="FROM STRAVA" size="xs" tone="teal" />
+        </div>
+      </div>
+      {matched && run.planLine && <p className="plan">{run.planLine}</p>}
+      <div className="td-ro">
+        {stravaReadouts(run).map(r => {
+          const miss = r.key === 'avgHr' && over != null
+          return (
+            <div key={r.key} className={miss ? 'is-dn' : undefined}>
+              <span className="wm-label">{r.label}</span>
+              <span className="v">
+                <FlapLabel text={r.value} size="md" />
+                <span className="u">{r.unit}</span>
+                {miss && <i className="dv">+{over} over cap</i>}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      {matched ? (
+        <>
+          <FlapButton label="CONFIRM" primary onClick={() => { mediumHaptic(); onConfirmMatch(id, s.id, ref.current) }} />
+          <div className="wm-btns is-two">
+            <FlapButton label="CHANGE" onClick={() => onReassignMatch(id)} />
+            <FlapButton label="NOT TRAINING" size="xs" onClick={() => onDismissMatch(id)} />
+          </div>
+        </>
+      ) : (
+        <div className="wm-btns is-two">
+          <FlapButton label="ASSIGN" primary onClick={() => onReassignMatch(id)} />
+          <FlapButton label="NOT TRAINING" size="xs" onClick={() => onDismissMatch(id)} />
+        </div>
+      )}
     </div>
   )
 }

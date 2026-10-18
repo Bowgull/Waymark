@@ -66,8 +66,8 @@ test('ramp-up ask: proof tiles, options with icons, AM/PM only on an added run, 
   const v = askView({
     id: 'r1', adjustmentType: 'ramp_up', reason: 'Fresh and easy. Push a little this week? Accept: one more set.', status: 'proposed',
     options: [
-      { kind: 'extra_set', id: 'extra_set', title: '+1 SET', detail: 'Squat and RDL, 3×8', sessionId: 's1' },
-      { kind: 'load_step', id: 'more_weight', title: 'MORE WEIGHT', detail: 'Squat 140 · RDL 120', sessionId: 's1', factor: 1.025, lifts: [] },
+      { kind: 'extra_set', id: 'extra_set', title: '+1 SET', detail: 'Front squat and RDL, 3×8', sessionId: 's1' },
+      { kind: 'load_step', id: 'more_weight', title: 'MORE WEIGHT', detail: 'Front squat 140 · RDL 120', sessionId: 's1', factor: 1.025, lifts: [] },
       { kind: 'add', id: 'extra_run', title: 'EXTRA RUN', detail: 'Zone 2, 30 min', type: 'foundation_run', sessionLabel: 'Zone 2', timeSlot: 'pm' },
     ],
     detail: { why: "You've been fresh and sessions felt easy.", proof: [{ label: 'FRESH', value: '3 DAYS' }, { label: 'EASY', value: '3 OF 3' }], decline: { id: 'not_this_week', title: 'NOT THIS WEEK' } },
@@ -128,10 +128,10 @@ test('training max ask: lifts, bounded steps, accept values', () => {
   const v = askView({
     id: 't1', adjustmentType: 'tm_update', reason: 'The block is done. New training maxes?',
     options: [{ kind: 'tm_update', id: 'approve', title: 'APPROVE', lifts: [] }],
-    detail: { lifts: [{ exerciseId: 'sq', name: 'Back Squat', currentKg: 61, proposedKg: 66, minKg: 61, maxKg: 68.5, stepKg: 2.5, reason: '' }] },
+    detail: { lifts: [{ exerciseId: 'sq', name: 'Front Squat', currentKg: 61, proposedKg: 66, minKg: 61, maxKg: 68.5, stepKg: 2.5, reason: '' }] },
   })!
   assert.equal(v.kind, 'tm_update')
-  assert.equal(v.tm?.[0].name, 'BACK SQUAT')
+  assert.equal(v.tm?.[0].name, 'FRONT SQUAT')
   const lift = v.tm![0]
   assert.equal(stepTm(lift, 66, 1), 68.5)
   assert.equal(stepTm(lift, 68.5, 1), 68.5, 'capped at the rule bound')

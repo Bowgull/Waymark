@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
+import { Board, FlapButton, glowRow, showPop } from '@/design'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
-import { kgToLbsDisplay } from '@/lib/chartTheme'
+import { kgToLbs, lbsToKg } from '@/lib/units'
 import { logger } from '@/lib/logger'
-import { PageHeader } from '@/components/PageHeader'
+import { FlapNumber, SettingsScreen } from '../settings/settingsParts'
+import { cleanNumber, histDate, todayFlap } from '../settings/settingsModel'
 import { Sparkline } from '../history/Sparkline'
 
 interface BodyMetricEntry {
@@ -15,13 +18,14 @@ interface BodyMetricEntry {
   notes: string | null
 }
 
-const LBS_PER_KG = 2.20462
-
-function lbsToKg(lbs: number): number {
-  return lbs / LBS_PER_KG
-}
-
+/**
+ * Body metrics, page 37 (approved): Log today (weight, resting HR and
+ * bodyfat as flap numbers you tap to type, a notes box, LOG), then History,
+ * newest first. The fields start from the last entry. Weight is in lb
+ * everywhere on screen (typed in lb, stored as weightKg).
+ */
 export function BodyMetricsPage() {
+  const navigate = useNavigate()
   const [entries, setEntries] = useState<BodyMetricEntry[]>([])
   const [weightLbs, setWeightLbs] = useState('')
   const [restingHr, setRestingHr] = useState('')
@@ -29,10 +33,21 @@ export function BodyMetricsPage() {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const seeded = useRef(false)
+  const boardRef = useRef<HTMLDivElement>(null)
 
   function loadEntries() {
     apiFetch<{ entries: BodyMetricEntry[] }>('/api/body-metrics')
-      .then(r => setEntries(r.entries))
+      .then(r => {
+        setEntries(r.entries)
+        const last = r.entries[0]
+        if (!seeded.current && last) {
+          seeded.current = true
+          if (last.weightKg != null) setWeightLbs(String(kgToLbs(last.weightKg)))
+          if (last.restingHr != null) setRestingHr(String(last.restingHr))
+          if (last.bodyfatPct != null) setBodyfatPct(String(last.bodyfatPct))
+        }
+      })
       .catch((e) => {
         const message = e instanceof Error ? e.message : String(e)
         logger.warn('system', 'body-metrics load failed', { message }, 'GET /body-metrics failed. Network or 5xx.')
@@ -41,11 +56,12 @@ export function BodyMetricsPage() {
 
   useEffect(() => { loadEntries() }, [])
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleLog() {
+    const row = boardRef.current?.querySelector('.wm-board') ?? null
     const w = parseFloat(weightLbs)
     if (!weightLbs || isNaN(w) || w <= 0) {
       setError('Weight is required.')
+      glowRow(row, 'bad')
       return
     }
     setSaving(true)
@@ -67,13 +83,13 @@ export function BodyMetricsPage() {
         body: JSON.stringify(payload),
       })
 
-      setWeightLbs('')
-      setRestingHr('')
-      setBodyfatPct('')
       setNotes('')
+      glowRow(row, 'good')
+      showPop('Logged.', 'good')
       loadEntries()
     } catch {
       setError('Could not save. Try again.')
+      glowRow(row, 'bad')
     } finally {
       setSaving(false)
     }
@@ -82,122 +98,64 @@ export function BodyMetricsPage() {
   const weightData = [...entries]
     .filter(e => e.weightKg != null)
     .reverse()
-    .map(e => kgToLbsDisplay(e.weightKg!))
+    .map(e => kgToLbs(e.weightKg!))
 
   const latest = entries[0]
+  const fields: { label: string; unit: string; value: string; set: (v: string) => void; decimal: boolean; max: number }[] = [
+    { label: 'WEIGHT', unit: 'LBS', value: weightLbs, set: v => setWeightLbs(cleanNumber(v, 5)), decimal: true, max: 5 },
+    { label: 'RESTING HR', unit: 'BPM', value: restingHr, set: v => setRestingHr(cleanNumber(v, 3).replace('.', '')), decimal: false, max: 3 },
+    { label: 'BODYFAT', unit: '%', value: bodyfatPct, set: v => setBodyfatPct(cleanNumber(v, 4)), decimal: true, max: 4 },
+  ]
 
   return (
-    <div className="flex flex-col gap-6 px-4 py-4">
-      <PageHeader title="Body metrics" />
+    <SettingsScreen title="BODY" onBack={() => navigate('/settings')}>
+      <div ref={boardRef}>
+        <Board head="Log today" headRight={<span className="wm-label">{todayFlap(new Date())}</span>} solid className="st-board">
+          <div className="st-fields">
+            {fields.map(f => (
+              <label key={f.label} className="st-fld">
+                <span className="wm-label">{f.label}</span>
+                <FlapNumber value={f.value} onChange={f.set} label={f.label.toLowerCase()} decimal={f.decimal} maxChars={f.max} placeholderCells={f.max > 3 ? 3 : 2} size={f.value.length > 4 ? 'md' : 'lg'} />
+                <span className="wm-label">{f.unit}</span>
+              </label>
+            ))}
+          </div>
+          <textarea className="st-nt" aria-label="Notes" placeholder="Dehydrated, post-travel, etc." value={notes} onChange={e => setNotes(e.target.value)} />
+          {error && <p className="wm-row-note" role="alert">{error}</p>}
+          <div className="wm-btns st-logbtn">
+            <FlapButton label={saving ? 'SAVING' : 'LOG'} primary disabled={saving} onClick={() => void handleLog()} />
+          </div>
+        </Board>
+      </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Weight (lbs)</span>
-          <input
-            type="number"
-            step="0.1"
-            min="1"
-            value={weightLbs}
-            onChange={e => setWeightLbs(e.target.value)}
-            placeholder="185"
-            className="min-h-[44px] rounded-md border border-border bg-secondary/50 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
-          />
-        </label>
+      <Board head="History" solid className="st-board">
+        {entries.length === 0 ? (
+          <p className="st-empty">No body metrics logged.</p>
+        ) : entries.slice(0, 10).map(entry => (
+          <div key={entry.id} className="st-hist">
+            <span className="d">{histDate(entry.loggedAt)}</span>
+            {entry.weightKg != null && <span className="w">{kgToLbs(entry.weightKg)}</span>}
+            {entry.restingHr != null && <span className="o">{entry.restingHr} bpm</span>}
+            {entry.bodyfatPct != null && <span className="o">{entry.bodyfatPct}%</span>}
+            {entry.notes && <i>{entry.notes}</i>}
+          </div>
+        ))}
+      </Board>
 
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">Resting HR</span>
-            <input
-              type="number"
-              step="1"
-              min="1"
-              value={restingHr}
-              onChange={e => setRestingHr(e.target.value)}
-              placeholder="60"
-              className="min-h-[44px] rounded-md border border-border bg-secondary/50 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">Bodyfat %</span>
-            <input
-              type="number"
-              step="0.1"
-              min="1"
-              max="60"
-              value={bodyfatPct}
-              onChange={e => setBodyfatPct(e.target.value)}
-              placeholder="18"
-              className="min-h-[44px] rounded-md border border-border bg-secondary/50 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
-            />
-          </label>
-        </div>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Notes</span>
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="dehydrated, post-travel, etc."
-            rows={2}
-            className="resize-none rounded-md border border-border bg-secondary/50 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 focus:border-gold/60 focus:outline-none"
-          />
-        </label>
-
-        {error && <p className="text-sm text-red-400">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={saving}
-          className="min-h-[44px] rounded-md border border-gold/40 px-5 py-2 text-sm text-gold transition-colors hover:border-gold/70 hover:bg-gold/10 disabled:opacity-40"
-        >
-          {saving ? 'Saving' : 'Commit'}
-        </button>
-      </form>
-
+      {/* Not on page 37 (owner to place): the weight trend line, kept as it was. */}
       {weightData.length >= 2 && (
         <div className="flex items-center gap-4 rounded-md border border-border bg-secondary/30 px-4 py-3">
           <div className="flex flex-col gap-0.5">
             <span className="text-xs text-muted-foreground">Weight</span>
             {latest?.weightKg && (
               <span className="text-lg text-foreground">
-                {kgToLbsDisplay(latest.weightKg)} lbs
+                {kgToLbs(latest.weightKg)} lbs
               </span>
             )}
           </div>
           <Sparkline data={weightData} width={120} height={32} className="ml-auto" />
         </div>
       )}
-
-      {entries.length > 0 && (
-        <ul className="flex flex-col gap-0">
-          {entries.slice(0, 10).map((entry, i) => (
-            <li
-              key={entry.id}
-              className={`flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2.5 text-sm ${i < entries.length - 1 ? 'border-b border-border/50' : ''}`}
-            >
-              <span className="w-16 shrink-0 text-xs text-muted-foreground">
-                {new Date(entry.loggedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </span>
-              {entry.weightKg != null && (
-                <span className="text-foreground">{kgToLbsDisplay(entry.weightKg)} lbs</span>
-              )}
-              {entry.restingHr != null && (
-                <span className="text-muted-foreground">{entry.restingHr} bpm</span>
-              )}
-              {entry.bodyfatPct != null && (
-                <span className="text-muted-foreground">{entry.bodyfatPct}%</span>
-              )}
-              {entry.notes && (
-                <span className="text-muted-foreground/60 italic">{entry.notes}</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {entries.length === 0 && (
-        <p className="text-sm text-muted-foreground/60">No body metrics logged.</p>
-      )}
-    </div>
+    </SettingsScreen>
   )
 }

@@ -1,12 +1,46 @@
-/* Settings boards (page 37 A): solid dark boards, label + line blocks, flap chips. */
+/* Settings, Body metrics and Logs (page 37 A; page 45 "For the coach"): solid dark, no world, the same boards. */
 
+/* the screen: page 37 `.solid` behind, the header fixed, the boards scrolling under it */
+.st-screen { position: fixed; inset: 0; z-index: 1; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+.st-solid { position: absolute; inset: 0; z-index: -1; background: radial-gradient(ellipse 90% 40% at 50% 0%, #142019, transparent 70%), linear-gradient(#0b1310, #070c0a); }
+.st-hd { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 16px 6px; }
+.st-brand { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.st-crest { width: 54px; height: 60px; display: grid; place-items: center; flex: none; }
+.st-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; padding: 4px 12px calc(40px + env(safe-area-inset-bottom)); scrollbar-width: none; }
+.st-scroll::-webkit-scrollbar { display: none; }
+.st-scroll > * { flex: none; }
+
+/* boards */
 .st-board.wm-board { background-color: rgba(14, 22, 18, 0.9); }
 .st-block { padding: 11px 0; }
+.st-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; }
+.st-row.is-tap { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.st-row.is-tap:active { opacity: 0.8; }
+.st-row + .st-row, .st-row + .st-block, .st-block + .st-row,
+.st-rowwrap + .st-rowwrap, .st-row + .st-rowwrap, .st-rowwrap + .st-row,
+.st-block + .st-rowwrap, .st-rowwrap + .st-block { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.03); }
+.st-rowwrap > .wm-row-note { margin: -4px 0 10px; }
 .st-sl { flex: 1; display: flex; flex-direction: column; gap: 3px; }
 .st-sl b { font: 700 16px/normal var(--font-body); color: #efe6c8; }
 .st-sl small { font: 600 13.5px/1.35 var(--font-body); color: #9fb2a8; }
+.st-chev { font: 800 17px/normal var(--font-mono); color: #c9b27a; }
+.st-val { display: inline-flex; flex: none; align-items: center; gap: 6px; max-width: 62%; }
+.st-mk { width: 16px; height: 16px; display: block; flex: none; }
+.st-note { margin: 8px 0 0; font: 600 13.5px/1.4 var(--font-body); color: #9fb2a8; }
+.st-dob { display: inline-flex; flex: none; gap: 6px; }
 
-/* Time of day: two to a row; a column grows to its words, so FOLLOW THE CLOCK fits whole */
+/* the badge */
+.st-badge { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 9px; background: rgba(14, 22, 18, 0.9); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); font: 600 14px/normal var(--font-body); color: #c9d6cf; }
+
+/* Training: day tiles and technique chips */
+.st-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 9px; }
+.st-day { display: block; padding: 6px 0; border: 0; border-radius: 7px; text-align: center; line-height: normal; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
+.st-day.is-on { background: rgba(95, 160, 140, 0.22); box-shadow: inset 0 0 0 1px rgba(143, 212, 184, 0.55); }
+.st-techs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 9px; }
+.st-tech { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 7px; line-height: normal; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
+.st-day:active, .st-tech:active { transform: scale(0.97); }
+
+/* Time of day (and the arc card): two to a row; a column grows to its words */
 .st-tod { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 9px; }
 .st-chip {
   display: block;
@@ -21,4 +55,76 @@
 }
 .st-chip.is-on { background: rgba(184, 152, 74, 0.22); box-shadow: inset 0 0 0 2px #b8984a; }
 .st-chip:active { transform: scale(0.97); }
-@media (prefers-reduced-motion: reduce) { .st-chip:active { transform: none; } }
+.st-arcs { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.st-arcs .st-chip { min-width: 0; overflow: hidden; }
+
+/* Connections */
+.st-strava { display: flex; align-items: center; gap: 10px; }
+.st-dot { width: 9px; height: 9px; border-radius: 50%; background: #8fd4b8; box-shadow: 0 0 8px rgba(143, 212, 184, 0.7); flex: none; }
+
+/* the time card (page 37): drums ▲ ▼, the colon, the AM/PM flap */
+.st-tpick { display: flex; justify-content: center; align-items: center; gap: 14px; margin: 6px 0 4px; }
+.st-drum { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.st-ar { position: relative; border: 0; background: none; padding: 4px 10px; font: 800 16px/1 var(--font-mono); color: rgba(240, 230, 192, 0.5); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.st-ar::before { content: ''; position: absolute; inset: -8px -6px; }
+.st-ar:active { color: #e8dcb4; }
+.st-colon { font: 800 30px/normal var(--font-mono); color: #e8dcb4; }
+.st-tsub { margin: 0; text-align: center; font: 500 14.5px/1.4 var(--font-body); color: rgba(240, 234, 214, 0.78); }
+
+/* a number you tap to type: the input sits over the flap, invisible */
+.st-fnum { position: relative; display: inline-flex; border-radius: 6px; }
+.st-fnum input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; font-size: 16px; cursor: text; }
+.st-fnum:focus-within { box-shadow: 0 0 0 2px rgba(232, 200, 96, 0.55); }
+
+/* text boxes (Body metrics notes, page 37; back and pain, page 45) */
+.st-nt { display: inline-block; vertical-align: baseline; width: 100%; box-sizing: border-box; min-height: 64px; resize: none; border: 0; border-radius: 9px; padding: 10px 12px; margin-top: 8px; background: rgba(4, 9, 7, 0.6); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); font: 500 16px/1.4 var(--font-body); color: #f0ead6; outline: none; }
+.st-nt.is-coach { min-height: 74px; }
+.st-nt::placeholder { color: rgba(240, 234, 214, 0.45); }
+
+/* Body metrics: three flap fields, history */
+.st-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.st-fld { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border-radius: 10px; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); cursor: text; }
+.st-fld .wm-label { font-size: 11.5px; line-height: 1; }
+.st-hist { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
+.st-hist + .st-hist { border-top: 1px solid rgba(0, 0, 0, 0.6); }
+.st-hist .d { width: 62px; flex: none; font: 700 13px/normal var(--font-mono); color: #9fb2a8; }
+.st-hist .w { font: 800 16px/normal var(--font-mono); color: #f2e8cc; }
+.st-hist .o { font: 700 13.5px/normal var(--font-mono); color: #c9b27a; }
+.st-hist i { min-width: 0; font: italic 600 13px/normal var(--font-body); color: #8ea79b; }
+.st-empty { margin: 0; font: 600 15px/1.4 var(--font-body); color: #9fb2a8; }
+
+/* Logs */
+.st-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.st-pill { display: inline-flex; padding: 7px 9px; border: 0; border-radius: 99px; cursor: pointer; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3); -webkit-tap-highlight-color: transparent; }
+.st-pill.is-on { background: rgba(184, 152, 74, 0.22); box-shadow: inset 0 0 0 2px #b8984a; }
+.st-headbtn { border: 0; background: none; padding: 0; cursor: pointer; }
+.st-lrow { display: flex; gap: 9px; align-items: flex-start; width: 100%; padding: 9px 0; border: 0; background: none; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.st-lrow + .st-lrow { border-top: 1px solid rgba(0, 0, 0, 0.6); }
+.st-lv { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex: none; }
+.st-lv.is-error { background: #d07050; box-shadow: 0 0 6px #d07050; }
+.st-lv.is-warn { background: #e8c878; }
+.st-lv.is-info { background: #8fd4b8; }
+.st-lv.is-debug { background: #6f8a7e; }
+.st-lt { flex: 1; min-width: 0; }
+.st-lt .m { font: 600 14.5px/1.35 var(--font-body); color: #e6efe9; overflow-wrap: anywhere; }
+.st-lt .m.is-error { color: #f0a684; }
+.st-lt .m.is-warn { color: #f0d890; }
+.st-lt .t { font: 600 12px/normal var(--font-mono); color: #8ea79b; margin-top: 3px; }
+.st-lt .x { margin: 6px 0 0; font: 600 12px/1.5 var(--font-mono); color: #9fb2a8; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (prefers-reduced-motion: reduce) {
+  .st-chip:active, .st-day:active, .st-tech:active { transform: none; }
+}
+.st-valtxt { display: flex; flex: 0 1 auto; min-width: 0; }
+.st-fld .st-fnum { max-width: 100%; }
+.st-logbtn { margin-top: 8px; }
+.st-lt > span { display: block; }
+/* page 37's board heads sit on a 1.0 line; a switch in a technique chip takes the line box the mockup's span does */
+.st-board .wm-board-head, .st-screen .wm-card .wm-board-head { line-height: 1; }
+.st-tech > button[role='switch'] { height: 22.6px; align-items: center; }
+/* centred cards on these screens: centred on the phone as page 37 draws them (.ccard top 50%), and the
+   scrim's fade releases when done so the card's blur reaches the boards behind it */
+.st-screen .wm-scrim { padding-top: 12px; padding-bottom: 12px; animation-fill-mode: backwards; }
+.st-board .wm-board-head .wm-label { line-height: 1; }
+/* the mockups' pages run on line-height: normal */
+.st-screen { line-height: normal; }

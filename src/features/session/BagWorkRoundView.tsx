@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-import { RingTimer } from '@/components/RingTimer'
-import { Button } from '@/components/ui/button'
-import { ForgeIcon } from '@/components/icons/SessionIcons'
+import { FlapLabel } from '@/design'
+import { ComboStrikes, GrassZone, Pips, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
 import { heavyHaptic } from '@/lib/haptics'
 import {
   soundRoundStart,
@@ -18,13 +17,9 @@ import {
   cancelRestCues,
 } from '@/lib/notifications'
 import { isStaleCue, type EngineState } from '@/lib/sessionResume'
+import { heatFor, workLabel } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
 
-import { SessionShell } from './SessionShell'
-import {
-  resolveBagWorkMoment,
-  type BagWorkIntent,
-} from './bagWorkMicrocopy'
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
@@ -43,25 +38,6 @@ interface ComboData {
   } | null
 }
 
-const TIER_LABELS: Record<string, string> = {
-  foundation: 'Fundamentals',
-  weapons: 'Weapons',
-  flow: 'Flow',
-  deception: 'Deception',
-  mastery: 'Mastery',
-}
-
-// Intensity-progression model: each round has a coaching intent.
-// Technical → Rhythm → Volume × 2 → Pressure → Power
-const ROUND_INTENTS: { label: BagWorkIntent; hint: string }[] = [
-  { label: 'Technical', hint: 'Sharp mechanics, controlled pace' },
-  { label: 'Rhythm', hint: 'Find your flow' },
-  { label: 'Volume', hint: 'Push the output' },
-  { label: 'Volume', hint: 'Stay consistent' },
-  { label: 'Pressure', hint: 'Controlled aggression' },
-  { label: 'Power', hint: 'Max output' },
-]
-
 interface RoundData {
   id: string
   roundNumber: number
@@ -72,24 +48,20 @@ interface RoundData {
   combos: ComboData[]
 }
 
-const ROUND_TYPE_LABELS: Record<string, string> = {
-  warmup: 'Warmup',
-  technical_flow: 'Technical',
-  drill_isolation: 'Drill',
-  combo_practice: 'Combos',
-  power: 'Power',
-  conditioning: 'Conditioning',
-}
-
 type RoundPhase = 'ready' | 'fighting' | 'rest'
 
 interface BagWorkRoundViewProps {
   round: RoundData
   totalRounds: number
+  /** The round after this one: its combos flip in on the rest board (NEXT ROUND). */
+  nextRound?: RoundData | null
+  /** Each combo's letter for the session (A, B, C…): the preview, the timer and the rating card share them. */
+  letters?: Map<string, string>
   phase: RoundPhase
   onPhaseChange: (phase: RoundPhase) => void
   onNextRound: () => void
   onComplete: () => void
+  /** Hold the × (1.5 s): leave the session (kept in progress, resumable). */
   onExit?: () => void
   /** Saved state to come back to (session resume), already brought up to now. */
   resume?: Extract<EngineState, { kind: 'rounds' }> | null
@@ -99,9 +71,19 @@ interface BagWorkRoundViewProps {
   onRoundDone?: (roundIndex: number, actualSec: number) => void
 }
 
+/**
+ * A bag round (page 19, "The round · calmer"; gym mode A, the half-screen zone):
+ * BAG WORK and the round on flaps, pips, the calm flap clock, FIGHT (FINISH with
+ * the yellow, orange, red heat in the last 10 s), the combo on big strike tiles,
+ * and the grass. Rest turns everything teal: REST, and the board reads NEXT ROUND
+ * with the next combo flipped in. Tap the grass to pause, swipe up to skip to the
+ * next phase, hold the × to end.
+ */
 export function BagWorkRoundView({
   round,
   totalRounds,
+  nextRound,
+  letters,
   phase,
   onPhaseChange,
   onNextRound,
@@ -314,192 +296,74 @@ export function BagWorkRoundView({
     },
   })
 
-  // Determine tier of combos + intent labels for this round
-  const roundTier = round.combos[0]?.combo?.tier
-  const coachRationale = (round.coachRationale ?? '').trim()
-  const roundTypeLabel = round.roundType ? ROUND_TYPE_LABELS[round.roundType] ?? null : null
-  const positionalIntent = ROUND_INTENTS[round.roundNumber - 1] ?? null
 
-  // Shell counter + progress
-  const counter = phase === 'rest'
-    ? 'Rest'
-    : `Round ${round.roundNumber} of ${totalRounds}`
-  const progress = {
-    completed: round.roundNumber - 1,
-    active: round.roundNumber - 1,
-    total: totalRounds,
+  // ─── The screen ──────────────────────────────────────────────
+
+  const fighting = phase === 'fighting'
+  const resting = phase === 'rest'
+  const shownSec = fighting ? Math.max(0, roundTimer.secondsRemaining) : resting ? Math.max(0, restTimer.secondsRemaining) : round.durationSec
+  const heat = fighting ? heatFor(shownSec) : null
+  const label = resting ? 'REST' : fighting ? workLabel('FIGHT', shownSec) : 'READY'
+  const paused = (fighting && roundTimer.isPaused) || (resting && restTimer.isPaused)
+  const timer = fighting ? roundTimer : resting ? restTimer : null
+  const track: TimerTrack = timer && timer.isRunning
+    ? { durationSec: timer.durationSec, endsAtMs: timer.isPaused ? null : timer.endsAtMs, remainingMs: timer.secondsRemaining * 1000 }
+    : { durationSec: round.durationSec, endsAtMs: null, remainingMs: round.durationSec * 1000 }
+  const boardRound = resting && nextRound ? nextRound : round
+  const combos = boardRound.combos.filter(rc => rc.combo)
+
+  function togglePause() {
+    if (fighting) { if (roundTimer.isPaused) resumeRound(); else pauseRound() }
+    else if (resting) { if (restTimer.isPaused) resumeRest(); else pauseRest() }
+  }
+  function skip() {
+    if (fighting) handleRoundEnd()
+    else if (resting) handleRestDone()
   }
 
-  // Moment line (Flavor C)
-  const moment = resolveBagWorkMoment({
-    phase:
-      phase === 'rest'
-        ? 'rest'
-        : phase === 'fighting'
-          ? 'fighting'
-          : 'ready',
-    intent: positionalIntent?.label,
-    roundType: round.roundType ?? null,
-    isLastRound,
-    secondsRemaining:
-      phase === 'fighting'
-        ? roundTimer.secondsRemaining
-        : phase === 'rest'
-          ? restTimer.secondsRemaining
-          : undefined,
-  })
-
-  // Footer action per phase
-  const footer =
-    phase === 'ready' ? (
-      <Button
-        onClick={handleStartRound}
-        size="lg"
-        className="w-full"
-        style={{ backgroundColor: '#E8C860', color: '#020A08' }}
-      >
-        Start Round
-      </Button>
-    ) : phase === 'fighting' ? (
-      <Button onClick={() => handleRoundEnd()} variant="secondary" size="lg" className="w-full">
-        End Round Early
-      </Button>
-    ) : (
-      <Button
-        onClick={() => handleRestDone()}
-        size="lg"
-        className="w-full"
-        style={{ backgroundColor: '#E8C860', color: '#020A08' }}
-      >
-        Next Round
-      </Button>
-    )
-
-  // ─── Body ────────────────────────────────────────────────────
-
-  const body =
-    phase === 'rest' ? (
-      <div className="mx-auto flex max-w-md flex-col items-center pt-6 animate-fade-in">
-        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/50">
-          Between Rounds
-        </p>
-        <h2 className="mt-1 text-display-lg text-foreground">Recover</h2>
-        <div className="mt-8 rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
-          <RingTimer
-            totalSeconds={round.restSec}
-            secondsRemaining={restTimer.secondsRemaining}
-            isOvertime={restTimer.isOvertime}
-            label={restTimer.isOvertime ? 'Over' : 'Rest'}
-            accentColor="#E8C860"
-            isPaused={restTimer.isPaused}
-            onTogglePause={() => (restTimer.isPaused ? resumeRest() : pauseRest())}
-          />
-        </div>
-      </div>
-    ) : (
-      <div className="mx-auto max-w-md animate-fade-in">
-        {(roundTypeLabel || roundTier) && (
-          <p className="font-cinzel text-xs uppercase tracking-[0.22em] text-gold/60">
-            {roundTypeLabel ?? TIER_LABELS[roundTier ?? ''] ?? roundTier}
-          </p>
-        )}
-        {coachRationale ? (
-          <p className="mt-1 text-[12px] italic text-muted-foreground/75">
-            {coachRationale}
-          </p>
-        ) : positionalIntent ? (
-          <p className="mt-1 text-[12px] text-muted-foreground/60">
-            {positionalIntent.label}. {positionalIntent.hint}.
-          </p>
-        ) : null}
-
-        {/* Combo card */}
-        <div className="mt-4 rounded border border-gold/15 bg-gradient-to-b from-[#1A1A10]/60 to-[#12170E]/40 p-5 shadow-[0_0_12px_rgba(0,0,0,0.3)]">
-          {round.combos.map((rc, i) => {
-            const mastery = rc.combo?.masteryScore ?? 0
-            const isFav = rc.combo?.isFavourite === 1
-            const dots = Math.min(Math.floor(mastery / 3), 5)
-            const techniques = rc.combo?.techniques?.split(',').filter(Boolean) ?? []
-
-            return (
-              <div key={rc.id} className="mb-3 last:mb-0 flex items-start gap-2">
-                <span className="shrink-0 text-sm font-bold text-gold">{i + 1}.</span>
-                <div className="flex-1">
-                  <span className="text-base text-foreground">
-                    {rc.combo?.text ?? 'Unknown combo'}
-                    {(isFav || mastery >= 9) && (
-                      <span className="ml-1.5 inline-flex text-gold">
-                        <ForgeIcon size={12} mastered={mastery >= 9} />
-                      </span>
-                    )}
-                  </span>
-                  {techniques.length > 0 && (
-                    <p className="mt-0.5 text-[13px] italic text-muted-foreground">
-                      {techniques.join(' \u00b7 ')}
-                    </p>
-                  )}
-                  {rc.combo?.formTips && (
-                    <p className="mt-1.5 font-cinzel text-xs leading-snug text-teal/80">
-                      {rc.combo.formTips}
-                    </p>
-                  )}
-                  {mastery > 0 && (
-                    <div className="mt-1 flex gap-1">
-                      {Array.from({ length: 5 }, (_, di) => (
-                        <span
-                          key={di}
-                          className={`h-1.5 w-1.5 rounded-full ${di < dots ? 'bg-gold' : 'bg-border'}`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Timer card */}
-        <div className="mt-8 flex justify-center">
-          <div className="rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
-            <RingTimer
-              totalSeconds={round.durationSec}
-              secondsRemaining={phase === 'fighting' ? roundTimer.secondsRemaining : round.durationSec}
-              isOvertime={phase === 'fighting' ? roundTimer.isOvertime : false}
-              label={
-                phase === 'fighting'
-                  ? roundTimer.secondsRemaining <= 10
-                    ? 'Finish'
-                    : 'Fight'
-                  : 'Round'
-              }
-              accentColor={
-                phase === 'fighting' && roundTimer.secondsRemaining <= 10
-                  ? '#C45A3C'
-                  : '#E8C860'
-              }
-              isPaused={phase === 'fighting' && roundTimer.isPaused}
-              onTogglePause={
-                phase === 'fighting'
-                  ? () => (roundTimer.isPaused ? resumeRound() : pauseRound())
-                  : undefined
-              }
-            />
+  return (
+    <SessionFrame
+      title="BAG WORK"
+      count={`${round.roundNumber}/${totalRounds}`}
+      onEnd={onExit}
+      paused={paused}
+      grass={
+        <GrassZone
+          track={track}
+          kind={resting ? 'rest' : 'work'}
+          mode={resting ? 'rest' : fighting ? 'work' : 'ready'}
+          heat={heat}
+          onTap={phase === 'ready' ? undefined : togglePause}
+          onSkip={phase === 'ready' ? undefined : skip}
+        />
+      }
+    >
+      <Pips total={totalRounds} now={round.roundNumber - 1} />
+      <TimerFace
+        seconds={shownSec}
+        kind={resting ? 'rest' : 'work'}
+        heat={heat}
+        tone={resting ? 'teal' : 'ink'}
+        label={label}
+        labelTone={resting ? 'teal' : 'gold'}
+        track={track}
+      />
+      {combos.length > 0 && (
+        <div className={`wm-board tm-next${resting ? ' is-rest' : ''}`}>
+          <span className="wm-label tm-nlab">{resting ? 'Next round' : 'Combo'}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {combos.map(rc => (
+              <ComboStrikes key={rc.id} text={rc.combo!.text} letter={letters?.get(rc.combo!.id)} size="md" timer />
+            ))}
           </div>
         </div>
-      </div>
-    )
-
-  return (
-    <SessionShell
-      sessionType="bag_work"
-      counter={counter}
-      progress={progress}
-      moment={moment}
-      onExit={onExit}
-      footer={footer}
-    >
-      {body}
-    </SessionShell>
+      )}
+      {phase === 'ready' && (
+        <div className="tm-wide">
+          <SessionButton label="START ROUND" primary onClick={handleStartRound} />
+        </div>
+      )}
+      {paused && <span className="sr-only" role="status"><FlapLabel text="PAUSED" size="xs" /></span>}
+    </SessionFrame>
   )
 }

@@ -8,6 +8,7 @@
 // else holds. Lifts with no logged sets are never bumped.
 
 import { epley } from '../blockZero/e1rm'
+import { lbText } from '../units'
 
 export const TM_MIN_CLEAN_RATE = 0.9
 export const TM_MIN_WORKING_SETS = 6
@@ -86,7 +87,7 @@ export function fighterTmDecision(input: TmProgressInput): TmDecision {
     action: 'progress',
     currentTmKg: input.currentTmKg,
     newTmKg,
-    reason: `Clean block and best effort up ${Math.round(change * 100)}%. Max up ${step} kg.`,
+    reason: `Clean block and best effort up ${Math.round(change * 100)}%. Max up ${lbText(step)}.`,
   }
 }
 

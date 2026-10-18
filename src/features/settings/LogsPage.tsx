@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { Board, FlapButton, FlapLabel } from '@/design'
 import { apiFetch } from '@/lib/api'
 import { logger, type LogEntry, type LogLevel } from '@/lib/logger'
 import { useToast } from '@/components/ui/Toast'
+import { SettingsScreen } from './settingsParts'
+import { agoText, clockText, countLevels, filterFlaps, type LogFilter } from './settingsModel'
 
 interface ServerLogRow {
   id: string
@@ -18,60 +21,42 @@ interface ServerLogRow {
   createdAt: number
 }
 
-type Filter = 'all' | LogLevel | 'session'
-
-const LEVEL_COLOR: Record<string, string> = {
-  debug: 'text-muted-foreground',
-  info: 'text-foreground',
-  warn: 'text-gold',
-  error: 'text-destructive',
-}
-
-const LEVEL_DOT: Record<string, string> = {
-  debug: 'bg-muted-foreground/50',
-  info: 'bg-teal',
-  warn: 'bg-gold',
-  error: 'bg-destructive',
-}
-
-function formatTime(ts: number): string {
+function formatStamp(ts: number): string {
   const d = new Date(ts)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`
+  const p = (n: number, w = 2) => String(n).padStart(w, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`
 }
 
-function timeAgo(ts: number): string {
-  const diff = Date.now() - ts
-  const sec = Math.floor(diff / 1000)
-  if (sec < 60) return `${sec}s ago`
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const day = Math.floor(hr / 24)
-  return `${day}d ago`
+/** The technical detail under a row: the raw message, when, where, the context. */
+function detail(e: LogEntry): string {
+  const lines: string[] = []
+  if (e.userMessage && e.userMessage !== e.message) lines.push(e.message)
+  lines.push(formatStamp(e.ts))
+  if (e.screen) lines.push(`screen: ${e.screen}`)
+  if (e.sessionId) lines.push(`session: ${e.sessionId}`)
+  if (e.context) lines.push(JSON.stringify(e.context, null, 2))
+  return lines.join('\n')
 }
 
-function formatDate(ts: number): string {
-  const d = new Date(ts)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
+/**
+ * Logs, page 37 "Logs (hidden)" (approved; hold the crest on Settings or
+ * Today): filter flaps with counts, Recent problems in plain words, then
+ * everything. Tap a row for the technical detail.
+ */
 export function LogsPage() {
   const navigate = useNavigate()
-  const { show: showToast, ToastContainer } = useToast()
+  const { show: showToast } = useToast()
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<Filter>('all')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [currentSessionOnly, setCurrentSessionOnly] = useState(false)
+  const [filter, setFilter] = useState<LogFilter>('all')
+  const [open, setOpen] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       await logger.flush()
       const data = await apiFetch<{ entries: ServerLogRow[] }>('/api/logs?limit=1000')
-      const normalized: LogEntry[] = data.entries.map(r => ({
+      setEntries(data.entries.map(r => ({
         id: r.id,
         ts: r.ts,
         level: (r.level as LogLevel) ?? 'info',
@@ -81,29 +66,36 @@ export function LogsPage() {
         context: r.contextJson ? tryParse(r.contextJson) : undefined,
         screen: r.screen ?? undefined,
         sessionId: r.sessionId ?? undefined,
-      }))
-      setEntries(normalized)
+      })))
     } catch {
-      // Server unreachable — fall back to local buffer
+      // Server unreachable: the phone's own buffer
       setEntries(logger.snapshot().slice().reverse())
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
+  const counts = useMemo(() => countLevels(entries.map(e => e.level)), [entries])
   const filtered = useMemo(() => {
-    let rows = entries
-    if (filter !== 'all' && filter !== 'session') {
-      rows = rows.filter(e => e.level === filter)
-    }
-    if (currentSessionOnly) {
+    if (filter === 'all') return entries
+    if (filter === 'session') {
       const sid = sessionIdFromUrl() ?? mostRecentSessionId(entries)
-      if (sid) rows = rows.filter(e => e.sessionId === sid)
+      return sid ? entries.filter(e => e.sessionId === sid) : entries
     }
-    return rows
-  }, [entries, filter, currentSessionOnly])
+    return entries.filter(e => e.level === filter)
+  }, [entries, filter])
+  const problems = useMemo(() => entries.filter(e => e.level === 'error' || e.level === 'warn').slice(0, 3), [entries])
+
+  function toggle(id: string) {
+    setOpen(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   async function handleClear() {
     if (!confirm('Clear all logs? This cannot be undone.')) return
@@ -116,138 +108,56 @@ export function LogsPage() {
     }
   }
 
-  const counts = useMemo(() => countByLevel(entries), [entries])
-  const recentProblems = useMemo(() => {
-    return entries
-      .filter(e => e.level === 'error' || e.level === 'warn')
-      .slice(0, 3)
-  }, [entries])
+  const now = Date.now()
 
   return (
-    <div className="relative z-[1] flex min-h-screen flex-col bg-background">
-      <header
-        className="sticky top-0 z-30 border-b border-border bg-background/90 px-4 pb-3 backdrop-blur-md"
-        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <button
-            onClick={() => navigate(-1)}
-            className="min-h-[44px] rounded-md px-2 text-sm text-muted-foreground active:text-foreground"
-          >
-            ← Back
-          </button>
-          <h1 className="text-display-sm text-foreground">
-            <span className="text-gold">L</span>ogs
-          </h1>
-          <button
-            onClick={load}
-            className="min-h-[44px] rounded-md px-2 text-sm text-muted-foreground active:text-foreground"
-          >
-            Refresh
-          </button>
+    <SettingsScreen title="LOGS" onBack={() => navigate(-1)}>
+      <Board solid className="st-board">
+        <div className="st-pills" role="radiogroup" aria-label="Filter">
+          {filterFlaps(entries.length, counts).map(f => {
+            const on = f.key === filter
+            return (
+              <button key={f.key} type="button" role="radio" aria-checked={on} aria-label={f.text.toLowerCase()} className={`st-pill${on ? ' is-on' : ''}`} onClick={() => setFilter(f.key)}>
+                <FlapLabel text={f.text} size="xs" tone={on ? 'gold' : 'ink'} />
+              </button>
+            )
+          })}
         </div>
-        <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
-          <FilterPill active={filter === 'all'} onClick={() => setFilter('all')} label={`All ${entries.length}`} />
-          <FilterPill active={filter === 'error'} onClick={() => setFilter('error')} label={`Errors ${counts.error}`} accent="text-destructive" />
-          <FilterPill active={filter === 'warn'} onClick={() => setFilter('warn')} label={`Warn ${counts.warn}`} accent="text-gold" />
-          <FilterPill active={filter === 'info'} onClick={() => setFilter('info')} label={`Info ${counts.info}`} />
-          <FilterPill active={filter === 'debug'} onClick={() => setFilter('debug')} label={`Debug ${counts.debug}`} accent="text-muted-foreground" />
-          <FilterPill active={currentSessionOnly} onClick={() => setCurrentSessionOnly(v => !v)} label="This session" />
-        </div>
-      </header>
+      </Board>
 
-      {!loading && recentProblems.length > 0 && (
-        <section className="border-b border-border bg-border/10 px-4 py-3">
-          <h2 className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">Recent problems</h2>
-          <ul className="space-y-1.5">
-            {recentProblems.map(e => (
-              <li key={`rp-${e.id}`} className="flex items-start gap-2">
-                <span className={`mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${LEVEL_DOT[e.level]}`} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm ${e.level === 'error' ? 'text-destructive' : 'text-gold'}`}>
-                    {e.userMessage ?? e.message}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground">{timeAgo(e.ts)} · {e.category}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {!loading && problems.length > 0 && (
+        <Board head="Recent problems" headRight={<button type="button" className="st-headbtn wm-label" onClick={() => void load()}>Refresh</button>} solid className="st-board">
+          {problems.map(e => (
+            <LogRow key={`rp-${e.id}`} entry={e} time={`${agoText(e.ts, now)} · ${e.category}`} open={open.has(`rp-${e.id}`)} onToggle={() => toggle(`rp-${e.id}`)} />
+          ))}
+        </Board>
       )}
 
-      <div className="flex flex-1 flex-col px-2 pb-20">
+      <Board head="All" headRight={problems.length === 0 ? <button type="button" className="st-headbtn wm-label" onClick={() => void load()}>Refresh</button> : undefined} solid className="st-board">
         {loading ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
+          <p className="st-empty">Loading.</p>
         ) : filtered.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">No logs match this filter.</p>
-        ) : (
-          <ul className="divide-y divide-border/50">
-            {filtered.map(entry => (
-              <li key={entry.id}>
-                <button
-                  onClick={() => setExpandedId(prev => prev === entry.id ? null : entry.id)}
-                  className="w-full px-2 py-2 text-left active:bg-border/30"
-                >
-                  <div className="flex items-start gap-2">
-                    <span className={`mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${LEVEL_DOT[entry.level]}`} />
-                    <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">{formatTime(entry.ts)}</span>
-                    <span className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{entry.category}</span>
-                    <div className="flex-1 min-w-0">
-                      {entry.userMessage ? (
-                        <>
-                          <div className={`truncate text-sm ${LEVEL_COLOR[entry.level]}`}>{entry.userMessage}</div>
-                          <div className="truncate font-mono text-[10px] text-muted-foreground">{entry.message}</div>
-                        </>
-                      ) : (
-                        <div className={`truncate text-xs ${LEVEL_COLOR[entry.level]}`}>{entry.message}</div>
-                      )}
-                    </div>
-                  </div>
-                  {expandedId === entry.id && (
-                    <div className="mt-1.5 space-y-1 pl-4 font-mono text-[10px] text-muted-foreground">
-                      <div>{formatDate(entry.ts)} {formatTime(entry.ts)}</div>
-                      {entry.screen && <div>screen: {entry.screen}</div>}
-                      {entry.sessionId && <div>session: {entry.sessionId}</div>}
-                      {entry.context && (
-                        <pre className="max-h-64 overflow-auto rounded bg-border/40 p-2 text-foreground whitespace-pre-wrap break-words">
-                          {JSON.stringify(entry.context, null, 2)}
-                        </pre>
-                      )}
-                    </div>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+          <p className="st-empty">No logs match this filter.</p>
+        ) : filtered.map(e => (
+          <LogRow key={e.id} entry={e} time={`${clockText(e.ts)} · ${e.category.toUpperCase()}`} open={open.has(e.id)} onToggle={() => toggle(e.id)} />
+        ))}
+      </Board>
 
-      <footer className="sticky bottom-0 border-t border-border bg-background/90 px-4 py-3 backdrop-blur-md" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}>
-        <div className="flex gap-2">
-          <button
-            onClick={handleClear}
-            className="min-h-[44px] rounded-md border border-border px-4 text-sm text-muted-foreground active:text-foreground"
-          >
-            Clear
-          </button>
-        </div>
-      </footer>
-
-      <ToastContainer />
-    </div>
+      {/* Not on page 37 (owner to place): clearing the logs, kept. */}
+      <FlapButton label="CLEAR" size="xs" onClick={() => void handleClear()} />
+    </SettingsScreen>
   )
 }
 
-function FilterPill({ active, onClick, label, accent }: { active: boolean; onClick: () => void; label: string; accent?: string }) {
+function LogRow({ entry, time, open, onToggle }: { entry: LogEntry; time: string; open: boolean; onToggle: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className={`rounded-full border px-2.5 py-1 ${active
-        ? 'border-gold/50 bg-gold/10 text-gold'
-        : `border-border bg-border/20 ${accent ?? 'text-foreground'} active:bg-border/50`
-      }`}
-    >
-      {label}
+    <button type="button" className="st-lrow" aria-expanded={open} onClick={onToggle}>
+      <span className={`st-lv is-${entry.level}`} aria-hidden />
+      <span className="st-lt">
+        <span className={`m is-${entry.level}`}>{entry.userMessage ?? entry.message}</span>
+        <span className="t">{time}</span>
+        {open && <span className="x">{detail(entry)}</span>}
+      </span>
     </button>
   )
 }
@@ -265,10 +175,3 @@ function mostRecentSessionId(entries: LogEntry[]): string | undefined {
   for (const e of entries) if (e.sessionId) return e.sessionId
   return undefined
 }
-
-function countByLevel(entries: LogEntry[]) {
-  const c = { debug: 0, info: 0, warn: 0, error: 0 }
-  for (const e of entries) c[e.level] += 1
-  return c
-}
-

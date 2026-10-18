@@ -11,7 +11,7 @@ import * as THREE from 'three'
 import { buildScene, POND, type BuiltScene, type SceneKind } from './build'
 import { cardMaterial, gi, glyphAtlas, makeShared, skyMaterial, surfaceMaterial, type SharedUniforms } from './materials'
 import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, frustumFor, glideEase, mixView, sceneLamp, sceneOf, scenesInView, sceneGlyphWorld, viewGlyphWorld, type PlaceView, type SceneKey } from '../places'
-import { weeksOrDefault, type WeekPost, type WorldPlace } from '../worldStore'
+import { pondLook, weeksOrDefault, type WeekPost, type WorldPlace } from '../worldStore'
 import type { WorldMode } from '../timeOfDay'
 
 const GLYPH_PX = 9
@@ -43,6 +43,8 @@ export interface WorldHandle {
   setMode(mode: WorldMode): void
   setWeeks(weeks: WeekPost[] | null): void
   setLantern(k: number): void
+  /** The Ledger: how the week has gone (0..1, 0.5 neutral): brighter water and more fireflies. */
+  setPond(k: number): void
   setOffline(offline: boolean): void
   setReducedMotion(reduced: boolean): void
   pause(): void
@@ -114,6 +116,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   let weeks = weeksOrDefault(init.weeks)
   let mode: WorldMode = init.mode
   let lantern = init.lantern
+  let pond = 0.5
   let reduced = init.reducedMotion
   let timeLamp = 1
 
@@ -124,13 +127,16 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
     if (b.lightFlies) b.lightFlies.visible = M.flies
     if (b.cyanMotes) b.cyanMotes.visible = M.flies
     if (b.beams) { b.beams.visible = M.beams > 0.3; (b.beams.material as THREE.ShaderMaterial).uniforms.uExposure.value = M.beams }
-    if (b.pondWater) { const m = b.pondWater.material as THREE.MeshBasicMaterial; m.color.set(mode === 'sun' ? '#3a2e14' : mode === 'night' ? '#061418' : '#1c2a2a'); m.opacity = mode === 'night' ? 0.35 : 0.5 }
-    if (b.shrooms) b.shrooms.visible = mode !== 'sun'
+        if (b.shrooms) b.shrooms.visible = mode !== 'sun'
     if (b.pondFlies) { b.pondFlies.visible = mode === 'night'; const tw = b.pondFlies.userData.twin as THREE.Object3D | undefined; if (tw) tw.visible = mode === 'night' }
     applyLight(b)
   }
   function applyLight(b: BuiltScene) {
     if (b.flies) b.flies.count = Math.round(24 * (0.35 + 0.65 * lantern))
+    // page 32 C: the pond reacts to the week (pondLook: 0.5 is the water as drawn)
+    const look = pondLook(pond)
+    if (b.pondWater) { const m = b.pondWater.material as THREE.MeshBasicMaterial; m.color.set(mode === 'sun' ? '#3a2e14' : mode === 'night' ? '#061418' : '#1c2a2a').multiplyScalar(look.water); m.opacity = mode === 'night' ? 0.35 : 0.5 }
+    if (b.pondFlies) { const n = (b.pondFlies.userData.n as number | undefined) ?? b.pondFlies.count; b.pondFlies.userData.n = n; b.pondFlies.count = Math.max(1, Math.round(n * look.flies)); const tw = b.pondFlies.userData.twin as THREE.InstancedMesh | undefined; if (tw) tw.count = b.pondFlies.count }
   }
   function applyDensity(b: BuiltScene) {
     for (const g of b.grass) g.mesh.count = Math.max(1, Math.floor(g.n * LEVELS[level].density))
@@ -319,6 +325,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
       if (glide) { roadStale = true; return }
       rebuildRoad()
     },
+    setPond(k) { pond = Math.max(0, Math.min(1, k)); for (const b of scenes.values()) applyLight(b); if (reduced) requestStill() },
     setLantern(k) { lantern = Math.max(0, Math.min(1, k)); for (const b of scenes.values()) applyLight(b); if (reduced) requestStill() },
     setOffline(off) { rain.visible = off; if (reduced) requestStill() },
     setReducedMotion(r) { if (r === reduced) return; reduced = r; if (r) { stop(); requestStill() } else start() },

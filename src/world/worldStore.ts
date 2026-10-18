@@ -28,6 +28,8 @@ export interface WorldState {
   bare: boolean
   /** A screen with no place of its own that shows the world behind a centred card (page 31's MT Class Log: the forest). */
   backdrop: WorldPlace | null
+  /** How the week has gone, 0..1 (page 32: the pond reacts to the week; brighter water and more fireflies when it's gone well). 0.5 = neutral. */
+  pond: number
 }
 
 const DEFAULT_WEEKS: WeekPost[] = [
@@ -35,7 +37,7 @@ const DEFAULT_WEEKS: WeekPost[] = [
   { state: 'todo', notches: 0 }, { state: 'todo', notches: 0 }, { state: 'todo', notches: 0 },
 ]
 
-let state: WorldState = { place: 'clearing', lantern: 1, weeks: null, offline: false, bare: false, backdrop: null }
+let state: WorldState = { place: 'clearing', lantern: 1, weeks: null, offline: false, bare: false, backdrop: null, pond: 0.5 }
 const listeners = new Set<() => void>()
 
 function emit(next: Partial<WorldState>) {
@@ -61,6 +63,17 @@ export function setWorldPlace(place: WorldPlace): void {
 
 export function setWorldLantern(k: number): void {
   emit({ lantern: Math.max(0, Math.min(1, Number.isFinite(k) ? k : 1)) })
+}
+
+/** The Ledger: how the week has gone (done of done + skipped), 0..1; null is neutral (0.5). */
+export function setWorldPond(k: number | null): void {
+  emit({ pond: k == null || !Number.isFinite(k) ? 0.5 : Math.round(Math.max(0, Math.min(1, k)) * 100) / 100 })
+}
+
+/** Page 32 C: the water's brightness and the night's pond fireflies for a week's k (0.5 = the look as drawn). */
+export function pondLook(k: number): { water: number; flies: number } {
+  const c = Math.max(0, Math.min(1, k))
+  return { water: 0.75 + 0.5 * c, flies: Math.min(1, 0.4 + 1.2 * c) }
 }
 
 /** Program: the block's weeks as wayposts. Same values keep the same reference (no rebuild). */

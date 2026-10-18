@@ -1,0 +1,95 @@
+/* In-session screens (pages 19 and 31): the set screen, the run boards, the bag preview,
+   combo rating and unlock, the close (effort, the moment) and Breathe. Values are the
+   mockups' (19-sessions.html, 31-in-session.html, shared/flap.css); small text sits at the
+   readable minimums (design-decisions). */
+
+.ss-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.ss-grow { flex: 1; min-width: 0; display: flex; }
+.ss-rows { display: flex; flex-direction: column; }
+.ss-rows > .ss-row + .ss-row { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
+
+/* the set (page 31 "A set"): the exercise, the set card and LOG SET in the middle */
+.ss-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: safe center; gap: 10px; padding: 4px 14px 40px; }
+.ss-headnote { font: 600 13px/1.4 var(--font-body); color: #9db5aa; text-shadow: none; }
+.ss-extra { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.ss-links { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ss-linkbtn { border: 0; background: none; cursor: pointer; text-align: center; font: 700 14px var(--font-body); color: #c9b27a; text-decoration: underline; text-underline-offset: 3px; padding: 6px; }
+.ss-linkbtn.is-left { text-align: left; padding: 6px 0; align-self: flex-start; }
+.ss-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* centred boards over the forest */
+.ss-card { gap: 10px; }
+.ss-seg2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+.ss-seg2 > button { display: flex; justify-content: center; border: 0; padding: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ss-grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+.ss-cell4 { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border-radius: 12px; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); }
+.ss-cellbtn { display: flex; justify-content: center; width: 100%; border: 0; padding: 0; background: none; cursor: pointer; }
+.ss-cellin { width: 100%; height: 41px; border: 0; border-radius: 8px; text-align: center; font: 800 26px/1 var(--font-mono); color: #e8dcb4; background: rgba(0, 0, 0, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.35); outline: none; }
+.ss-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ss-fld { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ss-in { min-height: 52px; width: 100%; border: 0; border-radius: 10px; padding: 0 12px; background: rgba(0, 0, 0, 0.38); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.25); font: 700 16px var(--font-body); color: #e8dcb4; outline: none; }
+.ss-in::placeholder { color: rgba(232, 220, 180, 0.38); font-weight: 500; }
+
+/* Bag Work Preview (page 31) */
+.wm-card.ss-preview { gap: 4px; max-height: 95dvh; }
+.ss-preview-top { display: flex; justify-content: space-between; align-items: center; margin: 2px 0 8px; }
+.ss-brow { display: flex; align-items: center; gap: 12px; padding: 6px 2px; border-top: 1px solid rgba(0, 0, 0, 0.55); }
+.ss-num { width: 24px; flex: none; padding-top: 2px; font: 800 14px var(--font-mono); color: rgba(240, 230, 192, 0.5); }
+.ss-rcombos { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+
+/* Rating, one at a time (page 31) */
+.ss-rate-combo { display: flex; justify-content: center; margin: 8px 0 12px; }
+.ss-big3 { display: grid; place-items: center; width: 100%; min-height: 62px; margin-top: 8px; border: 0; border-radius: 12px; cursor: pointer; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); transition: background var(--t-quick) ease-out, box-shadow var(--t-quick) ease-out; -webkit-tap-highlight-color: transparent; }
+.ss-big3 + .ss-big3 { margin-top: 18px; }
+.ss-big3.is-on { background: rgba(184, 152, 74, 0.16); box-shadow: inset 0 0 0 2px #b8984a, 0 0 18px rgba(184, 152, 74, 0.2); }
+.ss-big3.is-low.is-on { background: rgba(156, 90, 64, 0.18); box-shadow: inset 0 0 0 2px #9c5a40, 0 0 18px rgba(156, 90, 64, 0.2); }
+.ss-big3.is-hi.is-on { background: rgba(69, 121, 106, 0.2); box-shadow: inset 0 0 0 2px #45796a, 0 0 18px rgba(69, 121, 106, 0.25); }
+
+/* New Combos Available (page 31): ticked rows */
+.ss-tick { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 2px; border: 0; border-top: 1px solid rgba(0, 0, 0, 0.5); background: none; cursor: pointer; text-align: left; }
+.ss-tick + .ss-tick { margin-top: 10px; }
+.ss-bx { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 6px; font: 900 15px var(--font-mono); color: #1c1608; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3); }
+.ss-bx.is-on { background: #b8984a; box-shadow: none; }
+
+/* Closing: effort (page 19 #6) */
+.ss-close-top { margin-top: 40px; text-align: center; }
+.ss-veil { position: absolute; inset: 0; z-index: 5; background: rgba(2, 8, 6, 0.55); }
+.wm-board.ss-ccard { position: absolute; left: 14px; right: 14px; top: 50%; transform: translateY(-50%); z-index: 6; display: flex; flex-direction: column; gap: 10px; max-height: 78%; overflow-y: auto; }
+.ss-ccard .wm-board-head { margin-bottom: 9px; }
+.ss-etiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+.ss-etile { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 64px; padding: 10px 0; border: 0; border-radius: 10px; cursor: pointer; background: rgba(0, 0, 0, 0.22); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
+.ss-etile:active { transform: scale(0.97); }
+
+/* The moment (page 19 #6) */
+.ss-moment { position: fixed; inset: 0; z-index: 90; overflow: hidden; background: #020604; cursor: pointer; }
+.ss-moment-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ss-moment-fallback { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); }
+.ss-moment-dust { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; pointer-events: none; }
+.ss-shafts { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 1.2s; background: repeating-linear-gradient(105deg, transparent 0 34px, rgba(255, 230, 170, 0.07) 34px 52px, transparent 52px 90px); -webkit-mask-image: linear-gradient(rgba(0, 0, 0, 1), transparent 75%); mask-image: linear-gradient(rgba(0, 0, 0, 1), transparent 75%); }
+.ss-shafts.is-on { opacity: 1; }
+.ss-flare { position: absolute; left: 50%; top: 40%; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, -50%); z-index: 2; pointer-events: none; box-shadow: 0 0 0 0 rgba(255, 210, 130, 0); transition: box-shadow 1s ease-out; }
+.ss-flare.is-on { box-shadow: 0 0 120px 90px rgba(255, 200, 120, 0.22); }
+.ss-runes { position: absolute; left: 50%; top: 38%; width: 300px; height: 300px; transform: translate(-50%, -50%); z-index: 3; pointer-events: none; }
+.ss-runes span { position: absolute; left: 50%; top: 50%; font: 800 18px var(--font-mono); color: rgba(120, 190, 160, 0.15); transition: color 0.4s, text-shadow 0.4s; }
+.ss-runes span.is-lit { color: #c9b27a; text-shadow: 0 0 10px rgba(201, 178, 122, 0.8); }
+.ss-runes span.is-lit.is-t { color: #8fd4b8; text-shadow: 0 0 10px rgba(120, 210, 180, 0.8); }
+.ss-moment-words { position: absolute; left: 0; right: 0; bottom: 120px; z-index: 4; text-align: center; transition: opacity 0.5s; pointer-events: none; }
+
+/* Breathe (page 31) */
+.ss-breathe { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+.ss-ring { width: 170px; height: 170px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(120, 200, 180, 0.45), 0 0 60px rgba(120, 200, 180, 0.25) inset; animation: ss-breathe 3s ease-in-out infinite; }
+@keyframes ss-breathe { 0%, 100% { transform: scale(0.82); opacity: 0.6; } 50% { transform: scale(1); opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ss-ring { animation: none; }
+  .ss-shafts, .ss-flare, .ss-runes span, .ss-moment-words { transition: none; }
+}
+
+/* The talk test on Log your run (page 45 #3): Block Zero week 1 and 6 */
+.ss-talk { margin-top: 2px; padding-top: 12px; border-top: 1px solid rgba(0, 0, 0, 0.6); }
+.ss-q { margin: 6px 0 8px; font: 600 16px/1.4 var(--font-body); color: #e6efe9; }
+.ss-drum2 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ss-ar { width: 56px; height: 56px; flex: none; border: 0; border-radius: 11px; display: grid; place-items: center; cursor: pointer; font: 900 18px var(--font-mono); color: #e8dcb4; background: linear-gradient(180deg, #232823 0 50%, #1a1e1a 50%); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3); -webkit-tap-highlight-color: transparent; }
+.ss-ar:disabled { opacity: 0.45; cursor: default; }
+.ss-v { display: flex; align-items: baseline; gap: 8px; }
+.ss-u { font: 700 14px var(--font-body); letter-spacing: 0.14em; color: #c9d6cf; text-transform: uppercase; }

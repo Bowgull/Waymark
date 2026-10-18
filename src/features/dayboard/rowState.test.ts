@@ -148,7 +148,7 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
 {
   const set = (n: number, w: number, r: number, pw: number, pr: number, done = true) => ({ setNumber: n, weightKg: w, reps: r, plannedWeightKg: pw, plannedReps: pr, isWarmup: 0, completedAt: done ? 1 : null })
   const exs: WorkoutExercise[] = [
-    { exerciseId: 'sq', section: 'main', exercise: { name: 'Back Squat' }, sets: [set(1, 63.5, 8, 61.2, 8), set(2, 63.5, 8, 61.2, 8)] },
+    { exerciseId: 'sq', section: 'main', exercise: { name: 'Front Squat' }, sets: [set(1, 63.5, 8, 61.2, 8), set(2, 63.5, 8, 61.2, 8)] },
     { exerciseId: 'rdl', section: 'main', exercise: { name: 'RDL' }, sets: [set(1, 52.2, 7, 52.2, 8), set(2, 52.2, 8, 52.2, 8)] },
     { exerciseId: 'ss', section: 'accessory', exercise: { name: 'Split Squat' }, sets: [set(1, 11.3, 10, 11.3, 10), set(2, 11.3, 10, 11.3, 10)] },
     { exerciseId: 'db', section: 'core', exercise: { name: 'Dead Bug' }, sets: [set(1, 0, 10, 0, 10), set(2, 0, 10, 0, 10, false)] },
@@ -157,7 +157,7 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   const lines = strengthDiffLines(exs)
   assert.equal(lines.length, 4, 'warm-ups are left out')
   const [sq, rdl, ss, db] = lines
-  assert.equal(sq.label, 'BACK SQUAT')
+  assert.equal(sq.label, 'FRONT SQUAT')
   assert.equal(sq.band, 'up')
   assert.equal(sq.chip, '+5', 'load up in lbs')
   assert.deepEqual(sq.parts.filter(p => p.lifted).map(p => p.text), ['140'], 'the load is lifted')
@@ -257,14 +257,14 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
 {
   assert.equal(strengthWeekLine('block_zero', 3), 'Week 3: two sets of eight, about three left in the tank.', 'page 33 to-do strength line')
   assert.equal(strengthWeekLine('fighter', 3), null)
-  assert.equal(shortLift('Back Squat'), 'Squat')
+  assert.equal(shortLift('Front Squat'), 'Front squat')
   assert.equal(shortLift('Romanian Deadlift'), 'RDL')
   const lifts: WorkoutExercise[] = [
-    { exerciseId: 'sq', section: 'main', name: 'Back Squat', prescription: { prescribedWeightKg: 61.2, setsReps: '2×8' } },
+    { exerciseId: 'sq', section: 'main', name: 'Front Squat', prescription: { prescribedWeightKg: 61.2, setsReps: '2×8' } },
     { exerciseId: 'rdl', section: 'main', name: 'Romanian Deadlift', prescription: { prescribedWeightKg: 52.2, setsReps: '2×8' } },
     { exerciseId: 'ss', section: 'accessory', name: 'Split Squat', prescription: { prescribedWeightKg: 11.3, setsReps: '2×10' } },
   ]
-  assert.equal(topLiftsLine(lifts), 'Squat 2×135lbs · RDL 2×115lbs', 'page 20 top lifts on Today')
+  assert.equal(topLiftsLine(lifts), 'Front squat 2×135lbs · RDL 2×115lbs', 'page 20 top lifts on Today')
   assert.equal(topLiftsLine([]), null)
   assert.equal(zone2PlanLine('Run-walk', 142, 35), 'Easy, conversational pace. Heart rate under 142, nasal breathing. Run-walk, 35 min.', 'page 33 Zone 2 line')
   const sat = 20379 // a Saturday (2025-10-18)

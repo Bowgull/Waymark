@@ -4,7 +4,6 @@ import { normaliseClassType } from '../../lib/blockZero/muayThai'
 import { strengthSetPatchSchema, mtClassLogPatchSchema, userProfilePatchSchema } from '../../lib/validators/schemas'
 import { CLASS_TYPES, clampClassMinutes, classLogPatch, defaultClassType } from './classType'
 import { EFFORT_TILES, asksEffort, effortWrite, labelForRir, rirFromLabel } from './effort'
-import { stripWeeks, weekLine, weekName } from './program'
 import { readinessLine } from './readinessLine'
 
 // ─── effort tiles map to RIR 3 / 2 / 1 / 0 ──
@@ -74,20 +73,6 @@ import { readinessLine } from './readinessLine'
   assert.match(fresh!.why, /Not enough check-ins yet/)
   const steady = readinessLine({ checkedIn: true, ease: false, worseItems: [], reason: null, items: [{ item: 'sleepHours', today: 7, mean7: 7, worse: false }] })
   assert.equal(steady?.why, 'Everything is near your 7-day average.')
-}
-
-// ─── the six-week strip ──
-{
-  const s = stripWeeks(2, 6)
-  assert.deepEqual(s.map(w => w.letter).join(''), 'TBBBBR', 'Test · Build x4 · Retest')
-  assert.deepEqual(s.map(w => w.state), ['done', 'now', 'ahead', 'ahead', 'ahead', 'ahead'])
-  const ext = stripWeeks(7, 8)
-  assert.equal(ext.length, 8, 'extension weeks join the strip')
-  assert.equal(ext[6].letter, '+')
-  assert.equal(ext[6].state, 'now')
-  assert.equal(weekName(1), 'TEST')
-  assert.equal(weekName(6), 'RETEST')
-  assert.match(weekLine(7), /week-5 levels/)
 }
 
 // ─── Settings: the coach's fields ──

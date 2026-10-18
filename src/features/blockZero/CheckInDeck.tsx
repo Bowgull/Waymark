@@ -1,8 +1,10 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 
-import { Board, FlapButton, FlapChip, FlapLabel, TileChoice, useReducedMotion } from '@/design'
+import { Board, FlapButton, FlapLabel, showPop } from '@/design'
 import { SORENESS_COLOURS } from '@/design/tokens'
+import { apiFetch, idempotencyHeaders } from '@/lib/api'
 
+import { BzDots, BzOverlay, BzTiles } from './Bz'
 import {
   CHECK_IN_QUESTIONS,
   checkInPayload,
@@ -23,27 +25,34 @@ export interface CheckInDeckProps {
   onClose: (saved: boolean) => void
   /** Skip the whole thing for today (first-open cards only). */
   onSkipToday?: () => void
-  /** Design gallery only: open on the closing line. */
+  /** Today's note on the daily log (+ ADD NOTE edits it). */
+  note?: string | null
+  /** The daily log after a note was saved. */
+  onNoteSaved?: (log: unknown) => void
+  /** Design gallery only: open on the verdict. */
   previewSettled?: ReadinessIn | null
 }
 
-const SETTLE_MS = 1800
 const SWIPE_PX = 60
 
 /**
- * The morning check-in: centred swipe cards, one question each. A tap answers
- * and moves on; swipe left passes a question, swipe right goes back. At the
- * end: one line (the readiness read), then Today.
+ * The morning check-in (page 45, "Morning check-in cards"): a centred board
+ * over the dimmed Today, one question each. A tap answers and moves on; swipe
+ * left passes, swipe right goes back. The last board is the verdict (EASING
+ * TODAY clay / GOOD TO GO teal) with its line, then + ADD NOTE (the daily
+ * log's note) and TO TODAY.
  */
-export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, onSkipToday, previewSettled }: CheckInDeckProps) {
+export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, onSkipToday, note, onNoteSaved, previewSettled }: CheckInDeckProps) {
   const [state, dispatch] = useReducer(checkInReducer, undefined, () => initialCheckIn(existing, startAt))
   const [phase, setPhase] = useState<'cards' | 'saving' | 'settled' | 'error'>(previewSettled !== undefined ? 'settled' : 'cards')
   const [line, setLine] = useState<ReturnType<typeof readinessLine>>(() => (previewSettled ? readinessLine(previewSettled) : null))
-  const reduced = useReducedMotion()
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [noteText, setNoteText] = useState(note ?? '')
+  const [noteSaving, setNoteSaving] = useState(false)
   const touch = useRef<{ x: number; y: number } | null>(null)
   const submitted = useRef(false)
 
-  // The last card answered: save once, then show the line for a moment.
+  // The last card answered: save once, then the verdict.
   useEffect(() => {
     if (!state.done || submitted.current) return
     submitted.current = true
@@ -64,13 +73,6 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
     return () => { alive = false }
   }, [state, date, onSubmit])
 
-  // A calm moment on the line, then Today (tap skips the wait).
-  useEffect(() => {
-    if (phase !== 'settled' || previewSettled !== undefined) return
-    const t = setTimeout(() => onClose(true), reduced ? 1200 : SETTLE_MS)
-    return () => clearTimeout(t)
-  }, [phase, onClose, reduced, previewSettled])
-
   const q = CHECK_IN_QUESTIONS[Math.min(state.index, CHECK_IN_QUESTIONS.length - 1)]
   const total = CHECK_IN_QUESTIONS.length
 
@@ -87,18 +89,29 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
     dispatch(dx < 0 ? { type: 'pass' } : { type: 'back' })
   }
 
+  // + ADD NOTE: the daily log's note field (POST /api/daily-logs only writes the keys it is sent).
+  async function saveNote() {
+    setNoteSaving(true)
+    try {
+      const log = await apiFetch('/api/daily-logs', { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify({ date, notes: noteText.trim() || null }) })
+      onNoteSaved?.(log)
+      setNoteOpen(false)
+      showPop('Saved.', 'good')
+    } catch {
+      showPop("Couldn't save. Check your connection.", 'bad')
+    } finally {
+      setNoteSaving(false)
+    }
+  }
+
+  const tone = line?.tone === 'bad' ? 'clay' : 'teal'
   return (
-    <div className="wm-scrim" style={{ background: 'rgba(2,8,6,.82)' }} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
-      <div className="wm-card" role="dialog" aria-modal="true" aria-label="Morning check-in" style={{ gap: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-          <span className="wm-board-head" style={{ margin: 0 }}>Morning check-in</span>
-          {phase === 'cards' && (
-            <button
-              type="button"
-              className="wm-label"
-              style={{ minHeight: 44, padding: '0 4px', background: 'none', border: 0, cursor: 'pointer' }}
-              onClick={() => { onSkipToday?.(); onClose(false) }}
-            >
+    <div className="bz-deck" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+      <BzOverlay label="Morning check-in">
+        <div className="bz-toprow">
+          <FlapLabel text="MORNING CHECK-IN" size="xs" tone="gold" animate={false} />
+          {(phase === 'cards' || phase === 'settled') && (
+            <button type="button" className="bz-lnk" onClick={() => { if (phase === 'cards') onSkipToday?.(); onClose(phase === 'settled') }}>
               {onSkipToday ? 'Skip today ›' : 'Close ›'}
             </button>
           )}
@@ -106,18 +119,13 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
 
         {phase === 'cards' && (
           <>
-            <div className="wm-dots" aria-hidden>
-              {CHECK_IN_QUESTIONS.map((x, i) => (
-                <i key={x.key} className={i < state.index ? 'is-done' : i === state.index ? 'is-now' : ''} />
-              ))}
-            </div>
-
+            <BzDots n={total} now={state.index} done={i => i < state.index} />
             {state.askingBackNotes ? (
-              <Board solid head={`${state.index + 1} of ${total} · back today`}>
+              <Board className="bz-bd" head={`${state.index + 1} of ${total} · back today`}>
                 <FlapLabel text="WHAT BOTHERS IT?" size="md" animate="mount" />
-                <p className="wm-prose is-dim" style={{ margin: '8px 0 10px' }}>Which movements, where. The coach swaps in easier versions.</p>
+                <p className="bz-q">Which movements, where. The coach swaps in easier versions.</p>
                 <textarea
-                  className="wm-input"
+                  className="bz-note"
                   rows={3}
                   maxLength={500}
                   value={state.backNotes}
@@ -125,67 +133,86 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
                   onChange={e => dispatch({ type: 'backNotes', text: e.target.value })}
                 />
                 <div className="wm-btns" style={{ marginTop: 10 }}>
-                  <FlapButton label="BACK" onClick={() => dispatch({ type: 'back' })} />
-                  <FlapButton label="NEXT" primary onClick={() => dispatch({ type: 'finishNotes' })} />
+                  <FlapButton label="BACK" size="xs" onClick={() => dispatch({ type: 'back' })} />
+                  <FlapButton label="NEXT" primary size="sm" onClick={() => dispatch({ type: 'finishNotes' })} />
                 </div>
               </Board>
             ) : (
-              <Board solid key={q.key} head={`${state.index + 1} of ${total}`}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-                  <FlapLabel text={q.title} size="md" animate="mount" />
-                  {q.sub && <p className="wm-prose is-dim">{q.sub}</p>}
-                </div>
-                <TileChoice
+              <Board className="bz-bd" key={q.key} head={`${state.index + 1} of ${total}`}>
+                <FlapLabel text={q.title.toUpperCase()} size="md" animate="mount" />
+                {q.sub ? <p className="bz-q">{q.sub}</p> : <div style={{ height: 10 }} />}
+                <BzTiles
                   label={q.title}
                   columns={q.columns}
-                  options={q.options.map((o, i) => ({
-                    value: o.value,
-                    label: o.label,
-                    sub: o.sub,
-                    // Soreness tiles carry the Ledger key colours.
-                    ...(q.key === 'soreness' ? { swatch: SORENESS_COLOURS[i] } : {}),
-                  }))}
+                  options={q.options.map((o, i) => (q.key === 'soreness'
+                    // Soreness: the Ledger's colours and words (page 45).
+                    ? { value: o.value, label: o.label, sub: o.sub, swatch: SORENESS_COLOURS[i] }
+                    : { value: o.value, label: o.label, sub: o.sub }))}
                   selected={state.answers[q.key] ?? null}
                   onPick={v => dispatch({ type: 'answer', key: q.key, value: v })}
                 />
               </Board>
             )}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
-              <FlapChip label="‹ BACK" onClick={() => dispatch({ type: 'back' })} disabled={state.index === 0 && !state.askingBackNotes} />
-              <span className="wm-prose is-dim" style={{ textAlign: 'center' }}>Tap one. It moves on.</span>
-              <FlapChip label="PASS ›" onClick={() => dispatch({ type: 'pass' })} />
+            <div className="wm-btns">
+              <FlapButton label="‹ BACK" size="xs" onClick={() => dispatch({ type: 'back' })} />
+              <FlapButton label="PASS ›" size="xs" onClick={() => dispatch({ type: 'pass' })} />
             </div>
           </>
         )}
 
         {phase === 'saving' && (
-          <Board solid head="Checked in">
-            <p className="wm-prose">Saving.</p>
-          </Board>
+          <>
+            <BzDots n={total} now={-1} done={() => true} />
+            <Board className="bz-bd bz-verd">
+              <p>Saving.</p>
+            </Board>
+          </>
         )}
 
         {phase === 'error' && (
-          <Board solid edge="bad" head="Checked in">
-            <FlapLabel text="COULDN'T SAVE" size="sm" tone="clay" />
-            <p className="wm-prose" style={{ marginTop: 8 }}>Check your connection. Your answers are still here.</p>
+          <Board className="bz-bd" edge="bad" head="Checked in">
+            <FlapLabel text="COULDN'T SAVE" size="sm" />
+            <p className="bz-q is-last">Check your connection. Your answers are still here.</p>
             <div className="wm-btns" style={{ marginTop: 12 }}>
-              <FlapButton label="CLOSE" onClick={() => onClose(false)} />
-              <FlapButton label="TRY AGAIN" primary onClick={() => { dispatch({ type: 'jump', index: total - 1 }); setPhase('cards') }} />
+              <FlapButton label="CLOSE" size="xs" onClick={() => onClose(false)} />
+              <FlapButton label="TRY AGAIN" primary size="sm" onClick={() => { dispatch({ type: 'jump', index: total - 1 }); setPhase('cards') }} />
             </div>
           </Board>
         )}
 
         {phase === 'settled' && (
-          <Board solid edge={line?.tone === 'bad' ? 'bad' : 'good'} head="Checked in" onClick={() => onClose(true)}>
-            <div style={{ animation: reduced ? undefined : 'wm-settle 700ms var(--ease-out) both' }}>
-              <FlapLabel text={line ? (line.tone === 'bad' ? 'EASING TODAY' : 'GOOD TO GO') : 'LOGGED'} size="md" tone={line?.tone === 'bad' ? 'clay' : 'teal'} animate="mount" />
-              {line && <p className="wm-prose" style={{ marginTop: 10 }}>{line.why}</p>}
-              <p className="wm-prose is-dim" style={{ marginTop: 10 }}>Tap to go to Today.</p>
-            </div>
-          </Board>
+          <>
+            <BzDots n={total} now={-1} done={() => true} />
+            <Board className="bz-bd bz-verd">
+              <FlapLabel text={line ? (line.tone === 'bad' ? 'EASING TODAY' : 'GOOD TO GO') : 'LOGGED'} size="md" tone={tone} animate="mount" />
+              {line && <p>{line.why}</p>}
+              {noteOpen ? (
+                <>
+                  <textarea
+                    className="bz-note"
+                    rows={3}
+                    maxLength={1000}
+                    value={noteText}
+                    onChange={e => setNoteText(e.target.value)}
+                    placeholder="How does the body feel..."
+                    aria-label="Note for today"
+                    autoFocus
+                  />
+                  <div className="wm-btns">
+                    <FlapButton label="CANCEL" size="xs" onClick={() => { setNoteText(note ?? ''); setNoteOpen(false) }} disabled={noteSaving} />
+                    <FlapButton label={noteSaving ? 'SAVING' : 'SAVE'} primary size="sm" onClick={() => void saveNote()} disabled={noteSaving} />
+                  </div>
+                </>
+              ) : (
+                <div className="wm-btns">
+                  <FlapButton label="+ ADD NOTE" size="sm" onClick={() => setNoteOpen(true)} />
+                  <FlapButton label="TO TODAY" primary size="sm" onClick={() => onClose(true)} />
+                </div>
+              )}
+            </Board>
+          </>
         )}
-      </div>
+      </BzOverlay>
     </div>
   )
 }

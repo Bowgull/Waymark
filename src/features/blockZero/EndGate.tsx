@@ -7,34 +7,37 @@ import { getTodayISO } from '@/lib/dates'
 
 import { retestComparison, verdictFor, type ComparisonRow, type TransitionResultIn } from './gate'
 import type { TestRowIn } from './testWeek'
+import './blockZero.css'
 
 const CHECK_TIMEOUT_MS = 170_000
 
 function ComparisonBoard({ rows }: { rows: ComparisonRow[] }) {
   return (
-    <Board head="Week 1 → retest">
+    <Board className="bz-bd" head="Week 1 → week 6">
       {rows.length === 0 ? (
-        <p className="wm-prose is-dim">No retest numbers yet. The week-6 tests and check sets fill this in.</p>
-      ) : (
-        <div className="wm-rows">
-          {rows.map(r => (
-            <div
-              key={r.key}
-              className="wm-row"
-              style={r.better == null ? undefined : { boxShadow: `inset 3px 0 0 ${r.better ? '#5fa08c' : '#c4623f'}`, paddingLeft: 8, background: r.better ? 'rgba(95,160,140,.10)' : 'rgba(196,98,64,.10)' }}
-            >
-              <span className="wm-prose" style={{ flex: 1, fontSize: 15 }}>{r.label}</span>
-              <span className="wm-num" style={{ whiteSpace: 'nowrap' }}>{r.before} → {r.after}</span>
-              <span className="wm-num" style={{ minWidth: 46, textAlign: 'right', color: r.better == null ? undefined : r.better ? '#8fd4b8' : '#f0a684' }}>{r.delta}</span>
-            </div>
-          ))}
-        </div>
-      )}
+        <p className="bz-q is-last">No week-6 numbers yet. The front squat sets and the week-6 talk test fill this in.</p>
+      ) : rows.map(r => {
+        // Page 45: teal band up, clay band down; no change or no judgement is a plain row with a neutral chip.
+        const tone = r.better == null ? 'nt' : r.better ? 'up' : 'dn'
+        return (
+          <div key={r.key} className={`bz-cmp${tone === 'nt' ? '' : ` is-${tone}`}`}>
+            <span className="n">{r.label}</span>
+            <span className="v">{r.span}</span>
+            <i className={`bz-dv is-${tone}`}>{r.delta}</i>
+          </div>
+        )
+      })}
     </Board>
   )
 }
 
-/** The full-screen end gate (view): the crest, week 1 against the retest, the verdict, one way forward. */
+/**
+ * The end gate (page 45): the crest, week 1 against the retest with the teal /
+ * clay bands and chips, then THE VERDICT. Before the check: what the check
+ * reads, CHECK READINESS / BACK TO PROGRAM. MOVE ON (teal) leads to START
+ * FIGHTER BLOCK 1; EXTEND 1 WEEK (gold) to KEEP BUILDING; the reasons are
+ * brass-diamond lines.
+ */
 export function EndGateView({
   rows,
   result,
@@ -55,44 +58,34 @@ export function EndGateView({
   const verdict = result ? verdictFor(result) : null
   const enter = (delayMs: number) => (reduced ? undefined : { animation: `wm-settle 700ms var(--ease-out) ${delayMs}ms both` })
   return (
-    <div className="wm-dark" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 12, padding: 'calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 16px)' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-        <span className="wm-board-head" style={{ margin: 0 }}>Block Zero · retest</span>
-        <div style={reduced ? undefined : { animation: 'wm-card-in 900ms var(--ease-out) both' }}>
-          <Crest big width={checking ? 120 : 150} still={!checking && reduced} />
-        </div>
+    <div className="bz-gate">
+      <div className="bz-title"><FlapLabel text="BLOCK ZERO · THE GATE" size="xs" tone="gold" animate={false} /></div>
+      <div style={{ alignSelf: 'center', ...(reduced ? {} : { animation: 'wm-card-in 900ms var(--ease-out) both' }) }}>
+        <Crest big width={120} still={!checking && reduced} />
       </div>
-      <div style={{ flex: 1 }} />
       <div style={enter(300)}>
         <ComparisonBoard rows={comparison} />
       </div>
       {verdict ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, ...(enter(600) ?? {}) }}>
-          <Board edge={verdict.tone === 'good' ? 'good' : verdict.tone === 'bad' ? 'bad' : 'brass'} head="The verdict">
+          <Board className={`bz-bd ${verdict.tone === 'good' ? 'is-teal' : 'is-gold'}`} head="The verdict">
             <FlapLabel text={verdict.title} size="md" tone={verdict.tone === 'good' ? 'teal' : 'gold'} animate="mount" />
-            {verdict.line && <p className="wm-prose" style={{ marginTop: 10 }}>{verdict.line}</p>}
+            {verdict.line && <p className={`bz-q${verdict.reasons.length > 0 ? '' : ' is-last'}`}>{verdict.line}</p>}
             {verdict.reasons.length > 0 && (
-              <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {verdict.reasons.map(r => (
-                  <li key={r} className="wm-prose is-dim" style={{ display: 'flex', gap: 8 }}>
-                    <span aria-hidden style={{ color: '#c9a656' }}>◆</span>
-                    <span>{r}</span>
-                  </li>
-                ))}
+              <ul className="bz-why">
+                {verdict.reasons.map(r => <li key={r}>{r}</li>)}
               </ul>
             )}
           </Board>
           <FlapButton label={verdict.primaryLabel} primary onClick={onPrimary} />
-          {/* Moving on has already started the next block: no second check. */}
-          {verdict.kind !== 'move_on' && <FlapButton label="CHECK AGAIN" quiet onClick={onCheck} disabled={checking} />}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, ...(enter(600) ?? {}) }}>
-          <Board head="The verdict">
-            <p className="wm-prose">{checking ? 'Reading your block.' : 'The rules read consistency, your back and the retest, then the coach adds a second opinion. Move on or extend 1–2 weeks.'}</p>
+          <Board className="bz-bd" head="The verdict">
+            <p className="bz-q" style={{ margin: 0 }}>{checking ? 'Reading your block.' : 'The rules read consistency, your back and the retest, then the coach adds a second opinion. Move on or extend 1–2 weeks.'}</p>
           </Board>
           <FlapButton label={checking ? 'READING' : 'CHECK READINESS'} primary onClick={onCheck} disabled={checking} />
-          <FlapButton label="BACK TO PROGRAM" quiet onClick={onBack} disabled={checking} />
+          <FlapButton label="BACK TO PROGRAM" size="xs" onClick={onBack} disabled={checking} />
         </div>
       )}
     </div>

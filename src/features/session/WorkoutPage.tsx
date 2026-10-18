@@ -4,13 +4,12 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { getItem as storageGetItem, removeItem as storageRemoveItem, setItem as storageSetItem } from '@/lib/safeStorage'
 import { parseRoundSecs, roundSecsKey, withRoundSec } from '@/lib/plannedLength'
 
+import { getTodayISO } from '@/lib/dates'
 import { apiFetch, newIdempotencyKey } from '@/lib/api'
 import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
 import { EffortCard } from '@/features/blockZero/EffortCard'
 import { asksEffort, effortWrite } from '@/features/blockZero/effort'
-import { getMarkAsset, getSessionAccent } from '@/lib/markAssets'
 import { kgToLbs } from '@/lib/units'
-import { calculatePlates } from '@/lib/plateMath'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd, cancelAllCues } from '@/lib/notifications'
 import { loadOutbox } from '@/lib/outbox'
 import { rollStepSecs } from '@/lib/activeRecoveryTemplate'
@@ -39,19 +38,24 @@ import {
 import { logger } from '@/lib/logger'
 import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { Button } from '@/components/ui/button'
-import { RingTimer } from '@/components/RingTimer'
 import { useToast } from '@/components/ui/Toast'
+import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
+import { FlapLabel, SESSION_ICON_NAME, sessionIconFor } from '@/design'
+import { comboLetters, heatFor, momentLine, workLabel } from '@/lib/timers/timerLook'
+import { talkTestDue, TALK_TEST_WEEKS } from '@/lib/blockZero/talkTest'
 
 import { ActiveRecoveryView } from './ActiveRecoveryView'
+import { BagPreviewCard } from './BagPreviewCard'
 import { BagWorkRoundView } from './BagWorkRoundView'
+import { BreatheScreen } from './BreatheScreen'
 import { ComboRatingScreen } from './ComboRatingScreen'
 import { ComboUnlockSuggestion } from './ComboUnlockSuggestion'
-import { MarkEarnedOverlay } from './MarkEarnedOverlay'
 import { MtClassLogView } from './MtClassLogView'
 import { MobilityExerciseView } from './MobilityExerciseView'
 import { RitualEntrance } from './RitualEntrance'
 import { RunSessionView } from './RunSessionView'
 import { SessionComplete } from './SessionComplete'
+import { SessionMoment } from './SessionMoment'
 import { SkipRopeView } from './SkipRopeView'
 import { StrengthExerciseView } from './StrengthExerciseView'
 import type { StrengthSection } from './strengthMicrocopy'
@@ -68,6 +72,7 @@ interface SessionData {
   blockWeek?: number | null
   blockType?: string | null
   scheduledDate?: number | null
+  label?: string | null
   notes?: string | null
 }
 
@@ -250,12 +255,19 @@ interface MtClassWorkoutData {
 type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-warmup' | 'fr-run'
 type RoundPhase = 'ready' | 'fighting' | 'rest'
 
-function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersist }: {
+/**
+ * The skip-rope warm-up before bag work or strength (page 31 "Rope warm-up"):
+ * WARM UP with the rope icon, SKIP ROPE and its line, the clock on the grass.
+ * Before you start: START WARM UP. Running: SKIP, then FINISH with the heat in
+ * the last 10 s; SKIP WARM UP moves on (so does a swipe up the grass).
+ */
+function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersist, onExit }: {
   durationSec: number
   onComplete: () => void
   description?: string
   resume?: TimerSnap | null
   onPersist?: (state: EngineState) => void
+  onExit?: () => void
 }) {
   const timer = useRestTimer()
   const [started, setStarted] = useState(() => resume != null)
@@ -292,36 +304,33 @@ function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersi
     }
   }, [onComplete, started, stopWarmupTimer, timer.isPaused, warmupIsOvertime, warmupIsRunning, warmupSecondsRemaining])
 
+  const running = started && timer.isRunning
+  const shown = running ? Math.max(0, timer.secondsRemaining) : durationSec
+  const heat = running ? heatFor(shown) : null
+  const track: TimerTrack = running
+    ? { durationSec, endsAtMs: timer.isPaused ? null : timer.endsAtMs, remainingMs: timer.secondsRemaining * 1000 }
+    : { durationSec, endsAtMs: null, remainingMs: durationSec * 1000 }
+  const togglePause = () => { if (timer.isPaused) timer.resume(); else timer.pause() }
+
   return (
-    <div className="animate-fade-in flex flex-col items-center py-8">
-      <p className="text-label mb-1 text-muted-foreground">Warm Up</p>
-      <h2 className="text-display-lg text-foreground">Skip Rope</h2>
-      {description && (
-        <p className="mt-2 max-w-xs text-center text-sm text-muted-foreground">{description}</p>
-      )}
-      <div className="mt-8">
-        <RingTimer
-          totalSeconds={durationSec}
-          secondsRemaining={started ? timer.secondsRemaining : durationSec}
-          isOvertime={timer.isOvertime}
-          label={started ? (timer.secondsRemaining <= 10 ? 'Finish' : 'Skip') : 'Warm Up'}
-          accentColor={started && timer.secondsRemaining <= 10 ? '#C45A3C' : '#E8C860'}
-          isPaused={started && timer.isPaused}
-          onTogglePause={
-            started ? () => (timer.isPaused ? timer.resume() : timer.pause()) : undefined
-          }
-        />
+    <SessionFrame
+      title="WARM UP"
+      icon="rope"
+      onEnd={onExit}
+      paused={running && timer.isPaused}
+      grass={<GrassZone track={track} kind="work" mode={running ? 'work' : 'ready'} heat={heat} onTap={running ? togglePause : undefined} onSkip={running ? onComplete : undefined} />}
+    >
+      <div className="tm-center" style={{ marginTop: 14 }}>
+        <FlapLabel text="SKIP ROPE" size="md" />
+        {description && <p className="wm-prose is-dim" style={{ margin: '8px 22px 0' }}>{description}</p>}
       </div>
-      {!started ? (
-        <Button onClick={handleStart} size="lg" className="mt-6">
-          Start Warm Up
-        </Button>
-      ) : (
-        <Button onClick={onComplete} variant="secondary" size="lg" className="mt-6">
-          Skip Warm Up
-        </Button>
-      )}
-    </div>
+      <TimerFace seconds={shown} kind="work" heat={heat} label={running ? workLabel('SKIP', shown) : 'READY'} labelTone="gold" track={track} compact />
+      <div className="tm-wide">
+        {running
+          ? <SessionButton label="SKIP WARM UP" onClick={onComplete} />
+          : <SessionButton label="START WARM UP" primary onClick={handleStart} />}
+      </div>
+    </SessionFrame>
   )
 }
 
@@ -371,6 +380,11 @@ export function WorkoutPage() {
   const [sessionType, setSessionType] = useState<string | null>(null)
   // Runs keep their category in notes: the entrance shows the Zone 2 dial or the shoe.
   const [runCategory, setRunCategory] = useState<string | null>(null)
+  const [sessionLabel, setSessionLabel] = useState<string | null>(null)
+  // The close (page 19 #6): after the effort is saved, the moment plays, then Today.
+  const [moment, setMoment] = useState<string | null>(null)
+  // Block Zero week 1 / 6: the week's first easy run-walk asks the talk-test HR on its log (page 45 #3).
+  const [talkTest, setTalkTest] = useState<{ blockId: string; week: number } | null>(null)
   const [strengthData, setStrengthData] = useState<StrengthWorkoutData | null>(null)
   const [mobilityData, setMobilityData] = useState<MobilityWorkoutData | null>(null)
   const [bagData, setBagData] = useState<BagWorkoutData | null>(null)
@@ -597,6 +611,23 @@ export function WorkoutPage() {
         if (!session) throw new Error('Session not found')
 
         setSessionType(session.type)
+        setSessionLabel(session.label ?? null)
+        // Runs carry no block week (the server only stamps strength), so the block's training week decides.
+        if ((session.type === 'running' || session.type === 'foundation_run') && session.blockType === 'block_zero') {
+          void (async () => {
+            try {
+              const block = await apiFetch<{ id: string; currentWeek?: number | null } | null>(`/api/blocks/current?date=${getTodayISO()}`)
+              const week = session.blockWeek ?? block?.currentWeek ?? null
+              if (!block?.id || week == null || !TALK_TEST_WEEKS.includes(week)) return
+              const weekResults = await apiFetch<{ testKey: string; week: number }[]>(`/api/blocks/${block.id}/tests?week=${week}`)
+              if (talkTestDue({ blockType: session.blockType, blockWeek: week, sessionType: session.type, runCategory: session.notes, weekResults: weekResults ?? [] })) {
+                setTalkTest({ blockId: block.id, week })
+              }
+            } catch (e) {
+              logger.warn('session', 'talk test check failed', { message: e instanceof Error ? e.message : String(e) }, 'Could not tell whether the talk test is due. Run log works without it.')
+            }
+          })()
+        }
         setRunCategory(session.type === 'running' ? session.notes ?? null : null)
         const live = session.status !== 'completed' && session.status !== 'skipped'
 
@@ -806,9 +837,10 @@ export function WorkoutPage() {
     }
   }, [sessionType, strengthData])
 
-  const handleMarkEarnedComplete = useCallback(() => {
-    setPhase('complete')
-  }, [])
+  // The old pre-close mark overlay is gone: the close is effort first, then the moment (page 19 #6).
+  useEffect(() => {
+    if (phase === 'mark-earned') setPhase('complete')
+  }, [phase])
 
   async function handleFinish(rpe: number, notes: string) {
     if (!id) return
@@ -852,7 +884,7 @@ export function WorkoutPage() {
         },
         4000,
       )
-      navigate('/today', { replace: true })
+      setMoment(momentLine(sessionLabel ?? SESSION_ICON_NAME[sessionIconFor(sessionType ?? 'strength', runCategory)], rpe))
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to complete session:', e)
@@ -913,6 +945,12 @@ export function WorkoutPage() {
     )
   }
 
+  // ─── The moment (page 19 #6): after the close is saved ────
+
+  if (moment) {
+    return <SessionMoment line={moment} onDone={() => navigate('/today', { replace: true })} />
+  }
+
   // ─── Entrance animation ───────────────────────────────────
 
   if (phase === 'entrance' && sessionType) {
@@ -925,101 +963,28 @@ export function WorkoutPage() {
     )
   }
 
-  // ─── Mark earned overlay ──────────────────────────────────
+  // ─── Breathing cue interstitial (Foundation; page 31 "Breathe") ───
 
-  if (phase === 'mark-earned' && sessionType) {
-    return (
-      <MarkEarnedOverlay
-        sessionType={sessionType}
-        onComplete={handleMarkEarnedComplete}
-      />
-    )
-  }
+  if (phase === 'breathe') return <BreatheScreen />
 
-  // ─── Breathing cue interstitial (Foundation) ──────────────
+  // ─── Closing: effort (page 19 #6), the same for every session ───
 
-  if (phase === 'breathe') {
-    return (
-      <div className="relative flex min-h-screen flex-col items-center justify-center bg-near-black">
-        <SessionBackground />
-        <p className="relative z-10 animate-fade-in font-cinzel text-2xl tracking-widest text-gold/60 animate-pulse-glow">
-          Breathe
-        </p>
-        <p className="relative z-10 mt-3 animate-fade-in text-sm text-muted-foreground animation-delay-300">
-          Next exercise coming...
-        </p>
-      </div>
-    )
-  }
-
-  const accent = sessionType ? getSessionAccent(sessionType) : '#E8C860'
-  const markAsset = sessionType ? getMarkAsset(sessionType) : null
-
-  // ─── Session atmosphere (shared across types) ─────────────
-
-  function SessionAtmosphere() {
-    return (
-      <>
-        <SessionBackground accentColor={accent} />
-        {markAsset && (
-          <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
-            <img src={markAsset.png} alt="" width={256} height={256} className="h-64 w-64 object-contain opacity-[0.04]" />
-          </div>
-        )}
-      </>
-    )
-  }
-
-  // ─── Session header (shared across types) ─────────────────
-
-  function SessionHeader({ counter }: { counter?: string }) {
-    return (
-      <header
-        className="flex shrink-0 items-center justify-between px-4 pb-2"
-        style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}
-      >
-        <a
-          href="/today?resume=0"
-          onClick={(event) => {
-            event.preventDefault()
-            leaveSession()
-          }}
-          className="-ml-2 inline-flex min-h-[44px] min-w-[44px] items-center px-3 text-sm font-medium text-muted-foreground active:text-teal"
-        >
-          Back
-        </a>
-        {counter && (
-          <span className="text-label" style={{ color: accent }}>
-            {counter}
-          </span>
-        )}
-      </header>
-    )
-  }
-
-  // ─── Progress bar (shared) ────────────────────────────────
-
-  function ProgressBar({ value }: { value: number }) {
-    return (
-      <div className="h-1 bg-surface">
-        <div
-          className="h-full transition-all duration-300"
-          style={{ width: `${value}%`, backgroundColor: accent }}
-        />
-      </div>
-    )
-  }
+  const closing = phase === 'complete' || phase === 'mark-earned'
+  const closeScreen = (
+    <>
+      <SessionComplete sessionType={sessionType ?? 'strength'} onFinish={handleFinish} submitting={submitting} />
+      <ToastContainer />
+    </>
+  )
 
   // ─── Zone 2 (dynamic warmup → easy run) ────────────────────
 
   if (sessionType === 'foundation_run' && foundationRunData) {
+    if (closing) return closeScreen
     const frExercises = foundationRunData.postureExercises
     const frTotalExercises = frExercises.length
     const frCurrentExercise = frExercises[exerciseIdx]
     const frTotalSets = frCurrentExercise?.sets ?? 1
-
-    const frPrevExercise = exerciseIdx > 0 ? frExercises[exerciseIdx - 1] : null
-    const frShowSectionHeader = !frPrevExercise || frPrevExercise.section !== frCurrentExercise?.section
 
     function handleFrWarmupSetDone() {
       if (!frCurrentExercise) return
@@ -1050,85 +1015,56 @@ export function WorkoutPage() {
       }
     }
 
-    // Progress: warmup 0-65%, run 65-100%
-    let frProgress = 0
-    if (phase === 'fr-warmup') {
-      frProgress = (exerciseIdx / frTotalExercises) * 65
-    } else if (phase === 'fr-run') {
-      frProgress = 75
-    } else if (phase === 'mark-earned' || phase === 'complete') {
-      frProgress = 100
+    if (phase === 'fr-warmup' && frCurrentExercise) {
+      return (
+        <MobilityExerciseView
+          key={`fr-${exerciseIdx}-${setIdx}`}
+          inline
+          title="ZONE 2"
+          exercise={frCurrentExercise}
+          exerciseIndex={exerciseIdx}
+          totalExercises={frTotalExercises}
+          currentSet={setIdx + 1}
+          onSetDone={handleFrWarmupSetDone}
+          onExit={leaveSession}
+          resume={engineResume?.kind === 'hold' ? engineResume : null}
+          onPersist={persistEngine}
+        />
+      )
     }
-
+    if (phase === 'fr-run' && foundationRunData.runSession) {
+      return (
+        <RunSessionView
+          runSession={foundationRunData.runSession}
+          prescription={foundationRunData.prescription}
+          onComplete={() => setPhase('mark-earned')}
+          onExit={leaveSession}
+          resume={engineResume?.kind === 'run' ? engineResume : null}
+          onPersist={persistEngine}
+          talkTest={talkTest}
+        />
+      )
+    }
+    // No warm-up rows (straight to the run) or a run that isn't ready: no mockup, a plain frame.
     return (
-      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-        <SessionAtmosphere />
-        <SessionHeader counter={
-          phase === 'fr-warmup'
-            ? `${exerciseIdx + 1} / ${frTotalExercises}`
-            : phase === 'fr-run' ? 'Run' : undefined
-        } />
-        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-          {phase === 'entrance' && (
-            <RitualEntrance sessionType="foundation_run" onComplete={() => setPhase('fr-warmup')} />
-          )}
-          {phase === 'mark-earned' && (
-            <MarkEarnedOverlay sessionType="foundation_run" onComplete={() => setPhase('complete')} />
-          )}
-          {phase === 'complete' && (
-            <><SessionComplete sessionType="foundation_run" onFinish={handleFinish} submitting={submitting} /><ToastContainer /></>
-          )}
-          {phase === 'fr-warmup' && frCurrentExercise && (
-            <MobilityExerciseView
-              key={`fr-${exerciseIdx}-${setIdx}`}
-              inline
-              exercise={frCurrentExercise}
-              exerciseIndex={exerciseIdx}
-              totalExercises={frTotalExercises}
-              currentSet={setIdx}
-              showSectionHeader={frShowSectionHeader}
-              onSetDone={handleFrWarmupSetDone}
-              resume={engineResume?.kind === 'hold' ? engineResume : null}
-              onPersist={persistEngine}
-            />
-          )}
-          {phase === 'fr-warmup' && !frCurrentExercise && frTotalExercises === 0 && foundationRunData.runSession && (
-            // No warm-up rows: straight to the run instead of a blank screen.
-            <div className="flex flex-col items-center gap-4 py-12">
-              <Button size="lg" onClick={() => setPhase('fr-run')}>Start Run</Button>
-            </div>
-          )}
-          {phase === 'fr-run' && foundationRunData.runSession && (
-            <RunSessionView
-              inline
-              runSession={foundationRunData.runSession}
-              prescription={foundationRunData.prescription}
-              onComplete={() => setPhase('mark-earned')}
-              onExit={leaveSession}
-              resume={engineResume?.kind === 'run' ? engineResume : null}
-              onPersist={persistEngine}
-            />
-          )}
-          {phase === 'fr-run' && !foundationRunData.runSession && (
-            <p className="py-12 text-center text-sm text-muted-foreground">Run not ready. Go back and enter again.</p>
-          )}
-        </main>
-        <ProgressBar value={frProgress} />
-      </div>
+      <SessionFrame title="ZONE 2" icon="zone2" onEnd={leaveSession}>
+        <div className="tm-wide" style={{ marginTop: 40 }}>
+          {foundationRunData.runSession
+            ? <SessionButton label="START RUN" primary onClick={() => setPhase('fr-run')} />
+            : <p className="wm-prose is-dim tm-center">Run not ready. Go back and enter again.</p>}
+        </div>
+      </SessionFrame>
     )
   }
 
   // ─── Mobility workout ──────────────────────────────────────
 
   if (sessionType === 'mobility' && mobilityData) {
+    if (closing) return closeScreen
     const exercises = mobilityData.exercises
     const totalExercises = exercises.length
     const currentExercise = exercises[exerciseIdx]
     const totalSets = currentExercise?.sets ?? 1
-
-    // Determine if we're showing a new section header
-    const prevExercise = exerciseIdx > 0 ? exercises[exerciseIdx - 1] : null
-    const showSectionHeader = !prevExercise || prevExercise.section !== currentExercise?.section
 
     function handleMobilitySetDone() {
       if (currentExercise) {
@@ -1159,20 +1095,6 @@ export function WorkoutPage() {
       }
     }
 
-    // Mobility engine owns its own SessionShell (see MobilityExerciseView).
-    // WorkoutPage only intervenes for the complete phase.
-    if (phase === 'complete') {
-      return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <><SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} /><ToastContainer /></>
-          </main>
-        </div>
-      )
-    }
-
     if (!currentExercise) return null
 
     return (
@@ -1182,7 +1104,6 @@ export function WorkoutPage() {
         exerciseIndex={exerciseIdx}
         totalExercises={totalExercises}
         currentSet={setIdx + 1}
-        showSectionHeader={showSectionHeader}
         onSetDone={handleMobilitySetDone}
         onExit={leaveSession}
         resume={engineResume?.kind === 'hold' ? engineResume : null}
@@ -1195,18 +1116,7 @@ export function WorkoutPage() {
   // MtClassLogView is the page-31 board over the forest. WorkoutPage handles only complete.
 
   if (sessionType === 'mt_class' && mtData?.mtLog) {
-    if (phase === 'complete') {
-      return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-            <ToastContainer />
-          </main>
-        </div>
-      )
-    }
+    if (closing) return closeScreen
     return (
       <>
         <MtClassLogView
@@ -1224,21 +1134,9 @@ export function WorkoutPage() {
   }
 
   // ─── Running workout ────────────────────────────────────────
-  // RunSessionView owns its SessionShell. WorkoutPage handles only complete.
 
   if (sessionType === 'running' && runData?.runSession) {
-    if (phase === 'complete') {
-      return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-            <ToastContainer />
-          </main>
-        </div>
-      )
-    }
+    if (closing) return closeScreen
     return (
       <>
         <RunSessionView
@@ -1248,6 +1146,7 @@ export function WorkoutPage() {
           onExit={leaveSession}
           resume={engineResume?.kind === 'run' ? engineResume : null}
           onPersist={persistEngine}
+          talkTest={talkTest}
         />
         <ToastContainer />
       </>
@@ -1255,21 +1154,9 @@ export function WorkoutPage() {
   }
 
   // ─── Skip rope workout ──────────────────────────────────────
-  // SkipRopeView owns its SessionShell.
 
   if (sessionType === 'skip_rope' && skipData?.skipSession) {
-    if (phase === 'complete') {
-      return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-            <ToastContainer />
-          </main>
-        </div>
-      )
-    }
+    if (closing) return closeScreen
     return (
       <>
         <SkipRopeView
@@ -1286,21 +1173,10 @@ export function WorkoutPage() {
   }
 
   // ─── Active recovery workout ───────────────────────────────
-  // ActiveRecoveryView owns its SessionShell. WorkoutPage handles only complete.
+  // ActiveRecoveryView (Reset) has no approved in-session mockup yet: unchanged.
 
   if (sessionType === 'active_recovery' && recoveryData?.recoverySession) {
-    if (phase === 'complete') {
-      return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-            <ToastContainer />
-          </main>
-        </div>
-      )
-    }
+    if (closing) return closeScreen
     return (
       <>
         <ActiveRecoveryView
@@ -1321,6 +1197,8 @@ export function WorkoutPage() {
     const rounds = bagData.rounds
     const totalRounds = rounds.length
     const currentRound = rounds[roundIdx]
+    // Each combo keeps one letter for the session: the preview, the timer and the rating card.
+    const letters = comboLetters(rounds.flatMap(r => r.combos.map(rc => rc.combo?.id)))
 
     // Collect all combos for rating screen
     const allCombosForRating = rounds.flatMap(r =>
@@ -1359,114 +1237,63 @@ export function WorkoutPage() {
       setPhase('mark-earned')
     }
 
-    // Preview phase: show all rounds before starting
+    // Preview phase: one centred board of the rounds before starting (page 31)
     if (phase === 'bag-preview') {
       return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <div className="animate-fade-in space-y-4">
-              <div className="text-center">
-                <p className="font-cinzel text-xl tracking-wider text-foreground">Bag Work Preview</p>
-                <p className="mt-1 text-xs text-muted-foreground">{totalRounds} rounds</p>
-              </div>
-              {rounds.map((round) => (
-                <div key={round.id} className="rounded-md border border-border bg-deep-forest p-3">
-                  <p className="mb-2 text-xs font-medium text-gold/60">Round {round.roundNumber}</p>
-                  {round.combos.map((rc) => (
-                    <div key={rc.id} className="mb-1.5 last:mb-0">
-                      <span className="text-sm text-foreground">{rc.combo?.text ?? 'Unknown'}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
-              <Button onClick={() => setPhase('bag-warmup')} size="lg" className="w-full">
-                Begin Session
-              </Button>
-            </div>
-          </main>
-        </div>
+        <>
+          <BagPreviewCard rounds={rounds} letters={letters} onBegin={() => setPhase('bag-warmup')} onBack={leaveSession} />
+          <ToastContainer />
+        </>
       )
     }
 
     // Skip rope warmup before bag rounds
     if (phase === 'bag-warmup') {
       return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader counter="Warm Up" />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <SkipWarmupTimer
-              durationSec={300}
-              onComplete={() => setPhase('exercise')}
-              description="Light and easy. Get the blood flowing before you hit the bag."
-              resume={engineResume?.kind === 'warmup' ? engineResume.timer : null}
-              onPersist={persistEngine}
-            />
-          </main>
-          <ProgressBar value={5} />
-        </div>
+        <SkipWarmupTimer
+          durationSec={300}
+          onComplete={() => setPhase('exercise')}
+          description="Light and easy. Get the blood flowing before you hit the bag."
+          resume={engineResume?.kind === 'warmup' ? engineResume.timer : null}
+          onPersist={persistEngine}
+          onExit={leaveSession}
+        />
       )
     }
 
-    // Combo rating phase
+    // Combo rating phase: one card at a time
     if (phase === 'combo-rating') {
       return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <ComboRatingScreen
-              sessionId={id!}
-              combos={allCombosForRating}
-              onComplete={handleRatingComplete}
-            />
-          </main>
-          <ProgressBar value={100} />
-        </div>
+        <ComboRatingScreen
+          sessionId={id!}
+          combos={allCombosForRating}
+          letters={letters}
+          onComplete={handleRatingComplete}
+        />
       )
     }
 
     // Combo unlock suggestion phase
     if (phase === 'combo-unlock' && unlockSuggestions) {
       return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <ComboUnlockSuggestion
-              suggestions={unlockSuggestions.suggestions}
-              message={unlockSuggestions.message}
-              onDone={() => setPhase('mark-earned')}
-            />
-          </main>
-          <ProgressBar value={100} />
-        </div>
+        <ComboUnlockSuggestion
+          suggestions={unlockSuggestions.suggestions}
+          message={unlockSuggestions.message}
+          onDone={() => setPhase('mark-earned')}
+        />
       )
     }
 
-    // Complete screen keeps the legacy shell until SessionComplete itself moves.
-    if (phase === 'complete') {
-      return (
-        <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-          <SessionAtmosphere />
-          <SessionHeader counter={`Round ${roundIdx + 1}/${totalRounds}`} />
-          <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-            <SessionComplete sessionType={sessionType} onFinish={handleFinish} submitting={submitting} />
-            <ToastContainer />
-          </main>
-        </div>
-      )
-    }
+    if (closing) return closeScreen
 
-    // Bag round view owns its own SessionShell.
     return currentRound ? (
       <>
         <BagWorkRoundView
           key={roundIdx}
           round={currentRound}
           totalRounds={totalRounds}
+          nextRound={rounds[roundIdx + 1] ?? null}
+          letters={letters}
           phase={roundPhase}
           onPhaseChange={setRoundPhase}
           onNextRound={() => {
@@ -1494,23 +1321,19 @@ export function WorkoutPage() {
     )
   }
 
+  const strengthTitle = (sessionLabel ?? 'Strength').toUpperCase()
+
   // Skip rope warmup before strength exercises
   if (phase === 'strength-warmup-skip') {
     return (
-      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-        <SessionAtmosphere />
-        <SessionHeader counter="Warm Up" />
-        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-          <SkipWarmupTimer
-            durationSec={180}
-            onComplete={() => setPhase('exercise')}
-            description="Light and easy. Loosen up before you lift."
-            resume={engineResume?.kind === 'warmup' ? engineResume.timer : null}
-            onPersist={persistEngine}
-          />
-        </main>
-        <ProgressBar value={2} />
-      </div>
+      <SkipWarmupTimer
+        durationSec={180}
+        onComplete={() => setPhase('exercise')}
+        description="Light and easy. Loosen up before you lift."
+        resume={engineResume?.kind === 'warmup' ? engineResume.timer : null}
+        onPersist={persistEngine}
+        onExit={leaveSession}
+      />
     )
   }
 
@@ -1536,13 +1359,7 @@ export function WorkoutPage() {
     )
   }
   const currentSet = currentExercise?.sets[setIdx]
-  const totalExercises = strengthData.exercises.length
   const totalSetsForExercise = currentExercise?.sets.length ?? 0
-
-  // Check if we're entering a new section
-  const prevExercise = exerciseIdx > 0 ? strengthData.exercises[exerciseIdx - 1] : null
-  const currentSection = currentExercise?.section
-  const showSectionHeader = !prevExercise || prevExercise.section !== currentSection
 
   function handleSetComplete(weightKg: number | null, reps: number, opts: { fromLockScreen?: boolean } = {}) {
     if (!currentSet) return
@@ -1608,61 +1425,9 @@ export function WorkoutPage() {
     }
   }
 
-  // Session-wide last-set flag: fires only on the final set of the final exercise.
-  const isLastSetOfSession =
-    setIdx === totalSetsForExercise - 1 && exerciseIdx === totalExercises - 1
+  if (closing) return closeScreen
 
-  // Strength complete screen keeps the legacy shell for now.
-  if (phase === 'complete') {
-    return (
-      <div className="relative flex min-h-screen flex-col bg-near-black text-foreground">
-        <SessionAtmosphere />
-        <SessionHeader counter={`${exerciseIdx + 1}/${totalExercises}`} />
-        <main className="relative z-10 flex-1 overflow-auto px-4 py-4">
-          <SessionComplete sessionType={sessionType!} onFinish={handleFinish} submitting={submitting} />
-          <ToastContainer />
-        </main>
-      </div>
-    )
-  }
-
-  // Build display props for StrengthExerciseView.
   const sectionKey = (currentExercise?.section ?? null) as StrengthSection | null
-
-  const prescriptionDisplay = (() => {
-    if (!currentExercise?.prescription) return undefined
-    const rx = currentExercise.prescription
-    const weightLbs = rx.prescribedWeightKg ? Math.round(kgToLbs(rx.prescribedWeightKg)) : null
-    const tmLbs = rx.trainingMaxKg ? Math.round(kgToLbs(rx.trainingMaxKg)) : null
-    const isBarbell = currentExercise.exercise?.equipment === 'barbell'
-    return {
-      weightLbs,
-      tmLbs,
-      setsReps: rx.setsReps,
-      plateCounts: isBarbell && weightLbs ? calculatePlates(weightLbs).plateCounts : null,
-      wavePercentage: rx.wavePercentage,
-    }
-  })()
-
-  const historyDisplay = (() => {
-    if (!currentExercise) return undefined
-    const h = exerciseHistories.get(currentExercise.exerciseId)
-    if (!h) return undefined
-    return {
-      lastWeightLbs: h.lastSession ? Math.round(kgToLbs(h.lastSession.weightKg)) : null,
-      lastReps: h.lastSession?.reps ?? null,
-      lastDate: h.lastSession?.date ?? null,
-      prWeightLbs: h.pr ? Math.round(kgToLbs(h.pr.weightKg)) : null,
-      prReps: h.pr?.reps ?? null,
-      prDate: h.pr?.date ?? null,
-      recentTrend: h.recentTrend.map(t => ({
-        date: t.date,
-        weightLbs: Math.round(kgToLbs(t.maxWeightKg)),
-        avgReps: t.avgReps,
-      })),
-      suggestion: h.suggestion ? { message: h.suggestion.message } : null,
-    }
-  })()
 
   const lastSessionData = (() => {
     if (!currentExercise) return undefined
@@ -1688,18 +1453,13 @@ export function WorkoutPage() {
     <>
       <StrengthExerciseView
         phase={phase === 'rest' ? 'rest' : 'exercise'}
-        exerciseIndex={exerciseIdx}
-        totalExercises={totalExercises}
+        sessionTitle={strengthTitle}
         exerciseName={currentExercise.exercise?.name ?? ''}
-        exerciseId={currentExercise.exerciseId}
         formCues={currentExercise.exercise?.formCues ?? null}
         equipment={currentExercise.exercise?.equipment ?? null}
         notes={currentExercise.notes}
         formVideoUrl={currentExercise.exercise?.formVideoUrl}
         section={sectionKey}
-        showSectionHeader={showSectionHeader}
-        setIdx={setIdx}
-        isLastSetOfSession={isLastSetOfSession}
         currentSet={currentSet ? {
           setNumber: currentSet.setNumber,
           totalSets: totalSetsForExercise,
@@ -1708,8 +1468,6 @@ export function WorkoutPage() {
           targetReps: currentSet.plannedReps ?? currentSet.reps,
           restSec: currentSet.restSec ?? 60,
         } : undefined}
-        prescription={prescriptionDisplay}
-        history={historyDisplay}
         lastSessionData={lastSessionData}
         suggestion={suggestionDisplay}
         restState={phase === 'rest' ? {
@@ -1717,6 +1475,7 @@ export function WorkoutPage() {
           secondsRemaining: restTimer.secondsRemaining,
           isOvertime: restTimer.isOvertime,
           isPaused: restTimer.isPaused,
+          endsAtMs: restTimer.endsAtMs,
           onTogglePause: () => {
             if (restTimer.isPaused) {
               const endsAt = restTimer.resume()
@@ -1731,7 +1490,6 @@ export function WorkoutPage() {
         onLiveValuesChange={handleLiveValuesChange}
         onNextSet={handleNextSet}
         onExit={leaveSession}
-        accentColor={accent}
       />
       {effortFor && phase === 'exercise' && (
         <EffortCard setLabel={effortFor.label} onPick={rir => handleEffortPick(rir)} onSkip={() => handleEffortPick(null)} />

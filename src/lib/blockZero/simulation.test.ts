@@ -30,6 +30,8 @@ import {
   longestGapInWindow,
   nextLoad,
   planTransition,
+  retestDoneFrom,
+  GATE_SQUAT_ID,
   prescribeRunWalk,
   rebalanceDayForClass,
   weeklyLoadFlag,
@@ -257,7 +259,10 @@ function simulate(script: Script) {
     if (week === totalWeeks) {
       const today = START + week * 7 - 1
       const completedDays = gateSessions.filter(s => s.status === 'completed').map(s => s.scheduledDate)
-      const retestDone = gateSessions.some(s => s.type === 'strength' && s.status === 'completed' && weekOf(s.scheduledDate) === 6)
+      // No test week: the front squat estimate comes from week 5/6 strength sets, the talk test from a week-6 run-walk.
+      const squatSets = gateSessions.some(s => s.type === 'strength' && s.status === 'completed' && weekOf(s.scheduledDate) >= 5)
+      const talkWeeks = gateSessions.some(s => s.type === 'foundation_run' && s.status === 'completed' && weekOf(s.scheduledDate) >= 6) ? [6] : []
+      const retestDone = retestDoneFrom(squatSets ? new Map([[GATE_SQUAT_ID, 100]]) : new Map(), talkWeeks)
       const plan = planTransition({
         gate: {
           completionRate: keySessionCompletionRate(gateSessions, today + 1),

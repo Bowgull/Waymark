@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { RingTimer } from '@/components/RingTimer'
-import { Button } from '@/components/ui/button'
+import { GrassZone, Pips, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
 import {
   scheduleRoundCuesUntil,
   scheduleRestCuesUntil,
@@ -10,10 +9,9 @@ import {
 } from '@/lib/notifications'
 import { soundRoundEnd, soundRoundStart } from '@/lib/sounds'
 import { SKIP_ROPE_REST_SEC, isStaleCue, type EngineState } from '@/lib/sessionResume'
+import { heatFor, workLabel } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
 
-import { SessionShell } from './SessionShell'
-import { resolveSkipRopeMoment } from './skipRopeMicrocopy'
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
@@ -52,7 +50,6 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
 
   const totalRounds = skipSession.roundCount
   const isLastRound = currentRound >= totalRounds
-  const accent = '#1E8A68'
 
   // Resume: put the saved timer back and re-sync cues to its real end.
   const restoredRef = useRef(false)
@@ -214,128 +211,61 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
     },
   })
 
-  const moment = resolveSkipRopeMoment({
-    phase:
-      skipPhase === 'rest'
-        ? 'rest'
-        : skipPhase === 'skipping'
-          ? 'skipping'
-          : 'ready',
-    isLastRound,
-    secondsRemaining:
-      skipPhase === 'skipping'
-        ? roundTimer.secondsRemaining
-        : skipPhase === 'rest'
-          ? restTimer.secondsRemaining
-          : undefined,
-  })
 
-  const counter =
-    skipPhase === 'rest'
-      ? 'Rest'
-      : `Round ${currentRound} of ${totalRounds}`
+  // ─── The screen (page 19's timer: the same grass, flaps and heat as a round) ───
 
-  const progress = {
-    completed: currentRound - 1,
-    active: currentRound - 1,
-    total: totalRounds,
+  const skipping = skipPhase === 'skipping'
+  const resting = skipPhase === 'rest'
+  const shownSec = skipping ? Math.max(0, roundTimer.secondsRemaining) : resting ? Math.max(0, restTimer.secondsRemaining) : skipSession.roundDurSec
+  const heat = skipping ? heatFor(shownSec) : null
+  const label = resting ? (restTimer.isOvertime ? 'OVER' : 'REST') : skipping ? workLabel('SKIP', shownSec) : 'READY'
+  const paused = (skipping && roundTimer.isPaused) || (resting && restTimer.isPaused)
+  const timer = skipping ? roundTimer : resting ? restTimer : null
+  const track: TimerTrack = timer && timer.isRunning
+    ? { durationSec: timer.durationSec, endsAtMs: timer.isPaused ? null : timer.endsAtMs, remainingMs: timer.secondsRemaining * 1000 }
+    : { durationSec: skipSession.roundDurSec, endsAtMs: null, remainingMs: skipSession.roundDurSec * 1000 }
+
+  function togglePause() {
+    if (skipping) { if (roundTimer.isPaused) resumeRound(); else pauseRound() }
+    else if (resting) { if (restTimer.isPaused) resumeRest(); else pauseRest() }
+  }
+  function skip() {
+    if (skipping) endRound()
+    else if (resting) nextRound()
   }
 
-  const footer =
-    skipPhase === 'ready' ? (
-      <Button
-        onClick={startRound}
-        size="lg"
-        className="w-full"
-        style={{ backgroundColor: accent, color: '#020A08' }}
-      >
-        Start Round
-      </Button>
-    ) : skipPhase === 'skipping' ? (
-      <Button onClick={() => endRound()} variant="secondary" size="lg" className="w-full">
-        End Round Early
-      </Button>
-    ) : (
-      <Button
-        onClick={() => nextRound()}
-        size="lg"
-        className="w-full"
-        style={{ backgroundColor: accent, color: '#020A08' }}
-      >
-        Next Round
-      </Button>
-    )
-
-  const body =
-    skipPhase === 'rest' ? (
-      <div className="mx-auto flex max-w-md flex-col items-center pt-6 animate-fade-in">
-        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/50">
-          Between Rounds
-        </p>
-        <h2 className="mt-1 text-display-lg text-foreground">Recover</h2>
-        <div className="mt-8 rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
-          <RingTimer
-            totalSeconds={SKIP_REST_SEC}
-            secondsRemaining={restTimer.secondsRemaining}
-            isOvertime={restTimer.isOvertime}
-            label={restTimer.isOvertime ? 'Over' : 'Rest'}
-            accentColor={accent}
-            isPaused={restTimer.isPaused}
-            onTogglePause={() => (restTimer.isPaused ? resumeRest() : pauseRest())}
-          />
-        </div>
-      </div>
-    ) : (
-      <div className="mx-auto max-w-md animate-fade-in">
-        <h2 className="text-display-lg leading-[1.1] text-foreground">Skip Rope</h2>
-        <p className="mt-3 text-sm leading-relaxed text-foreground/85">
-          Steady rhythm. Stay light on the balls of your feet. Relax your shoulders.
-        </p>
-
-        <div className="mt-8 flex justify-center">
-          <div className="rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
-            <RingTimer
-              totalSeconds={skipSession.roundDurSec}
-              secondsRemaining={
-                skipPhase === 'skipping'
-                  ? roundTimer.secondsRemaining
-                  : skipSession.roundDurSec
-              }
-              isOvertime={skipPhase === 'skipping' ? roundTimer.isOvertime : false}
-              label={
-                skipPhase === 'skipping'
-                  ? roundTimer.secondsRemaining <= 10
-                    ? 'Finish'
-                    : 'Skip'
-                  : 'Round'
-              }
-              accentColor={
-                skipPhase === 'skipping' && roundTimer.secondsRemaining <= 10
-                  ? '#C45A3C'
-                  : accent
-              }
-              isPaused={skipPhase === 'skipping' && roundTimer.isPaused}
-              onTogglePause={
-                skipPhase === 'skipping'
-                  ? () => (roundTimer.isPaused ? resumeRound() : pauseRound())
-                  : undefined
-              }
-            />
-          </div>
-        </div>
-      </div>
-    )
-
   return (
-    <SessionShell
-      sessionType="skip_rope"
-      counter={counter}
-      progress={progress}
-      moment={moment}
-      onExit={onExit}
-      footer={footer}
+    <SessionFrame
+      title="SKIP ROPE"
+      count={`${currentRound}/${totalRounds}`}
+      onEnd={onExit}
+      paused={paused}
+      grass={
+        <GrassZone
+          track={track}
+          kind={resting ? 'rest' : 'work'}
+          mode={resting ? 'rest' : skipping ? 'work' : 'ready'}
+          heat={heat}
+          onTap={skipPhase === 'ready' ? undefined : togglePause}
+          onSkip={skipPhase === 'ready' ? undefined : skip}
+        />
+      }
     >
-      {body}
-    </SessionShell>
+      <Pips total={totalRounds} now={currentRound - 1} />
+      <TimerFace
+        seconds={shownSec}
+        kind={resting ? 'rest' : 'work'}
+        heat={heat}
+        tone={resting ? 'teal' : 'ink'}
+        label={label}
+        labelTone={resting ? 'teal' : 'gold'}
+        track={track}
+      />
+      {skipPhase === 'ready' && (
+        <div className="tm-wide">
+          <SessionButton label="START ROUND" primary onClick={startRound} />
+        </div>
+      )}
+    </SessionFrame>
   )
 }

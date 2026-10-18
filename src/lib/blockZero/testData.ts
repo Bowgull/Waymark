@@ -142,8 +142,15 @@ export interface TestDelta {
 const isRetestWeek = (w: number) => w >= BLOCK_ZERO_BASE_WEEKS
 
 /**
- * Week 1 against the retest (week 6 or later) for every test with a value on
- * either side. Lift e1RMs use the week-1 baseline (test or work-up) and the
+ * The only test the gate compares besides the lift estimates (2026-10-18: no
+ * test week). Older rows (push-ups, side plank, fixed-effort HR, mobility
+ * scores) still validate and read, but no longer feed the gate.
+ */
+export const GATE_FIXED_KEYS: readonly string[] = ['talk_test_hr']
+
+/**
+ * Week 1 against the retest (week 6 or later): the lift estimates and the
+ * talk-test HR (GATE_FIXED_KEYS), each with a value on either side. Lift e1RMs use the week-1 baseline (test or work-up) and the
  * retest e1RM map the gate reads. Names come from `liftNames`.
  */
 export function testDeltas(
@@ -162,6 +169,7 @@ export function testDeltas(
   const w1 = new Map(fixedResults(rows, w => w === 1).map(r => [r.key, r]))
   const w6 = new Map(fixedResults(rows, isRetestWeek).map(r => [r.key, r]))
   for (const key of new Set([...w1.keys(), ...w6.keys()])) {
+    if (!GATE_FIXED_KEYS.includes(key)) continue
     const a = w1.get(key)
     const b = w6.get(key)
     const label = (a ?? b) as FixedResult

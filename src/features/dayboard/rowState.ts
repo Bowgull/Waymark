@@ -563,13 +563,13 @@ export function strengthWeekLine(blockType: string | null | undefined, week: num
   return `Week ${week}: ${word(t.mainSets)} ${t.mainSets === 1 ? 'set' : 'sets'} of ${word(t.reps)}, about ${word(left)} left in the tank.`
 }
 
-/** "Back Squat" → "Squat", "Romanian Deadlift" → "RDL" (the coach screens' short names). */
+/** "Front Squat" → "Front squat" (the main squat), "Romanian Deadlift" → "RDL" (the coach screens' short names). */
 export function shortLift(name: string): string {
   if (/romanian deadlift/i.test(name)) return 'RDL'
-  return name.replace(/^back squat$/i, 'Squat')
+  return name.replace(/^front squat$/i, 'Front squat')
 }
 
-/** Page 20's top lifts on Today: "Squat 2×135lbs · RDL 2×115lbs" (main lifts: sets × load). */
+/** Page 20's top lifts on Today: "Front squat 2×135lbs · RDL 2×115lbs" (main lifts: sets × load). */
 export function topLiftsLine(exercises: ReadonlyArray<WorkoutExercise>): string | null {
   const parts = exercises
     .filter(ex => ex.section === 'main')

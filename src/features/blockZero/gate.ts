@@ -1,23 +1,30 @@
-// The retest + end gate moment (Block Zero Phase C, direction 7): week 1
-// against the retest, the verdict (move on / extend 1-2 weeks) with its
-// reasons, a primary button. The rules decide and the server applies the
+// The end gate (page 45, "BLOCK ZERO · THE GATE"): week 1 against week 6 for
+// the two numbers that steer the plan (design-decisions "Block Zero tests",
+// 2026-10-18): the front squat estimate (from logged sets) and the talk-test
+// HR (from the run log). Then the verdict (move on / extend 1-2 weeks) with
+// its reasons and one button. The rules decide and the server applies the
 // decision when the check runs (POST /api/ai/block-zero-transition); this
 // file only reads what came back. Pure.
 
-import { parseTestKey } from '@/lib/blockZero/tests'
+import { GATE_SQUAT_ID } from '@/lib/blockZero/endGate'
 import { BLOCK_ZERO_BASE_WEEKS } from '@/lib/blockZero/weeks'
+import { kgToLbs } from '@/lib/units'
 
-import { GUIDED_TESTS, formatTestValue, liftNameFromId, type TestRowIn } from './testWeek'
+import { formatTestValue, type TestRowIn } from './testWeek'
 
-/** Lower is better for these (same effort at a lower heart rate). Talk-test HR is shown without a judgement. */
-const LOWER_IS_BETTER = new Set(['fixed_effort_hr'])
-const NEUTRAL = new Set(['talk_test_hr'])
+/** The gate's two rows, in order. Talk-test HR is shown without a judgement (it is a ceiling, not a score). */
+export const GATE_ROWS: ReadonlyArray<{ key: string; label: string; unit: string; neutral: boolean }> = [
+  { key: `e1rm:${GATE_SQUAT_ID}`, label: 'Front squat · est. max', unit: 'kg', neutral: false },
+  { key: 'talk_test_hr', label: 'Talk-test HR', unit: 'bpm', neutral: true },
+]
 
 export interface ComparisonRow {
   key: string
   label: string
   before: string
   after: string
+  /** Both on one line, the unit once (page 45): "170 → 195 lb". */
+  span: string
   /** "+9", "−12", "+15%". */
   delta: string
   /** true = better, false = worse, null = no judgement or no change. */
@@ -30,37 +37,41 @@ function signed(n: number, digits = 0): string {
   return v > 0 ? `+${v}` : `−${Math.abs(v)}`
 }
 
-/** Week 1 against the latest retest week (6 or an extension week), test by test. */
+const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1))
+
+/**
+ * How a pair of results reads on the gate. Weights are stored in kg and shown
+ * in lb (Josh measures in lb): "170 → 195 lb". Other units as the tests write them.
+ */
+export function shownValues(a: number, unitA: string, b: number, unitB: string): { before: string; after: string; span: string } {
+  if (unitA === 'kg' && unitB === 'kg') {
+    const la = kgToLbs(a)
+    const lb = kgToLbs(b)
+    return { before: `${la} lb`, after: `${lb} lb`, span: `${la} → ${lb} lb` }
+  }
+  const before = formatTestValue(a, unitA)
+  const after = formatTestValue(b, unitB)
+  return { before, after, span: unitA === unitB ? `${num(a)} → ${after}` : `${before} → ${after}` }
+}
+
+/**
+ * Week 1 against week 6 for the two gate numbers. "Before" is week 1, or the
+ * earliest week before 6 with a value (the front squat starts in week 3, so
+ * its first estimate is the week-3 check set). "After" is the latest week 6+.
+ * Older rows (push-ups, side plank, fixed-effort HR, scores) are not compared.
+ */
 export function retestComparison(rows: readonly TestRowIn[]): ComparisonRow[] {
-  const week1 = new Map<string, TestRowIn>()
-  const retest = new Map<string, TestRowIn>()
-  for (const r of rows) {
-    if (r.week === 1) week1.set(r.testKey, r)
-    else if (r.week >= BLOCK_ZERO_BASE_WEEKS) {
-      const prev = retest.get(r.testKey)
-      if (!prev || r.week > prev.week) retest.set(r.testKey, r)
-    }
-  }
   const out: ComparisonRow[] = []
-  const add = (key: string, label: string, unit: string) => {
-    const a = week1.get(key)
-    const b = retest.get(key)
-    if (!a || !b) return
+  for (const g of GATE_ROWS) {
+    const mine = rows.filter(r => r.testKey === g.key)
+    const a = mine.filter(r => r.week < BLOCK_ZERO_BASE_WEEKS).sort((x, y) => x.week - y.week)[0]
+    const b = mine.filter(r => r.week >= BLOCK_ZERO_BASE_WEEKS).sort((x, y) => y.week - x.week)[0]
+    if (!a || !b) continue
     const diff = b.value - a.value
-    let delta: string
-    if (unit === 'kg' && a.value > 0) delta = `${signed((diff / a.value) * 100)}%`
-    else delta = signed(diff, Number.isInteger(diff) ? 0 : 1)
-    let better: boolean | null = null
-    if (diff !== 0 && !NEUTRAL.has(key)) better = LOWER_IS_BETTER.has(key) ? diff < 0 : diff > 0
-    out.push({ key, label, before: formatTestValue(a.value, a.unit ?? unit), after: formatTestValue(b.value, b.unit ?? unit), delta, better })
+    const delta = g.unit === 'kg' && a.value > 0 ? `${signed((diff / a.value) * 100)}%` : signed(diff, Number.isInteger(diff) ? 0 : 1)
+    const better = diff === 0 || g.neutral ? null : diff > 0
+    out.push({ key: g.key, label: g.label, ...shownValues(a.value, a.unit ?? g.unit, b.value, b.unit ?? g.unit), delta, better })
   }
-  // Lift estimates first (the headline), then the guided tests in order.
-  const lifts = [...new Set([...week1.keys(), ...retest.keys()])].filter(k => parseTestKey(k)?.kind === 'e1rm').sort()
-  for (const key of lifts) {
-    const parsed = parseTestKey(key)
-    if (parsed?.kind === 'e1rm') add(key, `${liftNameFromId(parsed.exerciseId)} · est. max`, 'kg')
-  }
-  for (const t of GUIDED_TESTS) add(t.key, t.label, t.unit)
   return out
 }
 
@@ -115,4 +126,16 @@ export function verdictFor(result: TransitionResultIn): Verdict {
 /** The gate opens in the block's last week (6, or the last extension week). */
 export function gateOpen(currentWeek: number, totalWeeks: number): boolean {
   return currentWeek >= Math.max(BLOCK_ZERO_BASE_WEEKS, totalWeeks)
+}
+
+/**
+ * Program's one Block Zero board (page 45): THE GATE · SEE THE VERDICT, in
+ * the block's last week once a week-6 number is in (the talk test from the
+ * run log, or the front squat estimate). No test-week or retest boards.
+ * `rows` null (couldn't load): it shows by the week.
+ */
+export function gateBoardShows(viewWeek: number, currentWeek: number, totalWeeks: number, rows: readonly TestRowIn[] | null): boolean {
+  if (!gateOpen(currentWeek, totalWeeks) || viewWeek !== currentWeek) return false
+  if (rows == null) return true
+  return rows.some(r => r.week >= BLOCK_ZERO_BASE_WEEKS && GATE_ROWS.some(g => g.key === r.testKey))
 }

@@ -13,7 +13,7 @@
 import type { TemplateSession } from '../weeklyTemplate'
 import { FOUNDATION_LABEL } from '../foundation'
 import { getRunWalkWeek, runWalkTotalSec } from './running'
-import { BLOCK_ZERO_BASE_WEEKS, blockZeroPhase, blockZeroTrainingWeek, type BlockZeroPhase } from './weeks'
+import { blockZeroPhase, type BlockZeroPhase } from './weeks'
 
 export type StrengthDay = 'A' | 'B' | 'C'
 
@@ -58,17 +58,12 @@ function strength(day: StrengthDay, phase: BlockZeroPhase): BlockZeroTemplateSes
   return { timeSlot: 'am', type: 'strength', label: `Strength ${day}`, estimatedMin: STRENGTH_MIN[phase], strengthDay: day }
 }
 
-// Weeks 1 and 6: a fixed 20-min rope piece at a set cadence gives an
-// HR-at-fixed-effort number to compare. Placed after Strength A (strength first).
-const ROPE_TEST: BlockZeroTemplateSession = { timeSlot: 'am', type: 'skip_rope', label: 'Rope: Fixed-Effort Test', estimatedMin: 20 }
-
 /** Day-of-week → sessions for a Block Zero week. Keys 0=Sun .. 6=Sat. */
 export function getBlockZeroWeekTemplate(weekNumber: number): Record<number, BlockZeroTemplateSession[]> {
-  const week = blockZeroTrainingWeek(weekNumber)
   const phase = blockZeroPhase(weekNumber)
-  const isTestWeek = phase !== 'extension' && (week === 1 || week === BLOCK_ZERO_BASE_WEEKS)
+  // Test weeks carry no extra session (2026-10-18): the fixed-effort rope test
+  // went with the HR-at-fixed-effort test. The guided tests run on their own screen.
   const monday = [FOUNDATION, strength('A', phase)]
-  if (isTestWeek) monday.push(ROPE_TEST)
 
   return {
     0: [FOUNDATION],

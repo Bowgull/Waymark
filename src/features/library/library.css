@@ -1,0 +1,170 @@
+/* The Library (page 21: list, an exercise opened, mastery A, Waybook B, Locked;
+   page 39: the category icons). Boards on glass over the rune arch.
+   Sizes and colours are the mockups' own (21-library.html, 39-library-icons.html,
+   shared/flap.css with its iPhone minimums). */
+
+/* the phone's .body: 14 px sides (main gives 16), 10 px between pieces */
+.lib-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  margin: 0 -2px;
+  padding-top: env(safe-area-inset-top);
+  background: transparent;
+}
+
+/* header (.hd): crest 54×60, LIBRARY on a small flap, 16 px from the edge */
+.lib-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 2px 6px; }
+.lib-brand { display: inline-flex; align-items: center; gap: 10px; padding: 0; border: 0; background: none; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.lib-crest { width: 54px; height: 60px; display: grid; place-items: center; flex: none; }
+
+.lib-body { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 10px; flex: 1; }
+/* the book sits 150 px from the phone's top and 23 px over the tab bar (page 21 B) */
+.lib-body.is-book { padding: 30px 0 0; }
+
+/* search (page 39) */
+.lib-search {
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(8, 13, 11, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18);
+  font: 600 15px var(--font-body);
+  color: #efe6c8;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.lib-search::placeholder { color: rgba(240, 234, 214, 0.55); opacity: 1; }
+.lib-search:focus { box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.45); }
+
+/* the board (.bd): margin-top 4 on the list (page 39), 6 on page 21's boards */
+.lib-bd { margin-top: 4px; }
+.lib-bd.is-open { margin-top: 6px; }
+
+/* ── the six groups (page 39 .grp2) ── */
+.lib-grp2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 2px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.lib-grp2 + .lib-grp2 { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.03); }
+.lib-grp2 .lib-chev { font: 800 14px var(--font-mono); color: #c9b27a; width: 12px; flex: none; }
+.lib-grp2 .lib-cnt2 { margin-left: auto; font: 700 14px var(--font-mono); color: #9fb2a8; }
+.lib-grp2 .wm-sicon { flex: none; }
+
+/* ── a group opened (page 21 .grp, .cnt, .chev) ── */
+.lib-grp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 2px;
+  border: 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.5);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.lib-grp:first-child { border-top: 0; }
+.lib-grp:disabled { cursor: default; }
+.lib-chev { font: 800 15px var(--font-mono); color: rgba(240, 230, 192, 0.6); width: 14px; flex: none; }
+.lib-cnt { font: 800 13px/1 var(--font-mono); padding: 5px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.35); color: #c9b27a; }
+.lib-lock { font: 800 14px var(--font-mono); color: rgba(240, 230, 192, 0.6); }
+
+/* ── an exercise (page 21 .ex) ── */
+.lib-ex { display: block; width: 100%; padding: 11px 0; border: 0; border-top: 1px solid rgba(0, 0, 0, 0.5); background: none; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.lib-ex-top { display: flex; justify-content: space-between; gap: 10px; }
+.lib-ex-nm { font: 700 16px var(--font-body); color: #efe6c8; }
+.lib-ex-eq { font: 600 13px var(--font-body); color: rgba(240, 230, 192, 0.7); text-align: right; }
+.lib-badges { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+.lib-badge { font: 700 11.5px/1 var(--font-body); padding: 5px 7px; border-radius: 5px; background: rgba(45, 121, 106, 0.22); color: #a9d4c2; }
+
+/* the open panel (.panel): brass edge on the left */
+.lib-panel { margin-top: 10px; padding: 10px 12px; border-left: 2px solid #b8984a; background: rgba(0, 0, 0, 0.25); border-radius: 0 8px 8px 0; text-align: left; }
+.lib-panel .wm-mlabel { margin-bottom: 6px; }
+.lib-cue { margin: 0; font: 500 15px/1.45 var(--font-body); color: #efe6c8; }
+.lib-watch { display: inline-flex; margin-top: 10px; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.lib-tip { margin: 0; font: 600 15px/1.4 var(--font-body); color: #8fc4b0; }
+
+/* ── a combo (page 21 .combo, mastery A) ── */
+.lib-combo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid rgba(0, 0, 0, 0.5); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.lib-combo.is-locked { opacity: 0.55; cursor: default; }
+.lib-combo .lib-panel { width: 100%; }
+
+/* the strikes: each its own tile, joined by › (page 31 .combo) */
+.lib-strikes { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.lib-stk { display: inline-flex; padding: 3px; border-radius: 7px; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.22); }
+.lib-arr { font: 800 14px var(--font-mono); color: rgba(232, 200, 96, 0.55); }
+
+/* five brass dots (.dots, 14 px on the iPhone) */
+.lib-dots { flex: none; font: 800 14px/1 var(--font-mono); letter-spacing: 0.15em; color: var(--sf-gold); }
+.lib-dots i { font-style: normal; color: rgba(240, 230, 192, 0.25); }
+
+/* the anvil: tap to favourite; it fills and glows once Mastered */
+.lib-anvil { flex: none; display: grid; place-items: center; width: 26px; height: 20px; padding: 0; border: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.lib-anvil::before { content: ''; position: absolute; width: 44px; height: 44px; }
+.lib-anvil { position: relative; }
+.lib-anvil svg { width: 26px; height: 20px; display: block; overflow: visible; }
+.lib-anvil path { fill: none; stroke: rgba(240, 230, 192, 0.5); stroke-width: 1.8; transition: fill var(--t-quick, 180ms) ease-out, stroke var(--t-quick, 180ms) ease-out; }
+.lib-anvil.is-fav path { fill: #b8984a; stroke: #b8984a; }
+.lib-anvil.is-mastered path { stroke: #b8984a; filter: drop-shadow(0 0 5px rgba(184, 152, 74, 0.7)); }
+
+/* the open combo's rows (.rows .r) */
+.lib-rows { display: flex; flex-direction: column; margin-top: 8px; }
+.lib-r { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.lib-r + .lib-r { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
+.lib-r .wm-label { flex: 1; }
+.lib-mastered { margin-top: 8px; }
+
+/* ── the Waybook: an old book page (page 21 B) ── */
+.lib-book {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  /* page 21: 150 px from the phone's top, 118 px from its foot (23 px over the tab bar) */
+  margin: 0 0 7px;
+  border-radius: 6px;
+  padding: 22px 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: radial-gradient(ellipse 90% 60% at 50% 0%, rgba(255, 190, 110, 0.16), transparent 60%), linear-gradient(180deg, #2a2116, #1b150d);
+  box-shadow: inset 0 0 0 1px rgba(120, 90, 50, 0.6), inset 0 0 40px rgba(0, 0, 0, 0.6), 0 18px 40px rgba(0, 0, 0, 0.6);
+  touch-action: pan-y;
+}
+.lib-book::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 14px; background: linear-gradient(90deg, rgba(0, 0, 0, 0.5), transparent); pointer-events: none; }
+.lib-book-h { margin: 0 0 14px; font: 700 13px var(--font-display); letter-spacing: 0.3em; color: #c9a868; text-align: center; }
+.lib-book-e { margin-bottom: 16px; }
+.lib-book-d { font: 600 12.5px var(--font-display); letter-spacing: 0.14em; color: #a88a58; }
+.lib-book-p { margin: 6px 0 0; font: 500 17px/1.55 Georgia, 'Cinzel', serif; color: #e6d6b4; }
+/* the drop cap sits right against its word: no gap after it */
+.lib-book-p.has-cap::first-letter { font: 700 32px/0 var(--font-display); color: #e0b860; margin-right: 0; text-shadow: 0 0 10px rgba(224, 184, 96, 0.4); }
+.lib-book-empty { margin: 6px 0 0; font: 500 17px/1.55 Georgia, 'Cinzel', serif; color: rgba(230, 214, 180, 0.7); text-align: center; }
+.lib-book.is-turn { animation: lib-turn var(--t-move, 320ms) var(--ease-out, ease-out) both; }
+@keyframes lib-turn { from { opacity: 0.4; } to { opacity: 1; } }
+
+/* the search's Waybook matches: the same page, inside the board */
+.lib-book.is-inline { flex: none; min-height: 0; margin: 10px 0 0; overflow: visible; }
+
+/* ── locked (page 21 "Locked"): ⚿, one line, UNLOCK WAYBOOK ── */
+.lib-locked { align-items: center; text-align: center; padding: 24px 14px !important; position: relative; top: -9px; }
+/* page 21: the card is centred on the whole phone (the scrim's safe-area padding is uneven) */
+.lib-locked-key { font: 800 30px var(--font-mono); color: #c9b27a; }
+
+.lib-none { margin: 4px 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-book.is-turn { animation: none; }
+  .lib-anvil path { transition: none; }
+}

@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, gte, inArray, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
 import { getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
+import { rebalanceForClassTonight } from './classTonight'
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { cors } from 'hono/cors'
@@ -24,11 +25,13 @@ import { BLOCK_ZERO_BASE_WEEKS, allowedClassTypes, blockZeroTrainingWeek, getRun
 import { KNOWN_SESSION_TYPES, bagRules, buildCoachSummary, estimatedMinutes, fallbackRoundTypes, governBagRounds, mergeContext, RAMP_LOAD_STEP, type SafeAlternative, type SessionChange } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
+import { CHART_WEEKS, aerobicWeekly, buildRings, currentStreak as ledgerStreak, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, coachSeenAt } from './weeklyPass'
 import { acceptCoachAsk, applyFeltHard, coachPushFrom, maybeRampUpAsk, proposeTmUpdate } from './coachAsks'
 import { runAthleteState } from '../lib/athleteState/runAthleteState'
 import { loadEasyHrCeiling } from '../lib/hrAnalysis'
+import { isZone2Run, stravaPlanLine } from '../lib/stravaMatch'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
 import { loadLiftTrends } from '../lib/athleteState/liftTrends'
@@ -604,9 +607,17 @@ app.get('/api/sessions/today', async (c) => {
     : []
   const runBySession = new Map(runs.map(r => [r.sessionId, r]))
 
+  // Page 40: a run waiting for CONFIRM shows its plan line and the Zone 2 cap
+  // (the clay band and "+N over cap" chip). Read only when one is waiting.
+  const waiting = rows.some(s => runBySession.get(s.id)?.attachmentStatus === 'auto_pending')
+  const easyCap = waiting ? (await loadEasyHrCeiling(db, epochDay)).bpm : null
+  const [hrProfile] = waiting ? await db.select({ maxHr: userProfile.maxHr }).from(userProfile).where(eq(userProfile.id, 'default')) : []
+
   const enriched = rows.map(s => {
     const r = runBySession.get(s.id)
     if (!r) return s
+    const pending = r.attachmentStatus === 'auto_pending'
+    const zone2Cap = pending && isZone2Run(s) ? easyCap : null
     return {
       ...s,
       runSession: {
@@ -620,6 +631,8 @@ app.get('/api/sessions/today', async (c) => {
         avgHr: r.avgHr,
         maxHr: r.maxHr,
         elevationGainM: r.elevationGainM,
+        zone2CapBpm: zone2Cap,
+        planLine: pending ? stravaPlanLine(s, hrProfile?.maxHr ?? null, zone2Cap) : null,
       },
     }
   })
@@ -645,7 +658,8 @@ app.get('/api/sessions/week-runs', async (c) => {
   await rolloverAndAsk(db, epochDay)
   const rows = await db.select().from(sessions)
     .where(and(
-      eq(sessions.type, 'running'),
+      // Block Zero's runs are foundation_run; ingestion matches both, so the board offers both.
+      inArray(sessions.type, ['running', 'foundation_run']),
       gte(sessions.scheduledDate, mondayEpoch),
       lte(sessions.scheduledDate, sundayEpoch),
     ))
@@ -800,6 +814,14 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
   return c.json(check.notes.length > 0 ? { ...row, coach: { notes: check.notes } } : row)
+})
+
+// "+ Class tonight" (page 45): the day rebalances around the class just added
+// (rebalanceDayForClass; src/server/classTonight.ts). Returns the Coach line.
+app.post('/api/sessions/:id/class-tonight', async (c) => {
+  const body = await c.req.json<{ today?: string }>().catch(() => ({} as { today?: string }))
+  const out = await rebalanceForClassTonight(createDB(c.env), c.req.param('id'), localToday(body.today), Math.floor(Date.now() / 1000))
+  return c.json(out.body, out.status as ContentfulStatusCode)
 })
 
 // Move a planned session to another day or slot in its own week. Same
@@ -3611,6 +3633,65 @@ app.get('/api/history/aerobic-fitness', async (c) => {
     highHr,
     days,
   }))
+})
+
+// ─── History: the Ledger (page 32) ───────────────────────────
+// Everything the Ledger draws in one read: the rings for the toggle's range, and the charts.
+// ?range=week|month|season, ?today=YYYY-MM-DD (the phone's date; defaults to the server's).
+
+app.get('/api/history/ledger', async (c) => {
+  const rangeRaw = c.req.query('range')
+  const range: LedgerRange = rangeRaw === 'month' || rangeRaw === 'season' ? rangeRaw : 'week'
+  const todayRaw = c.req.query('today')
+  const today = todayRaw && /^\d{4}-\d{2}-\d{2}$/.test(todayRaw) ? isoToEpochDay(todayRaw) : Math.floor(Date.now() / 86400000)
+  const weeks = CHART_WEEKS[range]
+  const db = createDB(c.env)
+
+  const [allSessions, allRuns, allSexes, allSets, allExercises, logs, metrics] = await Promise.all([
+    db.select().from(sessions),
+    db.select().from(runSessions),
+    db.select().from(strengthSessionExercises),
+    db.select().from(strengthSets),
+    db.select().from(exercises),
+    db.select().from(dailyLogs),
+    db.select().from(bodyMetrics),
+  ])
+  const dayOf = (s: { scheduledDate: number | null; completedAt: number | null; createdAt: number }) =>
+    s.scheduledDate ?? Math.floor((s.completedAt ?? s.createdAt) / 86400)
+  const sessionById = new Map(allSessions.map(s => [s.id, s]))
+
+  const runs = allRuns.map(r => {
+    const s = sessionById.get(r.sessionId)
+    return { epochDay: s ? dayOf(s) : 0, paceSecKm: r.paceSecKm, avgHr: r.avgHr, completed: s?.status === 'completed' }
+  })
+
+  const exName = new Map(allExercises.map(e => [e.id, e.name]))
+  const sexById = new Map(allSexes.map(se => [se.id, se]))
+  const setRows: { epochDay: number; exerciseName: string; weightLbs: number }[] = []
+  for (const st of allSets) {
+    if (!isLoggedWorkSet(st) || st.weightKg == null || st.weightKg <= 0 || st.reps < 1) continue
+    const se = sexById.get(st.sessionExerciseId)
+    if (!se || se.section === 'warmup') continue
+    const s = sessionById.get(se.sessionId)
+    if (!s || s.status !== 'completed') continue
+    setRows.push({ epochDay: dayOf(s), exerciseName: exName.get(se.exerciseId) ?? '', weightLbs: Math.round(st.weightKg * 2.20462) })
+  }
+
+  const weights = metrics
+    .filter(m => m.weightKg != null)
+    .map(m => ({ epochDay: Math.floor(m.loggedAt / 86400), weightLbs: Math.round(m.weightKg! * 2.20462 * 10) / 10 }))
+
+  return c.json({
+    range,
+    today,
+    weeks,
+    rings: buildRings(allSessions, range, today),
+    aerobic: aerobicWeekly(runs, weeks, today),
+    strength: strengthWeekly(setRows, weeks, today),
+    sleep: sleepWeek(logs, today),
+    weight: weightWeekly(weights, weeks, today),
+    streak: ledgerStreak(allSessions, today),
+  })
 })
 
 // ─── History: Dashboard Summary ──────────────────────────────

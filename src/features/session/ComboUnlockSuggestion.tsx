@@ -1,7 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
+import { CentredCard, FlapLabel } from '@/design'
+import { ComboStrikes, SessionButton } from '@/components/timers'
 import { apiFetch } from '@/lib/api'
-import { Button } from '@/components/ui/button'
+import { setWorldBackdrop } from '@/world/worldStore'
+
+import './session.css'
 
 interface Suggestion {
   id: string
@@ -24,9 +28,19 @@ const TIER_LABELS: Record<string, string> = {
   mastery: 'Mastery',
 }
 
+/**
+ * New Combos Available (page 31): a centred card over the forest, only when the
+ * server suggests some. The tier on a gold flap, the server's message, each combo
+ * as strike tiles with a tick (all ticked by default), then UNLOCK n or NOT YET.
+ */
 export function ComboUnlockSuggestion({ suggestions, message, onDone }: ComboUnlockSuggestionProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(suggestions.map(s => s.id)))
   const [unlocking, setUnlocking] = useState(false)
+
+  useEffect(() => {
+    setWorldBackdrop('clearing')
+    return () => setWorldBackdrop(null)
+  }, [])
 
   function toggle(id: string) {
     setSelected(prev => {
@@ -53,52 +67,31 @@ export function ComboUnlockSuggestion({ suggestions, message, onDone }: ComboUnl
   }
 
   const tier = suggestions[0]?.tier ?? ''
+  const tierLabel = TIER_LABELS[tier] ?? tier
 
   return (
-    <div className="animate-fade-in space-y-5">
-      <div className="text-center">
-        <p className="font-cinzel text-xl tracking-wider text-gold">New Combos Available</p>
-        <p className="mt-1 text-sm text-muted-foreground">{message}</p>
-      </div>
-
-      <div className="rounded-md border border-gold/30 bg-deep-forest p-4">
-        <p className="mb-3 text-xs font-cinzel tracking-wider text-gold/70">
-          {TIER_LABELS[tier] ?? tier}
-        </p>
-        <div className="space-y-2">
-          {suggestions.map(s => (
-            <button
-              key={s.id}
-              onClick={() => toggle(s.id)}
-              className={`flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors ${
-                selected.has(s.id)
-                  ? 'border-gold/40 bg-gold/5'
-                  : 'border-border bg-surface'
-              }`}
-            >
-              <span className={`h-4 w-4 rounded-sm border ${
-                selected.has(s.id) ? 'border-gold bg-gold' : 'border-border'
-              }`}>
-                {selected.has(s.id) && (
-                  <svg viewBox="0 0 16 16" className="h-4 w-4 text-near-black">
-                    <path fill="currentColor" d="M6.5 12L2 7.5 3.5 6l3 3 7-7L15 3.5z" />
-                  </svg>
-                )}
-              </span>
-              <span className="text-sm text-foreground">{s.text}</span>
+    <CentredCard
+      label="New Combos Available"
+      head="New Combos Available"
+      headRight={tierLabel ? <FlapLabel text={tierLabel} size="xs" tone="gold" /> : undefined}
+      className="ss-card"
+    >
+      <p className="wm-prose is-dim" style={{ margin: '0 0 6px' }}>{message}</p>
+      <div role="group" aria-label="Combos to unlock">
+        {suggestions.map(s => {
+          const on = selected.has(s.id)
+          return (
+            <button key={s.id} type="button" role="checkbox" aria-checked={on} className="ss-tick" onClick={() => toggle(s.id)}>
+              <span className={`ss-bx${on ? ' is-on' : ''}`} aria-hidden>{on ? '✓' : ''}</span>
+              <ComboStrikes text={s.text} size="xs" />
             </button>
-          ))}
-        </div>
+          )
+        })}
       </div>
-
-      <div className="flex gap-3">
-        <Button variant="secondary" onClick={onDone} className="flex-1">
-          Not Yet
-        </Button>
-        <Button onClick={handleUnlock} disabled={unlocking} className="flex-1">
-          {unlocking ? 'Unlocking...' : `Unlock ${selected.size}`}
-        </Button>
+      <div className="wm-btns">
+        <SessionButton label={unlocking ? 'UNLOCKING' : `UNLOCK ${selected.size}`} primary disabled={unlocking} onClick={() => void handleUnlock()} />
+        <SessionButton label="NOT YET" disabled={unlocking} onClick={onDone} />
       </div>
-    </div>
+    </CentredCard>
   )
 }

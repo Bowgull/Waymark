@@ -49,6 +49,7 @@ import { trainingWeekFor } from './coachData'
 import { zone2CeilingBpm } from '../lib/hrAnalysis'
 import { mondayOf } from '../lib/dates'
 import type { createDB } from '../db/client'
+import { lbText } from '../lib/units'
 
 type DB = ReturnType<typeof createDB>
 
@@ -353,7 +354,7 @@ export async function recordCheckSetE1rm(db: DB, setId: string) {
     testKey: e1rmTestKey(row.exerciseId),
     value: e1rm,
     unit: 'kg',
-    notes: `${row.set.weightKg} kg x ${row.set.reps}, ${row.set.rir === 3 ? '3+' : row.set.rir} left`,
+    notes: `${row.set.weightKg != null ? lbText(row.set.weightKg) : 'bodyweight'} x ${row.set.reps}, ${row.set.rir === 3 ? '3+' : row.set.rir} left`,
     source: 'auto',
     recordedAt: Math.floor(Date.now() / 1000),
   })

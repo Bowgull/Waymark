@@ -1,725 +1,452 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type TouchEvent } from 'react'
 
+import { useSearchParams } from 'react-router-dom'
+import { Board, Crest, FlapLabel, SessionIcon, showPop } from '@/design'
 import { apiFetch } from '@/lib/api'
-import { getCategoryMark, getMarkAsset, waybookPng } from '@/lib/markAssets'
-import { FormVideoLink } from '@/components/FormVideoLink'
-import { PageHeader } from '@/components/PageHeader'
-import { Badge } from '@/components/ui/badge'
-import { ForgeIcon, LockIcon } from '@/components/icons/SessionIcons'
-import { GoldDivider } from '@/components/ui/GoldDivider'
-import { LibrarySkeleton } from '@/components/ui/Skeleton'
-import { JournalEntry } from '@/features/today/JournalCard'
-import { WaybookGate } from '@/features/library/WaybookGate'
-import { isGateEnabled, isUnlocked, requireUnlock, subscribe } from '@/lib/waybookGate'
 
-// Library icons (page 39): Bagwork and the Waybook reuse their approved painted icons.
-const bagworkPng = getMarkAsset('bag_work').png
+import {
+  EXERCISE_GROUPS,
+  GROUPS,
+  MASTERY_MAX,
+  bagCount,
+  bookPages,
+  comboStrikes,
+  currentTier,
+  entryDateLine,
+  entryParagraphs,
+  equipmentName,
+  exerciseCounts,
+  isGroupKey,
+  isMastered,
+  masteryDots,
+  matchCombo,
+  matchEntry,
+  matchExercise,
+  muscleBadges,
+  tierViews,
+  type BookPage,
+  type GroupKey,
+  type LibraryCombo,
+  type LibraryExercise,
+  type LibraryJournalEntry,
+} from './libraryModel'
+import { useWaybookUnlocked } from './useWaybookUnlocked'
+import { WaybookLockedCard } from './WaybookGate'
+import './library.css'
 
-interface Exercise {
-  id: string
-  name: string
-  category: string
-  muscleGroups: string | null
-  equipment: string | null
-  formCues: string | null
-  formVideoUrl: string | null
-}
+// The Library (page 21 + page 39, approved): over the rune arch. The list is
+// page 39's six groups (painted icon, flap name, count); a group opens on its
+// own board (page 21 "An exercise, opened"); Bagwork opens to its tiers with
+// mastery A (five brass dots, the anvil); the Waybook opens as an old book
+// page (page 21 B), behind Face ID when that's on (page 21 "Locked").
+// The Library holds no history and no PRs; combos unlock only after a bag
+// session, never from here; the Waybook is read-only.
 
-interface ComboData {
-  id: string
-  text: string
-  tier: string
-  level: string
-  unlocked: number
-  masteryScore: number
-  techniques: string
-  formTips: string
-  isFavourite: number
-  timesSharp: number
-}
+/** The whole book: every reflection, one page per month. */
+const BOOK_DAYS = 3650
 
-interface JournalEntry {
-  id: string
-  date: number
-  type: string
-  content: string
-  createdAt: number
-}
-
-const TIER_ORDER_LIST = ['foundation', 'weapons', 'flow', 'deception', 'mastery']
-const TIER_LABELS: Record<string, string> = {
-  foundation: 'Fundamentals',
-  weapons: 'Weapons',
-  flow: 'Flow',
-  deception: 'Deception',
-  mastery: 'Mastery',
-}
-
-const CATEGORY_LABELS: Record<string, string> = {
-  strength: 'Strength',
-  core: 'Core',
-  posture: 'Foundation',
-  mobility: 'Mobility',
-}
-
-const CATEGORY_ORDER = ['strength', 'core', 'posture', 'mobility']
-
-function formatMuscleGroup(raw: string): string {
-  return raw
-    .split('_')
-    .map(w => (w.length <= 2 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)))
-    .join(' ')
-}
-
-function ChevronIcon({ open }: { open: boolean }) {
+/** The header: the small crest and LIBRARY on a flap. With a group open, it goes back to the list. */
+function LibraryHeader({ onBack }: { onBack?: () => void }) {
+  const inner = (
+    <>
+      <span className="lib-crest"><Crest width={52} /></span>
+      <FlapLabel text="LIBRARY" size="sm" />
+    </>
+  )
   return (
-    <svg
-      className={`h-4 w-4 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={2}
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-    </svg>
+    <header className="lib-head">
+      {onBack
+        ? <button type="button" className="lib-brand" onClick={onBack} aria-label="Library">{inner}</button>
+        : <span className="lib-brand">{inner}</span>}
+    </header>
   )
 }
 
-export function LibraryPage() {
-  const [exercises, setExercises] = useState<Exercise[]>([])
-  const [comboList, setComboList] = useState<ComboData[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set())
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [combosOpen, setCombosOpen] = useState(false)
-  const [expandedTiers, setExpandedTiers] = useState<Set<string>>(new Set())
-  const [expandedComboId, setExpandedComboId] = useState<string | null>(null)
+// ─── pieces ───────────────────────────────────────────────────
 
-  // Journal history
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
-  const [journalOpen, setJournalOpen] = useState(false)
+/** A combo: each strike its own tile, joined by ›. */
+function ComboStrikes({ text }: { text: string }) {
+  const strikes = comboStrikes(text)
+  return (
+    <span className="lib-strikes" aria-label={strikes.join(', ')}>
+      {strikes.map((s, i) => (
+        <Fragment key={i}>
+          {i > 0 && <span className="lib-arr" aria-hidden>›</span>}
+          <span className="lib-stk"><FlapLabel text={s} size="xs" /></span>
+        </Fragment>
+      ))}
+    </span>
+  )
+}
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const gateLocked = isGateEnabled() && !isUnlocked()
-        const [data, comboData, journalData] = await Promise.all([
-          apiFetch<Exercise[]>('/api/exercises'),
-          apiFetch<ComboData[]>('/api/combos'),
-          gateLocked
-            ? Promise.resolve<JournalEntry[]>([])
-            : apiFetch<JournalEntry[]>('/api/journal/history?days=90'),
-        ])
-        setExercises(data)
-        setComboList(comboData)
-        setJournalEntries(journalData)
-      } catch (e) {
-        console.error('Failed to load library:', e)
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-    // If the user unlocks Waybook elsewhere, fetch journal entries so search works.
-    const off = subscribe(async (unlocked) => {
-      if (unlocked && journalEntries.length === 0) {
-        try {
-          const rows = await apiFetch<JournalEntry[]>('/api/journal/history?days=90')
-          setJournalEntries(rows)
-        } catch (e) {
-          console.error('Failed to load journal after unlock:', e)
-        }
-      }
-    })
-    return off
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+function Dots({ score }: { score: number }) {
+  const n = masteryDots(score)
+  return (
+    <span className="lib-dots" aria-label={`Mastery ${score} of ${MASTERY_MAX}`}>
+      {'●'.repeat(n)}<i>{'●'.repeat(5 - n)}</i>
+    </span>
+  )
+}
 
-  async function loadJournal() {
-    if (isGateEnabled() && !isUnlocked()) {
-      const ok = await requireUnlock('Unlock Waybook')
-      if (!ok) return
-    }
-    if (journalEntries.length > 0) {
-      setJournalOpen(!journalOpen)
-      return
-    }
-    try {
-      const rows = await apiFetch<JournalEntry[]>('/api/journal/history?days=30')
-      setJournalEntries(rows)
-      setJournalOpen(true)
-      // Auto-expand reflections if there are any, otherwise body log
-      const hasReflections = rows.some(r => r.type !== 'wellness')
-      const hasBodyLog = rows.some(r => r.type === 'wellness')
-      if (hasReflections) {
-        setReflectionsOpen(true)
-        const firstReflection = rows.find(r => r.type !== 'wellness')
-        if (firstReflection) setExpandedMonths(new Set(['r-' + getMonthKey(firstReflection.date)]))
-      }
-      if (!hasReflections && hasBodyLog) {
-        setBodyLogOpen(true)
-        const firstBody = rows.find(r => r.type === 'wellness')
-        if (firstBody) setExpandedMonths(new Set(['b-' + getMonthKey(firstBody.date)]))
-      }
-    } catch (e) {
-      console.error('Failed to load journal:', e)
-    }
-  }
+function Anvil({ combo, onToggle }: { combo: LibraryCombo; onToggle: () => void }) {
+  const fav = combo.isFavourite === 1
+  const cls = ['lib-anvil', fav ? 'is-fav' : '', isMastered(combo) ? 'is-mastered' : ''].filter(Boolean).join(' ')
+  return (
+    <button
+      type="button"
+      className={cls}
+      aria-pressed={fav}
+      aria-label={fav ? 'Favourite' : 'Make favourite'}
+      onClick={e => { e.stopPropagation(); onToggle() }}
+    >
+      <svg viewBox="0 0 26 20" aria-hidden><path d="M2 5h16c0 3 2 4 6 4v1c-4 0-6 1-7 3l1 3H7l1-3c-1-2-3-3-6-3z" /></svg>
+    </button>
+  )
+}
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return exercises
-    const q = search.toLowerCase()
-    return exercises.filter(
-      (ex) =>
-        ex.name.toLowerCase().includes(q) ||
-        ex.muscleGroups?.toLowerCase().includes(q) ||
-        ex.equipment?.toLowerCase().includes(q)
+function ComboRow({ combo, open, onOpen, onFavourite }: { combo: LibraryCombo; open: boolean; onOpen: () => void; onFavourite: () => void }) {
+  if (!combo.unlocked) {
+    return (
+      <div className="lib-combo is-locked">
+        <ComboStrikes text={combo.text} />
+        <span className="lib-lock" aria-label="Locked">⚿</span>
+      </div>
     )
-  }, [exercises, search])
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, Exercise[]>()
-    for (const ex of filtered) {
-      if (!map.has(ex.category)) map.set(ex.category, [])
-      map.get(ex.category)!.push(ex)
-    }
-    return map
-  }, [filtered])
-
-  // Filter journal entries by search
-  const filteredJournal = useMemo(() => {
-    if (!search.trim()) return []
-    const q = search.toLowerCase()
-    return journalEntries.filter((e) => e.content.toLowerCase().includes(q))
-  }, [journalEntries, search])
-
-  // Combo filtering
-  const filteredCombos = useMemo(() => {
-    if (!search.trim()) return comboList
-    const q = search.toLowerCase()
-    return comboList.filter(c => c.text.toLowerCase().includes(q) || c.tier.toLowerCase().includes(q))
-  }, [comboList, search])
-
-  const combosByTier = useMemo(() => {
-    const map = new Map<string, ComboData[]>()
-    for (const c of filteredCombos) {
-      if (!map.has(c.tier)) map.set(c.tier, [])
-      map.get(c.tier)!.push(c)
-    }
-    return map
-  }, [filteredCombos])
-
-  function toggleTier(tier: string) {
-    setExpandedTiers(prev => {
-      const next = new Set(prev)
-      if (next.has(tier)) next.delete(tier)
-      else next.add(tier)
-      return next
-    })
   }
+  return (
+    <div
+      className="lib-combo"
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      onClick={onOpen}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
+    >
+      <ComboStrikes text={combo.text} />
+      <Dots score={combo.masteryScore} />
+      <Anvil combo={combo} onToggle={onFavourite} />
+      {open && (
+        <div className="lib-panel">
+          {combo.formTips && <p className="lib-tip">{combo.formTips}</p>}
+          <div className="lib-rows">
+            <div className="lib-r"><span className="wm-label">Mastery</span><FlapLabel text={`${combo.masteryScore}/${MASTERY_MAX}`} size="sm" tone="gold" /></div>
+            <div className="lib-r"><span className="wm-label">Sharp ratings</span><FlapLabel text={String(combo.timesSharp)} size="sm" /></div>
+          </div>
+          {isMastered(combo) && <div className="lib-mastered"><FlapLabel text="MASTERED" size="xs" tone="gold" /></div>}
+        </div>
+      )}
+    </div>
+  )
+}
 
-  async function toggleFavourite(comboId: string) {
-    try {
-      const updated = await apiFetch<ComboData>(`/api/combos/${comboId}/favourite`, { method: 'PATCH' })
-      setComboList(prev => prev.map(c => c.id === comboId ? updated : c))
-    } catch (e) {
-      console.error('Failed to toggle favourite:', e)
-    }
+function ExerciseRow({ ex, open, onOpen }: { ex: LibraryExercise; open: boolean; onOpen: () => void }) {
+  const badges = muscleBadges(ex.muscleGroups)
+  const eq = equipmentName(ex.equipment)
+  return (
+    <div
+      className="lib-ex"
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      onClick={onOpen}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
+    >
+      <div className="lib-ex-top">
+        <span className="lib-ex-nm">{ex.name}</span>
+        {eq && <span className="lib-ex-eq">{eq}</span>}
+      </div>
+      {badges.length > 0 && (
+        <div className="lib-badges">{badges.map(b => <span key={b} className="lib-badge">{b}</span>)}</div>
+      )}
+      {open && (ex.formCues || ex.formVideoUrl) && (
+        <div className="lib-panel">
+          {ex.formCues && (
+            <>
+              <div className="wm-mlabel">CUES</div>
+              <p className="lib-cue">{ex.formCues}</p>
+            </>
+          )}
+          {ex.formVideoUrl && (
+            <a className="lib-watch" href={ex.formVideoUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} aria-label="Watch form">
+              <FlapLabel text="WATCH FORM ›" size="xs" tone="gold" />
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** A group's head when it's open (page 21): ▾, the name on a padded flap, the count. */
+function GroupHead({ name, count, len, size = 'md', open = true, locked = false, onClick }: { name: string; count?: string; len: number; size?: 'md' | 'sm'; open?: boolean; locked?: boolean; onClick?: () => void }) {
+  return (
+    <button type="button" className="lib-grp" onClick={onClick} disabled={!onClick} aria-expanded={open}>
+      <span className="lib-chev" aria-hidden>{open ? '▾' : '▸'}</span>
+      <FlapLabel text={name} size={size} len={len} />
+      {locked ? <span className="lib-lock" aria-label="Locked">⚿</span> : count != null && <span className="lib-cnt">{count}</span>}
+    </button>
+  )
+}
+
+/** One page of the Waybook (page 21 B): the month, dated entries, a gold drop cap. */
+function BookEntries({ page }: { page: Pick<BookPage, 'head' | 'entries'> }) {
+  return (
+    <>
+      <h2 className="lib-book-h">{page.head}</h2>
+      {page.entries.map(e => (
+        <div key={e.id} className="lib-book-e">
+          <div className="lib-book-d">{entryDateLine(e)}</div>
+          {entryParagraphs(e.content).map((p, i) => (
+            <p key={i} className={`lib-book-p${i === 0 ? ' has-cap' : ''}`}>{p}</p>
+          ))}
+        </div>
+      ))}
+    </>
+  )
+}
+
+function WaybookBook({ entries, loaded }: { entries: LibraryJournalEntry[]; loaded: boolean }) {
+  const pages = useMemo(() => bookPages(entries), [entries])
+  const [index, setIndex] = useState(0)
+  const touch = useRef<{ x: number; y: number } | null>(null)
+  const page = pages[Math.min(index, Math.max(0, pages.length - 1))]
+
+  // swipe for the next month (left = older, right = newer)
+  function onTouchStart(e: TouchEvent) {
+    const t = e.touches[0]
+    touch.current = { x: t.clientX, y: t.clientY }
   }
-
-  const isSearching = search.trim().length > 0
-
-  function toggleCategory(cat: string) {
-    setExpandedCats((prev) => {
-      const next = new Set(prev)
-      if (next.has(cat)) next.delete(cat)
-      else next.add(cat)
-      return next
-    })
-  }
-
-  function formatEpochDay(epochDay: number) {
-    const d = new Date(epochDay * 86400 * 1000)
-    return d.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    })
-  }
-
-  function getMonthKey(epochDay: number) {
-    const d = new Date(epochDay * 86400 * 1000)
-    const month = d.toLocaleDateString('en-US', { month: 'long' })
-    const year = String(d.getFullYear()).slice(2)
-    return `${month} '${year}`
-  }
-
-  // Split entries into reflections vs body log
-  const reflections = useMemo(() => journalEntries.filter(e => e.type !== 'wellness'), [journalEntries])
-  const bodyLog = useMemo(() => journalEntries.filter(e => e.type === 'wellness'), [journalEntries])
-
-  const groupByMonth = useCallback((entries: typeof journalEntries) => {
-    const groups: { key: string; entries: typeof journalEntries }[] = []
-    const map = new Map<string, typeof journalEntries>()
-    for (const entry of entries) {
-      const key = getMonthKey(entry.date)
-      if (!map.has(key)) {
-        map.set(key, [])
-        groups.push({ key, entries: map.get(key)! })
-      }
-      map.get(key)!.push(entry)
-    }
-    return groups
-  }, [])
-
-  const reflectionsByMonth = useMemo(() => groupByMonth(reflections), [groupByMonth, reflections])
-  const bodyLogByMonth = useMemo(() => groupByMonth(bodyLog), [bodyLog, groupByMonth])
-
-  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
-  const [reflectionsOpen, setReflectionsOpen] = useState(false)
-  const [bodyLogOpen, setBodyLogOpen] = useState(false)
-
-  function toggleMonth(key: string) {
-    setExpandedMonths((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-
-  if (loading) {
-    return <LibrarySkeleton />
+  function onTouchEnd(e: TouchEvent) {
+    const s = touch.current
+    touch.current = null
+    if (!s) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - s.x
+    const dy = t.clientY - s.y
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+    setIndex(i => Math.max(0, Math.min(pages.length - 1, i + (dx < 0 ? 1 : -1))))
   }
 
   return (
-    <div>
-      <PageHeader title="Library" />
+    <article key={page?.key ?? 'none'} className="lib-book is-turn" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} aria-label="The Waybook">
+      {page
+        ? <BookEntries page={page} />
+        : loaded && <p className="lib-book-empty">No entries yet.</p>}
+    </article>
+  )
+}
 
-      {/* Search input */}
-      <div className="mb-5 px-1">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search exercises, combos, journal..."
-          className="w-full rounded-md border border-gold/10 bg-deep-forest px-3 py-2.5 text-base text-foreground placeholder-muted-foreground focus:border-gold/40 focus:outline-none focus:ring-1 focus:ring-gold/20"
-        />
+// ─── the page ─────────────────────────────────────────────────
+
+export function LibraryPage() {
+  const [params, setParams] = useSearchParams()
+  const openParam = params.get('open')
+  const open: GroupKey | null = isGroupKey(openParam) ? openParam : null
+
+  const [exercises, setExercises] = useState<LibraryExercise[]>([])
+  const [combos, setCombos] = useState<LibraryCombo[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [entries, setEntries] = useState<LibraryJournalEntry[]>([])
+  const [entriesLoaded, setEntriesLoaded] = useState(false)
+  const [search, setSearch] = useState('')
+  const [openExercise, setOpenExercise] = useState<string | null>(null)
+  // undefined: Bagwork opens on the current tier (the highest with an unlocked combo)
+  const [openTier, setOpenTier] = useState<string | null | undefined>(undefined)
+  const [openCombo, setOpenCombo] = useState<string | null>(null)
+  const unlocked = useWaybookUnlocked()
+
+  useEffect(() => {
+    let live = true
+    Promise.all([
+      apiFetch<LibraryExercise[]>('/api/exercises').catch(() => [] as LibraryExercise[]),
+      apiFetch<LibraryCombo[]>('/api/combos').catch(() => [] as LibraryCombo[]),
+    ]).then(([ex, co]) => {
+      if (!live) return
+      setExercises(Array.isArray(ex) ? ex : [])
+      setCombos(Array.isArray(co) ? co : [])
+      setLoaded(true)
+    })
+    return () => { live = false }
+  }, [])
+
+  // the journal loads only once the Waybook is readable (never behind the lock)
+  useEffect(() => {
+    if (!unlocked || entriesLoaded) return
+    let live = true
+    apiFetch<LibraryJournalEntry[]>(`/api/journal/history?days=${BOOK_DAYS}`)
+      .then(rows => { if (live) { setEntries(Array.isArray(rows) ? rows : []); setEntriesLoaded(true) } })
+      .catch(e => { console.error('Failed to load the Waybook:', e); if (live) setEntriesLoaded(true) })
+    return () => { live = false }
+  }, [unlocked, entriesLoaded])
+
+  const tiers = useMemo(() => tierViews(combos), [combos])
+  const counts = useMemo(() => exerciseCounts(exercises), [exercises])
+
+  function go(key: GroupKey | null) {
+    setOpenExercise(null)
+    setOpenCombo(null)
+    setSearch('')
+    setOpenTier(undefined)
+    setParams(key ? { open: key } : {}, { replace: true })
+  }
+
+
+  async function toggleFavourite(id: string) {
+    const before = combos
+    setCombos(list => list.map(c => (c.id === id ? { ...c, isFavourite: c.isFavourite ? 0 : 1 } : c)))
+    try {
+      const updated = await apiFetch<LibraryCombo>(`/api/combos/${id}/favourite`, { method: 'PATCH' })
+      if (updated && typeof updated === 'object' && 'id' in updated) setCombos(list => list.map(c => (c.id === id ? updated : c)))
+    } catch (e) {
+      console.error('Failed to toggle favourite:', e)
+      setCombos(before)
+      showPop("Couldn't save. Check your connection.", 'bad', { title: "COULDN'T SAVE", durationMs: 4000 })
+    }
+  }
+
+  const back = () => go(null)
+
+  // ── a group opened ──
+  if (open && EXERCISE_GROUPS.includes(open)) {
+    const g = GROUPS.find(x => x.key === open)!
+    const items = exercises.filter(ex => ex.category === open)
+    return (
+      <div className="lib-root">
+        <LibraryHeader onBack={back} />
+        <div className="lib-body">
+          <Board className="lib-bd is-open">
+            <GroupHead name={g.name} count={String(items.length)} len={10} onClick={back} />
+            {items.map(ex => (
+              <ExerciseRow key={ex.id} ex={ex} open={openExercise === ex.id} onOpen={() => setOpenExercise(openExercise === ex.id ? null : ex.id)} />
+            ))}
+          </Board>
+        </div>
       </div>
+    )
+  }
 
-      {filtered.length === 0 && !isSearching && (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          No exercises loaded.
-        </p>
-      )}
-
-      {filtered.length === 0 && filteredCombos.length === 0 && filteredJournal.length === 0 && isSearching && (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          No results for "{search}"
-        </p>
-      )}
-
-      {/* Exercise categories */}
-      {CATEGORY_ORDER.map((cat) => {
-        const items = grouped.get(cat)
-        if (!items?.length) return null
-
-        const isOpen = isSearching || expandedCats.has(cat)
-
-        return (
-          <div key={cat} className="mb-4">
-            <button
-              onClick={() => !isSearching && toggleCategory(cat)}
-              className="flex w-full items-center gap-3 px-1 py-2"
-            >
-              {!isSearching && <ChevronIcon open={isOpen} />}
-              <img
-                src={getCategoryMark(cat).png}
-                alt=""
-                className="h-8 w-8 object-contain"
-              />
-              <span className="text-label text-muted-foreground">
-                {CATEGORY_LABELS[cat] ?? cat}
-              </span>
-              <Badge variant="muted" className="ml-1 text-[13px]">
-                {items.length}
-              </Badge>
-            </button>
-
-            {isOpen && (
-              <div className="space-y-2 pl-1">
-                {items.map((ex) => {
-                  const isExpanded = expandedId === ex.id
-                  const muscles = ex.muscleGroups
-                    ? ex.muscleGroups.split(',').map((m) => m.trim())
-                    : []
-
-                  return (
-                    <button
-                      key={ex.id}
-                      onClick={() => setExpandedId(isExpanded ? null : ex.id)}
-                      className="w-full rounded-md border border-border bg-card p-3 text-left"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-sm font-medium text-foreground">
-                          {ex.name}
-                        </span>
-                        {ex.equipment && (
-                          <span className="shrink-0 text-[13px] text-muted-foreground">
-                            {ex.equipment}
-                          </span>
-                        )}
-                      </div>
-
-                      {muscles.length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {muscles.map((m) => (
-                            <Badge key={m} variant="inscription-gold">
-                              {formatMuscleGroup(m)}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-
-                      {isExpanded && (ex.formCues || ex.formVideoUrl) && (
-                        <div className="mt-3">
-                          {ex.formCues && (
-                            <>
-                              <GoldDivider className="my-3" />
-                              <p className="font-cinzel text-[10px] uppercase tracking-[0.3em] text-gold/50 mb-1.5">
-                                Cues
-                              </p>
-                              <p className="text-sm leading-relaxed text-foreground/80">
-                                {ex.formCues}
-                              </p>
-                            </>
-                          )}
-                          {ex.formVideoUrl && (
-                            <div className={ex.formCues ? 'mt-3' : ''}>
-                              <FormVideoLink url={ex.formVideoUrl} />
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )
-      })}
-
-      {/* Combos section */}
-      {!isSearching && <div className="mb-4">
-        <button
-          onClick={() => setCombosOpen(!combosOpen)}
-          className="flex w-full items-center gap-3 px-1 py-2"
-        >
-          <ChevronIcon open={combosOpen} />
-          <img
-            src={bagworkPng}
-            alt=""
-            className="h-8 w-8 object-contain"
-          />
-          <span className="text-label text-muted-foreground">Bagwork</span>
-          <Badge variant="muted" className="ml-1 text-[13px]">
-            {comboList.filter(c => c.unlocked).length}/{comboList.length}
-          </Badge>
-        </button>
-
-        {combosOpen && (
-          <div className="pl-1 pt-1 space-y-2">
-            {TIER_ORDER_LIST.map(tier => {
-              const items = combosByTier.get(tier)
-              if (!items?.length) return null
-              const isTierOpen = expandedTiers.has(tier)
-              const unlockedCount = items.filter(c => c.unlocked).length
-              const masteredCount = items.filter(c => c.masteryScore >= 9).length
-
+  if (open === 'bag') {
+    const shownTier = openTier === undefined ? currentTier(tiers) : openTier
+    return (
+      <div className="lib-root">
+        <LibraryHeader onBack={back} />
+        <div className="lib-body">
+          <Board className="lib-bd is-open">
+            {tiers.map(t => {
+              const isOpen = !t.locked && shownTier === t.tier
               return (
-                <div key={tier}>
-                  <button
-                    onClick={() => toggleTier(tier)}
-                    className="flex w-full items-center gap-2 py-2"
-                  >
-                    <ChevronIcon open={isTierOpen} />
-                    <span className="font-cinzel text-sm tracking-wider text-gold/70">
-                      {TIER_LABELS[tier]}
-                    </span>
-                    <Badge variant="muted" className="ml-1 text-[13px]">
-                      {unlockedCount > 0 ? `${masteredCount}/${unlockedCount}` : <LockIcon size={12} />}
-                    </Badge>
-                  </button>
-
-                  {isTierOpen && (
-                    <div className="space-y-1.5 pl-2">
-                      {items.map(c => {
-                        const isExpanded = expandedComboId === c.id
-                        const dots = Math.min(Math.floor(c.masteryScore / 3), 5)
-                        const techniques = c.techniques.split(',').filter(Boolean)
-
-                        return (
-                          <div
-                            key={c.id}
-                            onClick={() => setExpandedComboId(isExpanded ? null : c.id)}
-                            className={`w-full rounded-md border p-3 text-left cursor-pointer ${
-                              c.unlocked ? 'border-border bg-card' : 'border-border/50 bg-card/50 opacity-60'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1">
-                                <span className={`text-sm font-medium ${c.unlocked ? 'text-foreground' : 'text-muted-foreground'}`}>
-                                  {!c.unlocked && <span className="mr-1.5 inline-flex align-text-bottom text-muted-foreground"><LockIcon size={12} /></span>}{c.text}
-                                </span>
-                              </div>
-                              {c.isFavourite === 1 && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); toggleFavourite(c.id) }}
-                                  className="text-gold shrink-0"
-                                >
-                                  <ForgeIcon size={16} mastered={c.masteryScore >= 9} />
-                                </button>
-                              )}
-                              {c.unlocked === 1 && c.isFavourite === 0 && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); toggleFavourite(c.id) }}
-                                  className={c.masteryScore >= 9 ? 'text-gold shrink-0' : 'text-border shrink-0'}
-                                >
-                                  <ForgeIcon size={16} mastered={c.masteryScore >= 9} />
-                                </button>
-                              )}
-                            </div>
-
-                            {c.unlocked === 1 && (
-                              <div className="mt-1.5 flex items-center gap-3">
-                                <div className="flex gap-1">
-                                  {Array.from({ length: 5 }, (_, di) => (
-                                    <span
-                                      key={di}
-                                      className={`h-1.5 w-1.5 rounded-full ${di < dots ? 'bg-gold' : 'bg-border'}`}
-                                    />
-                                  ))}
-                                </div>
-                                {techniques.length > 0 && (
-                                  <div className="flex gap-1">
-                                    {techniques.map(t => (
-                                      <Badge key={t} variant="muted" className="text-[13px] py-0">{t}</Badge>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {isExpanded && c.unlocked === 1 && (
-                              <div className="mt-3 border-l-2 border-gold/30 pl-3 text-xs text-muted-foreground space-y-1">
-                                {c.formTips && (
-                                  <p className="font-cinzel text-[13px] leading-snug text-teal/80 mb-2">{c.formTips}</p>
-                                )}
-                                <p>Mastery: {c.masteryScore}/15</p>
-                                <p>Sharp ratings: {c.timesSharp}</p>
-                                {c.masteryScore >= 9 && <p className="text-teal">Mastered</p>}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
+                <Fragment key={t.tier}>
+                  <GroupHead
+                    name={t.name}
+                    size="sm"
+                    len={12}
+                    open={isOpen}
+                    locked={t.locked}
+                    count={`${t.mastered}/${t.unlocked}`}
+                    onClick={t.locked ? undefined : () => { setOpenCombo(null); setOpenTier(isOpen ? null : t.tier) }}
+                  />
+                  {isOpen && t.combos.map(c => (
+                    <ComboRow
+                      key={c.id}
+                      combo={c}
+                      open={openCombo === c.id}
+                      onOpen={() => setOpenCombo(openCombo === c.id ? null : c.id)}
+                      onFavourite={() => toggleFavourite(c.id)}
+                    />
+                  ))}
+                </Fragment>
               )
             })}
-          </div>
-        )}
-      </div>}
-
-      {/* Combo search results */}
-      {isSearching && filteredCombos.length > 0 && (
-        <div className="mb-4">
-          <div className="flex items-center gap-3 px-1 py-2">
-            <img src={bagworkPng} alt="" className="h-8 w-8 object-contain" />
-            <span className="text-label text-muted-foreground">Bagwork</span>
-            <Badge variant="muted" className="ml-1 text-[13px]">{filteredCombos.length}</Badge>
-          </div>
-          <div className="space-y-1.5 pl-1">
-            {filteredCombos.map(c => (
-              <div key={c.id} className="rounded-md border border-border bg-card p-3">
-                <span className="text-sm text-foreground">{c.text}</span>
-                <div className="mt-1 flex gap-1">
-                  <Badge variant="inscription-gold">{TIER_LABELS[c.tier]}</Badge>
-                  {(c.isFavourite === 1 || c.masteryScore >= 9) && <span className="text-gold"><ForgeIcon size={12} mastered={c.masteryScore >= 9} /></span>}
-                </div>
-              </div>
-            ))}
-          </div>
+          </Board>
         </div>
-      )}
+      </div>
+    )
+  }
 
-      {/* Waybook search results */}
-      {isSearching && filteredJournal.length > 0 && (
-        <WaybookGate reason="Unlock Waybook to search entries">
-        <div className="mb-4">
-          <div className="flex items-center gap-3 px-1 py-2">
-            <img src={waybookPng} alt="" className="h-8 w-8 object-contain" />
-            <span className="text-label text-gold/70">Waybook</span>
-            <Badge variant="muted" className="ml-1 text-[13px]">
-              {filteredJournal.length}
-            </Badge>
-          </div>
-          <div className="pl-1 pt-1">
-            {filteredJournal.map((entry, i) => (
-              <div key={entry.id}>
-                <div className="mb-2 flex items-center gap-2">
-                  <p className="font-[family-name:var(--font-display)] text-xs tracking-wider text-gold/60">
-                    {formatEpochDay(entry.date)}
-                  </p>
-                  <Badge
-                    variant={entry.type === 'wellness' ? 'muted' : 'gold'}
-                    className="text-[13px] py-0"
-                  >
-                    {entry.type === 'wellness' ? 'body' : entry.type}
-                  </Badge>
-                </div>
-                <JournalEntry content={entry.content} />
-                {i < filteredJournal.length - 1 && (
-                  <GoldDivider className="my-5" />
-                )}
-              </div>
-            ))}
-          </div>
+  if (open === 'waybook') {
+    return (
+      <div className="lib-root">
+        <LibraryHeader onBack={back} />
+        <div className="lib-body is-book">
+          {unlocked
+            ? <WaybookBook entries={entries} loaded={entriesLoaded} />
+            : <WaybookLockedCard onDismiss={back} />}
         </div>
-        </WaybookGate>
-      )}
+      </div>
+    )
+  }
 
-      {/* Journal section */}
-      {!isSearching && <div className="mb-4 mt-2">
-        <button
-          onClick={loadJournal}
-          className="flex w-full items-center gap-3 px-1 py-2"
-        >
-          <ChevronIcon open={journalOpen} />
-          <img src={waybookPng} alt="" className="h-8 w-8 object-contain" />
-          <span className="text-label text-gold/70">Waybook</span>
-        </button>
+  // ── the list (page 39), or search results ──
+  const q = search.trim()
+  const foundEx = q ? exercises.filter(ex => matchExercise(ex, q)) : []
+  const foundCombos = q ? combos.filter(c => matchCombo(c, q)) : []
+  const foundEntries = q && unlocked ? entries.filter(e => matchEntry(e, q)) : []
 
-        {journalOpen && (
-          <div className="pl-1 pt-2">
-            {journalEntries.length === 0 && (
-              <p className="py-4 text-center text-sm text-muted-foreground">
-                No entries yet.
-              </p>
-            )}
-
-            {/* Reflections sub-section */}
-            {reflections.length > 0 && (
-              <div className="mb-3">
-                <button
-                  onClick={() => setReflectionsOpen(!reflectionsOpen)}
-                  className="flex w-full items-center gap-2 py-2"
-                >
-                  <ChevronIcon open={reflectionsOpen} />
-                  <span className="text-label text-muted-foreground">Reflections</span>
-                  <Badge variant="muted" className="ml-1 text-[13px]">
-                    {reflections.length}
-                  </Badge>
+  return (
+    <div className="lib-root">
+      <LibraryHeader />
+      <div className="lib-body">
+        <input
+          type="search"
+          className="lib-search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search exercises, combos, journal..."
+          aria-label="Search exercises, combos, journal"
+          enterKeyHint="search"
+        />
+        {!q && (
+          <Board className="lib-bd">
+            {GROUPS.map(g => {
+              const count = g.key === 'waybook' ? '' : !loaded ? '' : g.key === 'bag' ? bagCount(combos) : String(counts[g.key] ?? 0)
+              return (
+                <button key={g.key} type="button" className="lib-grp2" onClick={() => go(g.key)} aria-label={g.name.toLowerCase()}>
+                  <span className="lib-chev" aria-hidden>›</span>
+                  <SessionIcon kind={g.icon} size={40} label="" />
+                  <FlapLabel text={g.name} size="md" />
+                  <span className="lib-cnt2">{count}</span>
                 </button>
-
-                {reflectionsOpen && reflectionsByMonth.map((group) => {
-                  const isOpen = expandedMonths.has('r-' + group.key)
-                  return (
-                    <div key={group.key} className="mb-3 pl-2">
-                      <button
-                        onClick={() => toggleMonth('r-' + group.key)}
-                        className="flex w-full items-center gap-2 py-2"
-                      >
-                        <ChevronIcon open={isOpen} />
-                        <span className="text-display-sm text-gold">{group.key}</span>
-                        <Badge variant="muted" className="ml-1 text-[13px]">
-                          {group.entries.length}
-                        </Badge>
-                      </button>
-
-                      {isOpen && (
-                        <div className="pt-1">
-                          {group.entries.map((entry, i) => (
-                            <div key={entry.id}>
-                              <div className="mb-2 flex items-center gap-2">
-                                <p className="font-[family-name:var(--font-display)] text-xs tracking-wider text-gold/60">
-                                  {formatEpochDay(entry.date)}
-                                </p>
-                                {entry.type === 'weekly' && (
-                                  <Badge variant="inscription-gold">Weekly</Badge>
-                                )}
-                              </div>
-                              <JournalEntry content={entry.content} />
-                              {i < group.entries.length - 1 && (
-                                <GoldDivider className="my-5" />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* Body Log sub-section */}
-            {bodyLog.length > 0 && (
-              <div className="mb-3">
-                <button
-                  onClick={() => setBodyLogOpen(!bodyLogOpen)}
-                  className="flex w-full items-center gap-2 py-2"
-                >
-                  <ChevronIcon open={bodyLogOpen} />
-                  <span className="text-label text-muted-foreground">Body Log</span>
-                  <Badge variant="muted" className="ml-1 text-[13px]">
-                    {bodyLog.length}
-                  </Badge>
-                </button>
-
-                {bodyLogOpen && bodyLogByMonth.map((group) => {
-                  const isOpen = expandedMonths.has('b-' + group.key)
-                  return (
-                    <div key={group.key} className="mb-3 pl-2">
-                      <button
-                        onClick={() => toggleMonth('b-' + group.key)}
-                        className="flex w-full items-center gap-2 py-2"
-                      >
-                        <ChevronIcon open={isOpen} />
-                        <span className="text-display-sm text-gold">{group.key}</span>
-                        <Badge variant="muted" className="ml-1 text-[13px]">
-                          {group.entries.length}
-                        </Badge>
-                      </button>
-
-                      {isOpen && (
-                        <div className="pt-1">
-                          {group.entries.map((entry, i) => (
-                            <div key={entry.id}>
-                              <div className="mb-2 flex items-center gap-2">
-                                <p className="font-[family-name:var(--font-display)] text-xs tracking-wider text-gold/60">
-                                  {formatEpochDay(entry.date)}
-                                </p>
-                              </div>
-                              <JournalEntry content={entry.content} />
-                              {i < group.entries.length - 1 && (
-                                <GoldDivider className="my-5" />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+              )
+            })}
+          </Board>
         )}
-      </div>}
+        {q && (
+          <Board className="lib-bd">
+            {foundEx.length === 0 && foundCombos.length === 0 && foundEntries.length === 0 && (
+              <p className="wm-prose is-dim lib-none">No results for “{q}”.</p>
+            )}
+            {EXERCISE_GROUPS.map(key => {
+              const items = foundEx.filter(ex => ex.category === key)
+              if (!items.length) return null
+              const g = GROUPS.find(x => x.key === key)!
+              return (
+                <Fragment key={key}>
+                  <GroupHead name={g.name} count={String(items.length)} len={10} />
+                  {items.map(ex => (
+                    <ExerciseRow key={ex.id} ex={ex} open={openExercise === ex.id} onOpen={() => setOpenExercise(openExercise === ex.id ? null : ex.id)} />
+                  ))}
+                </Fragment>
+              )
+            })}
+            {foundCombos.length > 0 && (
+              <>
+                <GroupHead name="BAGWORK" count={String(foundCombos.length)} len={10} />
+                {foundCombos.map(c => (
+                  <ComboRow key={c.id} combo={c} open={openCombo === c.id} onOpen={() => setOpenCombo(openCombo === c.id ? null : c.id)} onFavourite={() => toggleFavourite(c.id)} />
+                ))}
+              </>
+            )}
+            {foundEntries.length > 0 && (
+              <>
+                <GroupHead name="WAYBOOK" count={String(foundEntries.length)} len={10} />
+                <div className="lib-book is-inline">
+                  <BookEntries page={{ head: 'THE WAYBOOK', entries: foundEntries }} />
+                </div>
+              </>
+            )}
+          </Board>
+        )}
+      </div>
     </div>
   )
 }

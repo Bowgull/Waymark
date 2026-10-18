@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Board, Crest, FlapButton, FlapLabel } from '@/design'
 import type { DayBoardSession } from '@/features/dayboard/rowState'
 import { apiFetch } from '@/lib/api'
+import { lbText } from '@/lib/units'
 import { getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
 import { getWeekLabel } from '@/lib/strengthTemplates'
 import { strengthBlockWeek } from '@/lib/weeklyTemplate'
@@ -359,7 +360,7 @@ export function ProgramPage() {
               <p className="wm-label">Starting weights</p>
               <div className="db-lifts">
                 {assessment.calibrationStarts.map(cs => (
-                  <div key={cs.exerciseName} className="db-lift"><span>{cs.exerciseName.toUpperCase()}</span><span>{cs.startingWeightKg} kg</span></div>
+                  <div key={cs.exerciseName} className="db-lift"><span>{cs.exerciseName.toUpperCase()}</span><span>{lbText(cs.startingWeightKg)}</span></div>
                 ))}
               </div>
               <p className="wm-prose is-dim" style={{ marginTop: 6 }}>Block Zero loads at 40-55% of these numbers.</p>
@@ -465,10 +466,10 @@ export function ProgramPage() {
 
       {isBlockZero && (
         <BlockZeroExtras
+          blockId={block.id}
           viewWeek={weekNumber}
           currentWeek={currentWeek}
           totalWeeks={block.totalWeeks}
-          onOpenTests={(w, sheet) => navigate(`/block-zero/tests?week=${w}${sheet ? '&sheet=1' : ''}`)}
           onOpenGate={() => navigate('/block-zero/gate')}
         />
       )}

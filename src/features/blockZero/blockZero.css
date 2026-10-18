@@ -1,0 +1,115 @@
+/* Block Zero screens (page 45, approved 2026-10-18): the check-in cards, + CLASS TONIGHT,
+   the end gate and the Program gate board (no test week: design-decisions "Block Zero tests"). Sizes and colours are page 45's own
+   (its <style> block on top of shared/flap.css). */
+
+/* ── a centred column over the veil (page 45 .veil2 + .center) ── */
+.bz-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* symmetric, so the column centres on the whole screen as the mockup's top: 50% */
+  padding: calc(max(env(safe-area-inset-top), env(safe-area-inset-bottom)) + 12px) 12px;
+  background: rgba(2, 8, 6, 0.82);
+  animation: wm-fade-in var(--t-quick) var(--ease-out) both;
+}
+.bz-col { margin: auto 0; width: 100%; max-width: 406px; align-self: center; display: flex; flex-direction: column; gap: 10px; }
+
+/* page 45: every board on these screens is near-opaque */
+.wm-board.bz-bd { background-color: rgba(10, 16, 13, 0.92); }
+.wm-board.bz-bd .wm-board-head { line-height: 1; }
+
+/* the check-in cards hide Today under them (only the header shows through the veil) */
+.td-page:has(.bz-deck) .td-fill > :not(.td-hd),
+.td-page:has(.bz-deck) .td-settings,
+body:has(.bz-deck) .wm-tabs { visibility: hidden; }
+
+/* ── top row: a flap, a link or a compact button, the count ── */
+.bz-toprow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bz-toprow > .wm-btn { width: auto; flex: none; min-height: 40px; padding: 0 12px; }
+.bz-lnk { position: relative; padding: 0; border: 0; background: none; cursor: pointer; font: 700 14px/normal var(--font-body); letter-spacing: 0.06em; color: #c9b27a; -webkit-tap-highlight-color: transparent; }
+.bz-lnk::before { content: ''; position: absolute; inset: -14px -8px; }
+
+/* ── progress dots (page 45: teal done, gold now) ── */
+.bz-dots { display: flex; justify-content: center; gap: 6px; }
+.bz-dots > i { width: 8px; height: 8px; border-radius: 50%; background: rgba(240, 230, 192, 0.2); }
+.bz-dots > i.is-done { background: #8fd4b8; }
+.bz-dots > i.is-now { background: #e8c878; box-shadow: 0 0 6px #e8c878; }
+
+/* ── the one line under a flap ── */
+.bz-q { margin: 6px 0 10px; font: 600 16px/1.4 var(--font-body); color: #e6efe9; }
+.bz-q.is-last { margin-bottom: 0; }
+.bz-q.is-note { margin: 8px 0 0; font-size: 14.5px; color: #9fb2a8; }
+
+/* ── big tiles ── */
+.bz-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.bz-tl {
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.22);
+  transition: transform var(--t-tap) ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.bz-tl:active { transform: scale(0.97); }
+.bz-tl.is-on { background: rgba(184, 152, 74, 0.25); box-shadow: inset 0 0 0 2px #b8984a; }
+.bz-tl small { font: 600 13px/normal var(--font-body); color: #c9d6cf; }
+.bz-tl.is-sw { min-height: 72px; }
+.bz-tl.is-sw small { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.bz-tl .sw { width: 12px; height: 12px; border-radius: 3px; }
+
+/* ── the verdict board ── */
+.bz-verd { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.bz-verd > p { margin: 0; font: 600 16px/1.4 var(--font-body); color: #e6efe9; }
+.bz-verd > .wm-btns { align-self: stretch; }
+.bz-note { width: 100%; min-height: 74px; resize: none; border: 0; border-radius: 9px; padding: 10px 12px; background: rgba(4, 9, 7, 0.6); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); font: 500 16px/1.4 var(--font-body); color: #f0ead6; outline: none; text-align: left; }
+.bz-note::placeholder { color: rgba(240, 234, 214, 0.45); }
+
+/* ── + CLASS TONIGHT on the Coach board (page 13's placement) ── */
+.bz-class { padding: 0; }
+.td-coach .crow.is-ready + .crow.is-class { border-top: 0; padding-top: 0; }
+.td-coach .bz-class:not(:last-child) { padding-bottom: 8px; }
+.td-coach .bz-class + .crow { border-top: 1px solid rgba(0, 0, 0, 0.55); }
+.bz-chip { position: relative; display: inline-flex; padding: 7px 10px; border: 0; border-radius: 7px; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; transition: transform var(--t-tap) ease-out; }
+.bz-chip::before { content: ''; position: absolute; inset: -5px -2px; }
+.bz-chip:active { transform: scale(0.97); }
+.bz-chip:disabled { cursor: default; transform: none; }
+
+/* ── the end gate ── */
+.bz-gate { position: relative; z-index: 1; min-height: 100dvh; display: flex; flex-direction: column; gap: 10px; padding: calc(env(safe-area-inset-top) + 8px) 12px calc(env(safe-area-inset-bottom) + 30px); background: radial-gradient(ellipse 80% 50% at 50% 40%, #101a15, #050907 70%); }
+.bz-gate .bz-title { text-align: center; }
+.bz-gate .wm-crest { align-self: center; }
+.bz-cmp { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; }
+.bz-cmp + .bz-cmp { margin-top: 4px; }
+.bz-cmp .n { flex: 1; font: 600 14.5px/normal var(--font-body); color: #e6efe9; }
+.bz-cmp .v { font: 700 13.5px/normal var(--font-mono); color: #d6c08a; white-space: nowrap; }
+.bz-cmp.is-up { background: linear-gradient(90deg, rgba(95, 160, 140, 0.42), rgba(95, 160, 140, 0.14)); box-shadow: inset 3px 0 0 #5fa08c; }
+.bz-cmp.is-dn { background: linear-gradient(90deg, rgba(196, 98, 64, 0.44), rgba(196, 98, 64, 0.14)); box-shadow: inset 3px 0 0 #c4623f; }
+.bz-dv { white-space: nowrap; font: 800 11.5px/normal var(--font-body); padding: 2px 6px; border-radius: 5px; }
+.bz-dv.is-up { color: #a8ecd2; background: rgba(95, 160, 140, 0.3); }
+.bz-dv.is-dn { color: #f4b496; background: rgba(196, 98, 64, 0.32); }
+.bz-dv.is-nt { color: #c9d6cf; background: rgba(255, 255, 255, 0.08); }
+.wm-board.bz-bd.is-teal { box-shadow: inset 3px 0 0 #5fa08c, inset 0 0 0 1px rgba(95, 160, 140, 0.4); }
+.wm-board.bz-bd.is-gold { box-shadow: inset 3px 0 0 #b8984a, inset 0 0 0 1px rgba(232, 200, 96, 0.35); }
+.bz-why { margin: 6px 0 0; padding: 0; list-style: none; }
+.bz-why li { position: relative; margin-top: 4px; padding-left: 16px; font: 600 14.5px/1.4 var(--font-body); color: #c9d6cf; }
+.bz-why li::before { content: '◆'; position: absolute; left: 0; top: 3px; font-size: 10px; color: #b8984a; }
+
+/* ── Program: the board under the week ── */
+.bz-pb .bz-q { margin-top: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bz-overlay { animation: none; }
+  .bz-tl, .bz-chip { transition: none; }
+}

@@ -107,6 +107,7 @@ export function WorldLayer() {
   useEffect(() => { handleRef.current?.setMode(mode) }, [mode, ready])
   useEffect(() => { handleRef.current?.setWeeks(ws.weeks) }, [ws.weeks, ready])
   useEffect(() => { handleRef.current?.setLantern(ws.lantern) }, [ws.lantern, ready])
+  useEffect(() => { handleRef.current?.setPond(ws.pond) }, [ws.pond, ready])
   useEffect(() => { handleRef.current?.setOffline(ws.offline) }, [ws.offline, ready])
   useEffect(() => { handleRef.current?.setReducedMotion(reduced) }, [reduced, ready])
   useEffect(() => {

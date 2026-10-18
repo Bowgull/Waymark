@@ -265,7 +265,11 @@ export function AmPmHeader({ slot }: { slot: 'am' | 'pm' }) {
 
 // ─── ON / OFF switch ──────────────────────────────────────────
 
-/** Every switch is a flap that reads ON (teal) or OFF (page 37). */
+/**
+ * Every switch is a flap that reads ON (teal) or OFF (page 37's TOG): the bare
+ * flap, no box and no padding tile. The tap area reaches past the flap (44 pt)
+ * without changing the row's layout.
+ */
 export function FlapSwitch({ on, onChange, label, disabled = false }: { on: boolean; onChange: (next: boolean) => void; label: string; disabled?: boolean }) {
   return (
     <button
@@ -274,11 +278,11 @@ export function FlapSwitch({ on, onChange, label, disabled = false }: { on: bool
       aria-checked={on}
       aria-label={label}
       disabled={disabled}
-      className="wm-chip"
-      style={{ minHeight: 44 }}
-      onClick={() => onChange(!on)}
+      style={{ position: 'relative', display: 'inline-flex', flex: 'none', padding: 0, border: 0, background: 'none', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+      onClick={e => { e.stopPropagation(); onChange(!on) }}
     >
-      <FlapLabel text={on ? 'ON' : 'OFF'} len={3} size="sm" tone={on ? 'teal' : 'dim'} />
+      <span aria-hidden style={{ position: 'absolute', inset: '-13px -8px' }} />
+      <FlapLabel text={on ? 'ON' : 'OFF'} size="sm" tone={on ? 'teal' : 'dim'} />
     </button>
   )
 }

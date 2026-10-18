@@ -43,7 +43,7 @@ export interface BlockZeroAiContextInput {
   mt: { weeksSinceFirstClass: number | null; classesThisWeek: number; profileCap: number | null }
 }
 
-const PHASE_WORD = { test: 'test', build: 'build', consolidate: 'retest', extension: 'extension' } as const
+const PHASE_WORD = { test: 'start', build: 'build', consolidate: 'consolidate', extension: 'extension' } as const
 
 const ITEM_WORD: Record<ReadinessItem, string> = {
   sleepHours: 'sleepH',

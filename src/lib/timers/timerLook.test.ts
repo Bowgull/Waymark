@@ -1,0 +1,134 @@
+// Run: tsx src/lib/timers/timerLook.test.ts
+// The session timers' look (pages 19 and 31): heat bands in the last 10 s, the calm
+// swell of holds and rest, the clock digits and their short-way flips, the swipe-up
+// skip, combo strikes and letters, and the grass scene.
+import assert from 'node:assert/strict'
+
+import { flipFrames } from '../../design/flap'
+import { cellGlyph, grassGrid, timerCell } from './grassScene'
+import {
+  clockDigits, comboLetter, comboLetters, comboStrikes, effortWord, heatFor, momentLine,
+  progressOf, pullAmount, releaseAction, shownSeconds, swellK, workLabel,
+} from './timerLook'
+
+let passed = 0
+const test = (name: string, fn: () => void) => { fn(); passed++; console.log(`ok: ${name}`) }
+
+test('work timers heat up: yellow 10-7, orange 6-4, red 3-0', () => {
+  assert.equal(heatFor(11), null)
+  for (const s of [10, 9, 8, 7]) assert.equal(heatFor(s), 'hy', `${s}`)
+  for (const s of [6, 5, 4]) assert.equal(heatFor(s), 'ho', `${s}`)
+  for (const s of [3, 2, 1, 0]) assert.equal(heatFor(s), 'hr', `${s}`)
+  assert.equal(heatFor(-1), null, 'overtime is not hot')
+})
+
+test('holds and rest never heat; they swell from 5 s out', () => {
+  assert.equal(heatFor(3, 'hold'), null)
+  assert.equal(heatFor(3, 'rest'), null)
+  assert.equal(swellK(6, 'rest'), 0)
+  assert.equal(swellK(5, 'hold'), 0)
+  assert.ok(swellK(4.4, 'hold') > 0 && swellK(4.4, 'hold') < 1)
+  assert.equal(swellK(3.8, 'rest'), 1)
+  assert.equal(swellK(0, 'rest'), 0, 'done: no swell')
+  assert.equal(swellK(3, 'work'), 0, 'work timers heat instead')
+})
+
+test('FINISH replaces the running word in the last 10 s', () => {
+  assert.equal(workLabel('FIGHT', 35), 'FIGHT')
+  assert.equal(workLabel('FIGHT', 10), 'FINISH')
+  assert.equal(workLabel('SKIP', 4), 'FINISH')
+  assert.equal(workLabel('RUNNING', 11), 'RUNNING')
+})
+
+test('clock digits MM:SS', () => {
+  assert.equal(clockDigits(35), '0035')
+  assert.equal(clockDigits(180), '0300')
+  assert.equal(clockDigits(61), '0101')
+  assert.equal(clockDigits(-4), '0000')
+  assert.equal(clockDigits(1800), '3000')
+  assert.equal(shownSeconds(34_100), 35, 'rounds up')
+  assert.equal(shownSeconds(0), 0)
+  assert.equal(shownSeconds(-500), 0)
+})
+
+test('each second one quiet flip: a digit steps the short way, only through digits', () => {
+  assert.deepEqual(flipFrames('9', '8'), ['8'])
+  assert.deepEqual(flipFrames('0', '9'), ['9'], '0 -> 9 is one step back, not nine forward')
+  assert.deepEqual(flipFrames('1', '0'), ['0'])
+  assert.deepEqual(flipFrames('0', '5'), ['1', '2', '3', '4', '5'], 'a minute roll steps through digits only')
+  for (const f of flipFrames('3', '7')) assert.match(f, /^[0-9]$/)
+})
+
+test('progress of a countdown', () => {
+  assert.equal(progressOf(180_000, 180), 0)
+  assert.equal(progressOf(90_000, 180), 0.5)
+  assert.equal(progressOf(-5_000, 180), 1)
+  assert.equal(progressOf(1000, 0), 0)
+})
+
+test('swipe up skips on a full pull; a short drag up lets go; a tap pauses', () => {
+  assert.equal(pullAmount(300, 300, 400), 0)
+  assert.equal(pullAmount(300, 120, 400), 1, '180 px of a 400 px zone is 45%')
+  assert.ok(pullAmount(300, 210, 400) > 0.49 && pullAmount(300, 210, 400) < 0.51)
+  assert.equal(pullAmount(300, 400, 400), 0, 'down is no pull')
+  assert.equal(releaseAction(1, -200), 'skip')
+  assert.equal(releaseAction(0.6, -100), 'none')
+  assert.equal(releaseAction(0, 2), 'tap')
+})
+
+test('combos are strike tiles: "Jab → Cross → Hook"', () => {
+  assert.deepEqual(comboStrikes('Jab → Cross → Hook'), ['JAB', 'CROSS', 'HOOK'])
+  assert.deepEqual(comboStrikes('Jab → Low Kick'), ['JAB', 'LOW KICK'])
+  assert.deepEqual(comboStrikes('Double Jab -> Cross'), ['DOUBLE JAB', 'CROSS'])
+  assert.deepEqual(comboStrikes('Teep'), ['TEEP'])
+})
+
+test('each combo keeps one letter for the session, by first appearance', () => {
+  assert.equal(comboLetter(0), 'A')
+  assert.equal(comboLetter(3), 'D')
+  assert.equal(comboLetter(26), 'AA')
+  const m = comboLetters(['c2', 'c5', 'c2', 'c9', null, 'c5', 'c1'])
+  assert.deepEqual([...m.entries()], [['c2', 'A'], ['c5', 'B'], ['c9', 'C'], ['c1', 'D']])
+})
+
+test('effort words and the moment line (page 19 #6)', () => {
+  assert.equal(effortWord(7), 'HARD')
+  assert.equal(effortWord(1), 'VERY LIGHT')
+  assert.equal(effortWord(10), 'MAX EFFORT')
+  assert.equal(effortWord(42), 'MAX EFFORT')
+  assert.equal(momentLine('Strength A', 7), 'STRENGTH A · RPE 7')
+})
+
+test('grass: the lit part is time gone, the edge is a gold mark, heat burns the lit tips', () => {
+  const t = 1.3, now = 100
+  const lit = timerCell(0.1, 0.2, t, { progress: 0.5, mode: 'work' }, now)
+  const dark = timerCell(0.9, 0.2, t, { progress: 0.5, mode: 'work' }, now)
+  assert.ok(lit.b > dark.b, 'lit grass is brighter')
+  const edge = timerCell(0.5, 0.2, t, { progress: 0.5, mode: 'work' }, now)
+  assert.equal(edge.ch, '*')
+  const hot = timerCell(0.1, 0.2, t, { progress: 0.5, mode: 'work', hot: true, hotCol: [208, 72, 58] }, now)
+  assert.ok(hot.c[0] > lit.c[0] && hot.c[1] < lit.c[1], 'red tips')
+  const rest = timerCell(0.1, 0.5, t, { progress: 0.5, mode: 'rest' }, now)
+  assert.ok(rest.c[1] > rest.c[0], 'rest is teal')
+  const glow = timerCell(0.1, 0.5, t, { progress: 0.5, mode: 'rest', glow: 1 }, now)
+  assert.ok(glow.b >= rest.b)
+})
+
+test('grass follows the finger: light under it, a beam when pulled, a full pull lights the top', () => {
+  const p = { progress: 0, mode: 'work' as const, finger: { x: 0.5, y: 0.8, on: true }, pull: 1 }
+  const under = timerCell(0.5, 0.8, 0, p, 0)
+  assert.equal(under.ch, '*')
+  const beam = timerCell(0.5, 0.5, 0, p, 0)
+  assert.equal(beam.ch, '|')
+  const top = timerCell(0.5, 0.05, 0, p, 0)
+  assert.equal(top.b, 1)
+  assert.ok(cellGlyph(top))
+})
+
+test('grass grid is the mockups\' fit at 14 px', () => {
+  const g = grassGrid(390, 396.68)
+  assert.equal(g.cols, 46)
+  assert.equal(g.rows, 24)
+})
+
+console.log(`timerLook: ${passed} passed`)

@@ -202,8 +202,8 @@ export const FOUNDATION_ROWS: readonly FoundationRow[] = [
   },
   {
     exerciseId: 'ex-ytw-raises', label: 'Prone Y-T Raise', section: 'upper', block: 'neck',
-    levels: [d(2, null, 8), d(2, null, 10), d(2, null, 8, { note: '{reps} slow reps per set with a 1s pause at the top, thumbs up. Alternate sets: Y, then T. Add 0.5-1 kg when it is easy.' })],
-    fighter: d(2, null, 6, { note: '{reps} slow reps per set with a 1s pause at the top, thumbs up. Alternate sets: Y, then T. Add 0.5-1 kg when it is easy.' }),
+    levels: [d(2, null, 8), d(2, null, 10), d(2, null, 8, { note: '{reps} slow reps per set with a 1s pause at the top, thumbs up. Alternate sets: Y, then T. Add 1-2 lb when it is easy.' })],
+    fighter: d(2, null, 6, { note: '{reps} slow reps per set with a 1s pause at the top, thumbs up. Alternate sets: Y, then T. Add 1-2 lb when it is easy.' }),
     badBack: 'skip',
     badNeck: 'skip',
     skipOn: ANY_STRENGTH,

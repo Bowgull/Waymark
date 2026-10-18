@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import { Board, FlapLabel } from '@/design'
 import { TIME_OVERRIDES } from '@/world/timeOfDay'
 import { setTimeOverride, useTimeOverride } from '@/world/useWorldTime'
@@ -7,9 +9,10 @@ import './settings.css'
  * Settings · World · Time of day (page 37 A, approved): the label and its
  * line, then FOLLOW THE CLOCK / ALWAYS MISTY / ALWAYS DAY / ALWAYS NIGHT as
  * flap chips two to a row. The columns size to their words, as on the page,
- * so no label is cut. A look on this phone, kept on it.
+ * so no label is cut. A look on this phone, kept on it. The board's other
+ * rows (Haptics, Face ID for the Waybook) come in as children.
  */
-export function WorldTimeBoard() {
+export function WorldTimeBoard({ children }: { children?: ReactNode } = {}) {
   const value = useTimeOverride()
   return (
     <Board head="World" solid className="st-board">
@@ -37,6 +40,7 @@ export function WorldTimeBoard() {
           })}
         </div>
       </div>
+      {children}
     </Board>
   )
 }

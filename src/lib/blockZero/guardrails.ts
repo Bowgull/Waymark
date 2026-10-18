@@ -22,6 +22,7 @@ import type { NextLoad, WorkingLoad } from './strength'
 import { getBlockZeroWeekTemplate, type BlockZeroTemplateSession } from './weekPlan'
 import { BLOCK_ZERO_BASE_WEEKS, blockZeroPhase } from './weeks'
 import { FOUNDATION_LABEL } from '../foundation'
+import { lbText } from '../units'
 
 export const GUARDRAIL_TAG = '[bz-guardrail]'
 
@@ -197,11 +198,7 @@ export function guardWeekPlan(plan: WeekPlanOutput, input: WeekPlanGuardInput): 
           clamps.push({ code: 'strength_label', detail: `dow=${dow} label=${s.label ?? ''} -> ${t.label}`, reason: `${DOW[dow]} is ${t.label}. The label stays.` })
           s.label = t.label
         }
-        if (t.label.startsWith('Rope: Fixed-Effort Test') && s.type === t.type && s.label !== t.label) {
-          clamps.push({ code: 'test_week', detail: `dow=${dow} label=${s.label ?? ''}`, reason: 'The fixed-effort test keeps its name and length.' })
-          s.label = t.label
-        }
-        const upper = RUN_TYPES.has(s.type) || t.label.startsWith('Rope: Fixed-Effort Test')
+        const upper = RUN_TYPES.has(s.type)
           ? t.estimatedMin
           : s.type === 'strength' ? t.estimatedMin + 15 : undefined
         const min = clampMin(s.type, s.estimatedMin, upper)
@@ -725,7 +722,7 @@ export function guardLoadProposals(proposals: LoadProposal[], limits: Map<string
       clamps.push({ code: 'load_cap', detail: `${p.exerciseId} no_rules_load`, reason: 'No logged effort for that lift yet. The rules set the load.' })
       continue
     }
-    const capped = capLoad(p.weightKg, limit.weightKg, p.exerciseId, `Load capped at ${limit.weightKg} kg. ${limit.reason}`)
+    const capped = capLoad(p.weightKg, limit.weightKg, p.exerciseId, `Load capped at ${lbText(limit.weightKg)}. ${limit.reason}`)
     if (capped.clamp) clamps.push(capped.clamp)
     out.push({ exerciseId: p.exerciseId, weightKg: capped.weightKg })
   }
@@ -759,7 +756,7 @@ export function guardCalibrationStarts<T extends CalibrationStartLike>(
     const ceiling = id ? ceilings.get(id) : undefined
     let next = s
     if (ceiling != null) {
-      const capped = capLoad(s.startingWeightKg, ceiling, id as string, `${s.exerciseName} capped at ${ceiling} kg. That is 90% of the week-1 estimate.`)
+      const capped = capLoad(s.startingWeightKg, ceiling, id as string, `${s.exerciseName} capped at ${lbText(ceiling)}. That is 90% of the week-1 estimate.`)
       if (capped.clamp) {
         clamps.push({ ...capped.clamp, code: 'calibration_cap' })
         next = { ...s, startingWeightKg: capped.weightKg }
@@ -808,7 +805,7 @@ export function guardCalibrationWrites<T extends CalibrationWriteLike>(
     if (w.source !== 'ai' || e1rm == null) return w
     const ceiling = retestCeiling(e1rm, decision)
     const pct = decision === 'adjust' ? 85 : 90
-    const capped = capLoad(w.weightKg, ceiling, w.exerciseId, `Training max capped at ${ceiling} kg, ${pct}% of the retest.`)
+    const capped = capLoad(w.weightKg, ceiling, w.exerciseId, `Training max capped at ${lbText(ceiling)}, ${pct}% of the retest.`)
     if (!capped.clamp) return w
     clamps.push({ ...capped.clamp, code: 'calibration_cap' })
     return { ...w, weightKg: capped.weightKg }

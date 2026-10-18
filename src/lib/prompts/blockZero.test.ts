@@ -31,6 +31,7 @@ const rows: TestRow[] = [
   { week: 1, testKey: 'mobility:thoracic', value: 3, unit: 'score' },
   { week: 6, testKey: 'pushups_max', value: 28, unit: 'reps' },
   { week: 6, testKey: 'fixed_effort_hr', value: 144, unit: 'bpm' },
+  { week: 6, testKey: 'talk_test_hr', value: 146, unit: 'bpm' },
   { week: 6, testKey: 'e1rm:ex-bench-press', value: 72, unit: 'kg' },
 ]
 
@@ -48,8 +49,8 @@ const names = new Map([['ex-bench-press', 'Bench Press'], ['ex-ohp', 'Overhead P
 const deltas = testDeltas(rows, base, new Map([['ex-bench-press', 72]]), names)
 const bench = deltas.find(d => d.key === 'e1rm:ex-bench-press')
 assert(bench?.week1 === 66.7 && bench.retest === 72 && bench.change === 5.3, 'bench e1RM 66.7 -> 72 (+5.3)')
-assert(deltas.find(d => d.key === 'fixed_effort_hr')?.change === -7 && deltas.find(d => d.key === 'pushups_max')?.change === 6, 'fixed-effort HR -7 bpm, push-ups +6')
-assert(deltas.find(d => d.key === 'side_plank_sec_l')?.retest === null, 'a test with no retest shows none')
+assert(deltas.find(d => d.key === 'talk_test_hr')?.change === 4, 'talk-test HR 142 -> 146 (+4)')
+assert(['fixed_effort_hr', 'pushups_max', 'side_plank_sec_l', 'mobility:thoracic'].every(k => !deltas.some(d => d.key === k)), 'dropped tests (old rows) never reach the gate: only lift estimates and the talk test')
 
 // ─── Assessment prompt ──────────────────────────────────────────
 
@@ -119,13 +120,13 @@ const data: TransitionPromptData = {
 }
 const t0 = buildTransitionPrompt(data)
 assert(t0.includes('Week 1: 18/21 sessions completed.') && !t0.includes('Week 1 vs retest'), 'no tests: the existing transition prompt')
-assert(t0.includes('A rules gate') && t0.includes('Reply with only the blockTransition JSON object.'), 'gate note and JSON instruction')
+assert(t0.includes('front squat estimate or talk test logged') && !t0.includes('fixed effort') && t0.includes('Reply with only the blockTransition JSON object.'), 'gate note and JSON instruction')
 
 const tt = transitionTestData(testData, new Map([['ex-bench-press', 72]]), 'better')
 assert(tt != null && tt.ceilings.length === 1 && tt.ceilings[0].ceilingKg === 65 && tt.ceilings[0].adjustCeilingKg === 61, 'retest ceilings 90% / 85% of 72')
 const t1 = buildTransitionPrompt(data, tt)
 assert(t1.includes('Week 1 vs retest (real test numbers):'), 'with tests: deltas block')
-assert(t1.includes('Bench Press e1RM: 66.7 -> 72 kg (+5.3).') && t1.includes('HR at fixed effort: 151 -> 144 bpm (-7).') && t1.includes('Push-ups: 22 -> 28 reps (+6).'), 'e1RM, fixed-effort HR and push-up deltas')
+assert(t1.includes('Bench Press e1RM: 66.7 -> 72 kg (+5.3).') && t1.includes('Talk-test HR: 142 -> 146 bpm (+4).') && !t1.includes('Push-ups') && !t1.includes('fixed effort'), 'e1RM and talk-test deltas only')
 assert(t1.includes('Back today trend (first week vs last week): better.'), 'back trend')
 assert(t1.includes('Bench Press (id: ex-bench-press): e1RM 72 kg. Ceiling 65 kg, 61 kg on adjust.') && t1.includes('HARD LIMIT: no calibrationTarget above its ceiling.'), 'retest ceilings stated as a hard limit')
 assert(t1.includes('Set calibrationTargets from the retest e1RMs above'), 'targets anchored to the retest')

@@ -9,6 +9,9 @@ import {
   longestGapInWindow,
   planTransition,
   retestE1rms,
+  retestDoneFrom,
+  isRetestSetWeek,
+  GATE_SQUAT_ID,
   type EndGateInput,
 } from './endGate'
 import { FIGHTER_MAIN_LIFT_IDS, resolveCalibrationStarts, resolveLiftId, selectMainLifts } from './lifts'
@@ -74,6 +77,19 @@ const e1 = retestE1rms([
   { exerciseId: 'ex-ohp', weightKg: null, reps: 5 },
 ])
 assert(e1.get('ex-bench-press') === 70 && !e1.has('ex-front-squat') && !e1.has('ex-ohp'), 'retest e1RM: best valid set, >10 reps and empty sets ignored')
+const withRir = retestE1rms([{ exerciseId: 'ex-front-squat', weightKg: 60, reps: 8, rir: 2 }])
+assert(withRir.get('ex-front-squat') === 80, 'with RIR logged: reps + RIR to failure (8 + 2 = 10, Epley 80)')
+assert(retestE1rms([{ exerciseId: 'ex-front-squat', weightKg: 60, reps: 8, rir: 3 }]).get('ex-front-squat') === 76, 'reps + RIR past 10: plain Epley on the reps done (errs low)')
+
+// ─── "Retest done" with no test week (2026-10-18) ──────────────
+assert(GATE_SQUAT_ID === 'ex-front-squat', 'the gate reads the front squat')
+assert(retestDoneFrom(new Map([['ex-front-squat', 88]]), []), 'the week-6 front squat estimate from sets is enough')
+assert(retestDoneFrom(new Map(), [1, 6]), 'the week-6 talk test is enough')
+assert(retestDoneFrom(new Map(), [7]), 'an extension-week talk test counts')
+assert(!retestDoneFrom(new Map([['ex-bench-press', 70]]), [1]), 'bench only and a week-1 talk test: not done')
+assert(isRetestSetWeek(5) && isRetestSetWeek(6) && !isRetestSetWeek(4) && !isRetestSetWeek(null), 'week 5 and 6 sets (and extension weeks, stamped 5) feed the estimates')
+assert(evaluateEndGate({ ...clean, retestDone: false }).reasons.includes('No week-6 front squat estimate or talk test yet.'), 'missing numbers: the reason names them')
+assert(evaluateEndGate(clean).reasons[0] === 'Consistency, back and the week-6 numbers are in. Move on.', 'proceed reason')
 
 // ─── Transition plan (bug 1e) ───────────────────────────────────
 

@@ -13,7 +13,6 @@ import { SettingsPage } from '../features/settings/SettingsPage'
 import { LogsPage } from '../features/settings/LogsPage'
 import { TodayPage } from '../features/today/TodayPage'
 import { EndGatePage } from '../features/blockZero/EndGate'
-import { TestWeekPage } from '../features/blockZero/TestWeekPage'
 
 // Dev only: every new screen with sample data, for screenshots (never in a build).
 const DesignGallery = import.meta.env.DEV ? lazy(() => import('../design/DesignGallery')) : null
@@ -151,7 +150,9 @@ export function AppRoutes() {
       <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/session/:id" element={<ErrorBoundary level="session"><WorkoutPage /></ErrorBoundary>} />
       <Route path="/settings/logs" element={<ErrorBoundary level="page"><LogsPage /></ErrorBoundary>} />
-      <Route path="/block-zero/tests" element={<ErrorBoundary level="page"><TestWeekPage /></ErrorBoundary>} />
+      {/* Settings and Body metrics: full screen on the solid dark, no tab bar (page 37 A) */}
+      <Route path="/settings" element={<ErrorBoundary level="page"><SettingsPage /></ErrorBoundary>} />
+      <Route path="/metrics" element={<ErrorBoundary level="page"><BodyMetricsPage /></ErrorBoundary>} />
       <Route path="/block-zero/gate" element={<ErrorBoundary level="page"><EndGatePage /></ErrorBoundary>} />
       {DesignGallery && <Route path="/design" element={<Suspense fallback={null}><DesignGallery /></Suspense>} />}
 
@@ -161,12 +162,10 @@ export function AppRoutes() {
         <Route path="/program" element={<ErrorBoundary level="page"><ProgramPage /></ErrorBoundary>} />
         <Route path="/library" element={<ErrorBoundary level="page"><LibraryPage /></ErrorBoundary>} />
         <Route path="/history" element={<ErrorBoundary level="page"><HistoryPage /></ErrorBoundary>} />
-        <Route path="/settings" element={<ErrorBoundary level="page"><SettingsPage /></ErrorBoundary>} />
-        <Route path="/metrics" element={<ErrorBoundary level="page"><BodyMetricsPage /></ErrorBoundary>} />
         <Route path="*" element={<Navigate to="/today" replace />} />
       </Route>
     </Routes>
-    {location.pathname !== '/design' && <OfflinePill overTabs={!/^\/(session|onboarding|settings\/logs|block-zero)(\/|$)/.test(location.pathname)} />}
+    {location.pathname !== '/design' && <OfflinePill overTabs={!/^\/(session|onboarding|settings|metrics|block-zero)(\/|$)/.test(location.pathname)} />}
     </>
   )
 }

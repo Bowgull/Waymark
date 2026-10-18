@@ -2,12 +2,18 @@
 // decision can only be more cautious inside them, never override them.
 //
 // Proceed needs: key-session completion >= ~70%, no 7+ day gap recently, the
-// back stable or better, and the week-6 retest in. Otherwise extend, at most
+// back stable or better, and the week-6 numbers in. Otherwise extend, at most
 // 2 extensions (8 weeks). At the limit it proceeds with conservative loads.
+//
+// No test week (2026-10-18): the "retest" is two numbers only. The front squat
+// estimate comes silently from logged sets (week 5 and 6 sets, extension weeks
+// too); the talk-test HR comes from the run log on the first easy run-walk of
+// week 6. Either one counts as the retest being in. The other lifts' training
+// maxes still come from their logged sets.
 
-import { epley } from './e1rm'
+import { e1rmFromRir, epley } from './e1rm'
 import { isFighterMainLift } from './lifts'
-import { BLOCK_ZERO_MAX_EXTENSIONS } from './weeks'
+import { BLOCK_ZERO_BASE_WEEKS, BLOCK_ZERO_MAX_EXTENSIONS } from './weeks'
 import { transitionTmWrites } from '../coach/tm'
 
 export const MIN_COMPLETION_RATE = 0.7
@@ -55,10 +61,10 @@ export function evaluateEndGate(input: EndGateInput): EndGateResult {
     if (input.longestRecentGapDays >= 14) severe = true
   }
   if (input.backTrend === 'worse') reasons.push('The back is trending worse.')
-  if (!input.retestDone) reasons.push('No week-6 retest logged.')
+  if (!input.retestDone) reasons.push('No week-6 front squat estimate or talk test yet.')
 
   if (reasons.length === 0) {
-    return { decision: 'proceed', extendWeeks: 0, forced: false, reasons: ['Consistency, back and retest are in. Move on.'] }
+    return { decision: 'proceed', extendWeeks: 0, forced: false, reasons: ['Consistency, back and the week-6 numbers are in. Move on.'] }
   }
   if (remaining === 0) {
     return { decision: 'proceed', extendWeeks: 0, forced: true, reasons: [...reasons, 'Two extensions used. Moving on with conservative loads.'] }
@@ -129,18 +135,40 @@ export function backTrend(scores: Array<{ epochDay: number; backToday: number | 
 
 // ─── Retest → training max ────────────────────────────────────
 
+/** The squat the gate reads (the main squat is the front squat; goblet in weeks 1-2). */
+export const GATE_SQUAT_ID = 'ex-front-squat'
+
+/** Strength weeks whose logged sets give the week-6 estimates: week 5 (and the extension weeks that repeat it) and week 6. */
+export function isRetestSetWeek(blockWeek: number | null | undefined): boolean {
+  return blockWeek != null && blockWeek >= BLOCK_ZERO_BASE_WEEKS - 1
+}
+
+/**
+ * "Retest done": the week-6 front squat estimate from logged sets, or the
+ * week-6 (or later) talk-test HR from the run log. Either one is enough.
+ */
+export function retestDoneFrom(e1rms: ReadonlyMap<string, number>, talkTestWeeks: readonly number[]): boolean {
+  return e1rms.has(GATE_SQUAT_ID) || talkTestWeeks.some(w => w >= BLOCK_ZERO_BASE_WEEKS)
+}
+
 export interface RetestSet {
   exerciseId: string
   weightKg: number | null
   reps: number
+  /** Reps left in the tank, when logged: the estimate uses reps + RIR. */
+  rir?: number | null
 }
 
-/** Best Epley e1RM per lift from retest sets (reps 1-10 only). */
+/**
+ * Best e1RM per lift from retest sets (reps 1-10 only). With RIR logged it is
+ * reps + RIR to failure (R4); past 10 that way, or with no RIR, plain Epley
+ * on the reps done, which errs low.
+ */
 export function retestE1rms(sets: RetestSet[]): Map<string, number> {
   const best = new Map<string, number>()
   for (const s of sets) {
     if (s.weightKg == null) continue
-    const e = epley(s.weightKg, s.reps)
+    const e = (s.rir != null ? e1rmFromRir(s.weightKg, s.reps, s.rir) : null) ?? epley(s.weightKg, s.reps)
     if (e == null) continue
     if (e > (best.get(s.exerciseId) ?? 0)) best.set(s.exerciseId, e)
   }

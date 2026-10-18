@@ -51,7 +51,7 @@ export const STRENGTH_WEEK_TARGETS: readonly StrengthWeekTarget[] = [
   target({
     week: 1, mainSets: 2, reps: 8, repRange: [8, 10], rpe: [6, 7], checkSet: null,
     accessorySets: 2, coreSets: 2, loadPct: 0.55,
-    note: 'Test week. Work up to a set of 8 at RPE 6-7, 3-4 reps left. Log that weight. It is your starting load. No maxes.',
+    note: 'Week 1. Work up to a set of 8 at RPE 6-7, 3-4 reps left. Log that weight. It is your starting load. No maxes.',
   }),
   target({
     week: 2, mainSets: 2, reps: 8, repRange: [8, 10], rpe: [6, 7], checkSet: null,
@@ -76,7 +76,7 @@ export const STRENGTH_WEEK_TARGETS: readonly StrengthWeekTarget[] = [
   target({
     week: 6, mainSets: 1, reps: 8, repRange: [8, 10], rpe: [7, 7], checkSet: CHECK_SET,
     accessorySets: 2, coreSets: 1, loadPct: 0.65,
-    note: 'Retest. One set of 3-5 at about RPE 8, 2 left, then one set of 8 at RPE 7. Volume is down, intensity holds.',
+    note: 'Week 6. One set of 3-5 at about RPE 8, 2 left, then one set of 8 at RPE 7. Volume is down, intensity holds.',
   }),
 ]
 

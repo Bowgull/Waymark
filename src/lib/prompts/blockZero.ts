@@ -146,9 +146,9 @@ export function buildAssessmentPrompt(
       : 'Block Zero is starting. Assess this user and produce a Block Zero plan overview.',
     '',
     'Block Zero structure (6 weeks, up to 2 extension weeks):',
-    '  Week 1: test week. Each main lift works up to a set of 8 at RPE 6-7. Run-walk at talk-test pace.',
+    '  Week 1: each main lift works up to a set of 8 at RPE 6-7. The first easy run-walk logs the talk-test HR. No test week.',
     '  Weeks 2-5: build. 2-3 sets of 8, RPE 6-7 then 7-8, never to failure. Week 3 adds a 3-5 rep check set.',
-    '  Week 6: consolidate and retest. Volume down 30-50%, intensity held.',
+    '  Week 6: consolidate. Volume down 30-50%, intensity held. The check sets give the front squat estimate; the first easy run-walk logs the talk-test HR again.',
     '  Weekly: Strength A/B/C, 3 run-walks, daily Foundation (type mobility: back and neck, ~12 min), durability twice a week, 1 rest day.',
     '  No MT classes are scheduled. The athlete adds them: technique and pads only for the first 2 weeks back, light clinch from week 3, no hard sparring.',
     '',
@@ -213,7 +213,7 @@ export function serializeTransitionTests(tests: TransitionTestData): string[] {
   const lines: string[] = ['Week 1 vs retest (real test numbers):']
   for (const d of tests.deltas) lines.push(deltaLine(d))
   lines.push(`  Back today trend (first week vs last week): ${tests.backTrend}.`)
-  lines.push('A lower HR at fixed effort means the aerobic base improved.')
+  lines.push('The talk-test HR is the Zone 2 ceiling; a higher number at the same talk test means the aerobic base improved.')
   if (tests.ceilings.length > 0) {
     lines.push('Retest ceilings for calibrationTargets (90% of retest e1RM, 85% on adjust):')
     for (const c of tests.ceilings) lines.push(`  ${c.name} (id: ${c.exerciseId}): e1RM ${kg(c.retestE1rmKg)} kg. Ceiling ${kg(c.ceilingKg)} kg, ${kg(c.adjustCeilingKg)} kg on adjust.`)
@@ -264,7 +264,7 @@ export function buildTransitionPrompt(data: TransitionPromptData, tests: Transit
   lines.push('')
   lines.push('Decide: proceed (advance to Fighter Block 1), hold (extend Block Zero by one week), or adjust (advance with modified starting loads).')
   lines.push('Adherence floor: if block completion is below 70% or there is a recent gap of 7+ days, lean toward hold or adjust. Block Zero builds base through exposure, not calendar time. A block where half the sessions never happened has not built the base, no matter how many weeks passed.')
-  lines.push('A rules gate (completion, recent gaps, back trend, retest logged) makes the final call. Your decision can only be more cautious than the gate.')
+  lines.push('A rules gate (completion, recent gaps, back trend, and the week-6 front squat estimate or talk test logged) makes the final call. Your decision can only be more cautious than the gate.')
   lines.push('The athlete never sees this decision. They will just experience the next week. Do not ask for input. Do not soften with praise. State the decision and move.')
   lines.push(tests && tests.ceilings.length > 0
     ? 'Set calibrationTargets from the retest e1RMs above, at or under each ceiling. Use the exact exercise IDs from above. Lifts with no retest: keep estimates conservative (low confidence).'

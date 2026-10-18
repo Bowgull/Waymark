@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, TODAY_ZOOM, frustumFor, glideEase, mixView, placeForPath, sceneGlyphWorld, sceneLamp, sceneOf, scenesInView, viewGlyphWorld } from './places'
 import { modeForClock, msUntilNextChange, parseOverride, resolveMode, TIME_OVERRIDES } from './timeOfDay'
-import { getWorldState, sameWeeks, setWorldBackdrop, setWorldBare, setWorldLantern, setWorldPlace, setWorldWeeks, subscribeWorld, weeksOrDefault } from './worldStore'
+import { getWorldState, pondLook, sameWeeks, setWorldPond, setWorldBackdrop, setWorldBare, setWorldLantern, setWorldPlace, setWorldWeeks, subscribeWorld, weeksOrDefault } from './worldStore'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; void name }
@@ -106,6 +106,11 @@ test('the store tells the world only what changed', () => {
   setWorldBackdrop(null); assert.equal(getWorldState().backdrop, null)
   assert.equal(weeksOrDefault(null).length, 6)
   assert.equal(sameWeeks(null, null), true)
+  assert.equal(getWorldState().pond, 0.5, 'the pond is neutral by default')
+  setWorldPond(2 / 3); assert.equal(getWorldState().pond, 0.67)
+  setWorldPond(null); assert.equal(getWorldState().pond, 0.5)
+  assert.deepEqual(pondLook(0.5), { water: 1, flies: 1 }, 'neutral = the water as page 32 draws it')
+  assert.ok(pondLook(0).water < 1 && pondLook(0).flies < 1 && pondLook(1).water > 1, 'a slow week is darker and stiller; a good one brighter')
   off()
 })
 

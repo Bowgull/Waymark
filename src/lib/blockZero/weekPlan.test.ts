@@ -44,8 +44,8 @@ for (const w of [1, 2, 3, 4, 5, 6, 7, 8]) {
   const dayMinutes = ALL_DAYS.map(d => getBlockZeroWeekTemplate(w)[d].reduce((m, s) => m + s.estimatedMin, 0))
   assert(Math.max(...dayMinutes) <= 90, `week ${w}: no day over 90 min`)
 }
-assert(typesOf(1).includes('skip_rope') && typesOf(6).includes('skip_rope'), 'weeks 1 and 6 carry the fixed-effort rope test')
-assert(!typesOf(3).includes('skip_rope') && !typesOf(7).includes('skip_rope'), 'build and extension weeks have no rope test')
+assert([1, 3, 6, 7].every(w => !typesOf(w).includes('skip_rope')), 'no rope session in any week (the fixed-effort test is gone); rope stays a run swap')
+assert([1, 6].every(w => getBlockZeroWeekTemplate(w)[1].map(s => s.type).join(',') === 'mobility,strength'), 'test weeks: Monday is Foundation and Strength A only')
 assert(getBlockZeroWeekTemplate(2)[2][1].alternativeType === 'skip_rope' && getBlockZeroWeekTemplate(2)[4][1].alternativeType === 'skip_rope', 'runs the day after A and B allow rope instead')
 assert(getBlockZeroWeekTemplate(2)[6][1].alternativeType === undefined, 'Saturday run has no swap')
 assert(strengthBeforeRunning([{ timeSlot: 'am', type: 'foundation_run', label: 'r', estimatedMin: 20 }, { timeSlot: 'am', type: 'strength', label: 's', estimatedMin: 60 }]) === false, 'run before strength is caught')

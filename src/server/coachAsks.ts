@@ -271,11 +271,11 @@ export async function nextStrengthPlan(db: DB, session: { scheduledDate: number 
   return { names: main.map(e => shortLiftName(names.get(e.exerciseId) ?? e.label)), sets: work.length, reps }
 }
 
-/** "Back Squat" → "Squat", "Romanian Deadlift" → "RDL": the short names the coach screens use. */
+/** "Front Squat" → "Front squat" (the main squat, as the owner names it), "Romanian Deadlift" → "RDL": the short names the coach screens use. */
 export function shortLiftName(name: string): string {
   const n = name.trim()
   if (/romanian deadlift/i.test(n)) return 'RDL'
-  if (/^back squat$/i.test(n)) return 'Squat'
+  if (/^front squat$/i.test(n)) return 'Front squat'
   return n
 }
 

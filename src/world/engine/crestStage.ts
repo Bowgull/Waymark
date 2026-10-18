@@ -4,6 +4,8 @@
 //             and the eye ignites last with a warm bloom.
 //   'loading' A · the crest taken apart: its layers float apart and drift while the app works, then
 //             snap together when the answer arrives.
+//   'moment'  page 19 #6 · the close: the taken-apart crest snaps together over the first 45% of 3.2 s
+//             while it turns home, and its eye and centre flare (19-sessions.html c3).
 // Ported from 38-splash-loading-error.html (wA and wL), timings unchanged.
 
 import * as THREE from 'three'
@@ -11,7 +13,7 @@ import * as THREE from 'three'
 import { buildShield, type CrestPiece } from './crest'
 import { glyphAtlas, makeShared } from './materials'
 
-export type CrestKind = 'splash' | 'loading'
+export type CrestKind = 'splash' | 'loading' | 'moment'
 
 export interface CrestStage {
   /** Seconds since the stage started. */
@@ -77,6 +79,15 @@ export async function createCrestStage(canvas: HTMLCanvasElement, kind: CrestKin
       if (p.userData.layer === 'eye') p.material.uniforms.uEmissive.value = done ? 0.6 + snap * 0.6 : 0.35 + 0.15 * Math.sin(t * 1.5)
     }
   }
+  function momentFrame(s: number, t: number) {
+    const k = s / 3.2, ex = 1 - ease(Math.min(1, k / 0.45))
+    shield.holder.rotation.y = Math.sin(t * 0.35) * 0.25 - ex * 0.5; shield.holder.rotation.x = -0.12 * ex
+    for (const p of pieces) {
+      p.position.z = ex * p.userData.order * 9
+      if (p.userData.layer === 'eye') p.material.uniforms.uEmissive.value = 0.6 + (k > 0.45 ? 0.4 : 0) + 0.12 * Math.sin(t * 2)
+      if (p.userData.layer === 'centre') p.material.uniforms.uEmissive.value = k > 0.45 ? 1.1 : 0.5
+    }
+  }
   function draw() {
     const s = S()
     shared.uTime.value = s
@@ -85,6 +96,7 @@ export async function createCrestStage(canvas: HTMLCanvasElement, kind: CrestKin
       for (const p of pieces) { if (p.userData.layer === 'eye') p.material.uniforms.uEmissive.value = 1.0; if (p.userData.layer === 'centre') p.material.uniforms.uEmissive.value = 0.9 }
       shield.holder.rotation.y = -0.12
     } else if (kind === 'splash') splashFrame(s, s)
+    else if (kind === 'moment') momentFrame(s, s)
     else loadingFrame(s)
     renderer.render(scene, camera)
   }

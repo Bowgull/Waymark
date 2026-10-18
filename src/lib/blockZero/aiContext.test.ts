@@ -69,7 +69,7 @@ const sparse = serializeBlockZeroContext({
   weekNumber: 1, totalWeeks: 6, readiness: null, load: null, lifts: [], backScores: [null, null, null, null, null, null, null], backTrend: null,
   run: null, hrCeilingBpm: null, mt: { weeksSinceFirstClass: null, classesThisWeek: 0, profileCap: null },
 })
-assert(sparse.includes('Phase: test') && sparse.includes('work up to a set of 8') && sparse.includes('no check-in today') && sparse.includes('under 2 weeks of data'), 'sparse week 1 renders')
+assert(sparse.includes('Phase: start') && sparse.includes('work up to a set of 8') && sparse.includes('no check-in today') && sparse.includes('under 2 weeks of data'), 'sparse week 1 renders')
 assert(sparse.includes('single <= 23 min') && sparse.includes('week <= 69 min'), 'no run history: week-1 restart caps')
 assert(!sparse.includes('Back today'), 'no back line without scores')
 const ext = serializeBlockZeroContext({ ...full, weekNumber: 7, totalWeeks: 7 })

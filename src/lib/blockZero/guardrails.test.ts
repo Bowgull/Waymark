@@ -150,26 +150,22 @@ for (const w of [1, 2, 3, 4, 5, 6, 7, 8]) {
   assert(day(g.output, 2).some(s => s.type === 'mobility') && has(g.clamps, 'back_care'), 'back care restored daily')
 }
 {
-  // Test week: dropped strength and a renamed rope test come back as the rules wrote them.
+  // Test week: dropped strength comes back; a rope session added on Monday has no slot (the fixed-effort test is gone).
   const p = templatePlan(1)
   p.days[3].sessions = p.days[3].sessions.filter(s => s.type !== 'strength')
-  day(p, 1)[2] = { ...day(p, 1)[2], label: 'Rope Intervals', estimatedMin: 30 }
+  day(p, 1).push({ type: 'skip_rope', timeSlot: 'am', label: 'Rope: Fixed-Effort Test', estimatedMin: 20 })
   const g = guardWeekPlan(p, { weekNumber: 1 })
   assert(day(g.output, 3).some(s => s.type === 'strength' && s.label === 'Strength B'), 'test week: Strength B restored')
-  const rope = day(g.output, 1).find(s => s.type === 'skip_rope')
-  assert(rope?.label === 'Rope: Fixed-Effort Test' && rope.estimatedMin === 20, 'test week: the fixed-effort rope test keeps its name and 20 min')
-  assert(has(g.clamps, 'test_week'), 'clamp: test_week')
+  assert(!day(g.output, 1).some(s => s.type === 'skip_rope'), 'test week: no rope test session')
 }
 {
-  // Week 6 retest keeps its tests too; strength first on Monday.
+  // Week 6: Monday back in its order (Foundation, then Strength A); no rope test any more.
   const p = templatePlan(6)
   const mon = day(p, 1)
   mon.reverse()
-  mon.find(s => s.type === 'strength')!.timeSlot = 'pm'
   const g = guardWeekPlan(p, { weekNumber: 6 })
   const out = day(g.output, 1)
-  assert(out.findIndex(s => s.type === 'strength') < out.findIndex(s => s.type === 'skip_rope') && out.find(s => s.type === 'strength')?.timeSlot === 'am', 'strength comes before the rope piece, in the morning')
-  assert(has(g.clamps, 'strength_order'), 'clamp: strength_order')
+  assert(out.map(s => s.type).join(',') === 'mobility,strength', 'week 6 Monday: Foundation then Strength A, no rope test')
 }
 {
   // Duration bounds and bad days; voice.

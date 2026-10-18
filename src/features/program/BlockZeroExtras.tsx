@@ -1,50 +1,45 @@
-import { FlapButton } from '@/design'
-import { gateOpen } from '@/features/blockZero/gate'
-import { isTestWeek } from '@/lib/blockZero/tests'
+import { useEffect, useState } from 'react'
 
-// Block Zero's test and gate boards under the Program week (the step-1
-// boards from blockZero/ProgramBoards.tsx, without its week strip: the six
-// week flap tiles on the week board replace it). Same words, same routes.
-// Week 3's e1RM check has no board here (owner, 2026-10-18): its guidance
-// lives on the test-week screens (/block-zero/tests?week=3).
+import { Board, FlapButton } from '@/design'
+import { gateBoardShows, gateOpen } from '@/features/blockZero/gate'
+import type { TestRowIn } from '@/features/blockZero/testWeek'
+import { apiFetch } from '@/lib/api'
+import '@/features/blockZero/blockZero.css'
+
+// Block Zero's one board under the Program week (page 45, "Program: the gate
+// board"): THE GATE · SEE THE VERDICT, in week 6 once a week-6 number is in.
+// No test-week or retest boards (design-decisions "Block Zero tests").
 
 export function BlockZeroExtras({
+  blockId,
   viewWeek,
   currentWeek,
   totalWeeks,
-  onOpenTests,
   onOpenGate,
 }: {
+  /** The block's results tell the board a week-6 number is in. */
+  blockId?: string
   viewWeek: number
   currentWeek: number
   totalWeeks: number
-  onOpenTests: (week: number, sheet: boolean) => void
   onOpenGate: () => void
 }) {
-  const testWeek = isTestWeek(viewWeek, totalWeeks) && viewWeek !== 3
-  const gate = gateOpen(currentWeek, totalWeeks) && viewWeek === currentWeek
-  if (!testWeek && !gate) return null
+  const atGate = gateOpen(currentWeek, totalWeeks) && viewWeek === currentWeek
+  // undefined while loading (no board yet), null when it couldn't load (the board shows by the week)
+  const [rows, setRows] = useState<TestRowIn[] | null | undefined>(undefined)
+  useEffect(() => {
+    if (!atGate || !blockId) return
+    let alive = true
+    apiFetch<TestRowIn[]>(`/api/blocks/${blockId}/tests`).then(r => { if (alive) setRows(r) }).catch(() => { if (alive) setRows(null) })
+    return () => { alive = false }
+  }, [atGate, blockId])
+  if (!gateBoardShows(viewWeek, currentWeek, totalWeeks, blockId ? (rows === undefined ? [] : rows) : null)) return null
   return (
-    <>
-      {testWeek && (
-        <div className="db-glass">
-          <div className="db-glass-head"><span>{viewWeek === 1 ? 'Test week' : 'Retest'}</span></div>
-          <p className="wm-prose" style={{ marginBottom: 10 }}>
-            {viewWeek === 1 ? 'One test at a time. The numbers become your baseline.' : 'The week-1 tests again. Then the gate.'}
-          </p>
-          <div className="wm-btns">
-            <FlapButton label="RESULTS" onClick={() => onOpenTests(viewWeek, true)} />
-            <FlapButton label="START TESTS" primary onClick={() => onOpenTests(viewWeek, false)} />
-          </div>
-        </div>
-      )}
-      {gate && (
-        <div className="db-glass pg-brass">
-          <div className="db-glass-head"><span>The gate</span></div>
-          <p className="wm-prose" style={{ marginBottom: 10 }}>Retest against week 1, then the verdict: move on, or extend 1–2 weeks.</p>
-          <FlapButton label="SEE THE VERDICT" primary onClick={onOpenGate} />
-        </div>
-      )}
-    </>
+    <Board className="bz-bd bz-pb" head="The gate">
+      <p className="bz-q">Block Zero is done. See whether you move on or build one more week.</p>
+      <div className="wm-btns">
+        <FlapButton label="SEE THE VERDICT" primary size="sm" onClick={onOpenGate} />
+      </div>
+    </Board>
   )
 }

@@ -207,9 +207,6 @@ function buildBlockZeroStrengthA(blockWeek: number): StrengthTemplate {
     { exerciseId: 'ex-face-pulls', label: 'Face Pulls', section: 'accessory', sets: workingSets(t.accessorySets, 15, 60) },
     { exerciseId: 'ex-dead-bugs', label: 'Dead Bugs', section: 'core', sets: coreSets(t.coreSets, 10), notes: '10 each side. Back stays flat.' },
   ]
-  if (t.phase === 'test' || t.phase === 'consolidate') {
-    exercises.push({ exerciseId: 'ex-push-up', label: 'Push-Up Test', section: 'core', sets: coreSets(1, 0), notes: 'Test. One set of clean push-ups, stop when form breaks. Log the reps.' })
-  }
   exercises.push(...durability(t, 'A'))
   return { id: 'strength_a', label: 'Block Zero: A', exercises }
 }
@@ -221,7 +218,6 @@ function buildBlockZeroStrengthA(blockWeek: number): StrengthTemplate {
 function buildBlockZeroStrengthB(blockWeek: number): StrengthTemplate {
   const t = getStrengthWeekTarget(blockWeek)
   const hinge = defaultMainLift('hinge', blockWeek)
-  const isTest = t.phase === 'test' || t.phase === 'consolidate'
   const exercises: TemplateExercise[] = [
     { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges', section: 'warmup', sets: warmupSets(2, 12), notes: 'Squeeze at the top. Ribs down.' },
     { exerciseId: 'ex-face-pulls', label: 'Face Pulls', section: 'warmup', sets: warmupSets(2, 15) },
@@ -230,10 +226,7 @@ function buildBlockZeroStrengthB(blockWeek: number): StrengthTemplate {
     { exerciseId: 'ex-lat-pulldown', label: 'Lat Pulldown', section: 'accessory', sets: workingSets(t.accessorySets, 10, 75) },
     { exerciseId: 'ex-hamstring-curl', label: 'Hamstring Curl', section: 'accessory', sets: workingSets(t.accessorySets, 10, 60) },
     { exerciseId: 'ex-bird-dogs', label: 'Bird Dogs', section: 'core', sets: coreSets(t.coreSets, 10), notes: '10 each side. Hold 2s at reach.' },
-    {
-      exerciseId: 'ex-side-plank-lift', label: 'Side Plank Hip Lift', section: 'core', sets: coreSets(t.coreSets, 8),
-      notes: isTest ? 'Test. Side plank hold each side. Log the seconds in notes.' : '8 each side.',
-    },
+    { exerciseId: 'ex-side-plank-lift', label: 'Side Plank Hip Lift', section: 'core', sets: coreSets(t.coreSets, 8), notes: '8 each side.' },
   ]
   return { id: 'strength_b', label: 'Block Zero: B', exercises }
 }

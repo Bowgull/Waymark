@@ -5,6 +5,7 @@ import { Board, Crest, FlapButton, FlapLabel, SessionIcon, showPop, type Session
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { logger } from '@/lib/logger'
 import type { ReadinessLineView } from '@/features/blockZero/readinessLine'
+import { ClassTonightChip, type ClassTonightView } from '@/features/blockZero/TodayPieces'
 import { coachCount, dateFlap, splitLead, type StripDay } from './weekStrip'
 
 // The pieces of Today (pages 35, 36, 43), on the split-flap boards over the forest.
@@ -73,9 +74,10 @@ export interface CoachQuestionLine { id: string; line: string; icon: SessionIcon
  * open questions with a gold dot. The morning's readiness read sits under the
  * why line, written the same way (bold lead, then the rest); tap it for why.
  */
-export function CoachBoard({ why, readiness = null, changes, questions, onOpen }: { why: string | null; readiness?: ReadinessLineView | null; changes: CoachChangeLine[]; questions: CoachQuestionLine[]; onOpen: (id: string) => void }) {
+export function CoachBoard({ why, readiness = null, classTonight = null, changes, questions, onOpen }: { why: string | null; readiness?: ReadinessLineView | null; classTonight?: ClassTonightView | null; changes: CoachChangeLine[]; questions: CoachQuestionLine[]; onOpen: (id: string) => void }) {
   const [readyOpen, setReadyOpen] = useState(false)
-  if (!why && !readiness && changes.length === 0 && questions.length === 0) return null
+  if (!why && !readiness && !classTonight && changes.length === 0 && questions.length === 0) return null
+  const classLine = classTonight?.added ? classTonight.line : null
   // The first sentence of the why line is the kind of week (bold), the rest the reason.
   const w = splitLead(why ?? '', 'sentence')
   return (
@@ -97,6 +99,13 @@ export function CoachBoard({ why, readiness = null, changes, questions, onOpen }
           {readyOpen && <p className="why">{readiness.why}</p>}
         </button>
       )}
+      {/* page 45 (page 13's place): + CLASS TONIGHT by the readiness line; once added, one line on how the day rebalanced */}
+      {classLine && (
+        <div className="crow is-class" style={why || readiness ? undefined : { paddingTop: 0 }}>
+          <p><b>{classLine.lead}</b> {classLine.rest}</p>
+        </div>
+      )}
+      {classTonight && <ClassTonightChip added={classTonight.added} onAdd={classTonight.onAdd} />}
       {changes.map(c => {
         // "Strength C eased: one set, 10% lighter. Soreness was 4 this morning." (lead in brass)
         const parts = c.lead && c.body ? { lead: c.lead, rest: c.body } : splitLead(c.line, 'colon')

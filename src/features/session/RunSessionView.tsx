@@ -2,12 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 
-import { RingTimer } from '@/components/RingTimer'
-import { Button } from '@/components/ui/button'
+import { CentredCard, FlapLabel, SessionIcon } from '@/design'
+import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
 import { useToast } from '@/components/ui/Toast'
 import { apiFetch } from '@/lib/api'
 import { logger } from '@/lib/logger'
-import { onePaceSvg } from '@/lib/markAssets'
 import { soundRoundEnd } from '@/lib/sounds'
 import { assessRunCompletion, shouldShowRunRealityMark } from '@/lib/trainingReality'
 import { parseDurationToSec } from '@/lib/duration'
@@ -21,10 +20,13 @@ import {
   type EngineState,
   type StopwatchSnap,
 } from '@/lib/sessionResume'
+import { clampTalkHr, talkTestBody, talkTestStart, TALK_TEST_RANGE } from '@/lib/blockZero/talkTest'
+import { heatFor, workLabel } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
+import { setWorldBackdrop } from '@/world/worldStore'
 
-import { SessionShell } from './SessionShell'
-import { resolveRunMoment, type RunType } from './runMicrocopy'
+import '@/design/pickers.css'
+import './session.css'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
 const STRAVA_APP_STORE_URL = 'https://apps.apple.com/app/strava/id426826309'
@@ -122,6 +124,16 @@ const RUN_TYPE_LABELS: Record<string, string> = {
   '5k_test': '5K Test',
 }
 
+/** The run on the session flap (page 19: ZONE 2 · RUN). */
+const RUN_TITLES: Record<string, string> = {
+  zone2: 'ZONE 2',
+  easy: 'EASY',
+  easy_strides: 'EASY + STRIDES',
+  tempo: 'TEMPO',
+  intervals: 'INTERVALS',
+  '5k_test': '5K TEST',
+}
+
 
 interface RunSessionViewProps {
   runSession: RunSession
@@ -137,6 +149,8 @@ interface RunSessionViewProps {
   resume?: RunState | null
   /** Called on every change so the session can be resumed exactly here. */
   onPersist?: (state: RunState) => void
+  /** Block Zero week 1 / 6, the week's first easy run-walk: Log your run asks the talk-test HR (page 45 #3). */
+  talkTest?: { blockId: string; week: number } | null
 }
 
 export function RunSessionView({
@@ -144,9 +158,9 @@ export function RunSessionView({
   prescription,
   onComplete,
   onExit,
-  inline = false,
   resume,
   onPersist,
+  talkTest,
 }: RunSessionViewProps) {
   const draft = resume?.draft ?? {}
   const [phase, setPhase] = useState<RunPhase>(() => resume?.sub ?? 'ready')
@@ -167,6 +181,7 @@ export function RunSessionView({
   const [onePaceArc, setOnePaceArc] = useState(draft.onePaceArc ?? runSession.onePaceArc ?? '')
   const [onePaceEp, setOnePaceEp] = useState(draft.onePaceEp ?? runSession.onePaceEp ?? '')
   const [saving, setSaving] = useState(false)
+  const [talkHr, setTalkHr] = useState(() => talkTestStart(Number(draft.avgHr ?? runSession.avgHr ?? NaN)))
   // Naruto: the saved next episode (settings), and the after-run confirm.
   const [narutoEp, setNarutoEp] = useState<number | null>(null)
   const [narutoConfirm, setNarutoConfirm] = useState<
@@ -257,7 +272,7 @@ export function RunSessionView({
         return false
       }
       // Prefill from Strava values.
-      if (r.distanceKm != null) setDistance(String(Number(r.distanceKm.toFixed(2))))
+      if (r.distanceKm != null) setDistance(r.distanceKm.toFixed(2))
       if (r.durationSec != null) {
         const mins = Math.floor(r.durationSec / 60)
         const secs = r.durationSec % 60
@@ -337,7 +352,9 @@ export function RunSessionView({
     setStopwatch({ state: 'running', startedAtMs: now })
     setNowMs(now)
     setPhase('running')
-    if (!isIndoor) {
+    if (isIndoor) {
+      window.open(media === 'naruto' ? NARUTO_NETFLIX_URL : ONEPACE_URL, '_blank')
+    } else {
       logger.sessionEvent('strava launch attempt', { runSessionId: runSession.id })
       tryOpenStrava(() => {
         logger.warn('session', 'strava not installed', { runSessionId: runSession.id }, 'Strava app not installed on device. Deep link canceled.')
@@ -347,7 +364,7 @@ export function RunSessionView({
         })
       })
     }
-  }, [isIndoor, runSession.id, showToast])
+  }, [isIndoor, media, runSession.id, showToast])
 
   function finishRun() {
     const now = Date.now()
@@ -392,6 +409,19 @@ export function RunSessionView({
           logger.warn('session', 'strava confirm failed', {
             message: err instanceof Error ? err.message : String(err),
           }, 'POST /strava/activity/:id/confirm failed. Activity saved but not locked.')
+        })
+      }
+
+      // The talk test (Block Zero week 1 / 6): that week's talk_test_hr, which sets the Zone 2 cap.
+      if (talkTest) {
+        await apiFetch(`/api/blocks/${talkTest.blockId}/tests`, {
+          method: 'POST',
+          body: JSON.stringify(talkTestBody(talkTest.week, talkHr)),
+        }).catch((err) => {
+          logger.warn('session', 'talk test save failed', {
+            message: err instanceof Error ? err.message : String(err),
+          }, 'POST /blocks/:id/tests talk_test_hr failed. Run saved, talk test not.')
+          showToast("Talk-test heart rate didn't save. The run did.", 'warning')
         })
       }
 
@@ -457,30 +487,13 @@ export function RunSessionView({
     })
   }
 
-  const narutoEpLabel = narutoEp != null ? `Naruto ep ${narutoEp}` : null
 
   const isZone2 = prescription?.runType === 'zone2'
   const runTypeLabel = prescription
     ? (RUN_TYPE_LABELS[prescription.runType] ?? 'Run')
     : 'Easy Run'
-  const runDesc = prescription?.targetDesc
-    ?? 'Keep it conversational pace. Focus on form: upright posture, relaxed shoulders, short strides.'
   const timerEstimate = prescription?.targetDurSec ?? 3600
 
-  // Build inscription-style target segments
-  const targetSegments: string[] = []
-  if (prescription?.targetDurSec) {
-    targetSegments.push(`${Math.round(prescription.targetDurSec / 60)} min`)
-  }
-  if (prescription?.targetDistKm) {
-    targetSegments.push(`${prescription.targetDistKm} km`)
-  }
-  if (isZone2) {
-    targetSegments.push(prescription.z2CeilingBpm ? `HR <= ${prescription.z2CeilingBpm}` : 'talk test')
-    targetSegments.push('nasal breathing')
-  }
-
-  const runType = (prescription?.runType ?? undefined) as RunType | undefined
   const remaining = Math.max(0, timerEstimate - elapsed)
   const loggedDurationSec = parseDurationToSec(duration)
   const runReality = assessRunCompletion({
@@ -568,368 +581,205 @@ export function RunSessionView({
     },
   })
 
-  const moment = resolveRunMoment({
-    phase,
-    runType,
-    isIndoor,
-    secondsRemaining: phase === 'running' ? remaining : undefined,
-  })
+  // Ready and the log are boards over the forest (page 31); the running timer is on the dark ground.
+  useEffect(() => {
+    setWorldBackdrop(phase === 'running' ? null : 'clearing')
+    return () => setWorldBackdrop(null)
+  }, [phase])
 
-  const counter =
-    phase === 'logging'
-      ? 'Log'
-      : phase === 'running'
-        ? 'Running'
-        : prescription
-          ? `Week ${prescription.weekNumber}`
-          : undefined
+  const runTitle = (prescription ? RUN_TITLES[prescription.runType] : null) ?? 'RUN'
+  const icon = isZone2 || runSession.runType === 'zone2' ? 'zone2' as const : 'run' as const
+  const targetMin = prescription?.targetDurSec ? Math.round(prescription.targetDurSec / 60) : null
+  const narutoChip = isIndoor && media === 'naruto' && narutoEp != null ? `NARUTO EP ${narutoEp}` : null
 
-  // ─── Body renderers per phase ────────────────────────────────
-
-  const body =
-    phase === 'ready' ? (
-      <div className="mx-auto max-w-md animate-fade-in">
-        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/50">
-          {isZone2 ? 'Morning Run' : prescription ? `Week ${prescription.weekNumber}` : 'Run'}
-        </p>
-        <h2 className="mt-1 text-display-lg text-foreground">{runTypeLabel}</h2>
-        <p className="mt-3 text-sm leading-relaxed text-foreground/85">{runDesc}</p>
-
-        {targetSegments.length > 0 && (
-          <p className="mt-3 font-cinzel text-xs uppercase tracking-[0.22em] text-gold/60">
-            {targetSegments.join(' \u00b7 ')}
-          </p>
-        )}
-
-        <div className="mt-6 flex items-center gap-3">
-          <button
-            onClick={() => setIsIndoor(false)}
-            className={`flex-1 rounded-md py-3 text-sm font-medium ${
-              !isIndoor ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
-            }`}
-          >
-            Outdoor
-          </button>
-          <button
-            onClick={() => setIsIndoor(true)}
-            className={`flex-1 flex items-center justify-center gap-2 rounded-md py-3 text-sm font-medium ${
-              isIndoor ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
-            }`}
-          >
-            <img src={onePaceSvg} alt="" className="h-5 w-5 object-contain" />
-            Indoor
-          </button>
-        </div>
-
-        {isIndoor && (
-          <div className="mt-6 flex items-center gap-3">
-            <button
-              onClick={() => chooseMedia('one_pace')}
-              className={`flex-1 rounded-md py-3 text-sm font-medium ${
-                media === 'one_pace' ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
-              }`}
-            >
-              One Pace
-            </button>
-            <button
-              onClick={() => chooseMedia('naruto')}
-              className={`flex-1 rounded-md py-3 text-sm font-medium ${
-                media === 'naruto' ? 'bg-teal-dark text-foreground' : 'bg-surface-light text-muted-foreground'
-              }`}
-            >
-              Naruto
-            </button>
-          </div>
-        )}
-
-        {isIndoor && media === 'naruto' && (
-          <div className="mt-6 flex flex-col items-center gap-4">
-            {narutoEpLabel && (
-              <p className="font-cinzel text-display-lg text-gold text-center">{narutoEpLabel}</p>
-            )}
-            <button
-              onClick={() => window.open(NARUTO_NETFLIX_URL, '_blank')}
-              className="flex w-full flex-col items-center gap-2 rounded-md border border-gold/15 bg-deep-forest px-6 py-8"
-            >
-              <span className="font-cinzel text-display-lg text-gold">Naruto</span>
-              <span className="font-cinzel text-sm tracking-wider text-gold/70">
-                Open in Netflix
-              </span>
-            </button>
-          </div>
-        )}
-
-        {isIndoor && media === 'one_pace' && (
-          <div className="mt-8 flex flex-col items-center gap-4">
-            {(onePaceArc || onePaceEp) && (
-              <p className="font-cinzel text-display-lg text-gold text-center">
-                {[onePaceArc, onePaceEp ? `Ep ${onePaceEp}` : ''].filter(Boolean).join(' - ')}
-              </p>
-            )}
-            <button
-              onClick={() => window.open(ONEPACE_URL, '_blank')}
-              className="flex w-full flex-col items-center gap-4 rounded-md border border-gold/15 bg-deep-forest px-6 py-8"
-            >
-              <img
-                src={onePaceSvg}
-                alt="One Pace"
-                className="h-24 w-24 object-contain"
-                style={{ mixBlendMode: 'screen' }}
-              />
-              <span className="font-cinzel text-sm tracking-wider text-gold/70">
-                Open One Pace
-              </span>
-            </button>
-          </div>
-        )}
-      </div>
-    ) : phase === 'running' ? (
-      <div className="mx-auto flex max-w-md flex-col items-center pt-6 animate-fade-in">
-        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/50">
-          Running
-        </p>
-        <h2 className="mt-1 text-display-lg text-foreground">{runTypeLabel}</h2>
-        {isIndoor && media === 'naruto' && narutoEpLabel && (
-          <p className="mt-2 font-cinzel text-sm tracking-wider text-gold/70">{narutoEpLabel}</p>
-        )}
-        <div className="mt-8 rounded-2xl border border-gold/15 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
-          <RingTimer
-            totalSeconds={timerEstimate}
-            secondsRemaining={remaining}
-            label="Running"
-            accentColor="#1E8A68"
-            size={240}
-            isPaused={runPaused}
-            onTogglePause={toggleRunPause}
-          />
-        </div>
-        {!isIndoor && runSession.sessionId && (
-          <button
-            type="button"
-            onClick={() => checkForStravaActivity()}
-            disabled={checkingStrava}
-            className="mt-6 flex min-h-[40px] items-center justify-center gap-2 rounded-md border border-gold/25 bg-near-black/40 px-4 py-2 text-xs font-medium text-gold/80 active:bg-near-black/70 disabled:opacity-50"
-          >
-            {checkingStrava ? 'Checking Strava…' : 'Pull run from Strava'}
-          </button>
-        )}
-      </div>
-    ) : narutoConfirm ? (
-      // Naruto: one-tap confirm after the run is saved
-      <div className="mx-auto max-w-md space-y-5 animate-fade-in">
-        <div className="rounded-md border border-border bg-deep-forest p-4 text-center">
-          <p className="text-sm font-medium text-teal">Naruto</p>
-          <p className="mt-2 text-base text-foreground">
-            Watched about {narutoConfirm.watched} episode{narutoConfirm.watched === 1 ? '' : 's'} ({narutoConfirm.minutes} min).
-            {' '}Now on ep {narutoConfirm.proposed}?
-          </p>
-          {narutoConfirm.adjusting && (
-            <div className="mx-auto mt-4 flex w-40 gap-1">
-              <button
-                type="button"
-                onClick={() => stepNarutoProposed(-1)}
-                className="min-h-[44px] w-10 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
-              >
-                -
-              </button>
-              <div className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-border bg-surface text-lg text-foreground">
-                {narutoConfirm.proposed}
-              </div>
-              <button
-                type="button"
-                onClick={() => stepNarutoProposed(1)}
-                className="min-h-[44px] w-10 shrink-0 rounded-md bg-border text-muted-foreground active:bg-muted"
-              >
-                +
-              </button>
-            </div>
-          )}
-          {narutoArcForEp(narutoConfirm.proposed) && (
-            <p className="mt-2 text-xs text-muted-foreground">{narutoArcForEp(narutoConfirm.proposed)}</p>
-          )}
-        </div>
-      </div>
-    ) : (
-      // logging
-      <div className="mx-auto max-w-md space-y-5 animate-fade-in">
-        <div className="text-center">
-          <h2 className="text-display-lg text-foreground">Log Your Run</h2>
-          {fromStrava && (
-            <p className="mt-2 font-cinzel text-[11px] uppercase tracking-[0.24em] text-gold/70">
-              Pulled from Strava · review &amp; save
-            </p>
-          )}
-        </div>
-
-        {!isIndoor && runSession.sessionId && !fromStrava && (
-          <button
-            type="button"
-            onClick={() => checkForStravaActivity()}
-            disabled={checkingStrava}
-            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-gold/25 bg-near-black/40 px-4 py-2 text-sm font-medium text-gold/80 active:bg-near-black/70 disabled:opacity-50"
-          >
-            {checkingStrava ? 'Checking Strava…' : 'Pull run from Strava'}
-          </button>
-        )}
-
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <label className="text-label mb-1 block text-muted-foreground">Distance (km)</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={distance}
-              onChange={(e) => setDistance(e.target.value)}
-              placeholder="5.0"
-              className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
-            />
-          </div>
-          <div className="flex-1">
-            <label className="text-label mb-1 block text-muted-foreground">Duration</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={duration}
-              onChange={(e) => setDuration(e.target.value)}
-              placeholder="25:00"
-              className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
-            />
-          </div>
-        </div>
-
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <label className="text-label mb-1 block text-muted-foreground">Avg HR (bpm)</label>
-            <input
-              type="number"
-              inputMode="numeric"
-              value={avgHr}
-              onChange={(e) => setAvgHr(e.target.value)}
-              placeholder="138"
-              className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
-            />
-          </div>
-          <div className="flex-1">
-            <label className="text-label mb-1 block text-muted-foreground">Max HR (bpm)</label>
-            <input
-              type="number"
-              inputMode="numeric"
-              value={maxHr}
-              onChange={(e) => setMaxHr(e.target.value)}
-              placeholder="162"
-              className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-center text-lg text-foreground placeholder-muted-foreground focus:border-teal-dark focus:outline-none"
-            />
-          </div>
-        </div>
-
-        {isIndoor && media === 'one_pace' && (
-          <div className="rounded-md border border-border bg-deep-forest p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <img src={onePaceSvg} alt="" className="h-6 w-6 object-contain" style={{ mixBlendMode: 'screen' }} />
-                <p className="text-sm font-medium text-teal">One Pace</p>
-              </div>
-              <a
-                href={ONEPACE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-teal/70 underline decoration-teal/30 active:text-teal"
-              >
-                onepace.net \u2197
-              </a>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <label className="text-label mb-1 block text-muted-foreground">Arc</label>
-                <input type="text" value={onePaceArc} onChange={(e) => setOnePaceArc(e.target.value)}
-                  placeholder="e.g. Water 7"
-                  className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
-              </div>
-              <div className="flex-1">
-                <label className="text-label mb-1 block text-muted-foreground">Episode</label>
-                <input type="text" value={onePaceEp} onChange={(e) => setOnePaceEp(e.target.value)}
-                  placeholder="e.g. 3"
-                  className="min-h-[44px] w-full rounded-md border border-border bg-surface px-3 py-2 text-base text-foreground placeholder-muted-foreground focus:border-teal focus:outline-none" />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showRunRealityMark && (
-          <p className="font-cinzel text-[11px] uppercase tracking-[0.18em] text-gold/60">
-            ◇ Short run noted
-          </p>
-        )}
-      </div>
-    )
-
-  // ─── Footer per phase ────────────────────────────────────────
-
-  const footer =
-    phase === 'ready' ? (
-      <Button
-        onClick={startRun}
-        size="lg"
-        className="w-full"
-        style={{ backgroundColor: '#1E8A68', color: '#020A08' }}
-      >
-        Start Run
-      </Button>
-    ) : phase === 'running' ? (
-      <Button onClick={finishRun} size="lg" className="w-full">
-        Finish Run
-      </Button>
-    ) : narutoConfirm ? (
-      <div className="flex flex-col gap-2">
-        <Button onClick={confirmNarutoEp} disabled={saving} size="lg" className="w-full">
-          {saving ? 'Saving...' : `Yes, ep ${narutoConfirm.proposed}`}
-        </Button>
-        <div className="flex gap-2">
-          {!narutoConfirm.adjusting && (
-            <Button
-              variant="outline"
-              disabled={saving}
-              className="flex-1"
-              onClick={() => setNarutoConfirm(c => c && { ...c, adjusting: true })}
-            >
-              Adjust
-            </Button>
-          )}
-          <Button variant="ghost" disabled={saving} className="flex-1" onClick={onComplete}>
-            Skip
-          </Button>
-        </div>
-      </div>
-    ) : (
-      <Button onClick={handleSave} disabled={saving} size="lg" className="w-full">
-        {saving ? 'Saving...' : 'Save Run'}
-      </Button>
-    )
-
-  if (inline) {
+  // ─── Running (page 19 "Run": the grass, one countdown, FINISH RUN) ───
+  if (phase === 'running') {
+    const shown = Math.max(0, remaining)
+    const heat = remaining > 0 ? heatFor(shown) : null
+    const track: TimerTrack = {
+      durationSec: timerEstimate,
+      endsAtMs: runPaused || !runStartedAtMs ? null : runStartedAtMs + timerEstimate * 1000,
+      remainingMs: remaining * 1000,
+    }
+    const chips = [
+      targetMin ? `${targetMin} MIN` : null,
+      prescription?.targetDistKm ? `${prescription.targetDistKm} KM` : null,
+      isZone2 ? (prescription?.z2CeilingBpm ? `HR <= ${prescription.z2CeilingBpm}` : 'TALK TEST') : null,
+      isZone2 ? 'NASAL' : null,
+      narutoChip,
+    ].filter((c): c is string => !!c)
     return (
       <>
-        <div className="flex flex-col gap-4">
-          {body}
-          <div className="mx-auto w-full max-w-md">{footer}</div>
-        </div>
+        <SessionFrame
+          title={runTitle}
+          count="RUN"
+          onEnd={onExit}
+          paused={runPaused}
+          grass={<GrassZone track={track} kind="work" heat={heat} onTap={toggleRunPause} onSkip={finishRun} />}
+        >
+          {chips.length > 0 && (
+            <div className="wm-board" style={{ margin: '12px 14px 0' }}>
+              <div className="ss-chips">{chips.map(c => <FlapLabel key={c} text={c} size="xs" />)}</div>
+            </div>
+          )}
+          <TimerFace seconds={shown} kind="work" heat={heat} label={workLabel('RUNNING', remaining > 0 ? shown : 99)} labelTone="gold" track={track} />
+          <div className="tm-wide" style={{ marginTop: 16 }}>
+            <SessionButton label="FINISH RUN" onClick={finishRun} />
+          </div>
+        </SessionFrame>
         <ToastContainer />
       </>
     )
   }
 
+  // ─── Ready (page 31 "Zone 2 · ready, indoor" / "Progression · ready, outdoor") ───
+  if (phase === 'ready') {
+    const eyebrow = isZone2 ? 'Morning Run' : prescription ? `Week ${prescription.weekNumber}` : 'Run'
+    const onePaceWhy = [onePaceArc, onePaceEp ? `Ep ${onePaceEp}` : ''].filter(Boolean).join(' · ') || 'onepace.net'
+    return (
+      <>
+        <CentredCard label={`${runTypeLabel}, ready`} head={eyebrow} headRight={<SessionIcon kind={icon} size={34} />} onDismiss={onExit} className="ss-card">
+          <div style={{ margin: '4px 0 10px' }}><FlapLabel text={runTypeLabel} size="lg" fit /></div>
+          <div className="ss-rows">
+            {targetMin != null && <TargetRow k="Time" v={`${targetMin} MIN`} />}
+            {isZone2 && <TargetRow k="Heart rate" v={prescription?.z2CeilingBpm != null ? `UNDER ${prescription.z2CeilingBpm}` : 'TALK TEST'} tone="teal" />}
+            {isZone2 && <TargetRow k="Breathing" v="NASAL" />}
+            {prescription?.targetDistKm != null && <TargetRow k="Distance" v={`${prescription.targetDistKm} KM`} />}
+          </div>
+          <div className="ss-seg2" role="radiogroup" aria-label="Where">
+            <button type="button" role="radio" aria-checked={!isIndoor} onClick={() => setIsIndoor(false)}><FlapLabel text="OUTDOOR" size="sm" tone={!isIndoor ? 'gold' : 'ink'} /></button>
+            <button type="button" role="radio" aria-checked={isIndoor} onClick={() => setIsIndoor(true)}><FlapLabel text="INDOOR" size="sm" tone={isIndoor ? 'gold' : 'ink'} /></button>
+          </div>
+          {isIndoor ? (
+            <>
+              <div className="wm-mlabel" style={{ marginTop: 10 }}>WATCH WHILE YOU RUN</div>
+              <div className="wm-deps" role="radiogroup" aria-label="Watch while you run">
+                <div className={`wm-dep${media === 'one_pace' ? ' is-pick' : ''}`}>
+                  <button type="button" role="radio" aria-checked={media === 'one_pace'} className="wm-dep-main" onClick={() => chooseMedia('one_pace')}>
+                    <span className="wm-dep-text"><FlapLabel text="ONE PACE" size="sm" /><span className="wm-dep-why">{onePaceWhy}</span></span>
+                  </button>
+                </div>
+                <div className={`wm-dep${media === 'naruto' ? ' is-pick' : ''}`}>
+                  <button type="button" role="radio" aria-checked={media === 'naruto'} className="wm-dep-main" onClick={() => chooseMedia('naruto')}>
+                    <span className="wm-dep-text"><FlapLabel text="NARUTO" size="sm" /><span className="wm-dep-why">Netflix app</span></span>
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="tm-note" style={{ margin: '10px 0 0' }}>START RUN also opens Strava.</p>
+          )}
+          <div className="wm-btns" style={{ marginTop: 12 }}>
+            <SessionButton label="START RUN" primary onClick={startRun} />
+          </div>
+        </CentredCard>
+        <ToastContainer />
+      </>
+    )
+  }
+
+  // ─── After an indoor Naruto run: one confirm tap (design-decisions "Naruto on indoor runs"; no mockup) ───
+  if (narutoConfirm) {
+    const arc = narutoArcForEp(narutoConfirm.proposed)
+    return (
+      <>
+        <CentredCard label="Naruto episode" head="Naruto" headRight={<FlapLabel text={`EP ${narutoConfirm.proposed}`} size="xs" tone="gold" />} className="ss-card">
+          <p className="wm-prose">
+            Watched about {narutoConfirm.watched} episode{narutoConfirm.watched === 1 ? '' : 's'} ({narutoConfirm.minutes} min). Now on ep {narutoConfirm.proposed}?
+          </p>
+          {narutoConfirm.adjusting && (
+            <div className="wm-stepper" role="group" aria-label="Episode">
+              <button type="button" aria-label="Earlier episode" onClick={() => stepNarutoProposed(-1)}>−</button>
+              <span className="v"><FlapLabel text={String(narutoConfirm.proposed)} size="lg" /></span>
+              <button type="button" aria-label="Later episode" onClick={() => stepNarutoProposed(1)}>+</button>
+            </div>
+          )}
+          {arc && <p className="tm-note" style={{ margin: 0 }}>{arc}</p>}
+          <SessionButton label={`YES, EP ${narutoConfirm.proposed}`} primary disabled={saving} onClick={() => void confirmNarutoEp()} />
+          <div className="wm-btns">
+            {!narutoConfirm.adjusting && <SessionButton label="ADJUST" disabled={saving} onClick={() => setNarutoConfirm(c => c && { ...c, adjusting: true })} />}
+            <SessionButton label="SKIP" disabled={saving} onClick={onComplete} />
+          </div>
+        </CentredCard>
+        <ToastContainer />
+      </>
+    )
+  }
+
+  // ─── Log your run (page 31 "Log your run") ───
+  const linkable = !isIndoor && !!runSession.sessionId && !fromStrava
   return (
     <>
-      <SessionShell
-        sessionType="running"
-        counter={counter}
-        moment={moment}
-        onExit={onExit}
-        footer={footer}
-      >
-        {body}
-      </SessionShell>
+      <CentredCard label="Log your run" head="Log your run" headRight={fromStrava ? <FlapLabel text="FROM STRAVA" size="xs" tone="teal" /> : undefined} className="ss-card">
+        {linkable && (
+          <SessionButton label={checkingStrava ? 'CHECKING STRAVA' : 'PULL RUN FROM STRAVA'} disabled={checkingStrava} onClick={() => void checkForStravaActivity()} />
+        )}
+        <div className="ss-grid4">
+          <ReadoutCell k="KM" value={distance} onChange={setDistance} inputMode="decimal" placeholder="5.0" />
+          <ReadoutCell k="TIME" value={duration} onChange={setDuration} inputMode="numeric" placeholder="25:00" />
+          <ReadoutCell k="AVG HR" value={avgHr} onChange={setAvgHr} inputMode="numeric" placeholder="138" />
+          <ReadoutCell k="MAX HR" value={maxHr} onChange={setMaxHr} inputMode="numeric" placeholder="162" />
+        </div>
+        {!talkTest && <p className="tm-note" style={{ margin: '-2px 0 0' }}>Tap a number to change it.</p>}
+        {talkTest && (
+          <div className="ss-talk">
+            <FlapLabel text="TALK TEST" size="sm" tone="gold" />
+            <p className="ss-q">Heart rate when full sentences got hard?</p>
+            <div className="ss-drum2" role="group" aria-label="Talk-test heart rate, bpm">
+              <button type="button" className="ss-ar" aria-label="Lower" disabled={talkHr <= TALK_TEST_RANGE.min} onClick={() => setTalkHr(v => clampTalkHr(v - TALK_TEST_RANGE.step))}>▼</button>
+              <span className="ss-v" aria-live="polite"><FlapLabel text={String(talkHr)} size="xl" tone="gold" /><span className="ss-u">bpm</span></span>
+              <button type="button" className="ss-ar" aria-label="Higher" disabled={talkHr >= TALK_TEST_RANGE.max} onClick={() => setTalkHr(v => clampTalkHr(v + TALK_TEST_RANGE.step))}>▲</button>
+            </div>
+          </div>
+        )}
+        {isIndoor && media === 'one_pace' && (
+          <div className="ss-two">
+            <label className="ss-fld"><span className="wm-label">Arc</span><input className="ss-in" value={onePaceArc} onChange={e => setOnePaceArc(e.target.value)} placeholder="e.g. Water 7" /></label>
+            <label className="ss-fld"><span className="wm-label">Episode</span><input className="ss-in" value={onePaceEp} onChange={e => setOnePaceEp(e.target.value)} placeholder="e.g. 3" inputMode="numeric" /></label>
+          </div>
+        )}
+        {showRunRealityMark && <p className="tm-note" style={{ margin: 0 }}>Short run noted.</p>}
+        <div className="wm-btns" style={{ marginTop: 12 }}>
+          <SessionButton label={saving ? 'SAVING' : 'SAVE RUN'} primary disabled={saving} onClick={() => void handleSave()} />
+        </div>
+      </CentredCard>
       <ToastContainer />
     </>
+  )
+}
+
+function TargetRow({ k, v, tone }: { k: string; v: string; tone?: 'teal' }) {
+  return (
+    <div className="ss-row">
+      <span className="wm-label ss-grow">{k}</span>
+      <FlapLabel text={v} size="sm" tone={tone ?? 'ink'} />
+    </div>
+  )
+}
+
+/** A big flap readout; tap it to type the number (page 31 "Tap a number to change it."). */
+function ReadoutCell({ k, value, onChange, inputMode, placeholder }: { k: string; value: string; onChange: (v: string) => void; inputMode: 'decimal' | 'numeric'; placeholder: string }) {
+  const [editing, setEditing] = useState(false)
+  return (
+    <div className="ss-cell4" role="group" aria-label={k}>
+      <span className="wm-label">{k}</span>
+      {editing ? (
+        <input
+          className="ss-cellin"
+          autoFocus
+          inputMode={inputMode}
+          value={value}
+          placeholder={placeholder}
+          aria-label={k}
+          onChange={e => onChange(e.target.value)}
+          onBlur={() => setEditing(false)}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        />
+      ) : (
+        <button type="button" className="ss-cellbtn" aria-label={`${k} ${value || 'not set'}. Change`} onClick={() => setEditing(true)}>
+          <FlapLabel text={value || '-'} size="lg" fit />
+        </button>
+      )}
+    </div>
   )
 }

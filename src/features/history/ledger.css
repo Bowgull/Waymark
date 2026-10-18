@@ -1,0 +1,65 @@
+/* The Ledger (page 32, "The Ledger · together"): the pond fills the screen; boards on glass up top.
+   The page has no background: the world's pond shows through. */
+
+.lg-root { position: relative; display: flex; flex-direction: column; height: calc(100% + 16px); margin: 0 -4px -16px; padding-top: env(safe-area-inset-top); background: transparent; }
+.lg-hd { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px 6px; }
+.lg-brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.lg-crest { width: 54px; height: 60px; display: grid; place-items: center; flex: none; }
+
+/* page 32 .lbody: 6px top, 12px sides, 10px apart */
+.lg-body { position: relative; z-index: 1; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y mandatory; scrollbar-width: none; }
+.lg-body::-webkit-scrollbar { display: none; }
+/* one screen of boards: they sit up top, the water stays open below */
+.lg-page { min-height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 6px 0 12px; scroll-snap-align: start; }
+
+.lg-segl { display: flex; gap: 6px; justify-content: center; }
+.lg-segb { display: flex; padding: 0; border: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+
+.lg-glass { position: relative; padding: 12px; border-radius: 14px; background: rgba(6, 12, 10, 0.72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.16), 0 0 30px rgba(0, 0, 0, 0.55); }
+.lg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font: 700 12px/normal var(--font-body); letter-spacing: 0.18em; color: #c9b27a; text-transform: uppercase; }
+.lg-label { font: 700 12px/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: rgba(240, 230, 192, 0.88); text-shadow: 0 1px 4px #000; }
+
+/* the week's rings */
+.lg-rings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; }
+.lg-rcell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.lg-ringbox { position: relative; width: 96px; height: 96px; margin: 0 auto; }
+.lg-ringbox svg { width: 96px; height: 96px; display: block; }
+.lg-rc { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.lg-rlbl { font: 700 12px/normal var(--font-body); letter-spacing: 0.14em; color: #cfd9d2; text-transform: uppercase; }
+.lg-seg { opacity: 0; transform-origin: 50px 50px; animation: lg-segin 0.35s cubic-bezier(0.3, 1.4, 0.5, 1) forwards; }
+@keyframes lg-segin { from { opacity: 0; transform: scaleY(0.2); } to { opacity: 1; transform: none; } }
+
+/* charts */
+.lg-chart svg { width: 100%; height: auto; display: block; }
+.lg-legend { display: flex; gap: 12px; margin-top: 6px; font: 600 12px/normal var(--font-body); color: #9db5aa; }
+.lg-legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: 3px; margin-right: 4px; }
+.lg-delta { font: 700 12px/normal var(--font-body); color: #8fc4b0; }
+.lg-delta.is-dn { color: #d9906e; }
+.lg-bv { font: 800 11px var(--font-mono); fill: #e8f0ec; }
+.lg-bd2 { font: 700 11px var(--font-body); fill: #9db5aa; }
+.lg-sorerow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; text-align: center; }
+.lg-sorerow > div { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.lg-sorerow .st { width: 100%; height: 16px; border-radius: 4px; background: rgba(240, 230, 192, 0.06); }
+.lg-bd3 { font: 700 11px/normal var(--font-body); color: #9db5aa; }
+.lg-sorekey { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; font: 600 12px/normal var(--font-body); color: #9db5aa; }
+.lg-sorekey i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+
+/* consistency (page 32's .rows) */
+.lg-rows { display: flex; flex-direction: column; }
+.lg-rows .r { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.lg-rows .grow { flex: 1; }
+
+/* the pond: the glow on the water and the rings resting on it, behind everything */
+.lg-pond { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.lg-glowwash { position: absolute; inset: 0; background: radial-gradient(ellipse 80% 22% at 50% 80%, rgba(120, 210, 200, 0.22), transparent 70%); }
+.lg-pondrings { position: absolute; inset: 0; display: block; }
+.lg-prg { transform-box: fill-box; transform-origin: center; }
+.lg-pr { stroke-dashoffset: var(--len); animation: lg-prin 1.6s ease forwards; }
+@keyframes lg-prin { to { stroke-dashoffset: 0; } }
+.lg-spk { position: absolute; pointer-events: none; font: 700 10px/1 var(--font-mono); opacity: 0; text-shadow: 0 0 6px currentColor; animation: lg-spk var(--life, 3.2s) cubic-bezier(0.25, 0.1, 0.25, 1) forwards; }
+@keyframes lg-spk { 0% { opacity: 0; transform: translate(0, 0); } 18% { opacity: var(--o, 0.6); } 70% { opacity: calc(var(--o, 0.6) * 0.55); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-seg { animation: none; opacity: 1; }
+  .lg-pr { animation: none; stroke-dashoffset: 0; }
+}

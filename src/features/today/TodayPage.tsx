@@ -32,7 +32,8 @@ import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
 import { answersFromLog, answeredCount, shouldOpenCheckIn } from '@/features/blockZero/checkInFlow'
 import { CHECK_IN_EVENT, checkInSkippedOn, markCheckInSkipped, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
 import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessLine'
-import { MorningReportRow } from '@/features/blockZero/TodayPieces'
+import { MorningReportRow, type ClassTonightView } from '@/features/blockZero/TodayPieces'
+import { classTonightFrom } from '@/lib/blockZero/classTonight'
 import './today.css'
 
 type Session = TodaySession & { startedAt: number | null; completedAt: number | null; durationSec: number | null; rpe: number | null; notes: string | null }
@@ -49,6 +50,7 @@ interface DailyLog {
   mood?: number | null
   backToday?: number | null
   backNotes?: string | null
+  notes?: string | null
 }
 
 interface CurrentBlock {
@@ -630,15 +632,19 @@ export function TodayPage() {
     }
   }
 
-  async function handleConfirmMatch(activityId: number, row: HTMLElement | null) {
+  async function handleConfirmMatch(activityId: number, sessionId: string, card: HTMLElement | null) {
     try {
       await apiFetch(`/api/strava/activity/${activityId}/confirm`, { method: 'POST' })
+      // The confirmed row stays on screen to answer the tap (page 40), even when it was the
+      // evening's last session; ALL DONE (page 43) shows the next time Today opens.
+      setShowDayAnyway(true)
       await refreshSessions()
+      // Page 40 phone 2: LOGGED drops in and the run's row, now done, glows teal.
       showToast('Logged.', 'success')
-      glowRow(row, 'good')
+      requestAnimationFrame(() => glowRow(document.querySelector(`.td-row[data-sid="${CSS.escape(sessionId)}"]`), 'good'))
     } catch (e) {
       console.error('Failed to confirm match:', e)
-      glowRow(row, 'bad')
+      glowRow(card, 'bad')
       showToast("Couldn't save. Check your connection.", 'warning')
     }
   }
@@ -704,8 +710,13 @@ export function TodayPage() {
         }),
       })
       setSessions(prev => [...prev, created].sort((a, b) => (a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)))
-      const notes = created.coach?.notes?.filter(Boolean) ?? []
-      showToast(notes.length > 0 ? notes.join(' ') : 'Class tonight. Log the type after class.', 'success', { durationMs: 4000 })
+      // The day rebalances around the class (page 45); its line shows on the Coach board.
+      try {
+        await apiFetch(`/api/sessions/${created.id}/class-tonight`, { method: 'POST', body: JSON.stringify({ today }) })
+      } catch (e) {
+        logger.warn('system', 'class tonight rebalance failed', { sessionId: created.id, message: e instanceof Error ? e.message : String(e) }, 'The class is added; the day was not rebalanced.')
+      }
+      await refreshSessions()
       return null
     } catch (e) {
       const refusal = parseRefusal(e)
@@ -745,7 +756,7 @@ export function TodayPage() {
           <MorningReportRow logged={morningLogged} onOpen={() => setDeck({ startAt: 0, firstOpen: false })} />
           {/* the clearing and its lantern show between the top and the boards (pages 17, 35, 36) */}
           <div className="td-spacer" style={{ minHeight: strip ? '16dvh' : '24dvh' }} />
-          <CoachBoard why={whyLine} readiness={readinessLine(readiness)} changes={coachChanges} questions={coachQuestions} onOpen={openQuestion} />
+          <CoachBoard why={whyLine} readiness={readinessLine(readiness)} classTonight={block != null ? classTonightView(sessions, handleAddClassTonight) : null} changes={coachChanges} questions={coachQuestions} onOpen={openQuestion} />
           <TodayDay
             sessions={sessions}
             onStart={handleStart}
@@ -756,7 +767,6 @@ export function TodayPage() {
             onReassignMatch={handleReassignStart}
             onDismissMatch={handleDismissMatch}
             onAdd={openAddPicker}
-            classTonight={block != null ? { added: sessions.some(s => s.type === 'mt_class' && s.status !== 'skipped'), onAdd: handleAddClassTonight } : null}
           />
           <WaybookLine today={today} />
         </>
@@ -824,12 +834,14 @@ export function TodayPage() {
         />
       )}
 
-      <ReassignRunSheet
-        open={reassignFor != null}
-        onClose={() => setReassignFor(null)}
-        onSelect={handleReassignPick}
-        excludeSessionId={reassignFor?.sessionId}
-      />
+      {reassignFor && (
+        <ReassignRunSheet
+          open
+          onClose={() => setReassignFor(null)}
+          onSelect={handleReassignPick}
+          excludeSessionId={reassignFor.sessionId}
+        />
+      )}
 
       {askOpen && !deck && (
         <AskBoard
@@ -849,6 +861,8 @@ export function TodayPage() {
           onSubmit={handleCheckInSubmit}
           onClose={handleCheckInClose}
           onSkipToday={deck.firstOpen ? markCheckInSkipped : undefined}
+          note={dailyLog?.notes ?? null}
+          onNoteSaved={log => setDailyLog(log as DailyLog)}
         />
       )}
 
@@ -856,6 +870,12 @@ export function TodayPage() {
       <ToastContainer />
     </div>
   )
+}
+
+/** + CLASS TONIGHT on the Coach board: added once tonight's class is on the day; the line is the one the server stored when the day rebalanced. */
+function classTonightView(sessions: Session[], onAdd: () => Promise<string | null>): ClassTonightView {
+  const cls = sessions.find(s => s.type === 'mt_class' && s.status !== 'skipped')
+  return { added: cls != null, line: classTonightFrom(cls?.contextJson), onAdd }
 }
 
 /** Loaded before the crest was needed: show the page on the next tick. */
