@@ -19,6 +19,12 @@ interface GrassZoneProps {
   /** A full pull up the grass, released: skip to the next phase. */
   onSkip?: () => void
   label?: string
+  /**
+   * The bag round's fixed band (page 55 layout 1): the grass takes this share
+   * of the screen (0.34) and carries no hint, so nothing sits on it. Every
+   * other timer keeps page 19's half screen and its TAP · PAUSE hint.
+   */
+  band?: number
 }
 
 /**
@@ -28,7 +34,7 @@ interface GrassZoneProps {
  * early settles back); the blades part around the finger with a light under it
  * and a drag leaves a fading wake.
  */
-export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Timer. Tap to pause. Swipe up to skip.' }: GrassZoneProps) {
+export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Timer. Tap to pause. Swipe up to skip.', band }: GrassZoneProps) {
   const reduced = useReducedMotion()
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -98,7 +104,8 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Tim
     <>
       <div
         ref={boxRef}
-        className="tm-grass"
+        className={`tm-grass${band != null ? ' is-band' : ''}`}
+        style={band != null ? { height: `${band * 100}%` } : undefined}
         role="button"
         tabIndex={0}
         aria-label={label}
@@ -135,7 +142,7 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Tim
       >
         <canvas ref={canvasRef} aria-hidden />
       </div>
-      <div className="tm-ghint" aria-hidden><span>TAP · PAUSE</span><span /></div>
+      {band == null && <div className="tm-ghint" aria-hidden><span>TAP · PAUSE</span><span /></div>}
     </>
   )
 }

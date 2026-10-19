@@ -1,0 +1,50 @@
+/* The bag round (page 55 layout 1, "Round and clock on the grass", approved 2026-10-19).
+   Values are the mockup's (55-bag-round-layouts.html). */
+
+/* the ground: page 55's plain dark fall, a touch of teal in rest */
+.tm-screen.bw .tm-ground { background: linear-gradient(#0a120e, #070c0a 55%); }
+.tm-screen.bw.is-rest .tm-ground { background: linear-gradient(#0a1614, #070c0b 55%); }
+
+/* the top bar: × and BAG WORK on the left, the phase flap on the right */
+.tm-screen.bw .tm-stop { flex: none; justify-content: flex-start; gap: 10px; height: 44px; padding: 8px 16px 0; box-sizing: border-box; }
+.tm-screen.bw .tm-stop > :last-child { margin-left: auto; }
+
+/* the grass: a fixed band at the foot that nothing sits on (hard top edge, as drawn) */
+.tm-grass.is-band { -webkit-mask-image: none; mask-image: none; }
+/* the UI's own room for it: 34% of the whole screen (the column starts under the safe area) */
+.bw-gspace { flex: none; height: calc((100% + env(safe-area-inset-top)) * 0.34); }
+.tm-ui .bw-gspace { pointer-events: none; } /* taps fall through to the grass */
+
+/* the combo zone: what is left between the top bar and the round + clock */
+.bw-zone { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 8px 14px 10px; overflow: hidden; }
+
+/* the combo stacked, one strike per line, gold ⌄ arrows, no boxes; the session's one size */
+.bw-stack { display: flex; flex-direction: column; align-items: center; transition: opacity 0.3s ease; }
+.bw-stack.is-dim { opacity: 0.55; }
+.wm-flap.bw-strike { font-size: var(--cs, 40px); gap: calc(var(--cs, 40px) * 0.05); }
+.bw-dn { display: block; font: 900 22px/18px var(--font-mono); height: 18px; color: #e8c878; transform: rotate(90deg); text-shadow: 0 0 6px rgba(232, 200, 120, 0.5); }
+.bw.is-rest .bw-dn { color: #8fd4b8; text-shadow: 0 0 6px rgba(143, 212, 184, 0.5); }
+
+/* the cue: shown at the bell and in rest; its space always stays */
+.bw-cue { flex: none; display: flex; justify-content: center; align-items: center; min-height: 26px; }
+.bw-cue.is-hidden, .bw-then.is-hidden { visibility: hidden; }
+
+/* THEN: the round's other combos, small */
+.bw-then { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; opacity: 0.62; }
+.bw-then-row { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 6px; }
+.bw-ar { font: 800 13px var(--font-mono); color: rgba(240, 230, 192, 0.7); }
+
+/* the round and the clock, standing on the grass */
+.bw-pair { flex: none; display: flex; justify-content: center; align-items: center; gap: 16px; padding: 0 12px 8px; }
+.bw-round { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.bw-lab { font: 800 13px var(--font-body); letter-spacing: 0.3em; margin-left: 0.3em; color: #e8c878; }
+.bw.is-rest .bw-lab { color: #9ee0c6; }
+.bw-round small { font: 800 15px var(--font-mono); color: rgba(240, 230, 192, 0.7); }
+.wm-flap.bw-digit { font-size: 64px; gap: 3px; }
+.tm-rclock { display: flex; justify-content: center; align-items: center; transition: transform 0.4s ease; }
+.tm-rclock .wm-flap { font-size: inherit; gap: 4px; }
+.bw-start { min-width: 210px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bw-stack, .tm-rclock { transition: none; }
+}

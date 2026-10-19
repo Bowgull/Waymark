@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 import { FlapLabel } from '@/design'
-import { ComboStrikes, GrassZone, Pips, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
+import { GrassZone, RoundClock, SessionButton, SessionFrame, type TimerTrack } from '@/components/timers'
+import { SessionEndedContext } from '@/components/timers/endedContext'
 import { heavyHaptic } from '@/lib/haptics'
 import {
   soundRoundStart,
@@ -18,11 +19,14 @@ import {
 } from '@/lib/notifications'
 import { comboCue } from '@/lib/comboCue'
 import { isStaleCue, type EngineState } from '@/lib/sessionResume'
-import { heatFor, workLabel } from '@/lib/timers/timerLook'
+import { bagComboSize, cueShown, lockComboSize, type BagRoundView } from '@/lib/timers/bagRound'
+import { comboStrikes, heatFor, workLabel, type Heat } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
 
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
+
+import './bagRound.css'
 
 interface ComboData {
   id: string
@@ -36,6 +40,8 @@ interface ComboData {
     isFavourite?: number
     techniques?: string
     formTips?: string
+    /** Found in an MT class (page 49's glove). Not stored yet; carried to the lock card when it is. */
+    fromClass?: boolean | number | null
   } | null
 }
 
@@ -54,10 +60,10 @@ type RoundPhase = 'ready' | 'fighting' | 'rest'
 interface BagWorkRoundViewProps {
   round: RoundData
   totalRounds: number
-  /** The round after this one: its combos flip in on the rest board (NEXT ROUND). */
+  /** The round after this one: its combo flips in on the rest board (NEXT). */
   nextRound?: RoundData | null
-  /** Each combo's letter for the session (A, B, C…): the preview, the timer and the rating card share them. */
-  letters?: Map<string, string>
+  /** Every round of the session: the one combo size is fitted to the longest of them (page 55). */
+  rounds?: RoundData[]
   phase: RoundPhase
   onPhaseChange: (phase: RoundPhase) => void
   onNextRound: () => void
@@ -72,21 +78,34 @@ interface BagWorkRoundViewProps {
   onRoundDone?: (roundIndex: number, actualSec: number) => void
 }
 
+/** The combos of a round as its board shows them: the first stacked, the others on THEN. */
+function roundView(r: RoundData | null | undefined): BagRoundView {
+  const combos = (r?.combos ?? []).filter(rc => rc.combo).map(rc => comboStrikes(rc.combo!.text))
+  return { now: combos[0] ?? [], then: combos.slice(1).filter(c => c.length > 0) }
+}
+
+function firstCombo(r: RoundData | null | undefined) {
+  return r?.combos.find(rc => rc.combo)?.combo ?? null
+}
+
 /**
- * A bag round (page 19, "The round · calmer"; gym mode A, the half-screen zone):
- * BAG WORK and the round on flaps, pips, the calm flap clock, FIGHT (FINISH with
- * the yellow, orange, red heat in the last 10 s), the combo on big strike tiles,
- * and the grass. Rest turns everything teal: REST, and the board reads NEXT ROUND
- * with the next combo flipped in. Under the strikes, each combo's own form cue
- * on a teal flap (page 47: CUE · TURN THE HIP; from lib/comboCue, never AI).
- * Tap the grass to pause, swipe up to skip to the
- * next phase, hold the × to end.
+ * A bag round (page 55 layout 1, "Round and clock on the grass", approved
+ * 2026-10-19). The top bar: ×, BAG WORK, and FIGHT (gold; FINISH in the heat).
+ * The combo stacked at the top, one strike per line joined by gold ⌄ arrows,
+ * at the session's one size (fitted to its longest combo); its form cue on a
+ * gold flap under it (lib/comboCue, never AI) for the first 20 s, its space
+ * kept after; THEN with the round's other combos, small. ROUND / 3 / OF 6 and
+ * the unboxed M:SS clock stand on the grass, a fixed 34% band that nothing
+ * sits on and that fills with the round. Last 10 s: the heat on the clock,
+ * FINISH and the grass; the combo dims and THEN hides. Rest is teal: REST,
+ * NEXT / 4 / OF 6, the next round's combo at full size with its cue in teal.
+ * Tap the grass to pause, swipe up to skip to the next phase, hold the × to end.
  */
 export function BagWorkRoundView({
   round,
   totalRounds,
   nextRound,
-  letters,
+  rounds,
   phase,
   onPhaseChange,
   onNextRound,
@@ -212,8 +231,27 @@ export function BagWorkRoundView({
     }
   }, [restTimer.secondsRemaining, phase])
 
-  // Live Activity: drive the lock-screen timer + Dynamic Island.
-  const firstComboName = round.combos[0]?.combo?.text ?? undefined
+  // Live Activity: the lock card (page 55 "combo on two lines"). It counts
+  // rounds apart from the step count, shows this round's first combo in a
+  // round and the next round's first combo in rest, at one size per session.
+  // Nothing changes in the last 10 s (iOS can't redraw then; the bell does it).
+  const sessionRounds = useMemo(
+    () => rounds ?? [round, nextRound].filter((r): r is RoundData => !!r),
+    [nextRound, round, rounds],
+  )
+  const views = useMemo(() => sessionRounds.map(roundView), [sessionRounds])
+  const lockSize = useMemo(() => lockComboSize(views.map(v => v.now)), [views])
+  const nowCombo = firstCombo(round)
+  const nextCombo = firstCombo(nextRound)
+  const laCombo = {
+    stepIndex: round.roundNumber,
+    stepTotal: totalRounds,
+    round: round.roundNumber,
+    roundTotal: totalRounds,
+    combo: nowCombo ? comboStrikes(nowCombo.text) : undefined,
+    nextCombo: nextCombo ? comboStrikes(nextCombo.text) : undefined,
+    comboSize: lockSize,
+  }
   const activityConfig: LiveActivityConfig | null =
     phase === 'fighting' && roundTimer.isRunning
       ? {
@@ -222,9 +260,9 @@ export function BagWorkRoundView({
           state: {
             phase: 'active',
             label: `Round ${round.roundNumber} of ${totalRounds}`,
-            detail: firstComboName,
-            stepIndex: round.roundNumber,
-            stepTotal: totalRounds,
+            detail: nowCombo?.text ?? undefined,
+            ...laCombo,
+            fromClass: !!nowCombo?.fromClass,
             startedAt: roundTimer.startedAtMs,
             endsAt: roundTimer.endsAtMs,
             isPaused: roundTimer.isPaused,
@@ -240,9 +278,9 @@ export function BagWorkRoundView({
             state: {
               phase: 'rest',
               label: 'Rest',
-              detail: `Next: Round ${round.roundNumber + 1}`,
-              stepIndex: round.roundNumber,
-              stepTotal: totalRounds,
+              detail: nextCombo?.text ?? `Next: Round ${round.roundNumber + 1}`,
+              ...laCombo,
+              fromClass: !!nextCombo?.fromClass,
               startedAt: restTimer.startedAtMs,
               endsAt: restTimer.endsAtMs,
               isPaused: restTimer.isPaused,
@@ -310,18 +348,33 @@ export function BagWorkRoundView({
   const resting = phase === 'rest'
   const shownSec = fighting ? Math.max(0, roundTimer.secondsRemaining) : resting ? Math.max(0, restTimer.secondsRemaining) : round.durationSec
   const heat = fighting ? heatFor(shownSec) : null
-  const label = resting ? 'REST' : fighting ? workLabel('FIGHT', shownSec) : 'READY'
   const paused = (fighting && roundTimer.isPaused) || (resting && restTimer.isPaused)
   const timer = fighting ? roundTimer : resting ? restTimer : null
   const track: TimerTrack = timer && timer.isRunning
     ? { durationSec: timer.durationSec, endsAtMs: timer.isPaused ? null : timer.endsAtMs, remainingMs: timer.secondsRemaining * 1000 }
     : { durationSec: round.durationSec, endsAtMs: null, remainingMs: round.durationSec * 1000 }
+  // Rest shows the round coming: its number, its combo, its cue.
   const boardRound = resting && nextRound ? nextRound : round
-  const combos = boardRound.combos.filter(rc => rc.combo)
-  // One cue per combo row; with more than one combo each cue names its letter.
-  const cues = combos
-    .map(rc => ({ key: rc.id, cue: comboCue(rc.combo), letter: combos.length > 1 ? letters?.get(rc.combo!.id) : undefined }))
-    .filter(c => c.cue)
+  const board = roundView(boardRound)
+  const cue = comboCue(firstCombo(boardRound))
+  const showCue = !!cue && !heat && cueShown(phase, fighting ? round.durationSec - roundTimer.secondsRemaining : 0)
+  const shownRound = resting && nextRound ? nextRound.roundNumber : round.roundNumber
+
+  // One combo size for the whole session: the largest at which every round's
+  // board fits the zone (page 55 `fitSession`). The zone's size is set by the
+  // screen, never by what is in it, so every round lands on the same size.
+  const zoneRef = useRef<HTMLDivElement>(null)
+  const [comboPx, setComboPx] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const z = zoneRef.current
+    if (!z) return
+    const fit = () => setComboPx(bagComboSize(views, { width: z.clientWidth, height: z.clientHeight }))
+    fit()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(fit)
+    ro.observe(z)
+    return () => ro.disconnect()
+  }, [views])
 
   function togglePause() {
     if (fighting) { if (roundTimer.isPaused) resumeRound(); else pauseRound() }
@@ -332,59 +385,93 @@ export function BagWorkRoundView({
     else if (resting) handleRestDone()
   }
 
+  const zoneStyle = { '--cs': `${comboPx ?? 36}px`, visibility: comboPx == null ? 'hidden' : undefined } as CSSProperties
+
   return (
     <SessionFrame
       title="BAG WORK"
-      count={`${round.roundNumber}/${totalRounds}`}
+      right={<BagPhaseFlap phase={phase} heat={heat} seconds={shownSec} />}
       onEnd={onExit}
       paused={paused}
+      className={`bw${resting ? ' is-rest' : ''}`}
       grass={
         <GrassZone
           track={track}
           kind={resting ? 'rest' : 'work'}
           mode={resting ? 'rest' : fighting ? 'work' : 'ready'}
           heat={heat}
+          band={0.34}
           onTap={phase === 'ready' ? undefined : togglePause}
           onSkip={phase === 'ready' ? undefined : skip}
         />
       }
     >
-      <Pips total={totalRounds} now={round.roundNumber - 1} />
-      <TimerFace
-        seconds={shownSec}
-        kind={resting ? 'rest' : 'work'}
-        heat={heat}
-        tone={resting ? 'teal' : 'ink'}
-        label={label}
-        labelTone={resting ? 'teal' : 'gold'}
-        track={track}
-      />
-      {combos.length > 0 && (
-        <div className={`wm-board tm-next${resting ? ' is-rest' : ''}`}>
-          <span className="wm-label tm-nlab">{resting ? 'Next round' : 'Combo'}</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {combos.map(rc => (
-              <ComboStrikes key={rc.id} text={rc.combo!.text} letter={letters?.get(rc.combo!.id)} size="md" timer />
+      <div ref={zoneRef} className="bw-zone" style={zoneStyle}>
+        {board.now.length > 0 && (
+          <div className={`bw-stack${heat ? ' is-dim' : ''}`} role="img" aria-label={board.now.join(', ')}>
+            {board.now.map((strike, i) => (
+              <Fragment key={i}>
+                {i > 0 && <span className="bw-dn" aria-hidden>›</span>}
+                <FlapLabel text={strike} size="xl" className="bw-strike" />
+              </Fragment>
             ))}
           </div>
-          {cues.length > 0 && (
-            <div className="tm-cues">
-              {cues.map(c => (
-                <div key={c.key} className="tm-cue">
-                  <span className="wm-label">{c.letter ? `Cue ${c.letter}` : 'Cue'}</span>
-                  <span className="tm-cue-f"><FlapLabel text={c.cue} size="sm" tone="teal" fit /></span>
-                </div>
-              ))}
-            </div>
-          )}
+        )}
+        <div className={`bw-cue${showCue ? '' : ' is-hidden'}`} aria-hidden={!showCue}>
+          {cue && <FlapLabel text={cue} size="sm" tone={resting ? 'teal' : 'gold'} />}
         </div>
-      )}
-      {phase === 'ready' && (
-        <div className="tm-wide">
-          <SessionButton label="START ROUND" primary onClick={handleStartRound} />
+        {board.then.length > 0 && (
+          <div className={`bw-then${heat ? ' is-hidden' : ''}`} aria-hidden={!!heat}>
+            {board.then.map((strikes, r) => (
+              <div key={r} className="bw-then-row" role="img" aria-label={`Then: ${strikes.join(', ')}`}>
+                {r === 0 && <span className="wm-label">Then</span>}
+                {strikes.map((strike, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && <span className="bw-ar" aria-hidden>›</span>}
+                    <FlapLabel text={strike} size="xs" />
+                  </Fragment>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="bw-pair">
+        <div className="bw-round" role="img" aria-label={`${resting ? 'Next round' : 'Round'} ${shownRound} of ${totalRounds}`}>
+          <span className="bw-lab">{resting ? 'NEXT' : 'ROUND'}</span>
+          <FlapLabel text={String(shownRound)} size="xl" tone={resting ? 'teal' : 'gold'} className="bw-digit" />
+          <small>OF {totalRounds}</small>
         </div>
-      )}
+        {phase === 'ready' ? (
+          <div className="bw-start">
+            <SessionButton label="START ROUND" primary onClick={handleStartRound} />
+          </div>
+        ) : (
+          <RoundClock
+            seconds={shownSec}
+            kind={resting ? 'rest' : 'work'}
+            heat={heat}
+            tone={resting ? 'teal' : 'ink'}
+            track={track}
+          />
+        )}
+      </div>
+      <div className="bw-gspace" aria-hidden />
       {paused && <span className="sr-only" role="status"><FlapLabel text="PAUSED" size="xs" /></span>}
     </SessionFrame>
   )
+}
+
+/**
+ * Top right (page 55): FIGHT in gold, FINISH in the heat for the last 10 s,
+ * REST in teal; ENDED once the × has been held through.
+ */
+function BagPhaseFlap({ phase, heat, seconds }: { phase: RoundPhase; heat: Heat | null; seconds: number }) {
+  const ended = useContext(SessionEndedContext)
+  if (ended) return <FlapLabel text="ENDED" size="sm" tone="clay" />
+  if (phase === 'rest') return <FlapLabel text="REST" size="sm" tone="teal" />
+  if (phase === 'fighting') {
+    return <FlapLabel text={workLabel('FIGHT', seconds)} size="sm" tone={heat ? 'ink' : 'gold'} className={heat ? `is-${heat}` : ''} />
+  }
+  return <FlapLabel text="READY" size="sm" tone="gold" />
 }
