@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 
 import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, TODAY_ZOOM, frustumFor, glideEase, lampK, mixView, placeForPath, sceneGlyphWorld, sceneLamp, sceneOf, scenesInView, viewGlyphWorld } from './places'
 import { modeForClock, msUntilNextChange, parseOverride, resolveMode, TIME_OVERRIDES } from './timeOfDay'
-import { getWorldState, pondLook, sameWeeks, setWorldPond, setWorldBackdrop, setWorldBare, setWorldLantern, setWorldPlace, setWorldWeeks, subscribeWorld, weeksOrDefault } from './worldStore'
+import { getWorldState, pondLook, sameWeeks, setWorldPond, setWorldBackdrop, setWorldBare, setWorldLantern, setWorldPlace, setWorldWeather, setWorldWeeks, subscribeWorld, weeksOrDefault } from './worldStore'
+import { LIGHTNING_MIN_GAP_S, NO_WEATHER, WX, nextBoltIn, weatherMode, weatherParams } from './weather'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; void name }
@@ -123,5 +124,36 @@ test('the store tells the world only what changed', () => {
   assert.equal(lampK('night', 0.85), 1)
   assert.equal(lampK('night', 1), 1)
 }
+
+// page 58: the injury weather over the whole world
+test('the weather follows the pattern; quieter after GOT IT / DO IT; offline stays grey; green wins', () => {
+  const p1 = weatherParams({ level: 1, quiet: false, clearing: false }, false)
+  assert.deepEqual([p1.green, p1.rain, p1.grade, p1.lightning], [WX.rain1.green, WX.rain1.rain, WX.rain1.grade, 0], "green rain: page 58's rain1")
+  const p2 = weatherParams({ level: 2, quiet: false, clearing: false }, false)
+  assert.ok(p2.rain > p1.rain && p2.puddles > p1.puddles && p2.dark > p1.dark, 'a downpour: heavier rain, glowing puddles, darker sky')
+  const p3 = weatherParams({ level: 3, quiet: false, clearing: false }, false)
+  assert.ok(p3.lightning === 1 && p3.wind > 0.9 && p3.leaves === 1, 'a storm: wind, torn leaves, lightning')
+  const q1 = weatherParams({ level: 1, quiet: true, clearing: false }, false)
+  assert.equal(q1.rain, WX.held.rain, "the quieter fall is page 58's held")
+  const q3 = weatherParams({ level: 3, quiet: true, clearing: false }, false)
+  assert.ok(q3.rain < p3.rain && Math.abs(q3.rain / p3.rain - 0.62) < 0.01 && q3.lightning === 0, 'a settled storm: about 60% of the rain, no lightning')
+  const c = weatherParams({ level: 0, quiet: false, clearing: true }, false)
+  assert.ok(c.rain === 0 && c.shafts === 1 && c.sprouts === 1 && c.glints === 1 && c.dust === 1, 'the clearing: no rain; shafts, glints, shoots, dust')
+  assert.equal(weatherParams(NO_WEATHER, true).grey, 1, 'offline alone: the grey rain')
+  const both = weatherParams({ level: 1, quiet: false, clearing: false }, true)
+  assert.ok(both.grey === 0 && both.rain > 0 && both.green > 0, 'offline and green rain: green wins')
+  assert.equal(weatherParams(NO_WEATHER, false).rain, 0, 'no weather, no rain')
+  assert.equal(weatherMode('misty', { level: 0, quiet: false, clearing: true }), 'sun', "the clearing brings the sun's shafts")
+  assert.equal(weatherMode('night', { level: 1, quiet: false, clearing: false }), 'night')
+  assert.ok(nextBoltIn(0) >= LIGHTNING_MIN_GAP_S && nextBoltIn(1) >= LIGHTNING_MIN_GAP_S && nextBoltIn(-5) === 4, 'lightning: at most one flash every 4 s')
+  let n = 0
+  const off = subscribeWorld(() => n++)
+  setWorldWeather({ level: 1, quiet: false, clearing: false })
+  setWorldWeather({ level: 1, quiet: false, clearing: false })
+  assert.equal(n, 1, 'the same weather emits once')
+  setWorldWeather(null)
+  assert.deepEqual(getWorldState().weather, NO_WEATHER)
+  off()
+})
 
 console.log(`world.test: ${passed} passed`)

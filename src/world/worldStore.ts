@@ -8,6 +8,9 @@
 //   Library = the rune arch                     ('arch')
 //   Rest day on Today = the hobbit home         ('home')
 //   Offline = rain over whatever place is shown
+//   Injury weather (page 58) = green rain over every place, the clearing after
+
+import { NO_WEATHER, sameWeather, type WorldWeather } from './weather'
 
 export type WorldPlace = 'clearing' | 'road' | 'pond' | 'arch' | 'home'
 
@@ -30,6 +33,8 @@ export interface WorldState {
   backdrop: WorldPlace | null
   /** How the week has gone, 0..1 (page 32: the pond reacts to the week; brighter water and more fireflies when it's gone well). 0.5 = neutral. */
   pond: number
+  /** The injury weather (page 58): green rain, downpour, storm; quieter after GOT IT / DO IT; the clearing. */
+  weather: WorldWeather
 }
 
 const DEFAULT_WEEKS: WeekPost[] = [
@@ -37,7 +42,7 @@ const DEFAULT_WEEKS: WeekPost[] = [
   { state: 'todo', notches: 0 }, { state: 'todo', notches: 0 }, { state: 'todo', notches: 0 },
 ]
 
-let state: WorldState = { place: 'clearing', lantern: 1, weeks: null, offline: false, bare: false, backdrop: null, pond: 0.5 }
+let state: WorldState = { place: 'clearing', lantern: 1, weeks: null, offline: false, bare: false, backdrop: null, pond: 0.5, weather: NO_WEATHER }
 const listeners = new Set<() => void>()
 
 function emit(next: Partial<WorldState>) {
@@ -81,6 +86,13 @@ export function setWorldWeeks(weeks: WeekPost[] | null): void {
   const next = weeks ? weeks.slice(0, 6).map(w => ({ state: w.state, notches: Math.max(0, Math.min(10, Math.round(w.notches))) })) : null
   if (sameWeeks(next, state.weeks)) return
   emit({ weeks: next })
+}
+
+/** The injury weather over the whole world (page 58). Same values keep the same reference. */
+export function setWorldWeather(weather: WorldWeather | null): void {
+  const next = weather ?? NO_WEATHER
+  if (sameWeather(next, state.weather)) return
+  emit({ weather: { level: next.level, quiet: next.quiet, clearing: next.clearing } })
 }
 
 export function setWorldOffline(offline: boolean): void {

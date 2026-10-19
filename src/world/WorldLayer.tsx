@@ -8,6 +8,7 @@ import { useNetworkStatus } from '@/lib/network'
 import { placeForPath } from './places'
 import { useWorldMode } from './useWorldTime'
 import { getWorldState, setWorldOffline, subscribeWorld, type WorldPlace } from './worldStore'
+import { weatherMode, weatherParams } from './weather'
 import type { WorldHandle } from './engine'
 import { loadWorldEngine } from './loadEngine'
 import './world.css'
@@ -27,7 +28,8 @@ export function WorldLayer() {
   const routePlace = placeForPath(location.pathname)
   const ws = useSyncExternalStore(subscribeWorld, getWorldState)
   const reduced = useReducedMotion()
-  const mode = useWorldMode()
+  // The clearing (page 58) brings the sun mode's shafts, whatever the hour.
+  const mode = weatherMode(useWorldMode(), ws.weather)
   const online = useNetworkStatus()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const handleRef = useRef<WorldHandle | null>(null)
@@ -77,7 +79,7 @@ export function WorldLayer() {
     creating.current = true
     const s = getWorldState()
     loadWorldEngine()
-      .then(m => m.createWorld(canvas, { place: firstPlace.current, mode: firstMode.current, weeks: s.weeks, lantern: s.lantern, offline: s.offline, reducedMotion: firstReduced.current }))
+      .then(m => m.createWorld(canvas, { place: firstPlace.current, mode: firstMode.current, weeks: s.weeks, lantern: s.lantern, offline: s.offline, reducedMotion: firstReduced.current, weather: s.weather }))
       .then(h => {
         if (!mounted.current) { h.dispose(); return }
         handleRef.current = h
@@ -109,6 +111,7 @@ export function WorldLayer() {
   useEffect(() => { handleRef.current?.setLantern(ws.lantern) }, [ws.lantern, ready])
   useEffect(() => { handleRef.current?.setPond(ws.pond) }, [ws.pond, ready])
   useEffect(() => { handleRef.current?.setOffline(ws.offline) }, [ws.offline, ready])
+  useEffect(() => { handleRef.current?.setWeather(ws.weather) }, [ws.weather, ready])
   useEffect(() => { handleRef.current?.setReducedMotion(reduced) }, [reduced, ready])
   useEffect(() => {
     const h = handleRef.current
@@ -125,9 +128,28 @@ export function WorldLayer() {
   }, [])
 
   const cls = ['wm-world', ready && visible && !failed ? 'is-ready' : '', dip ? 'is-dip' : '', ws.bare ? 'is-bare' : ''].filter(Boolean).join(' ')
+  // Page 58's colour shift over the forest: a green grade (colour blend) and a darker sky (multiply).
+  const wx = weatherParams(ws.weather, ws.offline)
   return (
-    <div className={cls} data-place={place ?? shown ?? 'none'} data-mode={mode} aria-hidden="true">
+    <div className={cls} data-place={place ?? shown ?? 'none'} data-mode={mode} data-weather={ws.weather.clearing ? 'clearing' : ws.weather.level > 0 ? `${ws.weather.level}${ws.weather.quiet ? 'q' : ''}` : 'none'} aria-hidden="true">
       <canvas ref={canvasRef} className="wm-world-canvas" />
+      <div className="wm-weather wm-weather-grade" style={{ opacity: ready && visible && !failed ? wx.grade : 0 }} />
+      <div className="wm-weather wm-weather-dark" style={{ opacity: ready && visible && !failed ? wx.dark * 0.95 : 0 }} />
+      {/* the clearing's sun shafts breaking through (page 58), soft light from the upper right */}
+      <svg className="wm-weather wm-weather-shafts" viewBox="0 0 390 844" preserveAspectRatio="none" style={{ opacity: ready && visible && !failed ? wx.shafts : 0 }}>
+        <defs>
+          {[0.9, 0.7, 1].map((k, i) => (
+            <linearGradient key={i} id={`wmShaft${i}`} x1="0" y1="0" x2="-0.25" y2="1">
+              <stop offset="0" stopColor="rgb(255,228,160)" stopOpacity={0.2 * k} />
+              <stop offset="1" stopColor="rgb(255,228,160)" stopOpacity="0" />
+            </linearGradient>
+          ))}
+        </defs>
+        {[0.58, 0.74, 0.9].map((x0, i) => {
+          const tx = x0 * 390, bx = tx - 200, by = 844 * 0.9
+          return <polygon key={i} className={`s${i}`} points={`${tx - 16},-10 ${tx + 16},-10 ${bx + 60},${by} ${bx - 60},${by}`} fill={`url(#wmShaft${i})`} />
+        })}
+      </svg>
       <div className="wm-world-scrim" />
     </div>
   )
