@@ -10,6 +10,7 @@ import { apiFetch, newIdempotencyKey } from '@/lib/api'
 import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
 import { EffortCard } from '@/features/blockZero/EffortCard'
 import { asksEffort, effortWrite } from '@/features/blockZero/effort'
+import { setPlace } from '@/lib/setPlace'
 import { kgToLbs } from '@/lib/units'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd, cancelAllCues } from '@/lib/notifications'
 import { loadOutbox } from '@/lib/outbox'
@@ -511,6 +512,7 @@ export function WorkoutPage() {
   const strengthActiveExercise = strengthData?.exercises[exerciseIdx]
   const strengthActiveName = strengthActiveExercise?.exercise?.name
   const strengthActiveTotalSets = strengthActiveExercise?.sets.length ?? 0
+  const strengthActivePlace = strengthActiveExercise ? setPlace(strengthActiveExercise.sets, setIdx) : null
   // Header count on the lock screen (STRENGTH · 2/5): the lift's place in the session.
   const strengthExerciseCount = strengthData?.exercises.length ?? 0
   const strengthStep = strengthExerciseCount > 0
@@ -519,6 +521,8 @@ export function WorkoutPage() {
 
   // Pending weight/reps from the SetTracker inputs — pushed live so a
   // lock-screen "Complete Set" tap logs the same values the user sees.
+  /** This session's last logged weight per lift (exerciseId -> kg). */
+  const loggedKgRef = useRef(new Map<string, number>())
   const pendingSetValuesRef = useRef<{ weightKg: number | null; reps: number }>({
     weightKg: null,
     reps: 0,
@@ -558,12 +562,12 @@ export function WorkoutPage() {
         sessionLabel: 'Strength',
         state: {
           phase: 'exercise',
-          label: `Set ${setIdx + 1} of ${strengthActiveTotalSets}`,
+          label: `${strengthActivePlace?.warmup ? 'Warmup' : 'Set'} ${strengthActivePlace?.n ?? setIdx + 1} of ${strengthActivePlace?.of ?? strengthActiveTotalSets}`,
           detail: strengthActiveName,
           exerciseName: strengthActiveName,
           ...strengthStep,
-          setIndex: setIdx + 1,
-          setTotal: strengthActiveTotalSets,
+          setIndex: strengthActivePlace?.n ?? setIdx + 1,
+          setTotal: strengthActivePlace?.of ?? strengthActiveTotalSets,
           // Timer fields ignored by the widget in exercise phase, but the
           // payload shape requires them.
           startedAt: exerciseCardAtMs,
@@ -1399,7 +1403,9 @@ export function WorkoutPage() {
     )
   }
   const currentSet = currentExercise?.sets[setIdx]
-  const totalSetsForExercise = currentExercise?.sets.length ?? 0
+  // Warm-ups and working sets count apart ("Warmup 1 of 1", then "Set 1 of 2").
+  const place = currentExercise ? setPlace(currentExercise.sets, setIdx) : null
+  const totalSetsForExercise = place?.of ?? 0
 
   function handleSetComplete(weightKg: number | null, reps: number, opts: { fromLockScreen?: boolean } = {}) {
     if (!currentSet) return
@@ -1409,6 +1415,8 @@ export function WorkoutPage() {
     // so a retry never writes it twice.
     const setId = currentSet.id
     const completedAt = Math.floor(Date.now() / 1000)
+    // The next set of this lift starts from what was just lifted (a work-up with no planned load).
+    if (currentExercise && weightKg != null && weightKg > 0) loggedKgRef.current.set(currentExercise.exerciseId, weightKg)
     void queueWrite({
       method: 'PATCH',
       path: `/api/strength-sets/${setId}`,
@@ -1426,7 +1434,7 @@ export function WorkoutPage() {
 
     // Working sets ask how many reps were left (3+ / 2 / 1 / 0); one tap, then rest.
     if (!opts.fromLockScreen && asksEffort({ isWarmup: currentSet.isWarmup, reps, section: currentExercise?.section ?? null })) {
-      setEffortFor({ setId, label: `Set ${setIdx + 1} of ${totalSetsForExercise}` })
+      setEffortFor({ setId, label: `Set ${place?.n ?? setIdx + 1} of ${totalSetsForExercise}` })
       return
     }
     startStrengthRest()
@@ -1501,10 +1509,14 @@ export function WorkoutPage() {
         formVideoUrl={currentExercise.exercise?.formVideoUrl}
         section={sectionKey}
         currentSet={currentSet ? {
-          setNumber: currentSet.setNumber,
+          setNumber: place?.n ?? currentSet.setNumber,
           totalSets: totalSetsForExercise,
           isWarmup: currentSet.isWarmup === 1,
           suggestedWeightKg: currentSet.weightKg,
+          carryWeightKg: currentExercise ? (loggedKgRef.current.get(currentExercise.exerciseId)
+            ?? currentExercise.sets.slice(0, setIdx).reverse().find(s => s.weightKg != null && s.weightKg > 0)?.weightKg
+            ?? exerciseHistories.get(currentExercise.exerciseId)?.lastSession?.weightKg
+            ?? null) : null,
           targetReps: currentSet.plannedReps ?? currentSet.reps,
           restSec: currentSet.restSec ?? 60,
         } : undefined}

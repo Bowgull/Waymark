@@ -7,7 +7,7 @@ import { mediumHaptic } from '@/lib/haptics'
 import type { PlateCount } from '@/lib/plateMath'
 import { calculatePlates } from '@/lib/plateMath'
 import { assessStrengthSet, shouldShowStrengthRealityMark } from '@/lib/trainingReality'
-import { plannedSetLbs, setLbsToKg, stepSetLbs } from '@/lib/timers/setWeight'
+import { setLbsToKg, startSetLbs, stepSetLbs } from '@/lib/timers/setWeight'
 
 import type { StrengthSection, StrengthPhase } from './strengthMicrocopy'
 import './session.css'
@@ -49,6 +49,8 @@ export interface StrengthSetInput {
   totalSets: number
   isWarmup: boolean
   suggestedWeightKg: number | null
+  /** No planned load: this lift's last logged weight (this session, else last session). */
+  carryWeightKg?: number | null
   targetReps: number
   restSec: number
 }
@@ -204,7 +206,7 @@ function SetBoard({
   onComplete: (weightKg: number | null, reps: number) => void
   onLiveValuesChange?: (weightKg: number | null, reps: number) => void
 }) {
-  const [weight, setWeight] = useState<number | null>(() => plannedSetLbs(set.suggestedWeightKg, equipment))
+  const [weight, setWeight] = useState<number | null>(() => startSetLbs(set.suggestedWeightKg, equipment, set.carryWeightKg))
   const [reps, setReps] = useState(() => Math.max(0, set.targetReps))
 
   useEffect(() => {
