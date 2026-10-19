@@ -15,14 +15,32 @@
 import { isSessionAudioNative, playSessionSound } from './sessionAudio'
 
 let audioCtx: AudioContext | null = null
+let audioUnavailable = false
 
-function getCtx(): AudioContext {
+// A runtime without Web Audio (or one that refuses to make a context) gets no
+// bells rather than a crash: a missing sound must never take the session down.
+// iOS plays the bells through the native plugin and never reaches this.
+function getCtx(): AudioContext | null {
+  if (audioUnavailable) return null
   if (!audioCtx) {
-    audioCtx = new AudioContext()
+    const Ctor: typeof AudioContext | undefined =
+      typeof window === 'undefined'
+        ? undefined
+        : window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctor) {
+      audioUnavailable = true
+      return null
+    }
+    try {
+      audioCtx = new Ctor()
+    } catch {
+      audioUnavailable = true
+      return null
+    }
   }
   // iOS/mobile may suspend the context until a user gesture resumes it
   if (audioCtx.state === 'suspended') {
-    audioCtx.resume()
+    audioCtx.resume().catch(() => {})
   }
   return audioCtx
 }
@@ -30,6 +48,7 @@ function getCtx(): AudioContext {
 // Bell-like timbre using inharmonic partials (gives the metallic clang of a ring bell)
 function playBell(frequency: number, decaySec: number, gainPeak: number = 0.7) {
   const ctx = getCtx()
+  if (!ctx) return
   const now = ctx.currentTime
 
   // Inharmonic partials: fundamental + 2nd + 3rd
@@ -85,6 +104,7 @@ export function soundFinishWarning() {
     return
   }
   const ctx = getCtx()
+  if (!ctx) return
   const now = ctx.currentTime
 
   for (let i = 0; i < 3; i++) {
@@ -115,6 +135,7 @@ export function soundRestWarning() {
     return
   }
   const ctx = getCtx()
+  if (!ctx) return
   const now = ctx.currentTime
 
   for (let i = 0; i < 2; i++) {

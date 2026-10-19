@@ -3,8 +3,10 @@ import type { Page } from '@playwright/test'
 import { enterFromToday, gotoToday, insertSession, metricOffenders } from './support/helpers'
 
 /**
- * Josh reads lb and miles: no "kg" or "km" anywhere he can see. Each screen is
- * read whole: plain text, flap labels (by their aria-labels) and inputs.
+ * Josh reads weights in lb, form-cue distances in inches, and run distance and
+ * pace in km: no "kg", "cm" or "miles" anywhere he can see ("6:42/KM" on the
+ * Ledger and the manual run's KM field are right). Each screen is read whole:
+ * plain text, flap labels (by their aria-labels) and inputs.
  */
 async function expectNoMetric(page: Page) {
   // Let late boards land.
@@ -43,9 +45,6 @@ test('Units: Settings', async ({ page }) => {
 })
 
 test('Units: Ledger (week, month, season)', async ({ page }) => {
-  // Known bug: the Aerobic base board reads "6:42/KM @140" (src/lib/ledger.ts:282).
-  // Remove this line once it reads per mile.
-  test.fail(true, 'Ledger aerobic base shows pace per KM (src/lib/ledger.ts:282)')
   await page.goto('/history')
   const range = page.getByRole('tablist', { name: 'Range' })
   const offenders: string[] = []
@@ -54,7 +53,7 @@ test('Units: Ledger (week, month, season)', async ({ page }) => {
     await page.waitForTimeout(1500)
     offenders.push(...(await metricOffenders(page)))
   }
-  test.info().annotations.push({ type: 'metric units on the Ledger', description: [...new Set(offenders)].join(' | ') })
+  test.info().annotations.push({ type: 'wrong units on the Ledger', description: [...new Set(offenders)].join(' | ') })
   expect(offenders).toEqual([])
 })
 

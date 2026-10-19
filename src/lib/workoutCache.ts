@@ -5,7 +5,7 @@
 // the screen reads the copy and carries on. Pure over a storage, so it tests
 // without a browser.
 
-import type { StorageLike } from './sessionResume'
+import { loadResume, resumeDecision, type StorageLike } from './sessionResume'
 
 export const WORKOUT_CACHE_PREFIX = 'waymark_workout_cache_v1:'
 export const WORKOUT_CACHE_INDEX = 'waymark_workout_cache_v1_index'
@@ -96,4 +96,28 @@ export async function loadWithCopy<T>(
     }
     throw err
   }
+}
+
+/**
+ * The session to reopen straight into when Today can't reach the API: the
+ * newest one this phone kept a copy of that is today's, still live, of a
+ * workout type, and has a fresh saved position (the same rule Today uses
+ * online). Null when there is none.
+ */
+export function localActiveSession(
+  storage: StorageLike | null,
+  opts: { types: readonly string[]; todayEpochDay: number; nowMs: number },
+): string | null {
+  if (!storage) return null
+  for (const id of readIndex(storage)) {
+    const session = readWorkoutCache<{ id?: string; type?: string; status?: string; scheduledDate?: number | null }>(storage, id, 'session', opts.nowMs)
+    if (!session || session.id !== id || typeof session.type !== 'string') continue
+    if (session.status === 'completed' || session.status === 'skipped') continue
+    if (!opts.types.includes(session.type)) continue
+    if (typeof session.scheduledDate === 'number' && session.scheduledDate !== opts.todayEpochDay) continue
+    const saved = loadResume(storage, id)
+    if (!saved || resumeDecision(saved, opts.nowMs) !== 'resume') continue
+    return id
+  }
+  return null
 }

@@ -8,7 +8,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: './',
+  // Absolute asset URLs: the app routes are paths (/session/<id>), so a reload there
+  // must still find /assets/... (a relative './' base asked for /session/assets/...).
+  // The iOS app serves dist at the root of capacitor://localhost/ and falls back to
+  // index.html for extensionless paths (CapacitorRouter), so '/' works there too.
+  base: '/',
   plugins: [react(), tailwindcss()],
   // The worker's CORS allows http://localhost:5173 only: never drift to 5174 when the
   // port is busy, fail instead (e2e env note 29: another port fails every API call).

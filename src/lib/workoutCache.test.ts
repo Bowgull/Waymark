@@ -1,8 +1,8 @@
 // Run: tsx src/lib/workoutCache.test.ts
 import assert from 'node:assert/strict'
 
-import type { StorageLike } from './sessionResume'
-import { WORKOUT_CACHE_KEEP, WORKOUT_CACHE_MAX_AGE_MS, clearWorkoutCache, loadWithCopy, readWorkoutCache, writeWorkoutCache } from './workoutCache'
+import { saveResume, type StorageLike } from './sessionResume'
+import { WORKOUT_CACHE_KEEP, WORKOUT_CACHE_MAX_AGE_MS, clearWorkoutCache, loadWithCopy, localActiveSession, readWorkoutCache, writeWorkoutCache } from './workoutCache'
 
 function memory(): StorageLike & { map: Map<string, string> } {
   const map = new Map<string, string>()
@@ -38,6 +38,25 @@ async function main() {
   assert.equal(readWorkoutCache(s, `ses${WORKOUT_CACHE_KEEP + 2}`, 'workout', 5000), null)
   // No storage: still loads.
   assert.deepEqual(await loadWithCopy(null, 'x', 'p', async () => 1, isNetwork), { data: 1, fromCopy: false })
+
+  // Reopened offline: the live session with a fresh saved position (e2e: Reopened offline mid-session).
+  const o = memory()
+  const types = ['strength', 'bag_work']
+  const T = 1_000_000
+  const at = (id: string, session: Record<string, unknown>, resumeAt: number | null) => {
+    writeWorkoutCache(o, id, 'session', { id, ...session }, T)
+    if (resumeAt != null) saveResume(o, { sessionId: id, engine: 'strength', phase: 'exercise', exerciseIdx: 0, setIdx: 1, roundIdx: 0, engineState: null }, resumeAt)
+  }
+  assert.equal(localActiveSession(o, { types, todayEpochDay: 20000, nowMs: T }), null, 'nothing kept')
+  at('live', { type: 'strength', status: 'in_progress', scheduledDate: 20000 }, T)
+  assert.equal(localActiveSession(o, { types, todayEpochDay: 20000, nowMs: T }), 'live')
+  assert.equal(localActiveSession(o, { types, todayEpochDay: 20001, nowMs: T }), null, 'not today')
+  assert.equal(localActiveSession(o, { types, todayEpochDay: 20000, nowMs: T + 13 * 3600_000 }), null, 'an old save waits for a tap')
+  at('done', { type: 'strength', status: 'completed', scheduledDate: 20000 }, T)
+  at('noSave', { type: 'strength', status: 'in_progress', scheduledDate: 20000 }, null)
+  at('other', { type: 'meal', status: 'in_progress', scheduledDate: 20000 }, T)
+  assert.equal(localActiveSession(o, { types, todayEpochDay: 20000, nowMs: T }), 'live', 'completed, unsaved and non-workout sessions are passed over')
+  assert.equal(localActiveSession(null, { types, todayEpochDay: 20000, nowMs: T }), null)
   console.log('workoutCache tests passed')
 }
 

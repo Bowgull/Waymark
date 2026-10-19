@@ -45,11 +45,8 @@ test('Offline mid-session: the set logs to the outbox, then syncs on reconnect',
 })
 
 test('Offline reload mid-session: the same set comes back', async ({ page, context, api }) => {
-  // Known bug: after a reload on /session/<id> the bundle's scripts resolve to
-  // /session/assets/... (vite.config.ts base './' with BrowserRouter paths), which
-  // isn't in the bundle: a blank screen. Capacitor reloads the WebView in place
-  // (e.g. after iOS kills its content process). Remove once it comes back.
-  test.fail(true, 'reload on /session/:id loads ./assets from /session/assets/ (vite.config.ts base: "./")')
+  // Capacitor reloads the WebView in place (e.g. after iOS kills its content
+  // process): the bundle's /assets/... must still resolve from /session/<id>.
   const s = await midSession(page, api)
 
   await context.setOffline(true)
@@ -60,10 +57,7 @@ test('Offline reload mid-session: the same set comes back', async ({ page, conte
 })
 
 test('Reopened offline mid-session: straight back into it', async ({ page, context, api }) => {
-  // Known gap: Today's auto-resume runs only after its API reads succeed
-  // (src/features/today/TodayPage.tsx, load()), so reopened offline it shows
-  // TODAY DIDN'T LOAD instead of the session that is saved on the phone.
-  test.fail(true, 'Today auto-resume needs the API (TodayPage.tsx load())')
+  // Today can't reach the API: it reopens the session saved on the phone.
   const s = await midSession(page, api)
 
   await context.setOffline(true)

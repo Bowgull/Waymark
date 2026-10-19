@@ -12,31 +12,6 @@ export function addDaysISO(iso: string, n: number): string {
   return todayISO(d)
 }
 
-/**
- * Environment shims, installed before the app loads:
- * - Playwright's Windows WebKit build ships without Web Audio. The app's web
- *   fallback for timer bells (src/lib/sounds.ts) calls `new AudioContext()`
- *   unguarded, so a silent stand-in keeps the session alive. On iOS the native
- *   WaymarkAudio plugin plays the bells; this never runs there.
- */
-export async function installShims(page: Page) {
-  await page.addInitScript(() => {
-    const w = window as unknown as Record<string, unknown>
-    if (typeof w.AudioContext === 'undefined') {
-      class SilentParam { setValueAtTime() {} linearRampToValueAtTime() {} exponentialRampToValueAtTime() {} }
-      class SilentNode { gain = new SilentParam(); frequency = new SilentParam(); type = 'sine'; connect() {} start() {} stop() {} }
-      class SilentAudioContext {
-        state = 'running'; currentTime = 0; destination = {}
-        resume() { return Promise.resolve() }
-        createOscillator() { return new SilentNode() }
-        createGain() { return new SilentNode() }
-      }
-      w.AudioContext = SilentAudioContext
-      w.__e2eAudioShim = true
-    }
-  })
-}
-
 /** Today, without the auto-resume into an in-progress session. */
 export async function gotoToday(page: Page) {
   await page.goto('/today?resume=0')
@@ -101,11 +76,15 @@ export async function visibleWords(page: Page): Promise<string[]> {
   })
 }
 
-/** Metric units the athlete should never see (he reads lb and miles). */
-export const METRIC_UNIT = /(?:^|[^a-z])(kg|kgs|km|kms|kilograms?|kilometers?|kilometres?)(?![a-z])/i
+/**
+ * Units the athlete should never see. Weights read in lb (never kg), short
+ * distances (form cues) in inches (never cm or mm), and run distance and pace
+ * always in km (never miles): km is right, so it is not on this list.
+ */
+export const WRONG_UNIT = /(?:^|[^a-z])(kg|kgs|kilograms?|cm|mm|centimet(?:er|re)s?|millimet(?:er|re)s?|mi|miles?)(?![a-z])/i
 
 export async function metricOffenders(page: Page): Promise<string[]> {
-  return (await visibleWords(page)).filter(w => METRIC_UNIT.test(w))
+  return (await visibleWords(page)).filter(w => WRONG_UNIT.test(w))
 }
 
 /** The grass under a timer (tap: pause; swipe up: skip). */

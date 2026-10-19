@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { apiFetch, idempotencyHeaders } from '@/lib/api'
+import { ApiError, apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
 import { submitBoardPick, submitReplace, submitSkip, submitSkipReason } from '@/lib/boardPick'
 import { clearResume, loadResume, resumeDecision } from '@/lib/sessionResume'
+import { localActiveSession } from '@/lib/workoutCache'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
 import { endAllLiveActivities } from '@/lib/liveActivity'
@@ -164,6 +165,18 @@ export function TodayPage() {
   }, [])
 
   useEffect(() => {
+    // Today's auto-resume into a session is off when the route, the URL or a recent exit says so.
+    function autoResumeSuppressed(): boolean {
+      const suppressFromRoute = Boolean((location.state as { suppressAutoResume?: boolean } | null)?.suppressAutoResume)
+      const suppressFromSearch = new URLSearchParams(location.search).get('resume') === '0'
+      let suppressUntil = 0
+      try {
+        suppressUntil = Number(sessionStorage.getItem('waymark_suppress_auto_resume_until') ?? 0)
+      } catch {
+        suppressUntil = 0
+      }
+      return suppressFromRoute || suppressFromSearch || (Number.isFinite(suppressUntil) && Date.now() <= suppressUntil)
+    }
     async function load() {
       try {
         const [sessionsData, logData] = await Promise.all([
@@ -177,14 +190,6 @@ export function TodayPage() {
         void refreshReadiness()
         if (!autoResumeAttempted.current) {
           autoResumeAttempted.current = true
-          const suppressFromRoute = Boolean((location.state as { suppressAutoResume?: boolean } | null)?.suppressAutoResume)
-          const suppressFromSearch = new URLSearchParams(location.search).get('resume') === '0'
-          let suppressUntil = 0
-          try {
-            suppressUntil = Number(sessionStorage.getItem('waymark_suppress_auto_resume_until') ?? 0)
-          } catch {
-            suppressUntil = 0
-          }
           // Reopened mid-session (app killed, reload): straight back into it.
           // Any engine with a fresh save on this phone, and strength as
           // before. An older save waits for a tap on Resume (the session
@@ -199,7 +204,7 @@ export function TodayPage() {
               return saved ? resumeDecision(saved, Date.now()) === 'resume' : session.type === 'strength'
             })()
           )
-          if (activeSession && !suppressFromRoute && !suppressFromSearch && (!Number.isFinite(suppressUntil) || Date.now() > suppressUntil)) {
+          if (activeSession && !autoResumeSuppressed()) {
             navigate(`/session/${activeSession.id}`, { replace: true })
             return
           }
@@ -209,6 +214,20 @@ export function TodayPage() {
           setDeck({ startAt: 0, firstOpen: logData == null })
         }
       } catch (e) {
+        // Reopened offline mid-session: the session screen carries on from this
+        // phone's own copy, so go straight back into it instead of an error.
+        if (e instanceof ApiError && e.type === 'network' && !autoResumeAttempted.current) {
+          autoResumeAttempted.current = true
+          let storage: Storage | null = null
+          try { storage = window.localStorage } catch { storage = null }
+          const localId = autoResumeSuppressed()
+            ? null
+            : localActiveSession(storage, { types: WORKOUT_SESSION_TYPES, todayEpochDay: isoToEpochDay(today), nowMs: Date.now() })
+          if (localId) {
+            navigate(`/session/${localId}`, { replace: true })
+            return
+          }
+        }
         console.error('Failed to load today data:', e)
         setDailyLog(null)
         setLoadFailed(true)
