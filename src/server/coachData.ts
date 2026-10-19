@@ -1,13 +1,12 @@
 // Coach data access (Phase E1): the DB reads and writes the coach rules need.
 // Rules stay pure in lib/coach; this file loads rows and applies the results:
 // the pausable training week, the return ramp, week plans per calendar week,
-// template sessions for a day, placement context, missed-session asks,
-// injury flags and the per-session coach state prescriptions read.
+// template sessions for a day, placement context, injury flags and the
+// per-session coach state prescriptions read. Missed sessions: server/changes.ts.
 
 import { and, desc, eq, gte, inArray, lt, lte } from 'drizzle-orm'
-import { sessions, settings, trainingBlocks, userProfile, weekAdjustments, weekPlans } from '../db/schema'
+import { sessions, settings, trainingBlocks, userProfile, weekPlans } from '../db/schema'
 import { getBlockZeroTemplate, getDayTemplate, strengthBlockWeek, WEEKLY_TEMPLATE, type TemplateSession } from '../lib/weeklyTemplate'
-import { rolloverStaleSessionIds } from '../lib/sessionRollover'
 import {
   KEY_TYPES,
   LEAD_IN_CONTEXT,
@@ -15,12 +14,10 @@ import {
   coachEaseFrom,
   countsFromDay,
   inLeadIn,
-  optionalDay,
   planDayTemplate,
   startedAtForLocalDay,
   injuryActionFor,
   injuryFlag,
-  missedSessionOptions,
   mondayOf,
   plannedLoad,
   returnContext,
@@ -369,95 +366,6 @@ export async function checkChange(db: DB, change: SessionChange, todayDay: numbe
   return checkSessionChange(change, await loadPlacementContext(db, change.epochDay, todayDay))
 }
 
-/** The 409 body for a refused change. */
-export function refusalBody(r: Extract<PlacementResult, { ok: false }>) {
-  return { error: r.reason, code: r.code, reason: r.reason, safeAlternatives: r.safeAlternatives }
-}
-
-// ─── Missed sessions -> asks ──────────────────────────────────
-
-function isLeadInSession(s: { contextJson: string | null }): boolean {
-  if (!s.contextJson) return false
-  try { return (JSON.parse(s.contextJson) as { leadIn?: unknown }).leadIn === true } catch { return false }
-}
-
-/** Noon UTC the Monday after the week: Sunday is over everywhere in the Americas. */
-function expirySec(expiresOnDay: number): number {
-  return expiresOnDay * DAY_SEC + 12 * 3600
-}
-
-/** Lapse pending asks whose week is over. */
-export async function expireAsks(db: DB, nowSec: number): Promise<number> {
-  const due = await db.select({ id: weekAdjustments.id }).from(weekAdjustments)
-    .where(and(eq(weekAdjustments.status, 'proposed'), lte(weekAdjustments.expiresAt, nowSec)))
-  for (const r of due) {
-    await db.update(weekAdjustments).set({ status: 'expired', resolvedAt: nowSec }).where(eq(weekAdjustments.id, r.id))
-  }
-  return due.length
-}
-
-/**
- * One pending ask per missed key session from last Monday on (never back
- * care). Idempotent by session id. Options come from the placement rules;
- * nothing is rescheduled until the athlete answers.
- */
-export async function createMissedAsks(db: DB, todayDay: number, nowSec: number): Promise<number> {
-  const missed = await db.select().from(sessions)
-    .where(and(eq(sessions.status, 'missed'), inArray(sessions.type, KEY_LIST), gte(sessions.scheduledDate, mondayOf(todayDay) - 7), lt(sessions.scheduledDate, todayDay)))
-  if (missed.length === 0) return 0
-  const asked = await db.select({ target: weekAdjustments.targetSessionId }).from(weekAdjustments)
-    .where(and(eq(weekAdjustments.adjustmentType, 'missed_session'), inArray(weekAdjustments.targetSessionId, missed.map(m => m.id))))
-  const done = new Set(asked.map(a => a.target))
-  const block = await getActiveBlock(db)
-  // Lead-in and pre-start sessions are optional: a miss makes no question (Part B).
-  let created = 0
-  for (const m of missed) {
-    if (done.has(m.id) || m.scheduledDate == null) continue
-    if ((block && optionalDay(blockKind(block.blockType), blockStartDay(block), m.scheduledDate)) || isLeadInSession(m)) continue
-    const weekPlanId = m.weekPlanId ?? (block ? await resolveWeekPlan(db, block.id, (await trainingWeekFor(db, block, m.scheduledDate, todayDay)).week, mondayOf(m.scheduledDate), nowSec) : null)
-    if (!weekPlanId) continue
-    const ctx = await loadPlacementContext(db, m.scheduledDate, todayDay)
-    const ask = missedSessionOptions(toSessionLike(m), ctx)
-    const lapsed = ask.expiresOnDay <= todayDay
-    const def = ask.defaultOption
-    await db.insert(weekAdjustments).values({
-      id: crypto.randomUUID(),
-      weekPlanId,
-      adjustmentType: 'missed_session',
-      sessionType: m.type,
-      action: def.kind === 'drop' ? 'remove' : 'add',
-      reason: ask.reason,
-      targetDay: def.kind === 'drop' ? null : new Date(def.epochDay * DAY_SEC * 1000).getUTCDay(),
-      targetTimeSlot: def.kind === 'drop' ? null : def.timeSlot,
-      sourceData: JSON.stringify({ missedSessionId: m.id, missedDay: m.scheduledDate, label: m.label, defaultOption: def }),
-      status: lapsed ? 'expired' : 'proposed',
-      targetSessionId: m.id,
-      optionsJson: JSON.stringify(ask.options),
-      expiresAt: expirySec(ask.expiresOnDay),
-      resolvedAt: lapsed ? nowSec : null,
-      createdAt: nowSec,
-    })
-    created++
-  }
-  return created
-}
-
-/**
- * Rollover with the athlete's local today, then an ask for anything that just
- * became missed. Returns the number of sessions rolled over.
- */
-export async function rolloverAndAsk(db: DB, todayDay: number): Promise<number> {
-  const flipped = await rolloverStaleSessionIds(db, todayDay)
-  if (flipped.length > 0) {
-    try {
-      await createMissedAsks(db, todayDay, Math.floor(Date.now() / 1000))
-    } catch (err) {
-      console.warn('[coach] missed asks failed', err)
-    }
-  }
-  return flipped.length
-}
-
 // ─── Per-session coach state (prescriptions read this) ────────
 
 export interface SessionCoachState {
@@ -485,9 +393,3 @@ export async function currentBlockWeek(db: DB, todayDay: number) {
   const tw = await trainingWeekFor(db, block, todayDay, todayDay)
   return { block, tw }
 }
-
-export async function findWeekAdjustment(db: DB, id: string) {
-  const [adj] = await db.select().from(weekAdjustments).where(eq(weekAdjustments.id, id))
-  return adj ?? null
-}
-

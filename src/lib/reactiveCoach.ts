@@ -28,14 +28,15 @@ import { anthropicCall, getStructuredOutput, jsonFormatFor, jsonInstructionFor }
 import { MODELS } from './models'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
-import { TOOL_REACTIVE_REPLAN, TOOL_REPLACE_SUGGESTIONS, type ReactiveReplanOutput, type ReplaceSuggestionsOutput } from './prompts/tools'
+import { TOOL_REACTIVE_REPLAN, type ReactiveReplanOutput } from './prompts/tools'
 import { computeHrSnapshot, loadEasyHrCeiling, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from './hrAnalysis'
 import { computeBlockAdherence, deriveGuidance, serializeAdherenceForPrompt } from './adherence'
 import { computeStarterStatus, serializeStarterStatus } from './starterStatus'
-import { checkInFromDailyLog, clampsForStorage, evaluateReadiness, guardReactiveReplan, guardReplaceSuggestions, logClamps, serializeBlockZeroContext } from './blockZero'
+import { checkInFromDailyLog, clampsForStorage, evaluateReadiness, guardReactiveReplan, logClamps, serializeBlockZeroContext } from './blockZero'
 import { loadBlockZeroAiContext, loadBlockZeroGuardContext } from '../server/blockZeroData'
-import { checkChange, loadInjuryFlag } from '../server/coachData'
-import { classifyReplan, isLeadInContext, withCoachEase, type CoachEase, type InjuryFlag, type SessionChange } from './coach'
+import { loadInjuryFlag } from '../server/coachData'
+import { classifyReplan, isLeadInContext, nameToken, pickContext, sessionName, slotStart, withCoachEase, type CoachEase, type InjuryFlag } from './coach'
+import { loadHeld, pmStart, recordChanges } from '../server/changes'
 import { mondayOf } from './dates'
 import type { createDB } from '../db/client'
 
@@ -370,7 +371,7 @@ export function buildReactivePrompt(bundle: SignalBundle, rationale: string, adh
   }
 
   if (bundle.recentMissed.length > 0) {
-    lines.push(`Recently missed: ${bundle.recentMissed.map(m => SESSION_LABEL[m.type] ?? m.type).join(', ')}. The athlete is asked about each one. Do not make it up elsewhere.`)
+    lines.push(`Recently missed: ${bundle.recentMissed.map(m => SESSION_LABEL[m.type] ?? m.type).join(', ')}. The coach has already handled each one. Do not make it up elsewhere.`)
   }
 
   if (bundle.recentSkips.length > 0) {
@@ -635,14 +636,16 @@ export async function runReactiveReplan(
       ...(guardrails?.applied ? { guardrails: guardrails.clamps.map(c => c.code) } : {}),
       ...(applied.summary.refusal ? { refusal: applied.summary.refusal } : {}),
     }),
-    // Small changes are already applied (Today shows the note). Big ones wait for the athlete.
-    status: applied.summary.size === 'big' ? 'proposed' : 'accepted',
-    // An applied small change is an automatic change with a note (morning summary).
+    // Nothing waits on an answer any more: big decisions are notes only (page 56).
+    status: 'accepted',
     auto: applied.summary.size === 'small' && applied.summary.applied ? 1 : 0,
     targetSessionId: applied.targetSessionId,
-    expiresAt: applied.summary.size === 'big' ? (mondayOf(ctx.todayEpochDay) + 7) * 86400 + 12 * 3600 : null,
     createdAt: nowSec,
   })
+  // An applied ease is a change record with its rune and UNDO (server/changes.ts).
+  if (applied.ease && applied.targetSessionId && applied.targetEpochDay != null) {
+    await recordReactiveEase(db, applied, planId, nowSec).catch(err => console.warn('[reactiveCoach] change record failed', err))
+  }
 
   console.log(`[reactiveCoach] replan written. trigger=${ctx.trigger} tokens=${result.usage.input_tokens}/${result.usage.output_tokens}`)
   return { adjustmentId, note: cleanNote }
@@ -652,6 +655,8 @@ export async function runReactiveReplan(
 
 interface AppliedDecision {
   summary: { size: 'small' | 'big'; applied: boolean; action: string; refusal?: { code: string; reason: string } }
+  /** The ease written to the target session (small, applied). */
+  ease?: { kind: CoachEase['kind']; before: string | null; after: string; timeSlot: string | null; type: string; label: string | null; notes: string | null } | null
   note: string
   reason: string
   /** week_adjustments.action */
@@ -691,7 +696,6 @@ async function applyReplanDecision(db: DB, output: ReactiveReplanOutput, note: s
     .filter(s => s.type === output.targetSessionType)
     .sort((a, b) => Math.abs((a.scheduledDate ?? 0) - (wantedDay ?? todayEpochDay)) - Math.abs((b.scheduledDate ?? 0) - (wantedDay ?? todayEpochDay)))[0]
   const cls = classifyReplan(output, target ?? null)
-  const slot: 'am' | 'pm' = output.targetTimeSlot === 'pm' ? 'pm' : 'am'
   const base = {
     note,
     reason,
@@ -705,194 +709,37 @@ async function applyReplanDecision(db: DB, output: ReactiveReplanOutput, note: s
   }
 
   if (cls.size === 'small') {
-    if (cls.action === 'ease' && target) {
+    if (cls.action === 'ease' && target && !(await loadHeld(db, target.scheduledDate ?? todayEpochDay)).has(target.id)) {
       const ease: CoachEase = { kind: cls.kind, reason, source: 'reactive', at: nowSec }
-      await db.update(sessions).set({ contextJson: withCoachEase(target.contextJson, ease) }).where(eq(sessions.id, target.id))
-      return { ...base, action: 'ease', summary: { size: 'small', applied: true, action: `ease:${cls.kind}` } }
+      const after = withCoachEase(target.contextJson, ease)
+      await db.update(sessions).set({ contextJson: after }).where(eq(sessions.id, target.id))
+      return { ...base, action: 'ease', summary: { size: 'small', applied: true, action: `ease:${cls.kind}` }, ease: { kind: cls.kind, before: target.contextJson, after, timeSlot: target.timeSlot, type: target.type, label: target.label, notes: target.notes } }
     }
     return { ...base, action: 'hold', summary: { size: 'small', applied: false, action: 'note' } }
   }
 
-  const refuse = (code: string, why: string): AppliedDecision => ({
-    ...base,
-    note: why,
-    reason: why,
-    action: 'hold',
-    summary: { size: 'small', applied: false, action: 'note', refusal: { code, reason: why } },
-  })
-  if (wantedDay == null) return refuse('bad_day', 'That day is outside this week. Nothing changes.')
-  let change: SessionChange
-  if (cls.action === 'move') {
-    if (!target) return refuse('no_target', 'Nothing planned to move. The week holds.')
-    change = { kind: 'move', type: target.type, label: target.label, notes: target.notes, epochDay: wantedDay, timeSlot: slot, sessionId: target.id, fromEpochDay: target.scheduledDate }
-  } else if (cls.action === 'swap' && target) {
-    change = { kind: 'replace', type: output.targetSessionType, label: output.targetLabel, notes: null, epochDay: target.scheduledDate ?? wantedDay, timeSlot: target.timeSlot === 'pm' ? 'pm' : 'am', sessionId: target.id }
-  } else {
-    change = { kind: 'add', type: output.targetSessionType, label: output.targetLabel, notes: null, epochDay: wantedDay, timeSlot: slot }
-  }
-  const check = await checkChange(db, change, todayEpochDay)
-  if (!check.ok) return refuse(check.code, check.reason)
-  return {
-    ...base,
-    sessionType: change.kind === 'move' ? change.type : output.targetSessionType,
-    label: change.label ?? null,
-    timeSlot: check.change.timeSlot,
-    targetEpochDay: check.change.epochDay,
-    action: change.kind === 'move' ? 'move_timeslot' : change.kind === 'replace' ? 'swap' : 'add',
-    summary: { size: 'big', applied: false, action: change.kind },
-  }
+  // Big (another type, another day, an added session): the coach never asks
+  // (page 56), and an AI's big change is not applied on its own either. It
+  // stays a note in coaching_outputs; the rules' rebalance does the moving.
+  return { ...base, action: 'hold', summary: { size: 'big', applied: false, action: cls.action } }
 }
 
-// ─── Replace-suggestions blocking call ──────────────────────────
-
-export interface ReplacePromptInput {
-  session: { type: string; timeSlot: string | null }
-  todayEpochDay: number
-  reason: string | null
-  wellness: { sleepHours: number | null; soreness: number | null; alcoholScale: number | null } | null
-  weekSessions: Array<{ type: string; scheduledDate: number | null; timeSlot: string | null; status: string }>
-  adherenceBlock: string
-  hrBlock: string | null
-  /** Block Zero rules context (lib/blockZero/aiContext). Null outside Block Zero. */
-  blockZeroContext: string | null
-}
-
-/** The replace-suggestions user message. Pure. */
-export function buildReplacePrompt(input: ReplacePromptInput): string {
-  const todayDow = new Date(input.todayEpochDay * 86400000).getUTCDay()
-  const lines: string[] = [
-    `Replacing: ${SESSION_LABEL[input.session.type] ?? input.session.type} (${(input.session.timeSlot ?? 'am').toUpperCase()}) today (${DAY_NAMES[todayDow]}).`,
-    input.reason ? `Athlete reason: ${input.reason}.` : 'No reason given.',
-    'Rank three alternatives for right now. Best pick first. Respect MT cap and posture constraints from the profile.',
-  ]
-  if (input.wellness) {
-    const w: string[] = []
-    if (input.wellness.sleepHours != null) w.push(`sleep ${input.wellness.sleepHours}h`)
-    if (input.wellness.soreness != null) w.push(`soreness ${input.wellness.soreness}/5`)
-    if (input.wellness.alcoholScale != null) w.push(`alcohol ${input.wellness.alcoholScale}/10`)
-    if (w.length > 0) lines.push(`Wellness today: ${w.join(', ')}.`)
-  }
-  const completed = input.weekSessions.filter(s => s.status === 'completed')
-  lines.push(`Completed so far this week: ${completed.length > 0 ? completed.map(s => SESSION_LABEL[s.type] ?? s.type).join(', ') : 'none'}.`)
-  const remaining = input.weekSessions.filter(s => s.scheduledDate != null && s.scheduledDate > input.todayEpochDay && s.status !== 'skipped')
-  if (remaining.length > 0) {
-    lines.push('Remaining this week:')
-    for (const s of remaining) {
-      const dow = new Date((s.scheduledDate ?? 0) * 86400000).getUTCDay()
-      lines.push(`  ${DAY_NAMES[dow]} ${(s.timeSlot ?? 'am').toUpperCase()}: ${SESSION_LABEL[s.type] ?? s.type}`)
-    }
-  }
-  if (input.adherenceBlock) lines.push('', input.adherenceBlock)
-  if (input.hrBlock) lines.push('', input.hrBlock)
-  if (input.blockZeroContext) {
-    lines.push('', input.blockZeroContext)
-    lines.push('Only offer options inside these limits. coachLine is the one-line why for the top pick.')
-  }
-  lines.push('', 'Give exactly three options ranked best to worst. coachLine explains only the top pick. Voice canon.', jsonInstructionFor(TOOL_REPLACE_SUGGESTIONS))
-  return lines.join('\n')
-}
-
-export async function runReplaceSuggestions(
-  db: DB,
-  apiKey: string,
-  sessionId: string,
-  todayEpochDay: number,
-  reason: string | null,
-): Promise<ReplaceSuggestionsOutput | null> {
-  const [sess] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-  if (!sess) return null
-
-  const weekStart = mondayOf(todayEpochDay)
-  const weekEnd = weekStart + 6
-
-  const [todayLog] = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, todayEpochDay))
-  const weekSessions = await db
-    .select({ type: sessions.type, scheduledDate: sessions.scheduledDate, timeSlot: sessions.timeSlot, status: sessions.status })
-    .from(sessions)
-    .where(and(gte(sessions.scheduledDate, weekStart), lte(sessions.scheduledDate, weekEnd)))
-
-  const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
-  const maxHr = await loadProfileMaxHrForHr(db)
-  const hrBlock = serializeHrForPrompt(computeHrSnapshot(recentRuns, todayEpochDay, { maxHr, ceilingBpm: (await loadEasyHrCeiling(db, todayEpochDay)).bpm }))
-
-  const weekPlanId = await currentWeekPlanId(db, weekStart, weekEnd)
-  let adherenceBlock = ''
-  if (weekPlanId) {
-    const [wp] = await db.select({ blockId: weekPlans.blockId }).from(weekPlans).where(eq(weekPlans.id, weekPlanId))
-    if (wp) {
-      const adherence = await computeBlockAdherence(db, wp.blockId, todayEpochDay)
-      const guidance = deriveGuidance(adherence)
-      adherenceBlock = serializeAdherenceForPrompt(adherence, guidance)
-    }
-  }
-
-  // Block Zero: rules context in the user message, guardrails on the output.
-  const bzGuard = await loadBlockZeroGuardContext(db, todayEpochDay)
-  const bzInput = bzGuard ? await loadBlockZeroAiContext(db, todayEpochDay) : null
-  const prompt = buildReplacePrompt({
-    session: { type: sess.type, timeSlot: sess.timeSlot },
-    todayEpochDay,
-    reason,
-    wellness: todayLog ? { sleepHours: todayLog.sleepHours, soreness: todayLog.soreness, alcoholScale: todayLog.alcoholScale } : null,
-    weekSessions,
-    adherenceBlock,
-    hrBlock,
-    blockZeroContext: bzInput ? serializeBlockZeroContext(bzInput) : null,
-  })
-
-  const profile = await loadProfile(db)
-  const starter = await computeStarterStatus(db, todayEpochDay, profile.trainingHistory, profile.constraints)
-  const starterBlock = serializeStarterStatus(starter)
-  const systemBlocks = buildSystemPrompt(profile, null, starterBlock || null)
-
-  const result = await anthropicCall(apiKey, {
-    model: MODELS.reasoning,
-    max_tokens: 4000,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'low', format: jsonFormatFor(TOOL_REPLACE_SUGGESTIONS) },
-    fallbacks: 'default',
-    system: systemBlocks,
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  if (result.offline) {
-    console.warn('[replaceSuggestions] offline')
-    return null
-  }
-
-  const output = getStructuredOutput<ReplaceSuggestionsOutput>(result)
-  // The JSON format can't enforce "exactly three", so check it here.
-  if (!output || !Array.isArray(output.suggestions) || output.suggestions.length === 0) {
-    console.warn('[replaceSuggestions] no usable structured output')
-    return null
-  }
-  output.suggestions = output.suggestions.slice(0, 3)
-
-  let final = output
-  let guardrails: ReturnType<typeof clampsForStorage> & { original?: ReplaceSuggestionsOutput } | null = null
-  if (bzGuard) {
-    const replaced = { id: sess.id, type: sess.type, epochDay: sess.scheduledDate ?? todayEpochDay, timeSlot: sess.timeSlot === 'pm' ? 'pm' as const : 'am' as const }
-    const guarded = guardReplaceSuggestions(output, replaced, bzGuard)
-    logClamps('replace_suggestions', guarded.clamps)
-    final = guarded.output
-    guardrails = { ...clampsForStorage(guarded.clamps), ...(guarded.clamps.length > 0 ? { original: output } : {}) }
-  }
-
-  await db.insert(coachingOutputs).values({
-    id: crypto.randomUUID(),
-    kind: 'replace_suggestions',
-    model: result.model,
-    scopeWeekPlanId: weekPlanId,
-    scopeSessionId: sessionId,
-    inputHash: null,
-    outputJson: JSON.stringify(guardrails ? { ...final, guardrails } : final),
-    tokensIn: result.usage.input_tokens,
-    tokensOut: result.usage.output_tokens,
-    cachedTokensIn: result.usage.cache_read_input_tokens ?? 0,
-    createdAt: Math.floor(Date.now() / 1000),
-  })
-
-  return { ...final, coachLine: sanitizeVoice(final.coachLine) }
+/** An applied reactive ease as a change record (rune and UNDO until the session starts). */
+async function recordReactiveEase(db: DB, applied: AppliedDecision, weekPlanId: string, nowSec: number): Promise<void> {
+  const e = applied.ease
+  const day = applied.targetEpochDay
+  const id = applied.targetSessionId
+  if (!e || day == null || !id) return
+  const walk = e.kind === 'run_to_walk'
+  const name = sessionName({ type: e.type, label: e.label, notes: e.notes })
+  await recordChanges(db, [{
+    setId: crypto.randomUUID(), actor: 'coach', kind: 'ease', targetSessionId: id, sessionType: e.type, adjustmentType: 'reactive', weekPlanId,
+    before: { show: walk ? name.toUpperCase() : 'AS PLANNED', day, sessions: [{ id, f: {}, ctx: pickContext(e.before, ['coachEase']) }] },
+    after: { show: walk ? 'EASY WALK' : 'EASIER', day, sessions: [{ id, f: {}, ctx: pickContext(e.after, ['coachEase']) }], put: { line: `${nameToken(name, day)} is back as planned.`, dim: 'The coach leaves it as you set it this week.' } },
+    why: applied.reason || applied.note,
+    detail: walk ? 'An easy walk or bike instead.' : e.type === 'strength' ? 'One set less, about 10% lighter.' : null,
+    undoUntil: slotStart(day, e.timeSlot, await pmStart(db)),
+  }], nowSec)
 }
 
 // Voice canon: strip em dashes in case the model slips. Cheap insurance.

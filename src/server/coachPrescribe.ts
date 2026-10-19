@@ -44,6 +44,11 @@ export function adjustFighterStrength(template: StrengthTemplate, state: Session
     loadMultiplier *= EASED_LOAD_FACTOR
     noPush = true
     notes.push(`${state.coachEase.reason} One set less, load down 10%.`)
+  } else if (state.coachEase?.kind === 'one_set') {
+    // The rebalance's ease (page 56): one set less, same weights.
+    dropSets = 1
+    noPush = true
+    notes.push(`${state.coachEase.reason} One set less, same weights.`)
   }
   if (notes.length === 0) return { template, loadMultiplier, noPush, notes }
 
@@ -88,8 +93,8 @@ export function adjustFighterRun<T extends RunLike>(p: T, state: SessionCoachSta
     if (state.returnCtx.reason) reasons.push(state.returnCtx.reason)
   }
   // A small coach ease on a run (felt hard, weekly ease): about 80% of the time.
-  if (dur != null && state.coachEase?.kind === 'reduce') {
-    dur = Math.round(dur * EASED_RUN_FACTOR)
+  if (dur != null && (state.coachEase?.kind === 'reduce' || state.coachEase?.kind === 'rounds')) {
+    dur = state.coachEase.capMin != null ? Math.min(dur, state.coachEase.capMin * 60) : Math.round(dur * EASED_RUN_FACTOR)
     reasons.push(state.coachEase.reason)
   }
   if (dur != null) {

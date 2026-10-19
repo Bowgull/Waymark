@@ -158,18 +158,15 @@ export {
   guardLoadProposals,
   guardMtCap,
   guardReactiveReplan,
-  guardReplaceSuggestions,
   guardWeekPlan,
   houseVoice,
   isBlockZeroRestDay,
   logClamps,
-  safeReplaceOptions,
   type BlockZeroGuardContext,
   type Clamp,
   type ClampCode,
   type GuardSession,
   type Guarded,
-  type ReplacedSession,
   type RunHistory,
 } from './guardrails'
 

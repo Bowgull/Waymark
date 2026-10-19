@@ -145,19 +145,6 @@ export interface ReactiveReplanOutput {
   originalSessionId?: string
 }
 
-export interface ReplaceSuggestion {
-  type: SessionType
-  label: string
-  timeSlot: TimeSlot
-  estimatedMin: number
-  runCategory?: RunCategory
-}
-
-export interface ReplaceSuggestionsOutput {
-  coachLine: string
-  suggestions: ReplaceSuggestion[]
-}
-
 // ─── Tool definitions ─────────────────────────────────────────────
 
 const SESSION_TYPE_ENUM = [
@@ -523,42 +510,6 @@ export const TOOL_REACTIVE_REPLAN: Tool = {
   },
 }
 
-export const TOOL_REPLACE_SUGGESTIONS: Tool = {
-  name: 'replaceSuggestions',
-  description:
-    'Triggered when the athlete taps Replace on a planned session. Rank the three best-fit alternatives for right now, using the reason, wellness (sleep, soreness, alcohol), recent HR, adherence so far, and what is left in the week. First suggestion is the top pick. Voice canon: plain, observation before conclusion, no hype.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      coachLine: {
-        type: 'string',
-        description: 'One sentence, under 140 chars, explaining the #1 pick. Voice canon. No exclamation marks, no second-person scolding.',
-      },
-      suggestions: {
-        type: 'array',
-        minItems: 3,
-        maxItems: 3,
-        description: 'Exactly three alternatives, ordered best to worst for right now.',
-        items: {
-          type: 'object',
-          properties: {
-            type: { type: 'string', enum: SESSION_TYPE_ENUM },
-            label: {
-              type: 'string',
-              description: 'Short human label (e.g. "Reset", "Zone 2", "Foundation").',
-            },
-            timeSlot: { type: 'string', enum: ['am', 'pm'] },
-            estimatedMin: { type: 'integer' },
-            runCategory: { type: 'string', enum: ['zone2', 'progression'] },
-          },
-          required: ['type', 'label', 'timeSlot', 'estimatedMin'],
-        },
-      },
-    },
-    required: ['coachLine', 'suggestions'],
-  },
-}
-
 // ─── Athlete-State assessment (Phase 2) ───────────────────────────
 
 export type AthleteReadiness = 'fresh' | 'normal' | 'taxed' | 'overreached'
@@ -639,7 +590,6 @@ export const ALL_TOOLS: Tool[] = [
   TOOL_SKIP_RESPONSE,
   TOOL_BAG_PRESCRIPTION,
   TOOL_REACTIVE_REPLAN,
-  TOOL_REPLACE_SUGGESTIONS,
   TOOL_ASSESS_ATHLETE,
 ]
 

@@ -45,13 +45,11 @@ export interface SessionSuggestion {
   reason: string | null
   priority: 'suggested' | 'caution' | 'neutral'
   /**
-   * What picking the row does, decided by the placement rules before the
-   * board shows it (Part C): add, pull forward, or replace today's session.
-   * Absent on the Replace board and when no block is active.
+   * What picking the row does (page 56: it always adds): a plain add, or the
+   * week's next strength pulled to this day. Absent on the Replace board and
+   * when no block is active.
    */
-  action?: Exclude<PickAction, { kind: 'refused' }>
-  /** The rules would refuse it today: an ember with the reason, not pickable. */
-  blocked?: boolean
+  action?: PickAction
 }
 
 export interface SuggestionsResponse {
@@ -68,7 +66,7 @@ export interface SuggestionsResponse {
 
 function optionsForTargets(targets: SessionTarget[]): Omit<SessionSuggestion, 'reason' | 'priority'>[] {
   return targets
-  .filter(t => t.type !== 'mt_class') // MT class not available for ad-hoc
+  // MT Class is a row like any session (page 56 item 15).
   .map(t => ({
     type: t.type,
     label: t.label,
@@ -108,7 +106,7 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
       deficits.push({ type: key, label: target.label, completed, target: target.weeklyTarget })
     }
     // Skipped sessions are not flagged and never boosted: missed work is not
-    // made up (F14, system rules). Each missed session gets its own question.
+    // made up (F14, system rules). The coach handles each missed session.
   }
 
   // ─── Rule 1: High soreness ─────────────────────────────────

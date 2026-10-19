@@ -45,7 +45,7 @@ import {
   type WorkingLoad,
 } from '../lib/blockZero'
 import type { StrengthTemplate, TemplateSet } from '../lib/strengthTemplates'
-import { countsFromDay, inLeadIn, mtRampStartDay, scaleLoadKg, scaleSets, type CoachEase, type ReturnContext } from '../lib/coach'
+import { countsFromDay, inLeadIn, mtRampStartDay, runAllowanceBaseSec, scaleLoadKg, scaleSets, type CoachEase, type ReturnContext } from '../lib/coach'
 import type { InjuryAction } from '../lib/coach/injury'
 import { trainingWeekFor } from './coachData'
 import { zone2CeilingBpm } from '../lib/hrAnalysis'
@@ -214,13 +214,15 @@ export async function planBlockZeroStrength(
   }
   // Readiness first; an injury flag or an applied coach ease also eases (same shape).
   let eased = easeForReadiness(report, planned)
-  const extraWhy = injuryAction === 'ease' || injuryAction === 'back_swap' ? coach.injury?.note ?? null : coach.coachEase?.reason ?? null
+  // The rebalance's ease (page 56): one main set less, same weights, same effort.
+  const oneSet = coach.coachEase?.kind === 'one_set' && injuryAction !== 'ease' && injuryAction !== 'back_swap' ? coach.coachEase : null
+  const extraWhy = injuryAction === 'ease' || injuryAction === 'back_swap' ? coach.injury?.note ?? null : oneSet ? null : coach.coachEase?.reason ?? null
   if (!eased.eased && extraWhy) {
     eased = { ...easeSession(planned, { readinessEase: true, readinessReason: extraWhy }), reason: extraWhy }
   }
   // F12/F13: the return ramp trims sets on top of any ease.
   const ramp = coach.returnCtx?.active ? coach.returnCtx : null
-  let easedSets = eased.eased ? eased.session.sets ?? target.mainSets : null
+  let easedSets = eased.eased ? eased.session.sets ?? target.mainSets : oneSet ? Math.max(1, target.mainSets - 1) : null
   const easedRpe = eased.eased ? eased.session.rpe ?? target.rpe : null
   if (ramp) easedSets = scaleSets(easedSets ?? mainLiftHardSets(target), ramp.volumeFactor)
 
@@ -237,7 +239,7 @@ export async function planBlockZeroStrength(
       // Eased or ramping: the e1RM check (RPE 8) waits, working sets drop to the eased count.
       const working = next.sets.filter((s: TemplateSet) => !s.isWarmup && s.loadMultiplier == null)
       const warm = next.sets.filter((s: TemplateSet) => s.isWarmup)
-      const why = [eased.eased ? eased.reason : null, ramp?.reason ?? null].filter(Boolean).join(' ')
+      const why = [eased.eased ? eased.reason : oneSet?.reason ?? null, ramp?.reason ?? null].filter(Boolean).join(' ')
       next = {
         ...next,
         sets: [...warm, ...working.slice(0, Math.max(1, Math.min(easedSets, working.length)))],
@@ -444,11 +446,13 @@ export async function loadRunHistory(db: DB, epochDay: number): Promise<Required
     .select({ scheduledDate: sessions.scheduledDate, durationSec: runSessions.durationSec })
     .from(runSessions)
     .innerJoin(sessions, eq(runSessions.sessionId, sessions.id))
-    .where(and(eq(sessions.status, 'completed'), gte(sessions.scheduledDate, Math.min(epochDay - 30, monday - 7)), lte(sessions.scheduledDate, monday + 6)))
+    .where(and(eq(sessions.status, 'completed'), gte(sessions.scheduledDate, Math.min(epochDay - 30, monday - 14)), lte(sessions.scheduledDate, monday + 6)))
   const done = rows.filter(r => r.scheduledDate != null).map(r => ({ day: r.scheduledDate as number, sec: r.durationSec ?? 0 }))
+  const weekSec = (from: number) => done.filter(r => r.day >= from && r.day < from + 7).reduce((n, r) => n + r.sec, 0)
   return {
     longestLast30Sec: done.filter(r => r.day >= epochDay - 30 && r.day <= epochDay).reduce((m, r) => Math.max(m, r.sec), 0) || null,
-    lastWeekRunSec: done.filter(r => r.day >= monday - 7 && r.day < monday).reduce((n, r) => n + r.sec, 0),
+    // R3 (page 56): the larger of the last two weeks, so one swap never shrinks next week's runs.
+    lastWeekRunSec: runAllowanceBaseSec(weekSec(monday - 7), weekSec(monday - 14)),
     thisWeekRunSec: done.filter(r => r.day >= monday && r.day < epochDay).reduce((n, r) => n + r.sec, 0),
   }
 }

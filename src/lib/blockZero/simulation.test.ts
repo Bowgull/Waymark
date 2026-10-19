@@ -42,7 +42,7 @@ import {
 } from './index'
 import { extensionsUsed } from './weeks'
 import { blockZeroWorkingLoad, checkInFromDailyLog, readinessReport, type DailyLogFields, type LoggedWorkingSet } from './index'
-import { guardReactiveReplan, guardReplaceSuggestions, guardWeekPlan, type Clamp, type GuardSession } from './guardrails'
+import { guardReactiveReplan, guardWeekPlan, type Clamp, type GuardSession } from './guardrails'
 import { weeklyRunAllowanceSec } from './running'
 import type { WeekPlanOutput } from '../prompts/tools'
 
@@ -71,7 +71,7 @@ interface LoadStep { day: number; liftId: string; rpe: number; target: [number, 
 interface BackPick { day: number; picked: string; original: string }
 interface ClassLog { day: number; type: string; allowed: boolean; rampWeek: number; classType: string | null }
 interface GuardWeek { week: number; plan: WeekPlanOutput; clamps: Clamp[]; longest30: number; lastWeek: number; shapeMatches: boolean }
-interface GuardDay { day: number; kind: 'ease' | 'class'; action: string; type: string; label: string; clamps: Clamp[]; suggestionTypes: string[] }
+interface GuardDay { day: number; kind: 'ease' | 'class'; action: string; type: string; label: string; clamps: Clamp[] }
 
 /** A fake planner that tries to break every rule it can. */
 function adversarialPlan(week: number): WeekPlanOutput {
@@ -183,17 +183,9 @@ function simulate(script: Script) {
           ? { note: 'Push through.', shiftAction: 'add_recovery' as const, shiftReason: 'Add a heavy day!', targetSessionType: 'strength' as const, targetLabel: 'Heavy Strength', targetDay: dow(day), targetTimeSlot: 'pm' as const }
           : { note: 'Spar tonight.', shiftAction: 'swap' as const, shiftReason: 'Sparring builds timing.', targetSessionType: 'mt_class' as const, targetLabel: 'Hard Sparring', targetDay: dow(day), targetTimeSlot: 'pm' as const }
         const r = guardReactiveReplan(ask, ctx)
-        const replaced = guardSessions.find(x => x.epochDay === day && x.type !== 'mobility') ?? guardSessions.find(x => x.epochDay === day)
-        const sugg = replaced
-          ? guardReplaceSuggestions({ coachLine: 'Go hard!', suggestions: [
-            { type: 'mt_class', label: 'Sparring', timeSlot: 'pm', estimatedMin: 90 },
-            { type: 'strength', label: 'Strength', timeSlot: 'am', estimatedMin: 70 },
-            { type: 'foundation_run', label: 'Long Run', timeSlot: 'am', estimatedMin: 50 },
-          ] }, { id: replaced.id as string, type: replaced.type, epochDay: day, timeSlot: replaced.timeSlot }, ctx)
-          : null
         guardDays.push({
           day, kind: easeToday ? 'ease' : 'class', action: r.output.shiftAction, type: r.output.targetSessionType, label: r.output.targetLabel,
-          clamps: [...r.clamps, ...(sugg?.clamps ?? [])], suggestionTypes: sugg?.output.suggestions.map(x => `${x.type}:${x.label}:${x.estimatedMin}`) ?? [],
+          clamps: [...r.clamps],
         })
       }
 
@@ -307,10 +299,8 @@ function assertGuarded(name: string, sim: ReturnType<typeof simulate>): void {
     const tag = `${name} day ${d.day - START} (${d.kind})`
     if (d.kind === 'ease') {
       assert(d.action !== 'add_recovery' && d.clamps.some(c => c.code === 'ease_day'), `${tag}: heavy strength on an ease day refused, ${d.action} instead`)
-      assert(d.suggestionTypes.every(t => !t.startsWith('strength') && !t.startsWith('mt_class') && !t.startsWith('foundation_run')), `${tag}: replace options stay easy (${d.suggestionTypes.join(', ')})`)
     } else {
       assert(!/spar/i.test(d.label), `${tag}: sparring never gets through (${d.action} ${d.type} ${d.label})`)
-      assert(d.suggestionTypes.every(t => !/spar/i.test(t)), `${tag}: no sparring among replace options`)
     }
   }
 }

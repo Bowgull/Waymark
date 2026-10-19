@@ -1,51 +1,53 @@
-// "+ Class tonight" rebalance (page 45, page 13's placement). After the class
-// is added (POST /api/sessions/insert-ad-hoc), POST
-// /api/sessions/:id/class-tonight applies rebalanceDayForClass to its day:
-// strength drops a set (an applied coach ease, so the prescriptions read it)
-// and comes to the morning; the run moves to the first later day this week
-// the placement rules allow (none: it stays). The Coach line is stored on the
-// class session's context_json ({ classTonight: { lead, rest } }) so Today can
-// show it after a reload. Idempotent: a second call returns the stored line.
+// MT Class tonight (page 56 items 5 and 15, approved 2026-10-19): MT Class is
+// a normal row on the Add Session board. Adding one for tonight rebalances
+// the day with rebalanceDayForClass: strength drops a set and comes to the
+// morning; the run moves to the first later day this week the placement
+// rules allow (none: it stays). Every change is a change record (actor
+// 'class_tonight') with its rune and UNDO, in the add's change set.
+// Idempotent: a class rebalances its day once (context_json.classTonight).
 
 import { eq } from 'drizzle-orm'
 import { sessions } from '../db/schema'
-import { classTonightFrom, classTonightLine, planClassTonight } from '../lib/blockZero/classTonight'
-import { coachEaseFrom, mergeContext, mondayOf, withCoachEase } from '../lib/coach'
-import { checkChange } from './coachData'
+import { planClassTonight } from '../lib/blockZero/classTonight'
+import { DAY_NAMES, applyContext, easeFor, mondayOf, sessionName, type CoachChangePlan } from '../lib/coach'
+import { blockKind, checkChange, toSessionLike, trainingWeekFor } from './coachData'
+import { applyCoachPlans } from './changes'
+import { getActiveBlock } from './blockZeroData'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
 
-export interface ClassTonightResult {
-  line: { lead: string; rest: string }
-  moved: Array<{ id: string; epochDay: number; timeSlot: string }>
-  eased: string[]
-}
+const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-export async function rebalanceForClassTonight(db: DB, classId: string, todayDay: number, nowSec: number): Promise<{ status: number; body: ClassTonightResult | { error: string } }> {
+/** Rebalance the class's day and record what moved. Returns the change ids. */
+export async function rebalanceForClassTonight(db: DB, classId: string, setId: string, todayDay: number, nowSec: number): Promise<string[]> {
   const [cls] = await db.select().from(sessions).where(eq(sessions.id, classId))
-  if (!cls) return { status: 404, body: { error: 'session not found' } }
-  if (cls.type !== 'mt_class' || cls.scheduledDate == null) return { status: 400, body: { error: 'Only a class rebalances its day.' } }
-  const stored = classTonightFrom(cls.contextJson)
-  if (stored) return { status: 200, body: { line: stored, moved: [], eased: [] } }
+  if (!cls || cls.type !== 'mt_class' || cls.scheduledDate == null) return []
+  let ctx: { classTonight?: unknown } = {}
+  try { ctx = JSON.parse(cls.contextJson ?? '{}') as { classTonight?: unknown } } catch { ctx = {} }
+  if (ctx.classTonight) return []
 
   const day = cls.scheduledDate
   const rows = (await db.select().from(sessions).where(eq(sessions.scheduledDate, day))).filter(r => r.id !== cls.id)
   const plan = planClassTonight(rows, cls)
+  const block = await getActiveBlock(db)
+  const kind = blockKind(block?.blockType)
+  const week = block ? (await trainingWeekFor(db, block, day, todayDay)).week : 1
+  const plans: CoachChangePlan[] = []
 
-  const eased: string[] = []
   for (const id of plan.ease) {
     const row = rows.find(r => r.id === id)
     if (!row) continue
-    const already = coachEaseFrom(row.contextJson) != null
-    await db.update(sessions).set({
-      ...(plan.toAm.includes(id) ? { timeSlot: 'am' } : {}),
-      ...(already ? {} : { contextJson: withCoachEase(row.contextJson, { kind: 'reduce', reason: 'Class tonight.', source: 'reactive', at: nowSec }) }),
-    }).where(eq(sessions.id, id))
-    eased.push(id)
+    // Strength comes to the morning first (part of the same change on the day's back).
+    if (plan.toAm.includes(id) && row.timeSlot !== 'am') {
+      await db.update(sessions).set({ timeSlot: 'am' }).where(eq(sessions.id, id))
+      row.timeSlot = 'am'
+    }
+    const words = easeFor({ ...toSessionLike(row), id: row.id }, { blockType: kind, weekNumber: week })
+    if (!words) continue
+    plans.push({ rule: 'R5', kind: 'ease', sessionId: id, ease: words.ease, show: words.show, why: `Class tonight: ${sessionName(toSessionLike(row))} stays in the morning, one set less.`, detail: words.detail, put: words.put })
   }
 
-  const moved: ClassTonightResult['moved'] = []
   const sunday = mondayOf(day) + 6
   for (const id of plan.move) {
     const row = rows.find(r => r.id === id)
@@ -54,19 +56,20 @@ export async function rebalanceForClassTonight(db: DB, classId: string, todayDay
     for (let d = day + 1; d <= sunday; d++) {
       const check = await checkChange(db, { kind: 'move', type: row.type, label: row.label, notes: row.notes, epochDay: d, timeSlot: slot, sessionId: row.id, fromEpochDay: day }, todayDay)
       if (!check.ok) continue
-      await db.update(sessions).set({
-        scheduledDate: d,
-        timeSlot: check.change.timeSlot,
-        contextJson: mergeContext(row.contextJson, { movedFrom: { epochDay: day, timeSlot: row.timeSlot }, movedFor: 'class_tonight' }),
-      }).where(eq(sessions.id, id))
-      moved.push({ id, epochDay: d, timeSlot: check.change.timeSlot })
+      const name = sessionName(toSessionLike(row))
+      const to = check.change.timeSlot
+      plans.push({
+        rule: 'R1', kind: 'move', sessionId: id, move: { epochDay: d, timeSlot: to },
+        show: { before: `${DAY_NAMES[new Date(day * 86400000).getUTCDay()].toUpperCase()} ${slot.toUpperCase()}`, after: `${DAY_NAMES[new Date(d * 86400000).getUTCDay()].toUpperCase()} ${to.toUpperCase()}` },
+        why: `Class tonight, so ${name.toLowerCase()} moves to ${DAY_LONG[new Date(d * 86400000).getUTCDay()]} ${to.toUpperCase()}. Class is enough running for one night.`,
+        detail: null,
+        put: { line: `${name} is back tonight.`, dim: 'The coach leaves it as you set it this week.' },
+      })
       break
     }
   }
 
-  let placementNotes: string[] = []
-  try { placementNotes = (JSON.parse(cls.contextJson ?? '{}') as { placement?: { notes?: string[] } }).placement?.notes ?? [] } catch { placementNotes = [] }
-  const line = classTonightLine({ moved: moved.length, eased: eased.length > 0, placementNotes })
-  await db.update(sessions).set({ contextJson: mergeContext(cls.contextJson, { classTonight: line }) }).where(eq(sessions.id, cls.id))
-  return { status: 200, body: { line, moved, eased } }
+  const ids = await applyCoachPlans(db, plans, rows, setId, 'class_tonight', nowSec)
+  await db.update(sessions).set({ contextJson: applyContext(cls.contextJson, { classTonight: { at: nowSec, changes: ids.length } }) }).where(eq(sessions.id, cls.id))
+  return ids
 }

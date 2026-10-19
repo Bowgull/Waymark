@@ -11,19 +11,23 @@
 //      reason), else the template (rules only, offline or no key).
 //   2. The rules: at most two small eases with a reason each (coach/weeklyPass).
 //      Nothing is added, moved or made up.
-//   3. The week stores one "why this week" line and per-change reasons
-//      (week_plans.why_line, analysis_json v2, week_adjustments auto rows).
+//   3. The week stores its one line in plain words (what's new, what's
+//      next; week_plans.why_line, analysis_json v2) and each ease as a change
+//      record with its rune and UNDO (server/changes.ts).
 // No approval step: a prepared week is just shown.
 // Then the pass: the athlete model (Sonnet, guarded, 10-day expiry), the
-// training max proposal at a wave end, and an ask for sessions added 2+ weeks.
+// new training maxes at a wave end and sessions added 2+ weeks joining the
+// plan, each applied with its rune and UNDO (the coach never asks).
 
 import { and, eq, gte, lte } from 'drizzle-orm'
-import { blockTests, coachingOutputs, dailyLogs, sessions, settings, trainingBlocks, weekPlans } from '../db/schema'
+import { blockTests, coachingOutputs, dailyLogs, sessions, trainingBlocks, weekPlans } from '../db/schema'
 import type { createDB } from '../db/client'
 import {
   KEY_TYPES,
-  easeBody,
+  easeFor,
+  nameToken,
   sessionName,
+  slotStart,
   claimDecision,
   houseLine,
   isoOf,
@@ -60,7 +64,8 @@ import {
   trainingWeekFor,
   weekStamps,
 } from './coachData'
-import { loadEffortReads, maybeMakeRegularAsk, proposeTmUpdate, recordAutoChange } from './coachAsks'
+import { applyTmUpdate, loadEffortReads, maybeMakeRegular } from './coachAsks'
+import { applyPendingMerges, pmStart, recordChanges, snap } from './changes'
 
 type DB = ReturnType<typeof createDB>
 type Block = typeof trainingBlocks.$inferSelect
@@ -302,6 +307,8 @@ export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptio
   // 3. Insert, with reasons.
   const ids: string[] = []
   const changes: WeekChange[] = []
+  const pm = await pmStart(db)
+  const setId = crypto.randomUUID()
   for (let i = 0; i < planned.length; i++) {
     const p = planned[i]
     const id = crypto.randomUUID()
@@ -327,17 +334,28 @@ export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptio
       createdAt: nowSec,
     })
     if (ease) {
-      await recordAutoChange(db, { weekPlanId: weekId, adjustmentType: 'weekly_ease', sessionType: p.type, action: 'ease', reason: ease.reason, targetSessionId: id, targetEpochDay: p.epochDay, timeSlot: p.timeSlot, was: ease.was, now: ease.now, lead: `${sessionName(p)} eased`, body: easeBody(ease.now, ease.reason), detail: { cause: ease.cause }, nowSec })
-      changes.push({ sessionId: id, epochDay: p.epochDay, type: p.type, reason: ease.reason, was: ease.was, now: ease.now, source: 'rules' })
+      const words = easeFor({ id, type: p.type, label: p.label, notes: p.notes, epochDay: p.epochDay, timeSlot: p.timeSlot, status: 'planned' }, { blockType: kind, weekNumber: stamps.weekNumber })
+      const row = { id, contextJson: ctxJson }
+      await recordChanges(db, [{
+        setId, actor: 'weekly_pass', kind: 'ease', targetSessionId: id, sessionType: p.type, adjustmentType: 'weekly_ease', weekPlanId: weekId,
+        before: { show: words?.show.before ?? 'AS PLANNED', ...(words?.show.logBefore ? { logShow: words.show.logBefore } : {}), day: p.epochDay, sessions: [{ id, f: {}, ctx: { coachEase: null } }] },
+        after: { show: words?.show.after ?? 'EASIER', day: p.epochDay, sessions: [snap(row, [], ['coachEase'])], put: { line: `${nameToken(sessionName(p), p.epochDay)} is back as planned.`, dim: 'The coach leaves it as you set it this week.' } },
+        why: ease.reason, detail: p.type === 'strength' ? 'One set less, about 10% lighter.' : null,
+        undoUntil: slotStart(p.epochDay, p.timeSlot, pm), extraSource: { cause: ease.cause },
+      }], nowSec)
+      changes.push({ sessionId: id, epochDay: p.epochDay, type: p.type, reason: ease.reason, was: ease.was, now: ease.now, source: 'rules', cause: ease.cause })
     } else if (p.why) {
       changes.push({ sessionId: id, epochDay: p.epochDay, type: p.type, reason: p.why, was: null, now: null, source: 'ai' })
     }
   }
   for (const d of dropped) changes.push({ sessionId: null, epochDay: d.epochDay, type: d.type, reason: `Dropped ${isoOf(d.epochDay)}: ${d.reason}`, was: null, now: null, source: 'placement' })
 
-  const rulesWhy = whyThisWeek(signals, eases)
-  const aiWhy = adjustmentNotes || narrative
-  const why = source === 'ai' && aiWhy ? houseLine(aiWhy) : rulesWhy
+  // A missed session's lifts waiting for this week land on its strength day.
+  await applyPendingMerges(db, ids)
+
+  // The week line is the rules' own, in plain words (page 56 item 16); the planner's narrative is stored only.
+  const rulesWhy = whyThisWeek(signals, eases.map(e => ({ cause: e.cause, epochDay: planned[e.index].epochDay, name: sessionName(planned[e.index]), type: planned[e.index].type })))
+  const why = rulesWhy
   const state = await loadLatestAthleteState(db)
   const intelligence: WeekIntelligence = {
     version: 2,
@@ -370,7 +388,7 @@ export interface WeeklyPassResult {
   monday: number | null
   prepared?: boolean
   source?: string
-  asks?: string[]
+  applied?: string[]
   athleteVerdict?: string | null
   reason?: string
 }
@@ -407,7 +425,7 @@ export async function runWeeklyPass(db: DB, apiKey: string, todayDay: number, no
   const key = weeklyPassKey(block.id, monday)
   if (!(await claimPass(db, key, nowSec))) return { ran: false, key, monday, reason: 'already done' }
 
-  const asks: string[] = []
+  const applied: string[] = []
   const errors: string[] = []
   // The athlete model first, so its read shapes the week (within the rules).
   let athleteVerdict: string | null = null
@@ -433,33 +451,53 @@ export async function runWeeklyPass(db: DB, apiKey: string, todayDay: number, no
   try {
     const signals = prepared?.analysis?.signals
     if (block.blockType === 'fighter' && signals?.waveEnd) {
-      const tm = await proposeTmUpdate(db, block, todayDay, nowSec)
-      if (tm.adjustmentId && !tm.idempotent) asks.push(tm.adjustmentId)
+      const tm = await applyTmUpdate(db, block, todayDay, nowSec)
+      if (tm.changeId && !tm.idempotent) applied.push(tm.changeId)
     }
   } catch (err) {
     errors.push('tm')
-    console.warn('[weeklyPass] TM proposal failed', err)
+    console.warn('[weeklyPass] TM update failed', err)
   }
   try {
     // Only when preparing next week: the slot it offers is next week's.
     if (monday > todayDay) {
-      const id = await maybeMakeRegularAsk(db, block, monday, todayDay, nowSec)
-      if (id) asks.push(id)
+      const id = await maybeMakeRegular(db, block, monday, todayDay, nowSec)
+      if (id) applied.push(id)
     }
   } catch (err) {
     errors.push('make_regular')
-    console.warn('[weeklyPass] make-regular ask failed', err)
+    console.warn('[weeklyPass] make-regular failed', err)
   }
 
-  const out = { status: errors.includes('prepare') ? 'failed' : 'done', monday, date: isoOf(monday), weekPlanId: prepared?.week.id ?? null, prepared: prepared?.prepared ?? false, source: prepared?.source ?? null, why: prepared?.week.whyLine ?? null, asks, athleteVerdict, errors }
+  const out = { status: errors.includes('prepare') ? 'failed' : 'done', monday, date: isoOf(monday), weekPlanId: prepared?.week.id ?? null, prepared: prepared?.prepared ?? false, source: prepared?.source ?? null, why: prepared?.week.whyLine ?? null, applied, athleteVerdict, errors }
   await db.update(coachingOutputs).set({ outputJson: JSON.stringify(out), scopeWeekPlanId: prepared?.week.id ?? null })
     .where(and(eq(coachingOutputs.kind, 'weekly_pass'), eq(coachingOutputs.inputHash, key)))
-  console.log(`[weeklyPass] ${key} done: prepared=${out.prepared} source=${out.source} asks=${asks.length} errors=${errors.join(',') || 'none'}`)
-  return { ran: true, key, monday, prepared: out.prepared, source: out.source ?? undefined, asks, athleteVerdict }
+  console.log(`[weeklyPass] ${key} done: prepared=${out.prepared} source=${out.source} applied=${applied.length} errors=${errors.join(',') || 'none'}`)
+  return { ran: true, key, monday, prepared: out.prepared, source: out.source ?? undefined, applied, athleteVerdict }
 }
 
-/** Last time the athlete opened the app (settings.coach_seen_at). */
-export async function coachSeenAt(db: DB): Promise<number | null> {
-  const [row] = await db.select({ seen: settings.coachSeenAt }).from(settings)
-  return row?.seen ?? null
+/**
+ * The week line Program shows (page 56 item 16), always in the rules' plain
+ * words: from the week's stored read when it has one, else from the block
+ * and week alone. Weeks prepared before 0033 carry older wording in why_line;
+ * this reads them the new way.
+ */
+export function weekLineFor(week: Pick<WeekPlanRow, 'weekNumber' | 'analysisJson'>, block: Pick<Block, 'blockType' | 'totalWeeks'>, rows: ReadonlyArray<Pick<SessionRow, 'id' | 'label' | 'contextJson'>> = []): string {
+  const stored = parseStored(week.analysisJson) as Partial<WeekIntelligence> | null
+  const kind = blockKind(block.blockType)
+  const signals: WeekSignals = stored?.version === 2 && stored.signals
+    ? { ...stored.signals, weekNumber: week.weekNumber, blockType: kind, totalWeeks: block.totalWeeks }
+    : {
+      weekNumber: week.weekNumber, totalWeeks: block.totalWeeks, blockType: kind,
+      lastWeek: { planned: 0, completed: 0, missed: 0, skipped: 0, added: 0 }, completionRate: null,
+      load: { last7: 0, prev7: 0, changePct: null, flagged: false },
+      readiness: { days: 0, flaggedDays: 0, easeDays: 0, freshDays: 0, oversleepFatigueDays: 0 },
+      effort: summarizeEffort([]), avgSoreness: null, avgSleep: null,
+      returnRamp: { active: false, gapDays: 0, reason: null }, retestLastWeek: false, waveEnd: false, athleteShape: null,
+    }
+  const eases = (stored?.version === 2 ? stored.changes ?? [] : [])
+    // An ease he undid (the session no longer carries it) is not in the line.
+    .filter(c => c.source === 'rules' && c.cause != null && (rows.length === 0 || /"coachEase"/.test(rows.find(r => r.id === c.sessionId)?.contextJson ?? '')))
+    .map(c => ({ cause: c.cause as NonNullable<WeekChange['cause']>, epochDay: c.epochDay, name: rows.find(r => r.id === c.sessionId)?.label ?? (c.type === 'strength' ? 'Strength' : c.type), type: c.type }))
+  return whyThisWeek(signals, eases)
 }

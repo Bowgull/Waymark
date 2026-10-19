@@ -3,13 +3,12 @@
 // changed requests to the real API with a FAKE athlete and fake data, runs
 // each output through the guardrails, and prints model, tokens, pass/fail,
 // clamps and an approximate cost.
-//   Block Zero: week planner, reactive replan, replace suggestions,
-//     assessment, transition.
+//   Block Zero: week planner, reactive replan, assessment, transition.
 //   Weekly pass (E3): the Fighter week planner with the rules' read of last
 //     week (E1 placement on every session, small eases with reasons), and the
 //     athlete model (Sonnet 5.5, structured output, guarded, 10-day expiry).
 //
-//   npx tsx scripts/ai-livecheck.mts            seven live calls (about 2-3 minutes)
+//   npx tsx scripts/ai-livecheck.mts            six live calls (about 2-3 minutes)
 //   npx tsx scripts/ai-livecheck.mts --dry-run  builds every request and runs the
 //                                              guardrails on stub outputs, no API call
 //
@@ -24,13 +23,11 @@ import { buildSystemPrompt, type UserProfileContext } from '../src/lib/prompts/s
 import {
   TOOL_BLOCK_TRANSITION,
   TOOL_REACTIVE_REPLAN,
-  TOOL_REPLACE_SUGGESTIONS,
   TOOL_WEEK_PLAN,
   transitionFromModel,
   type BlockTransitionModelOutput,
   type BlockTransitionOutput,
   type ReactiveReplanOutput,
-  type ReplaceSuggestionsOutput,
   type WeekPlanOutput,
 } from '../src/lib/prompts/tools'
 import { BLOCK_ZERO_TOOL, assessmentFromModel, buildAssessmentPrompt, buildTransitionPrompt, type BlockZeroAssessmentModelOutput, type BlockZeroAssessmentOutput, type TransitionPromptData } from '../src/lib/prompts/blockZero'
@@ -39,7 +36,6 @@ import {
   getBlockZeroWeekTemplate,
   guardCalibrationWrites,
   guardReactiveReplan,
-  guardReplaceSuggestions,
   guardWeekPlan,
   planTransition,
   retestCeilingKg,
@@ -53,7 +49,7 @@ import {
   type WorkupSet,
 } from '../src/lib/blockZero'
 import { buildWeekPlanPrompt, type WeekPlanParams } from '../src/lib/weeklyPlanAI'
-import { buildReactivePrompt, buildReplacePrompt, type SignalBundle } from '../src/lib/reactiveCoach'
+import { buildReactivePrompt, type SignalBundle } from '../src/lib/reactiveCoach'
 import { assessmentTestData, guardAssessment, transitionTestData } from '../src/server/routes/blockZero'
 import type { BlockTestData } from '../src/server/blockZeroData'
 import { serializeWeekSignals } from '../src/server/weeklyPass'
@@ -260,18 +256,6 @@ const bundle: SignalBundle = {
 const fakeWeekRows = guardCtx.sessions.map(s => ({ type: s.type, scheduledDate: s.epochDay, timeSlot: s.timeSlot, status: s.status }))
 const reactivePrompt = buildReactivePrompt(bundle, 'Sleep or soreness crossed overreach threshold.', '', null, fakeWeekRows, contextText)
 
-const replaced = guardCtx.sessions.find(s => s.epochDay === WED && s.type === 'strength') as GuardSession
-const replacePrompt = buildReplacePrompt({
-  session: { type: replaced.type, timeSlot: replaced.timeSlot },
-  todayEpochDay: WED,
-  reason: 'Slept badly, feel flat.',
-  wellness: { sleepHours: 5.5, soreness: 3, alcoholScale: 0 },
-  weekSessions: fakeWeekRows,
-  adherenceBlock: '',
-  hrBlock: null,
-  blockZeroContext: contextText,
-})
-
 const assessmentPrompt = buildAssessmentPrompt(profile, assessmentTestData(blockTests))
 
 const transitionData: TransitionPromptData = {
@@ -419,18 +403,6 @@ const checks: Check[] = [
       const g = guardReactiveReplan(out as ReactiveReplanOutput, guardCtx)
       const again = guardReactiveReplan(g.output, guardCtx)
       return { clamps: g.clamps, pass: ok(again.clamps).length === 0, note: `${g.output.shiftAction} ${g.output.targetSessionType} day ${g.output.targetDay}: ${g.output.shiftReason}` }
-    },
-  },
-  {
-    name: 'replace suggestions (Sonnet, ease day)',
-    req: sonnet(TOOL_REPLACE_SUGGESTIONS, replacePrompt, 'low', 4000),
-    parse: r => getStructuredOutput<ReplaceSuggestionsOutput>(r),
-    stub: { coachLine: 'Stub.', suggestions: [{ type: 'mt_class', label: 'Sparring', timeSlot: 'pm', estimatedMin: 90 }] },
-    guard: out => {
-      const rep = { id: replaced.id as string, type: replaced.type, epochDay: WED, timeSlot: replaced.timeSlot }
-      const g = guardReplaceSuggestions(out as ReplaceSuggestionsOutput, rep, guardCtx)
-      const again = guardReplaceSuggestions(g.output, rep, guardCtx)
-      return { clamps: g.clamps, pass: g.output.suggestions.length > 0 && ok(again.clamps).length === 0, note: `${g.output.suggestions.map(s => `${s.type}:${s.label}:${s.estimatedMin}`).join(', ')} | ${g.output.coachLine}` }
     },
   },
   {

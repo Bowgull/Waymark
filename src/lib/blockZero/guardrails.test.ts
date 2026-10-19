@@ -2,10 +2,9 @@
 //
 // Every guardrail rule, fed crafted AI outputs, adversarial ones included:
 // sparring in week 1, a class on the rest day, a 50-min run after a 20-min
-// longest, three strength days in a row, loads above the rules' next load,
-// replace suggestions that are all disallowed.
+// longest, three strength days in a row, loads above the rules' next load.
 
-import type { ReactiveReplanOutput, ReplaceSuggestionsOutput, WeekPlanOutput } from '../prompts/tools'
+import type { ReactiveReplanOutput, WeekPlanOutput } from '../prompts/tools'
 import {
   capLoad,
   checkPlacement,
@@ -15,11 +14,9 @@ import {
   guardLoadProposals,
   guardMtCap,
   guardReactiveReplan,
-  guardReplaceSuggestions,
   guardWeekPlan,
   houseVoice,
   isBlockZeroRestDay,
-  safeReplaceOptions,
   type BlockZeroGuardContext,
   type Clamp,
   type GuardSession,
@@ -300,54 +297,6 @@ assert(classTypeFromLabel('Sparring') === 'sparring' && classTypeFromLabel('Pads
   const sun = dayFor(0)
   const r = checkPlacement({ type: 'mt_class', label: 'MT Class', epochDay: sun, timeSlot: 'pm', adds: true }, ctx(sun))
   assert(!r.ok && r.clamp.code === 'rest_day', 'MT on the rest day refused')
-}
-
-// ─── Replace suggestions ────────────────────────────────────────
-
-{
-  // Everything offered is disallowed: sparring past the cap, strength back to back, a 50-min run on an ease day...
-  const c = ctx(dayFor(4), { readinessEase: true, easeReason: 'Sleep and stress are off your 7-day trend for 2 days.', mt: { weeksSinceFirstClass: 0, classesThisWeek: 2, profileCap: 2 } })
-  const out: ReplaceSuggestionsOutput = {
-    coachLine: 'Sparring tonight!',
-    suggestions: [
-      { type: 'mt_class', label: 'Sparring', timeSlot: 'pm', estimatedMin: 90 },
-      { type: 'strength', label: 'Strength', timeSlot: 'am', estimatedMin: 60 },
-      { type: 'bag_work', label: 'Bag Rounds', timeSlot: 'pm', estimatedMin: 40 },
-    ],
-  }
-  const g = guardReplaceSuggestions(out, { id: `${dayFor(4)}-foundation_run`, type: 'foundation_run', epochDay: dayFor(4), timeSlot: 'am' }, c)
-  assert(g.output.suggestions.length >= 1 && g.output.suggestions.every(s => s.type === 'mobility' || s.type === 'active_recovery'), 'all disallowed: rules-made safe options')
-  assert(has(g.clamps, 'suggestion_fallback') && voiceOk(g.output.coachLine), `fallback carries a one-line reason: ${g.output.coachLine}`)
-}
-{
-  // Top pick refused, others kept; a long run is shrunk to the cap.
-  const c = ctx(dayFor(4), { run: { longestLast30Sec: 20 * 60, lastWeekRunSec: 60 * 60, thisWeekRunSec: 20 * 60 } })
-  const out: ReplaceSuggestionsOutput = {
-    coachLine: 'Sparring sharpens timing.',
-    suggestions: [
-      { type: 'strength', label: 'Strength', timeSlot: 'am', estimatedMin: 60 },
-      { type: 'foundation_run', label: 'Long Run', timeSlot: 'am', estimatedMin: 50 },
-      { type: 'mobility', label: 'Hips', timeSlot: 'am', estimatedMin: 15 },
-    ],
-  }
-  const g = guardReplaceSuggestions(out, { id: `${dayFor(4)}-foundation_run`, type: 'foundation_run', epochDay: dayFor(4), timeSlot: 'am' }, c)
-  assert(!g.output.suggestions.some(s => s.type === 'strength'), 'strength the day after strength filtered out')
-  const run = g.output.suggestions.find(s => s.type === 'foundation_run')
-  assert(run != null && run.estimatedMin <= 22 && has(g.clamps, 'run_single_cap'), `50-min run shrunk to the 110% cap (${run?.estimatedMin} min)`)
-  assert(g.output.coachLine !== out.coachLine && voiceOk(g.output.coachLine), 'coachLine explains the refusal of the old top pick')
-}
-{
-  // Ease day: a run suggestion becomes the eased walk or bike.
-  const c = ctx(dayFor(4), { readinessEase: true, easeReason: 'Energy and mood are off your 7-day trend for 2 days.' })
-  const g = guardReplaceSuggestions({ coachLine: 'Keep moving.', suggestions: [{ type: 'running', label: 'Zone 2', timeSlot: 'am', estimatedMin: 30 }] }, { id: 'x', type: 'skip_rope', epochDay: dayFor(4), timeSlot: 'am' }, c)
-  assert(g.output.suggestions[0].type === 'active_recovery' && has(g.clamps, 'ease_day'), 'ease day: run suggestion eased to a walk or bike')
-}
-{
-  // Rest day: replacing Sunday back care with bag work falls back to an easy walk.
-  const sun = dayFor(0)
-  const g = guardReplaceSuggestions({ coachLine: 'Bag.', suggestions: [{ type: 'bag_work', label: 'Bag', timeSlot: 'am', estimatedMin: 30 }] }, { id: `${sun}-mobility`, type: 'mobility', epochDay: sun, timeSlot: 'am' }, ctx(sun))
-  assert(g.output.suggestions.length === 1 && g.output.suggestions[0].type === 'active_recovery' && has(g.clamps, 'rest_day'), 'rest day: hard suggestions out, easy walk in')
-  assert(safeReplaceOptions({ type: 'strength' }).map(s => s.type).join(',') === 'mobility,active_recovery', 'safe options: back care and an easy walk')
 }
 
 // ─── Loads ──────────────────────────────────────────────────────

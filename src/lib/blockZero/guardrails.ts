@@ -10,8 +10,6 @@
 import type {
   PlannedSession as AiPlannedSession,
   ReactiveReplanOutput,
-  ReplaceSuggestion,
-  ReplaceSuggestionsOutput,
   SessionType,
   WeekPlanOutput,
 } from '../prompts/tools'
@@ -51,7 +49,6 @@ export type ClampCode =
   | 'calibration_cap'
   | 'calibration_untested'
   | 'mt_cap'
-  | 'suggestion_fallback'
   | 'voice'
 
 export interface Clamp {
@@ -294,7 +291,7 @@ export function guardWeekPlan(plan: WeekPlanOutput, input: WeekPlanGuardInput): 
   return { output, clamps }
 }
 
-// ─── Mid-week placements (reactive replan, replace suggestions) ──
+// ─── Mid-week placements (reactive replan) ──
 
 export interface GuardSession {
   id?: string
@@ -625,74 +622,6 @@ export function guardReactiveReplan(output: ReactiveReplanOutput, ctx: BlockZero
     if (HARD_TYPES.has(type) && !HARD_TYPES.has(p.type)) final.shiftAction = 'swap'
   }
   return { output: final, clamps }
-}
-
-// ─── Replace suggestions (ReplaceSuggestionsOutput) ───────────
-
-export interface ReplacedSession {
-  id: string
-  type: string
-  epochDay: number
-  timeSlot: 'am' | 'pm'
-}
-
-/** Rules-made safe options when nothing the AI offered fits. */
-export function safeReplaceOptions(replaced: Pick<ReplacedSession, 'type'>): ReplaceSuggestion[] {
-  const foundation: ReplaceSuggestion = { type: 'mobility', label: FOUNDATION_LABEL, timeSlot: 'am', estimatedMin: 12 }
-  const walk: ReplaceSuggestion = { type: 'active_recovery', label: 'Easy Walk', timeSlot: 'am', estimatedMin: 20 }
-  return replaced.type === 'mobility' ? [walk] : [foundation, walk]
-}
-
-/**
- * Filter replace suggestions to the ones the rules allow today, clamping
- * minutes, class types and time slots on the way. Fewer than one left: the
- * rules' safe options, with the refusal of the AI's top pick as the line.
- */
-export function guardReplaceSuggestions(
-  output: ReplaceSuggestionsOutput,
-  replaced: ReplacedSession,
-  ctx: BlockZeroGuardContext,
-): Guarded<ReplaceSuggestionsOutput> {
-  const clamps: Clamp[] = []
-  const coachLine = voiced(output.coachLine ?? '', 'coachLine', clamps) ?? ''
-  const kept: ReplaceSuggestion[] = []
-  let topRefusal: Clamp | null = null
-  let topChanged = false
-  const list = Array.isArray(output.suggestions) ? output.suggestions : []
-
-  list.forEach((s, i) => {
-    if (!s || typeof s.type !== 'string') return
-    const result = checkPlacement({
-      type: s.type,
-      label: s.label ?? s.type,
-      epochDay: Math.max(replaced.epochDay, ctx.todayEpochDay),
-      timeSlot: s.timeSlot === 'pm' ? 'pm' : 'am',
-      estimatedMin: Number.isFinite(s.estimatedMin) ? s.estimatedMin : (DURATION_BOUNDS[s.type]?.[0] ?? 10),
-      removedSessionId: replaced.id,
-      adds: true,
-    }, ctx)
-    clamps.push(...result.clamps)
-    if (!result.ok) {
-      clamps.push({ ...result.clamp, detail: `#${i + 1} ${result.clamp.detail}` })
-      if (i === 0) topRefusal = result.clamp
-      return
-    }
-    const p = result.placement
-    if (i === 0 && result.clamps.length > 0) topChanged = true
-    const next: ReplaceSuggestion = { type: p.type as SessionType, label: p.label, timeSlot: p.timeSlot, estimatedMin: p.estimatedMin ?? s.estimatedMin }
-    if (!kept.some(k => k.type === next.type && k.label === next.label)) kept.push(next)
-  })
-
-  if (kept.length === 0) {
-    const reason = (topRefusal as Clamp | null)?.reason ?? 'Nothing offered fits the rules today.'
-    const fallback = safeReplaceOptions(replaced)
-    clamps.push({ code: 'suggestion_fallback', detail: `replaced=${replaced.type} options=${fallback.map(f => f.type).join(',')}`, reason: `${reason} Foundation or an easy walk instead.` })
-    return { output: { coachLine: `${reason} Foundation or an easy walk instead.`, suggestions: fallback }, clamps }
-  }
-
-  const first = topRefusal as Clamp | null
-  const line = first ? first.reason : topChanged ? clamps.filter(c => c.code !== 'voice')[0]?.reason ?? coachLine : coachLine
-  return { output: { coachLine: line, suggestions: kept.slice(0, 3) }, clamps }
 }
 
 // ─── Loads (assessment, transition, any proposed weight) ──────
