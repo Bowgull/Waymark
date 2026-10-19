@@ -76,7 +76,7 @@ assert.ok(row(w5, 'ex-side-plank') && !row(w5, 'ex-side-plank-knees'), 'L3 full 
 assert.ok(row(w3, 'ex-mcgill-curl-up')!.holdSec! > row(w1, 'ex-mcgill-curl-up')!.holdSec! && row(w5, 'ex-mcgill-curl-up')!.holdSec! > row(w3, 'ex-mcgill-curl-up')!.holdSec!, 'curl-up hold rises each level')
 assert.ok(row(w5, 'ex-bird-dogs')!.holdSec! > row(w3, 'ex-bird-dogs')!.holdSec! && row(w3, 'ex-bird-dogs')!.holdSec! > row(w1, 'ex-bird-dogs')!.holdSec!, 'bird dog hold rises each level')
 assert.ok(!row(w1, 'ex-glute-bridges')!.perSide && row(w5, 'ex-glute-bridges')!.perSide, 'L3 bridge goes single-leg')
-assert.ok(/head about 2 cm/.test(row(w3, 'ex-chin-tucks')!.notes ?? ''), 'L2 chin tucks add the head lift')
+assert.ok(/head about an inch/.test(row(w3, 'ex-chin-tucks')!.notes ?? ''), 'L2 chin tucks add the head lift (in inches, M4)')
 assert.equal(w5.filter(r => r.exerciseId === 'ex-chin-tucks').length, 2, 'L3: seated chin tucks plus head-lift holds')
 assert.ok(/wall/.test(w5.find(r => r.exerciseId === 'ex-chin-tucks')!.notes ?? ''), 'L3 chin tucks against a wall')
 assert.equal(w1.filter(r => r.exerciseId === 'ex-chin-tucks').length, 1)

@@ -119,7 +119,7 @@ export const FOUNDATION_ROWS: readonly FoundationRow[] = [
     exerciseId: 'ex-mcgill-curl-up', label: 'McGill Curl-Up', section: 'lower', block: 'back',
     levels: [d(1, 6, 5), d(1, 8, 5), d(1, 10, 4)],
     badBack: d(1, 6, 3),
-    note: '{reps} reps, hold {hold}s each. Hands under the low back, lift head and shoulders a few centimetres. Swap the bent leg halfway.',
+    note: '{reps} reps, hold {hold}s each. Hands under the low back, lift head and shoulders about an inch. Swap the bent leg halfway.',
   },
   {
     exerciseId: 'ex-bird-dogs', label: 'Bird Dog', section: 'lower', block: 'back', perSide: true,
@@ -159,7 +159,7 @@ export const FOUNDATION_ROWS: readonly FoundationRow[] = [
     exerciseId: 'ex-chin-tucks', label: 'Chin Tuck', section: 'upper', block: 'neck',
     levels: [
       d(1, 10, 10),
-      d(1, 10, 10, { note: '{reps} holds of {hold}s, lying down. A gentle nod, as if saying "yes". On the last 3, lift the head about 2 cm off the floor.' }),
+      d(1, 10, 10, { note: '{reps} holds of {hold}s, lying down. A gentle nod, as if saying "yes". On the last 3, lift the head about an inch off the floor.' }),
       d(1, 10, 7, { note: '{reps} holds of {hold}s, sitting tall with the back of your head against a wall. A gentle nod, chin level, no hard double chin.' }),
     ],
     badBack: d(1, 10, 10),
@@ -171,7 +171,7 @@ export const FOUNDATION_ROWS: readonly FoundationRow[] = [
     levels: ['skip', 'skip', d(1, 15, 3)],
     badBack: 'skip',
     badNeck: 'skip',
-    note: 'Head-lift holds: {reps} x {hold}s. Lying down, nod gently, then lift the head about 2 cm and hold. Stop if the chin pokes forward.',
+    note: 'Head-lift holds: {reps} x {hold}s. Lying down, nod gently, then lift the head about an inch and hold. Stop if the chin pokes forward.',
   },
   {
     exerciseId: 'ex-foam-roll-thoracic', label: 'Thoracic Extension (Foam Roller)', section: 'upper', block: 'neck',
