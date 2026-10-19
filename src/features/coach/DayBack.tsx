@@ -26,6 +26,8 @@ export function DayBack({ day, changes, todayDay, onUndo, onClose }: {
   const ref = useRef<HTMLDivElement>(null)
   const [notch, setNotch] = useState<number | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  // The phone's wall clock when the back opened (m5: a planned start already gone isn't named).
+  const [nowLocal] = useState(() => Math.floor(Date.now() / 1000) - new Date().getTimezoneOffset() * 60)
 
   useLayoutEffect(() => {
     const back = ref.current
@@ -76,7 +78,7 @@ export function DayBack({ day, changes, todayDay, onUndo, onClose }: {
                   <p className="voice" style={{ marginTop: 8 }}>{backWhy(c, todayDay)}</p>
                   {c.detail && <p className="voice dim" style={{ marginTop: 4 }}>{c.detail}</p>}
                   <div className="uline" style={{ marginTop: 8 }}>
-                    <span className="until">{backUntil(c, todayDay, Math.floor(Date.now() / 1000) - new Date().getTimezoneOffset() * 60)}</span>
+                    <span className="until">{backUntil(c, todayDay, nowLocal)}</span>
                     {c.lock === 'open' && (
                       <FlapButton
                         label="UNDO"

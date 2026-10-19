@@ -121,12 +121,15 @@ function ProgramHeader() {
   )
 }
 
-/** The page frame: no background (the world shows through), the road band left clear. */
-function Frame({ children, road = true }: { children: ReactNode; road?: boolean }) {
+/**
+ * The page frame: no background (the world and its road show through behind
+ * the glass). Page 56 6A: the week board sits right under the header, with no
+ * band left clear between them.
+ */
+function Frame({ children }: { children: ReactNode; road?: boolean }) {
   return (
     <div className="pg-root">
       <ProgramHeader />
-      {road && <div className="pg-road" aria-hidden />}
       <div className="pg-body">{children}</div>
     </div>
   )

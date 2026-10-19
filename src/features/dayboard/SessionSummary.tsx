@@ -19,6 +19,8 @@ import {
   easedOneSet,
   topLiftsLine,
   zone2PlanLine,
+  runWalkPlanLine,
+  runWalkShapeFor,
   type DayBoardSession,
   type DiffLine,
   type RunActuals,
@@ -51,6 +53,8 @@ export interface SessionSummaryProps {
 
 interface RunPrescription extends RunPlan {
   targetDesc?: string | null
+  /** A Block Zero run-walk as prescribed (caps included). */
+  runWalk?: { runSec: number; walkSec: number; rounds: number; warmupSec: number } | null
 }
 
 type SummaryData =
@@ -157,6 +161,11 @@ function plain(label: string, text: string): DiffLine {
 function planView(s: DayBoardSession, data: SummaryData | null, weekNumber: number | null | undefined): { prose: string[]; lines: DiffLine[] } {
   const prose: string[] = []
   const lines: DiffLine[] = []
+  // Page 56 1A: a Block Zero run-walk opens to its rounds in one line, nothing else.
+  if (s.type === 'foundation_run' && s.blockType === 'block_zero') {
+    const rw = data?.kind === 'run' ? data.plan?.runWalk ?? null : null
+    return { prose: [runWalkPlanLine(rw ?? runWalkShapeFor(s, weekNumber ?? s.blockWeek ?? 1))], lines: [] }
+  }
   switch (data?.kind) {
     case 'strength': {
       const week = strengthWeekLine(s.blockType, weekNumber ?? s.blockWeek, easedOneSet(s.contextJson))

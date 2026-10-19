@@ -59,6 +59,8 @@ export interface TodayDayProps {
   /** The row to open (a skip just made opens its row for the tiles). */
   openId?: string | null
   onOpenChange?: (id: string | null) => void
+  /** The block's training week (a run-walk's rounds and minutes come from it). */
+  weekNumber?: number | null
 }
 
 /** Strava's run matched this planned run and waits for CONFIRM (page 40, phone 1). */
@@ -105,7 +107,7 @@ export function TodayDay(props: TodayDayProps) {
   )
 }
 
-function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
+function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason, weekNumber }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
   const rowRef = useRef<HTMLDivElement>(null)
   const [endOpen, setEndOpen] = useState(false)
   const actionable = isActionableTodaySession(s.status, false)
@@ -114,7 +116,7 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
   const name = sessionDisplayName(s).toUpperCase()
   // Page 35: a done row reads ✓ in the minutes' place (a teal tick once opened); a to-do its planned length.
   // Page 40: a run confirmed from Strava reads its minutes and ✓ ("35min ✓").
-  const mins = skipped ? '—' : `~${plannedRowMinutes(s)}min`
+  const mins = skipped ? '—' : `~${plannedRowMinutes(s, weekNumber)}min`
   const stravaMin = done && s.runSession?.stravaActivityId != null ? stravaMinutes(s) : null
   const rune = !skipped ? runes?.[s.id] ?? null : null
   const skip = skipped ? skipReasons?.[s.id] ?? null : null
@@ -143,6 +145,7 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
         <div className="td-sum" onClick={e => e.stopPropagation()}>
           <SessionSummary
             session={s}
+            weekNumber={weekNumber}
             variant="today"
             actions={actionable ? (
               <>

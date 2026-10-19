@@ -14,7 +14,7 @@ import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker
 import { REPLACE_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
 import { useToast } from '@/components/ui/Toast'
 import { PageErrorScreen } from '@/components/ui/ErrorScreens'
-import { iconFor, sessionDisplayName } from '@/features/dayboard/rowState'
+import { iconFor, sessionDisplayName, withoutReplaced } from '@/features/dayboard/rowState'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import { DayBack } from '@/features/coach/DayBack'
 import { backChanges, runeForDay, runeForSession } from '@/features/coach/changeView'
@@ -289,7 +289,7 @@ export function TodayPage() {
 
   // The week's changes and runes (page 56): Dagaz where the coach changed a day, Nauthiz where a session was missed.
   const { week: changes, markSeen, undo } = useWeekChanges(block ? mondayOf(todayEpoch) : null, changesVersion)
-  const strip = useMemo(() => (week?.sessions ? weekStripDays(week.sessions, mondayOf(todayEpoch), todayEpoch, d => runeForDay(changes, d)) : null), [week, todayEpoch, changes])
+  const strip = useMemo(() => (week?.sessions ? weekStripDays(withoutReplaced(week.sessions), mondayOf(todayEpoch), todayEpoch, d => runeForDay(changes, d)) : null), [week, todayEpoch, changes])
   const rowRunes = useMemo(() => Object.fromEntries(sessions.map(s => [s.id, runeForSession(changes, s.id)])), [sessions, changes])
   const backList = useMemo(() => (backDay != null ? backChanges(changes, backDay) : []), [changes, backDay])
   const tomorrow = useMemo(() => {
@@ -625,7 +625,8 @@ export function TodayPage() {
           {/* the clearing and its lantern show between the top and the boards (pages 17, 35, 56) */}
           <div className="td-spacer" style={{ minHeight: strip ? '16dvh' : '24dvh' }} />
           <TodayDay
-            sessions={sessions}
+            sessions={withoutReplaced(sessions)}
+            weekNumber={block?.currentWeek ?? null}
             onStart={handleStart}
             onSkip={id => { void handleSkip(id) }}
             onReplace={handleReplaceStart}

@@ -114,4 +114,10 @@ test('lock card: 19 pt for page 55\'s session, 18 pt for the longest combos', ()
   assert.equal(lockComboSize([['REAR ROUNDHOUSE', 'REAR ROUNDHOUSE', 'REAR ROUNDHOUSE', 'REAR ROUNDHOUSE']]), LOCK_COMBO_MIN, 'never below the xs minimum')
 })
 
+test('X11: a long single strike keeps about 25 px clear at each side of a 390 pt screen', () => {
+  const px = bagComboSize([{ now: ['REAR ROUNDHOUSE'], then: [] }], { width: 390, height: 420 })
+  const w = flapWidth('REAR ROUNDHOUSE', px, px * 0.05)
+  assert.ok(w <= 390 - 50, `${w} px wide at ${px} px`)
+})
+
 console.log(`\n${passed} bag round tests passed`)

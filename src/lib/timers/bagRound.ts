@@ -60,8 +60,8 @@ export const ZONE = {
   cue: 26,
   /** The ⌄ between two strikes. */
   arrow: 18,
-  /** A strike may run 4 px into the zone's side padding (centred). */
-  sideSlack: 4,
+  /** Page 55 keeps about 25 px clear at each side of the widest strike (X11: never edge to edge). */
+  sideMargin: 25,
 } as const
 
 /** The THEN line: a 12 px label, xs (14 px) strike flaps with 1 px between cells, 13 px › arrows; 6 px across, 4 px down. */
@@ -103,7 +103,7 @@ export function thenHeight(then: string[][], contentW: number): number {
 
 /** Whether one view fits a zone `width` × `height` with its combo at `px`. */
 export function viewFits(view: BagRoundView, px: number, width: number, height: number): boolean {
-  const maxW = width - 2 * ZONE.sideSlack
+  const maxW = width - 2 * ZONE.sideMargin
   if (view.now.some(s => flapWidth(s, px, px * 0.05) > maxW)) return false
   const th = thenHeight(view.then, width - 2 * ZONE.padX)
   const parts = [stackHeight(view.now.length, px), ZONE.cue, th].filter(h => h > 0)

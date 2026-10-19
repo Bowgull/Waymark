@@ -15,9 +15,6 @@
 .pg-brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; -webkit-tap-highlight-color: transparent; }
 .pg-crest { width: 54px; height: 60px; display: grid; place-items: center; flex: none; }
 
-/* the road band: the world draws the road and its wayposts here */
-.pg-road { height: 96px; flex: none; pointer-events: none; }
-
 /* page 33: the boards' column (.lbody: 12px sides, 8px apart) */
 .pg-body { display: flex; flex-direction: column; gap: 8px; }
 

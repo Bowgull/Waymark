@@ -15,8 +15,8 @@
 .bw-gspace { flex: none; height: calc((100% + env(safe-area-inset-top)) * 0.34); }
 .tm-ui .bw-gspace { pointer-events: none; } /* taps fall through to the grass */
 
-/* the combo zone: what is left between the top bar and the round + clock */
-.bw-zone { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 8px 14px 10px; overflow: hidden; }
+/* the combo zone: what is left between the top bar and the round + clock; the stack starts right under the top bar (X10) */
+.bw-zone { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 10px; padding: 8px 14px 10px; overflow: hidden; }
 
 /* the combo stacked, one strike per line, gold ⌄ arrows, no boxes; the session's one size */
 .bw-stack { display: flex; flex-direction: column; align-items: center; transition: opacity 0.3s ease; }

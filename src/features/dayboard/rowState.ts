@@ -149,10 +149,21 @@ function mmss(sec: number): string {
  * walk 1:00 · 23 min", the coach's rounds when it eased the session.
  */
 export function runWalkDetail(session: Pick<DayBoardSession, 'contextJson'>, weekNumber: number): string {
+  const w = runWalkShapeFor(session, weekNumber)
+  return `${w.rounds} rounds · run ${mmss(w.runSec)}, walk ${mmss(w.walkSec)} · ${Math.round(runWalkTotalSec(w) / 60)} min`
+}
+
+/** A Block Zero run-walk's shape for its week, with the coach's eased rounds. */
+export function runWalkShapeFor(session: Pick<DayBoardSession, 'contextJson'>, weekNumber: number): { runSec: number; walkSec: number; rounds: number; warmupSec: number } {
   const w = getRunWalkWeek(weekNumber)
   const ease = parseContext(session.contextJson).coachEase as { kind?: string; rounds?: number } | undefined
   const rounds = ease?.kind === 'rounds' && typeof ease.rounds === 'number' ? ease.rounds : w.rounds
-  return `${rounds} rounds · run ${mmss(w.runSec)}, walk ${mmss(w.walkSec)} · ${Math.round(runWalkTotalSec({ ...w, rounds }) / 60)} min`
+  return { runSec: w.runSec, walkSec: w.walkSec, rounds, warmupSec: w.warmupSec }
+}
+
+/** Page 56 1A, the open run-walk row: "5 rounds: run 3:30, walk 1:00, after a 5 min walk. Easy, full sentences." */
+export function runWalkPlanLine(w: { runSec: number; walkSec: number; rounds: number; warmupSec: number }): string {
+  return `${w.rounds} ${w.rounds === 1 ? 'round' : 'rounds'}: run ${mmss(w.runSec)}, walk ${mmss(w.walkSec)}, after a ${Math.round(w.warmupSec / 60)} min walk. Easy, full sentences.`
 }
 
 // ─── Row state ──
@@ -442,6 +453,8 @@ export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'l
     const min = plannedRowStrengthMinutes(t.exercises, { oneSetLess: easedOneSet(s.contextJson) })
     if (min != null) return min
   }
+  // A run-walk carries no block week: the week's own shape, with eased rounds (X3: ~28 in week 4).
+  if (s.type === 'foundation_run' && kind === 'block_zero') return Math.round(runWalkTotalSec(runWalkShapeFor(s, weekNumber ?? week)) / 60)
   return estimatedMinutes({ type: s.type, notes: s.notes ?? null, estimatedMin: null }, kind, weekNumber ?? week)
 }
 
@@ -520,4 +533,19 @@ export function roundDiffLines(roundSecs: ReadonlyArray<number>, plannedSecs: Re
     else lines.push(plainLine(`ROUND ${i + 1}`, mmss(sec)))
   })
   return lines
+}
+
+/**
+ * Page 56 1C: once he swaps a session, only the swap shows. The session it
+ * replaced (skipped, named in the swap's context_json.replaced) leaves the
+ * day board and the strip; undoing the swap brings it back. A plain SKIP
+ * stays, struck.
+ */
+export function withoutReplaced<T extends { id: string; status: string; contextJson?: string | null }>(list: ReadonlyArray<T>): T[] {
+  const gone = new Set<string>()
+  for (const s of list) {
+    const r = parseContext(s.contextJson).replaced as { originalSessionId?: unknown } | undefined
+    if (r && typeof r.originalSessionId === 'string') gone.add(r.originalSessionId)
+  }
+  return list.filter(s => !(s.status === 'skipped' && gone.has(s.id)))
 }
