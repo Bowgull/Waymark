@@ -50,6 +50,11 @@
 .tm-next { margin: 14px 14px 0; padding: 12px 12px 14px; }
 .tm-next .tm-nlab { display: block; text-align: center; margin-bottom: 10px; line-height: 1; }
 .tm-next.is-rest .stk { box-shadow: inset 0 0 0 1px rgba(120, 190, 170, 0.45); }
+/* the combo's own form cue under the strikes (page 47 .cue): CUE · TURN THE HIP on a teal flap */
+.tm-cues { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(0, 0, 0, 0.55); display: flex; flex-direction: column; gap: 8px; }
+.tm-cue { display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 0; }
+.tm-cue .wm-label { flex: none; }
+.tm-cue-f { display: inline-flex; flex: 0 1 auto; min-width: 0; }
 
 /* a combo: strike tiles joined by ›, its letter first (page 31 sizes; .is-timer = page 19's big tiles) */
 .tm-combo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }

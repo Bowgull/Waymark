@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { FlapLabel } from '@/design'
 import { SessionButton } from '@/components/timers'
@@ -19,9 +19,20 @@ interface SessionCompleteProps {
  * "How was it?" on the dark, then a centred card: Effort with its word on a
  * gold flap (HARD), ten 64 px flap tiles (the pick gold), Very light … Max
  * effort, CLOSE SESSION. One tap, with wraps on. The moment follows the save.
+ *
+ * Notes (page 47): shut by default. A small teal + NOTE chip under the scale
+ * opens the box in the card; the note saves with the session (sessions.notes),
+ * where the coach reads it.
  */
 export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) {
   const [rpe, setRpe] = useState(7)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [notes, setNotes] = useState('')
+  const noteRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (noteOpen) noteRef.current?.focus()
+  }, [noteOpen])
 
   useEffect(() => {
     const now = Date.now()
@@ -40,7 +51,7 @@ export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) 
 
   function handleFinish() {
     completeHaptic()
-    onFinish(rpe, '')
+    onFinish(rpe, notes.trim())
   }
 
   return (
@@ -70,6 +81,26 @@ export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) 
           <span className="ss-grow" />
           <span className="wm-label">Max effort</span>
         </div>
+        <div className="ss-chiprow">
+          {!noteOpen && (
+            <button type="button" className="ss-chipn" aria-label="Add a note" onClick={() => setNoteOpen(true)}>
+              <FlapLabel text="+ NOTE" size="xs" tone="teal" />
+            </button>
+          )}
+        </div>
+        {noteOpen && (
+          <div style={{ marginTop: 10 }}>
+            <textarea
+              ref={noteRef}
+              className="ss-note"
+              aria-label="Session note"
+              placeholder="Anything the coach should know."
+              value={notes}
+              maxLength={2000}
+              onChange={e => setNotes(e.target.value)}
+            />
+          </div>
+        )}
         <div style={{ marginTop: 10 }}>
           <SessionButton label={submitting ? 'SAVING' : 'CLOSE SESSION'} primary disabled={submitting} onClick={handleFinish} />
         </div>

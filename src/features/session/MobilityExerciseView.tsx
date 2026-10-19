@@ -180,20 +180,20 @@ export function MobilityExerciseView({
         },
       }
     }
+    // A finished hold mid-session is the lock screen's "time ran out" state
+    // (page 44: clay 0:00, skip only), not the session-finish card.
     if (holdTimer.running && holdTimer.reachedTarget) {
       const now = holdTimer.endsAtMs || activityReadyAtMs
       return {
         sessionType: 'mobility',
         sessionLabel: 'Foundation',
         state: {
-          phase: 'complete',
+          phase: 'hold',
           label: exerciseName,
           detail,
-          exerciseName,
-          startedAt: now,
+          startedAt: holdTimer.startedAtMs || now,
           endsAt: now,
           isPaused: false,
-          completeMessage: 'Hold complete',
         },
       }
     }

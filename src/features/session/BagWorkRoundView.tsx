@@ -16,6 +16,7 @@ import {
   cancelRoundActiveCues,
   cancelRestCues,
 } from '@/lib/notifications'
+import { comboCue } from '@/lib/comboCue'
 import { isStaleCue, type EngineState } from '@/lib/sessionResume'
 import { heatFor, workLabel } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
@@ -76,7 +77,9 @@ interface BagWorkRoundViewProps {
  * BAG WORK and the round on flaps, pips, the calm flap clock, FIGHT (FINISH with
  * the yellow, orange, red heat in the last 10 s), the combo on big strike tiles,
  * and the grass. Rest turns everything teal: REST, and the board reads NEXT ROUND
- * with the next combo flipped in. Tap the grass to pause, swipe up to skip to the
+ * with the next combo flipped in. Under the strikes, each combo's own form cue
+ * on a teal flap (page 47: CUE · TURN THE HIP; from lib/comboCue, never AI).
+ * Tap the grass to pause, swipe up to skip to the
  * next phase, hold the × to end.
  */
 export function BagWorkRoundView({
@@ -315,6 +318,10 @@ export function BagWorkRoundView({
     : { durationSec: round.durationSec, endsAtMs: null, remainingMs: round.durationSec * 1000 }
   const boardRound = resting && nextRound ? nextRound : round
   const combos = boardRound.combos.filter(rc => rc.combo)
+  // One cue per combo row; with more than one combo each cue names its letter.
+  const cues = combos
+    .map(rc => ({ key: rc.id, cue: comboCue(rc.combo), letter: combos.length > 1 ? letters?.get(rc.combo!.id) : undefined }))
+    .filter(c => c.cue)
 
   function togglePause() {
     if (fighting) { if (roundTimer.isPaused) resumeRound(); else pauseRound() }
@@ -360,6 +367,16 @@ export function BagWorkRoundView({
               <ComboStrikes key={rc.id} text={rc.combo!.text} letter={letters?.get(rc.combo!.id)} size="md" timer />
             ))}
           </div>
+          {cues.length > 0 && (
+            <div className="tm-cues">
+              {cues.map(c => (
+                <div key={c.key} className="tm-cue">
+                  <span className="wm-label">{c.letter ? `Cue ${c.letter}` : 'Cue'}</span>
+                  <span className="tm-cue-f"><FlapLabel text={c.cue} size="sm" tone="teal" fit /></span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
       {phase === 'ready' && (

@@ -59,6 +59,13 @@
 .ss-etiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
 .ss-etile { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 64px; padding: 10px 0; border: 0; border-radius: 10px; cursor: pointer; background: rgba(0, 0, 0, 0.22); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
 .ss-etile:active { transform: scale(0.97); }
+/* + NOTE (page 47): a small teal chip under the scale; the box opens only when tapped */
+.ss-chiprow { display: flex; justify-content: center; }
+.ss-chipn { margin-top: 10px; padding: 7px 12px; border: 0; border-radius: 9px; cursor: pointer; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgba(95, 160, 140, 0.55); -webkit-tap-highlight-color: transparent; }
+.ss-chipn:active { transform: scale(0.97); }
+.ss-note { display: block; width: 100%; box-sizing: border-box; min-height: 84px; resize: none; border: 0; border-radius: 9px; padding: 10px 12px; background: rgba(4, 9, 7, 0.6); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3); font: 500 16px/1.4 var(--font-body); color: #f0ead6; outline: none; }
+.ss-note::placeholder { color: rgba(240, 234, 214, 0.45); }
+.ss-note:focus-visible { box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.6); }
 
 /* The moment (page 19 #6) */
 .ss-moment { position: fixed; inset: 0; z-index: 90; overflow: hidden; background: #020604; cursor: pointer; }
