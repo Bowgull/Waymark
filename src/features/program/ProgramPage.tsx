@@ -36,6 +36,8 @@ interface Block {
   status: string
   /** Training week from the server, paused through gaps. */
   currentWeek?: number
+  /** Today's training week: leadIn on a mid-week start's days before week 1. */
+  trainingWeek?: { leadIn?: boolean }
   /** Return plan after a gap; offerBlockZero after 4+ weeks off in a Fighter block. */
   returnPlan?: { offerBlockZero: boolean; reason: string | null } | null
 }
@@ -76,7 +78,24 @@ function getMonday(weekOffset = 0): string {
   return monday.toLocaleDateString('en-CA')
 }
 
+/**
+ * A Block Zero started on any day but Monday leads in to week 1. The lead-in
+ * and week 1 are both plan week 1 on the server; here the lead-in is week 0.
+ */
+const LEAD_IN_WEEK = 0
+
+function hasLeadIn(b: Block): boolean {
+  if (b.blockType !== 'block_zero' || !b.startedAt) return false
+  const startDay = Math.floor(b.startedAt / 86400)
+  return new Date(startDay * 86400000).getUTCDay() !== 1
+}
+
+function firstWeekOf(b: Block): number {
+  return hasLeadIn(b) ? LEAD_IN_WEEK : 1
+}
+
 function currentWeekOf(b: Block): number {
+  if (b.trainingWeek?.leadIn) return LEAD_IN_WEEK
   // The server's training week pauses through gaps; the calendar is only a fallback.
   if (b.currentWeek != null) return b.currentWeek
   if (!b.startedAt) return 1
@@ -139,7 +158,9 @@ export function ProgramPage() {
   const { week: changes, markSeen, undo, refresh: refreshChanges } = useWeekChanges(changesMonday, changesVersion)
 
   const loadWeek = useCallback(async (b: Block, wn: number) => {
-    let wd = await apiFetch<WeekData | null>(`/api/weeks/current?blockId=${b.id}&weekNumber=${wn}`)
+    let wd = await apiFetch<WeekData | null>(wn === LEAD_IN_WEEK
+      ? `/api/weeks/current?blockId=${b.id}&weekNumber=1&leadIn=1`
+      : `/api/weeks/current?blockId=${b.id}&weekNumber=${wn}`)
     // The current week is prepared on open if it has no plan (the same path
     // as the Sunday weekly pass). Later weeks say "Not prepared yet".
     if (!wd && wn === currentWeekOf(b)) {
@@ -195,7 +216,7 @@ export function ProgramPage() {
         const cw = currentWeekOf(existingBlock)
         // A deep link (/program?day=YYYY-MM-DD) opens the week holding that day.
         const day = parseDayParam(new URLSearchParams(window.location.search).get('day'))
-        const wn = day != null ? weekForDay(day, isoToEpochDay(getTodayISO()), cw, existingBlock.totalWeeks) : cw
+        const wn = day != null ? weekForDay(day, isoToEpochDay(getTodayISO()), cw, existingBlock.totalWeeks, firstWeekOf(existingBlock)) : cw
         await loadWeek(existingBlock, wn)
       } catch (e) {
         console.error('Failed to load program:', e)
@@ -211,7 +232,7 @@ export function ProgramPage() {
   useEffect(() => {
     if (dayParam == null || !block) return
     let cancelled = false
-    const wn = weekForDay(dayParam, todayEpochDay, currentWeekOf(block), block.totalWeeks)
+    const wn = weekForDay(dayParam, todayEpochDay, currentWeekOf(block), block.totalWeeks, firstWeekOf(block))
     void (async () => {
       if (wn !== weekNumber) await loadWeek(block, wn).catch(() => {})
       if (!cancelled) setOpenDay(dayParam)
@@ -223,7 +244,7 @@ export function ProgramPage() {
 
   // The road's wayposts: sessions done in past weeks (fetched once per block window).
   const currentWeek = block ? currentWeekOf(block) : 1
-  const windowWeeks = block ? cycleWeeks(weekNumber, block.totalWeeks, block.blockType) : []
+  const windowWeeks = block ? cycleWeeks(Math.max(1, weekNumber), block.totalWeeks, block.blockType) : []
   const pastKey = block ? `${block.id}:${currentWeek}:${windowWeeks.join(',')}` : ''
   useEffect(() => {
     if (!block || !pastKey) return
@@ -331,7 +352,7 @@ export function ProgramPage() {
   }
 
   function goToWeek(w: number) {
-    if (!block || w < 1 || w > block.totalWeeks || w === weekNumber) return
+    if (!block || w < firstWeekOf(block) || w > block.totalWeeks || w === weekNumber) return
     setOpenDay(null)
     void loadWeek(block, w).catch(e => console.error('Failed to load week:', e))
   }
@@ -432,9 +453,12 @@ export function ProgramPage() {
 
   const isBlockZero = block.blockType === 'block_zero'
   // Block Zero extension weeks hold week-5 levels; Fighter cycles every 6 weeks.
-  const blockWeek = strengthBlockWeek(block.blockType, weekNumber)
+  const leadInView = weekNumber === LEAD_IN_WEEK
+  const blockWeek = strengthBlockWeek(block.blockType, Math.max(1, weekNumber))
   const weekInfo = getWeekLabel(blockWeek, isBlockZero ? 'block_zero' : 'fighter')
-  const blkLine = isBlockZero
+  const blkLine = leadInView
+    ? `Lead-in · week 1 starts Monday`
+    : isBlockZero
     ? `${weekInfo} · week ${weekNumber} of ${block.totalWeeks}`
     : `Fighter · ${weekInfo} · block week ${blockWeek} of 6`
   const read = readWeekAnalysis(weekData?.week.analysisJson, weekData?.week.whyLine)
@@ -453,8 +477,8 @@ export function ProgramPage() {
       {/* the week: nav, six week flap tiles, why this week */}
       <div className="db-glass">
         <div className="pg-nav">
-          <button type="button" className="pg-lnk" onClick={() => goToWeek(weekNumber - 1)} disabled={weekNumber <= 1} aria-label="Previous week">‹ Prev</button>
-          <FlapLabel text={`WEEK ${weekNumber}`} size="md" tone={weekNumber === currentWeek ? 'gold' : 'ink'} />
+          <button type="button" className="pg-lnk" onClick={() => goToWeek(weekNumber - 1)} disabled={weekNumber <= firstWeekOf(block)} aria-label="Previous week">‹ Prev</button>
+          <FlapLabel text={leadInView ? 'LEAD-IN' : `WEEK ${weekNumber}`} size="md" tone={weekNumber === currentWeek ? 'gold' : 'ink'} />
           <button type="button" className="pg-lnk" onClick={() => goToWeek(weekNumber + 1)} disabled={weekNumber >= block.totalWeeks} aria-label="Next week">Next ›</button>
         </div>
         <p className="pg-blk">{blkLine}</p>
@@ -509,7 +533,7 @@ export function ProgramPage() {
             return ok
           }}
           onChanged={() => setChangesVersion(v => v + 1)}
-          weekNumber={weekNumber}
+          weekNumber={Math.max(1, weekNumber)}
           days={days}
           todayEpochDay={todayEpochDay}
           openDay={shownDay}

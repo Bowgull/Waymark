@@ -36,6 +36,8 @@ import {
   weeklyPassKey,
   weeklyPassTarget,
   whyThisWeek,
+  isLeadInContext,
+  hasCoachEase,
   withCoachEase,
   mergeContext,
   placePlannedWeek,
@@ -339,8 +341,8 @@ export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptio
       await recordChanges(db, [{
         setId, actor: 'weekly_pass', kind: 'ease', targetSessionId: id, sessionType: p.type, adjustmentType: 'weekly_ease', weekPlanId: weekId,
         before: { show: words?.show.before ?? 'AS PLANNED', ...(words?.show.logBefore ? { logShow: words.show.logBefore } : {}), day: p.epochDay, sessions: [{ id, f: {}, ctx: { coachEase: null } }] },
-        after: { show: words?.show.after ?? 'EASIER', day: p.epochDay, sessions: [snap(row, [], ['coachEase'])], put: { line: `${nameToken(sessionName(p), p.epochDay)} is back as planned.`, dim: 'The coach leaves it as you set it this week.' } },
-        why: ease.reason, detail: p.type === 'strength' ? 'One set less, about 10% lighter.' : null,
+        after: { show: words?.show.after ?? 'EASIER', day: p.epochDay, sessions: [snap(row, [], ['coachEase'])], put: p.type === 'strength' && words?.put ? words.put : { line: `${nameToken(sessionName(p), p.epochDay)} is back as planned.`, dim: 'The coach leaves it as you set it this week.' } },
+        why: ease.reason, detail: p.type === 'strength' ? words?.detail ?? 'Same weights.' : null,
         undoUntil: slotStart(p.epochDay, p.timeSlot, pm), extraSource: { cause: ease.cause },
       }], nowSec)
       changes.push({ sessionId: id, epochDay: p.epochDay, type: p.type, reason: ease.reason, was: ease.was, now: ease.now, source: 'rules', cause: ease.cause })
@@ -497,7 +499,8 @@ export function weekLineFor(week: Pick<WeekPlanRow, 'weekNumber' | 'analysisJson
     }
   const eases = (stored?.version === 2 ? stored.changes ?? [] : [])
     // An ease he undid (the session no longer carries it) is not in the line.
-    .filter(c => c.source === 'rules' && c.cause != null && (rows.length === 0 || /"coachEase"/.test(rows.find(r => r.id === c.sessionId)?.contextJson ?? '')))
+    .filter(c => c.source === 'rules' && c.cause != null && (rows.length === 0 || hasCoachEase(rows.find(r => r.id === c.sessionId)?.contextJson)))
     .map(c => ({ cause: c.cause as NonNullable<WeekChange['cause']>, epochDay: c.epochDay, name: rows.find(r => r.id === c.sessionId)?.label ?? (c.type === 'strength' ? 'Strength' : c.type), type: c.type }))
-  return whyThisWeek(signals, eases)
+  const leadIn = rows.length > 0 && rows.some(r => isLeadInContext(r.contextJson))
+  return whyThisWeek(signals, eases, { leadIn })
 }

@@ -66,6 +66,7 @@ export interface WeekEase {
 /** What an ease does to a session, in plain words. */
 export function easeDetail(kind: CoachEaseKind, s: Pick<SessionLike, 'type' | 'label' | 'notes'>): { was: string; now: string } {
   if (kind === 'run_to_walk') return { was: sessionName(s), now: 'Easy walk or bike' }
+  if (s.type === 'strength' && kind === 'one_set') return { was: 'Planned sets', now: 'One set less, same weights' }
   if (s.type === 'strength') return { was: 'Planned sets and load', now: 'One set less, load 10% lower' }
   if (RUN_TYPES.has(s.type)) return { was: 'Planned run time', now: 'About 80% of the time' }
   if (s.type === 'mt_class') return { was: sessionName(s), now: 'Technique only, sit out the hard rounds' }
@@ -101,7 +102,8 @@ export function weekRuleEases(s: WeekSignals, planned: Array<Pick<SessionLike, '
     const pick = order.find(o => !used.has(o.index))
     if (!pick) break
     used.add(pick.index)
-    const kind: CoachEaseKind = 'reduce'
+    // Strength drops a set at the same weights (the line says so); runs shorten.
+    const kind: CoachEaseKind = pick.p.type === 'strength' ? 'one_set' : 'reduce'
     const d = easeDetail(kind, pick.p)
     out.push({
       index: pick.index,
@@ -194,8 +196,14 @@ export interface WeekLineEase {
  * Program's week board, as plain text. When the coach eased a session, one
  * sentence says which and why.
  */
-export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>): string {
+export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>, opts: { leadIn?: boolean } = {}): string {
   const parts: string[] = []
+  if (opts.leadIn && s.blockType === 'block_zero') {
+    // A mid-week start's lead-in has no strength: say what it holds, then week 1.
+    const r = getRunWalkWeek(1)
+    const t = getStrengthWeekTarget(1)
+    return houseLine(`Lead-in, all optional: Foundation every day and an easy run-walk on Tue, Thu and Sat. Week 1 starts Monday: ${NUM[t.mainSets] ?? t.mainSets} sets of ${t.reps} on every main lift, and run-walks of ${mmss(r.runSec)} run, ${mmss(r.walkSec)} walk.`, WEEK_LINE_MAX)
+  }
   if (s.returnRamp.active) {
     parts.push(`Back after ${s.returnRamp.gapDays} days: lifts and runs start lighter and climb back over the next weeks.`)
   } else if (s.blockType === 'block_zero') {
@@ -330,4 +338,14 @@ export function placePlannedWeek<T extends PlannedEntry>(planned: T[], template:
     else dropped.push({ entry: p, code: r.code, reason: r.reason })
   }
   return { accepted, dropped }
+}
+
+
+/** A session still carries a coach ease (an undo leaves `"coachEase":null`). */
+export function hasCoachEase(contextJson: string | null | undefined): boolean {
+  if (!contextJson) return false
+  try {
+    const ease = (JSON.parse(contextJson) as { coachEase?: unknown }).coachEase
+    return ease != null && typeof ease === 'object'
+  } catch { return false }
 }

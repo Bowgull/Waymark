@@ -58,6 +58,8 @@ interface CurrentBlock {
   id: string
   blockType: string
   currentWeek?: number
+  /** Today's training week; leadIn on a mid-week start's days before week 1. */
+  trainingWeek?: { leadIn?: boolean }
 }
 
 interface WeekPlanRow { id: string; weekNumber: number; whyLine?: string | null }
@@ -221,7 +223,9 @@ export function TodayPage() {
   useEffect(() => {
     if (!block?.id || block.currentWeek == null) return
     let cancelled = false
-    apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${block.currentWeek}`)
+    // A mid-week start: the lead-in and next Monday's week 1 are both week 1.
+    const leadIn = block.trainingWeek?.leadIn === true
+    apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${block.currentWeek}${leadIn ? '&leadIn=1' : ''}`)
       .then(w => {
         if (cancelled) return
         setWeek(w)
@@ -229,10 +233,10 @@ export function TodayPage() {
       .catch(() => { if (!cancelled) setWeek(null) })
     // Sunday's rest points at Monday, which belongs to next week's plan.
     if (todayEpoch + 1 > mondayOf(todayEpoch) + 6) {
-      apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${block.currentWeek + 1}`).then(w => { if (!cancelled) setNextWeek(w) }).catch(() => {})
+      apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${leadIn ? 1 : block.currentWeek + 1}`).then(w => { if (!cancelled) setNextWeek(w) }).catch(() => {})
     }
     return () => { cancelled = true }
-  }, [block?.id, block?.currentWeek, todayEpoch])
+  }, [block?.id, block?.currentWeek, block?.trainingWeek?.leadIn, todayEpoch])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a

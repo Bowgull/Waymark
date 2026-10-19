@@ -57,7 +57,9 @@ assert([1, 2, 3, 4, 5, 6].every(w => plainWords(whyThisWeek({ ...bz4, weekNumber
 const tired: WeekSignals = { ...base, readiness: { ...base.readiness, flaggedDays: 3, easeDays: 2 }, avgSoreness: 3.8 }
 const eases = weekRuleEases(tired, week)
 assert(eases.length === 2 && week[eases[0].index].type === 'strength' && week[eases[1].index].type === 'strength', 'two causes: the two strength days ease first')
-assert(eases.every(e => e.kind === 'reduce' && houseVoice(e.reason) && e.was && e.now), 'each ease has a reason and a was/now')
+assert(eases.every(e => e.kind === 'one_set' && houseVoice(e.reason) && e.was && e.now), 'each ease has a reason and a was/now')
+// m4 (E2E 2026-10-19b): the reason says "same weights", so the ease keeps the weights.
+assert(eases.every(e => /same weights/.test(e.reason) && e.now === 'One set less, same weights'), 'm4: a weekly strength ease drops a set at the same weights, and says so everywhere')
 assert(eases[0].reason.startsWith('Check-ins were off your usual on 2 mornings.') && plainWords(eases[0].reason), `reason names the cause in plain words: ${eases[0].reason}`)
 const lineEases = eases.map(e => ({ cause: e.cause, epochDay: week[e.index].epochDay, name: 'Strength', type: 'strength' }))
 const why = whyThisWeek(tired, lineEases)

@@ -14,6 +14,7 @@ import {
   coachEaseFrom,
   countsFromDay,
   inLeadIn,
+  pickWeekPlan,
   planDayTemplate,
   startedAtForLocalDay,
   injuryActionFor,
@@ -151,12 +152,22 @@ export async function resolveWeekPlan(db: DB, blockId: string, weekNumber: numbe
   return id
 }
 
-/** Latest plan row for a week number (a paused block can have more than one). */
-export async function latestWeekPlan(db: DB, blockId: string, weekNumber: number) {
-  const [row] = await db.select().from(weekPlans)
+/**
+ * Latest plan row for a week number (a paused block can have more than one).
+ * A mid-week Block Zero start has a lead-in plan and a real week 1, both
+ * numbered 1: `leadIn` picks which (default: the real week).
+ */
+export async function latestWeekPlan(db: DB, blockId: string, weekNumber: number, opts: { leadIn?: boolean } = {}) {
+  const plans = await db.select().from(weekPlans)
     .where(and(eq(weekPlans.blockId, blockId), eq(weekPlans.weekNumber, weekNumber)))
-    .orderBy(desc(weekPlans.createdAt)).limit(1)
-  return row ?? null
+    .orderBy(desc(weekPlans.createdAt))
+  if (plans.length === 0) return null
+  const withRows = []
+  for (const plan of plans) {
+    const rows = await db.select({ ctx: sessions.contextJson }).from(sessions).where(eq(sessions.weekPlanId, plan.id))
+    withRows.push({ plan, contexts: rows.map(r => r.ctx) })
+  }
+  return pickWeekPlan(withRows, opts.leadIn === true)
 }
 
 // ─── Sessions made regular (plan §4) ──────────────────────────

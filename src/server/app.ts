@@ -2449,7 +2449,9 @@ app.get('/api/weeks/current', async (c) => {
 
   const db = createDB(c.env)
   // A paused block can repeat a week number: the latest plan for it is current.
-  const week = await latestWeekPlan(db, blockId, parseInt(weekNumber))
+  // ?leadIn=1 asks for a mid-week start's lead-in, which is also numbered week 1.
+  const leadIn = c.req.query('leadIn') === '1'
+  const week = await latestWeekPlan(db, blockId, parseInt(weekNumber), { leadIn })
   if (!week) return c.json(null)
 
   // Get sessions for this week

@@ -65,10 +65,10 @@ export function dayStrip(days: ReadonlyArray<number>, sessions: ReadonlyArray<Da
 }
 
 /** The block week a calendar day falls in (deep links: /program?day=YYYY-MM-DD). */
-export function weekForDay(epochDay: number, todayEpochDay: number, currentWeek: number, totalWeeks: number): number {
+export function weekForDay(epochDay: number, todayEpochDay: number, currentWeek: number, totalWeeks: number, firstWeek = 1): number {
   const monday = (d: number) => d - ((new Date(d * 86400000).getUTCDay() + 6) % 7)
   const offset = Math.round((monday(epochDay) - monday(todayEpochDay)) / 7)
-  return Math.min(Math.max(currentWeek + offset, 1), Math.max(1, totalWeeks))
+  return Math.min(Math.max(currentWeek + offset, firstWeek), Math.max(1, totalWeeks))
 }
 
 export interface WeekRead {

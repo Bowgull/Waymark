@@ -2,7 +2,8 @@
 // Block Zero lead-in (Part B): start each weekday Mon..Sun, the local start
 // day, the intro strength session, felt-hard by Block Zero week, and the
 // lead-in limits in placement.
-import { countsFromDay, inLeadIn, optionalDay, planDayTemplate, startedAtForLocalDay } from './leadIn'
+import { countsFromDay, inLeadIn, optionalDay, pickWeekPlan, planDayTemplate, startedAtForLocalDay } from './leadIn'
+import { hasCoachEase, whyThisWeek } from './weeklyPass'
 import { anchorMondayFor } from './weekCounter'
 import { checkSessionChange } from './placement'
 import { blockZeroEffortTarget, consistentlyEasier, effortVerdict, noEasierReadFor, summarizeEffort, type EffortRead } from './feltHard'
@@ -105,5 +106,25 @@ const bag3 = checkSessionChange({ kind: 'add', type: 'bag_work', epochDay: MON +
 assert(!bag3.ok && bag3.code === 'lead_in_cap', 'lead-in: at most 2 bag sessions')
 const bagLead = bagRules({ blockType: 'block_zero', weekNumber: 1, eased: false, easeReason: null, returnActive: false, gapDays: 0, returnReason: null, leadIn: true })
 assert(bagLead.maxRounds === 4 && bagLead.noFinishers && bagLead.promptLines.some(l => /lead-in/i.test(l)), 'lead-in bag: 4 technique rounds, no finishers')
+
+// ─── M1 (E2E 2026-10-19b): a mid-week start has two plans numbered week 1 ───
+// Newest first, as the server reads them: next Monday's week 1 was prepared
+// during the lead-in, after the lead-in plan.
+const LEAD = JSON.stringify({ leadIn: true })
+const plansNewestFirst = [
+  { plan: 'week1', contexts: [null, null, '{"coachEase":null}'] },
+  { plan: 'leadin', contexts: [LEAD, LEAD, null] },
+]
+assert(pickWeekPlan(plansNewestFirst, true) === 'leadin', 'M1: the lead-in is asked for, the lead-in plan comes back (not next week)')
+assert(pickWeekPlan(plansNewestFirst, false) === 'week1', 'M1: week 1 is asked for, the real week 1 comes back')
+assert(pickWeekPlan([{ plan: 'leadin', contexts: [LEAD] }], false) === null, 'M1: before week 1 is prepared, week 1 is not the lead-in')
+assert(pickWeekPlan([{ plan: 'empty', contexts: [] }], false) === 'empty', 'M1: an empty plan is a normal week')
+assert(pickWeekPlan([{ plan: 'new', contexts: [null] }, { plan: 'old', contexts: [null] }], false) === 'new', 'M1: a repeated week number still reads the newest plan')
+const leadLineSignals = { weekNumber: 1, totalWeeks: 6, blockType: 'block_zero' as const, returnRamp: { active: false, gapDays: 0, reason: null } } as unknown as Parameters<typeof whyThisWeek>[0]
+const leadLine = whyThisWeek(leadLineSignals, [], { leadIn: true })
+assert(/^Lead-in/.test(leadLine) && /Week 1 starts Monday/.test(leadLine), `m7: the lead-in's week line says it is the lead-in (${leadLine})`)
+
+// m2: an undone ease leaves "coachEase":null, which is not an ease.
+assert(!hasCoachEase('{"coachEase":null}') && hasCoachEase('{"coachEase":{"kind":"set"}}') && !hasCoachEase(null), 'm2: an undone weekly ease drops out of the week line')
 
 console.log('lead-in tests passed')

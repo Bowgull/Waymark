@@ -71,3 +71,16 @@ export function isLeadInContext(contextJson: string | null | undefined): boolean
   if (!contextJson) return false
   try { return (JSON.parse(contextJson) as { leadIn?: unknown }).leadIn === true } catch { return false }
 }
+
+/**
+ * A mid-week Block Zero start has two plans numbered week 1: the lead-in
+ * (its sessions stamped leadIn) and the real week 1 from the next Monday.
+ * Plans come newest first; the newest plan of the asked kind wins (a paused
+ * block can repeat a week number). An empty plan is not a lead-in.
+ */
+export function pickWeekPlan<P>(plans: ReadonlyArray<{ plan: P; contexts: ReadonlyArray<string | null | undefined> }>, leadIn: boolean): P | null {
+  for (const p of plans) {
+    if (p.contexts.some(isLeadInContext) === leadIn) return p.plan
+  }
+  return null
+}
