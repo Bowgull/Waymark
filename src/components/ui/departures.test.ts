@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { computeSuggestions } from '../../lib/sessionSuggestions'
+import { allBoardRows, boardSuggestions, computeSuggestions } from '../../lib/sessionSuggestions'
 import { TRAINING_TARGETS } from '../../lib/trainingTargets'
 import {
   buildDepartures,
@@ -11,6 +11,8 @@ import {
   SKIP_PLACES,
   SKIP_REASONS,
   toggleTile,
+  pmOnlyFor,
+  replaceKeeps,
 } from './departures'
 
 const base = pickerOptions(TRAINING_TARGETS)
@@ -80,6 +82,39 @@ const base = pickerOptions(TRAINING_TARGETS)
   assert.equal(toggleTile(null, 'rough_day'), 'rough_day', 'one tap lights a tile')
   assert.equal(toggleTile('rough_day', 'rough_day'), null, 'tap again to clear')
   assert.equal(toggleTile('rough_day', 'tired'), 'tired', 'one tile at a time')
+}
+
+// ─── M3, X1, X2 (E2E 2026-10-19b): the evening board, page 56 1B and 4A ───
+{
+  const base = pickerOptions(TRAINING_TARGETS)
+  const names = (rows: Array<{ label: string }>) => rows.map(r => r.label.toUpperCase())
+  const wrap = (suggestions: ReturnType<typeof boardSuggestions>) => ({ suggestions, wellness: { avgSleep: null, avgSoreness: null, todaySoreness: null, todaySleep: null }, flags: [], deficits: [] })
+
+  // 1B: Tue 6:10 PM, replacing the run-walk (Foundation done this morning).
+  const runWalk = { type: 'foundation_run', label: 'Run-Walk', notes: null }
+  const repl = buildDepartures(base.filter(o => replaceKeeps(runWalk, o)), wrap(boardSuggestions(allBoardRows(), { mode: 'replace', replacing: 'foundation_run', dayTypes: ['mobility', 'foundation_run'] })), { pmOnly: pmOnlyFor('2026-10-20', '2026-10-20', 18) })
+  assert.deepEqual(names(repl.picks), ['SKIP ROPE', 'RESET'], 'X1: coach picks Skip Rope, Reset')
+  assert.deepEqual(repl.picks.map(r => r.reason), ["The run-walk's own swap", 'Easy, 20 min'])
+  assert.deepEqual(names(repl.rest), ['BAG WORK', 'MT CLASS', 'STRENGTH', 'ZONE 2', 'PROGRESSION RUN', 'FOUNDATION'], 'X1: the rest in the mockup order, Zone 2 included')
+  assert.ok([...repl.picks, ...repl.rest].every(r => r.timeSlot === 'pm'), 'M3: every row is PM in the evening')
+  const bag = repl.rest.find(r => r.type === 'bag_work')!
+  assert.equal(selectionFor(bag, bag.timeSlot).timeSlot, 'pm', 'M3: a 6:10 PM swap to Bag Work lands in PM')
+
+  // 4A: Thu 6:30 PM + add session; Foundation, run-walk and bag are done.
+  const add = buildDepartures(base, wrap(boardSuggestions(allBoardRows(), { mode: 'add', dayTypes: ['mobility', 'foundation_run', 'bag_work'] })), { pmOnly: true })
+  assert.deepEqual(names(add.picks), ['RESET', 'FOUNDATION'], 'X2: coach picks Reset, Foundation')
+  assert.deepEqual(add.picks.map(r => r.reason), ['Easy, 20 min', 'A second round, 12 min'])
+  assert.deepEqual(names(add.rest), ['SKIP ROPE', 'MT CLASS', 'STRENGTH', 'BAG WORK', 'ZONE 2', 'PROGRESSION RUN'], 'X2: the rest in the mockup order')
+  assert.ok([...add.picks, ...add.rest].every(r => r.timeSlot === 'pm'), 'X2: all PM')
+
+  // The morning keeps each row's own slot.
+  assert.equal(pmOnlyFor('2026-10-20', '2026-10-20', 9), false)
+  assert.equal(pmOnlyFor('2026-10-21', '2026-10-20', 18), false, 'another day keeps its own slots')
+
+  // Decision b (Josh, 2026-10-19): a knee, ankle or shin flag -> REPLACE on a run offers Reset, not rope.
+  const knee = boardSuggestions(allBoardRows(), { mode: 'replace', replacing: 'foundation_run', dayTypes: [], kneeSafe: true })
+  const kneePicks = knee.filter(s => s.priority === 'suggested')
+  assert.deepEqual(kneePicks.map(s => s.type), ['active_recovery'], 'b: the knee-safe pick is Reset, rope is not a pick')
 }
 
 console.log('departures tests passed')

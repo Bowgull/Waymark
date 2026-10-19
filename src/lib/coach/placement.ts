@@ -162,13 +162,22 @@ function weekBounds(epochDay: number): [number, number] {
   return [m, m + 6]
 }
 
+/** Regions where rope (and running) pound the joint: knee, ankle, shin (Josh, 2026-10-19). */
+export const KNEE_SAFE_REGIONS: ReadonlySet<string> = new Set(['knee', 'ankle', 'shin'])
+
+/** A knee, ankle or shin flag is up: offer knee-safe work (Reset or bike), not rope. */
+export function kneeSafeOnly(injury: { region: string } | null | undefined): boolean {
+  return injury != null && KNEE_SAFE_REGIONS.has(injury.region)
+}
+
 /** Easier sessions to offer instead, most like the original first. */
-export function easierOptions(c: Pick<SessionChange, 'type' | 'label' | 'notes'>, blockType: BlockKind): Array<{ type: string; label: string; notes?: string | null }> {
+export function easierOptions(c: Pick<SessionChange, 'type' | 'label' | 'notes'>, blockType: BlockKind, injury?: InjuryFlagLike | null): Array<{ type: string; label: string; notes?: string | null }> {
   const walk = { type: 'active_recovery', label: 'Easy Walk or Bike' }
   switch (c.type) {
     case 'strength': return [walk, { type: 'mobility', label: FOUNDATION_LABEL }]
     case 'mt_class': return classTypeFromLabel(c.label) === 'technical' ? [walk] : [{ type: 'mt_class', label: 'MT Technique' }, walk]
-    case 'bag_work': return [{ type: 'skip_rope', label: 'Easy Rope' }, walk]
+    // Rope pounds a knee, ankle or shin: with one flagged, the bike only (earlier bug 22).
+    case 'bag_work': return kneeSafeOnly(injury) ? [walk] : [{ type: 'skip_rope', label: 'Easy Rope' }, walk]
     case 'running':
       if (c.notes === 'progression') {
         return blockType === 'block_zero'
@@ -374,7 +383,7 @@ export function safeAlternatives(change: SessionChange, ctx: PlacementContext): 
   }
   const swapDay = change.epochDay >= ctx.todayEpochDay ? change.epochDay : first
   if (swapDay <= weekStart + 6) {
-    for (const opt of easierOptions(change, ctx.blockType)) {
+    for (const opt of easierOptions(change, ctx.blockType, ctx.injury)) {
       if (opt.type === change.type && (opt.label ?? '') === (change.label ?? '') && (opt.notes ?? null) === (change.notes ?? null)) continue
       const r = evaluate({ ...change, ...opt, estimatedMin: null, epochDay: swapDay, kind: change.kind === 'move' ? 'replace' : change.kind }, ctx)
       if ('change' in r) out.push({ kind: 'swap', type: opt.type, label: opt.label, ...(opt.notes ? { notes: opt.notes } : {}), epochDay: swapDay, date: isoOf(swapDay), timeSlot: r.change.timeSlot })

@@ -11,7 +11,7 @@ import { endAllLiveActivities } from '@/lib/liveActivity'
 
 import { FlapLabel, glowRow, showPop } from '@/design'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
-import { REPLACE_REASONS } from '@/components/ui/departures'
+import { REPLACE_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
 import { useToast } from '@/components/ui/Toast'
 import { PageErrorScreen } from '@/components/ui/ErrorScreens'
 import { iconFor, sessionDisplayName } from '@/features/dayboard/rowState'
@@ -667,6 +667,7 @@ export function TodayPage() {
           onSelect={handleAddSession}
           onClose={() => { setShowPicker(false); setPickerSuggestions(null) }}
           suggestions={pickerSuggestions}
+          pmOnly={pmOnlyFor(today, getTodayISO(), new Date().getHours())}
         />
       )}
 
@@ -676,7 +677,8 @@ export function TodayPage() {
           onClose={() => { setReplaceFor(null); setPickerSuggestions(null) }}
           suggestions={pickerSuggestions}
           title={replaceTarget ? `Replace ${sessionDisplayName(replaceTarget).toLowerCase()}` : 'Replace'}
-          filter={opt => !replaceTarget || !(opt.type === replaceTarget.type && (opt.runCategory ?? null) === (replaceTarget.type === 'running' ? replaceTarget.notes ?? null : null))}
+          filter={opt => !replaceTarget || replaceKeeps(replaceTarget, opt)}
+          pmOnly={pmOnlyFor(today, getTodayISO(), new Date().getHours())}
           reasons={{ tiles: REPLACE_REASONS, value: replaceFor.reason, onChange: reason => setReplaceFor(r => (r ? { ...r, reason } : r)) }}
         />
       )}

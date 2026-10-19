@@ -1,6 +1,6 @@
 // Run: tsx src/lib/coach/placement.test.ts
 // Every placement rule, and that every safe alternative offered passes them all.
-import { checkSessionChange, touchesRegion, type PlacementContext, type PlacementResult, type SessionChange } from './placement'
+import { checkSessionChange, easierOptions, touchesRegion, type PlacementContext, type PlacementResult, type SessionChange } from './placement'
 import { MON, assert, ctx, s } from './testUtil'
 
 const add = (type: string, epochDay: number, extra: Partial<SessionChange> = {}): SessionChange => ({ kind: 'add', type, epochDay, timeSlot: 'am', ...extra })
@@ -105,5 +105,9 @@ assert(checkSessionChange(add('mt_class', MON + 2, { timeSlot: 'pm', label: 'MT 
 
 const orig = s('strength', MON + 1)
 assert(checkSessionChange({ kind: 'replace', type: 'bag_work', epochDay: MON + 1, timeSlot: 'am', sessionId: orig.id }, ctx({ sessions: [orig] })).ok, 'replace: the replaced session does not stack with its replacement')
+
+// Earlier bug 22: with a knee (ankle, shin) flag, rope is not the easier option for bag work.
+assert(easierOptions({ type: 'bag_work', label: null, notes: null }, 'block_zero', { region: 'knee', since: MON, reason: 'Knee flagged on Monday.' }).every(o => o.type !== 'skip_rope'), 'bug 22: knee flag, no rope offered')
+assert(easierOptions({ type: 'bag_work', label: null, notes: null }, 'block_zero', null).some(o => o.type === 'skip_rope'), 'no flag: easy rope still offered')
 
 console.log('coach placement tests passed')

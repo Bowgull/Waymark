@@ -82,7 +82,20 @@ function padFor(rows: DepartureRow[]): number {
  *   option on the base list, plain (no reason, nothing greyed out, no ember)
  * - the pick's action (add / pull forward) travels with its row
  */
-export function buildDepartures(base: ReadonlyArray<PickerOption>, suggestions?: SuggestionsResponse | null): DepartureBoard {
+export function buildDepartures(base: ReadonlyArray<PickerOption>, suggestions?: SuggestionsResponse | null, opts: { pmOnly?: boolean } = {}): DepartureBoard {
+  const board = buildBoard(base, suggestions)
+  if (!opts.pmOnly) return board
+  // Today after the morning (M3): the AM slot has gone, so every row is PM.
+  const pm = (r: DepartureRow): DepartureRow => ({ ...r, timeSlot: 'pm', ...(r.action ? { action: { ...r.action, timeSlot: 'pm' } } : {}) })
+  return { ...board, picks: board.picks.map(pm), rest: board.rest.map(pm) }
+}
+
+/** Past noon on the day itself, the AM slot has gone: the board offers PM. */
+export function pmOnlyFor(date: string, today: string, hour: number): boolean {
+  return date === today && hour >= 12
+}
+
+function buildBoard(base: ReadonlyArray<PickerOption>, suggestions?: SuggestionsResponse | null): DepartureBoard {
   const list = suggestions?.suggestions ?? []
   const byKey = new Map(list.map(s => [optionKey(s), s]))
   const picks: DepartureRow[] = []
@@ -94,7 +107,10 @@ export function buildDepartures(base: ReadonlyArray<PickerOption>, suggestions?:
     picks.push(plainRow({ ...opt, label: s.label, timeSlot: s.timeSlot, flexibleTimeSlot: s.flexibleTimeSlot ?? opt.flexibleTimeSlot }, { tone: 'pick', reason: s.reason ?? null, ...(s.action ? { action: s.action } : {}) }))
   }
   const picked = new Set(picks.map(p => p.key))
-  for (const opt of base) {
+  // The rest in the server's order (what is already on that day goes last), then anything it left out.
+  const order = new Map(list.map((s, i) => [optionKey(s), i]))
+  const ordered = [...base].sort((a, b) => (order.get(optionKey(a)) ?? list.length) - (order.get(optionKey(b)) ?? list.length))
+  for (const opt of ordered) {
     if (picked.has(optionKey(opt))) continue
     const s = byKey.get(optionKey(opt))
     rest.push(plainRow(s ? { ...opt, label: s.label, timeSlot: s.timeSlot, flexibleTimeSlot: s.flexibleTimeSlot ?? opt.flexibleTimeSlot } : opt, s?.action ? { action: s.action } : {}))
@@ -151,4 +167,15 @@ export const SKIP_PLACES: ReadonlyArray<string> = ['Lower back', 'Knee', 'Hip', 
 /** One tap lights a tile; a tap on the lit one clears it. */
 export function toggleTile(current: string | null, value: string): string | null {
   return current === value ? null : value
+}
+
+/**
+ * REPLACE leaves out the session being replaced. A run-walk is not Zone 2
+ * (page 56 1B lists ZONE 2 when replacing the run-walk), so only an exact
+ * match goes.
+ */
+export function replaceKeeps(target: { type: string; label?: string | null; notes?: string | null }, opt: { type: string; runCategory?: string }): boolean {
+  const sameType = opt.type === target.type && (opt.runCategory ?? null) === (target.type === 'running' ? target.notes ?? null : null)
+  if (!sameType) return true
+  return target.type === 'foundation_run' && /run-walk/i.test(target.label ?? '')
 }

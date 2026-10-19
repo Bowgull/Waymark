@@ -23,11 +23,11 @@ import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { BLOCK_ZERO_BASE_WEEKS, allowedClassTypes, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
-import { KEY_TYPES, KNOWN_SESSION_TYPES, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, estimatedMinutes, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
+import { KEY_TYPES, KNOWN_SESSION_TYPES, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, estimatedMinutes, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, CONSISTENCY_WEEKS, aerobicWeekly, buildRings, consistencyWeeks, currentStreak as ledgerStreak, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
-import { computeSuggestions } from '../lib/sessionSuggestions'
+import { allBoardRows, boardSuggestions, computeSuggestions } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, weekLineFor } from './weeklyPass'
 import { applyFeltHard, applyTmUpdate, coachPushFrom, maybeRampUp } from './coachAsks'
 import { addedWhy, applyPendingMerges, emptyState, lineChanges, markSeen, pmStart, rebalanceAfter, reasonWords, recordChanges, rolloverAndFix, snap, undoChange, weekChangeViews } from './changes'
@@ -49,6 +49,7 @@ import { logs } from './routes/logs'
 import {
   blockDayPlan,
   currentBlockWeek,
+  loadInjuryFlag,
   loadPlacementContext,
   isBlockLeadInDay,
   loadTemplateExtras,
@@ -779,23 +780,22 @@ app.get('/api/sessions/suggestions', async (c) => {
     targetDate: targetEpochDay,
     existingSessionsOnDate: existingOnDate,
   })
+  // The board (page 56 1B, 4A): every session, the coach's picks first, then
+  // the rest with what is already on that day last. Nothing refused or greyed.
+  const dayTypes = existingOnDate.map(s => s.type)
   if (forReplace) {
-    // REPLACE (page 56): the coach's picks are the session's own swap (rope for a
-    // run-walk) and an easy Reset; everything else is on the board, plain.
     const replacing = c.req.query('replacing') ?? null
-    const own = replacing === 'foundation_run' || replacing === 'running' ? 'skip_rope' : null
-    const picks: Record<string, string> = { ...(own ? { [own]: `The ${replacing === 'foundation_run' ? 'run-walk' : 'run'}'s own swap` } : {}), active_recovery: 'Easy, 20 min' }
-    const suggestions = result.suggestions.map(s => (picks[s.type] && !s.runCategory ? { ...s, priority: 'suggested' as const, reason: picks[s.type] } : s.priority === 'suggested' ? { ...s, priority: 'neutral' as const } : s))
-    const order = (s: { type: string; priority: string }) => (s.priority === 'suggested' ? (s.type === own ? 0 : 1) : 2)
-    return c.json({ ...result, suggestions: suggestions.sort((x, y) => order(x) - order(y)) })
+    const kneeSafe = kneeSafeOnly(await loadInjuryFlag(db, targetEpochDay))
+    return c.json({ ...result, suggestions: boardSuggestions(allBoardRows(), { mode: 'replace', replacing, dayTypes, kneeSafe }) })
   }
-  if (!block) return c.json(result)
+  const board = boardSuggestions(allBoardRows(), { mode: 'add', dayTypes })
+  if (!block) return c.json({ ...result, suggestions: board })
 
   // "+ Add session always adds" (page 56 item 4): every row can be picked and
   // carries no preview line. Strength on a day with no lifting pulls the week's
   // lightest remaining strength session here (R10).
   const ctx = await loadPlacementContext(db, targetEpochDay, todayDay)
-  const rows = result.suggestions.map(s => {
+  const rows = board.map(s => {
     const a = pickDayOption({ type: s.type, label: null, notes: s.type === 'running' ? s.runCategory ?? null : null, timeSlot: s.timeSlot }, targetEpochDay, ctx).action
     return {
       ...s,

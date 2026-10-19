@@ -30,6 +30,8 @@ interface SessionPickerProps {
   title?: string
   /** REPLACE (page 56 item 1): the optional reason tiles on top of the same list. */
   reasons?: { tiles: ReadonlyArray<ReasonTile>; value: string | null; onChange: (next: string | null) => void }
+  /** Today after the morning: every row is PM (the AM slot has gone). */
+  pmOnly?: boolean
 }
 
 /**
@@ -39,9 +41,9 @@ interface SessionPickerProps {
  * nothing is refused or greyed out. Each row: its painted icon, the name on a
  * flap and an AM / PM slot (tap the slot to flip it, tap the row to pick).
  */
-export function SessionPicker({ onSelect, onClose, filter, suggestions, title, reasons }: SessionPickerProps) {
+export function SessionPicker({ onSelect, onClose, filter, suggestions, title, reasons, pmOnly }: SessionPickerProps) {
   const base = filter ? SESSION_OPTIONS.filter(filter) : SESSION_OPTIONS
-  const board = buildDepartures(base, suggestions)
+  const board = buildDepartures(base, suggestions, { pmOnly })
   const heading = title ?? 'Add Session'
   const grouped = board.picks.length > 0
 

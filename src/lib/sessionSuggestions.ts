@@ -217,3 +217,61 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
 function optKey(opt: { type: string; runCategory?: string }): string {
   return opt.runCategory ? `${opt.type}:${opt.runCategory}` : opt.type
 }
+
+// ─── The Add / Replace board (page 56 items 1, 4; approved 2026-10-19) ───
+
+/**
+ * Base order of the board's "Everything else". Kinds already on that day
+ * (any status; runs count as one kind) go last, in the same order, so what
+ * he hasn't done today comes first (page 56 1B and 4A).
+ */
+export const BOARD_ORDER: ReadonlyArray<string> = ['skip_rope', 'bag_work', 'mt_class', 'strength', 'foundation_run', 'running', 'mobility', 'active_recovery']
+
+const RUN_KINDS = new Set(['foundation_run', 'running'])
+const kindOf = (type: string) => (RUN_KINDS.has(type) ? 'run' : type)
+
+export interface BoardInput {
+  mode: 'add' | 'replace'
+  /** The session REPLACE swaps out (its type), when replacing. */
+  replacing?: string | null
+  /** Types of the sessions already on that day, the replaced one included. */
+  dayTypes: ReadonlyArray<string>
+  /** A knee, ankle or shin injury flag is up (Josh, 2026-10-19): no rope on REPLACE of a run. */
+  kneeSafe?: boolean
+}
+
+/**
+ * The coach picks and the order of the rest. REPLACE: the session's own swap
+ * (rope for a run-walk or a run; with a knee, ankle or shin flag the
+ * knee-safe Reset or bike instead) and an easy Reset. + Add: an easy Reset,
+ * and Foundation (a second round when it is already on the day). Nothing is
+ * refused, cautioned or greyed out; rows carry no other line.
+ */
+export function boardSuggestions(rows: ReadonlyArray<SessionSuggestion>, input: BoardInput): SessionSuggestion[] {
+  const isRun = input.replacing != null && RUN_KINDS.has(input.replacing)
+  const runWord = input.replacing === 'foundation_run' ? 'run-walk' : 'run'
+  const picks: Array<[string, string]> = input.mode === 'replace'
+    ? isRun && input.kneeSafe
+      ? [['active_recovery', 'Knee-safe. Easy, 20 min']]
+      : [...(isRun ? [['skip_rope', `The ${runWord}'s own swap`] as [string, string]] : []), ['active_recovery', 'Easy, 20 min']]
+    : [['active_recovery', 'Easy, 20 min'], ['mobility', input.dayTypes.includes('mobility') ? 'A second round, 12 min' : '12 min']]
+  const pickReason = new Map(picks)
+  const on = new Set(input.dayTypes.map(kindOf))
+  const base = (t: string) => { const i = BOARD_ORDER.indexOf(t); return i < 0 ? BOARD_ORDER.length : i }
+  const rank = (s: SessionSuggestion) => {
+    const pick = picks.findIndex(([t]) => t === s.type && !s.runCategory)
+    if (pick >= 0) return pick
+    return 100 + (on.has(kindOf(s.type)) ? 50 : 0) + base(s.type)
+  }
+  return rows
+    .map(s => {
+      const reason = !s.runCategory ? pickReason.get(s.type) : undefined
+      return reason ? { ...s, priority: 'suggested' as const, reason } : { ...s, priority: 'neutral' as const, reason: null }
+    })
+    .sort((a, b) => rank(a) - rank(b))
+}
+
+/** Every session on the board, plain, before the coach's picks and order. */
+export function allBoardRows(): SessionSuggestion[] {
+  return optionsForTargets(TRAINING_TARGETS).map(o => ({ ...o, reason: null, priority: 'neutral' as const }))
+}

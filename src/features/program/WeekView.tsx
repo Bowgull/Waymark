@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 
 import { FlapLabel, SessionIcon, glowRow, showPop } from '@/design'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
-import { REPLACE_REASONS, SKIP_PLACES, SKIP_REASONS } from '@/components/ui/departures'
+import { REPLACE_REASONS, SKIP_PLACES, SKIP_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
 import { submitBoardPick, submitReplace, submitSkip, submitSkipReason } from '@/lib/boardPick'
 import { DayBoardRow } from '@/features/dayboard/DayBoardRow'
 import { dowOfEpochDay, runWalkDetail, sessionDisplayName, strengthPlanDetail, type DayBoardSession } from '@/features/dayboard/rowState'
@@ -254,7 +254,8 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
           onClose={() => { setPicker(null); setPickerSuggestions(null) }}
           suggestions={pickerSuggestions}
           title={picker.mode === 'replace' ? `Replace ${sessionDisplayName(picker.session).toLowerCase()}` : undefined}
-          filter={picker.mode === 'replace' ? (opt => !(opt.type === picker.session.type && (opt.runCategory ?? null) === (picker.session.type === 'running' ? picker.session.notes ?? null : null))) : undefined}
+          filter={picker.mode === 'replace' ? (opt => replaceKeeps(picker.session, opt)) : undefined}
+          pmOnly={pmOnlyFor(picker.date, getTodayISO(), new Date().getHours())}
           reasons={picker.mode === 'replace' ? { tiles: REPLACE_REASONS, value: picker.reason, onChange: reason => setPicker(p => (p && p.mode === 'replace' ? { ...p, reason } : p)) } : undefined}
         />
       )}
