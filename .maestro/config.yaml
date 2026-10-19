@@ -1,0 +1,15 @@
+# Maestro flows for the iOS Simulator run (.github/workflows/ios-sim-test.yml).
+# The workflow runs each flow on its own, in this order, with API setup and
+# cleanup between them (.maestro/sim-api.sh).
+flows:
+  - "*.yaml"
+executionOrder:
+  continueOnFailure: true
+  flowsOrder:
+    - 01-today
+    - 02-checkin
+    - 03-strength
+    - 04-bag-round
+    - 05-run-walk
+    - 06-settings-library-ledger
+    - 07-coach

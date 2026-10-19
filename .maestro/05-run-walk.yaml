@@ -1,0 +1,49 @@
+appId: com.joshbocas.app
+name: Run-walk - the warm-up, then run and walk intervals
+# sim-api.sh before this flow: a good morning and an ad-hoc Run-Walk today.
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "\\+ add session"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "Run-Walk RUN-WALK.*"
+    direction: DOWN
+- tapOn: "Run-Walk RUN-WALK.*"
+- tapOn: "ENTER"
+- extendedWaitUntil:
+    visible: "1 OF 6"
+    timeout: 20000
+- takeScreenshot: 05-run-walk-warmup
+# Six warm-up moves: START a timed one then swipe the grass up to skip it; DONE a rep one.
+- repeat:
+    while:
+      notVisible: "START RUN"
+    times: 20
+    commands:
+      - tapOn:
+          text: "START"
+          optional: true
+      - tapOn:
+          text: "DONE"
+          optional: true
+      - swipe:
+          start: 50%, 92%
+          end: 50%, 45%
+          duration: 600
+          optional: true
+      - waitForAnimationToEnd:
+          timeout: 4000
+- takeScreenshot: 05-run-walk-ready
+- tapOn: "INDOOR"
+- tapOn: "START RUN"
+- takeScreenshot: 05-run-walk-start
+- extendedWaitUntil:
+    visible: "RUN 1/.*"
+    timeout: 200000
+- takeScreenshot: 05-run-walk-run
+- extendedWaitUntil:
+    visible: "WALK 1/.*"
+    timeout: 300000
+- takeScreenshot: 05-run-walk-walk

@@ -1,0 +1,33 @@
+appId: com.joshbocas.app
+name: Morning check-in, with the herb 0-9 card
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "\\+ add session"
+    timeout: 60000
+- tapOn: "Edit the Morning Report"
+- extendedWaitUntil:
+    visible: "MORNING CHECK-IN"
+    timeout: 10000
+- takeScreenshot: 02-checkin-sleep
+- tapOn: "8"
+- tapOn: "4, good"
+- tapOn: "4, good"
+- tapOn: "2, loose"
+- tapOn: "2, low"
+- tapOn: "4, good"
+- tapOn: "4, good"
+- takeScreenshot: 02-checkin-alcohol
+- tapOn: "0, none"
+- assertVisible: "HERB"
+- assertVisible: "9, most"
+- takeScreenshot: 02-checkin-herb
+- tapOn: "3"
+- extendedWaitUntil:
+    visible: "GOOD TO GO"
+    timeout: 15000
+- takeScreenshot: 02-checkin-verdict
+- tapOn: "TO TODAY"
+- assertVisible: "Morning Report, logged.*"
+- takeScreenshot: 02-checkin-today

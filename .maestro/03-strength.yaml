@@ -1,0 +1,37 @@
+appId: com.joshbocas.app
+name: Strength - a dumbbell main lift's weight input
+# sim-api.sh before this flow: a sore-back morning (Block Zero swaps in the
+# dumbbell versions of the main lifts) and an ad-hoc strength session today.
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "\\+ add session"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "Strength STRENGTH.*"
+    direction: DOWN
+- tapOn: "Strength STRENGTH.*"
+- takeScreenshot: 03-strength-row
+- tapOn: "ENTER"
+- extendedWaitUntil:
+    visible: "LOG SET"
+    timeout: 20000
+- takeScreenshot: 03-strength-warmup
+# Through the warm-up sets to the first main lift with a weight.
+- repeat:
+    while:
+      notVisible: "Weight in pounds"
+    times: 12
+    commands:
+      - tapOn:
+          text: "LOG SET"
+          optional: true
+      - tapOn:
+          text: "NEXT SET"
+          optional: true
+- takeScreenshot: 03-strength-main-lift
+- tapOn: "More weight"
+- takeScreenshot: 03-strength-weight-up
+- tapOn: "LOG SET"
+- takeScreenshot: 03-strength-logged

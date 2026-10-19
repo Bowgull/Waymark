@@ -1,0 +1,51 @@
+appId: com.joshbocas.app
+name: Bag round - work, last 10 s, rest (and the Live Activity)
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "\\+ add session"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "Bag Work BAG WORK.*"
+    direction: DOWN
+- tapOn: "Bag Work BAG WORK.*"
+- tapOn: "ENTER"
+- extendedWaitUntil:
+    visible: "START ROUND"
+    timeout: 20000
+- takeScreenshot: 04-bag-ready
+- tapOn: "START ROUND"
+- assertVisible: "FIGHT"
+- takeScreenshot: 04-bag-work
+# The Live Activity: the app backgrounded (Dynamic Island), then the lock screen.
+# Both are best effort: the workflow also tries Simulator's Device > Lock.
+- pressKey:
+    key: Home
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-bag-live-activity-home
+- pressKey:
+    key: Lock
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-bag-live-activity-lock
+- pressKey:
+    key: Home
+    optional: true
+- swipe:
+    direction: UP
+    optional: true
+- launchApp:
+    stopApp: false
+# The round runs on: its last 10 s, then the rest.
+- extendedWaitUntil:
+    visible: "FINISH"
+    timeout: 240000
+- takeScreenshot: 04-bag-last-10s
+- extendedWaitUntil:
+    visible: "REST"
+    timeout: 30000
+- takeScreenshot: 04-bag-rest

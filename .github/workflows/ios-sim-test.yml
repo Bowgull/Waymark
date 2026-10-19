@@ -1,0 +1,209 @@
+# Layer 2 e2e: the real iOS app (Capacitor 8, WKWebView) in the iOS Simulator,
+# driven by Maestro (.maestro/), against a test Worker on this runner.
+#
+# No real data, no real secrets: the repo is public and so are its artifacts.
+# - The backend is `wrangler dev` on 127.0.0.1:8787 over a scratch local D1
+#   (all migrations, src/db/seed.sql and the invented demo seed), with a dummy
+#   .dev.vars in a temp folder: empty Anthropic key (no AI calls), a test API key.
+#   See tests/e2e/support/backend.ts. Nothing here reaches Cloudflare.
+# - The web bundle is built with that test key and VITE_E2E_ALLOW_NATIVE_LOOPBACK=1,
+#   the test-only switch that lets a native build call localhost (lib/apiBase.ts).
+#   No secrets.* are referenced.
+# - CORS: the Worker already allows capacitor://localhost (src/server/app.ts),
+#   the origin the iOS app runs on; nothing to change.
+# - ATS: NSAllowsLocalNetworking is added to the Info.plist on this runner only
+#   (plain http to localhost), never committed.
+#
+# Artifacts (3 days): Maestro screenshots, its report and debug output, the
+# Simulator's app log, and the wrangler log.
+name: iOS Simulator test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  E2E_API: http://localhost:8787
+  E2E_API_KEY: e2e-test-key-not-a-secret
+  OUT: ${{ github.workspace }}/sim-out
+
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install
+        run: npm ci
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+          mkdir -p "$OUT/shots" "$OUT/maestro" "$OUT/logs"
+
+      - name: Start the test backend (wrangler dev, scratch D1, dummy .dev.vars)
+        timeout-minutes: 5
+        run: |
+          echo "::group::backend"
+          # --ip localhost: the app calls http://localhost:8787 (IPv4 or IPv6).
+          nohup npx tsx scripts/e2e-backend.mts --port 8787 --ip localhost > "$OUT/logs/backend.log" 2>&1 &
+          for i in $(seq 1 120); do
+            if curl -sf "$E2E_API/api/health" > /dev/null; then break; fi
+            sleep 1
+          done
+          cat "$OUT/logs/backend.log"
+          curl -sf "$E2E_API/api/health"; echo
+          # The key works, and the seed is there.
+          curl -sf -H "Authorization: Bearer $E2E_API_KEY" "$E2E_API/api/user-profile" | head -c 300; echo
+          echo "::endgroup::"
+
+      - name: Build the web app against the test backend
+        env:
+          VITE_API_URL: http://localhost:8787
+          VITE_API_KEY: e2e-test-key-not-a-secret
+          VITE_E2E_ALLOW_NATIVE_LOOPBACK: '1'
+        run: |
+          echo "VITE_API_URL=$VITE_API_URL"
+          npm run build
+          # The bundle must point at localhost, never at the production Worker.
+          grep -rl "localhost:8787" dist/assets > /dev/null || { echo "bundle doesn't point at the test backend"; exit 1; }
+
+      - name: Capacitor sync
+        run: npx cap sync ios
+
+      - name: Allow plain http to localhost (this runner only)
+        run: |
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsLocalNetworking true" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity" "$PLIST"
+
+      - name: Build for the Simulator (unsigned)
+        timeout-minutes: 30
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$OUT/logs/xcodebuild.log" | grep -E "error:|warning: .*Live|BUILD (SUCCEEDED|FAILED)" || true
+          APP=build/Build/Products/Debug-iphonesimulator/App.app
+          test -d "$APP" || { echo "no $APP"; tail -80 "$OUT/logs/xcodebuild.log"; exit 1; }
+          echo "APP=$PWD/$APP" >> "$GITHUB_ENV"
+          ls "$APP" | head -30
+
+      - name: Boot an iPhone simulator, install and launch
+        timeout-minutes: 10
+        run: |
+          xcrun simctl list runtimes
+          UDID=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | test("^iPhone [0-9]+( Pro)?$"))] | last | .udid')
+          test -n "$UDID" && test "$UDID" != null || { xcrun simctl list devices available; exit 1; }
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl list devices | grep "$UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+          xcrun simctl install "$UDID" "$APP"
+          # The app's own console (Capacitor logs the WebView console) for the whole run.
+          nohup xcrun simctl spawn "$UDID" log stream --level debug --style compact \
+            --predicate 'process == "App" OR subsystem CONTAINS "capacitor" OR process == "WaymarkActivity"' \
+            > "$OUT/logs/simulator-app.log" 2>&1 &
+          xcrun simctl launch "$UDID" com.joshbocas.app
+          sleep 15
+          xcrun simctl io "$UDID" screenshot "$OUT/shots/00-first-launch.png"
+          xcrun simctl terminate "$UDID" com.joshbocas.app || true
+
+      - name: Install Maestro
+        timeout-minutes: 5
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: Run the Maestro flows
+        timeout-minutes: 40
+        run: |
+          set +e
+          FAILED=0
+          run_flow() {
+            local flow=$1
+            echo "::group::$flow"
+            ( cd "$OUT/shots" && maestro --device "$UDID" test "$GITHUB_WORKSPACE/.maestro/$flow.yaml" \
+                --format junit --output "$OUT/maestro/$flow.xml" \
+                --test-output-dir "$OUT/maestro/$flow" --debug-output "$OUT/maestro/$flow-debug" )
+            local rc=$?
+            echo "$flow exit $rc"
+            [ $rc -ne 0 ] && FAILED=1
+            .maestro/sim-api.sh finish-open
+            echo "::endgroup::"
+          }
+          .maestro/sim-api.sh good-morning
+          run_flow 01-today
+          run_flow 02-checkin
+
+          .maestro/sim-api.sh sore-back
+          .maestro/sim-api.sh add strength
+          run_flow 03-strength
+          .maestro/sim-api.sh good-morning
+
+          .maestro/sim-api.sh add bag_work
+          # Leaves its round running: the lock-screen attempt below resumes into it.
+          echo "::group::04-bag-round"
+          ( cd "$OUT/shots" && maestro --device "$UDID" test "$GITHUB_WORKSPACE/.maestro/04-bag-round.yaml" \
+              --format junit --output "$OUT/maestro/04-bag-round.xml" \
+              --test-output-dir "$OUT/maestro/04-bag-round" --debug-output "$OUT/maestro/04-bag-round-debug" ) || FAILED=1
+          echo "::endgroup::"
+
+          # Live Activity on the lock screen: the bag session is still in progress,
+          # so a launch resumes into the running round (and its Live Activity).
+          echo "::group::lock screen"
+          xcrun simctl launch "$UDID" com.joshbocas.app; sleep 8
+          xcrun simctl io "$UDID" screenshot "$OUT/shots/04-bag-app-before-lock.png"
+          osascript -e 'tell application "Simulator" to activate' \
+                    -e 'delay 1' \
+                    -e 'tell application "System Events" to keystroke "l" using command down' \
+            || echo "osascript lock failed (no accessibility permission for System Events?)"
+          sleep 4
+          xcrun simctl io "$UDID" screenshot "$OUT/shots/04-bag-lock-screen.png"
+          echo "::endgroup::"
+          .maestro/sim-api.sh finish-open
+
+          .maestro/sim-api.sh add foundation_run Run-Walk
+          run_flow 05-run-walk
+          run_flow 06-settings-library-ledger
+          run_flow 07-coach
+          ls -R "$OUT/shots" | head -80
+          exit $FAILED
+
+      - name: Collect simulator logs
+        if: always()
+        continue-on-error: true
+        run: |
+          pkill -f "log stream" || true
+          [ -n "${UDID:-}" ] && xcrun simctl spawn "$UDID" log show --last 90m --style compact \
+            --predicate 'process == "App" OR process == "WaymarkActivity"' > "$OUT/logs/simulator-app-show.log" 2>&1 || true
+          ls -la "$OUT/logs"
+          # The test key is a public dummy, but nothing else should be in these logs.
+          grep -rIl "sk-ant-" "$OUT" && { echo "an Anthropic key in the artifacts?"; exit 1; } || true
+
+      - name: Upload screenshots, Maestro report and logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-sim-test
+          path: sim-out/
+          retention-days: 3

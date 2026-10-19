@@ -1,0 +1,43 @@
+appId: com.joshbocas.app
+name: The page 56 coach model - REPLACE, + Add, runes, UNDO, the week log
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "\\+ add session"
+    timeout: 60000
+# REPLACE with ROUGH DAY: swaps at once.
+- tapOn: "Foundation FOUNDATION ~.*"
+- tapOn: "REPLACE"
+- tapOn: "ROUGH DAY"
+- takeScreenshot: 07-coach-replace
+- tapOn: "Pick (Coach pick: )?Bag Work.*"
+- takeScreenshot: 07-coach-swapped
+# + Add always adds, MT Class included.
+- scrollUntilVisible:
+    element: "\\+ add session"
+    direction: DOWN
+- tapOn: "\\+ add session"
+- takeScreenshot: 07-coach-add
+- tapOn: "Pick (Coach pick: )?MT Class.*"
+- takeScreenshot: 07-coach-added
+# A Dagaz day: before -> after, why, UNDO.
+- scrollUntilVisible:
+    element: ".*The coach changed this day.*"
+    direction: UP
+    optional: true
+- tapOn:
+    text: ".*The coach changed this day.*"
+    optional: true
+- takeScreenshot: 07-coach-day-back
+- tapOn:
+    text: "UNDO"
+    optional: true
+- takeScreenshot: 07-coach-undone
+# The week log in Program.
+- tapOn:
+    point: 50%, 3%
+    optional: true
+- tapOn: "program"
+- tapOn: ".* changes? ›"
+- takeScreenshot: 07-coach-week-log
