@@ -4,20 +4,12 @@ name: Run-walk - the warm-up, then run and walk intervals
 ---
 - launchApp:
     stopApp: true
-# Today has loaded (the week strip sits at the top; the board below it grows
-# as the flows add sessions, so "+ add session" may be below the fold).
-- extendedWaitUntil:
-    visible: "This week"
-    timeout: 60000
-- scrollUntilVisible:
-    element: "Run-Walk RUN-WALK.*"
-    direction: DOWN
-    centerElement: true
-- tapOn: "Run-Walk RUN-WALK.*"
-- scrollUntilVisible:
-    element: "ENTER"
-    direction: DOWN
-    centerElement: true
+# Today has loaded (RELOAD pressed if it didn't). The board grows as the flows
+# add sessions, so "+ add session" may be below the fold.
+- runFlow: shared/open-today.yaml
+- runFlow: shared/today-bottom.yaml
+- tapOn: ".*RUN-WALK.*"
+- runFlow: shared/today-bottom.yaml
 - tapOn: "ENTER"
 - extendedWaitUntil:
     visible: "1 OF 6"

@@ -1,0 +1,9 @@
+appId: com.joshbocas.app
+name: Today, scrolled to the bottom
+# Settings is the last line on Today. Scrolled to it, the day's board sits
+# above the tab bar (a row half under the tab bar takes the tab bar's tap).
+---
+- scrollUntilVisible:
+    element: "Settings"
+    direction: DOWN
+    timeout: 20000

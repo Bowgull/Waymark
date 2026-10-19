@@ -1,0 +1,26 @@
+appId: com.joshbocas.app
+name: Today, loaded (RELOAD if it didn't)
+# The runner's test Worker is sometimes slower than the app's 10 s timeout
+# (no GPU, a busy Simulator), and Today then shows TODAY DIDN'T LOAD with
+# RELOAD, as designed. Press it, up to twice, until the week strip is there.
+---
+- extendedWaitUntil:
+    visible: "This week|RELOAD"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "RELOAD"
+    commands:
+      - tapOn: "RELOAD"
+      - extendedWaitUntil:
+          visible: "This week|RELOAD"
+          timeout: 60000
+- runFlow:
+    when:
+      visible: "RELOAD"
+    commands:
+      - tapOn: "RELOAD"
+      - extendedWaitUntil:
+          visible: "This week|RELOAD"
+          timeout: 60000
+- assertVisible: "This week"

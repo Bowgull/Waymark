@@ -3,20 +3,12 @@ name: Bag round - work, last 10 s, rest (and the Live Activity)
 ---
 - launchApp:
     stopApp: true
-# Today has loaded (the week strip sits at the top; the board below it grows
-# as the flows add sessions, so "+ add session" may be below the fold).
-- extendedWaitUntil:
-    visible: "This week"
-    timeout: 60000
-- scrollUntilVisible:
-    element: "Bag Work BAG WORK.*"
-    direction: DOWN
-    centerElement: true
+# Today has loaded (RELOAD pressed if it didn't). The board grows as the flows
+# add sessions, so "+ add session" may be below the fold.
+- runFlow: shared/open-today.yaml
+- runFlow: shared/today-bottom.yaml
 - tapOn: "Bag Work BAG WORK.*"
-- scrollUntilVisible:
-    element: "ENTER"
-    direction: DOWN
-    centerElement: true
+- runFlow: shared/today-bottom.yaml
 - tapOn: "ENTER"
 - extendedWaitUntil:
     visible: "START ROUND"
@@ -39,6 +31,11 @@ name: Bag round - work, last 10 s, rest (and the Live Activity)
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 04-bag-live-activity-lock
+# iOS asks once whether Waymark may show Live Activities: allow, and shoot again.
+- tapOn:
+    text: "Allow"
+    optional: true
+- takeScreenshot: 04-bag-live-activity-lock-allowed
 - pressKey:
     key: Home
     optional: true
@@ -52,7 +49,13 @@ name: Bag round - work, last 10 s, rest (and the Live Activity)
     visible: "FINISH"
     timeout: 240000
 - takeScreenshot: 04-bag-last-10s
-- extendedWaitUntil:
-    visible: "REST"
-    timeout: 30000
+# (A plain wait for REST gave up after 1.5 s in run 39334853303: poll instead.)
+- repeat:
+    while:
+      notVisible: "REST"
+    times: 30
+    commands:
+      - waitForAnimationToEnd:
+          timeout: 2000
+- assertVisible: "REST"
 - takeScreenshot: 04-bag-rest

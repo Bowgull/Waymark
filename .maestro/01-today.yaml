@@ -8,6 +8,7 @@ name: Today - week strip, Morning Report, no Coach board
 - tapOn:
     text: "Allow"
     optional: true
+- runFlow: shared/open-today.yaml
 - extendedWaitUntil:
     visible: "\\+ add session"
     timeout: 60000
