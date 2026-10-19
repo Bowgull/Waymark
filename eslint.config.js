@@ -20,4 +20,13 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // Playwright fixtures: `use` is Playwright's callback and `{}` its fixture shape, not React.
+    files: ['tests/e2e/**/*.ts'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'no-empty-pattern': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
 ])
