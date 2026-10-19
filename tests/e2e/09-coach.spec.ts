@@ -9,9 +9,11 @@ import { addDaysISO, gotoToday, insertSession, todayISO, todayRow } from './supp
  * their day, a missed session a Nauthiz; a rune day opens its back (before ->
  * after, why, UNDO), UNDO puts it back; Program's week log lists it all.
  *
- * Runs last: it rolls today's sessions over to "missed" at the end.
+ * Runs last: it rolls today's sessions over to "missed" at the end. No
+ * retries: each test builds on the one before in the shared scratch DB, so a
+ * serial retry (from the first test) would only fail on the state left behind.
  */
-test.describe.configure({ mode: 'serial' })
+test.describe.configure({ mode: 'serial', retries: 0 })
 
 const strip = (page: Page) => page.getByRole('list', { name: 'This week' })
 const row = (page: Page, name: RegExp) => page.locator('.td-row').filter({ has: page.getByRole('button', { name }) })
@@ -77,6 +79,9 @@ test('+ Add always adds, MT Class included', async ({ page }) => {
 test('a Dagaz day opens its back: before -> after, why, UNDO; UNDO puts it back', async ({ page }) => {
   await gotoToday(page)
   const dagaz = strip(page).getByRole('listitem', { name: /The coach changed this day\./ })
+  // The week's changes arrive after the board: wait for a rune day before counting
+  // (none may come on a Sunday, so a timeout here is not the failure).
+  await dagaz.first().waitFor({ state: 'attached', timeout: 10_000 }).catch(() => {})
   const n = await dagaz.count()
   test.skip(n === 0 && new Date().getDay() === 0, 'Sunday: the coach rebalances into next week, no rune this week')
   expect(n).toBeGreaterThan(0)
