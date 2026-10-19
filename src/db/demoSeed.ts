@@ -313,7 +313,7 @@ for (const s of sessions) {
 interface DailyLog {
   dayIdx: number
   sleepHours: number | null
-  weedGrams: number | null
+  herbScale: number | null // 0-9 check-in scale (0 none, 9 most)
   alcoholScale: number | null
   soreness: number | null
   notes: string | null
@@ -321,38 +321,38 @@ interface DailyLog {
 
 const DAILY_LOGS: DailyLog[] = [
   // Week 1
-  { dayIdx: 0,  sleepHours: 7.5, weedGrams: null, alcoholScale: null, soreness: 4, notes: 'Block Zero start. Back feels tight.' },
-  { dayIdx: 1,  sleepHours: 7.8, weedGrams: null, alcoholScale: null, soreness: 3, notes: null },
-  { dayIdx: 2,  sleepHours: 7.2, weedGrams: null, alcoholScale: null, soreness: 3, notes: 'Easy run felt good.' },
-  { dayIdx: 3,  sleepHours: 7.5, weedGrams: null, alcoholScale: null, soreness: 5, notes: 'Legs sore from squats.' },
-  { dayIdx: 4,  sleepHours: 6.5, weedGrams: 0.3, alcoholScale: 1,    soreness: 4, notes: null }, // weed + light drink fri
-  { dayIdx: 5,  sleepHours: 6.8, weedGrams: 0.4, alcoholScale: 2,    soreness: 4, notes: 'Social night.' }, // both sat
-  { dayIdx: 6,  sleepHours: 7.2, weedGrams: 0.2, alcoholScale: 1,    soreness: 3, notes: 'Carryover from Sat.' },
+  { dayIdx: 0,  sleepHours: 7.5, herbScale: null, alcoholScale: null, soreness: 4, notes: 'Block Zero start. Back feels tight.' },
+  { dayIdx: 1,  sleepHours: 7.8, herbScale: null, alcoholScale: null, soreness: 3, notes: null },
+  { dayIdx: 2,  sleepHours: 7.2, herbScale: null, alcoholScale: null, soreness: 3, notes: 'Easy run felt good.' },
+  { dayIdx: 3,  sleepHours: 7.5, herbScale: null, alcoholScale: null, soreness: 5, notes: 'Legs sore from squats.' },
+  { dayIdx: 4,  sleepHours: 6.5, herbScale: 3,    alcoholScale: 1,    soreness: 4, notes: null }, // weed + light drink fri
+  { dayIdx: 5,  sleepHours: 6.8, herbScale: 4,    alcoholScale: 2,    soreness: 4, notes: 'Social night.' }, // both sat
+  { dayIdx: 6,  sleepHours: 7.2, herbScale: 2,    alcoholScale: 1,    soreness: 3, notes: 'Carryover from Sat.' },
 
   // Week 2
-  { dayIdx: 7,  sleepHours: 7.6, weedGrams: null, alcoholScale: null, soreness: 3, notes: null },
-  { dayIdx: 8,  sleepHours: 7.4, weedGrams: null, alcoholScale: null, soreness: 4, notes: null },
-  { dayIdx: 9,  sleepHours: 7.0, weedGrams: null, alcoholScale: null, soreness: 3, notes: null },
-  { dayIdx: 10, sleepHours: 7.0, weedGrams: 0.2, alcoholScale: null, soreness: 5, notes: null }, // thurs light smoke
-  { dayIdx: 11, sleepHours: 5.2, weedGrams: 0.6, alcoholScale: 4,    soreness: 4, notes: 'Went too hard last night.' }, // BENDER fri
-  { dayIdx: 12, sleepHours: 6.0, weedGrams: null, alcoholScale: 1,    soreness: 7, notes: 'Hung over. Skipped bag work.' }, // sat
-  { dayIdx: 13, sleepHours: 9.1, weedGrams: null, alcoholScale: null, soreness: 5, notes: null },
+  { dayIdx: 7,  sleepHours: 7.6, herbScale: null, alcoholScale: null, soreness: 3, notes: null },
+  { dayIdx: 8,  sleepHours: 7.4, herbScale: null, alcoholScale: null, soreness: 4, notes: null },
+  { dayIdx: 9,  sleepHours: 7.0, herbScale: null, alcoholScale: null, soreness: 3, notes: null },
+  { dayIdx: 10, sleepHours: 7.0, herbScale: 2,    alcoholScale: null, soreness: 5, notes: null }, // thurs light smoke
+  { dayIdx: 11, sleepHours: 5.2, herbScale: 6,    alcoholScale: 4,    soreness: 4, notes: 'Went too hard last night.' }, // BENDER fri
+  { dayIdx: 12, sleepHours: 6.0, herbScale: null, alcoholScale: 1,    soreness: 7, notes: 'Hung over. Skipped bag work.' }, // sat
+  { dayIdx: 13, sleepHours: 9.1, herbScale: null, alcoholScale: null, soreness: 5, notes: null },
 
   // Week 3 — CLEAN WEEK
-  { dayIdx: 14, sleepHours: 7.8, weedGrams: null, alcoholScale: null, soreness: 3, notes: 'Locked in this week.' },
-  { dayIdx: 15, sleepHours: 8.0, weedGrams: null, alcoholScale: null, soreness: 2, notes: null },
-  { dayIdx: 16, sleepHours: 7.9, weedGrams: null, alcoholScale: null, soreness: 2, notes: null },
-  { dayIdx: 17, sleepHours: 8.1, weedGrams: null, alcoholScale: null, soreness: 3, notes: null },
-  { dayIdx: 18, sleepHours: 7.8, weedGrams: null, alcoholScale: null, soreness: 2, notes: 'PR on front squat 42.5kg.' },
-  { dayIdx: 19, sleepHours: 8.2, weedGrams: null, alcoholScale: null, soreness: 3, notes: null },
-  { dayIdx: 20, sleepHours: 8.4, weedGrams: null, alcoholScale: null, soreness: 2, notes: 'Best run pace yet.' },
+  { dayIdx: 14, sleepHours: 7.8, herbScale: null, alcoholScale: null, soreness: 3, notes: 'Locked in this week.' },
+  { dayIdx: 15, sleepHours: 8.0, herbScale: null, alcoholScale: null, soreness: 2, notes: null },
+  { dayIdx: 16, sleepHours: 7.9, herbScale: null, alcoholScale: null, soreness: 2, notes: null },
+  { dayIdx: 17, sleepHours: 8.1, herbScale: null, alcoholScale: null, soreness: 3, notes: null },
+  { dayIdx: 18, sleepHours: 7.8, herbScale: null, alcoholScale: null, soreness: 2, notes: 'PR on front squat 42.5kg.' },
+  { dayIdx: 19, sleepHours: 8.2, herbScale: null, alcoholScale: null, soreness: 3, notes: null },
+  { dayIdx: 20, sleepHours: 8.4, herbScale: null, alcoholScale: null, soreness: 2, notes: 'Best run pace yet.' },
 
   // Week 4
-  { dayIdx: 21, sleepHours: 7.9, weedGrams: null, alcoholScale: null, soreness: 3, notes: null },
-  { dayIdx: 22, sleepHours: 7.5, weedGrams: null, alcoholScale: null, soreness: 3, notes: null },
-  { dayIdx: 23, sleepHours: 7.7, weedGrams: null, alcoholScale: null, soreness: 4, notes: null },
-  { dayIdx: 24, sleepHours: 7.4, weedGrams: null, alcoholScale: null, soreness: 3, notes: null },
-  { dayIdx: 25, sleepHours: 6.8, weedGrams: 0.2, alcoholScale: 1,    soreness: 3, notes: 'Small smoke + one beer, early bed.' },
+  { dayIdx: 21, sleepHours: 7.9, herbScale: null, alcoholScale: null, soreness: 3, notes: null },
+  { dayIdx: 22, sleepHours: 7.5, herbScale: null, alcoholScale: null, soreness: 3, notes: null },
+  { dayIdx: 23, sleepHours: 7.7, herbScale: null, alcoholScale: null, soreness: 4, notes: null },
+  { dayIdx: 24, sleepHours: 7.4, herbScale: null, alcoholScale: null, soreness: 3, notes: null },
+  { dayIdx: 25, sleepHours: 6.8, herbScale: 2,    alcoholScale: 1,    soreness: 3, notes: 'Small smoke + one beer, early bed.' },
   // day 26 = today, no log yet
 ]
 
@@ -360,12 +360,12 @@ for (const log of DAILY_LOGS) {
   const logEpochDay = blockStartDay + log.dayIdx
   const createdAt = dayHour(log.dayIdx, 22) // logged evening
   const sleep = log.sleepHours ?? 'NULL'
-  const weed = log.weedGrams ?? 'NULL'
+  const herb = log.herbScale ?? 'NULL'
   const alcohol = log.alcoholScale ?? 'NULL'
   const sore = log.soreness ?? 'NULL'
   const notes = log.notes ? `'${esc(log.notes)}'` : 'NULL'
   lines.push(
-    `INSERT INTO daily_logs (id, log_date, sleep_hours, weed_grams, alcohol_scale, soreness, notes, created_at) VALUES ('demo-log-${log.dayIdx}', ${logEpochDay}, ${sleep}, ${weed}, ${alcohol}, ${sore}, ${notes}, ${createdAt});`
+    `INSERT INTO daily_logs (id, log_date, sleep_hours, herb_scale, alcohol_scale, soreness, notes, created_at) VALUES ('demo-log-${log.dayIdx}', ${logEpochDay}, ${sleep}, ${herb}, ${alcohol}, ${sore}, ${notes}, ${createdAt});`
   )
 }
 

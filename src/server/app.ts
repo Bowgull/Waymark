@@ -722,7 +722,7 @@ app.get('/api/sessions/suggestions', async (c) => {
   const todayWellness = todayLog ? {
     sleepHours: todayLog.sleepHours,
     soreness: todayLog.soreness,
-    weedGrams: todayLog.weedGrams,
+    herbScale: todayLog.herbScale,
     alcoholScale: todayLog.alcoholScale,
   } : null
 
@@ -2236,6 +2236,7 @@ app.post('/api/daily-logs', async (c) => {
     await db.update(dailyLogs).set({
       sleepHours: hasKey('sleepHours') ? body.sleepHours ?? null : prev.sleepHours,
       weedGrams: hasKey('weedGrams') ? body.weedGrams ?? null : prev.weedGrams,
+      herbScale: hasKey('herbScale') ? body.herbScale ?? null : prev.herbScale,
       alcoholScale: hasKey('alcoholScale') ? body.alcoholScale ?? null : prev.alcoholScale,
       soreness: hasKey('soreness') ? body.soreness ?? null : prev.soreness,
       sleepQuality: hasKey('sleepQuality') ? body.sleepQuality ?? null : prev.sleepQuality,
@@ -2257,6 +2258,7 @@ app.post('/api/daily-logs', async (c) => {
     logDate: epochDay,
     sleepHours: body.sleepHours ?? null,
     weedGrams: body.weedGrams ?? null,
+    herbScale: body.herbScale ?? null,
     alcoholScale: body.alcoholScale ?? null,
     soreness: body.soreness ?? null,
     sleepQuality: body.sleepQuality ?? null,
@@ -2641,7 +2643,8 @@ app.get('/api/history/wellness', async (c) => {
 
   const sleepValues = recent.filter(l => l.sleepHours != null).map(l => l.sleepHours!)
   const sorenessValues = recent.filter(l => l.soreness != null).map(l => l.soreness!)
-  const weedValues = recent.filter(l => l.weedGrams != null).map(l => l.weedGrams!)
+  // Herb reads the 0-9 scale only: old gram values can't be converted.
+  const herbValues = recent.filter(l => l.herbScale != null).map(l => l.herbScale!)
   const alcoholValues = recent.filter(l => l.alcoholScale != null).map(l => l.alcoholScale!)
 
   const avg = (arr: number[]) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length * 10) / 10 : null
@@ -2650,7 +2653,7 @@ app.get('/api/history/wellness', async (c) => {
     entries: recent.length,
     avgSleep: avg(sleepValues),
     avgSoreness: avg(sorenessValues),
-    avgWeed: avg(weedValues),
+    avgHerb: avg(herbValues),
     avgAlcohol: avg(alcoholValues),
   })
 })
@@ -3340,7 +3343,7 @@ app.get('/api/history/correlations', async (c) => {
     date: string
     sleepHours: number | null
     soreness: number | null
-    weedGrams: number | null
+    herbScale: number | null
     alcoholScale: number | null
     avgRpe: number | null
     sessionCount: number
@@ -3361,7 +3364,7 @@ app.get('/api/history/correlations', async (c) => {
       date: dateStr,
       sleepHours: log.sleepHours,
       soreness: log.soreness,
-      weedGrams: log.weedGrams,
+      herbScale: log.herbScale,
       alcoholScale: log.alcoholScale,
       avgRpe,
       sessionCount: daySessions.length,

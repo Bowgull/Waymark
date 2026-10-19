@@ -65,7 +65,7 @@ export function recentMtNoteLines(rows: MtNoteRow[]): string[] {
 
 function buildPrompt(
   available: AvailableCombo[],
-  wellness: { sleepHours: number | null; soreness: number | null; weedGrams: number | null; alcoholScale: number | null } | null,
+  wellness: { sleepHours: number | null; soreness: number | null; herbScale: number | null; alcoholScale: number | null } | null,
   recentMtNotes: string[],
   rules?: BagRules,
 ): string {
@@ -90,7 +90,8 @@ function buildPrompt(
     const w: string[] = []
     if (wellness.sleepHours != null) w.push(`sleep ${wellness.sleepHours}h`)
     if (wellness.soreness != null) w.push(`soreness ${wellness.soreness}/5`)
-    if (wellness.weedGrams != null) w.push(`weed ${wellness.weedGrams}g`)
+    // Herb on the 0-9 check-in scale (0 none, 9 most).
+    if (wellness.herbScale != null) w.push(`herb ${wellness.herbScale}/9`)
     if (wellness.alcoholScale != null) w.push(`alcohol ${wellness.alcoholScale}/10`)
     if (w.length > 0) lines.push(`Today wellness: ${w.join(', ')}.`)
   }
@@ -175,7 +176,7 @@ export async function runBagPrescription(
     ? {
         sleepHours: todayLog.sleepHours,
         soreness: todayLog.soreness,
-        weedGrams: todayLog.weedGrams,
+        herbScale: todayLog.herbScale,
         alcoholScale: todayLog.alcoholScale,
       }
     : null

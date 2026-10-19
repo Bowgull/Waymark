@@ -6,7 +6,8 @@ interface CorrelationDataPoint {
   date: string
   sleepHours: number | null
   soreness: number | null
-  weedGrams: number | null
+  /** 0-9 check-in scale (0 none, 9 most). */
+  herbScale: number | null
   alcoholScale: number | null
   avgRpe: number | null
   sessionCount: number
@@ -31,7 +32,7 @@ interface MetricConfig {
 const METRICS: MetricConfig[] = [
   { key: 'sleep', label: 'Sleep', get: d => d.sleepHours, xLabel: 'Sleep', xDomain: [4, 10] },
   { key: 'soreness', label: 'Soreness', get: d => d.soreness, xLabel: 'Soreness', xDomain: [1, 5], jitter: true },
-  { key: 'herb', label: 'Herb', get: d => d.weedGrams, xLabel: 'Herb (g)' },
+  { key: 'herb', label: 'Herb', get: d => d.herbScale, xLabel: 'Herb (0-9)', xDomain: [0, 9], jitter: true },
   { key: 'alcohol', label: 'Alcohol', get: d => d.alcoholScale, xLabel: 'Alcohol', xDomain: [0, 10], jitter: true },
 ]
 

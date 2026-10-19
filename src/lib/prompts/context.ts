@@ -13,7 +13,8 @@ export interface DailyLogRecord {
   logDate: number
   sleepHours: number | null
   soreness: number | null
-  weedGrams: number | null
+  /** 0-9 check-in scale (0 none, 9 most). Old gram values are not read. */
+  herbScale: number | null
   alcoholScale: number | null
 }
 
@@ -47,7 +48,7 @@ function formatDailyLog(l: DailyLogRecord): string {
   const parts: string[] = [date]
   if (l.sleepHours != null) parts.push(`sleep ${l.sleepHours}h`)
   if (l.soreness != null) parts.push(`soreness ${l.soreness}/5`)
-  if (l.weedGrams != null && l.weedGrams > 0) parts.push(`cannabis ${l.weedGrams}g`)
+  if (l.herbScale != null && l.herbScale > 0) parts.push(`cannabis ${l.herbScale}/9`)
   if (l.alcoholScale != null && l.alcoholScale > 0) parts.push(`alcohol ${l.alcoholScale}/10`)
   return parts.join(' | ')
 }

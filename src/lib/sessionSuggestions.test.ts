@@ -26,4 +26,21 @@ function testSuggestionsIncludeStandardOptions() {
 
 testSuggestionsIncludeStandardOptions()
 
+// Herb on the 0-9 check-in scale: 6+ is a substance-load day, 5 is not.
+function testHerbScale() {
+  const at = (herbScale: number) => computeSuggestions({
+    todayWellness: { sleepHours: 7.5, soreness: 2, herbScale, alcoholScale: 0 },
+    recentWellness: null,
+    weekSessions: [],
+    blockWeek: 1,
+    blockType: 'block_zero',
+    targetDate: 20592,
+    existingSessionsOnDate: [],
+  }).flags
+  assert(at(6).includes('Substance load (herb 6/9)'), 'herb 6 of 9 flags a substance load, in scale words')
+  assert(!at(5).some(f => f.startsWith('Substance load')), 'herb 5 of 9 is not a substance load')
+}
+
+testHerbScale()
+
 console.log('sessionSuggestions tests passed')

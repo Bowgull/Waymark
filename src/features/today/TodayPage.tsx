@@ -41,7 +41,7 @@ type Session = TodaySession & { startedAt: number | null; completedAt: number | 
 interface DailyLog {
   id: string
   sleepHours: number | null
-  weedGrams?: number | null
+  herbScale?: number | null
   alcoholScale?: number | null
   soreness?: number | null
   sleepQuality?: number | null

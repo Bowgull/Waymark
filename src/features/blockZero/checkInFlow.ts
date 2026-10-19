@@ -5,7 +5,8 @@
 //
 // Scales match POST /api/daily-logs (schemas.ts): 1-5 for the detailed items
 // (stress and soreness: higher is worse; back today: 1 is worst), sleep in
-// hours, alcohol on its 0-10 scale, herb in grams.
+// hours, alcohol on its 0-10 scale, herb on its 0-9 scale (0 none, 9 most;
+// page 51's herb card).
 
 export type CheckInKey =
   | 'sleepHours'
@@ -16,7 +17,7 @@ export type CheckInKey =
   | 'mood'
   | 'backToday'
   | 'alcoholScale'
-  | 'weedGrams'
+  | 'herbScale'
 
 export interface CheckInOption {
   value: number
@@ -70,16 +71,11 @@ export const CHECK_IN_QUESTIONS: readonly CheckInQuestion[] = [
     columns: 4,
   },
   {
-    key: 'weedGrams',
+    // Page 51: 0 (none) and 1-9 (9 = most), ten tiles in two rows of five.
+    key: 'herbScale',
     title: 'Herb',
-    sub: 'Grams, last 24 h',
-    options: [
-      { value: 0, label: '0', sub: 'none' },
-      { value: 0.5, label: '0.5' },
-      { value: 1, label: '1' },
-      { value: 2, label: '2' },
-      { value: 3, label: '3+' },
-    ],
+    sub: 'Last 24 h · 0 none, 9 most',
+    options: Array.from({ length: 10 }, (_, i) => (i === 0 ? { value: 0, label: '0', sub: 'none' } : i === 9 ? { value: 9, label: '9', sub: 'most' } : { value: i, label: String(i) })),
     columns: 5,
   },
 ]

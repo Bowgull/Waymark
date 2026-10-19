@@ -141,8 +141,8 @@ export async function loadWeekSignals(db: DB, block: Block, monday: number, toda
 
   const analysis = analyzeWeek(
     prev.map(s => ({ type: s.type, status: s.status, scheduledDate: s.scheduledDate ?? 0, timeSlot: s.timeSlot ?? 'am', rpe: s.rpe, difficulty: s.difficulty, notes: s.type === 'running' ? s.notes : null })),
-    weekLogs.map(l => ({ logDate: l.logDate, sleepHours: l.sleepHours, soreness: l.soreness, weedGrams: l.weedGrams, alcoholScale: l.alcoholScale })),
-    logs.filter(l => l.logDate >= prevStart - 7 && l.logDate < prevStart).map(l => ({ logDate: l.logDate, sleepHours: l.sleepHours, soreness: l.soreness, weedGrams: l.weedGrams, alcoholScale: l.alcoholScale })),
+    weekLogs.map(l => ({ logDate: l.logDate, sleepHours: l.sleepHours, soreness: l.soreness, herbScale: l.herbScale, alcoholScale: l.alcoholScale })),
+    logs.filter(l => l.logDate >= prevStart - 7 && l.logDate < prevStart).map(l => ({ logDate: l.logDate, sleepHours: l.sleepHours, soreness: l.soreness, herbScale: l.herbScale, alcoholScale: l.alcoholScale })),
     // The week before's stored read, whatever shape it has (no crash on an old AI plan).
     previousAnalysisFrom(parseStored(await latestPlanAnalysis(db, prev))),
   )

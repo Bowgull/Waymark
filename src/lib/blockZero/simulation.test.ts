@@ -432,7 +432,7 @@ assert(flaky.plans.every(p => p.plan.newTotalWeeks <= 8), 'no plan ever goes pas
     for (let i = 0; i < 7; i++) {
       const day = START + (week - 1) * 7 + i
       const off = badDays.has(day)
-      rows.push({ logDate: day, sleepHours: off ? 5.5 : 7.5, sleepQuality: off ? 2 : 4, energy: off ? 2 : 4, soreness: 2, stress: off ? 4 : 2, mood: 4, backToday: 4, alcoholScale: 0, weedGrams: 0 })
+      rows.push({ logDate: day, sleepHours: off ? 5.5 : 7.5, sleepQuality: off ? 2 : 4, energy: off ? 2 : 4, soreness: 2, stress: off ? 4 : 2, mood: 4, backToday: 4, alcoholScale: 0, herbScale: 0 })
       const report = readinessReport(rows.map(checkInFromDailyLog), day)
       if (report.ease) easedDays.push(day)
 

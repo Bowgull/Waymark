@@ -16,7 +16,8 @@ export interface DailyLogFields {
   mood?: number | null
   backToday?: number | null
   alcoholScale?: number | null
-  weedGrams?: number | null
+  /** 0-9 scale. Legacy weed_grams is never read: grams can't be converted. */
+  herbScale?: number | null
 }
 
 export function checkInFromDailyLog(row: DailyLogFields): CheckIn {
@@ -30,7 +31,7 @@ export function checkInFromDailyLog(row: DailyLogFields): CheckIn {
     mood: row.mood ?? null,
     backToday: row.backToday ?? null,
     alcohol: row.alcoholScale ?? null,
-    cannabis: row.weedGrams ?? null,
+    cannabis: row.herbScale ?? null,
   }
 }
 

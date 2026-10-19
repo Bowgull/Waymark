@@ -10,11 +10,13 @@ function assert(cond: unknown, msg: string): void {
 const D = 20500
 // daily_logs rows as the API stores them (Phase B columns included).
 const row = (logDate: number, over: Partial<DailyLogFields> = {}): DailyLogFields => ({
-  logDate, sleepHours: 7.5, sleepQuality: 4, energy: 4, soreness: 2, stress: 2, mood: 4, backToday: 4, alcoholScale: 0, weedGrams: 0, ...over,
+  logDate, sleepHours: 7.5, sleepQuality: 4, energy: 4, soreness: 2, stress: 2, mood: 4, backToday: 4, alcoholScale: 0, herbScale: 0, ...over,
 })
 
-const c = checkInFromDailyLog(row(D, { alcoholScale: 3, weedGrams: 0.5 }))
-assert(c.epochDay === D && c.sleepQuality === 4 && c.backToday === 4 && c.alcohol === 3 && c.cannabis === 0.5, 'daily_logs row maps to the readiness check-in (alcohol and cannabis from the old columns)')
+const c = checkInFromDailyLog(row(D, { alcoholScale: 3, herbScale: 4 }))
+assert(c.epochDay === D && c.sleepQuality === 4 && c.backToday === 4 && c.alcohol === 3 && c.cannabis === 4, 'daily_logs row maps to the readiness check-in (cannabis from the 0-9 herb scale)')
+const grams = checkInFromDailyLog({ logDate: D, sleepHours: 7, weedGrams: 1.5 } as DailyLogFields & { weedGrams: number })
+assert(grams.cannabis === null, 'old gram values are never read as the scale (they cannot be converted)')
 const legacy = checkInFromDailyLog({ logDate: D, sleepHours: 6, soreness: 3 })
 assert(legacy.energy === null && legacy.sleepQuality === null && legacy.sleepHours === 6, 'old rows without the new fields still map')
 

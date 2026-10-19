@@ -41,8 +41,19 @@ const stressDays = evaluateReadiness([...full, { epochDay: 208, energy: 4, mood:
 assert(stressDays[stressDays.length - 1].ease && stressDays[stressDays.length - 1].worseItems.join(',') === 'stress,alcohol', 'stress and alcohol up two days: ease')
 const backMood = evaluateReadiness([...full, { epochDay: 208, mood: 2, backToday: 2 }, { epochDay: 209, mood: 2, backToday: 2 }])
 assert(backMood[backMood.length - 1].ease, 'back and mood down two days: ease, missing items tolerated')
-const weed = evaluateReadiness([...full, { epochDay: 208, energy: 2, cannabis: 0.5 }, { epochDay: 209, energy: 2, cannabis: 0.6 }])
-assert(weed[weed.length - 1].ease, 'cannabis uses a 0.5 g step')
+// Herb on the 0-9 scale: 2+ points over the 7-day usual is worse; 1 point is not.
+const herbTwo = evaluateReadiness([...full, { epochDay: 208, energy: 2, cannabis: 2 }])
+assert(herbTwo[herbTwo.length - 1].deltas.cannabis === 2 && herbTwo[herbTwo.length - 1].worseItems.includes('cannabis'), 'herb 2 points over a usual of 0: worse')
+const herbEase = evaluateReadiness([...full, { epochDay: 208, energy: 2, cannabis: 3 }, { epochDay: 209, energy: 2, cannabis: 3 }])
+assert(herbEase[herbEase.length - 1].ease && herbEase[herbEase.length - 1].worseItems.includes('cannabis'), 'herb well over the usual with low energy, two days: ease')
+const herbOne = evaluateReadiness([...full, { epochDay: 208, energy: 2, cannabis: 1 }, { epochDay: 209, energy: 2, cannabis: 1 }])
+assert(!herbOne[herbOne.length - 1].worseItems.includes('cannabis') && !herbOne[herbOne.length - 1].ease, 'herb 1 point over the usual: not worse')
+const herbUsual: CheckIn[] = Array.from({ length: 8 }, (_, i) => ({ epochDay: 400 + i, energy: 4, cannabis: 5 }))
+const herbHabit = evaluateReadiness([...herbUsual, { epochDay: 408, energy: 4, cannabis: 6 }])
+assert(herbHabit[herbHabit.length - 1].deltas.cannabis === 1 && !herbHabit[herbHabit.length - 1].flagged, 'against his own usual: 6 after a week of 5 is 1 point, not worse')
+const herbHigh = evaluateReadiness([...herbUsual, { epochDay: 408, energy: 4, cannabis: 7 }])
+assert(herbHigh[herbHigh.length - 1].worseItems.includes('cannabis'), '7 after a week of 5 is 2 points over: worse')
+assert(latestReadiness([...full, { epochDay: 208, energy: 2, cannabis: 3 }, { epochDay: 209, energy: 2, cannabis: 3 }]).reason === 'Energy and cannabis are off your 7-day trend for 2 days.', 'the reason names the herb item')
 
 // Sparse data: fewer than 4 values in the window means no baseline.
 const sparse = evaluateReadiness([{ epochDay: 1, sleepHours: 8, soreness: 1 }, { epochDay: 5, sleepHours: 8, soreness: 1 }, { epochDay: 8, sleepHours: 4, soreness: 5 }, { epochDay: 9, sleepHours: 4, soreness: 5 }])

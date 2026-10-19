@@ -27,6 +27,9 @@ export interface CheckIn {
 
 export type ReadinessItem = Exclude<keyof CheckIn, 'epochDay'>
 
+/** Herb: this many points over the 7-day usual (0-9 scale) counts as worse. */
+export const HERB_WORSE_POINTS = 2
+
 interface ItemRule {
   /** +1: higher is better. -1: higher is worse. */
   polarity: 1 | -1
@@ -43,8 +46,10 @@ export const READINESS_ITEMS: Readonly<Record<ReadinessItem, ItemRule>> = {
   soreness: { polarity: -1, threshold: 1 },
   stress: { polarity: -1, threshold: 1 },
   alcohol: { polarity: -1, threshold: 1 },
-  // Grams, not a 1-5 scale. Half a gram over the usual is the "point".
-  cannabis: { polarity: -1, threshold: 0.5 },
+  // Herb on the check-in's 0-9 scale (0 none, 9 most; 2026-10-19). A finer
+  // scale than the 1-5 items, so 2 points over his own 7-day usual is the
+  // "point" (1 point is noise between neighbouring tiles).
+  cannabis: { polarity: -1, threshold: HERB_WORSE_POINTS },
 }
 
 export const BASELINE_DAYS = 7

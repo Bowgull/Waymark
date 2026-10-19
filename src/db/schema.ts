@@ -303,7 +303,10 @@ export const dailyLogs = sqliteTable('daily_logs', {
   id: text('id').primaryKey(),
   logDate: integer('log_date').notNull().unique(),
   sleepHours: real('sleep_hours'),
+  // Legacy: grams, kept as written. Nothing new writes it (0034).
   weedGrams: real('weed_grams'),
+  // Herb on the 0-9 check-in scale: 0 = none, 9 = most (0034).
+  herbScale: integer('herb_scale'),
   alcoholScale: integer('alcohol_scale'),
   soreness: integer('soreness'),
   // Detailed check-in (Block Zero readiness). 1-5; stress is the only one where higher is worse.

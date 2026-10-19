@@ -77,7 +77,8 @@ for (const q of CHECK_IN_QUESTIONS) {
   const body = checkInPayload(s, '2026-10-18')
   assert.equal(body.date, '2026-10-18')
   assert.equal('stress' in body, false, 'untouched stays out of the log')
-  assert.equal(body.weedGrams, 3)
+  assert.equal(body.herbScale, 9, 'herb sends the 0-9 scale')
+  assert.equal('weedGrams' in body, false, 'grams are never sent')
   assert.ok(dailyLogSchema.safeParse(body).success, 'the whole body passes the API schema')
   assert.equal(answeredCount(s.answers), total - 1)
   // Done ignores further taps until it is reopened.
@@ -85,6 +86,23 @@ for (const q of CHECK_IN_QUESTIONS) {
   const reopened = checkInReducer(s, { type: 'jump', index: 2 })
   assert.equal(reopened.done, false)
   assert.equal(reopened.index, 2)
+}
+
+// ─── herb: 0 (none) and 1-9 (9 = most), page 51 ──
+{
+  const herb = CHECK_IN_QUESTIONS.find(q => q.key === 'herbScale')!
+  assert.equal(herb.title, 'Herb', 'the title stays')
+  assert.equal(herb.sub, 'Last 24 h · 0 none, 9 most')
+  assert.deepEqual(herb.options.map(o => o.value), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+  assert.equal(herb.options[0].sub, 'none')
+  assert.equal(herb.options[9].sub, 'most')
+  assert.ok(herb.options.slice(1, 9).every(o => o.sub === undefined), '1-8 carry only the digit')
+  assert.equal(herb.columns, 5, 'two rows of five')
+  assert.equal(answerLabel('herbScale', 0), '0')
+  assert.equal(answerLabel('herbScale', 9), '9')
+  assert.equal(dailyLogSchema.safeParse({ date: '2026-10-18', herbScale: 10 }).success, false, '10 is off the scale')
+  assert.equal(dailyLogSchema.safeParse({ date: '2026-10-18', herbScale: 2.5 }).success, false, 'whole points only')
+  assert.deepEqual(answersFromLog({ herbScale: 3 }), { herbScale: 3 })
 }
 
 // ─── editing from the collapsed card ──

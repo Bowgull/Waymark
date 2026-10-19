@@ -37,7 +37,7 @@ const base = pickerOptions(TRAINING_TARGETS)
 // ─── sore and under-slept: picks lantern-lit, everything else plain and pickable ──
 {
   const s = computeSuggestions({
-    todayWellness: { sleepHours: 5, soreness: 4, weedGrams: null, alcoholScale: null },
+    todayWellness: { sleepHours: 5, soreness: 4, herbScale: null, alcoholScale: null },
     recentWellness: null, weekSessions: [], blockWeek: 1, targetDate: 20592, existingSessionsOnDate: [],
   })
   const board = buildDepartures(base, s)

@@ -2,7 +2,8 @@ interface WellnessData {
   entries: number
   avgSleep: number | null
   avgSoreness: number | null
-  avgWeed: number | null
+  /** Herb on the check-in's 0-9 scale (0 none, 9 most). */
+  avgHerb: number | null
   avgAlcohol: number | null
 }
 
@@ -36,10 +37,10 @@ export function LifestyleSnapshot({ wellness }: LifestyleSnapshotProps) {
             <span className="text-foreground">{getSorenessLabel(wellness.avgSoreness)}</span>
           </>
         )}
-        {wellness.avgWeed != null && (
+        {wellness.avgHerb != null && (
           <>
-            <span className="text-label text-muted-foreground">Avg Weed</span>
-            <span className="text-foreground">{wellness.avgWeed}g</span>
+            <span className="text-label text-muted-foreground">Avg Herb</span>
+            <span className="text-foreground">{wellness.avgHerb}/9</span>
           </>
         )}
         {wellness.avgAlcohol != null && (

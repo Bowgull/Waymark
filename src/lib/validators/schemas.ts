@@ -24,7 +24,10 @@ export const strengthSetSchema = z.object({
 export const dailyLogSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   sleepHours: z.number().min(0).max(24).optional().nullable(),
+  // Legacy grams: still accepted from an old build's queued check-in, never sent now.
   weedGrams: z.number().min(0).max(100).optional().nullable(),
+  // Herb on the check-in's 0-9 scale: 0 = none, 9 = most.
+  herbScale: z.number().int().min(0).max(9).optional().nullable(),
   alcoholScale: z.number().int().min(0).max(10).optional().nullable(),
   // The Today gauge sends 1-5 (Fresh .. Cooked); prompts read it as /5.
   soreness: z.number().int().min(1).max(5).optional().nullable(),

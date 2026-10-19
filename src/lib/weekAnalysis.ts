@@ -25,7 +25,7 @@ export interface DailyLogRecord {
   logDate: number
   sleepHours: number | null
   soreness: number | null
-  weedGrams: number | null
+  herbScale: number | null // 0-9 (0 none, 9 most)
   alcoholScale: number | null
 }
 

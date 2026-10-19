@@ -9,9 +9,12 @@ import type { PickAction } from './coach/pickDay'
 export interface WellnessSnapshot {
   sleepHours: number | null
   soreness: number | null   // 1-5 (1=Fresh, 5=Cooked)
-  weedGrams: number | null
+  herbScale: number | null  // 0-9 (0 none, 9 most)
   alcoholScale: number | null // 0-10
 }
+
+/** Herb at or above this (0-9 scale) is a substance load day. */
+export const HIGH_HERB_SCALE = 6
 
 export interface RecentWellness {
   avgSleep: number | null
@@ -145,12 +148,13 @@ export function computeSuggestions(input: SuggestionInput): SuggestionsResponse 
 
   // ─── Rule 3: High substance ────────────────────────────────
   const highAlcohol = todayWellness?.alcoholScale !== null && (todayWellness?.alcoholScale ?? 0) >= 5
-  const highHerb = todayWellness?.weedGrams !== null && (todayWellness?.weedGrams ?? 0) >= 2
+  // Herb on the 0-9 scale: 6+ is the top third (the old card's 2 g of 3+ g).
+  const highHerb = todayWellness?.herbScale != null && todayWellness.herbScale >= HIGH_HERB_SCALE
 
   if (highAlcohol || highHerb) {
     const parts: string[] = []
     if (highAlcohol) parts.push(`alcohol ${todayWellness!.alcoholScale}/10`)
-    if (highHerb) parts.push(`herb ${todayWellness!.weedGrams}g`)
+    if (highHerb) parts.push(`herb ${todayWellness!.herbScale}/9`)
     flags.push(`Substance load (${parts.join(', ')})`)
 
     for (const opt of allOptions) {
