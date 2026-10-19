@@ -179,6 +179,8 @@ export function ProgramPage() {
               const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST' }).catch(() => null)
               setAssessmentLoading(false)
               if (result) setAssessment(result)
+              // No assessment (AI offline): prepare the current week as any open does, no tap needed.
+              else await loadWeek(existingBlock, currentWeekOf(existingBlock)).catch(() => {})
               return
             }
             setLoading(false)
@@ -270,6 +272,8 @@ export function ProgramPage() {
       const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST' }).catch(() => null)
       setAssessmentLoading(false)
       setAssessment(result)
+      // No assessment (AI offline): prepare the current week now, as any open does.
+      if (!result) await loadWeek(newBlock, currentWeekOf(newBlock)).catch(() => {})
     } catch (e) {
       console.error('Failed to start Block Zero:', e)
       setStartingBlockZero(false)
@@ -375,7 +379,7 @@ export function ProgramPage() {
                   <div key={cs.exerciseName} className="db-lift"><span>{cs.exerciseName.toUpperCase()}</span><span>{lbText(cs.startingWeightKg)}</span></div>
                 ))}
               </div>
-              <p className="wm-prose is-dim" style={{ marginTop: 6 }}>Block Zero loads at 40-55% of these numbers.</p>
+              <p className="wm-prose is-dim" style={{ marginTop: 6 }}>Block Zero loads at 55-65% of these numbers.</p>
             </div>
           )}
           <div style={{ marginTop: 14 }}>
@@ -400,7 +404,7 @@ export function ProgramPage() {
               : "It's been a while since your last session. Tendons and ligaments detrain faster than muscle. Block Zero resets your starting weights and volume so you can build back up safely."}
           </p>
           <ul className="pg-list">
-            {['Weeks 1–2: Foundation + light strength (40% weights). No MT class.', 'Weeks 3–4: MT class returns. Weights climb to 50–55%.', 'Weeks 5–6: Full schedule. Ready for Block 1.'].map(item => (
+            {['Weeks 1–2: Foundation, run-walks and light strength (55–57.5% of your maxes).', 'Weeks 3–5: Weights climb to 60–65%. MT class is yours to add.', 'Week 6: Volume down, then the gate to Fighter Block 1.'].map(item => (
               <li key={item} className="wm-prose is-dim">{item}</li>
             ))}
           </ul>
