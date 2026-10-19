@@ -154,5 +154,11 @@ function stateKey(s: ActivityState): string {
     s.stepTotal ?? '',
     s.setIndex ?? '',
     s.setTotal ?? '',
+    s.round ?? '',
+    s.roundTotal ?? '',
+    s.combo?.join('›') ?? '',
+    s.nextCombo?.join('›') ?? '',
+    s.fromClass ? '1' : '',
+    s.comboSize ?? '',
   ].join('|')
 }

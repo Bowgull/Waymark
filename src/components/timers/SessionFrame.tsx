@@ -50,6 +50,8 @@ interface SessionFrameProps {
   /** Right side: a count flap (3/6) or the session icon. */
   count?: string
   icon?: SessionIconKey
+  /** Right side instead of a count or icon (the bag round's FIGHT / REST flap, page 55). */
+  right?: ReactNode
   onEnd?: () => void
   /** The grass zone (a timer screen) or nothing (the set screen). */
   grass?: ReactNode
@@ -67,7 +69,7 @@ interface SessionFrameProps {
  * the stop row (× end tile, the session on a flap, a count or the icon), the
  * body, and on timers the half-screen grass. Paused dims the whole screen.
  */
-export function SessionFrame({ title, count, icon, onEnd, grass, forest = false, paused = false, children, overlay, className = '' }: SessionFrameProps) {
+export function SessionFrame({ title, count, icon, right, onEnd, grass, forest = false, paused = false, children, overlay, className = '' }: SessionFrameProps) {
   // Held through: ENDED flips in place (the timer's phase word, or the title on a screen with no
   // timer) and the clock stops; the session leaves once it has been read (page 19 `.xbtn`).
   const [ended, setEnded] = useState(false)
@@ -98,7 +100,7 @@ export function SessionFrame({ title, count, icon, onEnd, grass, forest = false,
         <div className="tm-stop">
           <EndButton onEnd={onEnd ? startEnd : undefined} />
           <FlapLabel text={ended && !grass ? 'ENDED' : title} size="sm" tone={ended && !grass ? 'clay' : 'ink'} />
-          {icon ? <SessionIcon kind={icon} size={40} /> : count ? <FlapLabel text={count} size="sm" /> : <span style={{ width: 44 }} />}
+          {right ?? (icon ? <SessionIcon kind={icon} size={40} /> : count ? <FlapLabel text={count} size="sm" /> : <span style={{ width: 44 }} />)}
         </div>
         {children}
       </div>
@@ -121,15 +123,13 @@ export function Pips({ total, now, small = false }: { total: number; now: number
 // ─── Combos as strike tiles ───────────────────────────────────
 
 /**
- * A combo (design-decisions "Combos"): separate strike tiles joined by ›, its
- * session letter first on a brass-ringed tile. `timer` = page 19's big tiles;
- * otherwise page 31's board tiles.
+ * A combo (design-decisions "Combos"): separate strike tiles joined by ›, on
+ * page 31's board tiles. No combo letters (page 55, 2026-10-19).
  */
-export function ComboStrikes({ text, letter, size = 'xs', timer = false, className = '' }: { text: string; letter?: string | null; size?: 'xs' | 'sm' | 'md'; timer?: boolean; className?: string }) {
+export function ComboStrikes({ text, size = 'xs', className = '' }: { text: string; size?: 'xs' | 'sm' | 'md'; className?: string }) {
   const strikes = comboStrikes(text)
   return (
-    <span className={`tm-combo${timer ? ' is-timer' : ''} ${className}`} role="img" aria-label={`${letter ? `${letter}: ` : ''}${strikes.join(', ')}`}>
-      {letter && <span className="cl"><FlapLabel text={letter} size={size} tone="gold" /></span>}
+    <span className={`tm-combo ${className}`} role="img" aria-label={strikes.join(', ')}>
       {strikes.map((s, i) => (
         <span key={i} style={{ display: 'contents' }}>
           {i > 0 && <span className="arr" aria-hidden>›</span>}

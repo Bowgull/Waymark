@@ -42,7 +42,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/Toast'
 import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
 import { FlapLabel, SESSION_ICON_NAME, armCascade, sessionIconFor } from '@/design'
-import { comboLetters, heatFor, momentLine, workLabel } from '@/lib/timers/timerLook'
+import { heatFor, momentLine, workLabel } from '@/lib/timers/timerLook'
 import { talkTestDue, TALK_TEST_WEEKS } from '@/lib/blockZero/talkTest'
 
 import { ActiveRecoveryView } from './ActiveRecoveryView'
@@ -1235,8 +1235,6 @@ export function WorkoutPage() {
     const rounds = bagData.rounds
     const totalRounds = rounds.length
     const currentRound = rounds[roundIdx]
-    // Each combo keeps one letter for the session: the preview, the timer and the rating card.
-    const letters = comboLetters(rounds.flatMap(r => r.combos.map(rc => rc.combo?.id)))
 
     // Collect all combos for rating screen
     const allCombosForRating = rounds.flatMap(r =>
@@ -1279,7 +1277,7 @@ export function WorkoutPage() {
     if (phase === 'bag-preview') {
       return (
         <>
-          <BagPreviewCard rounds={rounds} letters={letters} onBegin={() => setPhase('bag-warmup')} onBack={leaveSession} />
+          <BagPreviewCard rounds={rounds} onBegin={() => setPhase('bag-warmup')} onBack={leaveSession} />
           <ToastContainer />
         </>
       )
@@ -1305,7 +1303,6 @@ export function WorkoutPage() {
         <ComboRatingScreen
           sessionId={id!}
           combos={allCombosForRating}
-          letters={letters}
           onComplete={handleRatingComplete}
         />
       )
@@ -1331,7 +1328,7 @@ export function WorkoutPage() {
           round={currentRound}
           totalRounds={totalRounds}
           nextRound={rounds[roundIdx + 1] ?? null}
-          letters={letters}
+          rounds={rounds}
           phase={roundPhase}
           onPhaseChange={setRoundPhase}
           onNextRound={() => {

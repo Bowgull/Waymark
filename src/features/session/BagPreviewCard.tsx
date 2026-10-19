@@ -15,10 +15,10 @@ interface PreviewRound {
 /**
  * Bag Work Preview (page 31): one centred board over the forest, like the
  * departures. The round count in brass ("6 ROUNDS") with "Tonight's combos",
- * then the numbered rounds with their combos as strike tiles and letters, and
+ * then the numbered rounds with their combos as strike tiles, and
  * BEGIN SESSION. Tapping outside returns to Today (the session stays open).
  */
-export function BagPreviewCard({ rounds, letters, onBegin, onBack }: { rounds: PreviewRound[]; letters: Map<string, string>; onBegin: () => void; onBack?: () => void }) {
+export function BagPreviewCard({ rounds, onBegin, onBack }: { rounds: PreviewRound[]; onBegin: () => void; onBack?: () => void }) {
   useEffect(() => {
     setWorldBackdrop('clearing')
     return () => setWorldBackdrop(null)
@@ -34,7 +34,7 @@ export function BagPreviewCard({ rounds, letters, onBegin, onBack }: { rounds: P
           <span className="ss-num">{String(i + 1).padStart(2, '0')}</span>
           <div className="ss-rcombos">
             {r.combos.filter(rc => rc.combo).map(rc => (
-              <ComboStrikes key={rc.id} text={rc.combo!.text} letter={letters.get(rc.combo!.id)} size="xs" />
+              <ComboStrikes key={rc.id} text={rc.combo!.text} size="xs" />
             ))}
           </div>
         </div>

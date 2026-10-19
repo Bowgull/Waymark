@@ -1,13 +1,13 @@
 // Run: tsx src/lib/timers/timerLook.test.ts
 // The session timers' look (pages 19 and 31): heat bands in the last 10 s, the calm
 // swell of holds and rest, the clock digits and their short-way flips, the swipe-up
-// skip, combo strikes and letters, and the grass scene.
+// skip, combo strikes, and the grass scene.
 import assert from 'node:assert/strict'
 
 import { flipFrames } from '../../design/flap'
 import { cellGlyph, grassGrid, timerCell } from './grassScene'
 import {
-  clockDigits, comboLetter, comboLetters, comboStrikes, effortWord, heatFor, momentLine,
+  clockDigits, comboStrikes, effortWord, heatFor, momentLine,
   ENDED_SHOW_MS, PULL_SETTLE_MS, progressOf, pullAmount, releaseAction, settlePull, shownSeconds, swellK, workLabel,
 } from './timerLook'
 
@@ -81,14 +81,6 @@ test('combos are strike tiles: "Jab → Cross → Hook"', () => {
   assert.deepEqual(comboStrikes('Jab → Low Kick'), ['JAB', 'LOW KICK'])
   assert.deepEqual(comboStrikes('Double Jab -> Cross'), ['DOUBLE JAB', 'CROSS'])
   assert.deepEqual(comboStrikes('Teep'), ['TEEP'])
-})
-
-test('each combo keeps one letter for the session, by first appearance', () => {
-  assert.equal(comboLetter(0), 'A')
-  assert.equal(comboLetter(3), 'D')
-  assert.equal(comboLetter(26), 'AA')
-  const m = comboLetters(['c2', 'c5', 'c2', 'c9', null, 'c5', 'c1'])
-  assert.deepEqual([...m.entries()], [['c2', 'A'], ['c5', 'B'], ['c9', 'C'], ['c1', 'D']])
 })
 
 test('effort words and the moment line (page 19 #6)', () => {

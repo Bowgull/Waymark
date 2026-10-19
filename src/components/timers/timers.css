@@ -48,27 +48,10 @@
 .tm-grass canvas { display: block; }
 .tm-ghint { position: absolute; left: 0; right: 0; bottom: 34px; z-index: 3; display: flex; justify-content: space-between; padding: 0 22px; pointer-events: none; font: 800 12.5px/1 var(--font-body); letter-spacing: 0.22em; color: rgba(240, 230, 192, 0.55); text-shadow: 0 1px 4px #000; }
 
-/* the combo board on the timer (page 19 .nextb): COMBO, then NEXT ROUND (teal) in rest */
-.tm-next { margin: 14px 14px 0; padding: 12px 12px 14px; }
-.tm-next .tm-nlab { display: block; text-align: center; margin-bottom: 10px; line-height: 1; }
-.tm-next.is-rest .stk { box-shadow: inset 0 0 0 1px rgba(120, 190, 170, 0.45); }
-/* the combo's own form cue under the strikes (page 47 .cue): CUE · TURN THE HIP on a teal flap */
-.tm-cues { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(0, 0, 0, 0.55); display: flex; flex-direction: column; gap: 8px; }
-.tm-cue { display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 0; }
-.tm-cue .wm-label { flex: none; }
-.tm-cue-f { display: inline-flex; flex: 0 1 auto; min-width: 0; }
-
-/* a combo: strike tiles joined by ›, its letter first (page 31 sizes; .is-timer = page 19's big tiles) */
+/* a combo: strike tiles joined by › (page 31 sizes; no letters, page 55) */
 .tm-combo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .tm-combo .stk { display: inline-flex; padding: 3px; border-radius: 7px; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.22); }
-.tm-combo .cl { display: inline-flex; padding: 3px; margin-right: 4px; border-radius: 7px; background: rgba(184, 152, 74, 0.16); box-shadow: inset 0 0 0 2px #b8984a; }
 .tm-combo .arr { font: 800 14px var(--font-mono); color: rgba(232, 200, 96, 0.55); }
-.tm-combo.is-timer { justify-content: center; gap: 6px; }
-.tm-combo.is-timer .stk { padding: 4px; border-radius: 9px; background: rgba(0, 0, 0, 0.32); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.25); }
-.tm-combo.is-timer .cl { padding: 4px; margin-right: 6px; border-radius: 9px; }
-.tm-combo.is-timer .arr { font-size: 20px; color: rgba(232, 200, 96, 0.6); }
-.tm-next.is-rest .tm-combo.is-timer .stk { box-shadow: inset 0 0 0 1px rgba(120, 190, 170, 0.45); }
-
 /* small text of pages 19/31 at the readable minimums */
 .tm-note { margin: 0; font: 600 15px/1.4 var(--font-body); color: #9db5aa; }
 .tm-wide { margin: 14px 14px 0; }

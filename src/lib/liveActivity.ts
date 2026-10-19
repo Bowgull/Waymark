@@ -42,6 +42,20 @@ export interface ActivityState {
   /** Strength set counter shown in the big tiles (2/3) and filling the grass. */
   setIndex?: number
   setTotal?: number
+  // Page 55 (the bag round's lock card, approved 2026-10-19). All optional:
+  // the widget draws today's card when they are absent.
+  /** The round, kept apart from the step count: this round in a round and in
+   *  the rest after it (the card's header then counts the round coming). */
+  round?: number
+  roundTotal?: number
+  /** This round's first combo as strikes (JAB, CROSS, HOOK). */
+  combo?: string[]
+  /** The next round's first combo: the card shows it in rest. */
+  nextCombo?: string[]
+  /** The combo on the card was found in an MT class (page 49's glove). */
+  fromClass?: boolean
+  /** The session's one combo size on the card (pt, 14–19; lib/timers/bagRound lockComboSize). */
+  comboSize?: number
 }
 
 /** Default painted icon for a Live Activity session type. */

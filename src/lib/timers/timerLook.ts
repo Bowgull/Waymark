@@ -7,7 +7,7 @@
 // - Holds and rest stay calm teal; from 5 s out the clock eases into a swell,
 //   brightens and breathes, and the grass glows.
 // - Digits are four flap tiles MM:SS; each flips only through digits, the short way.
-// - Combos are strikes joined by ›; each combo keeps one letter (A, B, C…) for the session.
+// - Combos are strikes joined by › (no combo letters: page 55, 2026-10-19).
 
 export type TimerKind = 'work' | 'hold' | 'rest'
 export type Heat = 'hy' | 'ho' | 'hr'
@@ -131,27 +131,6 @@ export function comboStrikes(text: string): string[] {
     .split(/\s*(?:→|›|->|>|,|·|\|)\s*/)
     .map(s => s.trim().toUpperCase())
     .filter(Boolean)
-}
-
-/** The letter for the n-th (0-based) combo: A..Z, then AA, AB… */
-export function comboLetter(n: number): string {
-  let i = Math.max(0, Math.floor(n))
-  let out = ''
-  do {
-    out = String.fromCharCode(65 + (i % 26)) + out
-    i = Math.floor(i / 26) - 1
-  } while (i >= 0)
-  return out
-}
-
-/** Each combo id gets a letter in order of first appearance; the same combo keeps its letter all session. */
-export function comboLetters(ids: Iterable<string | null | undefined>): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const id of ids) {
-    if (!id || map.has(id)) continue
-    map.set(id, comboLetter(map.size))
-  }
-  return map
 }
 
 // ─── closing ─────────────────────────────────────────────────

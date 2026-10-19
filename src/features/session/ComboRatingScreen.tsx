@@ -18,8 +18,6 @@ interface ComboForRating {
 interface ComboRatingScreenProps {
   sessionId: string
   combos: ComboForRating[]
-  /** The session's combo letters (A, B, C…), as on the preview and the timer. */
-  letters?: Map<string, string>
   onComplete: (newFavourites: string[]) => void
 }
 
@@ -34,13 +32,13 @@ const NEXT_MS = 260
 
 /**
  * Rate your combos, one at a time (page 31 "Rating · one at a time (approved)"):
- * a centred card per combo over the forest, its strike tiles and letter, then
+ * a centred card per combo over the forest, its strike tiles (no letter), then
  * STRUGGLED (clay) / SOLID (brass, already lit) / SHARP (teal). A tap on any tile
  * (SOLID included) rates it and flips the next combo in; pips show where you
  * are. After the last, the ratings are saved as before (mastery, favourites,
  * future picks, unlocks).
  */
-export function ComboRatingScreen({ sessionId, combos, letters, onComplete }: ComboRatingScreenProps) {
+export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRatingScreenProps) {
   // Deduplicate combos (same combo might appear in multiple rounds)
   const uniqueCombos = Array.from(
     combos.reduce((map, c) => {
@@ -144,7 +142,7 @@ export function ComboRatingScreen({ sessionId, combos, letters, onComplete }: Co
         className="ss-card ss-rate"
       >
         <div className="ss-rate-combo">
-          <ComboStrikes key={shown.comboId} text={shown.text} letter={letters?.get(shown.comboId)} size="sm" />
+          <ComboStrikes key={shown.comboId} text={shown.text} size="sm" />
         </div>
         <div role="radiogroup" aria-label="How did it go?">
           {OPTIONS.map(o => {
