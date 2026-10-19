@@ -49,7 +49,7 @@ import {
   isLongRun,
   mondayOf,
   plannedLoad,
-  sessionName,
+  nameInSentence, sessionName,
   type SessionLike,
   type TimeSlot,
 } from './sessions'
@@ -301,7 +301,7 @@ export function rebalance(input: RebalanceInput): CoachChangePlan[] {
   // R9: the pick stands on an easing day; the next hard day eases instead.
   if (easeToday && pickLive && hard(pick) && room()) {
     const target = sorted().find(s => s.epochDay > day && s.epochDay <= day + 2 && hard(s) && free(s))
-    if (target) ease(target, 'R9', `${pickName(pick)} ${dayToken(day)} ${STRESS_WORDS.readiness}; ${dayLong(target.epochDay)}'s ${sessionName(target).toLowerCase()} eases.`)
+    if (target) ease(target, 'R9', `${pickName(pick)} ${dayToken(day)} ${STRESS_WORDS.readiness}; ${dayLong(target.epochDay)}'s ${nameInSentence(sessionName(target))} eases.`)
   }
 
   // R5: three hard days in a row with his pick in them: the third one he didn't choose eases.
@@ -313,7 +313,7 @@ export function rebalance(input: RebalanceInput): CoachChangePlan[] {
       const target = candidates[0]
       if (!target) continue
       const words = [start, start + 1, start + 2].map(d => shortWord(week.find(s => s.epochDay === d && hard(s)) ?? pick))
-      const set = target.type === 'strength' ? `One set off ${dayLong(target.epochDay)}, same weights.` : `${dayLong(target.epochDay)}'s ${sessionName(target).toLowerCase()} eases.`
+      const set = target.type === 'strength' ? `One set off ${dayLong(target.epochDay)}, same weights.` : `${dayLong(target.epochDay)}'s ${nameInSentence(sessionName(target))} eases.`
       ease(target, 'R5', `${capital(words.join(', '))}: three hard days in a row. ${set}`)
     }
   }
@@ -350,7 +350,7 @@ export function rebalance(input: RebalanceInput): CoachChangePlan[] {
         const to = clash.epochDay + 1
         const moved = to <= sunday ? checkSessionChange({ kind: 'move', type: clash.type, label: clash.label, notes: clash.notes, epochDay: to, timeSlot: clash.timeSlot, sessionId: clash.id, fromEpochDay: clash.epochDay }, { ...ctx, sessions: week }, { alternatives: false }) : null
         const why = legs
-          ? `Heavy legs ${dayToken(day)} need 24 hours from ${sessionName(clash).toLowerCase()}.`
+          ? `Heavy legs ${dayToken(day)} need 24 hours from ${nameInSentence(sessionName(clash))}.`
           : `${pickName(pick)} ${dayToken(day)} needs 24 hours from the heavy leg day.`
         if (moved?.ok && room()) {
           out.push({
@@ -402,7 +402,7 @@ export function rebalance(input: RebalanceInput): CoachChangePlan[] {
     if (load > ctx.planWeekLoad * PLAN_LOAD_TOLERANCE) {
       const target = sorted().find(s => s.epochDay > day && hard(s) && free(s))
       const pct = Math.round((load / ctx.planWeekLoad - 1) * 100)
-      if (target) ease(target, 'load', `${pickName(pick)} ${dayToken(day)} takes the week ${pct}% past its plan. ${target.type === 'strength' ? `One set off ${dayLong(target.epochDay)}, same weights.` : `${dayLong(target.epochDay)}'s ${sessionName(target).toLowerCase()} eases.`}`)
+      if (target) ease(target, 'load', `${pickName(pick)} ${dayToken(day)} takes the week ${pct}% past its plan. ${target.type === 'strength' ? `One set off ${dayLong(target.epochDay)}, same weights.` : `${dayLong(target.epochDay)}'s ${nameInSentence(sessionName(target))} eases.`}`)
     }
   }
 

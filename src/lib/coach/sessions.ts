@@ -72,6 +72,15 @@ export function sessionName(s: Pick<SessionLike, 'type' | 'label' | 'notes'>): s
   return TYPE_NAME[s.type] ?? s.type.replace(/_/g, ' ')
 }
 
+/**
+ * A session's name inside a sentence: "Strength A" -> "strength A",
+ * "MT Technique" -> "MT technique", "Run-Walk" -> "run-walk". Short capital
+ * words (a letter, MT) keep their case (e2e minor 14: "strength a eases").
+ */
+export function nameInSentence(name: string): string {
+  return name.split(' ').map(w => (/^[A-Z0-9]{1,3}$/.test(w) ? w : w.toLowerCase())).join(' ')
+}
+
 export function isLongRun(s: Pick<SessionLike, 'type' | 'notes' | 'estimatedMin'>): boolean {
   if (s.type !== 'running') return false
   return s.notes === 'progression' || (s.estimatedMin ?? 0) >= 45

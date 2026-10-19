@@ -15,7 +15,7 @@
 // Option ids and titles follow the approved coach screens ("The coach speaks").
 
 import { checkSessionChange, type PlacementContext } from './placement'
-import { DAY_NAMES, dowOf, estimatedMinutes, isoOf, mondayOf, sessionName, type BlockKind, type SessionLike, type TimeSlot } from './sessions'
+import { DAY_NAMES, dowOf, estimatedMinutes, isoOf, mondayOf, nameInSentence, sessionName, type BlockKind, type SessionLike, type TimeSlot } from './sessions'
 import { consistentlyEasier, type EffortSummary } from './feltHard'
 import type { ReadinessDay } from '../blockZero/readiness'
 
@@ -165,7 +165,7 @@ export function rampUpOptions(input: RampUpOptionInput): RampUpOption[] {
   // Block Zero test week (1) and consolidation week (6+) keep their set counts.
   const bzFixedWeek = input.blockType === 'block_zero' && (input.weekNumber <= 1 || input.weekNumber >= 6)
   if (nextStrength && !bzFixedWeek) {
-    const where = `${DAY_NAMES[dowOf(nextStrength.epochDay)]} ${sessionName(nextStrength).toLowerCase()}`
+    const where = `${DAY_NAMES[dowOf(nextStrength.epochDay)]} ${nameInSentence(sessionName(nextStrength))}`
     const base = { epochDay: nextStrength.epochDay, date: isoOf(nextStrength.epochDay), sessionId: nextStrength.id }
     // The sub-lines read as page 36: what changes, not where ("Squat and RDL, 3×8").
     const plan = input.nextStrength

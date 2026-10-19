@@ -153,4 +153,7 @@ assert(restateSetCount('2 sets of 8 at RPE 6-7, 3-4 reps left. Never to failure.
 assert(restateSetCount('First set is a check: 3-5 reps at about RPE 8, 2 left. Then 2 sets of 8 at RPE 7-8.', 1)!.endsWith('Then 1 set of 8 at RPE 7-8.'), 'week 3: the working sets after the check')
 assert(restateSetCount('Week 1. Work up to a set of 8 at RPE 6-7.', 1) === 'Week 1. Work up to a set of 8 at RPE 6-7.', 'no count to restate')
 assert(restateSetCount(null, 1) === null, 'no note')
+// E2E minor 14: a one-number target reads "7", never "6-6".
+assert(nextLoad({ weightKg: 40, reps: 8, rpe: 7 }, { reps: 8, rpe: [7, 7] }, 'lower').reason === 'Top set landed at RPE 7. Target is 7. Hold.', 'one-number RPE target')
+assert(nextLoad({ weightKg: 40, reps: 8, rpe: 6 }, { reps: 8, rpe: [6, 7] }, 'lower').reason === 'Top set landed at RPE 6. Target is 6-7. Hold.', 'a range stays a range')
 console.log('\nAll Block Zero strength tests passed')

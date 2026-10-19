@@ -15,7 +15,7 @@
 
 import type { CoachEase } from './classify'
 import { LEAD_IN_TARGET, RIR_MAX, RIR_THREE_PLUS_AS, getStrengthWeekTarget } from '../blockZero/strength'
-import { RUN_TYPES, dowOf, DAY_NAMES, isHard, sessionName, typicalRpe, type SessionLike } from './sessions'
+import { RUN_TYPES, dowOf, DAY_NAMES, isHard, nameInSentence, sessionName, typicalRpe, type SessionLike } from './sessions'
 
 /** Reps in reserve the main working sets aim for. */
 export const TARGET_RIR = 2
@@ -151,8 +151,8 @@ export function feltHardEase(input: FeltHardInput): FeltHardEase | null {
   const nextName = sessionName(next)
   const nextDay = DAY_NAMES[dowOf(next.epochDay)]
   const reason = verdict === 'way_harder'
-    ? `${what} on ${day} ran well over its target effort. ${nextDay} ${nextName.toLowerCase()} eases.`
-    : `Soreness ${input.nextMorningSoreness} the morning after ${day} ${what.toLowerCase()}. ${nextDay} ${nextName.toLowerCase()} eases.`
+    ? `${what} on ${day} ran well over its target effort. ${nextDay} ${nameInSentence(nextName)} eases.`
+    : `Soreness ${input.nextMorningSoreness} the morning after ${day} ${nameInSentence(what)}. ${nextDay} ${nameInSentence(nextName)} eases.`
   return {
     targetSessionId: next.id,
     targetEpochDay: next.epochDay,

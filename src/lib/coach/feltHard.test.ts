@@ -4,6 +4,7 @@
 // Consistently easier than target feeds the ramp-up ask.
 import { consistentlyEasier, effortVerdict, feltHardEase, summarizeEffort, TARGET_RIR } from './feltHard'
 import { MON, assert, s } from './testUtil'
+import { nameInSentence } from './sessions'
 
 const houseVoice = (t: string) => !t.includes('!') && !t.includes('—')
 
@@ -36,5 +37,8 @@ assert(feltHardEase({ done: { epochDay: MON + 1, type: 'mobility', rpe: 10 }, ne
 const easier = summarizeEffort([{ epochDay: MON, type: 'strength', rpe: 5 }, { epochDay: MON + 1, type: 'mt_class', rpe: 5 }, { epochDay: MON + 2, type: 'mobility', rpe: 1 }])
 assert(easier.sessions === 2 && easier.easier === 2 && consistentlyEasier(easier), 'two sessions under target (Foundation ignored): consistently easier')
 assert(!consistentlyEasier(summarizeEffort([{ epochDay: MON, type: 'strength', rpe: 5 }, { epochDay: MON + 1, type: 'strength', rpe: 9 }])), 'one hard session breaks the streak')
+
+// E2E minor 14: names inside a sentence keep their letter ("Mon strength A eases", not "strength a").
+assert(nameInSentence('Strength A') === 'strength A' && nameInSentence('MT Technique') === 'MT technique' && nameInSentence('Run-Walk') === 'run-walk', 'session names in a sentence')
 
 console.log('feltHard tests passed')

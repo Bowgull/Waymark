@@ -173,11 +173,13 @@ export function nextLoad(top: TopSet, t: LoadTarget, region: LiftRegion): NextLo
   }
 
   if (rpe != null) {
-    if (rpe >= t.rpe[0]) return { weightKg: w, change: 'hold', reason: `Top set landed at RPE ${rpe}. Target is ${t.rpe[0]}-${t.rpe[1]}. Hold.` }
+    // "6-7", or "7" when the range is one number (never "6-6", e2e minor 14).
+    const target = t.rpe[0] === t.rpe[1] ? `${t.rpe[0]}` : `${t.rpe[0]}-${t.rpe[1]}`
+    if (rpe >= t.rpe[0]) return { weightKg: w, change: 'hold', reason: `Top set landed at RPE ${rpe}. Target is ${target}. Hold.` }
     const below = t.rpe[0] - rpe
     const step = below >= 2 ? STEP[region].large : STEP[region].small
     const next = Math.max(roundLoad(w * (1 + step)), w + ROUND_TO_KG)
-    return { weightKg: next, change: 'increase', reason: `Top set was RPE ${rpe}, easier than ${t.rpe[0]}-${t.rpe[1]}. Up ${Math.round(step * 1000) / 10}%.` }
+    return { weightKg: next, change: 'increase', reason: `Top set was RPE ${rpe}, easier than ${target}. Up ${Math.round(step * 1000) / 10}%.` }
   }
 
   if (top.inferredStatus === 'rep_surplus') {
