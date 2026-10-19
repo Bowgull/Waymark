@@ -37,6 +37,14 @@ name: Run-walk - the warm-up, then run and walk intervals
 - takeScreenshot: 05-run-walk-ready
 - tapOn: "INDOOR"
 - tapOn: "START RUN"
+# Indoors, START RUN opens One Pace in Safari (by design: the treadmill show);
+# the run keeps time in the app and its Live Activity, in the Dynamic Island.
+- waitForAnimationToEnd:
+    timeout: 4000
+- takeScreenshot: 05-run-walk-start-one-pace
+# Back to Waymark, the run going.
+- launchApp:
+    stopApp: false
 - takeScreenshot: 05-run-walk-start
 - extendedWaitUntil:
     visible: "RUN 1/.*"
