@@ -17,7 +17,7 @@ import type {
 } from '../prompts/tools'
 import { easeSession } from './autoEase'
 import { evaluateClassRequest, normaliseClassType, type MtClassType } from './muayThai'
-import { RESTART_WEEKLY_SEC, WEEKLY_RUN_CAP_RATIO, getRunWalkWeek, runWalkTotalSec, singleRunCap } from './running'
+import { allowanceFromLastWeek, getRunWalkWeek, runWalkTotalSec, singleRunCap, weeklyRunAllowanceSec } from './running'
 import type { NextLoad, WorkingLoad } from './strength'
 import { getBlockZeroWeekTemplate, type BlockZeroTemplateSession } from './weekPlan'
 import { BLOCK_ZERO_BASE_WEEKS, blockZeroPhase } from './weeks'
@@ -261,7 +261,7 @@ export function guardWeekPlan(plan: WeekPlanOutput, input: WeekPlanGuardInput): 
   if (input.run) {
     const order = [1, 2, 3, 4, 5, 6, 0]
     const runs = order.flatMap(d => (days.find(x => x.dayOfWeek === d)?.sessions ?? []).filter(s => RUN_TYPES.has(s.type)).map(s => ({ d, s })))
-    const allowance = input.run.lastWeekRunSec > 0 ? Math.floor(input.run.lastWeekRunSec * WEEKLY_RUN_CAP_RATIO) : RESTART_WEEKLY_SEC
+    const allowance = weeklyRunAllowanceSec(input.run.lastWeekRunSec)
     let budget = Math.max(0, allowance - (input.run.thisWeekRunSec ?? 0))
     runs.forEach(({ d, s }, i) => {
       const single = Math.floor(singleRunCap(s.estimatedMin * 60, input.run?.longestLast30Sec ?? null).capSec / 60)
@@ -465,13 +465,13 @@ export function checkPlacement(p: Placement, ctx: BlockZeroGuardContext): Placem
     // R8: weekly cap, only when the change adds a run to the week.
     if (p.adds) {
       const monday = mondayOf(ctx.todayEpochDay)
-      const allowance = ctx.run.lastWeekRunSec > 0 ? Math.floor(ctx.run.lastWeekRunSec * WEEKLY_RUN_CAP_RATIO) : RESTART_WEEKLY_SEC
+      const allowance = weeklyRunAllowanceSec(ctx.run.lastWeekRunSec)
       const stillPlanned = around.filter(s => RUN_TYPES.has(s.type) && s.status !== 'completed' && s.epochDay >= ctx.todayEpochDay && s.epochDay <= monday + 6).length
       const room = allowance - (ctx.run.thisWeekRunSec ?? 0) - stillPlanned * weekRunSec(ctx.weekNumber)
       if (room < capSec) {
         capSec = Math.max(0, room)
         capCode = 'run_weekly_cap'
-        capReason = ctx.run.lastWeekRunSec > 0 ? 'Run time this week stays within 30% of last week.' : 'No running last week. This week stays at week-1 volume.'
+        capReason = allowanceFromLastWeek(ctx.run.lastWeekRunSec) ? 'Run time this week stays within 30% of last week.' : 'This week stays at week-1 volume.'
       }
     }
 

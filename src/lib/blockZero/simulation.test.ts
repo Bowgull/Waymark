@@ -16,7 +16,6 @@
 import {
   BACK_FRIENDLY_SWAPS,
   RESTART_SESSION_SEC,
-  RESTART_WEEKLY_SEC,
   backFriendlyVariation,
   backTrend,
   defaultMainLift,
@@ -44,7 +43,7 @@ import {
 import { extensionsUsed } from './weeks'
 import { blockZeroWorkingLoad, checkInFromDailyLog, readinessReport, type DailyLogFields, type LoggedWorkingSet } from './index'
 import { guardReactiveReplan, guardReplaceSuggestions, guardWeekPlan, type Clamp, type GuardSession } from './guardrails'
-import { WEEKLY_RUN_CAP_RATIO } from './running'
+import { weeklyRunAllowanceSec } from './running'
 import type { WeekPlanOutput } from '../prompts/tools'
 
 function assert(cond: unknown, msg: string): void {
@@ -299,7 +298,7 @@ function assertGuarded(name: string, sim: ReturnType<typeof simulate>): void {
     const runs = all.filter(s => s.type === 'foundation_run' || s.type === 'running')
     const single = g.longest30 > 0 ? Math.floor(g.longest30 * 1.1 / 60) : 23
     assert(runs.every(s => s.type === 'foundation_run' && s.estimatedMin <= single), `${tag}: 50-min runs cut to <= ${single} min`)
-    const weekly = g.lastWeek > 0 ? Math.floor(g.lastWeek * WEEKLY_RUN_CAP_RATIO / 60) : 69
+    const weekly = Math.floor(weeklyRunAllowanceSec(g.lastWeek) / 60)
     assert(runs.reduce((n, s) => n + s.estimatedMin, 0) <= weekly, `${tag}: run total within the weekly cap (${weekly} min)`)
     assert(g.clamps.length > 0 && g.clamps.every(c => c.reason.length > 0 && !/[!\u2014]/.test(c.reason)), `${tag}: ${g.clamps.length} clamps, each with a house-voice reason`)
     assert(!/[!\u2014]/.test(g.plan.narrative), `${tag}: narrative cleaned`)
@@ -341,8 +340,8 @@ const weeklyRun = (w: number) => scripted.runs.filter(r => weekOf(r.day) === w).
 for (let w = 2; w <= maxWeek; w++) {
   const prev = weeklyRun(w - 1)
   const cur = weeklyRun(w)
-  const limit = prev > 0 ? prev * 1.3 : RESTART_WEEKLY_SEC
-  assert(cur <= limit + 1, `week ${w} run time ${cur}s within ${prev > 0 ? '+30% of last week' : 'week-1 restart volume'} (${Math.round(limit)}s)`)
+  const limit = weeklyRunAllowanceSec(prev)
+  assert(cur <= limit + 1, `week ${w} run time ${cur}s within +30% of last week, floored at week-1 volume (${Math.round(limit)}s)`)
 }
 assert(scripted.runs.some(r => r.capped), 'the guards actually capped something (return after the missed week)')
 

@@ -4,6 +4,7 @@
 // and volume deficits from training targets.
 
 import { TRAINING_TARGETS, type SessionTarget } from './trainingTargets'
+import type { PickAction } from './coach/pickDay'
 
 export interface WellnessSnapshot {
   sleepHours: number | null
@@ -43,6 +44,14 @@ export interface SessionSuggestion {
   runCategory?: string
   reason: string | null
   priority: 'suggested' | 'caution' | 'neutral'
+  /**
+   * What picking the row does, decided by the placement rules before the
+   * board shows it (Part C): add, pull forward, or replace today's session.
+   * Absent on the Replace board and when no block is active.
+   */
+  action?: Exclude<PickAction, { kind: 'refused' }>
+  /** The rules would refuse it today: an ember with the reason, not pickable. */
+  blocked?: boolean
 }
 
 export interface SuggestionsResponse {

@@ -3,7 +3,7 @@
 // Replace signpost's three roads, and the Why skip / Why swap reason boards.
 // No React and no image imports, so the unit tests run it under node.
 
-import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
+import type { SessionSuggestion, SuggestionsResponse } from '@/lib/sessionSuggestions'
 import type { ReplaceSuggestion } from '@/lib/prompts/tools'
 
 import { sessionIconFor, type SessionIconKey } from '../../design/sessionIconKeys'
@@ -16,6 +16,8 @@ export interface SessionOption {
   label: string
   timeSlot: Slot
   runCategory?: string
+  /** Add, pull forward or replace (Part C); absent means a plain add. */
+  action?: SessionSuggestion['action']
 }
 
 export interface PickerOption extends SessionOption {
@@ -32,6 +34,8 @@ export interface DepartureRow extends PickerOption {
   /** The reason line under the name. Neutral rows carry none. */
   reason: string | null
   tone: DepartureTone
+  /** The rules would refuse it: shown as an ember with its reason, not pickable. */
+  blocked?: boolean
 }
 
 export interface DepartureBoard {
@@ -102,7 +106,9 @@ export function buildDepartures(base: ReadonlyArray<PickerOption>, suggestions?:
     if (PICKER_EXCLUDED_TYPES.has(s.type)) continue
     const baseOpt = byKey.get(optionKey(s))
     if (!baseOpt) continue
-    const tone: DepartureTone = s.priority === 'suggested' ? 'pick' : s.priority === 'caution' ? 'ember' : 'plain'
+    const tone: DepartureTone = s.blocked ? 'ember' : s.priority === 'suggested' ? 'pick' : s.priority === 'caution' ? 'ember' : 'plain'
+    // A pull forward or a swap always says what it does, even on a plain row.
+    const says = s.action != null && s.action.kind !== 'add'
     rows.push({
       type: s.type,
       label: s.label,
@@ -111,8 +117,10 @@ export function buildDepartures(base: ReadonlyArray<PickerOption>, suggestions?:
       flexibleTimeSlot: s.flexibleTimeSlot ?? baseOpt.flexibleTimeSlot ?? false,
       key: optionKey(s),
       icon: sessionIconFor(s.type, s.runCategory),
-      reason: tone === 'plain' ? null : (s.reason ?? null),
+      reason: tone === 'plain' && !says ? null : (s.reason ?? null),
       tone,
+      ...(s.blocked ? { blocked: true } : {}),
+      ...(s.action ? { action: s.action } : {}),
     })
   }
   if (rows.length === 0) {
@@ -120,7 +128,8 @@ export function buildDepartures(base: ReadonlyArray<PickerOption>, suggestions?:
     return { picks: [], rest, flagsLine, labelLen: padFor(rest) }
   }
   const picks = rows.filter(r => r.tone === 'pick')
-  const rest = rows.filter(r => r.tone !== 'pick')
+  // Refused rows sit last: they say why, but can't be picked.
+  const rest = [...rows.filter(r => r.tone !== 'pick' && !r.blocked), ...rows.filter(r => r.blocked)]
   return { picks, rest, flagsLine, labelLen: padFor(rows) }
 }
 
@@ -130,7 +139,9 @@ export function flipSlot(slot: Slot): Slot {
 
 /** The pick handed to onSelect. A fixed-slot session always keeps its own slot. */
 export function selectionFor(row: DepartureRow, slot: Slot): SessionOption {
-  return { type: row.type, label: row.label, timeSlot: row.flexibleTimeSlot ? slot : row.timeSlot, runCategory: row.runCategory }
+  const timeSlot = row.flexibleTimeSlot ? slot : row.timeSlot
+  const action = row.action ? { ...row.action, timeSlot } : undefined
+  return { type: row.type, label: row.label, timeSlot, runCategory: row.runCategory, ...(action ? { action } : {}) }
 }
 
 // ─── Replace signpost: the coach's three roads ───────────────

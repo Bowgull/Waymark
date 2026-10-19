@@ -62,7 +62,7 @@ assert(moreWeightDetail([{ exerciseId: 'a', name: 'Squat', fromKg: 61.2, toKg: 6
 // Every add passes placement (stacking, run caps, MT ramp and cap).
 const adds = rampUpOptions({ ...optInput, ctx: ctx({ todayEpochDay: MON + 1, sessions: week, planWeekLoad: 5000, mt: { weeksSinceRampStart: 6, profileCap: 1 } }) })
 assert(!adds.some(o => o.id === 'extra_class'), 'MT cap reached: no extra class offered')
-const noRunRoom = rampUpOptions({ ...optInput, ctx: ctx({ todayEpochDay: MON + 1, sessions: week, planWeekLoad: 5000, run: { longestLast30Sec: 40 * 60, lastWeekRunSec: 10 * 60, thisWeekRunSec: 10 * 60 } }) })
+const noRunRoom = rampUpOptions({ ...optInput, ctx: ctx({ todayEpochDay: MON + 1, sessions: week, planWeekLoad: 5000, run: { longestLast30Sec: 40 * 60, lastWeekRunSec: 10 * 60, thisWeekRunSec: 60 * 60 } }) })
 assert(!noRunRoom.some(o => o.id === 'extra_run'), 'weekly run cap reached: no extra run offered')
 const overPlan = rampUpOptions({ ...optInput, ctx: ctx({ todayEpochDay: MON + 1, sessions: week, planWeekLoad: 100 }) })
 assert(!overPlan.some(o => o.kind === 'add'), 'past the 10% load allowance: no added session')

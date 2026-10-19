@@ -24,6 +24,8 @@ import {
   easeSession,
   evaluateClassRequest,
   getStrengthWeekTarget,
+  introStartLoad,
+  LEAD_IN_TARGET,
   mainLiftHardSets,
   readinessReport,
   rollingLoadRead,
@@ -43,7 +45,7 @@ import {
   type WorkingLoad,
 } from '../lib/blockZero'
 import type { StrengthTemplate, TemplateSet } from '../lib/strengthTemplates'
-import { mtRampStartDay, scaleLoadKg, scaleSets, type CoachEase, type ReturnContext } from '../lib/coach'
+import { countsFromDay, inLeadIn, mtRampStartDay, scaleLoadKg, scaleSets, type CoachEase, type ReturnContext } from '../lib/coach'
 import type { InjuryAction } from '../lib/coach/injury'
 import { trainingWeekFor } from './coachData'
 import { zone2CeilingBpm } from '../lib/hrAnalysis'
@@ -135,8 +137,8 @@ export interface BlockZeroStrengthPlan {
 }
 
 /** Main-lift working sets per exercise this block, before a given session. */
-async function loadMainSetHistory(db: DB, blockStart: number, excludeSessionId: string, exerciseIds: string[]): Promise<Map<string, LoggedWorkingSet[]>> {
-  const out = new Map<string, LoggedWorkingSet[]>()
+async function loadMainSetHistory(db: DB, blockStart: number, excludeSessionId: string, exerciseIds: string[]): Promise<Map<string, Array<LoggedWorkingSet & { scheduledDate: number | null }>>> {
+  const out = new Map<string, Array<LoggedWorkingSet & { scheduledDate: number | null }>>()
   if (exerciseIds.length === 0) return out
   const rows = await db
     .select({
@@ -148,6 +150,7 @@ async function loadMainSetHistory(db: DB, blockStart: number, excludeSessionId: 
       completedAt: strengthSets.completedAt,
       setNumber: strengthSets.setNumber,
       sessionId: sessions.id,
+      scheduledDate: sessions.scheduledDate,
     })
     .from(strengthSets)
     .innerJoin(strengthSessionExercises, eq(strengthSets.sessionExerciseId, strengthSessionExercises.id))
@@ -164,7 +167,7 @@ async function loadMainSetHistory(db: DB, blockStart: number, excludeSessionId: 
     ))
   for (const r of rows) {
     const list = out.get(r.exerciseId) ?? []
-    list.push({ weightKg: r.weightKg, reps: r.reps, plannedReps: r.plannedReps, rir: r.rir, completedAt: r.completedAt, setNumber: r.setNumber, sessionId: r.sessionId })
+    list.push({ weightKg: r.weightKg, reps: r.reps, plannedReps: r.plannedReps, rir: r.rir, completedAt: r.completedAt, setNumber: r.setNumber, sessionId: r.sessionId, scheduledDate: r.scheduledDate })
     out.set(r.exerciseId, list)
   }
   return out
@@ -190,7 +193,11 @@ export async function planBlockZeroStrength(
   coach: CoachStrengthInputs = {},
 ): Promise<BlockZeroStrengthPlan> {
   const epochDay = session.scheduledDate ?? todayEpochDayUtc()
-  const target = getStrengthWeekTarget(session.blockWeek ?? 1)
+  const block = await getActiveBlockZero(db)
+  const startDay = block ? blockStartDay(block) : null
+  // Lead-in (Part B): the intro target, and its sets never set the starting load.
+  const leadIn = startDay != null && inLeadIn('block_zero', startDay, epochDay)
+  const target = leadIn ? LEAD_IN_TARGET : getStrengthWeekTarget(session.blockWeek ?? 1)
   const report = await readinessFor(db, epochDay)
   const [log] = await db.select({ backToday: dailyLogs.backToday }).from(dailyLogs).where(eq(dailyLogs.logDate, epochDay))
   const injuryAction = coach.injury?.action ?? 'none'
@@ -241,11 +248,20 @@ export async function planBlockZeroStrength(
   })
 
   const mainIds = [...new Set(exercises.filter(e => e.section === 'main').map(e => e.exerciseId))]
-  const block = await getActiveBlockZero(db)
-  const history = await loadMainSetHistory(db, block ? blockStartDay(block) : epochDay - 56, session.id, mainIds)
+  // Load steps read sets from week 1's Monday on; lead-in intro sets only give
+  // the start of week 1's work-up (shown as last time, never a step).
+  const weekOneMonday = startDay != null ? countsFromDay('block_zero', startDay) : epochDay - 56
+  const allSets = await loadMainSetHistory(db, startDay ?? epochDay - 56, session.id, mainIds)
   const loads = new Map<string, WorkingLoad>()
   for (const id of mainIds) {
-    const hist = history.get(id) ?? []
+    const sets = allSets.get(id) ?? []
+    const intro = sets.filter(s => s.scheduledDate != null && s.scheduledDate < weekOneMonday)
+    const hist = leadIn ? [] : sets.filter(s => s.scheduledDate == null || s.scheduledDate >= weekOneMonday)
+    if (hist.length === 0) {
+      const start = introStartLoad(intro)
+      if (start) loads.set(id, start)
+      continue
+    }
     const load = blockZeroWorkingLoad({
       exerciseId: id,
       history: hist,
@@ -591,7 +607,8 @@ export async function loadBlockTestData(db: DB, blockId: string): Promise<BlockT
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
   const rows = await db.select({ week: blockTests.week, testKey: blockTests.testKey, value: blockTests.value, unit: blockTests.unit })
     .from(blockTests).where(eq(blockTests.blockId, blockId))
-  const workups = block ? await loadBlockMainSets(db, blockStartDay(block), [1]) : []
+  // Week 1's work-up from its Monday: lead-in intro sets never set a baseline (Part B).
+  const workups = block ? await loadBlockMainSets(db, countsFromDay(block.blockType === 'block_zero' ? 'block_zero' : 'fighter', blockStartDay(block)), [1]) : []
   const baselines = week1LiftBaselines(rows, workups)
   const names = new Map((await db.select({ id: exercises.id, name: exercises.name }).from(exercises)).map(e => [e.id, e.name]))
   const ceilings = new Map([...baselines.values()].map(b => [b.exerciseId, calibrationCeilingKg(b)]))

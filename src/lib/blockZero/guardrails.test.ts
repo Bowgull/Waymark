@@ -100,10 +100,10 @@ for (const w of [1, 2, 3, 4, 5, 6, 7, 8]) {
   assert(runs.reduce((n, s) => n + s.estimatedMin, 0) <= 78, 'week run total within +30% of last week (78 min)')
 }
 {
-  // Weekly cap: last week 40 min, plan has 3 x 26.
+  // Weekly cap: last week 40 min (under the week-1 floor of 69), plan has 3 x 26.
   const g = guardWeekPlan(templatePlan(3), { weekNumber: 3, run: { longestLast30Sec: 26 * 60, lastWeekRunSec: 40 * 60 } })
   const total = g.output.days.flatMap(d => d.sessions).filter(s => s.type === 'foundation_run').reduce((n, s) => n + s.estimatedMin, 0)
-  assert(total <= 52 && has(g.clamps, 'run_weekly_cap'), `weekly run cap: ${total} min <= 52 (130% of 40)`)
+  assert(total <= 69 && total >= 60 && has(g.clamps, 'run_weekly_cap'), `weekly run cap floors at week-1 volume: ${total} min <= 69, not 52 (130% of 40)`)
 }
 {
   // Three strength days in a row, wrong labels.

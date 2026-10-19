@@ -19,6 +19,8 @@ export interface BagGovernanceInput {
   returnReason: string | null
   /** Injury flag on an upper-body region, or any red flag. */
   injuryReason?: string | null
+  /** Block Zero lead-in: 4 technique rounds, light power, kicks low and controlled (Part B). */
+  leadIn?: boolean
 }
 
 export interface BagRules {
@@ -32,18 +34,20 @@ export interface BagRules {
 const FINISHERS: ReadonlySet<string> = new Set(['power', 'conditioning'])
 
 export function bagRules(g: BagGovernanceInput): BagRules {
-  const earlyBlockZero = g.blockType === 'block_zero' && g.weekNumber <= 2
+  const earlyBlockZero = g.blockType === 'block_zero' && (g.weekNumber <= 2 || g.leadIn === true)
   const noFinishers = g.eased || g.returnActive || earlyBlockZero || !!g.injuryReason
-  const maxRounds = g.eased || g.injuryReason ? 4 : g.returnActive ? 5 : 6
+  const maxRounds = g.eased || g.injuryReason || g.leadIn ? 4 : g.returnActive ? 5 : 6
   const reason = g.injuryReason
     ?? (g.eased ? g.easeReason ?? 'Easy day.' : null)
     ?? (g.returnActive ? g.returnReason : null)
+    ?? (g.leadIn && g.blockType === 'block_zero' ? 'Lead-in. Technique only.' : null)
     ?? (earlyBlockZero ? 'Early Block Zero. Technique only.' : null)
   const promptLines: string[] = []
   if (noFinishers) promptLines.push(`- No power or conditioning rounds today. Finish on technical_flow or combo_practice. Why: ${reason ?? 'technique day'}`)
   promptLines.push(`- At most ${maxRounds} rounds today.`)
   if (g.returnActive) promptLines.push(`- Coming back after ${g.gapDays} days off. Technique volume holds, intensity stays down.`)
-  if (g.blockType === 'block_zero') promptLines.push(`- Block Zero week ${g.weekNumber}. Technique and pads level work, never hard rounds.`)
+  if (g.blockType === 'block_zero' && g.leadIn) promptLines.push('- Block Zero lead-in, before week 1. Light power, about RPE 5. Kicks at low volume and controlled: the shins start the count, not the load.')
+  else if (g.blockType === 'block_zero') promptLines.push(`- Block Zero week ${g.weekNumber}. Technique and pads level work, never hard rounds.`)
   return { noFinishers, maxRounds, reason, promptLines }
 }
 

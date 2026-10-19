@@ -165,6 +165,10 @@ export function typicalRpe(s: Pick<SessionLike, 'type' | 'label' | 'notes'>): nu
   return TYPICAL_RPE[s.type] ?? 4
 }
 
+/** Block Zero weeks 1-2 (and the lead-in) bag is technique and combos only, light power: about RPE 5. */
+const EARLY_BLOCK_ZERO_BAG_RPE = 5
+
 export function plannedLoad(s: Pick<SessionLike, 'type' | 'label' | 'notes' | 'estimatedMin'>, blockType: BlockKind, weekNumber: number): number {
-  return estimatedMinutes(s, blockType, weekNumber) * typicalRpe(s)
+  const rpe = s.type === 'bag_work' && blockType === 'block_zero' && weekNumber <= 2 ? EARLY_BLOCK_ZERO_BAG_RPE : typicalRpe(s)
+  return estimatedMinutes(s, blockType, weekNumber) * rpe
 }

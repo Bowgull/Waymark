@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
 import { parseRefusal, refusalMessage } from '@/lib/refusal'
+import { submitBoardPick } from '@/lib/boardPick'
 import { clearResume, loadResume, resumeDecision } from '@/lib/sessionResume'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
@@ -572,7 +573,7 @@ export function TodayPage() {
   async function loadPickerFallback(sessionId: string, reason: string) {
     setReplaceState({ sessionId, stage: 'picker', reason })
     try {
-      const s = await apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
+      const s = await apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}&today=${getTodayISO()}&mode=replace`)
       setPickerSuggestions(s)
     } catch {
       setPickerSuggestions(null)
@@ -628,7 +629,7 @@ export function TodayPage() {
 
   function openAddPicker() {
     setShowPicker(true)
-    apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}`)
+    apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}&today=${getTodayISO()}`)
       .then(setPickerSuggestions)
       .catch(() => setPickerSuggestions(null))
   }
@@ -636,20 +637,16 @@ export function TodayPage() {
   async function handleAddSession(option: SessionOption) {
     setShowPicker(false)
     try {
-      const created = await apiFetch<Session>('/api/sessions/insert-ad-hoc', {
-        method: 'POST',
-        headers: idempotencyHeaders(),
-        body: JSON.stringify({
-          date: getTodayISO(),
-          type: option.type,
-          timeSlot: option.timeSlot,
-          runCategory: option.runCategory,
-          today: getTodayISO(),
-        }),
-      })
-      setSessions(prev => [...prev, created].sort((a, b) =>
-        (a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)
-      ))
+      // The board decided the form (Part C): add, pull the next strength forward, or swap.
+      const out = await submitBoardPick<Session>(option, getTodayISO(), getTodayISO())
+      if (out.kind === 'added') {
+        const created = out.session
+        setSessions(prev => [...prev, created].sort((a, b) =>
+          (a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)
+        ))
+      } else {
+        await refreshSessions()
+      }
     } catch (e) {
       console.error('Failed to add session:', e)
       showRefusal(e, "Couldn't add. Check your connection.")

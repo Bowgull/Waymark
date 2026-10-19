@@ -54,6 +54,21 @@ export const RESTART_SESSION_SEC = runWalkTotalSec(RUN_WALK_WEEKS[0])
 /** After a week with no runs, the weekly allowance restarts at week-1 volume. */
 export const RESTART_WEEKLY_SEC = RESTART_SESSION_SEC * RUN_SESSIONS_PER_WEEK
 
+/**
+ * R8 weekly allowance: 130% of last week's run time, never below week-1
+ * volume. Week-1 run-walk is the plan's own restart level, so a short week
+ * (a lead-in run, one run-walk done) never shrinks the next full week (D2).
+ * R8 guards jumps above an established base; the floor is not a jump.
+ */
+export function weeklyRunAllowanceSec(lastWeekRunSec: number): number {
+  return Math.max(RESTART_WEEKLY_SEC, Math.floor(Math.max(0, lastWeekRunSec) * WEEKLY_RUN_CAP_RATIO))
+}
+
+/** The allowance comes from last week (not the week-1 floor). */
+export function allowanceFromLastWeek(lastWeekRunSec: number): boolean {
+  return Math.floor(Math.max(0, lastWeekRunSec) * WEEKLY_RUN_CAP_RATIO) > RESTART_WEEKLY_SEC
+}
+
 export interface CapResult {
   capSec: number
   reason: string | null
@@ -87,15 +102,13 @@ export interface WeeklyRunContext {
  * left is shared evenly across the run sessions still to come.
  */
 export function weeklyRunCap(plannedSec: number, ctx: WeeklyRunContext): CapResult {
-  const allowance = ctx.lastWeekRunSec > 0
-    ? Math.floor(ctx.lastWeekRunSec * WEEKLY_RUN_CAP_RATIO)
-    : RESTART_WEEKLY_SEC
+  const allowance = weeklyRunAllowanceSec(ctx.lastWeekRunSec)
   const budget = Math.max(0, allowance - ctx.thisWeekSoFarSec)
   const perSession = Math.floor(budget / Math.max(1, ctx.sessionsLeftThisWeek))
   if (plannedSec <= perSession) return { capSec: plannedSec, reason: null }
-  const reason = ctx.lastWeekRunSec > 0
+  const reason = allowanceFromLastWeek(ctx.lastWeekRunSec)
     ? 'Capped so this week stays within 30% of last week\'s run time.'
-    : 'No running last week. This week restarts at week-1 volume.'
+    : 'This week stays at week-1 volume.'
   return { capSec: perSession, reason }
 }
 

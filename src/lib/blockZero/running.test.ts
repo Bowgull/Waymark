@@ -3,6 +3,7 @@ import {
   RESTART_SESSION_SEC,
   RESTART_WEEKLY_SEC,
   RUN_WALK_WEEKS,
+  weeklyRunAllowanceSec,
   ageFromDob,
   getRunWalkWeek,
   hrCeiling,
@@ -43,9 +44,15 @@ assert(singleRunCap(1800, 1500).reason?.includes('110%'), 'cap says why')
 
 // ─── Weekly cap (R8) ────────────────────────────────────────────
 
-assert(weeklyRunCap(1800, { lastWeekRunSec: 3000, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 }).capSec === 1300, '130% of 50 min shared over 3 sessions = 21:40')
-assert(weeklyRunCap(1200, { lastWeekRunSec: 3000, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 }).capSec === 1200, 'under the weekly budget passes')
-assert(weeklyRunCap(1800, { lastWeekRunSec: 3000, thisWeekSoFarSec: 3900, sessionsLeftThisWeek: 1 }).capSec === 0, 'budget spent: cap 0')
+assert(weeklyRunCap(2400, { lastWeekRunSec: 4500, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 }).capSec === 1950, '130% of 75 min shared over 3 sessions = 32:30')
+assert(weeklyRunCap(1200, { lastWeekRunSec: 4500, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 }).capSec === 1200, 'under the weekly budget passes')
+assert(weeklyRunCap(1800, { lastWeekRunSec: 4500, thisWeekSoFarSec: 5850, sessionsLeftThisWeek: 1 }).capSec === 0, 'budget spent: cap 0')
+// D2: the allowance never drops below week-1 volume (3 x 23 min).
+assert(weeklyRunAllowanceSec(0) === RESTART_WEEKLY_SEC && weeklyRunAllowanceSec(1380) === RESTART_WEEKLY_SEC && weeklyRunAllowanceSec(4500) === 5850, 'run cap floor: max(week-1 volume, 130% of last week)')
+const afterLeadIn = weeklyRunCap(RESTART_SESSION_SEC, { lastWeekRunSec: RESTART_SESSION_SEC, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 })
+assert(afterLeadIn.capSec === RESTART_SESSION_SEC && afterLeadIn.reason === null, 'one 23-min lead-in run last week: week 1 keeps its three full run-walks')
+const afterOne = weeklyRunCap(RESTART_SESSION_SEC, { lastWeekRunSec: 1800, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 })
+assert(afterOne.capSec === RESTART_SESSION_SEC, 'a short week (one 30-min run) never shrinks the next full week below week 1')
 const restart = weeklyRunCap(1800, { lastWeekRunSec: 0, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 })
 assert(restart.capSec === RESTART_SESSION_SEC && restart.reason?.includes('week-1'), 'no running last week: weekly volume restarts at week 1')
 
@@ -63,7 +70,7 @@ assert(capped.reasons.some(r => r.includes('110%')), 'capped says why')
 
 const tight = prescribeRunWalk({ week: 5, longestLast30Sec: 700, weekly: { lastWeekRunSec: 3000, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 } })
 assert(tight.totalSec <= 700 * 1.1 && tight.runSec === 60, 'very short history: falls back to week-1 intervals')
-const spent = prescribeRunWalk({ week: 4, longestLast30Sec: 1500, weekly: { lastWeekRunSec: 3000, thisWeekSoFarSec: 3900, sessionsLeftThisWeek: 1 } })
+const spent = prescribeRunWalk({ week: 4, longestLast30Sec: 1500, weekly: { lastWeekRunSec: 3000, thisWeekSoFarSec: RESTART_WEEKLY_SEC, sessionsLeftThisWeek: 1 } })
 assert(spent.rounds === 0 && spent.totalSec === 0 && spent.targetDesc.startsWith('Easy walk'), 'weekly budget spent: easy walk, no running')
 const afterGap = prescribeRunWalk({ week: 5, longestLast30Sec: null, weekly: { lastWeekRunSec: 0, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 } })
 assert(afterGap.totalSec <= RESTART_SESSION_SEC, 'after 30 days without running: week-1 length')

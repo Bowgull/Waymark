@@ -7,7 +7,7 @@
 import type { BackTrend } from './endGate'
 import { allowedClassTypes, mtRampWeek, weeklyClassCap } from './muayThai'
 import type { ReadinessItem } from './readiness'
-import { RESTART_SESSION_SEC, RESTART_WEEKLY_SEC, SINGLE_RUN_CAP_RATIO, WEEKLY_RUN_CAP_RATIO, getRunWalkWeek, runWalkTotalSec } from './running'
+import { RESTART_SESSION_SEC, SINGLE_RUN_CAP_RATIO, getRunWalkWeek, runWalkTotalSec, weeklyRunAllowanceSec } from './running'
 import { getStrengthWeekTarget } from './strength'
 import { blockZeroPhase } from './weeks'
 import { kgToLbs } from '../units'
@@ -80,7 +80,7 @@ export function runCapsMin(run: BlockZeroAiContextInput['run']): { single: numbe
   const last = run?.lastWeekRunSec ?? 0
   return {
     single: minutes(longest > 0 ? longest * SINGLE_RUN_CAP_RATIO : RESTART_SESSION_SEC),
-    weekly: minutes(last > 0 ? last * WEEKLY_RUN_CAP_RATIO : RESTART_WEEKLY_SEC),
+    weekly: minutes(weeklyRunAllowanceSec(last)),
   }
 }
 

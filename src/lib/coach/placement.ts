@@ -19,13 +19,13 @@
 // other days this week that pass, and easier swaps that pass.
 
 import {
-  RESTART_WEEKLY_SEC,
-  WEEKLY_RUN_CAP_RATIO,
+  allowanceFromLastWeek,
   classTypeFromLabel,
   evaluateClassRequest,
   isBlockZeroRestDay,
   mtRampWeek,
   singleRunCap,
+  weeklyRunAllowanceSec,
 } from '../blockZero'
 import { FOUNDATION_LABEL } from '../foundation'
 import {
@@ -48,6 +48,7 @@ import {
   type SessionLike,
   type TimeSlot,
 } from './sessions'
+import { LEAD_IN_MAX_SESSIONS } from './leadIn'
 
 export type ChangeKind = 'add' | 'move' | 'replace'
 
@@ -91,6 +92,11 @@ export interface PlacementContext {
   /** The plan's load for the week (template). Null skips the cramming check. */
   planWeekLoad: number | null
   injury?: InjuryFlagLike | null
+  /**
+   * Block Zero: the change's week is the lead-in (before week 1's Monday).
+   * Intro strength and bag at most 2 each; no cramming check (Part B).
+   */
+  leadIn?: boolean
 }
 
 export type PlacementCode =
@@ -113,6 +119,7 @@ export type PlacementCode =
   | 'mt_ramp'
   | 'mt_cap'
   | 'over_plan'
+  | 'lead_in_cap'
 
 export type SafeAlternative =
   | { kind: 'day'; epochDay: number; date: string; timeSlot: TimeSlot }
@@ -127,6 +134,7 @@ const MIN_USEFUL_RUN_SEC = 10 * 60
 /** Load tolerance before a change counts as cramming. */
 const PLAN_LOAD_TOLERANCE = 1.05
 const MAX_DAY_ALTERNATIVES = 6
+
 
 const LOWER_BODY = /back|spine|lumbar|hip|groin|knee|ankle|foot|shin|calf|achilles|hamstring|quad|leg/i
 const UPPER_BODY = /shoulder|neck|elbow|wrist|hand|finger|knuckle|rib|chest/i
@@ -242,6 +250,14 @@ function evaluate(change: SessionChange, ctx: PlacementContext): { refusal: Refu
     if (clash) return { refusal: refuse('legs_24h', `${name} needs 24 hours from the heavy leg day on ${DAY_NAMES[dowOf(clash.epochDay)]}.`) }
   }
 
+  // Part B: the lead-in takes at most 2 intro strength sessions and 2 bag sessions.
+  if (ctx.leadIn && ctx.blockType === 'block_zero' && change.kind !== 'move' && (change.type === 'strength' || change.type === 'bag_work')) {
+    const n = inWeek.filter(s => s.type === change.type).length
+    if (n >= LEAD_IN_MAX_SESSIONS) {
+      return { refusal: refuse('lead_in_cap', change.type === 'strength' ? 'Two intro sessions before week 1 is enough. Monday finds your starting load.' : 'Two bag sessions before week 1 is enough.') }
+    }
+  }
+
   if (change.type === 'strength') {
     if (sameDay.some(s => s.type === 'strength')) return { refusal: refuse('strength_same_day', 'One strength session a day.') }
     if (ctx.blockType === 'block_zero' && others.some(s => s.type === 'strength' && Math.abs(s.epochDay - day) === 1)) {
@@ -272,7 +288,7 @@ function evaluate(change: SessionChange, ctx: PlacementContext): { refusal: Refu
       let capCode: PlacementCode = 'run_single_cap'
       let capReason = single.reason ?? 'Capped at 110% of your longest run in 30 days.'
       // F11: weekly cap, counting what is done and what is still planned.
-      const allowance = ctx.run.lastWeekRunSec > 0 ? Math.floor(ctx.run.lastWeekRunSec * WEEKLY_RUN_CAP_RATIO) : RESTART_WEEKLY_SEC
+      const allowance = weeklyRunAllowanceSec(ctx.run.lastWeekRunSec)
       const stillPlanned = inWeek
         .filter(s => RUN_TYPES.has(s.type) && s.status !== 'completed' && s.epochDay >= ctx.todayEpochDay)
         .reduce((n, s) => n + estimatedMinutes(s, ctx.blockType, ctx.weekNumber) * 60, 0)
@@ -280,7 +296,7 @@ function evaluate(change: SessionChange, ctx: PlacementContext): { refusal: Refu
       if (room < capSec) {
         capSec = Math.max(0, room)
         capCode = 'run_weekly_cap'
-        capReason = ctx.run.lastWeekRunSec > 0 ? 'Run time this week stays within 30% of last week.' : 'No running last week. This week stays at week-1 volume.'
+        capReason = allowanceFromLastWeek(ctx.run.lastWeekRunSec) ? 'Run time this week stays within 30% of last week.' : 'This week stays at week-1 volume.'
       }
       if (plannedSec > capSec) {
         if (capSec < MIN_USEFUL_RUN_SEC) return { refusal: refuse(capCode, capReason) }
@@ -317,7 +333,7 @@ function evaluate(change: SessionChange, ctx: PlacementContext): { refusal: Refu
 
   // F14: no cramming. Added load can't take the week past the plan.
   const exempt = RECOVERY_TYPES.has(change.type) || (ctx.blockType === 'block_zero' && change.type === 'mt_class')
-  if (change.kind !== 'move' && !exempt && ctx.planWeekLoad != null && ctx.planWeekLoad > 0) {
+  if (change.kind !== 'move' && !exempt && !ctx.leadIn && ctx.planWeekLoad != null && ctx.planWeekLoad > 0) {
     // Recovery work never counts against the plan's load (the plan's load leaves it out too).
     const current = inWeek.filter(s => !RECOVERY_TYPES.has(s.type)).reduce((n, s) => n + plannedLoad(s, ctx.blockType, ctx.weekNumber), 0)
     const added = plannedLoad(next, ctx.blockType, ctx.weekNumber)

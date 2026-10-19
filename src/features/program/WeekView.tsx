@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from 'react'
 import { FlapLabel, SessionIcon, glowRow, showPop } from '@/design'
 import { CoachSignpost } from '@/components/ui/CoachSignpost'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
+import { submitBoardPick } from '@/lib/boardPick'
 import { SkipReasonSheet, type SkipReasonCommit } from '@/features/session/SkipReasonSheet'
 import { ReplaceReasonSheet } from '@/features/session/ReplaceReasonSheet'
 import { DayBoardRow } from '@/features/dayboard/DayBoardRow'
 import { askDay, askRequest, dowOfEpochDay, type AdjustmentLike, type AskChip, type DayBoardSession, type RowAsk, type WeekChangeLike } from '@/features/dayboard/rowState'
-import { apiFetch, idempotencyHeaders } from '@/lib/api'
+import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { parseRefusal, refusalMessage } from '@/lib/refusal'
 import type { ReplaceSuggestion, ReplaceSuggestionsOutput } from '@/lib/prompts/tools'
@@ -113,9 +114,9 @@ export function WeekView({ sessions, weekPlanId, changes, weekNumber, days, toda
     glow(row, 'bad')
   }
 
-  function loadSuggestions(date: string) {
+  function loadSuggestions(date: string, mode: 'add' | 'replace') {
     setPickerSuggestions(null)
-    apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${date}`)
+    apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${date}&today=${getTodayISO()}${mode === 'replace' ? '&mode=replace' : ''}`)
       .then(setPickerSuggestions)
       .catch(() => setPickerSuggestions(null))
   }
@@ -123,13 +124,13 @@ export function WeekView({ sessions, weekPlanId, changes, weekNumber, days, toda
   function openAdd() {
     const date = isoOfEpochDay(openDay)
     setPicker({ mode: 'add', date })
-    loadSuggestions(date)
+    loadSuggestions(date, 'add')
   }
 
   function openReplacePicker(s: DayBoardSession, reason: string) {
     const date = isoOfEpochDay(s.scheduledDate ?? openDay)
     setPicker({ mode: 'replace', date, session: s, reason })
-    loadSuggestions(date)
+    loadSuggestions(date, 'replace')
   }
 
   // Replace, as Today: Why swap, then the coach's signpost (three roads),
@@ -186,13 +187,20 @@ export function WeekView({ sessions, weekPlanId, changes, weekNumber, days, toda
       return
     }
     try {
-      const created = await apiFetch<DayBoardSession>('/api/sessions/insert-ad-hoc', {
-        method: 'POST',
-        headers: idempotencyHeaders(),
-        body: JSON.stringify({ date: p.date, type: option.type, timeSlot: option.timeSlot, runCategory: option.runCategory, today: getTodayISO() }),
-      })
-      onSessionAdded(created)
-      showPop('Added.', 'good')
+      // The board decided the form (Part C): add, pull the next strength forward, or swap.
+      const out = await submitBoardPick<DayBoardSession>(option, p.date, getTodayISO())
+      if (out.kind === 'added') {
+        onSessionAdded(out.session)
+        showPop('Added.', 'good')
+      } else if (out.kind === 'moved') {
+        onSessionUpdate(out.session.id, out.session)
+        for (const d of out.displaced) onSessionUpdate(d.id, d)
+        showPop('Moved.', 'good')
+      } else {
+        onSessionUpdate(out.original.id, out.original)
+        onSessionAdded(out.replacement)
+        showPop('Replaced.', 'good')
+      }
     } catch (e) {
       console.error('Failed to add session:', e)
       showRefusal(e, "Couldn't add. Check your connection.")

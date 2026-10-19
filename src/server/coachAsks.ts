@@ -13,8 +13,12 @@ import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, sessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, weekAdjustments, weekPlans } from '../db/schema'
 import type { createDB } from '../db/client'
 import {
+  blockZeroEffortTarget,
   coachEaseFrom,
   feltHardEase,
+  inLeadIn,
+  noEasierReadFor,
+  skipReasonEase,
   fighterTmDecision,
   makeRegularAsk,
   makeRegularCandidates,
@@ -49,6 +53,7 @@ import { getActiveBlock, readinessFor } from './blockZeroData'
 import {
   addTemplateExtra,
   blockKind,
+  blockStartDay,
   loadInjuryFlag,
   loadPlacementContext,
   mtClassDays,
@@ -169,9 +174,19 @@ export async function loadEffortReads(db: DB, fromDay: number, toDay: number): P
       rirBySession.set(s.sessionId, [...(rirBySession.get(s.sessionId) ?? []), s.rir])
     }
   }
+  // D5: Block Zero strength reads its own week's band; lead-in and week 1 never read "easier".
+  const block = await getActiveBlock(db)
+  const bzStart = block?.blockType === 'block_zero' ? blockStartDay(block) : null
+  const planIds = [...new Set(rows.map(r => r.weekPlanId).filter((id): id is string => id != null))]
+  const planWeek = new Map(planIds.length > 0 ? (await db.select({ id: weekPlans.id, weekNumber: weekPlans.weekNumber }).from(weekPlans).where(inArray(weekPlans.id, planIds))).map(p => [p.id, p.weekNumber]) : [])
   return rows.filter(r => r.scheduledDate != null).map(r => {
     const rirs = rirBySession.get(r.id)
+    const leadIn = bzStart != null && r.blockType === 'block_zero' && inLeadIn('block_zero', bzStart, r.scheduledDate as number)
+    const weekNumber = r.weekPlanId ? planWeek.get(r.weekPlanId) ?? null : null
+    const bz = { type: r.type, blockType: r.blockType, blockWeek: r.blockWeek, leadIn, weekNumber }
     return {
+      target: blockZeroEffortTarget(bz),
+      noEasierRead: noEasierReadFor(bz),
       id: r.id,
       sessionId: r.id,
       epochDay: r.scheduledDate as number,
@@ -240,6 +255,44 @@ export async function applyFeltHard(db: DB, todayDay: number, nowSec: number): P
     n++
   }
   return n
+}
+
+/**
+ * A "sick" or "tired" skip eases the next planned session in 3 days (D11,
+ * soft rule), with a one-line reason, the same way felt-hard does.
+ */
+export async function applySkipEase(db: DB, sessionId: string, todayDay: number, nowSec: number): Promise<boolean> {
+  const block = await getActiveBlock(db)
+  if (!block) return false
+  const [skipped] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
+  if (!skipped || skipped.status !== 'skipped' || skipped.scheduledDate == null) return false
+  const from = Math.max(todayDay, skipped.scheduledDate)
+  const upcomingRows = await db.select().from(sessions)
+    .where(and(eq(sessions.status, 'planned'), gte(sessions.scheduledDate, todayDay), lte(sessions.scheduledDate, from + 3)))
+  const upcoming = upcomingRows.filter(r => r.scheduledDate != null).map(r => ({ ...toSessionLike(r), id: r.id, eased: coachEaseFrom(r.contextJson) != null }))
+  const result = skipReasonEase({ skipped: { sessionId, epochDay: skipped.scheduledDate, skipReason: skipped.skipReason }, upcoming, todayEpochDay: todayDay, nowSec })
+  if (!result) return false
+  const target = upcomingRows.find(r => r.id === result.targetSessionId)
+  if (!target) return false
+  await db.update(sessions).set({ contextJson: withCoachEase(target.contextJson, result.ease) }).where(eq(sessions.id, target.id))
+  const detail = easeDetail(result.ease.kind, target)
+  await recordAutoChange(db, {
+    weekPlanId: target.weekPlanId ?? await weekPlanForDay(db, block, result.targetEpochDay, todayDay, nowSec),
+    adjustmentType: 'felt_hard',
+    sessionType: target.type,
+    action: 'ease',
+    reason: result.ease.reason,
+    targetSessionId: target.id,
+    targetEpochDay: result.targetEpochDay,
+    timeSlot: target.timeSlot,
+    was: detail.was,
+    now: detail.now,
+    lead: `${sessionName(toSessionLike(target))} eased`,
+    body: easeBody(detail.now, result.ease.reason),
+    detail: { fromSessionId: sessionId, cause: 'skip', skipReason: skipped.skipReason },
+    nowSec,
+  })
+  return true
 }
 
 // ─── Ramp-up ask (at most one a week) ─────────────────────────

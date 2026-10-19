@@ -3,8 +3,10 @@
 // doesn't move them further into the program (F12, F13; program for exposure,
 // not the calendar). Pure: callers pass completed key-session days.
 //
-// - Week 1 is the block's first Monday-Sunday week. A block started Thursday to
-//   Sunday treats those days as a lead-in and the next week as week 1.
+// - Week 1 is the block's first Monday-Sunday week. Block Zero: week 1 always
+//   starts on a Monday. A Monday start is week 1 that day; any other start day
+//   leads in to the next Monday (the lead-in, Part B). Fighter keeps the older
+//   rule: Monday-Wednesday count their own week, Thursday-Sunday lead in.
 // - A past week with no completed key session is paused.
 // - The week a 7+ day gap began is paused too when under half its key sessions
 //   were done, so the athlete resumes at the week they left.
@@ -44,13 +46,29 @@ export interface TrainingWeek {
   pausedWeeks: number
   /** Block Zero restarted after a 4+ week gap. */
   restarted: boolean
+  /**
+   * Block Zero: the day sits before week 1's Monday (the lead-in, or before
+   * the start). Lead-in work is optional: no asks, no completion count, no
+   * week count. Always false for Fighter.
+   */
+  leadIn: boolean
 }
 
-/** Mon-Wed starts count their own week; Thu-Sun starts lead into next week. */
-export function anchorMondayFor(startDay: number): number {
+/**
+ * Week 1's Monday. Block Zero: a Monday start is its own week 1, any other
+ * day leads in to the next Monday. Fighter: Mon-Wed starts count their own
+ * week; Thu-Sun starts lead into the next.
+ */
+export function anchorMondayFor(startDay: number, blockType: BlockKind = 'fighter'): number {
   const dow = dowOf(startDay)
+  if (blockType === 'block_zero') return mondayOf(startDay) + (dow === 1 ? 0 : 7)
   const lateStart = dow === 0 || dow >= 4
   return mondayOf(startDay) + (lateStart ? 7 : 0)
+}
+
+/** Block Zero: is this day in the lead-in (start day up to week 1's Monday)? */
+export function isLeadInDay(startDay: number, day: number): boolean {
+  return day >= startDay && day < anchorMondayFor(startDay, 'block_zero')
 }
 
 interface Gap { lastDay: number; returnDay: number | null; days: number }
@@ -73,7 +91,7 @@ export function trainingWeek(input: TrainingWeekInput): TrainingWeek {
   const todayMonday = mondayOf(input.todayDay)
   const days = [...input.completedKeyDays].filter(d => d <= input.todayDay).sort((a, b) => a - b)
   const distinct = [...new Set(days)]
-  const blockAnchor = anchorMondayFor(input.startDay)
+  const blockAnchor = anchorMondayFor(input.startDay, input.blockType)
   const half = Math.max(1, Math.ceil(input.plannedKeyPerWeek / 2))
 
   // Block Zero: a 4+ week gap inside the block restarts the count.
@@ -115,5 +133,6 @@ export function trainingWeek(input: TrainingWeekInput): TrainingWeek {
     anchorMonday: anchor,
     pausedWeeks: paused,
     restarted,
+    leadIn: input.blockType === 'block_zero' && input.day < blockAnchor,
   }
 }

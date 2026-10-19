@@ -79,9 +79,12 @@ expectRefusal('single run cap', add('running', MON + 1, { notes: 'zone2' }), ctx
 const shortened = checkSessionChange(add('running', MON + 1, { notes: 'zone2' }), ctx({ run: { longestLast30Sec: 15 * 60, lastWeekRunSec: 120 * 60, thisWeekRunSec: 0 } }))
 assert(shortened.ok && shortened.change.estimatedMin === 16 && shortened.notes.length === 1, 'a run over the 110% cap is shortened when there is room')
 expectRefusal('weekly run cap', add('running', MON + 5, { notes: 'zone2' }), ctx({
-  run: { longestLast30Sec: 40 * 60, lastWeekRunSec: 35 * 60, thisWeekRunSec: 0 },
+  run: { longestLast30Sec: 40 * 60, lastWeekRunSec: 35 * 60, thisWeekRunSec: 45 * 60 },
   sessions: [s('foundation_run', MON + 1), s('foundation_run', MON + 3)],
 }), 'run_weekly_cap')
+// D2: a short last week (one 23-min run) floors the allowance at week-1 volume, so week 1's runs fit.
+const floored = checkSessionChange(add('foundation_run', MON + 5), bz({ weekNumber: 1, run: { longestLast30Sec: 23 * 60, lastWeekRunSec: 23 * 60, thisWeekRunSec: 0 }, sessions: [s('foundation_run', MON + 1), s('foundation_run', MON + 3)] }))
+assert(floored.ok && floored.change.estimatedMin == null, 'run cap floor: after a lead-in run, week 1 keeps its third full run-walk')
 
 // ─── Muay thai ramp and cap ──────────────────────────────────
 

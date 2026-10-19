@@ -48,8 +48,9 @@ import { runAthleteState } from '../lib/athleteState/runAthleteState'
 import { loadLatestAthleteState } from '../lib/athleteState/store'
 import { getActiveBlock, loadRunHistory, loadSessionLoadEntries, readinessFor } from './blockZeroData'
 import {
+  blockCountsFrom,
+  blockDayPlan,
   blockKind,
-  dayTemplateWithExtras,
   loadInjuryFlag,
   loadPlacementContext,
   loadTemplateExtras,
@@ -200,6 +201,8 @@ interface Planned {
   /** One-line reason from the planner when it differs from the template. */
   why: string | null
   extra?: boolean
+  /** Block Zero lead-in day: optional session (Part B). */
+  leadIn?: boolean
 }
 
 export interface PrepareWeekOptions {
@@ -238,11 +241,15 @@ export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptio
   const extras = await loadTemplateExtras(db, block.id)
   const { signals, analysis } = await loadWeekSignals(db, block, monday, todayDay)
   const template: Planned[] = []
+  // No sessions before the start; a Block Zero lead-in day gets the lead-in day (D1).
   for (let d = monday; d <= monday + 6; d++) {
-    for (const t of dayTemplateWithExtras(block.blockType, stamps.weekNumber, new Date(d * DAY_SEC * 1000).getUTCDay(), mtDays, extras)) {
-      template.push({ type: t.type, label: isBlockZero || 'extra' in t ? t.label : null, notes: t.runCategory ?? null, epochDay: d, timeSlot: t.timeSlot, estimatedMin: null, why: null, extra: 'extra' in t })
+    const day = blockDayPlan(block, d, stamps.weekNumber, mtDays, extras)
+    for (const t of day.entries) {
+      template.push({ type: t.type, label: isBlockZero || 'extra' in t ? t.label : null, notes: t.runCategory ?? null, epochDay: d, timeSlot: t.timeSlot, estimatedMin: null, why: null, extra: 'extra' in t, ...(day.leadIn ? { leadIn: true } : {}) })
     }
   }
+  // The start week (lead-in or pre-start days) is the template alone: the planner never fills it.
+  const startWeek = monday < blockCountsFrom(block)
 
   // 1. The planner.
   let source: 'ai' | 'rules' = 'rules'
@@ -250,7 +257,7 @@ export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptio
   const dropped: WeekIntelligence['dropped'] = []
   let narrative: string | null = null
   let adjustmentNotes: string | null = null
-  const aiPlan = opts.useAi
+  const aiPlan = opts.useAi && !startWeek
     ? await generateWeekPlan(db, apiKey, {
       blockId: block.id, weekId, weekNumber: stamps.weekNumber, blockWeek: stamps.strengthWeek, isBlockZero,
       mtClassDays: mtDays, prevWeekStart: monday - 7, prevWeekEnd: monday - 1, coachContext: serializeWeekSignals(signals),
@@ -302,6 +309,7 @@ export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptio
     const ease = easeBy.get(i)
     let ctxJson: string | null = null
     if (p.why || p.extra) ctxJson = mergeContext(null, { coachNote: { reason: p.why ?? 'Part of the plan since you made it regular.', source: p.extra ? 'make_regular' : 'planner', at: nowSec } })
+    if (p.leadIn) ctxJson = mergeContext(ctxJson, { leadIn: true })
     if (ease) ctxJson = withCoachEase(ctxJson, { kind: ease.kind, reason: ease.reason, source: 'reactive', at: nowSec })
     await db.insert(sessions).values({
       id,

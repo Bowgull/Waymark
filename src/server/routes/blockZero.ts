@@ -56,7 +56,7 @@ import {
 } from '../../lib/blockZero'
 import { createTrainingBlock, endActiveBlocks } from '../blocks'
 import { loadBackScores, loadBlockTestData, transitionTestSummary, type BlockTestData } from '../blockZeroData'
-import { trainingWeekFor } from '../coachData'
+import { blockCountsFrom, trainingWeekFor } from '../coachData'
 import type { createDB } from '../../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -359,8 +359,11 @@ async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
   // The training week, paused through gaps: a holiday doesn't reach the end gate early.
   const currentWeekNumber = block ? (await trainingWeekFor(db, block, todayEpochDay, todayEpochDay)).week : 1
 
+  // Consistency counts from week 1's Monday: pre-start and lead-in sessions are optional (D14, Part B).
+  const countsFrom = block ? blockCountsFrom(block) : startEpochDay
+  const gateSessions = blockSessions.filter(s => s.scheduledDate != null && s.scheduledDate >= countsFrom)
   const gate: EndGateInput = {
-    completionRate: keySessionCompletionRate(blockSessions, todayEpochDay),
+    completionRate: keySessionCompletionRate(gateSessions, todayEpochDay),
     longestRecentGapDays: longestGapInWindow(completedDays, todayEpochDay, startEpochDay),
     backTrend: backTrend(await loadBackScores(db, startEpochDay, todayEpochDay), startEpochDay, todayEpochDay),
     // The two numbers (2026-10-18): the front squat estimate and/or the week-6 talk test.

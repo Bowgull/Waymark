@@ -73,6 +73,8 @@ function DepartureRowView({ row, len, onSelect }: { row: DepartureRow; len: numb
   const [slot, setSlot] = useState<Slot>(row.timeSlot)
 
   function pick() {
+    // A refused row says why; it is not a departure.
+    if (row.blocked) return
     mediumHaptic()
     onSelect(selectionFor(row, slot))
   }
@@ -91,14 +93,14 @@ function DepartureRowView({ row, len, onSelect }: { row: DepartureRow; len: numb
 
   return (
     <div className={`wm-dep${row.tone === 'pick' ? ' is-pick' : ''}`} role="listitem" onClick={pick}>
-      <button type="button" className="wm-dep-main" aria-label={`Add ${spoken}`}>
+      <button type="button" className="wm-dep-main" aria-label={row.blocked ? `Not today: ${spoken}` : `Add ${spoken}`} aria-disabled={row.blocked || undefined}>
         <SessionIcon kind={row.icon} size={44} label="" />
         <span className="wm-dep-text">
           <FlapLabel text={row.label} size="sm" len={len} fit />
           {row.reason && <span className={`wm-dep-why${row.tone === 'ember' ? ' is-ember' : ''}`}>{row.reason}</span>}
         </span>
       </button>
-      <AmPmFlap slot={shownSlot} onChange={row.flexibleTimeSlot ? flip : undefined} />
+      <AmPmFlap slot={shownSlot} onChange={row.flexibleTimeSlot && !row.blocked ? flip : undefined} />
     </div>
   )
 }

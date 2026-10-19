@@ -80,6 +80,22 @@ export const STRENGTH_WEEK_TARGETS: readonly StrengthWeekTarget[] = [
   }),
 ]
 
+/**
+ * Block Zero lead-in intro session (Part B): the week-1 lifts, 2 x 8 at RPE
+ * 5-6 (4-5 reps left), accessories 1 set, core 1 set, no check set, no
+ * durability finisher. Loads are logged but never set the starting load:
+ * week 1's Monday work-up does (R1, R4: RIR guesses are least accurate far
+ * from failure and out of practice). A light first bout also blunts the
+ * soreness of the next one (repeated-bout effect, Hyldahl et al. 2017).
+ */
+export const LEAD_IN_TARGET: StrengthWeekTarget = {
+  ...target({
+    week: 1, mainSets: 2, reps: 8, repRange: [8, 10], rpe: [5, 6], checkSet: null,
+    accessorySets: 1, coreSets: 1, loadPct: 0.5,
+    note: 'Intro. Learn the lifts. Stop with 4-5 in the tank. Monday finds your starting load.',
+  }),
+}
+
 /** Targets for a block week. Extension weeks use week 5. */
 export function getStrengthWeekTarget(weekNumber: number): StrengthWeekTarget {
   const w = blockZeroTrainingWeek(weekNumber)
@@ -306,6 +322,20 @@ export interface WorkingLoad {
   reason: string
   /** The top set the step was taken from. Plate snapping uses it so an increase moves one loadable step. */
   fromKg?: number
+}
+
+/**
+ * The lead-in intro's top weight for a lift (Part B): shown as "last time" and
+ * used as the start of week 1's work-up. Never a load step: the intro sets
+ * are too far from failure to read (R4), so the load holds.
+ */
+export function introStartLoad(intro: LoggedWorkingSet[]): WorkingLoad | null {
+  const done = intro.filter(s => s.weightKg != null && s.weightKg > 0 && s.completedAt != null)
+  if (done.length === 0) return null
+  const latest = done.reduce((a, s) => ((s.completedAt as number) > (a.completedAt as number) ? s : a))
+  const same = latest.sessionId != null ? done.filter(s => s.sessionId === latest.sessionId) : [latest]
+  const top = same.reduce((m, s) => Math.max(m, s.weightKg as number), 0)
+  return { weightKg: top, source: 'rir', change: 'hold', reason: 'Your intro weight. Work up from here.', fromKg: top }
 }
 
 /**

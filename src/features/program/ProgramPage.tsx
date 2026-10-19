@@ -248,7 +248,8 @@ export function ProgramPage() {
     try {
       const newBlock = await apiFetch<Block>('/api/blocks/block-zero', {
         method: 'POST',
-        body: JSON.stringify(freshStart ? { freshStart: true, confirmReset: true } : {}),
+        // The athlete's local date is the start day (an evening start stays that day).
+        body: JSON.stringify(freshStart ? { freshStart: true, confirmReset: true, today: getTodayISO() } : { today: getTodayISO() }),
       })
       setBlock(newBlock)
       setBlockZeroPrompt(null)
@@ -271,7 +272,7 @@ export function ProgramPage() {
     try {
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
-        body: JSON.stringify({ blockId: block.id, weekNumber: 1, startDate: getMonday(0) }),
+        body: JSON.stringify({ blockId: block.id, weekNumber: 1, startDate: getMonday(0), today: getTodayISO() }),
       })
       setAssessment(null)
       setWeekData(wd)
@@ -290,7 +291,7 @@ export function ProgramPage() {
     if (!block) {
       const newBlock = await apiFetch<Block>('/api/blocks', {
         method: 'POST',
-        body: JSON.stringify({ name: 'Fighter Block', totalWeeks: 12 }),
+        body: JSON.stringify({ name: 'Fighter Block', totalWeeks: 12, today: getTodayISO() }),
       })
       setBlock(newBlock)
       await loadWeek(newBlock, currentWeekOf(newBlock))

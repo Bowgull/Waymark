@@ -14,7 +14,7 @@ export { FIGHTER_DEFAULT_TOTAL_WEEKS }
 
 export async function createTrainingBlock(
   db: DB,
-  params: { name: string; blockType: 'fighter' | 'block_zero'; totalWeeks: number; nowSec: number },
+  params: { name: string; blockType: 'fighter' | 'block_zero'; totalWeeks: number; nowSec: number; startedAt?: number | null },
 ) {
   const id = crypto.randomUUID()
   await db.insert(trainingBlocks).values({
@@ -22,7 +22,9 @@ export async function createTrainingBlock(
     name: params.name,
     blockType: params.blockType,
     totalWeeks: params.totalWeeks,
-    startedAt: params.nowSec,
+    // The start is the athlete's local day when the client sent it (noon UTC
+    // of that date, D4); else now.
+    startedAt: params.startedAt ?? params.nowSec,
     status: 'active',
     createdAt: params.nowSec,
   })

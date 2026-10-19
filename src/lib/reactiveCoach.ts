@@ -35,7 +35,7 @@ import { computeStarterStatus, serializeStarterStatus } from './starterStatus'
 import { checkInFromDailyLog, clampsForStorage, evaluateReadiness, guardReactiveReplan, guardReplaceSuggestions, logClamps, serializeBlockZeroContext } from './blockZero'
 import { loadBlockZeroAiContext, loadBlockZeroGuardContext } from '../server/blockZeroData'
 import { checkChange, loadInjuryFlag } from '../server/coachData'
-import { classifyReplan, withCoachEase, type CoachEase, type InjuryFlag, type SessionChange } from './coach'
+import { classifyReplan, isLeadInContext, withCoachEase, type CoachEase, type InjuryFlag, type SessionChange } from './coach'
 import { mondayOf } from './dates'
 import type { createDB } from '../db/client'
 
@@ -210,15 +210,16 @@ async function collectSignals(db: DB, ctx: ReactiveEvalCtx): Promise<SignalBundl
 
   // Recent missed: planned sessions flipped to missed in last 3 days.
   const recentMissedRows = await db
-    .select({ type: sessions.type, scheduledDate: sessions.scheduledDate })
+    .select({ type: sessions.type, scheduledDate: sessions.scheduledDate, contextJson: sessions.contextJson })
     .from(sessions)
     .where(and(
       eq(sessions.status, 'missed'),
       gte(sessions.scheduledDate, ctx.todayEpochDay - 3),
       lte(sessions.scheduledDate, ctx.todayEpochDay - 1),
     ))
+  // Lead-in sessions are optional (Block Zero Part B): a missed one is not a signal.
   const recentMissed = recentMissedRows
-    .filter(r => r.scheduledDate != null)
+    .filter(r => r.scheduledDate != null && !isLeadInContext(r.contextJson))
     .map(r => ({ type: r.type, scheduledDate: r.scheduledDate as number }))
 
   // Recent completed with quality signal: Effort (rpe) and notes are the

@@ -1,4 +1,4 @@
-import { defaultMainLift, getStrengthWeekTarget, mainLiftHardSets, type StrengthWeekTarget } from './blockZero/strength'
+import { LEAD_IN_TARGET, defaultMainLift, getStrengthWeekTarget, mainLiftHardSets, type StrengthWeekTarget } from './blockZero/strength'
 import { strengthDayFor } from './blockZero/weekPlan'
 
 export interface TemplateSet {
@@ -195,8 +195,8 @@ function durability(t: StrengthWeekTarget, day: 'A' | 'C'): TemplateExercise[] {
  * Block Zero A (Mon): squat pattern + bench. Goblet squat in weeks 1-2, front
  * squat from week 3 (back-friendly first). Durability finisher.
  */
-function buildBlockZeroStrengthA(blockWeek: number): StrengthTemplate {
-  const t = getStrengthWeekTarget(blockWeek)
+function buildBlockZeroStrengthA(blockWeek: number, intro = false): StrengthTemplate {
+  const t = intro ? LEAD_IN_TARGET : getStrengthWeekTarget(blockWeek)
   const squat = defaultMainLift('squat', blockWeek)
   const exercises: TemplateExercise[] = [
     { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges', section: 'warmup', sets: warmupSets(2, 12), notes: 'Squeeze at the top. Ribs down.' },
@@ -207,7 +207,8 @@ function buildBlockZeroStrengthA(blockWeek: number): StrengthTemplate {
     { exerciseId: 'ex-face-pulls', label: 'Face Pulls', section: 'accessory', sets: workingSets(t.accessorySets, 15, 60) },
     { exerciseId: 'ex-dead-bugs', label: 'Dead Bugs', section: 'core', sets: coreSets(t.coreSets, 10), notes: '10 each side. Back stays flat.' },
   ]
-  exercises.push(...durability(t, 'A'))
+  // The lead-in intro has no durability finisher (Part B).
+  if (!intro) exercises.push(...durability(t, 'A'))
   return { id: 'strength_a', label: 'Block Zero: A', exercises }
 }
 
@@ -215,8 +216,8 @@ function buildBlockZeroStrengthA(blockWeek: number): StrengthTemplate {
  * Block Zero B (Wed): hinge + overhead press. DB RDL in weeks 1-2, block pull
  * from week 3. Hinge at the hips, never round to reach the floor.
  */
-function buildBlockZeroStrengthB(blockWeek: number): StrengthTemplate {
-  const t = getStrengthWeekTarget(blockWeek)
+function buildBlockZeroStrengthB(blockWeek: number, intro = false): StrengthTemplate {
+  const t = intro ? LEAD_IN_TARGET : getStrengthWeekTarget(blockWeek)
   const hinge = defaultMainLift('hinge', blockWeek)
   const exercises: TemplateExercise[] = [
     { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges', section: 'warmup', sets: warmupSets(2, 12), notes: 'Squeeze at the top. Ribs down.' },
@@ -235,8 +236,8 @@ function buildBlockZeroStrengthB(blockWeek: number): StrengthTemplate {
  * Block Zero C (Fri): row + single-leg work. Supported DB row in weeks 1-2,
  * bent-over row from week 3. Durability finisher.
  */
-function buildBlockZeroStrengthC(blockWeek: number): StrengthTemplate {
-  const t = getStrengthWeekTarget(blockWeek)
+function buildBlockZeroStrengthC(blockWeek: number, intro = false): StrengthTemplate {
+  const t = intro ? LEAD_IN_TARGET : getStrengthWeekTarget(blockWeek)
   const row = defaultMainLift('row', blockWeek)
   const exercises: TemplateExercise[] = [
     { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges', section: 'warmup', sets: warmupSets(2, 12), notes: 'Squeeze at the top. Ribs down.' },
@@ -246,7 +247,7 @@ function buildBlockZeroStrengthC(blockWeek: number): StrengthTemplate {
     { exerciseId: 'ex-incline-db-press', label: 'Incline DB Press', section: 'accessory', sets: workingSets(t.accessorySets, 10, 75) },
     { exerciseId: 'ex-lateral-raise', label: 'Lateral Raise', section: 'accessory', sets: workingSets(t.accessorySets, 12, 60) },
     { exerciseId: 'ex-pallof-press', label: 'Pallof Press', section: 'core', sets: coreSets(t.coreSets, 10), notes: '10 each side.' },
-    ...durability(t, 'C'),
+    ...(intro ? [] : durability(t, 'C')),
   ]
   return { id: 'strength_c', label: 'Block Zero: C', exercises }
 }
@@ -263,12 +264,15 @@ export function getStrengthTemplate(
   blockWeek: number = 1,
   blockType: 'fighter' | 'block_zero' = 'fighter',
   label?: string | null,
+  opts: { leadIn?: boolean } = {},
 ): StrengthTemplate {
   if (blockType === 'block_zero') {
+    // Lead-in: the intro session, week-1 lifts at RPE 5-6 (Part B).
+    const intro = opts.leadIn === true
     const day = strengthDayFor(dayOfWeek, label)
-    if (day === 'A') return buildBlockZeroStrengthA(blockWeek)
-    if (day === 'B') return buildBlockZeroStrengthB(blockWeek)
-    return buildBlockZeroStrengthC(blockWeek)
+    if (day === 'A') return buildBlockZeroStrengthA(intro ? 1 : blockWeek, intro)
+    if (day === 'B') return buildBlockZeroStrengthB(intro ? 1 : blockWeek, intro)
+    return buildBlockZeroStrengthC(intro ? 1 : blockWeek, intro)
   }
   return dayOfWeek === 2 ? buildStrengthA(blockWeek) : buildStrengthB(blockWeek)
 }
