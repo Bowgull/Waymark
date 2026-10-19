@@ -124,7 +124,7 @@ jobs:
           ls "$APP" | head -30
 
       - name: Boot an iPhone simulator, install and launch
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
           xcrun simctl list runtimes
           UDID=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | test("^iPhone [0-9]+( Pro)?$"))] | last | .udid')
@@ -132,22 +132,31 @@ jobs:
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl list devices | grep "$UDID"
           xcrun simctl shutdown all || true
-          xcrun simctl boot "$UDID" || true
-          xcrun simctl bootstatus "$UDID" -b
           # Reduce Motion on, as the Playwright suite runs (reducedMotion: 'reduce').
           # The runner has no GPU: the animated world (three.js) renders in software
           # and starves the CPU, and run 39320971646's Worker then took 2-75 s per
           # request (past the app's 10 s timeout: TODAY DIDN'T LOAD). With Reduce
-          # Motion the world draws still frames. Read at boot, so boot again.
-          xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool true
-          xcrun simctl shutdown "$UDID"
-          xcrun simctl boot "$UDID"
-          xcrun simctl bootstatus "$UDID" -b
-          xcrun simctl spawn "$UDID" defaults read com.apple.Accessibility ReduceMotionEnabled
+          # Motion the world draws still frames. It is read at boot, so it goes into
+          # the device's preferences before the boot (a reboot costs minutes here).
+          defaults write "$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Preferences/com.apple.Accessibility" ReduceMotionEnabled -bool true
+          echo "$(date -u +%T) boot"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b > /dev/null
+          echo "$(date -u +%T) booted"
+          if [ "$(xcrun simctl spawn "$UDID" defaults read com.apple.Accessibility ReduceMotionEnabled 2>/dev/null)" != 1 ]; then
+            echo "Reduce Motion didn't take before boot: set it and boot again"
+            xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool true
+            xcrun simctl shutdown "$UDID"
+            xcrun simctl boot "$UDID"
+            xcrun simctl bootstatus "$UDID" -b > /dev/null
+          fi
+          echo "Reduce Motion: $(xcrun simctl spawn "$UDID" defaults read com.apple.Accessibility ReduceMotionEnabled)"
           # The app follows the Mac's zone; set it in the Simulator's launchd too.
           xcrun simctl spawn "$UDID" launchctl setenv TZ "$TZ" || true
           open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+          echo "$(date -u +%T) install"
           xcrun simctl install "$UDID" "$APP"
+          echo "$(date -u +%T) installed"
           # The app's own console (Capacitor logs the WebView console) for the whole run.
           nohup xcrun simctl spawn "$UDID" log stream --style compact \
             --predicate 'process == "App" OR subsystem CONTAINS "capacitor" OR process == "WaymarkActivity"' \
