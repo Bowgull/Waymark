@@ -11,8 +11,11 @@ import { surfaceMaterial, type SharedUniforms } from './materials'
 
 export type CrestLayer = 'body' | 'rimDark' | 'bossField' | 'rim' | 'marks' | 'arch' | 'tip' | 'boss' | 'eye' | 'centre' | 'cut'
 
+/** The paint as Logo.svg wrote it (url(#sgold)), kept aside by svgForLoader. */
+const paint = (node: Element, attr: 'fill' | 'stroke') => node.getAttribute(`data-${attr}`) || node.getAttribute(attr) || ''
+
 function classify(node: Element): CrestLayer {
-  const f = node.getAttribute('fill') || '', s = node.getAttribute('stroke') || '', d = node.getAttribute('d') || '', tag = node.tagName
+  const f = paint(node, 'fill'), s = paint(node, 'stroke'), d = node.getAttribute('d') || '', tag = node.tagName
   if (tag === 'circle' && node.getAttribute('cy') === '259') return 'centre'
   if (tag === 'circle' && s.includes('sgold')) return 'boss'
   if (tag === 'circle') return 'bossField'
@@ -26,6 +29,19 @@ function classify(node: Element): CrestLayer {
   return 'body'
 }
 const FILL: Record<string, string> = { 'url(#sbody)': '#2f6a54', 'url(#sgold)': '#D8B048', 'url(#seye)': '#2aa07a', 'url(#sinner)': '#1f4a3c' }
+/**
+ * Logo.svg for SVGLoader: its gradient paints (url(#sgold)) become their flat
+ * colours, the original kept in data-fill / data-stroke for classify(), and the
+ * drop-shadow filter goes. SVGLoader can't read url() paints and warned about
+ * every one on each load (e2e minor 26: ~50 "url access" / "Unknown color
+ * model" console warnings).
+ */
+export function svgForLoader(svg: string): string {
+  return svg
+    .replace(/\s(fill|stroke)="(url\(#\w+\))"/g, (_m, attr: string, url: string) => ` ${attr}="${FILL[url] ?? '#163a2e'}" data-${attr}="${url}"`)
+    .replace(/\sfilter="url\(#\w+\)"/g, '')
+}
+
 const LAYER_SET: Record<string, string> = { body: 'stone', rimDark: 'stone', bossField: 'stone', rim: 'metal', marks: 'metal', arch: 'metal', tip: 'metal', boss: 'metal', eye: 'eye', centre: 'metal' }
 
 function offsetRing(points: THREE.Vector2[], half: number): THREE.Shape {
@@ -46,14 +62,14 @@ export interface CrestPiece extends THREE.Mesh<THREE.ExtrudeGeometry, THREE.Shad
 }
 
 export function buildShield(shared: SharedUniforms, worldGlyph: number): { holder: THREE.Group; group: THREE.Group; pieces: CrestPiece[]; S: number } {
-  const data = new SVGLoader().parse(logoSvg)
+  const data = new SVGLoader().parse(svgForLoader(logoSvg))
   const group = new THREE.Group(), S = 3.1 / 560
   group.scale.set(S, -S, S)
   const pieces: CrestPiece[] = []; let order = 0
   for (const path of data.paths) {
     const node = (path.userData as { node: Element }).node, layer = classify(node)
     if (layer === 'cut') continue
-    const style = (path.userData as { style: { strokeWidth?: number } }).style, fillStr = node.getAttribute('fill') || '', strokeStr = node.getAttribute('stroke') || ''
+    const style = (path.userData as { style: { strokeWidth?: number } }).style, fillStr = paint(node, 'fill'), strokeStr = paint(node, 'stroke')
     order++
     let shapes: THREE.Shape[] = []
     if (strokeStr && strokeStr !== 'none' && (!fillStr || fillStr === 'none')) {
