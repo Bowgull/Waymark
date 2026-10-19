@@ -14,7 +14,7 @@ const HOLD_MS = 700
  * title on a flap) fixed at the top and the boards scrolling under it. Tap the
  * crest to go back; hold it for Logs when `onHold` is given.
  */
-export function SettingsScreen({ title, onBack, onHold, backLabel, children }: { title: string; onBack: () => void; onHold?: () => void; /** page 46: "‹ TODAY" in gold top left; the crest and title move right (the crest still goes back). */ backLabel?: string; children: ReactNode }) {
+export function SettingsScreen({ title, onBack, onHold, holdLabel = 'logs', backLabel, children }: { title: string; onBack: () => void; onHold?: () => void; /** What holding the crest opens, for its label. */ holdLabel?: string; /** page 46: "‹ TODAY" in gold top left; the crest and title move right (the crest still goes back). */ backLabel?: string; children: ReactNode }) {
   const timer = useRef<number | null>(null)
   const held = useRef(false)
   const stop = () => { if (timer.current) window.clearTimeout(timer.current); timer.current = null }
@@ -32,7 +32,7 @@ export function SettingsScreen({ title, onBack, onHold, backLabel, children }: {
         <button
           type="button"
           className="st-brand"
-          aria-label={onHold ? 'Back. Hold for logs.' : 'Back'}
+          aria-label={onHold ? `Back. Hold for ${holdLabel}.` : 'Back'}
           onPointerDown={start}
           onPointerUp={stop}
           onPointerLeave={stop}

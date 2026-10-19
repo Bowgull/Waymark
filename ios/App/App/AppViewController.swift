@@ -12,5 +12,7 @@ class AppViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(WaymarkAudioPlugin())
         bridge?.registerPluginInstance(WaymarkLiveActivityPlugin())
+        // Phase 1 run-recorder spike (throwaway; /dev/recorder).
+        bridge?.registerPluginInstance(WaymarkRecorderSpikePlugin())
     }
 }

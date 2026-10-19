@@ -111,7 +111,7 @@ export function LogsPage() {
   const now = Date.now()
 
   return (
-    <SettingsScreen title="LOGS" onBack={() => navigate(-1)}>
+    <SettingsScreen title="LOGS" onBack={() => navigate(-1)} onHold={() => navigate('/dev/recorder')} holdLabel="the recorder test">
       <Board solid className="st-board">
         <div className="st-pills" role="radiogroup" aria-label="Filter">
           {filterFlaps(entries.length, counts).map(f => {
