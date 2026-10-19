@@ -18,7 +18,9 @@ export function plannedSetLbs(kg: number | null | undefined, equipment: string |
  * weight (earlier this session, else last session), else 0 (the empty bar for a
  * barbell). Bodyweight-only lifts have no weight row (null).
  */
-export function startSetLbs(plannedKg: number | null | undefined, equipment: string | null | undefined, carryKg?: number | null): number | null {
+export function startSetLbs(plannedKg: number | null | undefined, equipment: string | null | undefined, carryKg?: number | null, editedKg?: number | null): number | null {
+  // He changed the last set at this same planned load: the next one starts where he put it (m12).
+  if (editedKg != null && editedKg > 0 && loadEquipment(equipment) !== 'none') return plannedSetLbs(editedKg, equipment)
   const planned = plannedSetLbs(plannedKg, equipment)
   if (planned != null) return planned
   const eq = loadEquipment(equipment)
@@ -39,4 +41,41 @@ export function stepSetLbs(lbs: number, dir: 1 | -1, equipment: string | null | 
 /** What is logged: the lb on the screen, stored as kg. */
 export function setLbsToKg(lbs: number | null): number | null {
   return lbs == null ? null : lbsToKg(lbs)
+}
+
+// ─── What this session lifted, kept on the phone (m10, m12) ───
+
+/** Per lift: the last weight logged (any set), and the last working set's plan and weight. */
+export interface LiftCarry {
+  kg?: number
+  work?: { plannedKg: number | null; kg: number }
+}
+
+/** Where a session's carried weights wait on the phone (an offline reload keeps them). */
+export function carryKey(sessionId: string): string {
+  return `waymark_carry_kg:${sessionId}`
+}
+
+export function parseCarry(raw: string | null | undefined): Record<string, LiftCarry> {
+  if (!raw) return {}
+  try {
+    const v = JSON.parse(raw) as unknown
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, LiftCarry>) : {}
+  } catch {
+    return {}
+  }
+}
+
+/** After a logged set: remember its weight, and a working set's plan beside it. */
+export function withLogged(carry: Record<string, LiftCarry>, exerciseId: string, kg: number | null, set: { isWarmup: boolean; plannedKg: number | null }): Record<string, LiftCarry> {
+  if (kg == null || !(kg > 0)) return carry
+  const prev = carry[exerciseId] ?? {}
+  return { ...carry, [exerciseId]: { kg, work: set.isWarmup ? prev.work : { plannedKg: set.plannedKg, kg } } }
+}
+
+/** The weight a working set starts from when he changed the last one at the same planned load; else null. */
+export function editedStartKg(c: LiftCarry | undefined, set: { isWarmup: boolean; plannedKg: number | null }): number | null {
+  if (set.isWarmup || !c?.work || set.plannedKg == null || c.work.plannedKg == null) return null
+  if (Math.abs(c.work.plannedKg - set.plannedKg) > 0.01) return null
+  return Math.abs(c.work.kg - set.plannedKg) > 0.01 ? c.work.kg : null
 }

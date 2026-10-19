@@ -621,7 +621,8 @@ export function RunSessionView({
     return () => setWorldBackdrop(null)
   }, [phase])
 
-  const runTitle = (prescription ? RUN_TITLES[prescription.runType] : null) ?? 'RUN'
+  // A Block Zero run-walk is RUN-WALK here too, as on its row (m9).
+  const runTitle = prescription?.runWalk ? 'RUN-WALK' : (prescription ? RUN_TITLES[prescription.runType] : null) ?? 'RUN'
   const icon = isZone2 || runSession.runType === 'zone2' ? 'zone2' as const : 'run' as const
   const targetMin = prescription?.targetDurSec ? Math.round(prescription.targetDurSec / 60) : null
   const narutoChip = isIndoor && media === 'naruto' && narutoEp != null ? `NARUTO EP ${narutoEp}` : null

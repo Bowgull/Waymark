@@ -150,7 +150,7 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
           <>
             <BzDots n={total} now={state.index} done={i => i < state.index} />
             {state.askingBackNotes ? (
-              <Board className="bz-bd" head={`${state.index + 1} of ${total} · back today`}>
+              <Board className="bz-bd" head={`${Math.min(state.index + 1, total)} of ${total} · back today`}>
                 <FlapLabel text="WHAT BOTHERS IT?" size="md" animate="mount" />
                 <p className="bz-q">Which movements, where. The coach swaps in easier versions.</p>
                 <textarea
@@ -167,7 +167,7 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
                 </div>
               </Board>
             ) : (
-              <Board className="bz-bd" key={q.key} head={`${state.index + 1} of ${total}`}>
+              <Board className="bz-bd" key={q.key} head={`${Math.min(state.index + 1, total)} of ${total}`}>
                 <FlapLabel text={q.title.toUpperCase()} size="md" animate="mount" />
                 {q.sub ? <p className="bz-q">{q.sub}</p> : <div style={{ height: 10 }} />}
                 <BzTiles

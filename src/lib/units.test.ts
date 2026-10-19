@@ -1,7 +1,7 @@
 // Run: tsx src/lib/units.test.ts
 // Josh measures in lb: every weight people read is lb; data stays kg.
 import assert from 'node:assert/strict'
-import { kgToLbs, kgToLbsFloor, lbText, lbsToKg, lbsToKgStored, loggedAtSec } from './units'
+import { bodyLbs, kgToLbs, kgToLbsFloor, lbText, lbsToKg, lbsToKgStored, loggedAtSec } from './units'
 import { TM_STEP_KG } from './coach/tm'
 
 let passed = 0
@@ -30,6 +30,10 @@ test('body weigh-in times read as seconds, ms or s (e2e major 3)', () => {
   assert.equal(loggedAtSec(1792409527398), 1792409527, 'ms from the old Body page')
   assert.equal(loggedAtSec(1792409527), 1792409527, 'seconds stay')
   assert.equal(Math.floor(loggedAtSec(1792409527398) / 86400), Math.floor(1792409527 / 86400), 'same epoch day either way')
+})
+
+test('m13: body weight keeps its decimal (182.4 lb logged reads 182.4)', () => {
+  assert.equal(bodyLbs(lbsToKg(182.4)), 182.4)
 })
 
 console.log(`units: ${passed} passed`)

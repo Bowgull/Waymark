@@ -14,16 +14,27 @@ export type LineChange = Pick<ChangeRowLike, 'actor' | 'kind' | 'undoneAt' | 'se
   day: number
   /** Still undoable (the session hasn't started). */
   open: boolean
+  /** A missed session's fix: the session that takes its lifts, and its day (m18). */
+  into?: { day: number; name: string } | null
 }
+
+/** The day a line is about: a missed session's fix day, else the changed day. */
+const lineDay = (c: LineChange) => (c.kind === 'missed' ? c.into?.day ?? c.day : c.day)
 
 /** The coach's changes still worth a line: unseen, not undone, not started, today or later. */
 function pending(changes: ReadonlyArray<LineChange>, fromDay: number): LineChange[] {
   return changes
-    .filter(c => isCoachActor(c.actor) && c.kind !== 'missed' && c.undoneAt == null && c.seenAt == null && c.open && c.day >= fromDay)
-    .sort((a, b) => a.day - b.day || a.createdAt - b.createdAt)
+    .filter(c => isCoachActor(c.actor) && (c.kind !== 'missed' || c.into != null) && c.undoneAt == null && c.seenAt == null && c.open && lineDay(c) >= fromDay)
+    .sort((a, b) => lineDay(a) - lineDay(b) || a.createdAt - b.createdAt)
 }
 
 function sentence(c: LineChange, refDay: number): string {
+  if (c.kind === 'missed' && c.into) {
+    // m18: "Strength C's main lifts are in Strength A today."
+    const own = midName(c.name)
+    const lead = `${own.charAt(0).toUpperCase()}${own.slice(1)}'s main lifts are in`
+    return c.into.day === refDay ? `${lead} ${midName(c.into.name)} today.` : `${lead} ${nameOnDay(c.into.name, c.into.day, refDay)}.`
+  }
   const after = c.after.show.toLowerCase()
   const own = midName(c.name)
   return c.day === refDay ? `${own.charAt(0).toUpperCase()}${own.slice(1)} is ${after} today.` : `${nameOnDay(c.name, c.day, refDay)}: ${after}.`

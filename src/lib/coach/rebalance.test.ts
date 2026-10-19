@@ -96,6 +96,10 @@ if (missed.kind === 'merge') {
 }
 const pending = missedFix({ id: 'c', type: 'strength', label: 'Strength C', epochDay: MON + 4, timeSlot: 'am', status: 'missed' }, [], { blockType: 'block_zero', weekNumber: 4, nextWeekNumber: 5, nextStrength: { epochDay: nextMon, label: 'Strength A' } })
 assert(pending.kind === 'merge' && pending.targetSessionId == null && pending.targetDay === nextMon, 'next week not prepared yet: the fix waits for Monday A')
+// m17 (E2E 2026-10-19b): one name and one case on missed lines.
+const ropeMiss = missedFix({ id: 'rp', type: 'skip_rope', label: null, epochDay: MON + 3, timeSlot: 'pm', status: 'missed' }, [], { blockType: 'block_zero', weekNumber: 4 })
+const bagMiss = missedFix({ id: 'bg', type: 'bag_work', label: 'Bag Work', epochDay: MON + 3, timeSlot: 'pm', status: 'missed' }, [], { blockType: 'block_zero', weekNumber: 4 })
+assert(ropeMiss.why.startsWith('Skip rope missed.') && bagMiss.why.startsWith('Bag work missed.'), `m17: ${ropeMiss.why} / ${bagMiss.why}`)
 const runMiss = missedFix({ id: 'r', type: 'foundation_run', label: 'Run-Walk', epochDay: MON + 1, timeSlot: 'am', status: 'missed' }, [], { blockType: 'block_zero', weekNumber: 4 })
 assert(runMiss.kind === 'let_go' && /don't stack/.test(runMiss.why), 'a missed run is not made up: runs don\'t stack')
 const far = missedFix({ id: 'c', type: 'strength', label: 'Strength C', epochDay: MON + 4, timeSlot: 'am', status: 'missed' }, [{ id: 'x', type: 'strength', label: 'Strength A', epochDay: MON + 12, timeSlot: 'am', status: 'planned' }], { blockType: 'block_zero', weekNumber: 4 })

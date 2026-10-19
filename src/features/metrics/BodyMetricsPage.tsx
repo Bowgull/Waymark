@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { Board, FlapButton, glowRow, showPop } from '@/design'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
-import { kgToLbs, lbsToKg } from '@/lib/units'
+import { bodyLbs, lbsToKg } from '@/lib/units'
 import { logger } from '@/lib/logger'
 import { FlapNumber, SettingsScreen } from '../settings/settingsParts'
 import { cleanNumber, histDate, todayFlap } from '../settings/settingsModel'
@@ -44,7 +44,7 @@ export function BodyMetricsPage() {
         const last = r.entries[0]
         if (!seeded.current && last) {
           seeded.current = true
-          if (last.weightKg != null) setWeightLbs(String(kgToLbs(last.weightKg)))
+          if (last.weightKg != null) setWeightLbs(String(bodyLbs(last.weightKg)))
           if (last.restingHr != null) setRestingHr(String(last.restingHr))
           if (last.bodyfatPct != null) setBodyfatPct(String(last.bodyfatPct))
         }
@@ -99,7 +99,7 @@ export function BodyMetricsPage() {
   const weightData = [...entries]
     .filter(e => e.weightKg != null)
     .reverse()
-    .map(e => kgToLbs(e.weightKg!))
+    .map(e => bodyLbs(e.weightKg!))
 
   const latest = entries[0]
   const fields: { label: string; unit: string; value: string; set: (v: string) => void; decimal: boolean; max: number }[] = [
@@ -135,7 +135,7 @@ export function BodyMetricsPage() {
         ) : entries.slice(0, 10).map(entry => (
           <div key={entry.id} className="st-hist">
             <span className="d">{histDate(entry.loggedAt * 1000)}</span>
-            {entry.weightKg != null && <span className="w">{kgToLbs(entry.weightKg)}</span>}
+            {entry.weightKg != null && <span className="w">{bodyLbs(entry.weightKg)}</span>}
             {entry.restingHr != null && <span className="o">{entry.restingHr} bpm</span>}
             {entry.bodyfatPct != null && <span className="o">{entry.bodyfatPct}%</span>}
             {entry.notes && <i>{entry.notes}</i>}
@@ -150,7 +150,7 @@ export function BodyMetricsPage() {
             <span className="text-xs text-muted-foreground">Weight</span>
             {latest?.weightKg && (
               <span className="text-lg text-foreground">
-                {kgToLbs(latest.weightKg)} lbs
+                {bodyLbs(latest.weightKg)} lbs
               </span>
             )}
           </div>

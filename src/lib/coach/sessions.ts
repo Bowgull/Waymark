@@ -60,9 +60,9 @@ const TYPE_NAME: Record<string, string> = {
   running: 'Run',
   mt_class: 'Muay thai',
   bag_work: 'Bag work',
-  skip_rope: 'Rope',
+  skip_rope: 'Skip rope',
   mobility: 'Foundation',
-  active_recovery: 'Recovery',
+  active_recovery: 'Reset',
 }
 
 /** A session's name for one-line reasons: its label, else a plain name for the type. */
@@ -79,6 +79,12 @@ export function sessionName(s: Pick<SessionLike, 'type' | 'label' | 'notes'>): s
  */
 export function nameInSentence(name: string): string {
   return name.split(' ').map(w => (/^[A-Z0-9]{1,3}$/.test(w) ? w : w.toLowerCase())).join(' ')
+}
+
+/** A name that starts a line, one case for all (m17): "Bag Work" -> "Bag work", "Strength C" stays. */
+export function nameAtStart(name: string): string {
+  const s = nameInSentence(name)
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 export function isLongRun(s: Pick<SessionLike, 'type' | 'notes' | 'estimatedMin'>): boolean {

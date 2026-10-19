@@ -2,6 +2,11 @@ export function kgToLbs(kg: number): number {
   return Math.round(kg * 2.20462)
 }
 
+/** Body weight in lb to one decimal (182.4), as he logs it and the Ledger shows it (m13). */
+export function bodyLbs(kg: number): number {
+  return Math.round(kg * 2.20462 * 10) / 10
+}
+
 export function lbsToKg(lbs: number): number {
   return lbs / 2.20462
 }

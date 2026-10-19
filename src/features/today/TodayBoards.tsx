@@ -56,7 +56,7 @@ export function WeekStrip({ days, home = false, openDay = null, onRune }: { days
             data-day={d.epochDay}
             className={`td-t7${d.isToday ? ' is-today' : ''}${d.rune ? ' has-rn' : ''}${openDay === d.epochDay ? ' is-open' : ''}`}
             onClick={() => (d.rune && onRune ? onRune(d.epochDay) : navigate(`/program?day=${d.iso}`))}
-            aria-label={`${d.iso}${d.isToday ? ', today' : ''}${d.rest ? ', rest' : ''}. ${d.icons.map(i => `${i.key} ${i.state}`).join(', ')}.${d.rune ? (d.rune.startsWith('miss') ? ' A missed session. Tap to see what the coach did.' : ' The coach changed this day. Tap to see.') : ' Open in Program.'}`}
+            aria-label={`${d.iso}${d.isToday ? ', today' : ''}${d.rest ? ', rest' : ''}. ${d.icons.map(i => `${i.name} ${i.state}`).join(', ')}.${d.rune ? (d.rune.startsWith('miss') ? ' A missed session. Tap to see what the coach did.' : ' The coach changed this day. Tap to see.') : ' Open in Program.'}`}
           >
             <span className="dn">{d.letter}</span>
             <span className="dd">{d.date}</span>

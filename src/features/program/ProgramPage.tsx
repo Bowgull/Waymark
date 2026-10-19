@@ -56,7 +56,7 @@ interface WeekData {
   sessions: DayBoardSession[]
 }
 
-type BlockZeroPrompt = 'first_launch' | 'return_from_break' | null
+type BlockZeroPrompt = 'first_launch' | 'return_from_break' | 'restart' | null
 
 interface BlockZeroAssessmentOutput {
   narrative: string
@@ -415,14 +415,18 @@ export function ProgramPage() {
 
   if (blockZeroPrompt) {
     const isFirstLaunch = blockZeroPrompt === 'first_launch'
+    // m15: a restart by hand isn't a return from a break, so it says nothing about one.
+    const isRestart = blockZeroPrompt === 'restart'
     return (
       <Frame road={false}>
-        <Board head={isFirstLaunch ? 'Before you begin' : 'Welcome back'} solid>
+        <Board head={isFirstLaunch ? 'Before you begin' : isRestart ? (block?.blockType === 'block_zero' ? 'Restart Block Zero' : 'Reset with Block Zero') : 'Welcome back'} solid>
           <FlapLabel text={isFirstLaunch ? 'START WITH BLOCK ZERO' : 'TIME FOR A RESET'} size="sm" tone="gold" fit />
           <p className="wm-prose" style={{ marginTop: 10 }}>
             {isFirstLaunch
               ? 'After time away from training, jumping straight into heavy weights risks tendon injury. Muscle memory returns faster than connective tissue adapts. Block Zero is a 6-week ramp-up that gets your body ready to train hard without breaking down.'
-              : "It's been a while since your last session. Tendons and ligaments detrain faster than muscle. Block Zero resets your starting weights and volume so you can build back up safely."}
+              : isRestart
+                ? 'Block Zero resets your starting weights and volume so you can build back up safely.'
+                : "It's been a while since your last session. Tendons and ligaments detrain faster than muscle. Block Zero resets your starting weights and volume so you can build back up safely."}
           </p>
           <ul className="pg-list">
             {['Weeks 1–2: Foundation, run-walks and light strength (55–57.5% of your maxes).', 'Weeks 3–5: Weights climb to 60–65%. MT class is yours to add.', 'Week 6: Volume down, then the gate to Fighter Block 1.'].map(item => (
@@ -562,7 +566,7 @@ export function ProgramPage() {
       )}
 
       {/* Manual block starts */}
-      <button type="button" className="db-add pg-reset" onClick={() => setBlockZeroPrompt('return_from_break')}>
+      <button type="button" className="db-add pg-reset" onClick={() => setBlockZeroPrompt('restart')}>
         {isBlockZero ? 'Restart Block Zero' : 'Reset with Block Zero'}
       </button>
     </Frame>

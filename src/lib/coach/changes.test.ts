@@ -87,4 +87,10 @@ assert(morningLine([line({})], WED) === 'Strength B is 2×8 today. Tap to see.',
 assert(morningLine([line({ seenAt: 5 })], WED) == null && morningLine([line({ actor: 'you' })], WED) == null, 'nothing new, no line')
 assert(finishLine([line({ name: 'Run-Walk', day: SAT, after: { show: '4 ROUNDS', day: SAT, sessions: [] } })], MON + 3) === "Saturday's run-walk: 4 rounds. Tap to see.", 'the finish card names what moved')
 
+// m18: Friday's C missed, its lifts into next Monday's A (a week not prepared yet): Monday's alarm names it.
+const nextMon = MON + 7
+const missedC = line({ kind: 'missed', name: 'Strength C', day: MON + 4, after: { show: 'INTO MON A', day: MON + 4, sessions: [] }, into: { day: nextMon, name: 'Strength A' } })
+assert(morningLine([missedC], nextMon) === "Strength C's main lifts are in strength A today. Tap to see.", `m18: ${morningLine([missedC], nextMon)}`)
+assert(morningLine([line({ kind: 'missed', into: null })], WED) == null, 'a missed run that just goes makes no alarm line')
+
 console.log('changes tests passed')

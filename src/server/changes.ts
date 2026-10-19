@@ -254,15 +254,27 @@ export async function weekChangeViews(db: DB, monday: number, todayDay: number):
 
 /** The changes the one quiet line reads (alarm, finish card), for the week of `day`. */
 export async function lineChanges(db: DB, day: number, todayDay: number): Promise<LineChange[]> {
-  const list = await loadWeekChanges(db, mondayOf(day))
+  // Last week's missed sessions too: their fix can land this week (m18: Friday's C into Monday's A).
+  const thisWeek = await loadWeekChanges(db, mondayOf(day))
+  const lastWeek = (await loadWeekChanges(db, mondayOf(day) - 7)).filter(c => c.change.kind === 'missed')
+  const list = [...thisWeek, ...lastWeek.filter(l => !thisWeek.some(t => t.change.id === l.change.id))]
   const now = await sessionsNow(db, list.flatMap(c => touched(c.change)))
-  return list.map(({ change: c }) => {
+  return list.map(({ row, change: c }) => {
     const target = now.get(c.targetSessionId ?? '')?.row
+    let into: { day: number; name: string } | null = null
+    if (c.kind === 'missed') {
+      const fixRow = now.get(c.after.sessions[0]?.id ?? '')?.row
+      let pending: { epochDay?: unknown; label?: unknown } | undefined
+      try { pending = (JSON.parse(row.sourceData ?? '{}') as { pending?: { epochDay?: unknown; label?: unknown } }).pending } catch { pending = undefined }
+      if (fixRow?.scheduledDate != null) into = { day: fixRow.scheduledDate, name: fixRow.label ?? sessionName(toSessionLike(fixRow)) }
+      else if (pending && typeof pending.epochDay === 'number' && typeof pending.label === 'string') into = { day: pending.epochDay, name: pending.label }
+    }
     return {
       ...c,
       name: target ? (target.label ?? sessionName(toSessionLike(target))) : c.sessionType,
       day: c.after.day,
       open: changeLock(c, now, todayDay) === 'open',
+      into,
     }
   })
 }

@@ -10,7 +10,7 @@
 
 import { getStrengthTemplate } from '../strengthTemplates'
 import { strengthDayFor } from '../blockZero/weekPlan'
-import { estimatedMinutes, dowOf, sessionName, type BlockKind, type SessionLike } from './sessions'
+import { estimatedMinutes, dowOf, nameAtStart, sessionName, type BlockKind, type SessionLike } from './sessions'
 import { liftWord, strengthShape } from './rebalance'
 import { setsReps } from './changes'
 import { WORK_SET_SEC } from '../plannedLength'
@@ -75,7 +75,7 @@ export function missedFix(
   upcoming: ReadonlyArray<SessionLike & { id: string }>,
   opts: { blockType: BlockKind; weekNumber: number; nextWeekNumber?: number; nextStrength?: { epochDay: number; label: string } | null; held?: ReadonlySet<string> },
 ): MissedFix {
-  const name = sessionName(missed)
+  const name = nameAtStart(sessionName(missed))
   const dayShow = `${DAY3[dowOf(missed.epochDay)]}`
   if (missed.type !== 'strength') {
     const runs = missed.type === 'foundation_run' || missed.type === 'running'

@@ -27,7 +27,8 @@ export interface StripDay {
   isToday: boolean
   /** A prepared week with nothing on this day: REST. */
   rest: boolean
-  icons: Array<{ key: SessionIconKey; state: StripIconState; id: string }>
+  /** name: what the session is called, for the spoken label (a run-walk is not "zone2", m9). */
+  icons: Array<{ key: SessionIconKey; state: StripIconState; id: string; name: string }>
   /** Page 56: Dagaz (the coach changed this day) or Nauthiz (a missed session), new or seen. */
   rune: RuneState | null
 }
@@ -69,7 +70,7 @@ export function weekStripDays(sessions: StripSession[], mondayEpoch: number, tod
       date: new Date(day * 86400000).getUTCDate(),
       isToday: day === todayEpoch,
       rest: prepared && list.length === 0,
-      icons: list.map(s => ({ key: sessionIconFor(s.type, runCategoryOf(s)), state: iconState(s.status), id: s.id })),
+      icons: list.map(s => { const key = sessionIconFor(s.type, runCategoryOf(s)); return { key, state: iconState(s.status), id: s.id, name: (s.label?.trim() || (key === 'zone2' ? 'Zone 2' : key)).toLowerCase() } }),
       rune: runeOf(day),
     }
   })

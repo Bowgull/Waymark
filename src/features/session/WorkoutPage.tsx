@@ -14,6 +14,7 @@ import { asksEffort, effortWrite } from '@/features/blockZero/effort'
 import { setPlace } from '@/lib/setPlace'
 import { typicalRpe } from '@/lib/coach/sessions'
 import { kgToLbs } from '@/lib/units'
+import { carryKey, editedStartKg, parseCarry, withLogged, type LiftCarry } from '@/lib/timers/setWeight'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd, cancelAllCues } from '@/lib/notifications'
 import { loadOutbox } from '@/lib/outbox'
 import { rollStepSecs } from '@/lib/activeRecoveryTemplate'
@@ -524,8 +525,9 @@ export function WorkoutPage() {
 
   // Pending weight/reps from the SetTracker inputs — pushed live so a
   // lock-screen "Complete Set" tap logs the same values the user sees.
-  /** This session's last logged weight per lift (exerciseId -> kg). */
-  const loggedKgRef = useRef(new Map<string, number>())
+  /** This session's last logged weights per lift, kept on the phone so an offline reload keeps them (m10). */
+  const loggedKgRef = useRef<Record<string, LiftCarry> | null>(null)
+  if (loggedKgRef.current == null) loggedKgRef.current = id ? parseCarry(storageGetItem(carryKey(id))) : {}
   const pendingSetValuesRef = useRef<{ weightKg: number | null; reps: number }>({
     weightKg: null,
     reps: 0,
@@ -922,6 +924,7 @@ export function WorkoutPage() {
       armedRef.current = false
       clearResume(resumeStorage(), id)
       storageRemoveItem(roundSecsKey(id))
+      storageRemoveItem(carryKey(id))
       void cancelAllCues()
       // Let the Live Activity show its finish card for 4s before it dismisses
       // itself from the lock screen. Its one line names what the coach moved
@@ -1079,7 +1082,7 @@ export function WorkoutPage() {
           key={`fr-${exerciseIdx}-${setIdx}`}
           inline
           warmUp
-          title="ZONE 2"
+          title={foundationRunData.prescription?.runWalk ? 'RUN-WALK' : 'ZONE 2'}
           exercise={frCurrentExercise}
           exerciseIndex={exerciseIdx}
           totalExercises={frTotalExercises}
@@ -1106,7 +1109,7 @@ export function WorkoutPage() {
     }
     // No warm-up rows (straight to the run) or a run that isn't ready: no mockup, a plain frame.
     return (
-      <SessionFrame title="ZONE 2" icon="zone2" onEnd={leaveSession}>
+      <SessionFrame title={foundationRunData.prescription?.runWalk ? 'RUN-WALK' : 'ZONE 2'} icon="zone2" onEnd={leaveSession}>
         <div className="tm-wide" style={{ marginTop: 40 }}>
           {foundationRunData.runSession
             ? <SessionButton label="START RUN" primary onClick={() => setPhase('fr-run')} />
@@ -1428,7 +1431,10 @@ export function WorkoutPage() {
     const setId = currentSet.id
     const completedAt = Math.floor(Date.now() / 1000)
     // The next set of this lift starts from what was just lifted (a work-up with no planned load).
-    if (currentExercise && weightKg != null && weightKg > 0) loggedKgRef.current.set(currentExercise.exerciseId, weightKg)
+    if (currentExercise && weightKg != null && weightKg > 0) {
+      loggedKgRef.current = withLogged(loggedKgRef.current ?? {}, currentExercise.exerciseId, weightKg, { isWarmup: currentSet.isWarmup === 1, plannedKg: currentSet.weightKg ?? null })
+      if (id) storageSetItem(carryKey(id), JSON.stringify(loggedKgRef.current))
+    }
     void queueWrite({
       method: 'PATCH',
       path: `/api/strength-sets/${setId}`,
@@ -1525,7 +1531,8 @@ export function WorkoutPage() {
           totalSets: totalSetsForExercise,
           isWarmup: currentSet.isWarmup === 1,
           suggestedWeightKg: currentSet.weightKg,
-          carryWeightKg: currentExercise ? (loggedKgRef.current.get(currentExercise.exerciseId)
+          editedWeightKg: currentExercise ? editedStartKg(loggedKgRef.current?.[currentExercise.exerciseId], { isWarmup: currentSet.isWarmup === 1, plannedKg: currentSet.weightKg ?? null }) : null,
+          carryWeightKg: currentExercise ? (loggedKgRef.current?.[currentExercise.exerciseId]?.kg
             ?? currentExercise.sets.slice(0, setIdx).reverse().find(s => s.weightKg != null && s.weightKg > 0)?.weightKg
             ?? exerciseHistories.get(currentExercise.exerciseId)?.lastSession?.weightKg
             ?? null) : null,

@@ -51,6 +51,8 @@ export interface StrengthSetInput {
   suggestedWeightKg: number | null
   /** No planned load: this lift's last logged weight (this session, else last session). */
   carryWeightKg?: number | null
+  /** He changed the last working set at this same planned load: start here (m12). */
+  editedWeightKg?: number | null
   targetReps: number
   restSec: number
 }
@@ -206,7 +208,7 @@ function SetBoard({
   onComplete: (weightKg: number | null, reps: number) => void
   onLiveValuesChange?: (weightKg: number | null, reps: number) => void
 }) {
-  const [weight, setWeight] = useState<number | null>(() => startSetLbs(set.suggestedWeightKg, equipment, set.carryWeightKg))
+  const [weight, setWeight] = useState<number | null>(() => startSetLbs(set.suggestedWeightKg, equipment, set.carryWeightKg, set.editedWeightKg))
   const [reps, setReps] = useState(() => Math.max(0, set.targetReps))
 
   useEffect(() => {
@@ -227,8 +229,13 @@ function SetBoard({
     actualReps: reps,
   }))
 
+  // m11: a dumbbell or kettlebell working set needs its weight (the cue: "Log that weight").
+  const bell = /dumbbell|kettlebell/i.test(equipment ?? '')
+  const needsWeight = bell && !set.isWarmup && weight === 0
+  const blocked = reps <= 0 || needsWeight
+
   function log() {
-    if (reps <= 0) return
+    if (blocked) return
     mediumHaptic()
     onComplete(setLbsToKg(weight), reps)
   }
@@ -243,7 +250,7 @@ function SetBoard({
         </div>
         {weight != null && (
           <>
-            <div className="wm-label" style={{ marginBottom: 6 }}>Weight · lbs</div>
+            <div className="wm-label" style={{ marginBottom: 6 }}>{/kettlebell/i.test(equipment ?? '') ? 'Weight · lbs per bell' : /dumbbell/i.test(equipment ?? '') ? 'Weight · lbs per dumbbell' : 'Weight · lbs'}</div>
             <div className="wm-stepper" role="group" aria-label="Weight in pounds">
               <button type="button" aria-label="Less weight" disabled={weight <= 0} onClick={() => setWeight(w => (w == null ? w : stepSetLbs(w, -1, equipment)))}>−</button>
               <span className="v" aria-live="polite"><FlapLabel text={String(weight)} size="xl" /></span>
@@ -257,8 +264,9 @@ function SetBoard({
           <span className="v" aria-live="polite"><FlapLabel text={String(reps)} size="xl" /></span>
           <button type="button" aria-label="More reps" onClick={() => setReps(r => r + 1)}>+</button>
         </div>
-        {(plates || (suggestion && !set.isWarmup) || noted) && (
+        {(plates || (suggestion && !set.isWarmup) || noted || needsWeight) && (
           <div className="ss-extra">
+            {needsWeight && <p className="tm-note">Set the weight you lift.</p>}
             {plates && <p className="tm-note">{plates}</p>}
             {suggestion && !set.isWarmup && weight !== suggestion.weightLbs && (
               <button type="button" className="ss-linkbtn is-left" onClick={() => setWeight(suggestion.weightLbs)}>Try {suggestion.weightLbs}lb?</button>
@@ -267,7 +275,7 @@ function SetBoard({
           </div>
         )}
       </div>
-      <SessionButton label="LOG SET" primary onClick={log} disabled={reps <= 0} />
+      <SessionButton label="LOG SET" primary onClick={log} disabled={blocked} />
     </>
   )
 }

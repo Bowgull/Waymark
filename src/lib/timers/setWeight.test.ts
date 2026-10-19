@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 
 import { kgToLbs } from '../units'
-import { plannedSetLbs, setLbsToKg, startSetLbs, stepSetLbs } from './setWeight'
+import { carryKey, editedStartKg, parseCarry, plannedSetLbs, setLbsToKg, startSetLbs, stepSetLbs, withLogged } from './setWeight'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; console.log(`ok: ${name}`) }
@@ -38,6 +38,27 @@ test('a loadable lift with no planned load still gets a weight row (e2e major 1)
 test('what is logged is kg, and reads back as the same lb', () => {
   for (const lbs of [45, 95, 135, 140, 225, 25]) assert.equal(kgToLbs(setLbsToKg(lbs)!), lbs)
   assert.equal(setLbsToKg(null), null)
+})
+
+test('m12: front squat set 1 changed to 70 lb, sets 2-3 start at 70', () => {
+  const plan = 65 / 2.20462
+  let c = withLogged({}, 'fsq', 70 / 2.20462, { isWarmup: false, plannedKg: plan })
+  const next = editedStartKg(c.fsq, { isWarmup: false, plannedKg: plan })
+  assert.equal(startSetLbs(plan, 'barbell', null, next), 70)
+  // A warm-up never moves the work weight; a set at another plan (the check set) doesn't carry.
+  c = withLogged(c, 'fsq', 45 / 2.20462, { isWarmup: true, plannedKg: null })
+  assert.equal(editedStartKg(c.fsq, { isWarmup: false, plannedKg: plan }), next)
+  assert.equal(editedStartKg(c.fsq, { isWarmup: false, plannedKg: 80 / 2.20462 }), null)
+  // Logged as planned: nothing to carry.
+  assert.equal(editedStartKg(withLogged({}, 'fsq', plan, { isWarmup: false, plannedKg: plan }).fsq, { isWarmup: false, plannedKg: plan }), null)
+})
+
+test('m10: the carried weight survives a reload (stored per session)', () => {
+  const c = withLogged({}, 'lat', 50 / 2.20462, { isWarmup: false, plannedKg: null })
+  const back = parseCarry(JSON.stringify(c))
+  assert.equal(startSetLbs(null, 'cable', back.lat.kg), 50)
+  assert.equal(carryKey('s1'), 'waymark_carry_kg:s1')
+  assert.deepEqual(parseCarry('not json'), {})
 })
 
 console.log(`setWeight: ${passed} passed`)
