@@ -125,8 +125,13 @@ export interface WeeklyPoint { weekStart: number; value: number }
 
 export interface LedgerRunRow { epochDay: number; paceSecKm: number | null; avgHr: number | null; completed: boolean }
 
-/** Runs close to 140 bpm count; each is normalised to 140 (pace × HR ÷ 140, the same work per beat). */
-export const AEROBIC_HR = { target: 140, low: 130, high: 150 } as const
+/**
+ * Easy runs count; each is normalised to 140 (pace × HR ÷ 140, the same work
+ * per beat). The band reaches down to 120: Block Zero holds easy runs under the
+ * talk-test cap (about 130-137), so a compliant run averages under 130 and the
+ * old 130 floor left the chart empty (e2e minor 16). Hard runs (over 150) stay out.
+ */
+export const AEROBIC_HR = { target: 140, low: 120, high: 150 } as const
 
 export function paceAt140(paceSecKm: number, avgHr: number): number {
   return paceSecKm * avgHr / AEROBIC_HR.target

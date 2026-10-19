@@ -66,9 +66,14 @@ test('aerobic base: runs near 140 bpm, normalised to 140, one point per week', (
     { epochDay: MON + 2, paceSecKm: 300, avgHr: 170, completed: true }, // hard run: out of the band
     { epochDay: MON + 3, paceSecKm: 360, avgHr: 140, completed: false }, // not done
     { epochDay: MON - 70, paceSecKm: 450, avgHr: 140, completed: true }, // older than 10 weeks
+    { epochDay: MON - 30, paceSecKm: 500, avgHr: 110, completed: true }, // a walk: under the band
   ]
   const { points, runs: n } = aerobicWeekly(runs, 10, SUN)
   assert.equal(n, 3)
+  // E2E minor 16: a Block Zero easy run under the talk-test cap (avg 128) counts.
+  const easy = aerobicWeekly([{ epochDay: MON + 1, paceSecKm: 420, avgHr: 128, completed: true }], 10, SUN)
+  assert.equal(easy.runs, 1)
+  assert.deepEqual(easy.points, [{ weekStart: MON, value: 384 }])
   assert.deepEqual(points, [{ weekStart: MON - 7, value: 410 }, { weekStart: MON, value: 380 }])
   assert.deepEqual(paceDelta(points), { text: '▲ 30 s faster', up: true })
   assert.equal(paceFlap(365), '6:05/KM @140')
