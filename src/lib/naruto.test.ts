@@ -66,8 +66,8 @@ assert.equal(validateNarutoPatch({ narutoArc: 5 }).ok, false)
 console.log('naruto tests passed')
 
 // E2E minor 19: the episode drum opens inside the chosen arc.
-assert.equal(narutoEpDrumStart('Chunin Exams', null), 20, 'no episode yet: the arc's first')
-assert.equal(narutoEpDrumStart('Chunin Exams', 3), 20, 'an episode from another arc: the arc's first')
+assert.equal(narutoEpDrumStart('Chunin Exams', null), 20, 'no episode yet: the first of the arc')
+assert.equal(narutoEpDrumStart('Chunin Exams', 3), 20, 'an episode from another arc: the first of the arc')
 assert.equal(narutoEpDrumStart('Chunin Exams', 42), 42, 'an episode in the arc stays')
 assert.equal(narutoEpDrumStart(null, 42), 42)
 assert.equal(narutoEpDrumStart('', null), 1)
