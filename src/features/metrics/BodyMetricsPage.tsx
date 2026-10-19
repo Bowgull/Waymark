@@ -109,7 +109,7 @@ export function BodyMetricsPage() {
   ]
 
   return (
-    <SettingsScreen title="BODY" onBack={() => navigate('/settings')}>
+    <SettingsScreen title="BODY" backLabel="SETTINGS" onBack={() => navigate('/settings')}>
       <div ref={boardRef}>
         <Board head="Log today" headRight={<span className="wm-label">{todayFlap(new Date())}</span>} solid className="st-board">
           <div className="st-fields">
