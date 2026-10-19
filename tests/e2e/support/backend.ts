@@ -98,6 +98,8 @@ export interface BackendOptions {
   ip?: string
   /** Keep the temp folder after stop (for debugging). */
   keep?: boolean
+  /** Echo wrangler's output (with --log-level info, one line per request) to this process's stdout. */
+  echo?: boolean
 }
 
 export async function startBackend(opts: BackendOptions = {}): Promise<Backend> {
@@ -155,11 +157,11 @@ export async function startBackend(opts: BackendOptions = {}): Promise<Backend> 
     '--port', String(port),
     '--inspector-port', String(inspector),
     '--show-interactive-dev-session=false',
-    '--log-level', 'warn',
+    '--log-level', opts.echo ? 'info' : 'warn',
   ], { cwd: ROOT, env: wranglerEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
   const out: string[] = []
-  child.stdout?.on('data', d => out.push(String(d)))
-  child.stderr?.on('data', d => out.push(String(d)))
+  child.stdout?.on('data', d => { out.push(String(d)); if (opts.echo) process.stdout.write(d) })
+  child.stderr?.on('data', d => { out.push(String(d)); if (opts.echo) process.stdout.write(d) })
 
   try {
     await waitForHealth(url, child, 90_000)

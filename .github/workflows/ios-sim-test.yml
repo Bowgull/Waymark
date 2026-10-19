@@ -14,6 +14,12 @@
 # - ATS: NSAllowsLocalNetworking is added to the Info.plist on this runner only
 #   (plain http to localhost), never committed.
 #
+# Time of day: Today's board depends on the local hour (ALL DONE from 17:00 once
+# the day is done, the PM-only Add list from 12:00). The Playwright suite pins
+# 10:00; here the clock is real, so the runner's zone is set to the fixed-offset
+# zone where it is 10:xx now. The Simulator boots after this and follows the Mac's
+# zone; node, wrangler, `date` and .maestro/sim-api.sh read the same TZ.
+#
 # Artifacts (3 days): Maestro screenshots, its report and debug output, the
 # Simulator's app log, and the wrangler log.
 name: iOS Simulator test
@@ -28,6 +34,8 @@ env:
   E2E_API: http://localhost:8787
   E2E_API_KEY: e2e-test-key-not-a-secret
   OUT: ${{ github.workspace }}/sim-out
+  MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
+  MAESTRO_CLI_NO_ANALYTICS: '1'
 
 jobs:
   simulator:
@@ -49,6 +57,15 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Pin the local time of day to 10:xx (fixed-offset zone)
+        run: |
+          h=$((10#$(date -u +%H)))
+          off=$((10 - h)); [ $off -lt -12 ] && off=$((off + 24))
+          if [ $off -gt 0 ]; then ZONE="Etc/GMT-$off"; elif [ $off -lt 0 ]; then ZONE="Etc/GMT+$((-off))"; else ZONE="Etc/GMT"; fi
+          sudo ln -sf "/usr/share/zoneinfo/$ZONE" /etc/localtime
+          echo "TZ=$ZONE" >> "$GITHUB_ENV"
+          echo "UTC $(date -u +%H:%M), zone $ZONE, local $(TZ=$ZONE date '+%F %H:%M')"
+
       - name: Select Xcode
         run: |
           sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
@@ -60,7 +77,8 @@ jobs:
         run: |
           echo "::group::backend"
           # --ip localhost: the app calls http://localhost:8787 (IPv4 or IPv6).
-          nohup npx tsx scripts/e2e-backend.mts --port 8787 --ip localhost > "$OUT/logs/backend.log" 2>&1 &
+          # --echo: wrangler's request log goes to backend.log too, so we can see the app reach it.
+          nohup npx tsx scripts/e2e-backend.mts --port 8787 --ip localhost --echo > "$OUT/logs/backend.log" 2>&1 &
           for i in $(seq 1 120); do
             if curl -sf "$E2E_API/api/health" > /dev/null; then break; fi
             sleep 1
@@ -113,18 +131,29 @@ jobs:
           test -n "$UDID" && test "$UDID" != null || { xcrun simctl list devices available; exit 1; }
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl list devices | grep "$UDID"
+          xcrun simctl shutdown all || true
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
+          # The app follows the Mac's zone; set it in the Simulator's launchd too.
+          xcrun simctl spawn "$UDID" launchctl setenv TZ "$TZ" || true
           open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
           xcrun simctl install "$UDID" "$APP"
           # The app's own console (Capacitor logs the WebView console) for the whole run.
           nohup xcrun simctl spawn "$UDID" log stream --level debug --style compact \
             --predicate 'process == "App" OR subsystem CONTAINS "capacitor" OR process == "WaymarkActivity"' \
             > "$OUT/logs/simulator-app.log" 2>&1 &
-          xcrun simctl launch "$UDID" com.joshbocas.app
-          sleep 15
+          # First launch with the app's stdout: Capacitor prints the WebView console there.
+          BEFORE=$(wc -l < "$OUT/logs/backend.log")
+          nohup xcrun simctl launch --console-pty --terminate-running-process "$UDID" com.joshbocas.app             > "$OUT/logs/app-console-first-launch.log" 2>&1 &
+          sleep 20
           xcrun simctl io "$UDID" screenshot "$OUT/shots/00-first-launch.png"
           xcrun simctl terminate "$UDID" com.joshbocas.app || true
+          echo "::group::app console (first launch)"
+          grep -E "⚡|\[(log|warn|error)\]|Error|error" "$OUT/logs/app-console-first-launch.log" | head -80 || true
+          echo "::endgroup::"
+          echo "::group::requests the Worker saw during the first launch"
+          tail -n +"$((BEFORE + 1))" "$OUT/logs/backend.log" | head -60
+          echo "::endgroup::"
 
       - name: Install Maestro
         timeout-minutes: 5
@@ -150,6 +179,7 @@ jobs:
             .maestro/sim-api.sh finish-open
             echo "::endgroup::"
           }
+          chmod +x .maestro/sim-api.sh
           .maestro/sim-api.sh good-morning
           run_flow 01-today
           run_flow 02-checkin
