@@ -5,11 +5,17 @@
 //
 // Small changes only, automatic, with a note (classify.ts): at most two
 // sessions ease. Nothing is ever added or moved here; missed work is never
-// made up (F14). Pushes are asks (rampUp, makeRegular, the TM proposal).
+// made up (F14). Pushes apply too, each with its rune and UNDO (the coach never asks).
 
 import type { CoachEaseKind } from './classify'
 import { checkSessionChange, type PlacementContext } from './placement'
-import { DAY_NAMES, RUN_TYPES, dowOf, isHard, mondayOf, sessionName, type BlockKind, type SessionLike } from './sessions'
+import { RUN_TYPES, dowOf, isHard, mondayOf, sessionName, type BlockKind, type SessionLike } from './sessions'
+import { getRunWalkWeek } from '../blockZero/running'
+import { getStrengthWeekTarget } from '../blockZero/strength'
+import { getWeekPercentage } from '../strengthTemplates'
+import { midName } from './changes'
+
+const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 import type { EffortSummary } from './feltHard'
 
 /** The pass runs the night the athlete's local day is Sunday; Monday catches up a missed run. */
@@ -68,12 +74,12 @@ export function easeDetail(kind: CoachEaseKind, s: Pick<SessionLike, 'type' | 'l
 
 function causes(s: WeekSignals): Array<{ cause: WeekEaseCause; why: string }> {
   const out: Array<{ cause: WeekEaseCause; why: string }> = []
-  if (s.readiness.easeDays >= 2) out.push({ cause: 'readiness', why: `Check-ins were off your trend on ${s.readiness.easeDays} days.` })
-  if (s.load.flagged) out.push({ cause: 'load', why: s.load.changePct != null ? `Load jumped ${s.load.changePct}% on the week before.` : 'Load jumped past the guide.' })
+  if (s.readiness.easeDays >= 2) out.push({ cause: 'readiness', why: `Check-ins were off your usual on ${s.readiness.easeDays} mornings.` })
+  if (s.load.flagged) out.push({ cause: 'load', why: s.load.changePct != null ? `Last week ran ${s.load.changePct}% over the one before.` : 'Last week ran well over the one before.' })
   if (s.avgSoreness != null && s.avgSoreness >= SORENESS_EASE_AVG) out.push({ cause: 'soreness', why: `Soreness averaged ${s.avgSoreness.toFixed(1)} last week.` })
-  if ((s.effort.avgRpe != null && s.effort.avgRpe >= RPE_EASE_AVG) || s.effort.wayHarder >= 2) out.push({ cause: 'effort', why: s.effort.avgRpe != null && s.effort.avgRpe >= RPE_EASE_AVG ? `Sessions ran hard last week, RPE ${s.effort.avgRpe} on average.` : `${s.effort.wayHarder} sessions ran well over target effort.` })
+  if ((s.effort.avgRpe != null && s.effort.avgRpe >= RPE_EASE_AVG) || s.effort.wayHarder >= 2) out.push({ cause: 'effort', why: s.effort.avgRpe != null && s.effort.avgRpe >= RPE_EASE_AVG ? `Sessions felt like ${s.effort.avgRpe}s last week.` : `${s.effort.wayHarder} sessions felt much harder than planned.` })
   if (s.completionRate != null && s.lastWeek.planned >= 4 && s.completionRate < LOW_COMPLETION) out.push({ cause: 'completion', why: `${s.lastWeek.completed} of ${s.lastWeek.planned} sessions got done. Nothing is made up.` })
-  if (s.athleteShape === 'pull_back') out.push({ cause: 'athlete', why: 'The coach read says pull back a little.' })
+  if (s.athleteShape === 'pull_back') out.push({ cause: 'athlete', why: 'Your last two weeks read as tired.' })
   return out
 }
 
@@ -101,7 +107,7 @@ export function weekRuleEases(s: WeekSignals, planned: Array<Pick<SessionLike, '
       index: pick.index,
       kind,
       cause: c.cause,
-      reason: `${c.why} ${DAY_NAMES[dowOf(pick.p.epochDay)]} ${sessionName(pick.p).toLowerCase()} eases.`,
+      reason: `${c.why} ${DAY_LONG[dowOf(pick.p.epochDay)]}'s ${midName(sessionName(pick.p))} ${pick.p.type === 'strength' ? 'drops a set, same weights' : 'eases'}.`,
       was: d.was,
       now: d.now,
     })
@@ -118,26 +124,101 @@ export function houseLine(s: string, max = WHY_MAX): string {
   return stop > 40 ? cut.slice(0, stop + 1) : `${cut.replace(/[\s,;:]+\S*$/, '')}.`
 }
 
-/** The week's one "why this week" line from the rules. */
-export function whyThisWeek(s: WeekSignals, eases: WeekEase[]): string {
+/** The week line is longer than other lines: what's new, then what's next. */
+const WEEK_LINE_MAX = 260
+
+function mmss(sec: number): string {
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+}
+
+const NUM = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']
+
+/** Block Zero: what the main lifts and the run-walks do in `week` against `prev` (null = first week). */
+function blockZeroNews(week: number, prev: number | null): string[] {
+  const t = getStrengthWeekTarget(week)
+  const r = getRunWalkWeek(week)
+  const out: string[] = []
+  if (prev == null) {
+    out.push(`${NUM[t.mainSets] ?? t.mainSets} sets of ${t.reps} on every main lift`)
+    out.push(`run-walks of ${mmss(r.runSec)} run, ${mmss(r.walkSec)} walk (${r.rounds} rounds)`)
+    return out
+  }
+  const pt = getStrengthWeekTarget(prev)
+  const pr = getRunWalkWeek(prev)
+  if (t.mainSets !== pt.mainSets) {
+    out.push(t.mainSets > pt.mainSets
+      ? `every main lift goes from ${pt.mainSets} sets of ${pt.reps} to ${t.mainSets}`
+      : `every main lift drops to ${NUM[t.mainSets] ?? t.mainSets} ${t.mainSets === 1 ? 'set' : 'sets'} of ${t.reps}`)
+  }
+  if (t.checkSet && !pt.checkSet) out.push(`a heavier set of ${t.checkSet.repRange[0]} to ${t.checkSet.repRange[1]} comes first`)
+  if (r.runSec !== pr.runSec || r.rounds !== pr.rounds) {
+    if (r.runSec > pr.runSec) out.push(`you run ${mmss(r.runSec)} at a time, up from ${mmss(pr.runSec)}${r.rounds !== pr.rounds ? ` (${r.rounds} rounds, not ${pr.rounds})` : ''}`)
+    else if (r.rounds < pr.rounds) out.push(`runs drop to ${r.rounds} rounds`)
+    else out.push(`runs go to ${r.rounds} rounds of ${mmss(r.runSec)}`)
+  }
+  return out
+}
+
+/** Block Zero: the next week's change in a few words, or null when it holds. */
+function blockZeroNext(week: number, total: number): string | null {
+  if (week >= total) return 'the gate, then the next block'
+  const t = getStrengthWeekTarget(week)
+  const n = getStrengthWeekTarget(week + 1)
+  const r = getRunWalkWeek(week)
+  const nr = getRunWalkWeek(week + 1)
+  const parts: string[] = []
+  if (nr.runSec > r.runSec) parts.push(`runs go to ${mmss(nr.runSec)}`)
+  else if (nr.rounds < r.rounds) parts.push(`runs drop to ${nr.rounds} rounds`)
+  else if (nr.rounds > r.rounds) parts.push(`runs go to ${nr.rounds} rounds`)
+  if (n.mainSets > t.mainSets) parts.push(`main lifts go to ${n.mainSets} sets`)
+  else if (n.mainSets < t.mainSets) parts.push(`main lifts drop to ${NUM[n.mainSets] ?? n.mainSets} ${n.mainSets === 1 ? 'set' : 'sets'}`)
+  return parts.length > 0 ? parts.join(', and ') : null
+}
+
+/** Fighter: the main lifts' share of the training max that week. */
+function fighterPct(week: number): number {
+  return Math.round(getWeekPercentage(week, 'fighter') * 100)
+}
+
+/** A rules ease as the week line reads it. */
+export interface WeekLineEase {
+  cause: WeekEaseCause
+  epochDay: number
+  name: string
+  type?: string
+}
+
+/**
+ * The week's one line (page 56 item 16): in plain words, what's new against
+ * last week and what's next, with the real numbers. No jargon. Shown only on
+ * Program's week board, as plain text. When the coach eased a session, one
+ * sentence says which and why.
+ */
+export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>): string {
   const parts: string[] = []
   if (s.returnRamp.active) {
-    parts.push(s.returnRamp.reason ?? `Back after ${s.returnRamp.gapDays} days. Loads and volume start lower.`)
-  } else if (eases.length > 0) {
-    const first = causes(s).find(c => c.cause === eases[0].cause)
-    parts.push(first?.why ?? 'Recovery is behind.')
-    parts.push(eases.length === 1 ? 'One session eases.' : `${eases.length} sessions ease.`)
-  } else if (s.completionRate != null && s.lastWeek.planned > 0) {
-    const done = `${s.lastWeek.completed} of ${s.lastWeek.planned} done`
-    const onTrend = s.readiness.flaggedDays === 0 ? ', check-ins on trend' : ''
-    parts.push(s.completionRate >= 0.8 ? `${done}${onTrend}. The plan moves on.` : `${done}. Same shape, nothing made up.`)
+    parts.push(`Back after ${s.returnRamp.gapDays} days: lifts and runs start lighter and climb back over the next weeks.`)
+  } else if (s.blockType === 'block_zero') {
+    const prev = s.weekNumber > 1 ? s.weekNumber - 1 : null
+    const news = blockZeroNews(s.weekNumber, prev)
+    if (prev == null) parts.push(`First week: ${news.join(', and ')}.`)
+    else if (news.length > 0) parts.push(`New this week: ${news.join(', and ')}.`)
+    else parts.push('Same as last week, with a little more weight where the last top set felt easy.')
+    const next = blockZeroNext(s.weekNumber, s.totalWeeks)
+    parts.push(next ? `Next week: ${next}.` : 'Next week: the same.')
   } else {
-    parts.push('First week on record. The plan as written.')
+    const pct = fighterPct(s.weekNumber)
+    const prevPct = s.weekNumber > 1 ? fighterPct(s.weekNumber - 1) : null
+    parts.push(prevPct == null || prevPct === pct ? `Main lifts at ${pct}% of your max this week.` : `New this week: main lifts at ${pct}% of your max, ${pct > prevPct ? 'up' : 'down'} from ${prevPct}%.`)
+    parts.push(s.waveEnd ? 'New maxes go in after this week.' : `Next week: ${fighterPct(s.weekNumber + 1)}%.`)
   }
-  if (s.waveEnd) parts.push('New training maxes are up for review.')
-  else if (s.blockType === 'fighter' && s.weekNumber % 6 === 0) parts.push('Wave ends this week.')
-  if (s.lastWeek.added > 0 && !s.returnRamp.active) parts.push(`${s.lastWeek.added} added ${s.lastWeek.added === 1 ? 'session' : 'sessions'} counted in the load.`)
-  return houseLine(parts.join(' '))
+  const first = eases[0]
+  if (first && !s.returnRamp.active) {
+    const why = causes(s).find(c => c.cause === first.cause)?.why
+    const what = `${DAY_LONG[dowOf(first.epochDay)]}'s ${midName(first.name)} ${first.type == null || first.type === 'strength' ? 'drops a set' : 'eases'}${eases.length > 1 ? ', and one more session eases' : ''}.`
+    parts.push(why ? `${why} ${what}` : what)
+  }
+  return houseLine(parts.join(' '), WEEK_LINE_MAX)
 }
 
 // ─── What the week stores (week_plans.analysis_json, version 2) ──
@@ -151,6 +232,8 @@ export interface WeekChange {
   was: string | null
   now: string | null
   source: 'rules' | 'ai' | 'placement'
+  /** A rules ease: why it eased (the week line reads it). */
+  cause?: WeekEaseCause
 }
 
 export interface WeekIntelligence {

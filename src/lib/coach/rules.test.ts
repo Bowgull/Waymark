@@ -1,14 +1,13 @@
 // Run: tsx src/lib/coach/rules.test.ts
-// Small/big classification, missed-session options, training max rules,
+// Small/big classification, missed-session fixes, training max rules,
 // MT ramp reset, bag governance and injury flags.
 import { classifyReplan, coachEaseFrom, mergeContext, withCoachEase } from './classify'
-import { missedSessionOptions } from './missed'
+import { missedFix } from './missed'
 import { mtRampStartDay, weeksSinceRampStart } from './mtRamp'
 import { fighterTmDecision, transitionTmWrites, type BlockWorkingSet } from './tm'
 import { bagRules, fallbackRoundTypes, governBagRounds } from './bag'
 import { injuryActionFor, injuryFlag, normaliseRegion } from './injury'
-import { checkSessionChange } from './placement'
-import { MON, assert, ctx, s } from './testUtil'
+import { MON, assert, s } from './testUtil'
 
 // ─── Small auto, big ask ─────────────────────────────────────
 
@@ -31,23 +30,15 @@ assert(coachEaseFrom(ctxJson)?.kind === 'reduce' && JSON.parse(ctxJson).blockZer
 assert(coachEaseFrom('not json') == null && coachEaseFrom(null) == null, 'bad context_json reads as no ease')
 assert(JSON.parse(mergeContext(ctxJson, { coach: { a: 1 } })).coachEase.kind === 'reduce', 'mergeContext keeps the ease')
 
-// ─── Missed sessions -> ask ─────────────────────────────────
+// ─── Missed sessions -> the coach applies its fix (never asks) ──
 
-// Tue strength missed; today is Wed. MT Wed PM; Thu free; Fri strength.
-const missed = s('strength', MON + 1, { status: 'missed' })
-const week = ctx({ todayEpochDay: MON + 2, planWeekLoad: 3000, sessions: [missed, s('mt_class', MON + 2, { timeSlot: 'pm', label: 'MT Class' }), s('strength', MON + 4)] })
-const ask = missedSessionOptions(missed, week)
-assert(ask.options[0].kind === 'drop', 'drop is always an option')
-const moves = ask.options.filter(o => o.kind === 'move')
-assert(moves.length > 0 && moves.every(o => o.kind === 'move' && o.epochDay >= MON + 2 && o.epochDay <= MON + 6), 'moves stay this week, from today')
-assert(moves.every(o => o.kind === 'move' && checkSessionChange({ kind: 'add', type: 'strength', epochDay: o.epochDay, timeSlot: o.timeSlot }, week, { alternatives: false }).ok), 'every move passes the placement rules')
-assert(!moves.some(o => o.kind === 'move' && (o.epochDay === MON + 2 || o.epochDay === MON + 4 || (o.epochDay === MON + 3 && o.timeSlot === 'am'))), 'no move onto the class day, the other strength day, or within 24 h of the class')
-assert(ask.options.some(o => o.kind === 'swap'), 'an easier swap is offered')
-assert(ask.expiresOnDay === MON + 7 && /missed/.test(ask.reason) && !/[!—]/.test(ask.reason), 'expires after Sunday; one line, house voice')
-const late = missedSessionOptions(s('strength', MON + 1, { status: 'missed' }), ctx({ todayEpochDay: MON + 7 }))
-assert(late.options.length === 1 && late.defaultOption.kind === 'drop' && /Let it go/.test(late.reason), 'week over: only drop')
-const crammed = missedSessionOptions(s('bag_work', MON + 1, { status: 'missed' }), ctx({ todayEpochDay: MON + 2, planWeekLoad: 600, sessions: [s('strength', MON + 3), s('strength', MON + 5)] }))
-assert(crammed.options.every(o => o.kind !== 'move'), 'no move when the week is already at its planned load (no cramming)')
+// Tue Strength A missed (Fighter, weekday strength); Fri strength is planned within reach.
+const missed = { ...s('strength', MON + 1, { status: 'missed', label: null }), id: 'tue' }
+const fix = missedFix(missed, [{ ...s('mt_class', MON + 2, { timeSlot: 'pm', label: 'MT Class' }), id: 'mt' }, { ...s('strength', MON + 4), id: 'fri' }], { blockType: 'fighter', weekNumber: 3 })
+assert(fix.kind === 'merge' && fix.targetSessionId === 'fri', 'a missed strength session: its main lifts go into the next strength day in reach')
+assert(fix.kind === 'merge' && !/[!—]/.test(fix.why) && /accessories dropped/.test(fix.why), 'one line, house voice')
+const late = missedFix({ ...s('bag_work', MON + 1, { status: 'missed' }), id: 'bag' }, [], { blockType: 'fighter', weekNumber: 3 })
+assert(late.kind === 'let_go', 'a missed bag session goes: nothing is crammed (F14)')
 
 // ─── MT ramp reset ──────────────────────────────────────────
 

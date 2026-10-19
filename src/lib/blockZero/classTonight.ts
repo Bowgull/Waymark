@@ -1,9 +1,9 @@
-// "+ Class tonight" (page 45, page 13's placement): an MT class lands on
-// today, and the day rebalances around it with rebalanceDayForClass (the run
-// moves off, strength stays in the morning one set lighter, Foundation stays).
-// Pure: which rows to ease, which to bring to the morning, which to move, and
-// the one Coach line that says what happened. The server applies the plan
-// (src/server/classTonight.ts) and stores the line on the class session.
+// MT Class tonight (page 56: MT Class is a normal row on the Add Session
+// board): an MT class lands on today, and the day rebalances around it with
+// rebalanceDayForClass (the run moves off, strength stays in the morning one
+// set less, Foundation stays). Pure: which rows to ease, which to bring to the
+// morning, which to move. The server applies the plan as change records
+// (src/server/classTonight.ts).
 
 import type { PlannedSession } from './autoEase'
 import { rebalanceDayForClass } from './muayThai'
@@ -43,42 +43,4 @@ export function planClassTonight(day: readonly DayRow[], mtClass: Pick<DayRow, '
     }
   })
   return plan
-}
-
-/** What the server managed to apply. */
-export interface ClassTonightApplied {
-  /** Rows that did move (a row with no safe day left this week stays). */
-  moved: number
-  /** Strength was eased (or already was). */
-  eased: boolean
-  /** The placement rules' notes from adding the class, if any. */
-  placementNotes?: readonly string[]
-}
-
-/**
- * The Coach line under the readiness line: "Class tonight." in brass, then
- * how the day rebalanced, in rebalanceDayForClass's own words. Nothing
- * rebalanced: the placement notes, else the app's add line.
- */
-export function classTonightLine(a: ClassTonightApplied): { lead: string; rest: string } {
-  const parts: string[] = []
-  if (a.moved > 0) parts.push('The run moves to another day.')
-  if (a.eased) parts.push('Strength stays in the morning, one set lighter.')
-  if (parts.length === 0) {
-    const notes = (a.placementNotes ?? []).map(n => n.trim()).filter(Boolean)
-    parts.push(...(notes.length > 0 ? notes : ['Log the type after class.']))
-  }
-  return { lead: 'Class tonight.', rest: parts.join(' ') }
-}
-
-/** The stored line on the class session's context_json ({ classTonight: { lead, rest } }), or null. */
-export function classTonightFrom(contextJson: string | null | undefined): { lead: string; rest: string } | null {
-  if (!contextJson) return null
-  try {
-    const c = (JSON.parse(contextJson) as { classTonight?: { lead?: unknown; rest?: unknown } }).classTonight
-    if (!c || typeof c.lead !== 'string' || typeof c.rest !== 'string') return null
-    return { lead: c.lead, rest: c.rest }
-  } catch {
-    return null
-  }
 }

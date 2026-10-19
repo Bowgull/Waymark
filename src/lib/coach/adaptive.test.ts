@@ -1,14 +1,14 @@
 // Run: tsx src/lib/coach/adaptive.test.ts
 // The adaptive coach's other rules: the training max proposal, the weekly
-// pass (eases with reasons, why line, idempotency) and the morning summary.
+// pass (eases with reasons, the week line, idempotency).
 import { fighterTmDecision, tmAcceptValues, tmProposal, type BlockWorkingSet } from './tm'
 import { claimDecision, easeDetail, placePlannedWeek, type PlannedEntry, houseLine, STALE_CLAIM_SEC, weekRuleEases, weeklyPassKey, weeklyPassTarget, whyThisWeek, type WeekSignals } from './weeklyPass'
-import { buildCoachSummary, easeBody, morningLine } from './summary'
 import { summarizeEffort } from './feltHard'
 import { MON, assert, ctx, s } from './testUtil'
 import { analyzeWeek, previousAnalysisFrom } from '../weekAnalysis'
 
 const houseVoice = (t: string) => !t.includes('!') && !t.includes('—')
+const plainWords = (t: string) => !/\b(load|volume|deload|building|guide|trend)\b/i.test(t)
 
 // ─── Training max proposal ───────────────────────────────────
 
@@ -45,23 +45,31 @@ const base: WeekSignals = {
 const week = [s('foundation_run', MON, { label: 'Zone 2' }), s('mt_class', MON, { timeSlot: 'pm' }), s('strength', MON + 1), s('strength', MON + 3), s('bag_work', MON + 5)]
 assert(weekRuleEases(base, week).length === 0, 'good week: nothing eases')
 const good = whyThisWeek(base, [])
-assert(good.startsWith('9 of 10 done, check-ins on trend.') && houseVoice(good), `why line: ${good}`)
+assert(good === 'New this week: main lifts at 75% of your max, down from 90%. Next week: 80%.' && houseVoice(good) && plainWords(good), `Fighter week line: ${good}`)
+
+// Page 56 item 16: Block Zero week 3 -> 4, in plain words with the real numbers.
+const bz4: WeekSignals = { ...base, blockType: 'block_zero', weekNumber: 4, totalWeeks: 6 }
+assert(whyThisWeek(bz4, []) === 'New this week: every main lift goes from 2 sets of 8 to 3, and you run 3:30 at a time, up from 2:00 (5 rounds, not 7). Next week: runs go to 4:00.', `page 56 week line: ${whyThisWeek(bz4, [])}`)
+assert(whyThisWeek({ ...bz4, weekNumber: 1 }, []).startsWith('First week: two sets of 8 on every main lift, and run-walks of 1:00 run, 2:00 walk (6 rounds).'), `week 1: ${whyThisWeek({ ...bz4, weekNumber: 1 }, [])}`)
+assert(whyThisWeek({ ...bz4, weekNumber: 6 }, []).includes('Next week: the gate'), 'the last week points at the gate')
+assert([1, 2, 3, 4, 5, 6].every(w => plainWords(whyThisWeek({ ...bz4, weekNumber: w }, []))), 'no jargon in any Block Zero week line')
 
 const tired: WeekSignals = { ...base, readiness: { ...base.readiness, flaggedDays: 3, easeDays: 2 }, avgSoreness: 3.8 }
 const eases = weekRuleEases(tired, week)
 assert(eases.length === 2 && week[eases[0].index].type === 'strength' && week[eases[1].index].type === 'strength', 'two causes: the two strength days ease first')
 assert(eases.every(e => e.kind === 'reduce' && houseVoice(e.reason) && e.was && e.now), 'each ease has a reason and a was/now')
-assert(eases[0].reason.startsWith('Check-ins were off your trend on 2 days.'), `reason names the cause: ${eases[0].reason}`)
-const why = whyThisWeek(tired, eases)
-assert(why.includes('2 sessions ease') && why.length <= 160, `why line counts the eases: ${why}`)
+assert(eases[0].reason.startsWith('Check-ins were off your usual on 2 mornings.') && plainWords(eases[0].reason), `reason names the cause in plain words: ${eases[0].reason}`)
+const lineEases = eases.map(e => ({ cause: e.cause, epochDay: week[e.index].epochDay, name: 'Strength', type: 'strength' }))
+const why = whyThisWeek(tired, lineEases)
+assert(why.includes('Check-ins were off your usual on 2 mornings.') && why.includes('drops a set') && plainWords(why), `the week line says which session eases and why: ${why}`)
 const spiky = weekRuleEases({ ...base, load: { last7: 3200, prev7: 2300, changePct: 39, flagged: true }, avgSoreness: 4, effort: summarizeEffort([{ epochDay: 1, type: 'strength', rpe: 9 }, { epochDay: 2, type: 'strength', rpe: 10 }]) }, week)
 assert(spiky.length === 2, 'never more than two eases a week')
+assert(spiky.every(e => plainWords(e.reason)), 'ease reasons in plain words')
 assert(weekRuleEases({ ...tired, returnRamp: { active: true, gapDays: 12, reason: 'Back after 12 days.' } }, week).length === 0, 'after a gap the return ramp does the easing')
-assert(whyThisWeek({ ...tired, returnRamp: { active: true, gapDays: 12, reason: 'Back after 12 days. Loads at 90%.' } }, []) === 'Back after 12 days. Loads at 90%.', 'gap: the why line is the return ramp')
+assert(whyThisWeek({ ...tired, returnRamp: { active: true, gapDays: 12, reason: 'Back after 12 days. Loads at 90%.' } }, []).startsWith('Back after 12 days:'), 'gap: the week line says it starts lighter')
 const low = weekRuleEases({ ...base, lastWeek: { planned: 10, completed: 3, missed: 7, skipped: 0, added: 0 }, completionRate: 0.3 }, week)
 assert(low.length === 1 && low[0].reason.includes('Nothing is made up'), 'low completion eases, never makes up')
-assert(whyThisWeek({ ...base, waveEnd: true }, []).includes('training maxes'), 'wave end: the why line mentions the max review')
-assert(whyThisWeek({ ...base, lastWeek: { ...base.lastWeek, added: 2 } }, []).includes('2 added sessions counted'), 'added sessions count toward the week')
+assert(whyThisWeek({ ...base, waveEnd: true }, []).includes('New maxes'), 'wave end: the week line says new maxes go in')
 assert(easeDetail('reduce', { type: 'strength' }).now === 'One set less, load 10% lower', 'ease detail in plain words')
 assert(houseLine('Big week — huge!! Keep going.') === 'Big week, huge. Keep going.', 'house voice: no em dash, no exclamation')
 
@@ -98,27 +106,5 @@ const wa = analyzeWeek(missed, [], [], null)
 assert(!wa.recommendations.some(r => /make up/i.test(r.reason)) && !wa.recommendations.some(r => r.action === 'add'), 'missed work is never made up')
 const wa2 = analyzeWeek(missed, [], [], previousAnalysisFrom(wa))
 assert(wa2.recommendations.some(r => r.action === 'swap'), 'missed two weeks running: a swap note, not a make-up')
-
-// ─── Morning summary ─────────────────────────────────────────
-
-assert(morningLine(2, 1) === '2 changes, 1 question' && morningLine(1, 0) === '1 change' && morningLine(0, 3) === '3 questions' && morningLine(0, 0) === null, 'morning line wording')
-const since = 1000
-const now = 5000
-const summary = buildCoachSummary([
-  { id: 'a', adjustmentType: 'felt_hard', status: 'accepted', auto: 1, reason: 'Thu strength eases.', createdAt: 1500, expiresAt: null, sourceData: JSON.stringify({ was: 'Planned sets and load', lead: 'Strength C eased', body: ': one set less, load 10% lower. Soreness 4 the morning after Wed strength.' }) },
-  { id: 'b', adjustmentType: 'reactive', status: 'accepted', auto: 0, reason: 'Hold.', createdAt: 1600, expiresAt: null },
-  { id: 'c', adjustmentType: 'felt_hard', status: 'accepted', auto: 1, reason: 'Old.', createdAt: 500, expiresAt: null },
-  { id: 'd', adjustmentType: 'ramp_up', status: 'proposed', auto: 0, reason: 'Push a little this week?', createdAt: 1700, expiresAt: 9000 },
-  { id: 'e', adjustmentType: 'missed_session', status: 'proposed', auto: 0, reason: 'Tue run was missed.', createdAt: 800, expiresAt: 4000 },
-  { id: 'f', adjustmentType: 'missed_session', status: 'accepted', auto: 0, reason: 'Answered.', createdAt: 1800, expiresAt: 9000 },
-], [{ id: 'w', weekNumber: 5, whyLine: '9 of 10 done.', preparedAt: 2000 }, { id: 'w0', weekNumber: 4, whyLine: null, preparedAt: 10 }], since, now)
-assert(summary.changes === 2 && summary.questions === 1, `counts: ${summary.changes} changes, ${summary.questions} questions`)
-assert(summary.line === '2 changes, 1 question', 'line for the alarm')
-assert(summary.changeLines.some(l => l.line === 'Week 5 is ready. 9 of 10 done.') && summary.changeLines.find(l => l.id === 'a')?.was === 'Planned sets and load', 'a prepared week and an auto change, with its "was"')
-assert(summary.questionLines[0].id === 'd', 'only open, unexpired questions; questions listed first')
-const eased = summary.changeLines.find(l => l.id === 'a')
-assert(eased?.lead === 'Strength C eased' && eased.body?.startsWith(': one set less'), 'an ease carries its bold lead and the words after it (page 36 Coach board)')
-assert(summary.changeLines.find(l => l.id === 'w')?.lead == null, 'lines without a lead stay plain')
-assert(easeBody('One set less, load 10% lower', 'Soreness 4 the morning after Wed strength. Sat strength c eases.') === ': one set less, load 10% lower. Soreness 4 the morning after Wed strength.', 'ease body: what it is now, then the cause')
 
 console.log('adaptive coach tests passed')

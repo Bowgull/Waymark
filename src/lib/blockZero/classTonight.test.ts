@@ -1,5 +1,5 @@
 // Run: tsx src/lib/blockZero/classTonight.test.ts
-import { classTonightFrom, classTonightLine, planClassTonight, type DayRow } from './classTonight'
+import { planClassTonight, type DayRow } from './classTonight'
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(msg)
@@ -28,18 +28,5 @@ assert(same(p3, { ease: [], toAm: [], move: [] }), 'done, skipped and the class 
 
 // Foundation only: nothing rebalances.
 assert(same(planClassTonight([R('m', 'mobility', 'am')], cls), { ease: [], toAm: [], move: [] }), 'a Foundation-only day: nothing to rebalance')
-
-// The line.
-assert(same(classTonightLine({ moved: 1, eased: true }), { lead: 'Class tonight.', rest: 'The run moves to another day. Strength stays in the morning, one set lighter.' }), 'run moved and strength eased: both, in rebalanceDayForClass words')
-assert(classTonightLine({ moved: 0, eased: true }).rest === 'Strength stays in the morning, one set lighter.', 'no safe day for the run: the line only says what happened')
-assert(classTonightLine({ moved: 0, eased: false, placementNotes: ['Strength comes first. The run goes after.'] }).rest === 'Strength comes first. The run goes after.', 'nothing rebalanced: the placement notes')
-assert(classTonightLine({ moved: 0, eased: false }).rest === 'Log the type after class.', 'nothing at all: the app\'s add line')
-for (const l of [classTonightLine({ moved: 1, eased: true }), classTonightLine({ moved: 0, eased: false })]) {
-  assert(!l.rest.includes('!') && !l.rest.includes('—'), `house voice: ${l.rest}`)
-}
-
-// Stored on the class session.
-assert(same(classTonightFrom(JSON.stringify({ placement: {}, classTonight: { lead: 'Class tonight.', rest: 'x' } })), { lead: 'Class tonight.', rest: 'x' }), 'reads the stored line')
-assert(classTonightFrom(null) === null && classTonightFrom('{bad') === null && classTonightFrom('{}') === null, 'no line: null')
 
 console.log('classTonight: all passed')

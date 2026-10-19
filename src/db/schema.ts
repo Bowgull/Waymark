@@ -363,6 +363,21 @@ export const weekAdjustments = sqliteTable('week_adjustments', {
   resolvedAt: integer('resolved_at'),
   // 0031: 1 = applied by the coach on its own (small change, reason is the note).
   auto: integer('auto').notNull().default(0),
+  // 0033 (page 56): every change is a row, his and the coach's. NULL kind = a
+  // legacy row (never a rune, never in the week log). See lib/coach/changes.ts.
+  changeSetId: text('change_set_id'),
+  actor: text('actor'), // 'you' | 'coach' | 'check_in' | 'weekly_pass' | 'class_tonight'
+  kind: text('kind'), // 'swap' | 'skip' | 'add' | 'pull_forward' | 'move' | 'ease' | 'shorten' | 'missed' | 'push' | 'make_regular' | 'tm'
+  beforeJson: text('before_json'),
+  afterJson: text('after_json'),
+  why: text('why'),
+  detail: text('detail'),
+  // Local wall-clock seconds (epoch day x 86400 + time of day): the session's planned start.
+  undoUntil: integer('undo_until'),
+  undoneAt: integer('undone_at'),
+  seenAt: integer('seen_at'),
+  // 1 = he undid this coach change: the coach leaves the session alone that week.
+  held: integer('held').notNull().default(0),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_wa_week').on(t.weekPlanId),
@@ -370,6 +385,8 @@ export const weekAdjustments = sqliteTable('week_adjustments', {
   index('idx_wa_target_session').on(t.targetSessionId),
   index('idx_wa_type_status').on(t.adjustmentType, t.status),
   index('idx_wa_created').on(t.createdAt),
+  index('idx_wa_change_set').on(t.changeSetId),
+  index('idx_wa_kind_created').on(t.kind, t.createdAt),
 ])
 
 // ─── Config ────────────────────────────────────────────────────

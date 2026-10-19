@@ -162,46 +162,6 @@ export function feltHardEase(input: FeltHardInput): FeltHardEase | null {
   }
 }
 
-// ─── Sick / tired skips (D11, soft rule) ──────────────────────
-
-/** How far ahead a sick or tired skip eases the next session. */
-export const SKIP_EASE_WITHIN_DAYS = 3
-
-/**
- * A skip for "sick" or "tired" eases the next planned training session in the
- * next 3 days: a set fewer, a shorter run (F13: return once symptom-free; a
- * tired skip reads like a poor check-in). Foundation and recovery are never
- * eased; a session already eased is left alone. Null when nothing applies.
- */
-export function skipReasonEase(input: {
-  skipped: { sessionId: string; epochDay: number; skipReason: string | null }
-  upcoming: Array<SessionLike & { id: string; eased?: boolean }>
-  todayEpochDay: number
-  nowSec: number
-}): FeltHardEase | null {
-  const why = input.skipped.skipReason
-  if (why !== 'sick' && why !== 'tired') return null
-  const from = Math.max(input.todayEpochDay, input.skipped.epochDay)
-  const next = input.upcoming
-    .filter(s => s.id !== input.skipped.sessionId && s.status === 'planned' && s.type !== 'mobility' && s.type !== 'active_recovery'
-      && s.epochDay >= from && s.epochDay <= from + SKIP_EASE_WITHIN_DAYS && (s.epochDay > input.skipped.epochDay || s.epochDay === input.todayEpochDay))
-    .sort((a, b) => a.epochDay - b.epochDay || (a.timeSlot === 'am' ? -1 : 1))[0]
-  if (!next || next.eased) return null
-  const day = DAY_NAMES[dowOf(input.skipped.epochDay)]
-  const nextDay = DAY_NAMES[dowOf(next.epochDay)]
-  const nextName = sessionName(next).toLowerCase()
-  const reason = why === 'sick'
-    ? `Sick on ${day}. ${nextDay} ${nextName} eases. Train once you're symptom-free.`
-    : `Tired on ${day}. ${nextDay} ${nextName} eases.`
-  return {
-    targetSessionId: next.id,
-    targetEpochDay: next.epochDay,
-    ease: { kind: 'reduce', reason, source: 'reactive', at: input.nowSec },
-    cause: 'effort',
-    fromSessionId: input.skipped.sessionId,
-  }
-}
-
 export interface EffortSummary {
   sessions: number
   easier: number

@@ -8,16 +8,27 @@
 import type { ReactiveReplanOutput } from '../prompts/tools'
 import { RUN_TYPES } from './sessions'
 
-/** What an applied ease does to the session. Stored in sessions.context_json.coachEase. */
-export type CoachEaseKind = 'reduce' | 'run_to_walk'
+/**
+ * What an applied ease does to the session. Stored in sessions.context_json.coachEase.
+ * reduce: one set less and about 10% lighter (a run: about 80% of the time, or capMin);
+ * run_to_walk: an easy walk or bike; one_set: one main set less, same weights
+ * (the rebalance, page 56); rounds: a run-walk of this many rounds.
+ */
+export type CoachEaseKind = 'reduce' | 'run_to_walk' | 'one_set' | 'rounds'
 
 export interface CoachEase {
   kind: CoachEaseKind
   reason: string
-  source: 'reactive' | 'injury'
+  source: 'reactive' | 'injury' | 'rebalance'
   /** Unix seconds. */
   at: number
+  /** rounds: the run-walk's rounds. */
+  rounds?: number
+  /** reduce on a run: its minutes. */
+  capMin?: number
 }
+
+const EASE_KINDS: ReadonlySet<string> = new Set(['reduce', 'run_to_walk', 'one_set', 'rounds'])
 
 export type ReplanClass =
   | { size: 'small'; action: 'note' }
@@ -61,7 +72,7 @@ export function coachEaseFrom(contextJson: string | null | undefined): CoachEase
   try {
     const parsed = JSON.parse(contextJson) as { coachEase?: CoachEase }
     const e = parsed.coachEase
-    if (!e || (e.kind !== 'reduce' && e.kind !== 'run_to_walk') || typeof e.reason !== 'string') return null
+    if (!e || !EASE_KINDS.has(e.kind) || typeof e.reason !== 'string') return null
     return e
   } catch {
     return null

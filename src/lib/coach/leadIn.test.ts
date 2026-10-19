@@ -5,7 +5,7 @@
 import { countsFromDay, inLeadIn, optionalDay, planDayTemplate, startedAtForLocalDay } from './leadIn'
 import { anchorMondayFor } from './weekCounter'
 import { checkSessionChange } from './placement'
-import { blockZeroEffortTarget, consistentlyEasier, effortVerdict, noEasierReadFor, skipReasonEase, summarizeEffort, type EffortRead } from './feltHard'
+import { blockZeroEffortTarget, consistentlyEasier, effortVerdict, noEasierReadFor, summarizeEffort, type EffortRead } from './feltHard'
 import { bagRules } from './bag'
 import { getStrengthTemplate } from '../strengthTemplates'
 import { LEAD_IN_TARGET, introStartLoad } from '../blockZero/strength'
@@ -105,15 +105,5 @@ const bag3 = checkSessionChange({ kind: 'add', type: 'bag_work', epochDay: MON +
 assert(!bag3.ok && bag3.code === 'lead_in_cap', 'lead-in: at most 2 bag sessions')
 const bagLead = bagRules({ blockType: 'block_zero', weekNumber: 1, eased: false, easeReason: null, returnActive: false, gapDays: 0, returnReason: null, leadIn: true })
 assert(bagLead.maxRounds === 4 && bagLead.noFinishers && bagLead.promptLines.some(l => /lead-in/i.test(l)), 'lead-in bag: 4 technique rounds, no finishers')
-
-// ─── Sick / tired skips ease the next session (D11, soft) ───
-const up = [{ ...s('foundation_run', MON + 2), id: 'run' }, { ...s('strength', MON + 3, { label: 'Strength B' }), id: 'str' }, { ...s('mobility', MON + 2), id: 'fnd' }]
-const tired = skipReasonEase({ skipped: { sessionId: 'x', epochDay: MON + 1, skipReason: 'tired' }, upcoming: up, todayEpochDay: MON + 1, nowSec: 1 })
-assert(tired?.targetSessionId === 'run' && tired.ease.kind === 'reduce' && tired.ease.reason === 'Tired on Tue. Wed easy run eases.', `tired skip: the next session eases (${tired?.ease.reason})`)
-const sick = skipReasonEase({ skipped: { sessionId: 'x', epochDay: MON + 1, skipReason: 'sick' }, upcoming: up.slice(1), todayEpochDay: MON + 1, nowSec: 1 })
-assert(sick?.targetSessionId === 'str' && houseVoice(sick.ease.reason) && sick.ease.reason.includes('symptom-free'), `sick skip: next session eases, train once symptom-free (${sick?.ease.reason})`)
-assert(skipReasonEase({ skipped: { sessionId: 'x', epochDay: MON + 1, skipReason: 'busy' }, upcoming: up, todayEpochDay: MON + 1, nowSec: 1 }) === null, 'other skip reasons change nothing')
-assert(skipReasonEase({ skipped: { sessionId: 'x', epochDay: MON + 1, skipReason: 'tired' }, upcoming: [{ ...up[0], eased: true }], todayEpochDay: MON + 1, nowSec: 1 }) === null, 'an already eased session is left alone')
-assert(skipReasonEase({ skipped: { sessionId: 'x', epochDay: MON + 1, skipReason: 'tired' }, upcoming: [{ ...s('strength', MON + 6), id: 'far' }], todayEpochDay: MON + 1, nowSec: 1 }) === null, 'nothing past 3 days out')
 
 console.log('lead-in tests passed')

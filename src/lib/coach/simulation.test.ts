@@ -11,10 +11,11 @@
 // a 1-week holiday, a 3-week gap, a sick week, a back flare with an injury
 // skip, a knee injury skip, missed sessions, ad-hoc adds (including stacking
 // attempts) and reactive replans, small and big. Then a Block Zero athlete
-// takes a 5-week gap. Checks: no placement rule broken by any accepted change,
-// gaps handled per the return table, the week counter pauses, nothing crammed,
-// big changes never applied on their own, and every missed session produces
-// an ask with only safe options.
+// takes a 5-week gap. Checks (page 56): his adds always land and the coach
+// rebalances other sessions (at most two, never his pick, moves of a day that
+// pass the placement rules); gaps handled per the return table; the week
+// counter pauses; the coach never crams; an AI's big change is never applied;
+// every missed key session gets the coach's fix, never a question.
 
 import { getDayTemplate } from '../weeklyTemplate'
 import { keySessionCompletionRate, prescribeRunWalk, singleRunCap, weeklyRunAllowanceSec, RESTART_SESSION_SEC } from '../blockZero'
@@ -30,7 +31,9 @@ import {
   classifyReplan,
   estimatedMinutes,
   injuryFlag,
-  missedSessionOptions,
+  missedFix,
+  rebalance,
+  runAllowanceBaseSec,
   mondayOf,
   plannedLoad,
   returnContext,
@@ -82,7 +85,7 @@ interface SimSession extends SessionLike {
 let nextId = 0
 const all: SimSession[] = []
 const skips: SkipSignal[] = []
-const asks: Array<{ sessionId: string; day: number; options: ReturnType<typeof missedSessionOptions>['options'] }> = []
+const fixes: Array<{ sessionId: string; day: number; fix: ReturnType<typeof missedFix> }> = []
 const proposals: Array<{ day: number; applied: boolean; kind: string }> = []
 const violations: string[] = []
 const loadFactors: Array<{ day: number; tier: string; loadFactor: number; gapDays: number }> = []
@@ -175,8 +178,32 @@ const KNEE_DAY = MON + 13 * 7 + 1 // week 13 Tue
 const MISSED_THURSDAYS = [1, 4, 11, 14]
 const weekIndex = (d: number) => Math.floor((d - MON) / 7)
 
-let stackingAttempts = 0
-let stackingRefused = 0
+let stackingAdds = 0
+let coachChanges = 0
+
+/** His add lands as he picked it; the coach then rebalances the rest (rebalance.ts). */
+function addAndRebalance(type: string, label: string, epochDay: number, today: number, tag: string) {
+  const mine: SimSession = { id: `a${nextId++}`, type, label, notes: null, epochDay, timeSlot: 'am', status: 'planned', weekNumber: weekByMonday.get(mondayOf(epochDay)) ?? 1, source: 'ad_hoc' }
+  all.push(mine)
+  const ctx = context(epochDay, today)
+  const before = new Map(all.map(x => [x.id, JSON.stringify(x)]))
+  const plans = rebalance({ action: { kind: 'add', session: mine, reason: null }, week: ctx.sessions as Array<SimSession>, ctx, held: new Set() })
+  if (plans.length > 2) violations.push(`${tag}: ${plans.length} coach changes`)
+  for (const p of plans) {
+    if (p.sessionId === mine.id) violations.push(`${tag}: the coach changed his pick`)
+    const target = all.find(x => x.id === p.sessionId)
+    if (!target) continue
+    if (p.kind === 'move' && p.move) {
+      if (Math.abs(p.move.epochDay - target.epochDay) > 1) violations.push(`${tag}: a move of more than a day`)
+      if (!checkSessionChange({ kind: 'move', type: target.type, label: target.label, notes: target.notes, epochDay: p.move.epochDay, timeSlot: p.move.timeSlot, sessionId: target.id, fromEpochDay: target.epochDay }, context(p.move.epochDay, today), { alternatives: false }).ok && p.rule !== 'R1') violations.push(`${tag}: a coach move the rules refuse`)
+      target.epochDay = p.move.epochDay
+      target.timeSlot = p.move.timeSlot
+    }
+    coachChanges++
+  }
+  if (JSON.stringify(mine) !== before.get(mine.id)) violations.push(`${tag}: his pick moved`)
+  return mine
+}
 
 for (let day = MON; day < MON + WEEKS * 7; day++) {
   const today = day
@@ -188,11 +215,9 @@ for (let day = MON; day < MON + WEEKS * 7; day++) {
 
   // Ad-hoc adds: a bag session on a class day (stacking), and a rope piece on Sunday.
   if (!off && wi !== SICK_WEEK && dowOf(day) === 1) {
-    stackingAttempts++
-    const r = tryChange({ kind: 'add', type: 'bag_work', label: 'Bag Work', epochDay: day, timeSlot: 'am' }, today, `w${wi} stacked bag`)
-    if (!r.ok) stackingRefused++ // stacked_hard, or an earlier rule (injury flag) first
-    const rope = tryChange({ kind: 'add', type: 'skip_rope', label: 'Rope', epochDay: day + 6, timeSlot: 'am' }, today, `w${wi} rope`)
-    if (rope.ok) all.push({ id: `a${nextId++}`, type: 'skip_rope', label: 'Rope', epochDay: day + 6, timeSlot: rope.change.timeSlot, status: 'planned', weekNumber: weekByMonday.get(mondayOf(day)) ?? 1, source: 'ad_hoc' })
+    stackingAdds++
+    addAndRebalance('bag_work', 'Bag Work', day, today, `w${wi} stacked bag`)
+    addAndRebalance('skip_rope', 'Rope', day + 6, today, `w${wi} rope`)
   }
 
   // Reactive replans on Wednesdays: one small, one big.
@@ -243,40 +268,33 @@ for (let day = MON; day < MON + WEEKS * 7; day++) {
     sess.status = 'completed'
   }
 
-  // Nightly: rollover, then an ask per missed key session; the athlete takes
-  // the first move sometimes. Nothing is rescheduled without an answer.
+  // Nightly: rollover, then the coach's fix per missed key session (page 56):
+  // a strength session's main lifts go into the next strength day in reach;
+  // the rest goes. Nothing is crammed and nothing asks.
   const tomorrow = day + 1
   for (const sess of all.filter(s => s.status === 'planned' && s.epochDay < tomorrow)) {
     sess.status = 'missed'
     if (!KEY_TYPES.has(sess.type)) continue
-    const ctx = context(sess.epochDay, tomorrow)
-    const ask = missedSessionOptions(sess, ctx)
-    asks.push({ sessionId: sess.id, day: tomorrow, options: ask.options })
-    for (const o of ask.options) {
-      if (o.kind === 'drop') continue
-      const change = o.kind === 'move'
-        ? { kind: 'add' as const, type: sess.type, label: sess.label, notes: sess.notes, epochDay: o.epochDay, timeSlot: o.timeSlot }
-        : { kind: 'add' as const, type: o.type, label: o.label, notes: o.notes ?? null, epochDay: o.epochDay, timeSlot: o.timeSlot }
-      if (o.epochDay < tomorrow || mondayOf(o.epochDay) !== mondayOf(sess.epochDay)) violations.push(`ask option outside the week for ${sess.id}`)
-      if (!checkSessionChange(change, ctx, { alternatives: false }).ok) violations.push(`unsafe ask option for ${sess.id}`)
+    const upcoming = all.filter(x => x.status === 'planned' && x.epochDay > sess.epochDay && x.epochDay <= sess.epochDay + 4)
+    const fix = missedFix(sess, upcoming, { blockType: 'fighter', weekNumber: sess.weekNumber })
+    fixes.push({ sessionId: sess.id, day: tomorrow, fix })
+    if (fix.kind === 'merge') {
+      const target = all.find(x => x.id === fix.targetSessionId)
+      if (!target || target.type !== 'strength' || target.status !== 'planned' || target.epochDay - sess.epochDay > 4) violations.push(`missed fix for ${sess.id} lands somewhere wrong`)
     }
-    const move = ask.options.find(o => o.kind === 'move')
-    if (move && move.kind === 'move' && sess.type === 'strength' && !off) {
-      const r = tryChange({ kind: 'add', type: sess.type, label: sess.label, notes: sess.notes, epochDay: move.epochDay, timeSlot: move.timeSlot }, tomorrow, `accept move ${sess.id}`)
-      if (r.ok) all.push({ id: `c${nextId++}`, type: sess.type, label: sess.label, notes: sess.notes, epochDay: move.epochDay, timeSlot: r.change.timeSlot, status: 'planned', weekNumber: sess.weekNumber, source: 'coach' })
-    }
+    if (/[!—]/.test(fix.why)) violations.push(`missed line out of voice: ${fix.why}`)
   }
 }
 
 // ─── Checks ──────────────────────────────────────────────────
 
 assert(violations.length === 0, `no rule broken by any accepted change or offered option${violations.length ? `: ${violations.slice(0, 5).join('; ')}` : ''}`)
-assert(stackingAttempts > 0 && stackingRefused === stackingAttempts, `every stacking attempt refused (${stackingRefused}/${stackingAttempts})`)
+assert(stackingAdds > 0 && coachChanges > 0, `every add landed as he picked it, the coach rebalanced around them (${stackingAdds} weeks, ${coachChanges} coach changes)`)
 assert(proposals.length > 0 && proposals.every(p => !p.applied), `big coach changes never applied on their own (${proposals.length} proposals)`)
 
 const missedKey = all.filter(s => s.status === 'missed' && KEY_TYPES.has(s.type))
-assert(missedKey.length > 0 && missedKey.every(m => asks.some(a => a.sessionId === m.id)), `every missed key session produced an ask (${missedKey.length})`)
-assert(asks.every(a => a.options[0].kind === 'drop'), 'every ask offers to let it go')
+assert(missedKey.length > 0 && missedKey.every(m => fixes.some(f => f.sessionId === m.id)), `every missed key session got the coach's fix, no question (${missedKey.length})`)
+assert(fixes.some(f => f.fix.kind === 'merge') && fixes.filter(f => f.fix.kind === 'merge').every(f => /accessories dropped/.test(f.fix.why)), 'missed strength: main lifts move on, accessories dropped')
 
 // Week counter: holiday week and the 3-week gap pause the calendar.
 const wkAt = (wi: number) => weekByMonday.get(MON + wi * 7) ?? -1
@@ -298,11 +316,15 @@ assert(steady.length > 0 && steady.every(l => l.loadFactor === 1), 'normal weeks
 
 // Nothing crammed: no week's live load above the plan (with tolerance).
 for (const [monday, wk] of weekByMonday) {
-  const live = all.filter(s => s.epochDay >= monday && s.epochDay <= monday + 6 && (s.status === 'completed' || s.status === 'planned'))
+  // His own adds are his call (never refused); the coach's sessions alone never pass the plan.
+  const live = all.filter(s => s.source !== 'ad_hoc' && s.epochDay >= monday && s.epochDay <= monday + 6 && (s.status === 'completed' || s.status === 'planned'))
   const load = live.filter(s => KEY_TYPES.has(s.type)).reduce((n, s) => n + plannedLoad(s, 'fighter', wk), 0)
   if (load > planLoad(wk) * 1.05) violations.push(`week of ${monday} crammed: ${load} > ${planLoad(wk)}`)
 }
-assert(violations.length === 0, 'no week went past its planned load')
+assert(violations.length === 0, 'the coach never takes a week past its planned load')
+
+// R3: a week with one run swapped never shrinks next week's allowance.
+assert(runAllowanceBaseSec(55 * 60, 78 * 60) === 78 * 60, 'R3: the allowance reads the larger of the last two weeks')
 
 // ─── Block Zero: a 5-week gap restarts at week 1 ─────────────
 
@@ -439,7 +461,7 @@ assert(bzRet.plan.restart && bzRet.loadFactor === 0.75 && bzRet.noFinishers, 'Bl
       const nextTemplate: SessionLike[] = []
       for (let d = target; d < target + 7; d++) for (const t of getDayTemplate('fighter', signals.weekNumber, dowOf(d), MT_DAYS)) nextTemplate.push({ type: t.type, label: t.label, notes: t.runCategory ?? null, epochDay: d, timeSlot: t.timeSlot, status: 'planned' })
       const weekEases = weekRuleEases(signals, nextTemplate)
-      preparedWeeks.push({ monday: target, status: 'active', why: whyThisWeek(signals, weekEases), changes: weekEases.map(e => ({ reason: e.reason, was: e.was })) })
+      preparedWeeks.push({ monday: target, status: 'active', why: whyThisWeek(signals, weekEases.map(e => ({ cause: e.cause, epochDay: nextTemplate[e.index].epochDay, name: nextTemplate[e.index].label ?? nextTemplate[e.index].type, type: nextTemplate[e.index].type }))), changes: weekEases.map(e => ({ reason: e.reason, was: e.was })) })
       // The prepared week becomes next week's plan, eases applied.
       for (let i = 0; i < nextTemplate.length; i++) {
         const t = nextTemplate[i]
@@ -488,7 +510,7 @@ assert(bzRet.plan.restart && bzRet.loadFactor === 0.75 && bzRet.noFinishers, 'Bl
 // ─── Part 3: Block Zero mid-week starts (Part B lead-in) ──────
 // A Wednesday start and a Saturday start, day by day through week 2, the way
 // the server calls the rules: the day's template (planDayTemplate), the week
-// counter, missed asks only from week 1's Monday, the run cap floor, intro
+// counter, missed fixes only from week 1's Monday, the run cap floor, intro
 // strength on a lead-in day, felt-easy reads by week, and the board's picks.
 function simulateStart(startDay: number, name: string) {
   const anchor = anchorMondayFor(startDay, 'block_zero')
@@ -557,24 +579,20 @@ function simulateStart(startDay: number, name: string) {
     // Lead-in strength: pick it on the first lead-in Friday (or Saturday) the board allows.
     if (inLeadIn('block_zero', startDay, day) && (dowOf(day) === 5 || dowOf(day) === 6) && !sess.some(x => x.leadIn && x.type === 'strength')) {
       const pick = pickDayOption({ type: 'strength', timeSlot: 'am' }, day, bzCtx(day, day))
-      if (pick.action.kind === 'add') {
-        if (!checkSessionChange({ kind: 'add', type: 'strength', label: pick.action.label, epochDay: day, timeSlot: pick.action.timeSlot }, bzCtx(day, day), { alternatives: false }).ok) bzViolations.push(`${name}: board offered an intro that the route refuses`)
+      // He picks an intro on a day the rules call safe (the board itself never refuses, page 56).
+      if (pick.action.kind === 'add' && checkSessionChange({ kind: 'add', type: 'strength', label: pick.action.label, epochDay: day, timeSlot: pick.action.timeSlot }, bzCtx(day, day), { alternatives: false }).ok) {
         sess.push({ id: `${name}${id++}`, type: 'strength', label: pick.action.label, epochDay: day, timeSlot: pick.action.timeSlot, status: 'completed', leadIn: true })
         const info = { type: 'strength', blockType: 'block_zero', blockWeek: 1, leadIn: true, weekNumber: 1 }
         reads.push({ epochDay: day, type: 'strength', rpe: 4, rir: 3, target: blockZeroEffortTarget(info), noEasierRead: noEasierReadFor(info) })
       }
     }
 
-    // The nightly asks: missed key sessions from week 1's Monday only.
+    // The nightly fixes: missed key sessions from week 1's Monday only (never a question).
     for (const m of sess.filter(x => x.status === 'missed' && KEY_TYPES.has(x.type) && x.epochDay < day && !asked.includes(x.id))) {
       if (optionalDay('block_zero', startDay, m.epochDay)) continue
       asked.push(m.id)
-      const ask = missedSessionOptions(m, bzCtx(m.epochDay, day))
-      for (const o of ask.options) {
-        if (o.kind === 'drop') continue
-        const ok = checkSessionChange({ kind: 'add', type: o.kind === 'move' ? m.type : o.type, label: o.kind === 'move' ? m.label : o.label, epochDay: o.epochDay, timeSlot: o.timeSlot }, bzCtx(o.epochDay, day), { alternatives: false }).ok
-        if (!ok) bzViolations.push(`${name}: unsafe missed option ${JSON.stringify(o)}`)
-      }
+      const fix = missedFix(m, sess.filter(x => x.status === 'planned' && x.epochDay > m.epochDay), { blockType: 'block_zero', weekNumber: week(m.epochDay, day).week })
+      if (fix.kind === 'merge' && fix.targetSessionId && !sess.some(x => x.id === fix.targetSessionId && x.type === 'strength')) bzViolations.push(`${name}: missed fix onto a non-strength session`)
     }
   }
   return { anchor, sess, asked, bzViolations, reads, bzCtx, week }
@@ -589,7 +607,7 @@ for (const [startOffset, name] of [[2, 'wed'], [5, 'sat']] as const) {
   const leadRuns = lead.filter(x => x.type === 'foundation_run').map(x => dowOf(x.epochDay))
   assert(leadRuns.join() === (name === 'wed' ? '4,6' : '6'), `${name} start: lead-in run-walks on ${leadRuns.join(',')} (Tue/Thu/Sat from the start)`)
   assert(lead.filter(x => x.type === 'mobility').length === MON + 7 - START_DAY, `${name} start: Foundation every lead-in day`)
-  assert(!r.asked.some(id => lead.some(x => x.id === id)), `${name} start: a missed lead-in session makes no question`)
+  assert(!r.asked.some(id => lead.some(x => x.id === id)), `${name} start: a missed lead-in session changes nothing`)
   assert(r.week(r.anchor, r.anchor).week === 1 && !r.week(r.anchor, r.anchor).leadIn && r.week(r.anchor + 7, r.anchor + 7).week === 2, `${name} start: week 1 on the Monday, week 2 a week later (the lead-in never counts a week)`)
   const w1 = r.sess.filter(x => x.epochDay >= r.anchor && x.epochDay < r.anchor + 7 && x.type === 'strength').map(x => `${dowOf(x.epochDay)}${x.label?.slice(-1)}`)
   assert(w1.join() === '1A,3B,5C', `${name} start: week 1 runs the full A/B/C week (${w1.join()})`)
@@ -612,14 +630,14 @@ for (const [startOffset, name] of [[2, 'wed'], [5, 'sat']] as const) {
   const intro = r.sess.find(x => x.leadIn && x.type === 'strength')
   assert(intro?.label === 'Strength C' && dowOf(intro.epochDay) === 5, 'wed start: intro Strength C on lead-in Friday')
   const sat = pickDayOption({ type: 'strength', timeSlot: 'am' }, MON + 5, r.bzCtx(MON + 5, MON + 5))
-  assert(sat.action.kind === 'refused' && /back to back/.test(sat.line ?? ''), `wed start: no intro the day after another (${sat.line})`)
-  // Week 2 Tuesday: strength after Monday's A is refused; bag is offered as the run's swap.
+  assert(sat.action.kind === 'add', 'wed start: a second intro the day after another still adds (the coach rebalances, page 56)')
+  // Week 2 Tuesday: strength after Monday's A pulls Friday's C forward (R10); bag is a plain add.
   const tue = r.anchor + 8
-  const str = pickDayOption({ type: 'strength', timeSlot: 'am' }, tue, r.bzCtx(tue, tue))
-  assert(str.action.kind === 'refused', `wed start, week 2 Tuesday: no strength pulled forward after Monday's A (${str.line})`)
   const morning: PlacementContext = { ...r.bzCtx(tue, tue), sessions: r.bzCtx(tue, tue).sessions.map(x => (x.epochDay >= tue ? { ...x, status: 'planned' } : x)) }
+  const str = pickDayOption({ type: 'strength', timeSlot: 'am' }, tue, morning)
+  assert(str.action.kind === 'pull_forward' && str.action.label === 'Strength C', `wed start, week 2 Tuesday after Monday's A: Friday's C comes forward (R10)`)
   const bag = pickDayOption({ type: 'bag_work', timeSlot: 'pm' }, tue, morning)
-  assert(bag.action.kind === 'replace' && bag.line === "Instead of today's run-walk.", `wed start, week 2 Tuesday at its planned load: bag is offered as the run's swap (${bag.line})`)
+  assert(bag.action.kind === 'add', 'wed start, week 2 Tuesday: bag always adds (REPLACE is the swap)')
 }
 // The Saturday start misses week 2's Monday A: Tuesday's board pulls Wednesday's B forward.
 {
@@ -630,7 +648,7 @@ for (const [startOffset, name] of [[2, 'wed'], [5, 'sat']] as const) {
   // Put Tuesday back as planned (the sim ran through week 2), as the board would see it that morning.
   const morning: PlacementContext = { ...ctx2, sessions: ctx2.sessions.map(x => (x.epochDay >= tue ? { ...x, status: 'planned' } : x)) }
   const str = pickDayOption({ type: 'strength', timeSlot: 'am' }, tue, morning)
-  assert(plannedTue.length > 0 && str.action.kind === 'pull_forward' && str.action.fromEpochDay === tue + 1, `sat start, week 2 Tuesday after a missed Monday: ${str.line}`)
+  assert(plannedTue.length > 0 && str.action.kind === 'pull_forward' && str.action.fromEpochDay === tue + 1, 'sat start, week 2 Tuesday after a missed Monday: Wednesday\'s B comes forward')
   const bag = pickDayOption({ type: 'bag_work', timeSlot: 'pm' }, tue, morning)
   assert(bag.action.kind === 'add', 'sat start, week 2 Tuesday: with Monday missed the week has room, so bag is a plain add')
 }
