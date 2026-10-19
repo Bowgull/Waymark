@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 
@@ -7,7 +7,10 @@ import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } fr
 import { useToast } from '@/components/ui/Toast'
 import { apiFetch } from '@/lib/api'
 import { logger } from '@/lib/logger'
-import { soundRoundEnd } from '@/lib/sounds'
+import { soundRoundEnd, soundRoundStart } from '@/lib/sounds'
+import { mediumHaptic } from '@/lib/haptics'
+import { cancelRunWalkCues, scheduleRunWalkCues } from '@/lib/notifications'
+import { runWalkAt, runWalkCount, runWalkCueTimes, runWalkSegments, runWalkWord, type RunWalkShape } from '@/lib/timers/runWalk'
 import { assessRunCompletion, shouldShowRunRealityMark } from '@/lib/trainingReality'
 import { parseDurationToSec } from '@/lib/duration'
 import { NARUTO_NETFLIX_URL, ONEPACE_URL, type IndoorMedia } from '@/lib/onePace'
@@ -105,6 +108,8 @@ interface RunPrescription {
   targetDurSec: number | null
   targetDistKm: number | null
   z2CeilingBpm?: number | null
+  /** Block Zero run-walk: warm-up walk, then rounds of run / walk (the server's shape). */
+  runWalk?: RunWalkShape | null
 }
 
 type RunPhase = 'ready' | 'running' | 'logging'
@@ -496,6 +501,30 @@ export function RunSessionView({
   const timerEstimate = prescription?.targetDurSec ?? 3600
 
   const remaining = Math.max(0, timerEstimate - elapsed)
+  // The run-walk's intervals on the same run clock (null: one countdown, as before).
+  const segments = useMemo(() => runWalkSegments(prescription?.runWalk), [prescription?.runWalk])
+  const rwPos = segments ? runWalkAt(segments, elapsed) : null
+  const rwIndex = rwPos?.index ?? -1
+
+  // A cue at every run / walk change while the app is open (the lock screen gets notifications).
+  const rwIndexRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (phase !== 'running' || !segments || rwIndex < 0) { rwIndexRef.current = null; return }
+    const prev = rwIndexRef.current
+    rwIndexRef.current = rwIndex
+    if (prev == null || prev === rwIndex || rwPos?.done) return
+    if (segments[rwIndex].kind === 'run') soundRoundStart()
+    else soundRoundEnd()
+    mediumHaptic()
+  }, [phase, segments, rwIndex, rwPos?.done])
+
+  // Locked screen: every change is scheduled up front from the clock's start; a pause cancels them.
+  const rwCueStart = phase === 'running' && segments && stopwatch?.state === 'running' ? stopwatch.startedAtMs : null
+  useEffect(() => {
+    if (!segments || rwCueStart == null) { void cancelRunWalkCues(); return }
+    void scheduleRunWalkCues(rwCueStart, runWalkCueTimes(segments))
+  }, [segments, rwCueStart])
+  useEffect(() => () => { void cancelRunWalkCues() }, [])
   const loggedDurationSec = parseDurationToSec(duration)
   const runReality = assessRunCompletion({
     plannedDurationSec: prescription?.targetDurSec ?? runSession.plannedDurationSec,
@@ -599,12 +628,17 @@ export function RunSessionView({
 
   // ─── Running (page 19 "Run": the grass, one countdown, FINISH RUN) ───
   if (phase === 'running') {
-    const shown = Math.max(0, remaining)
-    const heat = remaining > 0 ? heatFor(shown) : null
+    // Run-walk: the clock counts down the interval you are in (WALK teal like a rest, RUN gold),
+    // with RUN 2/6 beside the title. Without intervals: the one countdown.
+    const seg = rwPos && !rwPos.done ? rwPos.segment : null
+    const walking = seg != null && seg.kind !== 'run'
+    const shown = seg ? rwPos!.remainingSec : Math.max(0, remaining)
+    const heat = seg ? (walking ? null : heatFor(shown)) : remaining > 0 ? heatFor(shown) : null
+    const segEnd = seg ? seg.startSec + seg.sec : timerEstimate
     const track: TimerTrack = {
-      durationSec: timerEstimate,
-      endsAtMs: runPaused || !runStartedAtMs ? null : runStartedAtMs + timerEstimate * 1000,
-      remainingMs: remaining * 1000,
+      durationSec: seg ? seg.sec : timerEstimate,
+      endsAtMs: runPaused || !runStartedAtMs ? null : runStartedAtMs + segEnd * 1000,
+      remainingMs: shown * 1000,
     }
     const chips = [
       targetMin ? `${targetMin} MIN` : null,
@@ -613,21 +647,24 @@ export function RunSessionView({
       isZone2 ? 'NASAL' : null,
       narutoChip,
     ].filter((c): c is string => !!c)
+    const rounds = prescription?.runWalk?.rounds ?? 0
     return (
       <>
         <SessionFrame
           title={runTitle}
-          count="RUN"
+          count={seg ? runWalkCount(seg, rounds) : 'RUN'}
           onEnd={onExit}
           paused={runPaused}
-          grass={<GrassZone track={track} kind="work" heat={heat} onTap={toggleRunPause} onSkip={finishRun} />}
+          grass={<GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} onTap={toggleRunPause} onSkip={finishRun} />}
         >
           {chips.length > 0 && (
             <div className="wm-board" style={{ margin: '12px 14px 0' }}>
               <div className="ss-chips">{chips.map(c => <FlapLabel key={c} text={c} size="xs" />)}</div>
             </div>
           )}
-          <TimerFace seconds={shown} kind="work" heat={heat} label={workLabel('RUNNING', remaining > 0 ? shown : 99)} labelTone="gold" track={track} />
+          {seg
+            ? <TimerFace seconds={shown} kind={walking ? 'rest' : 'work'} tone={walking ? 'teal' : undefined} heat={heat} label={walking ? runWalkWord(seg.kind) : workLabel(runWalkWord(seg.kind), shown)} labelTone={walking ? 'teal' : 'gold'} track={track} />
+            : <TimerFace seconds={shown} kind="work" heat={heat} label={workLabel('RUNNING', remaining > 0 ? shown : 99)} labelTone="gold" track={track} />}
           <div className="tm-wide" style={{ marginTop: 16 }}>
             <SessionButton label="FINISH RUN" onClick={finishRun} />
           </div>

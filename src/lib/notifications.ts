@@ -30,6 +30,10 @@ const CUE_ROUND_END   = 4002  // round ends, rest starts
 const CUE_REST_WARN   = 4003  // 10s before rest ends
 const CUE_REST_END    = 4004  // rest over, go again
 const CUE_STRENGTH_REST_END = 4005 // strength set rest over
+// Run-walk changes (run / walk), one id per change: 4100..4139.
+const CUE_RUN_WALK_BASE = 4100
+const CUE_RUN_WALK_MAX = 40
+const CUE_RUN_WALK_IDS = Array.from({ length: CUE_RUN_WALK_MAX }, (_, i) => CUE_RUN_WALK_BASE + i)
 
 const REDEPLOY_WARN_ID = 5000
 const REDEPLOY_DAY_ID = 5001
@@ -399,7 +403,7 @@ export async function scheduleRedeployReminders(buildTime: number): Promise<void
 // a cue no longer plays twice with the app open. In the background the OS
 // presents them as usual, sound included.
 
-const CUE_IDS = new Set([CUE_FINISH_WARN, CUE_ROUND_END, CUE_REST_WARN, CUE_REST_END, CUE_STRENGTH_REST_END])
+const CUE_IDS = new Set([CUE_FINISH_WARN, CUE_ROUND_END, CUE_REST_WARN, CUE_REST_END, CUE_STRENGTH_REST_END, ...CUE_RUN_WALK_IDS])
 
 export function isCueNotificationId(id: number): boolean {
   return CUE_IDS.has(id)
@@ -533,6 +537,38 @@ export async function cancelStrengthRestEnd(): Promise<void> {
   if (!isNative) return
   try {
     await LocalNotifications.cancel({ notifications: [{ id: CUE_STRENGTH_REST_END }] })
+  } catch {
+    // nothing pending
+  }
+}
+
+/**
+ * The run-walk's changes as cues ("Run." / "Walk."), each at its wall-clock
+ * time from the run's (virtual) start. All scheduled at once: JS is suspended
+ * while the screen is locked. Call again after a pause/resume with the new start.
+ */
+export function runWalkCueSpecs(startedAtMs: number, cues: Array<{ atSec: number; kind: 'warmup' | 'run' | 'walk' }>, nowMs: number): CueSpec[] {
+  return cues
+    .slice(0, CUE_RUN_WALK_MAX)
+    .map((c, i) => ({
+      id: CUE_RUN_WALK_BASE + i,
+      body: c.kind === 'run' ? 'Run.' : 'Walk.',
+      sound: c.kind === 'run' ? 'round_start.caf' : 'round_end.caf',
+      at: new Date(startedAtMs + c.atSec * 1000),
+    }))
+    .filter(s => s.at.getTime() > nowMs)
+}
+
+export async function scheduleRunWalkCues(startedAtMs: number, cues: Array<{ atSec: number; kind: 'warmup' | 'run' | 'walk' }>): Promise<void> {
+  if (!isNative) return
+  await cancelRunWalkCues()
+  await scheduleCues(runWalkCueSpecs(startedAtMs, cues, Date.now()))
+}
+
+export async function cancelRunWalkCues(): Promise<void> {
+  if (!isNative) return
+  try {
+    await LocalNotifications.cancel({ notifications: CUE_RUN_WALK_IDS.map(id => ({ id })) })
   } catch {
     // nothing pending
   }

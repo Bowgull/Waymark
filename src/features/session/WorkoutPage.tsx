@@ -200,6 +200,7 @@ interface RunPrescription {
   targetDurSec: number | null
   targetDistKm: number | null
   z2CeilingBpm?: number | null
+  runWalk?: { runSec: number; walkSec: number; rounds: number; warmupSec: number } | null
 }
 
 interface RunWorkoutData {
