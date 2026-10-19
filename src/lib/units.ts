@@ -28,3 +28,12 @@ export function kgToLbsFloor(kg: number): number {
 export function lbsToKgStored(lbs: number): number {
   return Math.round((lbs / 2.20462) * 100) / 100
 }
+
+/**
+ * body_metrics.logged_at as unix seconds. The column holds both: the server's
+ * default and the demo seed wrote seconds, the Body page used to send ms
+ * (e2e major 3). Anything past 1e11 is ms (1e11 s is the year 5138).
+ */
+export function loggedAtSec(loggedAt: number): number {
+  return loggedAt > 1e11 ? Math.floor(loggedAt / 1000) : Math.floor(loggedAt)
+}

@@ -1,11 +1,12 @@
-import { desc, isNotNull, gte, and } from 'drizzle-orm'
+import { isNotNull } from 'drizzle-orm'
 
 import { bodyMetrics } from '../db/schema'
 import type { createDB } from '../db/client'
+import { loggedAtSec } from './units'
 
 type DB = ReturnType<typeof createDB>
 
-const THIRTY_DAYS_MS = 30 * 86400 * 1000
+const THIRTY_DAYS_SEC = 30 * 86400
 
 /**
  * Returns the most recent logged bodyweight (kg) within the last 30 days,
@@ -14,12 +15,15 @@ const THIRTY_DAYS_MS = 30 * 86400 * 1000
  * about current load.
  */
 export async function getLatestBodyweightKg(db: DB): Promise<number | null> {
-  const cutoff = Date.now() - THIRTY_DAYS_MS
+  // logged_at mixes ms (old Body page) and seconds: normalise before the cutoff.
+  const cutoff = Math.floor(Date.now() / 1000) - THIRTY_DAYS_SEC
   const rows = await db
-    .select({ weightKg: bodyMetrics.weightKg })
+    .select({ weightKg: bodyMetrics.weightKg, loggedAt: bodyMetrics.loggedAt })
     .from(bodyMetrics)
-    .where(and(isNotNull(bodyMetrics.weightKg), gte(bodyMetrics.loggedAt, cutoff)))
-    .orderBy(desc(bodyMetrics.loggedAt))
-    .limit(1)
-  return rows[0]?.weightKg ?? null
+    .where(isNotNull(bodyMetrics.weightKg))
+  const fresh = rows
+    .map(r => ({ weightKg: r.weightKg, at: loggedAtSec(r.loggedAt) }))
+    .filter(r => r.at >= cutoff)
+    .sort((a, b) => b.at - a.at)
+  return fresh[0]?.weightKg ?? null
 }

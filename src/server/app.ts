@@ -9,6 +9,7 @@ import { cors } from 'hono/cors'
 import { createDB } from '../db/client'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay, mondayOf } from '../lib/dates'
+import { loggedAtSec } from '../lib/units'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
 import { FOUNDATION_LABEL, LEGACY_FOUNDATION_LABELS, estimateRoutineSec, foundationTemplate, strengthKindFromLabel, type FoundationInput } from '../lib/foundation'
@@ -3541,7 +3542,7 @@ app.get('/api/history/ledger', async (c) => {
 
   const weights = metrics
     .filter(m => m.weightKg != null)
-    .map(m => ({ epochDay: Math.floor(m.loggedAt / 86400), weightLbs: Math.round(m.weightKg! * 2.20462 * 10) / 10 }))
+    .map(m => ({ epochDay: Math.floor(loggedAtSec(m.loggedAt) / 86400), weightLbs: Math.round(m.weightKg! * 2.20462 * 10) / 10 }))
 
   return c.json({
     range,
@@ -3884,7 +3885,8 @@ app.post('/api/body-metrics', async (c) => {
   const id = crypto.randomUUID()
   await db.insert(bodyMetrics).values({
     id,
-    loggedAt: body.loggedAt ?? now,
+    // Unix seconds, like the rest of the app (an old build sends ms).
+    loggedAt: body.loggedAt != null && Number.isFinite(body.loggedAt) ? loggedAtSec(body.loggedAt) : now,
     weightKg: body.weightKg,
     restingHr: body.restingHr ?? null,
     bodyfatPct: body.bodyfatPct ?? null,
@@ -3959,11 +3961,11 @@ app.get('/api/body-metrics', async (c) => {
   const db = createDB(c.env)
   const limitParam = c.req.query('limit')
   const limit = limitParam ? Math.min(parseInt(limitParam, 10), 100) : 30
-  const entries = await db
-    .select()
-    .from(bodyMetrics)
-    .orderBy(desc(bodyMetrics.loggedAt))
-    .limit(limit)
+  // logged_at mixes ms (old Body page) and seconds: read every row as seconds, newest first.
+  const entries = (await db.select().from(bodyMetrics))
+    .map(e => ({ ...e, loggedAt: loggedAtSec(e.loggedAt) }))
+    .sort((a, b) => b.loggedAt - a.loggedAt)
+    .slice(0, limit)
   return c.json({ entries })
 })
 

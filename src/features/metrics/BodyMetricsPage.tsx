@@ -11,6 +11,7 @@ import { Sparkline } from '../history/Sparkline'
 
 interface BodyMetricEntry {
   id: string
+  /** Unix seconds (the server normalises). */
   loggedAt: number
   weightKg: number | null
   restingHr: number | null
@@ -69,7 +70,7 @@ export function BodyMetricsPage() {
     try {
       const payload: Record<string, unknown> = {
         weightKg: lbsToKg(w),
-        loggedAt: Date.now(),
+        loggedAt: Math.floor(Date.now() / 1000),
       }
       const hr = parseInt(restingHr, 10)
       if (restingHr && !isNaN(hr)) payload.restingHr = hr
@@ -133,7 +134,7 @@ export function BodyMetricsPage() {
           <p className="st-empty">No body metrics logged.</p>
         ) : entries.slice(0, 10).map(entry => (
           <div key={entry.id} className="st-hist">
-            <span className="d">{histDate(entry.loggedAt)}</span>
+            <span className="d">{histDate(entry.loggedAt * 1000)}</span>
             {entry.weightKg != null && <span className="w">{kgToLbs(entry.weightKg)}</span>}
             {entry.restingHr != null && <span className="o">{entry.restingHr} bpm</span>}
             {entry.bodyfatPct != null && <span className="o">{entry.bodyfatPct}%</span>}
