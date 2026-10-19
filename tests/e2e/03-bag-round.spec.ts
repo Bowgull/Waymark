@@ -54,8 +54,10 @@ test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
   await page.getByRole('button', { name: /^Timer\. Tap to pause/ }).tap()
   await expect(page.getByRole('status').getByRole('img', { name: 'PAUSED' })).toHaveCount(0)
 
-  // Rest runs out: round 2 in work.
+  // Rest runs out: round 2 stands READY, START ROUND puts it in work.
   await page.clock.fastForward((restSec + 1) * 1000)
-  await expect(phase('FIGHT')).toBeVisible()
+  await expect(phase('READY')).toBeVisible()
   await expect(page.getByRole('img', { name: /^Round 2 of \d+$/ })).toBeVisible()
+  await page.getByRole('button', { name: 'START ROUND' }).tap()
+  await expect(phase('FIGHT')).toBeVisible()
 })

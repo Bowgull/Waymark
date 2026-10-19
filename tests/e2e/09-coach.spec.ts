@@ -20,6 +20,7 @@ test('REPLACE with ROUGH DAY swaps at once', async ({ page }) => {
   await gotoToday(page)
   // Foundation is on every day of Block Zero.
   const foundation = row(page, /^Foundation FOUNDATION ~\d+min$/).first()
+  const sid = await foundation.getAttribute('data-sid')
   await foundation.locator('[role=button]').first().tap()
   await foundation.getByRole('button', { name: 'REPLACE' }).tap()
 
@@ -37,7 +38,8 @@ test('REPLACE with ROUGH DAY swaps at once', async ({ page }) => {
   // No confirm step: the picker closes and the swap is on the board.
   await expect(picker).toBeHidden()
   await expect(page.getByRole('button', { name: /^Bag Work BAG WORK ~\d+min$/ }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Foundation FOUNDATION —$/ }).first()).toBeVisible()
+  // The replaced session leaves the board (it stays in the week log).
+  await expect(page.locator(`.td-row[data-sid="${sid}"]`)).toHaveCount(0)
 })
 
 test('SKIP is instant, then offers the reason tiles', async ({ page, api }) => {
