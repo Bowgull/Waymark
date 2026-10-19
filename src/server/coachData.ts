@@ -5,10 +5,9 @@
 // injury flags and the per-session coach state prescriptions read.
 
 import { and, desc, eq, gte, inArray, lt, lte } from 'drizzle-orm'
-import { dailyLogs, sessions, settings, trainingBlocks, userProfile, weekAdjustments, weekPlans } from '../db/schema'
+import { sessions, settings, trainingBlocks, userProfile, weekAdjustments, weekPlans } from '../db/schema'
 import { getBlockZeroTemplate, getDayTemplate, strengthBlockWeek, WEEKLY_TEMPLATE, type TemplateSession } from '../lib/weeklyTemplate'
 import { rolloverStaleSessionIds } from '../lib/sessionRollover'
-import { userNotesFrom } from '../lib/sessionNotes'
 import {
   KEY_TYPES,
   LEAD_IN_CONTEXT,
@@ -297,21 +296,16 @@ export async function backfillCurrentWeek(db: DB, todayDay: number, nowSec: numb
   return created
 }
 
-// ─── Injury flag (F16, F17) ───────────────────────────────────
+// ─── Injury flag (F16) ────────────────────────────────────────
 
 export async function loadInjuryFlag(db: DB, day: number): Promise<InjuryFlag | null> {
   const from = day - 10
-  // Skipped sessions, and the athlete's own notes on finished ones (D12):
-  // "sharp pain down the leg" in a session note stops loading like a skip note.
-  const skips = await db.select({ epochDay: sessions.scheduledDate, skipReason: sessions.skipReason, detail: sessions.skipReasonDetail, notes: sessions.notes, status: sessions.status, contextJson: sessions.contextJson })
+  const skips = await db.select({ epochDay: sessions.scheduledDate, skipReason: sessions.skipReason, detail: sessions.skipReasonDetail, notes: sessions.notes })
     .from(sessions)
-    .where(and(inArray(sessions.status, ['skipped', 'completed']), gte(sessions.scheduledDate, from), lte(sessions.scheduledDate, day)))
-  const backNotes = await db.select({ epochDay: dailyLogs.logDate, text: dailyLogs.backNotes }).from(dailyLogs)
-    .where(and(gte(dailyLogs.logDate, from), lte(dailyLogs.logDate, day)))
-  const signals = skips.filter(s => s.epochDay != null && (s.status === 'skipped' || userNotesFrom(s) != null)).map(s => s.status === 'skipped'
-    ? { epochDay: s.epochDay as number, skipReason: s.skipReason, detail: s.detail, notes: s.notes }
-    : { epochDay: s.epochDay as number, skipReason: null, detail: null, notes: userNotesFrom(s) })
-  return injuryFlag(signals, backNotes, day)
+    .where(and(eq(sessions.status, 'skipped'), gte(sessions.scheduledDate, from), lte(sessions.scheduledDate, day)))
+  const signals = skips.filter(s => s.epochDay != null)
+    .map(s => ({ epochDay: s.epochDay as number, skipReason: s.skipReason, detail: s.detail, notes: s.notes }))
+  return injuryFlag(signals, day)
 }
 
 // ─── Placement context ────────────────────────────────────────

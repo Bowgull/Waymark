@@ -6,7 +6,7 @@ import { missedSessionOptions } from './missed'
 import { mtRampStartDay, weeksSinceRampStart } from './mtRamp'
 import { fighterTmDecision, transitionTmWrites, type BlockWorkingSet } from './tm'
 import { bagRules, fallbackRoundTypes, governBagRounds } from './bag'
-import { hasRedFlag, injuryActionFor, injuryFlag, normaliseRegion } from './injury'
+import { injuryActionFor, injuryFlag, normaliseRegion } from './injury'
 import { checkSessionChange } from './placement'
 import { MON, assert, ctx, s } from './testUtil'
 
@@ -93,22 +93,17 @@ const ai = governBagRounds([1, 2, 3, 4, 5, 6].map(n => ({ roundNumber: n, roundT
 assert(ai.length === 5 && ai.every(r => r.roundType !== 'conditioning') && ai.map(r => r.roundNumber).join() === '1,2,3,4,5', 'AI rounds held to the rules and renumbered')
 assert(bagRules({ blockType: 'block_zero', weekNumber: 1, eased: false, easeReason: null, returnActive: false, gapDays: 0, returnReason: null }).noFinishers, 'early Block Zero: technique only')
 
-// ─── Injury flags (F16, F17) ────────────────────────────────
+// ─── Injury flags (F16) ─────────────────────────────────────
 
-assert(hasRedFlag('numbness in the groin since yesterday') && hasRedFlag('Saddle area feels odd') && hasRedFlag('bladder trouble') && hasRedFlag('pain at night, nothing helps') && hasRedFlag('my legs are getting weak'), 'red flag words caught')
-assert(!hasRedFlag('lower back stiff after deadlifts') && !hasRedFlag('tight hamstrings'), 'ordinary stiffness is not a red flag')
 assert(normaliseRegion('Lower back') === 'back' && normaliseRegion('Knee') === 'knee' && normaliseRegion('Ankle') === 'ankle', 'regions from the skip sheet')
-const kneeFlag = injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Knee', notes: null }], [], MON + 2)
-assert(kneeFlag?.region === 'knee' && !kneeFlag.redFlag && /Knee flagged on Mon/.test(kneeFlag.reason), 'injury skip -> region flag')
-assert(injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Knee', notes: null }], [], MON + 11) == null, 'flag lapses after 10 days')
-assert(injuryFlag([{ epochDay: MON, skipReason: 'tired', detail: null, notes: null }], [], MON + 1) == null, 'a tired skip is not an injury')
-const redFlag = injuryFlag([], [{ epochDay: MON + 1, text: 'numb in the groin and bladder issues' }], MON + 2)
-assert(redFlag?.redFlag === true && /clinician/.test(redFlag.reason), 'back note with red flags -> stop and see a clinician')
-assert(injuryActionFor('strength', redFlag).action === 'stop' && injuryActionFor('mobility', redFlag).action === 'none', 'red flag stops loading, back care stays')
-const back = injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Lower back', notes: null }], [], MON + 1)
+const kneeFlag = injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Knee', notes: null }], MON + 2)
+assert(kneeFlag?.region === 'knee' && /Knee flagged on Mon/.test(kneeFlag.reason), 'injury skip -> region flag')
+assert(injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Knee', notes: null }], MON + 11) == null, 'flag lapses after 10 days')
+assert(injuryFlag([{ epochDay: MON, skipReason: 'tired', detail: null, notes: null }], MON + 1) == null, 'a tired skip is not an injury')
+const back = injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Lower back', notes: null }], MON + 1)
 assert(injuryActionFor('strength', back).action === 'back_swap' && injuryActionFor('foundation_run', back).action === 'walk_or_bike', 'back flag: back-friendly lifts, walk instead of the run')
 assert(injuryActionFor('strength', kneeFlag).action === 'ease' && injuryActionFor('running', kneeFlag).action === 'walk_or_bike' && injuryActionFor('mt_class', kneeFlag).action === 'technical', 'knee flag: conservative ease')
-const shoulder = injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Shoulder', notes: null }], [], MON + 1)
+const shoulder = injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Shoulder', notes: null }], MON + 1)
 assert(injuryActionFor('running', shoulder).action === 'none', 'shoulder flag leaves runs alone')
 
 console.log('coach rules tests passed')

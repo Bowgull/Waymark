@@ -321,7 +321,7 @@ function coachSummary(state: SessionCoachState, fighter: { loadMultiplier: numbe
   return {
     returnRamp: state.returnCtx.active ? { gapDays: state.returnCtx.plan.gapDays, tier: state.returnCtx.plan.tier, loadFactor: state.returnCtx.loadFactor, volumeFactor: state.returnCtx.volumeFactor, reason: state.returnCtx.reason } : null,
     coachEase: state.coachEase,
-    injury: state.injury ? { region: state.injury.region, redFlag: state.injury.redFlag, note: state.injuryAction.note } : null,
+    injury: state.injury ? { region: state.injury.region, note: state.injuryAction.note } : null,
     ...(fighter ? { loadMultiplier: fighter.loadMultiplier, noPush: fighter.noPush, notes: fighter.notes } : {}),
   }
 }
@@ -571,12 +571,6 @@ async function getRunPrescription(db: DrizzleDB, session: RunSessionInput) {
     targetDurSec: plan.targetDurSec,
     targetDistKm: plan.targetDistKm,
   }, state, longestLast30Sec)
-}
-
-/** Loading routes stop on a back red flag (F17) with one line. */
-async function redFlagStop(db: DrizzleDB, session: { type: string; scheduledDate: number | null; contextJson: string | null }) {
-  const state = await loadSessionCoachState(db, session, Math.floor(Date.now() / 86400000))
-  return state.injuryAction.action === 'stop' ? { error: state.injuryAction.note, code: 'red_flag', reason: state.injuryAction.note } : null
 }
 
 /** The athlete's local today: `today` (YYYY-MM-DD) when sent, else the target day capped at UTC today, so tonight never reads as past. */
@@ -1353,9 +1347,8 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   let template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label, { leadIn: await isLeadInStrength(db, session) })
   const weekPct = getWeekPercentage(blockWeek, blockType)
 
-  // Coach state: return ramp after a gap (F12/F13), an applied coach ease, injury flags (F16/F17).
+  // Coach state: return ramp after a gap (F12/F13), an applied coach ease, injury flags (F16).
   const state = await loadSessionCoachState(db, session, Math.floor(Date.now() / 86400000))
-  if (state.injuryAction.action === 'stop') return c.json({ error: state.injuryAction.note, code: 'red_flag', reason: state.injuryAction.note }, 409)
 
   // Block Zero: back swaps, auto-ease, the return ramp and RIR-based loads for today.
   // An accepted push (ramp-up ask), skipped on a day the rules ease.
@@ -1705,8 +1698,6 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
   if (session.type !== 'foundation_run') return c.json({ error: 'not a foundation_run session' }, 400)
-  const stop = await redFlagStop(db, session)
-  if (stop) return c.json(stop, 409)
 
   // Idempotent
   const existingRun = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
@@ -1787,9 +1778,9 @@ app.post('/api/sessions/:id/start-mobility', async (c) => {
   // The daily session is Foundation (lib/foundation): levelled by Block Zero
   // week (Fighter: level 3), de-duplicated against the day's strength session,
   // a bad-back version when back today is 2 or less, a bad-neck version on a
-  // neck injury flag, breathing only on a back or neck red flag, and the
-  // clinch neck add-on once the muay thai ramp allows clinch. Older sessions
-  // labelled "Mobility" outside Block Zero keep the legacy daily routine.
+  // neck injury flag, and the clinch neck add-on once the muay thai ramp
+  // allows clinch. Older sessions labelled "Mobility" outside Block Zero
+  // keep the legacy daily routine.
   const isFoundation = session.blockType === 'block_zero' || session.label === FOUNDATION_LABEL || LEGACY_FOUNDATION_LABELS.includes(session.label ?? '')
   let rows: MobilityExerciseTemplate[] = DAILY_MOBILITY_TEMPLATE
   let foundation: FoundationInput | null = null
@@ -1808,8 +1799,7 @@ app.post('/api/sessions/:id/start-mobility', async (c) => {
     foundation = {
       week,
       backToday: log?.backToday ?? null,
-      neckFlag: state.injury?.region === 'neck' && !state.injury.redFlag,
-      redFlag: state.injury?.redFlag ? (state.injury.region === 'neck' ? 'neck' : 'back') : false,
+      neckFlag: state.injury?.region === 'neck',
       strengthDay,
       dayOfWeek,
       clinchAllowed,
@@ -1864,8 +1854,6 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
   if (session.type !== 'bag_work') return c.json({ error: 'not a bag work session' }, 400)
-  const stop = await redFlagStop(db, session)
-  if (stop) return c.json(stop, 409)
 
   // Idempotent
   const existingRounds = await db.select().from(bagWorkRounds).where(eq(bagWorkRounds.sessionId, sessionId))
@@ -2144,8 +2132,6 @@ app.post('/api/sessions/:id/start-run', async (c) => {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return c.json({ error: 'session not found' }, 404)
   if (session.type !== 'running') return c.json({ error: 'not a running session' }, 400)
-  const stop = await redFlagStop(db, session)
-  if (stop) return c.json(stop, 409)
 
   // Idempotent
   const existing = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
@@ -2245,8 +2231,6 @@ app.post('/api/sessions/:id/start-skip-rope', async (c) => {
   if (existing.length > 0) {
     return c.json({ session, skipSession: existing[0] })
   }
-  const stop = await redFlagStop(db, session)
-  if (stop) return c.json(stop, 409)
 
   // Rope is lower-leg load (F11): fewer rounds on an ease day, an injury flag or the return ramp.
   const state = await loadSessionCoachState(db, session, Math.floor(nowSec / 86400))
@@ -2344,8 +2328,6 @@ app.post('/api/sessions/:id/start-mt-class', async (c) => {
   if (existing.length > 0) {
     return c.json({ session, mtLog: existing[0], plannedMin: plannedClassMin(session) })
   }
-  const stop = await redFlagStop(db, session)
-  if (stop) return c.json(stop, 409)
 
   // Ease day, applied coach ease, injury flag or the return ramp: keep it technical (R10, F16).
   const day = session.scheduledDate ?? Math.floor(nowSec / 86400)

@@ -4,7 +4,7 @@
 //
 // Rules, in order:
 // - Known session types only. No past days. A move stays in its own week.
-// - Back red flags (F17) stop loading. An injury flag keeps hard work off that region.
+// - An injury flag keeps hard work off that region.
 // - Block Zero Sunday is rest (Foundation only).
 // - Ease and load-flag days get no hard sessions; the eased version is offered (R10, R5).
 // - No two hard sessions on one day (F6, F14).
@@ -69,7 +69,6 @@ export interface SessionChange {
 
 export interface InjuryFlagLike {
   region: string
-  redFlag: boolean
   reason: string
 }
 
@@ -103,7 +102,6 @@ export type PlacementCode =
   | 'unknown_type'
   | 'past_day'
   | 'other_week'
-  | 'red_flag'
   | 'injury_flag'
   | 'rest_day'
   | 'ease_day'
@@ -214,8 +212,7 @@ function evaluate(change: SessionChange, ctx: PlacementContext): { refusal: Refu
   const key = KEY_TYPES.has(change.type)
   const hard = isHard(change)
 
-  // F17, F16: flags from injury skips and back notes.
-  if (ctx.injury?.redFlag && key) return { refusal: refuse('red_flag', ctx.injury.reason) }
+  // F16: flags from injury skips.
   if (ctx.injury && key && touchesRegion(change.type, ctx.injury.region) && (hard || RUN_TYPES.has(change.type))) {
     return { refusal: refuse('injury_flag', `${ctx.injury.reason} No ${name.toLowerCase()} on it for now.`) }
   }
@@ -353,7 +350,7 @@ export function checkSessionChange(change: SessionChange, ctx: PlacementContext,
   const result = evaluate(change, ctx)
   if ('change' in result) return { ok: true, change: result.change, notes: result.notes }
   const { code, reason } = result.refusal
-  if (opts.alternatives === false || code === 'unknown_type' || code === 'red_flag') {
+  if (opts.alternatives === false || code === 'unknown_type') {
     return { ok: false, code, reason, safeAlternatives: [] }
   }
   return { ok: false, code, reason, safeAlternatives: safeAlternatives(change, ctx) }

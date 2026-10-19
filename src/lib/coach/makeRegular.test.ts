@@ -49,7 +49,7 @@ assert(free != null && free.options[0].id === 'usual' && free.options[0].kind ==
 const another = free!.options.find(o => o.id === 'another_day')
 assert(another != null && another.kind === 'make_regular' && another.id === 'another_day' && another.safeSlots.length >= 3, 'ANOTHER DAY lists the safe days')
 assert(free!.expiresOnDay === NEXT + 7 && !free!.question.includes('!'), 'lapses after next week, house voice')
-const blocked = makeRegularAsk(two[0], ctx({ todayEpochDay: NEXT - 1, sessions: [], injury: { region: 'shoulder', redFlag: false, reason: 'Shoulder flagged.' } }), NEXT)
+const blocked = makeRegularAsk(two[0], ctx({ todayEpochDay: NEXT - 1, sessions: [], injury: { region: 'shoulder', reason: 'Shoulder flagged.' } }), NEXT)
 assert(blocked === null, 'no safe slot (injury flag on bag work): no ask')
 
 console.log('makeRegular tests passed')

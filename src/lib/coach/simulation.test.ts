@@ -82,7 +82,6 @@ interface SimSession extends SessionLike {
 let nextId = 0
 const all: SimSession[] = []
 const skips: SkipSignal[] = []
-const backNotes: Array<{ epochDay: number; text: string | null }> = []
 const asks: Array<{ sessionId: string; day: number; options: ReturnType<typeof missedSessionOptions>['options'] }> = []
 const proposals: Array<{ day: number; applied: boolean; kind: string }> = []
 const violations: string[] = []
@@ -132,7 +131,7 @@ function context(targetDay: number, today: number, extra: Partial<PlacementConte
     run: runHistory(today),
     mt: { weeksSinceRampStart: weeksSinceRampStart(classDays, targetDay), profileCap: 3 },
     planWeekLoad: planLoad(tw.week),
-    injury: injuryFlag(skips, backNotes, today),
+    injury: injuryFlag(skips, today),
     ...extra,
   }
 }
@@ -185,7 +184,6 @@ for (let day = MON; day < MON + WEEKS * 7; day++) {
   if (dowOf(day) === 1) generateWeek(day, today)
 
   const off = wi === HOLIDAY_WEEK || GAP_WEEKS.includes(wi)
-  const flag = injuryFlag(skips, backNotes, today)
   const ret = returnContext(completedKeyDays(today), today)
 
   // Ad-hoc adds: a bag session on a class day (stacking), and a rope piece on Sunday.
@@ -223,7 +221,6 @@ for (let day = MON; day < MON + WEEKS * 7; day++) {
     if (day === BACK_FLARE_DAY && sess.type === 'strength') {
       sess.status = 'skipped'
       skips.push({ epochDay: day, skipReason: 'injury', detail: 'Lower back', notes: null })
-      backNotes.push({ epochDay: day, text: 'Stiff and achy after the deadlifts.' })
       continue
     }
     if (day === KNEE_DAY && sess.type === 'strength') {
@@ -231,8 +228,6 @@ for (let day = MON; day < MON + WEEKS * 7; day++) {
       skips.push({ epochDay: day, skipReason: 'injury', detail: 'Knee', notes: null })
       continue
     }
-    // Injury flags apply to sessions touching the region (no red flag in this script).
-    if (flag?.redFlag && KEY_TYPES.has(sess.type)) violations.push(`loaded on a red flag day ${day}`)
 
     if (sess.type === 'strength') {
       loadFactors.push({ day, tier: ret.plan.tier, loadFactor: ret.loadFactor, gapDays: ret.plan.gapDays })

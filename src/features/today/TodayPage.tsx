@@ -412,7 +412,6 @@ export function TodayPage() {
     // Sessions with dedicated workout engines
     if (WORKOUT_SESSION_TYPES.includes(session.type)) {
       // Resume: the session screen loads its rows and saved step itself.
-      // (A start call here could be refused by a red flag set since.)
       if (session.status === 'in_progress') {
         navigate(`/session/${id}`)
         return

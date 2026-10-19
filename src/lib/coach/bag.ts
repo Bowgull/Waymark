@@ -17,7 +17,7 @@ export interface BagGovernanceInput {
   returnActive: boolean
   gapDays: number
   returnReason: string | null
-  /** Injury flag on an upper-body region, or any red flag. */
+  /** Injury flag on an upper-body region. */
   injuryReason?: string | null
   /** Block Zero lead-in: 4 technique rounds, light power, kicks low and controlled (Part B). */
   leadIn?: boolean

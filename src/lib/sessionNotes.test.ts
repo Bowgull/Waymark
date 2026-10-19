@@ -1,8 +1,6 @@
 // Run: tsx src/lib/sessionNotes.test.ts
-// Finishing a session never wipes its notes (D12), and the athlete's own
-// session notes feed the injury rule like skip notes do.
+// Finishing a session never wipes its notes (D12).
 import { isRunTag, notesOnComplete, userNotesFrom } from './sessionNotes'
-import { injuryFlag } from './coach/injury'
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(msg)
@@ -21,12 +19,5 @@ assert(strength.notes === 'Back a bit stiff.' && strength.userNotes === 'Back a 
 assert(userNotesFrom({ notes: 'progression', contextJson: JSON.stringify({ userNotes: 'Sharp pain down my left leg.' }) }) === 'Sharp pain down my left leg.', 'userNotes wins over a run tag')
 assert(userNotesFrom({ notes: 'zone2', contextJson: null }) === null, 'a bare run tag is not a note')
 assert(userNotesFrom({ notes: 'Knee fine.', contextJson: 'not json' }) === 'Knee fine.', 'older rows: the column is the note')
-
-// The injury rule reads finished-session notes like skip notes (red flags stop loading).
-const day = 20010
-const fromNote = userNotesFrom({ notes: 'zone2', contextJson: JSON.stringify({ userNotes: 'Tingling down my right leg on the last interval.' }) })
-const flag = injuryFlag([{ epochDay: day - 1, skipReason: null, detail: null, notes: fromNote }], [], day)
-assert(flag?.redFlag === true && flag.region === 'back', 'a red flag in a finished run\'s note stops loading, like a skip note')
-assert(injuryFlag([{ epochDay: day - 1, skipReason: null, detail: null, notes: userNotesFrom({ notes: 'Good session.', contextJson: null }) }], [], day) === null, 'an ordinary note changes nothing')
 
 console.log('session notes tests passed')

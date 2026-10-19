@@ -20,8 +20,7 @@
 // A bad-back day (back today <= 2) runs a short version and ends with an easy
 // walk (walking is the best-supported "do something" on a sore day). A bad-neck
 // day (a neck injury flag) keeps only pain-free chin tucks, the pec stretch and
-// shoulder rolls in the neck block. A red flag (back or neck) is breathing only
-// and one line to a clinician. Once the muay thai ramp allows clinch, Wednesday
+// shoulder rolls in the neck block. Once the muay thai ramp allows clinch, Wednesday
 // adds light neck isometrics for clinch tolerance (not concussion prevention).
 // The Fighter phase (no Block Zero week) runs level 3 plus two moves the
 // research keeps for kicks and punching volume: the world's greatest stretch
@@ -38,8 +37,6 @@ export const FOUNDATION_LABEL = 'Foundation'
 /** Labels the daily session carried before the rename; still read as Foundation. */
 export const LEGACY_FOUNDATION_LABELS: readonly string[] = ['Back Care']
 export const BAD_BACK_THRESHOLD = 2
-export const BACK_RED_FLAG_NOTE = 'Back red flag in your notes. No loading today, just easy breathing. See a clinician before training again.'
-export const NECK_RED_FLAG_NOTE = 'Neck red flag in your notes. No loading today, just easy breathing. See a clinician before training again.'
 export const BAD_BACK_WALK_NOTE = 'Then a 10-15 min easy walk if it feels OK.'
 /** Day of week (0 = Sunday) for the clinch-phase neck add-on: a third neck day after Strength A and C. */
 export const CLINCH_NECK_DOW = 3
@@ -54,8 +51,6 @@ export interface FoundationInput {
   backToday?: number | null
   /** A neck injury flag is active (bad-neck day). */
   neckFlag?: boolean
-  /** A red flag in the notes: true or 'back' for the back list, 'neck' for the neck list. */
-  redFlag?: boolean | 'back' | 'neck'
   /** The strength session on the same day, if any. */
   strengthDay?: StrengthKind | null
   /** Day of week, 0 = Sunday. */
@@ -249,17 +244,12 @@ export function strengthKindFromLabel(label: string | null | undefined): Strengt
   return null
 }
 
-function redFlagRow(region: 'back' | 'neck'): MobilityExerciseTemplate {
-  return { exerciseId: 'ex-crocodile-breathing', label: 'Crocodile Breathing', section: 'breathing', sets: 1, holdSec: 120, reps: null, notes: region === 'neck' ? NECK_RED_FLAG_NOTE : BACK_RED_FLAG_NOTE }
-}
-
 function fill(note: string, dose: Dose): string {
   return note.replace('{reps}', String(dose.reps ?? '')).replace('{hold}', String(dose.holdSec ?? ''))
 }
 
 /** The Foundation routine for a day, built from FOUNDATION_ROWS. */
 export function foundationTemplate(input: FoundationInput, rows: readonly FoundationRow[] = FOUNDATION_ROWS): MobilityExerciseTemplate[] {
-  if (input.redFlag) return [redFlagRow(input.redFlag === 'neck' ? 'neck' : 'back')]
   const badBack = isBadBackDay(input.backToday)
   const badNeck = input.neckFlag === true
   const level = foundationLevel(input.week)

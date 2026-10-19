@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import {
-  BACK_RED_FLAG_NOTE,
   BAD_BACK_WALK_NOTE,
   CLINCH_NECK_DOW,
   FOUNDATION_ROWS,
-  NECK_RED_FLAG_NOTE,
   estimateRoutineSec,
   foundationLevel,
   foundationTemplate,
@@ -14,7 +12,7 @@ import {
   type FoundationInput,
   type StrengthKind,
 } from './foundation'
-import { hasNeckRedFlag, hasRedFlag, injuryActionFor, injuryFlag, redFlagRegion } from './coach/injury'
+import { injuryFlag } from './coach/injury'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, LEGACY_FR_STATIC_WARMUP_TEMPLATE, legacyMobilityTemplates } from './mobilityTemplate'
 
 type Rows = ReturnType<typeof foundationTemplate>
@@ -147,60 +145,8 @@ assert.ok(!ids(w5).includes('ex-neck-iso-4way'), 'not by default')
 const iso = foundationTemplate({ week: 1, dayOfWeek: CLINCH_NECK_DOW, clinchAllowed: true }).find(r => r.exerciseId === 'ex-neck-iso-4way')!
 assert.deepEqual([iso.sets, iso.holdSec, iso.reps], [2, 20, 4], '2 x 20 s per direction')
 
-// Red flags: breathing only, one line to a clinician, region-specific.
-const red = foundationTemplate({ week: 3, redFlag: true })
-assert.deepEqual(ids(red), ['ex-crocodile-breathing'])
-assert.equal(red[0].notes, BACK_RED_FLAG_NOTE)
-const redNeck = foundationTemplate({ week: 3, redFlag: 'neck', neckFlag: true, backToday: 1 })
-assert.deepEqual(ids(redNeck), ['ex-crocodile-breathing'])
-assert.equal(redNeck[0].notes, NECK_RED_FLAG_NOTE)
-assert.ok(/clinician/.test(BACK_RED_FLAG_NOTE) && /clinician/.test(NECK_RED_FLAG_NOTE))
-
-// Back red flags (F17 and the plan's stop line).
-for (const t of ['sharp pain in my low back', 'back went sharp bending over', 'tingling down my left leg', 'pain shooting down the leg', 'numbness down into my foot', 'sciatica again', 'saddle numbness']) {
-  assert.equal(redFlagRegion(t), 'back', `back red flag: ${t}`)
-}
-// Neck red flags: arm symptoms, cord signs, vascular signs, sudden severe headache, neck trauma.
-for (const t of [
-  'tingling down my right arm',
-  'pain shooting down into my hand',
-  'numb fingers since yesterday',
-  'left arm feels weak',
-  'weakness in my right hand',
-  'clumsy hands, trouble with buttons',
-  'unsteady walking today',
-  'dizzy when I turn my head',
-  'double vision after clinch',
-  'slurred speech for a minute',
-  'trouble swallowing',
-  'sudden severe headache',
-  'worst headache of my life',
-  'landed on my neck in a takedown',
-  'neck hurts after a fall',
-  'whiplash from the car',
-]) {
-  assert.equal(redFlagRegion(t), 'neck', `neck red flag: ${t}`)
-  assert.ok(hasRedFlag(t) && hasNeckRedFlag(t))
-}
-for (const t of [
-  'lower back stiff after deadlifts', 'tight hamstrings', 'felt sharp on the pads', 'achy back, better after walking',
-  'neck stiff from gaming', 'tight neck after neck isometrics', 'sore traps', 'headache after work', 'cold hands on the run',
-  'clumsy footwork on pads', 'fell asleep on the couch, stiff neck', 'arms tired after face pulls',
-]) {
-  assert.ok(!hasRedFlag(t), `not a red flag: ${t}`)
-}
-const backFlag = injuryFlag([], [{ epochDay: 100, text: 'tingling down my right leg this morning' }], 101)
-assert.ok(backFlag?.redFlag && backFlag.region === 'back', 'back note with tingling down a leg sets the back red flag')
-assert.equal(injuryActionFor('strength', backFlag).action, 'stop', 'and loading stops')
-const neckFlag = injuryFlag([], [{ epochDay: 100, text: 'neck sore and tingling down my left arm' }], 101)
-assert.ok(neckFlag?.redFlag && neckFlag.region === 'neck', 'neck red flag in a note')
-assert.equal(neckFlag?.reason, 'Neck red flag in your notes. Loading stops. See a clinician before training again.')
-for (const type of ['strength', 'foundation_run', 'bag_work', 'mt_class', 'skip_rope']) assert.equal(injuryActionFor(type, neckFlag).action, 'stop', `neck red flag stops ${type}`)
-assert.equal(injuryActionFor('mobility', neckFlag).action, 'none', 'Foundation stays (breathing only)')
-const skipNeck = injuryFlag([{ epochDay: 100, skipReason: 'other', detail: 'felt dizzy and seeing double', notes: null }], [], 101)
-assert.ok(skipNeck?.redFlag && skipNeck.region === 'neck', 'neck red flag in a skip note')
-const neckInjury = injuryFlag([{ epochDay: 100, skipReason: 'injury', detail: 'neck', notes: 'stiff after gaming' }], [], 101)
-assert.ok(neckInjury && !neckInjury.redFlag && neckInjury.region === 'neck', 'a neck injury skip is a neck flag, not a red flag (bad-neck day)')
+const neckInjury = injuryFlag([{ epochDay: 100, skipReason: 'injury', detail: 'neck', notes: 'stiff after gaming' }], 101)
+assert.ok(neckInjury && neckInjury.region === 'neck', 'a neck injury skip is a neck flag (bad-neck day)')
 
 // Mobility timer steps.
 assert.deepEqual(mobilitySteps({ holdSec: 30, reps: null, perSide: true }).map(s => [s.side, s.holdSec]), [['Left', 30], ['Right', 30]], 'each-side hold times both sides')

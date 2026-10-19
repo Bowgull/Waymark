@@ -96,7 +96,7 @@ export interface SignalBundle {
   adHocConflict: AdHocConflict | null
   /** Skips in the last 7 days with their reason (injury, sick, tired...). */
   recentSkips: Array<{ type: string; scheduledDate: number; reason: string | null; detail: string | null }>
-  /** Deterministic injury / red-flag rule from skips and back notes (F16, F17). */
+  /** Deterministic injury rule from injury skips (F16). */
   injury: InjuryFlag | null
 }
 
@@ -381,9 +381,7 @@ export function buildReactivePrompt(bundle: SignalBundle, rationale: string, adh
     lines.push(`Skipped this week: ${skips.join(', ')}.`)
   }
   if (bundle.injury) {
-    lines.push(bundle.injury.redFlag
-      ? `${bundle.injury.region === 'neck' ? 'Neck' : 'Back'} red flag in the notes. The rules stop all loading. Only hold or add_recovery.`
-      : `Rules flag: ${bundle.injury.reason} Sessions on that region are eased or swapped by the rules. Do not load it.`)
+    lines.push(`Rules flag: ${bundle.injury.reason} Sessions on that region are eased or swapped by the rules. Do not load it.`)
   }
 
   if (bundle.recentCompleted.length > 0) {
@@ -632,7 +630,7 @@ export async function runReactiveReplan(
       z2: bundle.justCompleted?.z2 ?? null,
       recentMissed: bundle.recentMissed.length,
       recentSkips: bundle.recentSkips.length,
-      injury: bundle.injury ? { region: bundle.injury.region, redFlag: bundle.injury.redFlag } : null,
+      injury: bundle.injury ? { region: bundle.injury.region } : null,
       wellness: bundle.wellnessToday,
       ...(guardrails?.applied ? { guardrails: guardrails.clamps.map(c => c.code) } : {}),
       ...(applied.summary.refusal ? { refusal: applied.summary.refusal } : {}),

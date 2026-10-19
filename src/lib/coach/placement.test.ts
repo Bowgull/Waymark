@@ -37,9 +37,7 @@ expectRefusal('move to another week', { kind: 'move', type: 'skip_rope', epochDa
 
 // ─── Flags ───────────────────────────────────────────────────
 
-expectRefusal('red flag stops loading', add('strength', MON + 1), ctx({ injury: { region: 'back', redFlag: true, reason: 'Back red flag in your notes. Loading stops. See a clinician before training again.' } }), 'red_flag')
-assert(checkSessionChange(add('mobility', MON + 1), ctx({ injury: { region: 'back', redFlag: true, reason: 'x' } })).ok, 'red flag: back care still allowed')
-const knee = expectRefusal('knee flag blocks a run', add('running', MON + 2, { notes: 'zone2' }), ctx({ injury: { region: 'knee', redFlag: false, reason: 'Knee flagged on Mon.' } }), 'injury_flag')
+const knee = expectRefusal('knee flag blocks a run', add('running', MON + 2, { notes: 'zone2' }), ctx({ injury: { region: 'knee', reason: 'Knee flagged on Mon.' } }), 'injury_flag')
 assert(knee.safeAlternatives.some(a => a.kind === 'swap' && a.type === 'active_recovery'), 'knee flag: offers an easy walk or bike')
 assert(touchesRegion('running', 'knee') && !touchesRegion('running', 'shoulder') && touchesRegion('strength', 'shoulder') && !touchesRegion('mobility', 'back'), 'region mapping')
 
