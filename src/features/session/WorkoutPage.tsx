@@ -6,7 +6,8 @@ import { entranceLine, parseRoundSecs, roundSecsKey, withRoundSec } from '@/lib/
 import { estimatedMinutes } from '@/lib/coach/sessions'
 
 import { getTodayISO } from '@/lib/dates'
-import { apiFetch, newIdempotencyKey } from '@/lib/api'
+import { ApiError, apiFetch, newIdempotencyKey } from '@/lib/api'
+import { loadWithCopy, writeWorkoutCache } from '@/lib/workoutCache'
 import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
 import { EffortCard } from '@/features/blockZero/EffortCard'
 import { asksEffort, effortWrite } from '@/features/blockZero/effort'
@@ -632,9 +633,17 @@ export function WorkoutPage() {
     if (!id) return
     async function load() {
       try {
-        const allSessions = await apiFetch<SessionData[]>('/api/sessions')
-        const session = allSessions.find(s => s.id === id)
-        if (!session) throw new Error('Session not found')
+        // Every GET keeps a copy on this phone: a reload with the API unreachable carries on from it.
+        const store = resumeStorage()
+        const get = async <T,>(part: string, load: () => Promise<T>): Promise<T> =>
+          (await loadWithCopy(store, id!, part, load, e => e instanceof ApiError && e.type === 'network')).data
+        const keep = <T,>(part: string, data: T): T => { writeWorkoutCache(store, id!, part, data, Date.now()); return data }
+        const session = await get('session', async () => {
+          const allSessions = await apiFetch<SessionData[]>('/api/sessions')
+          const found = allSessions.find(s => s.id === id)
+          if (!found) throw new Error('Session not found')
+          return found
+        })
 
         setSessionType(session.type)
         setSessionLabel(session.label ?? null)
@@ -671,9 +680,9 @@ export function WorkoutPage() {
         }))
 
         if (session.type === 'foundation_run') {
-          let data = await apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/foundation-run-workout`)
+          let data = await get('foundation-run-workout', () => apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/foundation-run-workout`))
           if (live && (!data.runSession || data.postureExercises.length === 0)) {
-            data = await apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/start-foundation-run`, { method: 'POST' })
+            data = keep('foundation-run-workout', await apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/start-foundation-run`, { method: 'POST' }))
           }
           setFoundationRunData(data)
           showLength((data.prescription?.targetDurSec ? data.prescription.targetDurSec / 60 : null))
@@ -683,9 +692,9 @@ export function WorkoutPage() {
             ? { phase: 'fr-run', exerciseIdx: 0, setIdx: 0 }
             : { phase: 'fr-warmup', exerciseIdx: next, setIdx: 0 }
         } else if (session.type === 'mobility') {
-          let data = await apiFetch<MobilityWorkoutData>(`/api/sessions/${id}/mobility-workout`)
+          let data = await get('mobility-workout', () => apiFetch<MobilityWorkoutData>(`/api/sessions/${id}/mobility-workout`))
           if (live && data.exercises.length === 0) {
-            data = await apiFetch<MobilityWorkoutData>(`/api/sessions/${id}/start-mobility`, { method: 'POST' })
+            data = keep('mobility-workout', await apiFetch<MobilityWorkoutData>(`/api/sessions/${id}/start-mobility`, { method: 'POST' }))
           }
           setMobilityData(data)
           showLength(data.plannedMin)
@@ -695,24 +704,24 @@ export function WorkoutPage() {
             ? { phase: 'complete', exerciseIdx: Math.max(0, data.exercises.length - 1), setIdx: 0 }
             : { phase: 'exercise', exerciseIdx: next, setIdx: 0 }
         } else if (session.type === 'bag_work') {
-          let data = await apiFetch<BagWorkoutData>(`/api/sessions/${id}/bag-workout`)
+          let data = await get('bag-workout', () => apiFetch<BagWorkoutData>(`/api/sessions/${id}/bag-workout`))
           if (live && data.rounds.length === 0) {
-            data = await apiFetch<BagWorkoutData>(`/api/sessions/${id}/start-bag-work`, { method: 'POST' })
+            data = keep('bag-workout', await apiFetch<BagWorkoutData>(`/api/sessions/${id}/start-bag-work`, { method: 'POST' }))
           }
           setBagData(data)
           showLength(data.plannedMin, data.rounds.length)
           rounds = data.rounds.map(r => ({ durationSec: r.durationSec, restSec: r.restSec }))
         } else if (session.type === 'running') {
-          let data = await apiFetch<RunWorkoutData>(`/api/sessions/${id}/run-workout`)
+          let data = await get('run-workout', () => apiFetch<RunWorkoutData>(`/api/sessions/${id}/run-workout`))
           if (live && !data.runSession) {
-            data = await apiFetch<RunWorkoutData>(`/api/sessions/${id}/start-run`, { method: 'POST' })
+            data = keep('run-workout', await apiFetch<RunWorkoutData>(`/api/sessions/${id}/start-run`, { method: 'POST' }))
           }
           setRunData(data)
           showLength((data.prescription?.targetDurSec ? data.prescription.targetDurSec / 60 : null))
         } else if (session.type === 'skip_rope') {
-          let data = await apiFetch<SkipWorkoutData>(`/api/sessions/${id}/skip-rope-workout`)
+          let data = await get('skip-rope-workout', () => apiFetch<SkipWorkoutData>(`/api/sessions/${id}/skip-rope-workout`))
           if (live && !data.skipSession) {
-            data = await apiFetch<SkipWorkoutData>(`/api/sessions/${id}/start-skip-rope`, { method: 'POST' })
+            data = keep('skip-rope-workout', await apiFetch<SkipWorkoutData>(`/api/sessions/${id}/start-skip-rope`, { method: 'POST' }))
           }
           setSkipData(data)
           showLength(data.plannedMin, data.skipSession?.roundCount ?? null)
@@ -721,21 +730,21 @@ export function WorkoutPage() {
             restAutoEnds = false
           }
         } else if (session.type === 'active_recovery') {
-          let data = await apiFetch<RecoveryWorkoutData>(`/api/sessions/${id}/recovery-workout`)
+          let data = await get('recovery-workout', () => apiFetch<RecoveryWorkoutData>(`/api/sessions/${id}/recovery-workout`))
           if (live && !data.recoverySession) {
-            data = await apiFetch<RecoveryWorkoutData>(`/api/sessions/${id}/start-recovery`, { method: 'POST' })
+            data = keep('recovery-workout', await apiFetch<RecoveryWorkoutData>(`/api/sessions/${id}/start-recovery`, { method: 'POST' }))
           }
           setRecoveryData(data)
           showLength(null)
         } else if (session.type === 'mt_class') {
-          let data = await apiFetch<MtClassWorkoutData>(`/api/sessions/${id}/mt-class-workout`)
+          let data = await get('mt-class-workout', () => apiFetch<MtClassWorkoutData>(`/api/sessions/${id}/mt-class-workout`))
           if (live && !data.mtLog) {
-            data = await apiFetch<MtClassWorkoutData>(`/api/sessions/${id}/start-mt-class`, { method: 'POST' })
+            data = keep('mt-class-workout', await apiFetch<MtClassWorkoutData>(`/api/sessions/${id}/start-mt-class`, { method: 'POST' }))
           }
           setMtData(data)
           showLength(data.plannedMin)
         } else {
-          const data = await apiFetch<StrengthWorkoutData>(`/api/sessions/${id}/workout`)
+          const data = await get('workout', () => apiFetch<StrengthWorkoutData>(`/api/sessions/${id}/workout`))
           setStrengthData(data)
           showLength(data.plannedMin)
           setCounts = data.exercises.map(e => e.sets.length)
@@ -750,7 +759,7 @@ export function WorkoutPage() {
           await Promise.all(
             Array.from(uniqueExercises).map(async ([exId, section]) => {
               try {
-                const h = await apiFetch<ExerciseHistoryData>(`/api/exercises/${exId}/history?section=${section}`)
+                const h = await get(`history:${exId}:${section}`, () => apiFetch<ExerciseHistoryData>(`/api/exercises/${exId}/history?section=${section}`))
                 if (h) histories.set(exId, h)
               } catch { /* no history yet */ }
             })
