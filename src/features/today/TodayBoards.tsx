@@ -221,6 +221,17 @@ export function EmptyDayBoard({ onPrepare, preparing }: { onPrepare: () => void;
   )
 }
 
+/** No active block: nothing is planned until Block Zero starts (owner decision). Same board as NOTHING TODAY. */
+export function NoBlockBoard({ onStart }: { onStart: () => void }) {
+  return (
+    <Board className="td-empty">
+      <FlapLabel text="NOTHING TODAY" size="md" tone="gold" />
+      <p>No block running. Start Block Zero to begin.</p>
+      <FlapButton label="START BLOCK ZERO" primary onClick={onStart} />
+    </Board>
+  )
+}
+
 /** A day planned as rest (page 43, layout B): REST DAY, one line, and tomorrow's sessions. */
 export function RestDayBoards({ tomorrow, tomorrowLine }: { tomorrow: SessionIconKey[]; tomorrowLine: string | null }) {
   return (

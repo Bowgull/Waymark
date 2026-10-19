@@ -25,7 +25,7 @@ import { setWorldLantern, setWorldPlace } from '@/world/worldStore'
 import { ReassignRunSheet } from './ReassignRunSheet'
 import { AskBoard } from './AskBoard'
 import { askView, isAsk, type AskRow, type AskView } from './askView'
-import { AllDoneBoard, CoachBoard, EmptyDayBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip, type CoachChangeLine, type CoachQuestionLine } from './TodayBoards'
+import { AllDoneBoard, CoachBoard, EmptyDayBoard, NoBlockBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip, type CoachChangeLine, type CoachQuestionLine } from './TodayBoards'
 import { TodayDay, type TodaySession } from './TodayDay'
 import { ALL_DONE_AFTER_CONFIRM_MS, fadesToAllDone, lanternFor, shortWhy, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
@@ -98,6 +98,8 @@ export function TodayPage() {
   const [reassignFor, setReassignFor] = useState<{ activityId: number; sessionId: string } | null>(null)
   const [readiness, setReadiness] = useState<ReadinessIn | null>(null)
   const [block, setBlock] = useState<CurrentBlock | null>(null)
+  // True once /blocks/current answered (so null means "no active block", not "still loading").
+  const [blockChecked, setBlockChecked] = useState(false)
   const [week, setWeek] = useState<WeekPayload | null | undefined>(undefined)
   const [nextWeek, setNextWeek] = useState<WeekPayload | null>(null)
   const [summary, setSummary] = useState<CoachSummary | null>(null)
@@ -213,7 +215,7 @@ export function TodayPage() {
         ])
         setSessions(sessionsData)
         setDailyLog(logData)
-        apiFetch<CurrentBlock | null>(`/api/blocks/current?date=${today}`).then(setBlock).catch(() => { setBlock(null); setWeek(null) })
+        apiFetch<CurrentBlock | null>(`/api/blocks/current?date=${today}`).then(b => { setBlock(b); setBlockChecked(true) }).catch(() => { setBlock(null); setWeek(null) })
         void refreshReadiness()
         void refreshCoach()
         if (!autoResumeAttempted.current) {
@@ -801,7 +803,9 @@ export function TodayPage() {
           {/* page 43: the hobbit home fills the screen behind; the boards sit low, the Waybook last */}
           <div className="td-spacer" />
           {mode === 'rest' && <RestDayBoards tomorrow={tomorrowIcons} tomorrowLine={tomorrowText} />}
-          {mode === 'unprepared' && <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} />}
+          {mode === 'unprepared' && (blockChecked && !block
+            ? <NoBlockBoard onStart={() => navigate('/program')} />
+            : <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} />)}
           {mode === 'allDone' && <AllDoneBoard icons={doneIcons} onShowDay={() => setShowDayAnyway(true)} />}
           <WaybookLine today={today} variant="home" />
         </>

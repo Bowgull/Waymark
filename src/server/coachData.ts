@@ -202,6 +202,9 @@ export function dayTemplateWithExtras(blockType: string, weekNumber: number, dow
  */
 export async function generateDaySessions(db: DB, epochDay: number, todayDay: number, nowSec: number): Promise<SessionRow[]> {
   const block = await getActiveBlock(db)
+  // No active block: nothing to plan. Training starts when the athlete starts a
+  // block (Block Zero on Program); Today shows that board instead.
+  if (!block) return []
   const mtDays = await mtClassDays(db)
   const dow = new Date(epochDay * DAY_SEC * 1000).getUTCDay()
   let blockType = 'fighter'
