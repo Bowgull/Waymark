@@ -25,4 +25,16 @@ assert.equal(
   'configured production origin is trimmed',
 )
 
+assert.equal(
+  resolveApiBaseUrl('http://localhost:8787', true, true),
+  'http://localhost:8787',
+  'the Simulator test build may point at the runner local Worker',
+)
+
+assert.equal(
+  resolveApiBaseUrl('', true, true),
+  'https://waymark.bocas-joshua.workers.dev',
+  'the test flag never invents a local URL',
+)
+
 console.log('apiBase tests passed')
