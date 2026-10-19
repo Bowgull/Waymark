@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, gte, inArray, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
-import { getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
+import { applyStoredBlockZeroTransition, getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
 import { rebalanceForClassTonight } from './classTonight'
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -3852,6 +3852,20 @@ app.post('/api/ai/block-zero-transition', async (c) => {
 
   const output = await runBlockZeroTransition(db, c.env.ANTHROPIC_API_KEY, block.id)
   if (!output) return c.json({ error: 'transition check unavailable' }, 503)
+  return c.json(output)
+})
+
+// START FIGHTER BLOCK 1 / KEEP BUILDING: the verdict CHECK READINESS stored is applied
+// only now (move on ends Block Zero and starts Fighter Block 1; extend lengthens it).
+app.post('/api/ai/block-zero-transition/apply', async (c) => {
+  const db = createDB(c.env)
+  const [block] = await db
+    .select()
+    .from(trainingBlocks)
+    .where(eq(trainingBlocks.status, 'active'))
+  if (!block || block.blockType !== 'block_zero') return c.json({ error: 'no active block zero' }, 404)
+  const output = await applyStoredBlockZeroTransition(db, block.id)
+  if (!output) return c.json({ error: 'check readiness first' }, 409)
   return c.json(output)
 })
 

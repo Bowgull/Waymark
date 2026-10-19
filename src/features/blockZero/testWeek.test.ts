@@ -64,6 +64,13 @@ import { formatTestValue, liftNameFromId } from './testWeek'
   assert.equal(verdictFor({ decision: 'hold', rationale: 'Older row.' }).kind, 'extend', 'old rows without rules still read')
   assert.equal(verdictFor({ decision: 'proceed', rationale: 'x', rules: { decision: 'not_yet', reasons: [], extendWeeks: 0, totalWeeks: 6 } }).kind, 'not_yet')
   assert.equal(verdictFor({ decision: 'adjust', rationale: 'x', rules: { decision: 'adjust', reasons: [], extendWeeks: 0, totalWeeks: 6 }, nextBlockId: null }).kind, 'move_on')
+  // E2E major 5: the check only reads; the verdict is applied by its button.
+  const unapplied = verdictFor({ decision: 'proceed', rationale: 'Move on.', rules: { decision: 'proceed', reasons: ['Key sessions 84%.'], extendWeeks: 0, totalWeeks: 6 }, nextBlockId: null, applied: false })
+  assert.equal(unapplied.primaryLabel, 'START FIGHTER BLOCK 1', 'before it is applied there is no next block yet, the button still starts it')
+  // E2E minor 14: offline, the line is the reasons: no bullet repeats it.
+  const offline = verdictFor({ decision: 'proceed', rationale: 'Key sessions 84%. Back steady.', rules: { decision: 'proceed', reasons: ['Key sessions 84%.', 'Back steady.'], extendWeeks: 0, totalWeeks: 6 } })
+  assert.deepEqual(offline.reasons, [], 'reasons already in the line are not repeated')
+  assert.deepEqual(go.reasons, ['Key sessions 84%.'], 'other reasons stay as bullets')
   assert.equal(gateOpen(5, 6), false)
   assert.equal(gateOpen(6, 6), true)
   assert.equal(gateOpen(6, 7), false, 'an extended block opens the gate in its last week')

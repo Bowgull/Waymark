@@ -100,6 +100,8 @@ export interface TransitionResultIn {
     totalWeeks: number
   }
   nextBlockId?: string | null
+  /** False: the check only read; the primary button applies it. Missing on old rows (already applied). */
+  applied?: boolean
 }
 
 export interface Verdict {
@@ -115,7 +117,8 @@ export interface Verdict {
 
 export function verdictFor(result: TransitionResultIn): Verdict {
   const rules = result.rules
-  const reasons = (rules?.reasons ?? []).filter(r => r.trim().length > 0)
+  // A reason the line already says is not repeated as a bullet (offline, the line is the reasons).
+  const reasons = (rules?.reasons ?? []).filter(r => r.trim().length > 0 && !result.rationale.includes(r.trim()))
   const decision = rules?.decision ?? (result.decision === 'hold' ? 'extend' : result.decision)
   if (decision === 'extend') {
     const n = Math.max(1, rules?.extendWeeks ?? 1)
@@ -130,7 +133,7 @@ export function verdictFor(result: TransitionResultIn): Verdict {
     tone: 'good',
     line: result.rationale,
     reasons,
-    primaryLabel: result.nextBlockId ? 'START FIGHTER BLOCK 1' : 'TO PROGRAM',
+    primaryLabel: result.applied === false || result.nextBlockId ? 'START FIGHTER BLOCK 1' : 'TO PROGRAM',
   }
 }
 

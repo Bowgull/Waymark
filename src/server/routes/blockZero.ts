@@ -383,6 +383,15 @@ export interface BlockZeroTransitionResult extends BlockTransitionOutput {
     totalWeeks: number
   }
   nextBlockId: string | null
+  /**
+   * The check only reads (e2e major 5): the plan is stored with the verdict and
+   * applied when the athlete taps START FIGHTER BLOCK 1 / KEEP BUILDING.
+   */
+  applied?: boolean
+  /** The plan the verdict will apply (server-side; the UI ignores it). */
+  plan?: TransitionPlan
+  /** The block the verdict is for. */
+  blockId?: string
   /** Clamps the rules applied to the AI's targets, for audit. */
   guardrails?: { applied: boolean; clamps: Clamp[] }
 }
@@ -466,7 +475,6 @@ export async function runBlockZeroTransition(
   const aiWeight = new Map(plan.calibration.filter(c => c.source === 'ai').map(c => [c.exerciseId, c.weightKg]))
 
   const nowSec = Math.floor(Date.now() / 1000)
-  const nextBlockId = await applyTransitionPlan(db, blockId, plan, nowSec)
 
   const combined: BlockZeroTransitionResult = {
     decision: plan.reportedDecision,
@@ -480,7 +488,10 @@ export async function runBlockZeroTransition(
       extendWeeks: plan.extendWeeks,
       totalWeeks: plan.newTotalWeeks,
     },
-    nextBlockId,
+    nextBlockId: null,
+    applied: false,
+    plan,
+    blockId,
     ...(calibration.clamps.length > 0 ? { guardrails: clampsForStorage(calibration.clamps) } : {}),
   }
   // When the rules overrode the AI, the athlete-facing line is the rules' reason.
@@ -527,6 +538,34 @@ export async function applyTransitionPlan(db: DB, blockId: string, plan: Transit
     return next?.id ?? null
   }
   return null
+}
+
+/**
+ * START FIGHTER BLOCK 1 / KEEP BUILDING: apply the stored verdict's plan for
+ * this block, once. Null when there is no unapplied verdict for it (the check
+ * has to run first). An already-applied verdict comes back as it is.
+ */
+export async function applyStoredBlockZeroTransition(db: DB, blockId: string): Promise<BlockZeroTransitionResult | null> {
+  const [row] = await db
+    .select({ id: coachingOutputs.id, outputJson: coachingOutputs.outputJson })
+    .from(coachingOutputs)
+    .where(and(eq(coachingOutputs.kind, 'block_zero_transition'), eq(coachingOutputs.inputHash, blockId)))
+    .orderBy(desc(coachingOutputs.createdAt))
+    .limit(1)
+  if (!row) return null
+  let stored: BlockZeroTransitionResult
+  try {
+    stored = JSON.parse(row.outputJson) as BlockZeroTransitionResult
+  } catch {
+    return null
+  }
+  // Rows from before the split were applied by the check itself.
+  if (stored.applied !== false || !stored.plan) return { ...stored, applied: true }
+  const nowSec = Math.floor(Date.now() / 1000)
+  const nextBlockId = await applyTransitionPlan(db, blockId, stored.plan, nowSec)
+  const done: BlockZeroTransitionResult = { ...stored, applied: true, nextBlockId }
+  await db.update(coachingOutputs).set({ outputJson: JSON.stringify(done) }).where(eq(coachingOutputs.id, row.id))
+  return done
 }
 
 export async function getStoredBlockZeroTransition(

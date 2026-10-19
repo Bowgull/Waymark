@@ -77,7 +77,7 @@ export function EndGateView({
               </ul>
             )}
           </Board>
-          <FlapButton label={verdict.primaryLabel} primary onClick={onPrimary} />
+          <FlapButton label={verdict.primaryLabel} primary onClick={onPrimary} disabled={checking} />
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, ...(enter(600) ?? {}) }}>
@@ -98,6 +98,7 @@ export function EndGatePage() {
   const [rows, setRows] = useState<TestRowIn[]>([])
   const [result, setResult] = useState<TransitionResultIn | null>(null)
   const [checking, setChecking] = useState(false)
+  const [applying, setApplying] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -123,7 +124,7 @@ export function EndGatePage() {
   async function check() {
     setChecking(true)
     try {
-      // The rules decide (and apply: extend lengthens the block, move on starts Fighter Block 1).
+      // The rules decide; nothing changes until START FIGHTER BLOCK 1 / KEEP BUILDING.
       const r = await apiFetch<TransitionResultIn>('/api/ai/block-zero-transition', { method: 'POST', timeoutMs: CHECK_TIMEOUT_MS })
       setResult(r)
     } catch {
@@ -133,13 +134,31 @@ export function EndGatePage() {
     }
   }
 
+  // START FIGHTER BLOCK 1 / KEEP BUILDING: now the verdict is applied (move on ends
+  // Block Zero and starts Fighter Block 1, extend lengthens it). NOT YET changes nothing.
+  async function primary() {
+    if (!result || result.applied !== false || verdictFor(result).kind === 'not_yet') {
+      navigate('/program')
+      return
+    }
+    setApplying(true)
+    try {
+      await apiFetch('/api/ai/block-zero-transition/apply', { method: 'POST' })
+      navigate('/program')
+    } catch {
+      showPop("Couldn't save. Check your connection.", 'bad', { durationMs: 4000 })
+    } finally {
+      setApplying(false)
+    }
+  }
+
   return (
     <EndGateView
       rows={rows}
       result={result}
-      checking={checking}
+      checking={checking || applying}
       onCheck={() => void check()}
-      onPrimary={() => navigate('/program')}
+      onPrimary={() => void primary()}
       onBack={() => navigate('/program')}
     />
   )
