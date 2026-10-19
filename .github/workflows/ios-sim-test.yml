@@ -40,7 +40,7 @@ env:
 jobs:
   simulator:
     runs-on: macos-26
-    timeout-minutes: 75
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
 
@@ -134,12 +134,22 @@ jobs:
           xcrun simctl shutdown all || true
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
+          # Reduce Motion on, as the Playwright suite runs (reducedMotion: 'reduce').
+          # The runner has no GPU: the animated world (three.js) renders in software
+          # and starves the CPU, and run 39320971646's Worker then took 2-75 s per
+          # request (past the app's 10 s timeout: TODAY DIDN'T LOAD). With Reduce
+          # Motion the world draws still frames. Read at boot, so boot again.
+          xcrun simctl spawn "$UDID" defaults write com.apple.Accessibility ReduceMotionEnabled -bool true
+          xcrun simctl shutdown "$UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl spawn "$UDID" defaults read com.apple.Accessibility ReduceMotionEnabled
           # The app follows the Mac's zone; set it in the Simulator's launchd too.
           xcrun simctl spawn "$UDID" launchctl setenv TZ "$TZ" || true
           open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
           xcrun simctl install "$UDID" "$APP"
           # The app's own console (Capacitor logs the WebView console) for the whole run.
-          nohup xcrun simctl spawn "$UDID" log stream --level debug --style compact \
+          nohup xcrun simctl spawn "$UDID" log stream --style compact \
             --predicate 'process == "App" OR subsystem CONTAINS "capacitor" OR process == "WaymarkActivity"' \
             > "$OUT/logs/simulator-app.log" 2>&1 &
           # First launch with the app's stdout: Capacitor prints the WebView console there.
@@ -163,7 +173,7 @@ jobs:
           "$HOME/.maestro/bin/maestro" --version
 
       - name: Run the Maestro flows
-        timeout-minutes: 40
+        timeout-minutes: 60
         run: |
           set +e
           FAILED=0
@@ -216,6 +226,8 @@ jobs:
           run_flow 06-settings-library-ledger
           run_flow 07-coach
           ls -R "$OUT/shots" | head -80
+          # How fast the Worker answered the app (wrangler's per-request times).
+          grep -oE "\(([0-9]+)ms\)$" "$OUT/logs/backend.log" | tr -d '()ms' | sort -n             | awk '{a[NR]=$1} END {if (NR) print "Worker requests:", NR, "median", a[int((NR+1)/2)], "ms, p90", a[int(NR*0.9)], "ms, max", a[NR], "ms"}'
           exit $FAILED
 
       - name: Collect simulator logs

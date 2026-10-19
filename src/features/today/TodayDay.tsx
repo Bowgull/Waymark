@@ -124,7 +124,7 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
 
   return (
     <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${tiles ? ' is-openx' : ''}`}>
-      <div role="button" tabIndex={0} aria-expanded={open} style={{ display: 'contents' }} onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}>
+      <div role="button" tabIndex={0} aria-expanded={open} className="td-rowhit" onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}>
         <SessionIcon kind={iconFor(s)} size={40} />
         <span className="td-nm"><FlapLabel text={name} size="md" len={11} fit /></span>
         {stravaMin != null ? (

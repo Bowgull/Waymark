@@ -38,6 +38,10 @@
 
 /* the day board: AM / PM groups, a row per session (pages 20, 35, 42; flap.css .rows .r) */
 .td-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* The row's tap target lays out its own line (icon, name, minutes). It was display: contents,
+   which leaves the button without a box: WebKit then gave it a wrong accessibility frame
+   (VoiceOver's focus and the iOS Simulator test's taps landed above the row). */
+.td-rowhit { display: flex; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
 .td-rows { display: flex; flex-direction: column; }
 .td-rows > .td-row + .td-row { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
 .td-row.is-done { box-shadow: inset 3px 0 0 var(--sf-good-edge); padding-left: 8px; }
