@@ -1078,6 +1078,7 @@ export function WorkoutPage() {
         <MobilityExerciseView
           key={`fr-${exerciseIdx}-${setIdx}`}
           inline
+          warmUp
           title="ZONE 2"
           exercise={frCurrentExercise}
           exerciseIndex={exerciseIdx}

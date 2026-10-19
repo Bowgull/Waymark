@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { FlapLabel, SessionIcon } from '@/design'
+import { FlapLabel, SessionIcon, type SessionIconKey } from '@/design'
 import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
 import { mobilitySteps, type MobilityStep } from '@/lib/foundation'
 import type { EngineState } from '@/lib/sessionResume'
@@ -53,6 +53,12 @@ interface MobilityExerciseViewProps {
   onExit?: () => void
   /** Zone 2 warm-up: no Live Activity of its own. */
   inline?: boolean
+  /**
+   * Zone 2 warm-up (e2e minor 23): a timed walk is not a hold. Its icon (the
+   * Zone 2 dial, not the Foundation mat) and its words (START, GO, DONE)
+   * instead of START HOLD / HOLD / HOLD COMPLETE.
+   */
+  warmUp?: boolean
   /** Saved step + hold (session resume) for this exercise and set. */
   resume?: Extract<EngineState, { kind: 'hold' }> | null
   /** Called on every change so the session can be resumed exactly here. */
@@ -75,9 +81,11 @@ export function MobilityExerciseView({
   onSetDone,
   onExit,
   inline = false,
+  warmUp = false,
   resume,
   onPersist,
 }: MobilityExerciseViewProps) {
+  const icon: SessionIconKey = warmUp ? 'zone2' : 'foundation'
   const totalSets = exercise.sets ?? 1
   // One set can be several timed steps: both sides of a per-side hold, or one
   // hold per rep (prone cobra 10 x 3s). The set is done after the last step.
@@ -268,7 +276,7 @@ export function MobilityExerciseView({
   const board = (
     <div className="wm-board" style={{ margin: '12px 14px 0' }}>
       <div className="ss-row">
-        <SessionIcon kind="foundation" size={36} />
+        <SessionIcon kind={icon} size={36} />
         <span className="ss-grow"><FlapLabel text={exercise.exercise?.name ?? 'Exercise'} size="md" len={10} fit /></span>
       </div>
       {note && <p className="tm-note" style={{ marginTop: 6 }}>{note}</p>}
@@ -297,8 +305,8 @@ export function MobilityExerciseView({
   const done = running && holdTimer.reachedTarget
   const showComplete = done || (!running && afterComplete)
   const shown = running ? holdTimer.secondsRemaining : holdSec
-  const label = showComplete ? 'HOLD COMPLETE' : running ? 'HOLD' : 'READY'
-  const startLabel = step.side && step.rep == null ? `START ${step.side.toUpperCase()} SIDE` : step.rep != null && step.rep > 1 ? 'START NEXT REP' : 'START HOLD'
+  const label = showComplete ? (warmUp ? 'DONE' : 'HOLD COMPLETE') : running ? (warmUp ? 'GO' : 'HOLD') : 'READY'
+  const startLabel = step.side && step.rep == null ? `START ${step.side.toUpperCase()} SIDE` : step.rep != null && step.rep > 1 ? 'START NEXT REP' : warmUp ? 'START' : 'START HOLD'
   const track: TimerTrack = running
     ? { durationSec: holdSec, endsAtMs: holdTimer.isPaused || done ? null : holdTimer.endsAtMs, remainingMs: done ? 0 : holdTimer.secondsRemaining * 1000 }
     : { durationSec: holdSec, endsAtMs: null, remainingMs: afterComplete ? 0 : holdSec * 1000 }
