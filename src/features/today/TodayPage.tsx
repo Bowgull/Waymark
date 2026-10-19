@@ -13,6 +13,7 @@ import { FlapLabel, glowRow, showPop } from '@/design'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { REPLACE_REASONS } from '@/components/ui/departures'
 import { useToast } from '@/components/ui/Toast'
+import { PageErrorScreen } from '@/components/ui/ErrorScreens'
 import { iconFor, sessionDisplayName } from '@/features/dayboard/rowState'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import { DayBack } from '@/features/coach/DayBack'
@@ -75,6 +76,8 @@ export function TodayPage() {
   const [dailyLog, setDailyLog] = useState<DailyLog | null | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const [loaded, setLoaded] = useState(false)
+  // The day couldn't be read (API unreachable): page 38's page error, not an empty day.
+  const [loadFailed, setLoadFailed] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
@@ -167,6 +170,7 @@ export function TodayPage() {
         ])
         setSessions(sessionsData)
         setDailyLog(logData)
+        setLoadFailed(false)
         apiFetch<CurrentBlock | null>(`/api/blocks/current?date=${today}`).then(b => { setBlock(b); setBlockChecked(true) }).catch(() => { setBlock(null); setWeek(null) })
         void refreshReadiness()
         if (!autoResumeAttempted.current) {
@@ -205,6 +209,7 @@ export function TodayPage() {
       } catch (e) {
         console.error('Failed to load today data:', e)
         setDailyLog(null)
+        setLoadFailed(true)
       } finally {
         setLoaded(true)
       }
@@ -565,6 +570,9 @@ export function TodayPage() {
     if (!slowLoad) return loaded ? <LoadedNow onReady={() => setLoading(false)} /> : null
     return <CrestLoading message="Reading your profile." done={loaded} onDone={() => setLoading(false)} />
   }
+
+  // E2E minor 10: an unreachable API showed NOTHING TODAY. Page 38 "A page": what didn't load, nothing lost, RELOAD.
+  if (loadFailed) return <PageErrorScreen pathname="/today" onReload={() => window.location.reload()} />
 
   const replaceTarget = replaceFor ? sessions.find(s => s.id === replaceFor.sessionId) : null
   const doneIcons = sessions.filter(s => s.status === 'completed').map(s => iconFor(s))
