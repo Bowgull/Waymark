@@ -3,8 +3,10 @@ name: Morning check-in, with the herb 0-9 card
 ---
 - launchApp:
     stopApp: true
+# Today has loaded (the week strip sits at the top; the board below it grows
+# as the flows add sessions, so "+ add session" may be below the fold).
 - extendedWaitUntil:
-    visible: "\\+ add session"
+    visible: "This week"
     timeout: 60000
 # The LOGGED flap ("Edit the Morning Report") is a button inside the Morning
 # Report board, itself a button: iOS WebKit exposes only the board, so tap the

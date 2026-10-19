@@ -3,13 +3,20 @@ name: Bag round - work, last 10 s, rest (and the Live Activity)
 ---
 - launchApp:
     stopApp: true
+# Today has loaded (the week strip sits at the top; the board below it grows
+# as the flows add sessions, so "+ add session" may be below the fold).
 - extendedWaitUntil:
-    visible: "\\+ add session"
+    visible: "This week"
     timeout: 60000
 - scrollUntilVisible:
     element: "Bag Work BAG WORK.*"
     direction: DOWN
+    centerElement: true
 - tapOn: "Bag Work BAG WORK.*"
+- scrollUntilVisible:
+    element: "ENTER"
+    direction: DOWN
+    centerElement: true
 - tapOn: "ENTER"
 - extendedWaitUntil:
     visible: "START ROUND"

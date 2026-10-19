@@ -3,9 +3,16 @@ name: Settings, the Library, the Ledger
 ---
 - launchApp:
     stopApp: true
+# Today has loaded (the week strip sits at the top; the board below it grows
+# as the flows add sessions, so "+ add session" may be below the fold).
 - extendedWaitUntil:
-    visible: "\\+ add session"
+    visible: "This week"
     timeout: 60000
+# Settings is the line under the board, below the fold once the day is full.
+- scrollUntilVisible:
+    element: "Settings"
+    direction: DOWN
+    centerElement: true
 - tapOn: "Settings"
 - assertVisible: "MT class days"
 - takeScreenshot: 06-settings
