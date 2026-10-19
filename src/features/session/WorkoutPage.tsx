@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { getItem as storageGetItem, removeItem as storageRemoveItem, setItem as storageSetItem } from '@/lib/safeStorage'
-import { parseRoundSecs, roundSecsKey, withRoundSec } from '@/lib/plannedLength'
+import { entranceLine, parseRoundSecs, roundSecsKey, withRoundSec } from '@/lib/plannedLength'
+import { estimatedMinutes } from '@/lib/coach/sessions'
 
 import { getTodayISO } from '@/lib/dates'
 import { apiFetch, newIdempotencyKey } from '@/lib/api'
@@ -40,7 +41,7 @@ import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/Toast'
 import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
-import { FlapLabel, SESSION_ICON_NAME, sessionIconFor } from '@/design'
+import { FlapLabel, SESSION_ICON_NAME, armCascade, sessionIconFor } from '@/design'
 import { comboLetters, heatFor, momentLine, workLabel } from '@/lib/timers/timerLook'
 import { talkTestDue, TALK_TEST_WEEKS } from '@/lib/blockZero/talkTest'
 
@@ -118,6 +119,8 @@ interface StrengthExerciseData {
 interface StrengthWorkoutData {
   session: SessionData
   exercises: StrengthExerciseData[]
+  /** The planned length (min), from the prescription (the server sends it). */
+  plannedMin?: number | null
 }
 
 // ─── Mobility types ────────────────────────────────────────────
@@ -137,6 +140,8 @@ interface MobilityExerciseData {
 interface MobilityWorkoutData {
   session: SessionData
   exercises: MobilityExerciseData[]
+  /** The planned length (min), from the prescription (the server sends it). */
+  plannedMin?: number | null
 }
 
 // ─── Bag work types ────────────────────────────────────────────
@@ -167,6 +172,8 @@ interface BagRoundData {
 interface BagWorkoutData {
   session: SessionData
   rounds: BagRoundData[]
+  /** The planned length (min), from the prescription (the server sends it). */
+  plannedMin?: number | null
 }
 
 // ─── Run types ─────────────────────────────────────────────────
@@ -217,6 +224,8 @@ interface SkipSessionData {
 interface SkipWorkoutData {
   session: SessionData
   skipSession: SkipSessionData | null
+  /** The planned length (min), from the prescription (the server sends it). */
+  plannedMin?: number | null
 }
 
 // ─── Active recovery types ─────────────────────────────────────
@@ -381,6 +390,8 @@ export function WorkoutPage() {
   // Runs keep their category in notes: the entrance shows the Zone 2 dial or the shoe.
   const [runCategory, setRunCategory] = useState<string | null>(null)
   const [sessionLabel, setSessionLabel] = useState<string | null>(null)
+  // The entrance's length line (page 19): "6 ROUNDS · 40 MIN", "WEEK 3 · 45 MIN".
+  const [entranceDetail, setEntranceDetail] = useState<string | null>(null)
   // The close (page 19 #6): after the effort is saved, the moment plays, then Today.
   const [moment, setMoment] = useState<string | null>(null)
   // Block Zero week 1 / 6: the week's first easy run-walk asks the talk-test HR on its log (page 45 #3).
@@ -645,6 +656,13 @@ export function WorkoutPage() {
         let rounds: RoundSpec[] | undefined
         let restAutoEnds = true
         let serverPosition: { phase: Phase; exerciseIdx: number; setIdx: number } = { phase: 'exercise', exerciseIdx: 0, setIdx: 0 }
+        // The entrance's length line: the plan's own minutes, else the coach's planning minutes (as Today shows them).
+        const showLength = (minutes: number | null | undefined, roundCount?: number | null) => setEntranceDetail(entranceLine({
+          type: session.type,
+          rounds: roundCount ?? null,
+          week: session.blockWeek ?? null,
+          minutes: minutes ?? estimatedMinutes({ type: session.type, notes: session.notes ?? null, estimatedMin: null }, session.blockType === 'block_zero' ? 'block_zero' : 'fighter', session.blockWeek ?? 1),
+        }))
 
         if (session.type === 'foundation_run') {
           let data = await apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/foundation-run-workout`)
@@ -652,6 +670,7 @@ export function WorkoutPage() {
             data = await apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/start-foundation-run`, { method: 'POST' })
           }
           setFoundationRunData(data)
+          showLength((data.prescription?.targetDurSec ? data.prescription.targetDurSec / 60 : null))
           setCounts = data.postureExercises.map(e => Math.max(1, e.sets ?? 1))
           const next = deriveMobilityPosition(data.postureExercises)
           serverPosition = next === 'done'
@@ -663,6 +682,7 @@ export function WorkoutPage() {
             data = await apiFetch<MobilityWorkoutData>(`/api/sessions/${id}/start-mobility`, { method: 'POST' })
           }
           setMobilityData(data)
+          showLength(data.plannedMin)
           setCounts = data.exercises.map(e => Math.max(1, e.sets ?? 1))
           const next = deriveMobilityPosition(data.exercises)
           serverPosition = next === 'done'
@@ -674,6 +694,7 @@ export function WorkoutPage() {
             data = await apiFetch<BagWorkoutData>(`/api/sessions/${id}/start-bag-work`, { method: 'POST' })
           }
           setBagData(data)
+          showLength(data.plannedMin, data.rounds.length)
           rounds = data.rounds.map(r => ({ durationSec: r.durationSec, restSec: r.restSec }))
         } else if (session.type === 'running') {
           let data = await apiFetch<RunWorkoutData>(`/api/sessions/${id}/run-workout`)
@@ -681,12 +702,14 @@ export function WorkoutPage() {
             data = await apiFetch<RunWorkoutData>(`/api/sessions/${id}/start-run`, { method: 'POST' })
           }
           setRunData(data)
+          showLength((data.prescription?.targetDurSec ? data.prescription.targetDurSec / 60 : null))
         } else if (session.type === 'skip_rope') {
           let data = await apiFetch<SkipWorkoutData>(`/api/sessions/${id}/skip-rope-workout`)
           if (live && !data.skipSession) {
             data = await apiFetch<SkipWorkoutData>(`/api/sessions/${id}/start-skip-rope`, { method: 'POST' })
           }
           setSkipData(data)
+          showLength(data.plannedMin, data.skipSession?.roundCount ?? null)
           if (data.skipSession) {
             rounds = Array.from({ length: data.skipSession.roundCount }, () => ({ durationSec: data.skipSession!.roundDurSec, restSec: SKIP_REST_SEC }))
             restAutoEnds = false
@@ -697,15 +720,18 @@ export function WorkoutPage() {
             data = await apiFetch<RecoveryWorkoutData>(`/api/sessions/${id}/start-recovery`, { method: 'POST' })
           }
           setRecoveryData(data)
+          showLength(null)
         } else if (session.type === 'mt_class') {
           let data = await apiFetch<MtClassWorkoutData>(`/api/sessions/${id}/mt-class-workout`)
           if (live && !data.mtLog) {
             data = await apiFetch<MtClassWorkoutData>(`/api/sessions/${id}/start-mt-class`, { method: 'POST' })
           }
           setMtData(data)
+          showLength(data.plannedMin)
         } else {
           const data = await apiFetch<StrengthWorkoutData>(`/api/sessions/${id}/workout`)
           setStrengthData(data)
+          showLength(data.plannedMin)
           setCounts = data.exercises.map(e => e.sets.length)
           const next = deriveStrengthPosition(data.exercises, locallyLoggedSetIds(id!))
           serverPosition = next === 'done'
@@ -834,6 +860,8 @@ export function WorkoutPage() {
   }, [phase, restTimer, restTimer.isRunning, restTimer.isPaused, restTimer.secondsRemaining, strengthData, exerciseIdx, setIdx])
 
   const handleEntranceComplete = useCallback(() => {
+    // page 17: the session's first screen cascades in as the entrance lifts
+    armCascade()
     if (sessionType === 'bag_work') {
       setPhase('bag-preview')
     } else if (sessionType === 'foundation_run') {
@@ -967,6 +995,7 @@ export function WorkoutPage() {
       <RitualEntrance
         sessionType={sessionType}
         runCategory={runCategory}
+        detail={entranceDetail}
         onComplete={handleEntranceComplete}
       />
     )

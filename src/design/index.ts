@@ -21,4 +21,5 @@ export {
 export { PopFlapHost } from './PopFlapHost'
 export { dismissPop, glowRow, showPop, type PopTone } from './popFlap'
 export { prefersReducedMotion, useReducedMotion } from './motion'
+export { armCascade, cascadeForScreen } from './cascade'
 export { SESSION_ICON_NAME, sessionIconFor, type SessionIconKey } from './sessionIcons'

@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 import { FlapLabel, SessionIcon, type FlapTone, type SessionIconKey } from '@/design'
-import { comboStrikes, END_HOLD_MS } from '@/lib/timers/timerLook'
+import { comboStrikes, END_HOLD_MS, ENDED_SHOW_MS } from '@/lib/timers/timerLook'
 import { setWorldBackdrop } from '@/world/worldStore'
+
+import { SessionEndedContext } from './endedContext'
 
 import './timers.css'
 
@@ -66,6 +68,20 @@ interface SessionFrameProps {
  * body, and on timers the half-screen grass. Paused dims the whole screen.
  */
 export function SessionFrame({ title, count, icon, onEnd, grass, forest = false, paused = false, children, overlay, className = '' }: SessionFrameProps) {
+  // Held through: ENDED flips in place (the timer's phase word, or the title on a screen with no
+  // timer) and the clock stops; the session leaves once it has been read (page 19 `.xbtn`).
+  const [ended, setEnded] = useState(false)
+  const endRef = useRef(onEnd)
+  useLayoutEffect(() => { endRef.current = onEnd })
+  const pending = useRef<number | null>(null)
+  const leave = () => { if (pending.current == null) return; window.clearTimeout(pending.current); pending.current = null; endRef.current?.() }
+  const startEnd = () => {
+    if (ended || pending.current != null) return
+    setEnded(true)
+    pending.current = window.setTimeout(leave, ENDED_SHOW_MS)
+  }
+  // Unmounted mid-way (the phase moved on underneath): still end, at once.
+  useEffect(() => () => leave(), [])
   // page 31 draws the set screen over the forest (the clearing, as the MT log)
   useEffect(() => {
     if (!forest) return
@@ -73,20 +89,22 @@ export function SessionFrame({ title, count, icon, onEnd, grass, forest = false,
     return () => setWorldBackdrop(null)
   }, [forest])
   return (
-    <div className={`tm-screen${forest ? ' is-forest' : ''}${paused ? ' is-paused' : ''} ${className}`}>
+    <SessionEndedContext.Provider value={ended}>
+    <div className={`tm-screen${forest ? ' is-forest' : ''}${paused ? ' is-paused' : ''}${ended ? ' is-ended' : ''} ${className}`}>
       {!forest && <div className="tm-ground" aria-hidden />}
       {forest && <div className="tm-forest-scrim" aria-hidden />}
       {grass}
       <div className="tm-ui">
         <div className="tm-stop">
-          <EndButton onEnd={onEnd} />
-          <FlapLabel text={title} size="sm" />
+          <EndButton onEnd={onEnd ? startEnd : undefined} />
+          <FlapLabel text={ended && !grass ? 'ENDED' : title} size="sm" tone={ended && !grass ? 'clay' : 'ink'} />
           {icon ? <SessionIcon kind={icon} size={40} /> : count ? <FlapLabel text={count} size="sm" /> : <span style={{ width: 44 }} />}
         </div>
         {children}
       </div>
       {overlay}
     </div>
+    </SessionEndedContext.Provider>
   )
 }
 

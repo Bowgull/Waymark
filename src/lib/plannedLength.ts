@@ -58,3 +58,20 @@ export function withRoundSec(list: ReadonlyArray<number>, index: number, sec: nu
   next[index] = Math.max(0, Math.round(sec))
   return next
 }
+
+/**
+ * The line under a session's name on its entrance (page 19 #en1 / #en2): the
+ * session's own length. Rounds sessions lead with their rounds
+ * ("6 ROUNDS · 40 MIN"), strength with its block week ("WEEK 3 · 45 MIN"),
+ * anything else is just its minutes. Null when nothing is known.
+ */
+export function entranceLine(o: { type: string; rounds?: number | null; week?: number | null; minutes?: number | null }): string | null {
+  const min = o.minutes != null && Number.isFinite(o.minutes) && o.minutes > 0 ? `${Math.round(o.minutes)} MIN` : null
+  const lead = (o.type === 'bag_work' || o.type === 'skip_rope') && o.rounds != null && o.rounds > 0
+    ? `${o.rounds} ${o.rounds === 1 ? 'ROUND' : 'ROUNDS'}`
+    : o.type === 'strength' && o.week != null && o.week > 0
+      ? `WEEK ${o.week}`
+      : null
+  if (lead && min) return `${lead} · ${min}`
+  return lead ?? min
+}

@@ -10,7 +10,7 @@ import * as THREE from 'three'
 
 import { buildScene, POND, type BuiltScene, type SceneKind } from './build'
 import { cardMaterial, gi, glyphAtlas, makeShared, skyMaterial, surfaceMaterial, type SharedUniforms } from './materials'
-import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, frustumFor, glideEase, mixView, sceneLamp, sceneOf, scenesInView, sceneGlyphWorld, viewGlyphWorld, type PlaceView, type SceneKey } from '../places'
+import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, frustumFor, glideEase, lampK, mixView, sceneLamp, sceneOf, scenesInView, sceneGlyphWorld, viewGlyphWorld, type PlaceView, type SceneKey } from '../places'
 import { pondLook, weeksOrDefault, type WeekPost, type WorldPlace } from '../worldStore'
 import type { WorldMode } from '../timeOfDay'
 
@@ -223,7 +223,8 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
       if (k >= 1) { glide = null; if (roadStale) { roadStale = false; rebuildRoad() } }
     }
     shared.uLampPos.value.copy(lampNow)
-    shared.uLamp.value = 1.6 * (0.45 + 0.55 * lantern) * timeLamp * (reduced ? 1 : 0.94 + 0.06 * Math.sin(t * 11) * Math.sin(t * 7.3))
+    // at night the lantern never burns below page 14 #c's (1.6): the clearing's path and spill must read
+    shared.uLamp.value = 1.6 * lampK(mode, lantern) * timeLamp * (reduced ? 1 : 0.94 + 0.06 * Math.sin(t * 11) * Math.sin(t * 7.3))
     const inView = new Set(scenesInView(view, W))
     for (const [k, b] of scenes) {
       const vis = inView.has(k)

@@ -183,6 +183,7 @@ export function buildScene(kind: SceneKind, env: BuildEnv, weeksIn?: WeekPost[])
     const ZS = [6.6, 3.6, 0.6, -2.6, -6.0, -9.6], woodM = surf({ set: 'wood', color: '#7a5a3c', fill: 0.3, min: 0.2 }), notchM = surf({ set: 'wood', color: '#2a1c10', fill: 0.4, min: 0.05 })
     const ironM = surf({ set: 'metal', color: '#4a4a44', fill: 0.3, min: 0.12 }), litM = surf({ set: 'glow', color: '#e8b870', fill: 0.4, min: 0.3, emissive: 0.75 }), nowM = surf({ set: 'glow', color: '#ffd08a', fill: 0.5, min: 0.45, emissive: 1.2 }), coldM = surf({ set: 'glow', color: '#3a4440', fill: 0.3, min: 0.1 })
     const mossCap = surf({ set: 'moss', color: '#6e9a4e', fill: 0.4, min: 0.2 })
+    const runes: CardItem[] = []
     opts.weeks.forEach((w, i) => {
       const z = ZS[i] ?? -12 - i, side = i % 2 ? -1 : 1, x = pathX(z) + side * 0.9, g = new THREE.Group()
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.25, 0.16), woodM); post.position.y = 0.62; post.rotation.z = (rnd(i, 1400) - 0.5) * 0.08; g.add(post)
@@ -192,9 +193,12 @@ export function buildScene(kind: SceneKind, env: BuildEnv, weeksIn?: WeekPost[])
       const flame = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.11, 0.08), w.state === 'now' ? nowM : w.state === 'done' ? litM : coldM); flame.position.set(-side * 0.3, 1.04, 0); g.add(flame)
       if (w.state === 'now') { const cap = new THREE.Mesh(clump(0.13, 1410 + i, [1.2, 0.6, 1.2]), mossCap); cap.position.set(0, 1.28, 0); g.add(cap) }
       g.scale.setScalar(1.75); g.position.set(x, 0, z); add(g)
+      // a done week: its notch carved and a teal rune on the post (design-decisions.md, Program)
+      if (w.state === 'done') runes.push({ x, y: 0.62 * 1.75, z: z + 0.45, c: 'Y', t: [0.36, 0.99, 0.83], p: i * 1.3 })
       if (w.state === 'done' || w.state === 'now') { lightPts.push({ x: x - side * 0.52, y: 1.8, z: z + 0.1, r: w.state === 'now' ? 1.3 : 0.7 }); glintPts.push([x - side * 0.52, 2.0, z + 0.08]) }
       if (w.state === 'now') { const items: CardItem[] = []; for (let k = 0; k < 14; k++) items.push({ x: x + (rnd(k, 1420 + i) - 0.5) * 1.6, y: 0.4 + rnd(k, 1421 + i) * 1.4, z: z + (rnd(k, 1422 + i) - 0.5) * 1.2, c: rnd(k, 1423) > 0.5 ? '*' : '+', t: [1.0, 0.9, 0.5], p: rnd(k, 1424) * 6.28 }); addCards(items, { spill: 1, fly: 0.35, sway: 0 }) }
     })
+    if (runes.length) addCards(runes, { spill: 1, sway: 0, w: gw * 1.1, h: gw * 1.6 })
     {
       const rails: THREE.BufferGeometry[] = [], STATES = ['intact', 'half', 'broken', 'intact', 'half', 'broken', 'intact']
       for (let i = 0; i < ZS.length - 1; i++) for (const side of [-1, 1]) {

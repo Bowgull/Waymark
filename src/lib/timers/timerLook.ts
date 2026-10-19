@@ -104,6 +104,25 @@ export function releaseAction(pull: number, dy: number): 'skip' | 'none' | 'tap'
 /** The × end button: held this long, it ends (a clay bar fills along its foot). */
 export const END_HOLD_MS = 1500
 
+/**
+ * After the hold, the phase word flips to ENDED in place (page 19 `.xbtn`) and
+ * the clock stops; the session leaves once ENDED has landed and been read.
+ */
+export const ENDED_SHOW_MS = 900
+
+/**
+ * Letting go of an early pull settles back (design-decisions "Timers"): the
+ * beam sinks to nothing over this long, easing out, instead of vanishing.
+ */
+export const PULL_SETTLE_MS = 350
+
+/** The beam `elapsedMs` into its settle from `from` (0..1): ease-out cubic down to 0. */
+export function settlePull(from: number, elapsedMs: number, ms = PULL_SETTLE_MS): number {
+  if (!(from > 0) || !(ms > 0)) return 0
+  const t = Math.max(0, Math.min(1, elapsedMs / ms))
+  return from * Math.pow(1 - t, 3)
+}
+
 // ─── combos ──────────────────────────────────────────────────
 
 /** A combo's strikes, upper-cased: "Jab → Cross → Hook" → JAB, CROSS, HOOK. */

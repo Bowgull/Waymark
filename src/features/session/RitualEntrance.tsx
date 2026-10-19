@@ -6,16 +6,18 @@ import { setWorldBare } from '@/world/worldStore'
 interface RitualEntranceProps {
   sessionType: string
   runCategory?: string | null
+  /** The session's length line under its name ("6 ROUNDS · 40 MIN", "WEEK 3 · 45 MIN"); null until known. */
+  detail?: string | null
   onComplete: () => void
 }
 
-// The session entrance (design-decisions.md "Session icons"): the session's own
-// painted icon over the dimmed, blurred forest, swaying slowly like the crest,
-// with the session name (never WAYMARK). Fade in 0.4 s, hold about 1.2 s, fade
-// out 0.4 s. Tap skips.
+// The session entrance (design-decisions.md "Session icons"; page 19 #en1/#en2): the
+// session's own painted icon over the dimmed, blurred forest (a warm glow at the
+// icon, 3 px blur), swaying slowly like the crest, with the session name (never
+// WAYMARK) and its length. Fade in 0.4 s, hold about 1.2 s, fade out 0.4 s. Tap skips.
 export const ENTRANCE_MS = { fadeIn: 400, hold: 1200, fadeOut: 400 } as const
 
-export function RitualEntrance({ sessionType, runCategory, onComplete }: RitualEntranceProps) {
+export function RitualEntrance({ sessionType, runCategory, detail, onComplete }: RitualEntranceProps) {
   const reduced = useReducedMotion()
   const [phase, setPhase] = useState<'in' | 'hold' | 'out'>('in')
   const doneRef = useRef(false)
@@ -40,14 +42,18 @@ export function RitualEntrance({ sessionType, runCategory, onComplete }: RitualE
       className={`wm-entrance is-${phase}`}
       role="button"
       tabIndex={0}
-      aria-label={`${SESSION_ICON_NAME[icon]}. Tap to skip.`}
+      aria-label={`${SESSION_ICON_NAME[icon]}${detail ? `, ${detail.toLowerCase()}` : ''}. Tap to skip.`}
       onClick={skip}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') skip() }}
+      data-no-cascade
     >
       <div className={`wm-entrance-icon${reduced ? '' : ' is-sway'}`}>
-        <SessionIcon kind={icon} size={168} />
+        <SessionIcon kind={icon} size={220} />
       </div>
-      <FlapLabel text={name} size="lg" tone="gold" animate={reduced ? false : 'mount'} />
+      <div className="wm-entrance-words">
+        <FlapLabel text={name} size="lg" tone="gold" animate={reduced ? false : 'mount'} />
+        {detail && <div className="wm-entrance-detail"><FlapLabel text={detail} size="sm" animate={reduced ? false : 'mount'} /></div>}
+      </div>
     </div>
   )
 }

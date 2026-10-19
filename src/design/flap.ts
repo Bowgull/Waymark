@@ -111,3 +111,40 @@ export function fitFlapSize(text: string, maxWidth: number, preferred: FlapSizeK
   }
   return 'xs'
 }
+
+// ─── The screen-open cascade (page 17, 17-split-flap.html `cascade` + `flip`) ──
+// A screen opens: every label waits 120 ms + 2 ms per px it sits below the top
+// of the screen, then its tiles flip in 22 ms apart, a flip every 45 ms, 4 to 7
+// flips each, so the board fills row by row from the top.
+
+export const CASCADE = { baseMs: 120, msPerPx: 2, staggerMs: 22, stepMs: 45, flips: 4, extraFlips: 4 } as const
+
+/** When a label at `top` px (from the top of the screen) starts its cascade. Clamped to the screen. */
+export function cascadeDelayMs(top: number, screenHeight: number): number {
+  const y = Math.max(0, Math.min(Math.max(0, screenHeight), Number.isFinite(top) ? top : 0))
+  return Math.round(CASCADE.baseMs + y * CASCADE.msPerPx)
+}
+
+/** A small stable hash, so a label's flip counts are the same on every open (the mockup draws them at random). */
+export function cascadeSeed(text: string): number {
+  let h = 7
+  for (const c of text) h = (h * 31 + c.charCodeAt(0)) % 9973
+  return h
+}
+
+/**
+ * The glyphs one tile shows as it cascades in from blank, ending on `ch`.
+ * Page 17 gives each tile 4 + (0..3) flips and then lands: a letter flips
+ * through letters, a digit counts the short way through digits and lands, a
+ * gap stays clear, anything else just lands.
+ */
+export function cascadeFrames(ch: string, index: number, seed = 0): string[] {
+  if (ch === ' ') return []
+  const n = CASCADE.flips + ((seed + index * 7) % CASCADE.extraFlips)
+  if (ch >= 'A' && ch <= 'Z') return flipFrames(' ', ch, n + 1)
+  if (ch >= '0' && ch <= '9') {
+    const start = (Number(ch) - Math.min(n, 9) + 10) % 10
+    return [...flipFrames(String(start), ch), ch]
+  }
+  return [ch]
+}

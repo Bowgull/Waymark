@@ -1,7 +1,7 @@
 // The world's pure parts: tabs to places, the camera's views and glide, time of day, the store.
 import assert from 'node:assert/strict'
 
-import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, TODAY_ZOOM, frustumFor, glideEase, mixView, placeForPath, sceneGlyphWorld, sceneLamp, sceneOf, scenesInView, viewGlyphWorld } from './places'
+import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, TODAY_ZOOM, frustumFor, glideEase, lampK, mixView, placeForPath, sceneGlyphWorld, sceneLamp, sceneOf, scenesInView, viewGlyphWorld } from './places'
 import { modeForClock, msUntilNextChange, parseOverride, resolveMode, TIME_OVERRIDES } from './timeOfDay'
 import { getWorldState, pondLook, sameWeeks, setWorldPond, setWorldBackdrop, setWorldBare, setWorldLantern, setWorldPlace, setWorldWeeks, subscribeWorld, weeksOrDefault } from './worldStore'
 
@@ -113,5 +113,15 @@ test('the store tells the world only what changed', () => {
   assert.ok(pondLook(0).water < 1 && pondLook(0).flies < 1 && pondLook(1).water > 1, 'a slow week is darker and stiller; a good one brighter')
   off()
 })
+
+// the lantern: readiness dims it by day; at night it never burns below page 14 #c (night clearing)
+{
+  assert.equal(lampK('misty', 1), 1)
+  assert.equal(lampK('misty', 0), 0.45)
+  assert.equal(lampK('sun', 0.85), 0.45 + 0.55 * 0.85)
+  assert.equal(lampK('night', 0), 1)
+  assert.equal(lampK('night', 0.85), 1)
+  assert.equal(lampK('night', 1), 1)
+}
 
 console.log(`world.test: ${passed} passed`)

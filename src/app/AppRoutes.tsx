@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { OfflinePill, ShellLayout } from './ShellLayout'
 import { WorldLayer } from '../world/WorldLayer'
+import { cascadeForScreen } from '../design/cascade'
 import { HistoryPage } from '../features/history/HistoryPage'
 import { LibraryPage } from '../features/library/LibraryPage'
 import { OnboardingPage } from '../features/onboarding/OnboardingPage'
@@ -13,6 +14,17 @@ import { SettingsPage } from '../features/settings/SettingsPage'
 import { LogsPage } from '../features/settings/LogsPage'
 import { TodayPage } from '../features/today/TodayPage'
 import { EndGatePage } from '../features/blockZero/EndGate'
+
+/**
+ * The screens page 17 cascades as they open (Today, Program, Library, Ledger and
+ * a session's screens); null for the rest (Settings, onboarding...), which land at once.
+ */
+function cascadeScreen(pathname: string): string | null {
+  if (pathname === '/') return '/today'
+  if (/^\/(today|program|library|history)(\/|$)/.test(pathname)) return pathname
+  if (/^\/session\//.test(pathname)) return pathname
+  return null
+}
 
 // Dev only: every new screen with sample data, for screenshots (never in a build).
 const DesignGallery = import.meta.env.DEV ? lazy(() => import('../design/DesignGallery')) : null
@@ -49,6 +61,8 @@ async function coachMorningLine(): Promise<string | null> {
 export function AppRoutes() {
   const navigate = useNavigate()
   const location = useLocation()
+  // Arm the cascade as the new screen renders, before its labels' first layout effects run (idempotent).
+  cascadeForScreen(cascadeScreen(location.pathname))
 
   useEffect(() => {
     if (location.pathname === '/onboarding' || location.pathname === '/design') return

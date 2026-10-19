@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { getStrengthTemplate } from './strengthTemplates'
 import { estimateRoutineSec, foundationTemplate } from './foundation'
-import { parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes, roundSecsKey, withRoundSec, WORK_SET_SEC } from './plannedLength'
+import { entranceLine, parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes, roundSecsKey, withRoundSec, WORK_SET_SEC } from './plannedLength'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; console.log(`ok: ${name}`) }
@@ -46,6 +46,15 @@ test('per-round seconds: kept by index, read back only when well formed', () => 
   assert.equal(parseRoundSecs('[1,-2]'), null)
   assert.equal(parseRoundSecs('not json'), null)
   assert.equal(roundSecsKey('s1'), 'waymark_round_secs:s1')
+})
+
+test('entrance line: the length under the session name (page 19)', () => {
+  assert.equal(entranceLine({ type: 'bag_work', rounds: 6, minutes: 40 }), '6 ROUNDS · 40 MIN')
+  assert.equal(entranceLine({ type: 'strength', week: 3, minutes: 45 }), 'WEEK 3 · 45 MIN')
+  assert.equal(entranceLine({ type: 'skip_rope', rounds: 1, minutes: 3 }), '1 ROUND · 3 MIN')
+  assert.equal(entranceLine({ type: 'running', week: 2, minutes: 34.6 }), '35 MIN', 'only strength leads with its week')
+  assert.equal(entranceLine({ type: 'bag_work', rounds: 6 }), '6 ROUNDS')
+  assert.equal(entranceLine({ type: 'strength', week: null, minutes: 0 }), null)
 })
 
 console.log(`plannedLength: ${passed} passed`)

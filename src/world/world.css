@@ -23,7 +23,7 @@
 .wm-world[data-place='clearing'] .wm-world-canvas { filter: brightness(0.8); }
 .wm-world.is-dip .wm-world-canvas { opacity: 0; transition-duration: 160ms; }
 /* the session entrance: the forest dimmed and blurred behind the session's icon */
-.wm-world.is-bare .wm-world-canvas { filter: blur(7px) brightness(0.45); }
+.wm-world.is-bare .wm-world-canvas { filter: none; }
 
 .wm-world-scrim {
   position: absolute;
@@ -42,6 +42,14 @@
 /* Program: the road band up top, then dark under the boards (page 33 .roadfade) */
 .wm-world[data-place='road'] .wm-world-scrim {
   background: linear-gradient(rgba(2, 10, 8, 0.4), transparent 9%, transparent 30%, rgba(4, 9, 7, 0.9) 47%, #050b09 64%);
+}
+/* Night on Today (the clearing, the rest-day home): page 14 #c's exposure. The forest is already dark,
+   so no dimming filter and only a light veil under the header and the tabs; the red path, the lantern's
+   spill and the fireflies read as on page 14. */
+.wm-world[data-mode='night'][data-place='clearing'] .wm-world-canvas { filter: none; }
+.wm-world[data-mode='night'][data-place='clearing'] .wm-world-scrim,
+.wm-world[data-mode='night'][data-place='home'] .wm-world-scrim {
+  background: linear-gradient(rgba(2, 10, 8, 0.4), rgba(2, 10, 8, 0) 16%, rgba(2, 10, 8, 0) 72%, rgba(2, 10, 8, 0.6));
 }
 .wm-world.is-bare .wm-world-scrim { opacity: 0; }
 

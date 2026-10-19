@@ -10,6 +10,7 @@
 // (a 390×400 road band), Library page 14b (the arch), Ledger page 32, rest day
 // page 43. `pxPerUnit` keeps the mockups' glyph size (9 px) on any phone height.
 
+import type { WorldMode } from './timeOfDay'
 import type { WorldPlace } from './worldStore'
 
 export interface PlaceView {
@@ -123,4 +124,10 @@ export function frustumFor(view: PlaceView, w: number, h: number): { left: numbe
 export function scenesInView(view: PlaceView, w: number): SceneKey[] {
   const half = w / view.pxPerUnit / 2 + 8
   return (Object.keys(PLACE_ORIGIN) as SceneKey[]).filter(k => Math.abs(PLACE_ORIGIN[k] - view.x) < half + 1)
+}
+
+/** The lantern's strength for the readiness value (0..1): dimmed down to 0.45 by day, at least page 14's at night. */
+export function lampK(mode: WorldMode, lantern: number): number {
+  const k = 0.45 + 0.55 * Math.max(0, Math.min(1, lantern))
+  return mode === 'night' ? Math.max(1, k) : k
 }

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 
 import { useReducedMotion } from '@/design'
 import { drawGrass, grassGrid, type GrassMode, type GrassParams } from '@/lib/timers/grassScene'
-import { HEAT_RGB, progressOf, pullAmount, releaseAction, swellBreath, swellK, trackRemainingMs, type Heat, type TimerKind, type TimerTrack } from '@/lib/timers/timerLook'
+import { HEAT_RGB, progressOf, pullAmount, releaseAction, settlePull, swellBreath, swellK, trackRemainingMs, type Heat, type TimerKind, type TimerTrack } from '@/lib/timers/timerLook'
 
 const CALM_FINGER: [number, number, number] = [170, 236, 214]
 const WORK_FINGER: [number, number, number] = [236, 206, 120]
@@ -35,6 +35,8 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Tim
   const live = useRef({ track, kind, mode, heat })
   useLayoutEffect(() => { live.current = { track, kind, mode, heat } })
   const touch = useRef<Pick<GrassParams, 'finger' | 'trail' | 'pull' | 'fcol' | 'touch'>>({})
+  // An early pull let go settles back: the beam sinks from where it was (timerLook settlePull).
+  const settle = useRef<{ x: number; y: number; from: number; at: number } | null>(null)
   const handlers = useRef({ onTap, onSkip })
   useLayoutEffect(() => { handlers.current = { onTap, onSkip } })
 
@@ -72,6 +74,12 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Tim
         glow: calm ? swellBreath(swellK(remaining / 1000, k), Date.now()) : 0,
         ...touch.current,
       }
+      const st = settle.current
+      if (st) {
+        const k = reduced ? 0 : settlePull(st.from, performance.now() - st.at)
+        if (k > 0) params.settle = { x: st.x, y: st.y, k }
+        else settle.current = null
+      }
       drawGrass(g, grid, reduced ? 0 : now / 1000, params, performance.now() / 1000)
     }
     raf = requestAnimationFrame(frame)
@@ -101,6 +109,7 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Tim
         onPointerDown={e => {
           const p = at(e)
           gesture.current = { down: true, y0: e.clientY }
+          settle.current = null
           try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* not capturable */ }
           touch.current = { finger: { x: p.x, y: p.y, on: true }, trail: [], pull: 0, fcol: fcol(), touch: { x: p.x, y: p.y, at: performance.now() / 1000, col: fcol() } }
         }}
@@ -115,8 +124,10 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Tim
           if (!gesture.current.down) return
           gesture.current.down = false
           const pull = touch.current.pull ?? 0
+          const f = touch.current.finger
           touch.current = { ...touch.current, finger: { x: 0, y: 0, on: false }, pull: 0 }
           const act = handlers.current.onSkip ? releaseAction(pull, e.clientY - gesture.current.y0) : 'tap'
+          if (act !== 'skip' && pull > 0 && f) settle.current = { x: f.x, y: f.y, from: pull, at: performance.now() }
           if (act === 'skip') handlers.current.onSkip?.()
           else if (act === 'tap') handlers.current.onTap?.()
         }}

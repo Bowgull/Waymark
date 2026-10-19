@@ -50,9 +50,18 @@ export interface GrassParams {
   pull?: number
   /** The finger's light colour. */
   fcol?: RGB
+  /** An early pull let go: the beam sinking back where the finger was (0..1 of the zone; k = what is left of the pull). */
+  settle?: { x: number; y: number; k: number } | null
   /** A tap ripple: where and when (s). */
   touch?: { x: number; y: number; at: number; col?: RGB } | null
   calm?: boolean
+}
+
+/** The pull's beam of light up the grass above the finger at (fx, fy), as strong as the pull k. */
+function beam(cell: Cell, x: number, y: number, fx: number, fy: number, k0: number, FC: RGB) {
+  if (Math.abs(x - fx) >= 0.09 || y >= fy) return
+  const k = k0 * (1 - Math.abs(x - fx) / 0.09) * (0.4 + 0.6 * (1 - (fy - y)))
+  cell.c = mix(cell.c, FC, Math.min(1, k)); cell.b = clamp(cell.b + k * 0.9); if (k > 0.35) cell.ch = '|'
 }
 
 /** One cell of the timer scene (wm.js SCENES.timer). `now` is the wall clock in seconds (trail, touch). */
@@ -80,9 +89,10 @@ export function timerCell(x: number, y: number, t: number, p: GrassParams, now: 
   if (p.finger && p.finger.on) {
     const f = p.finger, d = Math.hypot(x - f.x, y - f.y), pull = p.pull ?? 0
     if (d < 0.17) { const k = 1 - d / 0.17; cell.ch = d < 0.035 ? '*' : (x < f.x ? '\\' : '/'); cell.c = mix(cell.c, FC, k * 0.9); cell.b = clamp(cell.b + k * 0.9) }
-    if (pull > 0 && Math.abs(x - f.x) < 0.09 && y < f.y) { const k = pull * (1 - Math.abs(x - f.x) / 0.09) * (0.4 + 0.6 * (1 - (f.y - y))); cell.c = mix(cell.c, FC, Math.min(1, k)); cell.b = clamp(cell.b + k * 0.9); if (k > 0.35) cell.ch = '|' }
+    if (pull > 0) beam(cell, x, y, f.x, f.y, pull, FC)
     if (pull >= 1 && y < 0.12) { cell.c = FC; cell.b = 1 }
   }
+  if (p.settle && p.settle.k > 0 && !(p.finger && p.finger.on)) beam(cell, x, y, p.settle.x, p.settle.y, p.settle.k, FC)
   if (p.touch) {
     const dt = now - p.touch.at
     if (dt >= 0 && dt < 1.4) {

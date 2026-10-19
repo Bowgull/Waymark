@@ -472,7 +472,8 @@
   /* headers sitting straight on the world carry a soft shadow so they read at any time of day */
   .wm-on-world { text-shadow: 0 1px 8px #000, 0 0 2px #000; }
 
-  /* ── session entrance: the session's icon over the blurred forest ── */
+  /* ── session entrance (page 19 #en1/#en2): the session's icon over the forest, a warm glow at the icon,
+     darkening out to the edges, the forest blurred 3 px; name and length under it ── */
   .wm-entrance {
     position: fixed;
     inset: 0;
@@ -481,16 +482,24 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 22px;
-    background: radial-gradient(ellipse 70% 45% at 50% 46%, rgba(2, 10, 8, 0.15), rgba(2, 10, 8, 0.6));
     opacity: 0;
-    transition: opacity 400ms ease-out;
+    transition: opacity 400ms ease;
     -webkit-tap-highlight-color: transparent;
   }
+  .wm-entrance::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 42%, rgba(255, 200, 120, 0.14), rgba(2, 8, 6, 0.6) 45%, rgba(2, 8, 6, 0.85) 100%);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+  }
   .wm-entrance.is-hold { opacity: 1; }
-  .wm-entrance.is-in { animation: wm-fade-in 400ms ease-out both; }
-  .wm-entrance.is-out { opacity: 0; transition-timing-function: ease-in; }
-  .wm-entrance-icon { filter: drop-shadow(0 0 18px rgba(255, 214, 140, 0.25)); }
+  .wm-entrance.is-in { animation: wm-fade-in 400ms ease both; }
+  .wm-entrance.is-out { opacity: 0; }
+  .wm-entrance-icon { position: relative; margin-top: -60px; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.55)); }
+  .wm-entrance-words { position: relative; margin-top: 22px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .wm-entrance-detail { margin-top: 10px; }
   .wm-entrance-icon.is-sway { animation: wm-crest-turn 9s ease-in-out infinite; }
 
   /* ── splash (page 38, A): the crest suits up, WAYMARK flaps in, Today fades up ── */

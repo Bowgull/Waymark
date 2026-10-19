@@ -4,6 +4,8 @@
 
 .tm-screen { position: fixed; inset: 0; z-index: 1; overflow: hidden; isolation: isolate; color: var(--sf-ink); transition: filter 180ms ease-out; }
 .tm-screen.is-paused { filter: brightness(0.7); }
+/* held ×: ENDED shows in place, nothing more can be touched while it does (page 19 .xbtn) */
+.tm-screen.is-ended .tm-grass, .tm-screen.is-ended .tm-ui, .tm-screen.is-ended .tm-ui * { pointer-events: none; }
 .tm-ground { position: absolute; inset: 0; z-index: 0; background: radial-gradient(ellipse 130% 55% at 50% 100%, #0b2018, #030907 70%); }
 /* page 31 FOREST: the world behind, the phone scrim over it */
 .tm-forest-scrim { position: absolute; inset: 0; z-index: 0; pointer-events: none; background: linear-gradient(rgba(2, 10, 8, 0.55), rgba(2, 10, 8, 0.12) 26%, rgba(2, 10, 8, 0.35) 55%, rgba(2, 10, 8, 0.85)); }

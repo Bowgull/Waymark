@@ -9,7 +9,7 @@ export function PopFlapHost() {
   useEffect(() => subscribePops(setItems), [])
   if (items.length === 0) return null
   return (
-    <div className="wm-pop-host" aria-live="polite" role="status">
+    <div className="wm-pop-host" aria-live="polite" role="status" data-no-cascade>
       {items.map(m => (
         <div key={m.id} className={`wm-pop is-${m.tone}${m.leaving ? ' is-leaving' : ''}`} onClick={() => dismissPop(m.id)}>
           {/* page 35 A: good news on a teal flap; a failure's words on plain tiles, the clay is the board's edge */}

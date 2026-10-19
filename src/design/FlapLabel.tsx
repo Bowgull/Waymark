@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 
-import { fitFlapSize, flapCells, flapStaggerMs, flipFrames } from './flap'
+import { cascadeArmed } from './cascade'
+import { CASCADE, cascadeDelayMs, cascadeFrames, cascadeSeed, fitFlapSize, flapCells, flapStaggerMs, flipFrames } from './flap'
 import { useReducedMotion } from './motion'
 
 export type FlapSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
@@ -14,8 +15,11 @@ export interface FlapLabelProps {
   len?: number
   /**
    * 'change' (default): flips when the text changes, lands at once on first show.
-   * 'mount': also flips in on first show (a screen opening).
-   * false: never flips.
+   * 'mount': also flips in on first show.
+   * false: never flips on a change.
+   * Whatever this is, a label that first shows as a screen opens cascades in
+   * with the rest of the screen (page 17, design/cascade.ts) unless it sits
+   * inside [data-no-cascade].
    */
   animate?: 'change' | 'mount' | false
   /**
@@ -54,6 +58,37 @@ export function FlapLabel({ text, size = 'sm', tone = 'ink', len = 0, animate = 
       el.textContent = (targetChars[i] ?? ' ') === ' ' ? '' : targetChars[i]
       el.classList.remove('is-tick')
     })
+    // A screen just opened (page 17): the label waits for its row, then its tiles flip in.
+    // Reduce Motion lands at once; the timer's digits and the overlays keep their own motion.
+    if (from == null && !reduced && cascadeArmed() && !root.closest('[data-no-cascade]')) {
+      const delay = cascadeDelayMs(root.getBoundingClientRect().top, window.innerHeight)
+      const seed = cascadeSeed(target)
+      const timers: ReturnType<typeof setTimeout>[] = []
+      let remaining = 0
+      root.style.opacity = '0'
+      timers.push(setTimeout(() => { root.style.opacity = '' }, delay))
+      targetChars.forEach((ch, i) => {
+        const el = els[i]
+        const seq = cascadeFrames(ch, i, seed)
+        if (!el || seq.length === 0) return
+        el.textContent = ''
+        remaining += seq.length
+        seq.forEach((glyph, k) => {
+          timers.push(setTimeout(() => {
+            el.classList.remove('is-tick')
+            void el.offsetWidth
+            el.classList.add('is-tick')
+            el.textContent = glyph
+            remaining--
+          }, delay + i * CASCADE.staggerMs + k * CASCADE.stepMs))
+        })
+      })
+      return () => {
+        timers.forEach(clearTimeout)
+        root.style.opacity = ''
+        if (remaining > 0) landedRef.current = from
+      }
+    }
     if (animate === false || reduced) return
     if (from == null && animate !== 'mount') return
     if (from === target) return

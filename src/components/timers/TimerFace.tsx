@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { FlapLabel, useReducedMotion, type FlapTone } from '@/design'
+import { SessionEndedContext } from './endedContext'
 import { clockDigits, HEAT_RED_SCALE, swellBreath, swellK, swellStyle, trackRemainingMs, type Heat, type TimerKind, type TimerTrack } from '@/lib/timers/timerLook'
 
 interface TimerFaceProps {
@@ -27,7 +28,13 @@ interface TimerFaceProps {
  * last 10 s (digits and the phase word; the clock grows 6% at red); holds and
  * rest swell, brighten and breathe from 5 s out.
  */
-export function TimerFace({ seconds, kind, heat, tone = 'ink', label, labelTone = 'gold', track, compact = false }: TimerFaceProps) {
+export function TimerFace({ seconds: liveSeconds, kind, heat, tone = 'ink', label: liveLabel, labelTone = 'gold', track, compact = false }: TimerFaceProps) {
+  // Held × (page 19): the clock stops where it was and the phase word flips to ENDED.
+  const ended = useContext(SessionEndedContext)
+  const [stoppedAt, setStoppedAt] = useState<number | null>(null)
+  if (ended && stoppedAt == null) setStoppedAt(liveSeconds)
+  const seconds = ended && stoppedAt != null ? stoppedAt : liveSeconds
+  const label = ended ? 'ENDED' : liveLabel
   const reduced = useReducedMotion()
   const clockRef = useRef<HTMLDivElement>(null)
   const phaseRef = useRef<HTMLDivElement>(null)
@@ -66,6 +73,7 @@ export function TimerFace({ seconds, kind, heat, tone = 'ink', label, labelTone 
       <div
         ref={clockRef}
         className={`tm-clock${compact ? ' is-compact' : ''}${red ? ' is-red' : ''}`}
+        data-no-cascade
         role="timer"
         aria-label={`${Math.floor(seconds / 60)} minutes ${seconds % 60} seconds`}
         style={red ? { transform: `scale(${HEAT_RED_SCALE})` } : undefined}

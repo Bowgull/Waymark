@@ -8,7 +8,7 @@ import { flipFrames } from '../../design/flap'
 import { cellGlyph, grassGrid, timerCell } from './grassScene'
 import {
   clockDigits, comboLetter, comboLetters, comboStrikes, effortWord, heatFor, momentLine,
-  progressOf, pullAmount, releaseAction, shownSeconds, swellK, workLabel,
+  ENDED_SHOW_MS, PULL_SETTLE_MS, progressOf, pullAmount, releaseAction, settlePull, shownSeconds, swellK, workLabel,
 } from './timerLook'
 
 let passed = 0
@@ -129,6 +129,21 @@ test('grass grid is the mockups\' fit at 14 px', () => {
   const g = grassGrid(390, 396.68)
   assert.equal(g.cols, 46)
   assert.equal(g.rows, 24)
+})
+
+test('an early pull settles back over about a third of a second, easing out', () => {
+  assert.ok(PULL_SETTLE_MS >= 300 && PULL_SETTLE_MS <= 400)
+  assert.equal(settlePull(0.5, 0), 0.5, 'starts where the finger let go')
+  assert.equal(settlePull(0.5, PULL_SETTLE_MS), 0, 'gone at the end')
+  assert.equal(settlePull(0.5, PULL_SETTLE_MS * 2), 0)
+  const half = settlePull(1, PULL_SETTLE_MS / 2)
+  assert.ok(half < 0.5 && half > 0, 'eases out: most of the way down by halfway')
+  assert.ok(settlePull(1, 50) > settlePull(1, 100), 'only ever sinks')
+  assert.equal(settlePull(0, 10), 0)
+})
+
+test('the hold-to-end shows ENDED before leaving', () => {
+  assert.ok(ENDED_SHOW_MS >= 600 && ENDED_SHOW_MS <= 1200)
 })
 
 console.log(`timerLook: ${passed} passed`)

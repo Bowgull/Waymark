@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { fitFlapSize, fitsOnFlap, flapCells, flapStaggerMs, flapWidth, flipFrames } from './flap'
+import { CASCADE, cascadeDelayMs, cascadeFrames, cascadeSeed, fitFlapSize, fitsOnFlap, flapCells, flapStaggerMs, flapWidth, flipFrames } from './flap'
 import { popParts } from './popFlap'
 import { sessionIconFor } from './sessionIconKeys'
 
@@ -71,6 +71,28 @@ import { sessionIconFor } from './sessionIconKeys'
   assert.equal(sessionIconFor('mt_class'), 'mt')
   assert.equal(sessionIconFor('bag_work'), 'bag')
   assert.equal(sessionIconFor('skip_rope'), 'rope')
+}
+
+// ─── the screen-open cascade (page 17): row by row from the top ──
+{
+  assert.equal(cascadeDelayMs(0, 844), 120, 'the top row starts 120 ms in')
+  assert.equal(cascadeDelayMs(100, 844), 320, '2 ms per px further down')
+  assert.ok(cascadeDelayMs(400, 844) > cascadeDelayMs(200, 844), 'lower rows wait longer')
+  assert.equal(cascadeDelayMs(5000, 844), 120 + 844 * 2, 'clamped to the screen')
+  assert.equal(cascadeDelayMs(-50, 844), 120)
+  assert.deepEqual([CASCADE.staggerMs, CASCADE.stepMs], [22, 45], 'page 17 flip(): stagger 22, speed 45')
+  for (let i = 0; i < 12; i++) {
+    const f = cascadeFrames('W', i, cascadeSeed('WAYMARK'))
+    assert.ok(f.length >= 5 && f.length <= 8, '4 to 7 flips, then it lands')
+    assert.equal(f[f.length - 1], 'W')
+    for (const g of f) assert.match(g, /^[A-Z]$/)
+    const d = cascadeFrames('7', i, 3)
+    assert.equal(d[d.length - 1], '7')
+    for (const g of d) assert.match(g, /^[0-9]$/, 'digits only through digits')
+  }
+  assert.deepEqual(cascadeFrames(' ', 0), [], 'a gap stays clear')
+  assert.deepEqual(cascadeFrames('·', 0), ['·'], 'other glyphs just land')
+  assert.equal(cascadeSeed('TODAY'), cascadeSeed('TODAY'), 'the same on every open')
 }
 
 console.log('design tests passed')
