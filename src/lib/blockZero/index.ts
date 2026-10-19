@@ -32,6 +32,7 @@ export {
   effectiveRir,
   getStrengthWeekTarget,
   mainLiftHardSets,
+  restateSetCount,
   latestRirTopSet,
   liftRegion,
   nextLoad,

@@ -16,6 +16,7 @@ import {
   runDiffLines,
   strengthDiffLines,
   strengthWeekLine,
+  easedOneSet,
   topLiftsLine,
   zone2PlanLine,
   type DayBoardSession,
@@ -158,7 +159,7 @@ function planView(s: DayBoardSession, data: SummaryData | null, weekNumber: numb
   const lines: DiffLine[] = []
   switch (data?.kind) {
     case 'strength': {
-      const week = strengthWeekLine(s.blockType, weekNumber ?? s.blockWeek)
+      const week = strengthWeekLine(s.blockType, weekNumber ?? s.blockWeek, easedOneSet(s.contextJson))
       if (week) prose.push(week)
       prose.push(...data.notes)
       if (prose.length === 0) prose.push(getSessionIntent(s.type))

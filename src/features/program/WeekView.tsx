@@ -5,7 +5,7 @@ import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker
 import { REPLACE_REASONS, SKIP_PLACES, SKIP_REASONS } from '@/components/ui/departures'
 import { submitBoardPick, submitReplace, submitSkip, submitSkipReason } from '@/lib/boardPick'
 import { DayBoardRow } from '@/features/dayboard/DayBoardRow'
-import { dowOfEpochDay, runWalkDetail, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
+import { dowOfEpochDay, runWalkDetail, sessionDisplayName, strengthPlanDetail, type DayBoardSession } from '@/features/dayboard/rowState'
 import { DayBack } from '@/features/coach/DayBack'
 import { ReasonTiles } from '@/features/coach/ReasonTiles'
 import { Rune } from '@/features/coach/Rune'
@@ -56,7 +56,7 @@ function isoOfEpochDay(d: number): string {
 /** The plan line on a to-do row (page 56: "12 min · back and neck", "4 rounds · run 3:30, walk 1:00 · 23 min"). */
 function planDetail(s: DayBoardSession, weekNumber: number): string | null {
   const blockType = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
-  if (s.type === 'strength') return getWeekLabel(s.blockWeek ?? 1, blockType).replace(/^Block Zero · /, '')
+  if (s.type === 'strength') return strengthPlanDetail(getWeekLabel(s.blockWeek ?? 1, blockType).replace(/^Block Zero · /, ''), s.contextJson)
   // page 33: a class reads by its type alone ("technical")
   if (s.type === 'mt_class') return null
   if (s.type === 'foundation_run' && blockType === 'block_zero') return runWalkDetail(s, weekNumber)

@@ -1,6 +1,6 @@
 // Run: tsx src/lib/blockZero/strength.test.ts
 import { readFileSync } from 'node:fs'
-import { backFriendlyVariation, BACK_FRIENDLY_SWAPS, blockZeroWorkingLoad, defaultMainLift, effectiveRir, getStrengthWeekTarget, latestRirTopSet, liftRegion, LIFT_REGION, mainLiftHardSets, nextLoad, STRENGTH_WEEK_TARGETS, type LoggedWorkingSet } from './strength'
+import { backFriendlyVariation, BACK_FRIENDLY_SWAPS, blockZeroWorkingLoad, defaultMainLift, effectiveRir, getStrengthWeekTarget, latestRirTopSet, liftRegion, LIFT_REGION, mainLiftHardSets, nextLoad, restateSetCount, STRENGTH_WEEK_TARGETS, type LoggedWorkingSet } from './strength'
 import { brzycki, e1rmFromRir, e1rmFromRpe, epley, rirFromRpe } from './e1rm'
 import { getStrengthTemplate } from '../strengthTemplates'
 
@@ -148,4 +148,9 @@ for (const rir of [0, 1, 2]) {
   }
 }
 
+// E2E minor 13: an eased lift's week note says the sets that are left.
+assert(restateSetCount('2 sets of 8 at RPE 6-7, 3-4 reps left. Never to failure.', 1) === '1 set of 8 at RPE 6-7, 3-4 reps left. Never to failure.', 'eased note: one set of 8, not 2')
+assert(restateSetCount('First set is a check: 3-5 reps at about RPE 8, 2 left. Then 2 sets of 8 at RPE 7-8.', 1)!.endsWith('Then 1 set of 8 at RPE 7-8.'), 'week 3: the working sets after the check')
+assert(restateSetCount('Week 1. Work up to a set of 8 at RPE 6-7.', 1) === 'Week 1. Work up to a set of 8 at RPE 6-7.', 'no count to restate')
+assert(restateSetCount(null, 1) === null, 'no note')
 console.log('\nAll Block Zero strength tests passed')

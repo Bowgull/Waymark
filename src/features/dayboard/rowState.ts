@@ -445,12 +445,28 @@ export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'l
   return estimatedMinutes({ type: s.type, notes: s.notes ?? null, estimatedMin: null }, kind, weekNumber ?? week)
 }
 
-/** Page 33's to-do strength line: "Week 3: two sets of eight, about three left in the tank." (Block Zero). */
-export function strengthWeekLine(blockType: string | null | undefined, week: number | null | undefined): string | null {
+/** A coach ease on the session that takes a set off each main lift (page 56: "one set less"). */
+export function easedOneSet(contextJson: string | null | undefined): boolean {
+  const ease = parseContext(contextJson).coachEase as { kind?: string } | undefined
+  return ease?.kind === 'reduce' || ease?.kind === 'one_set'
+}
+
+/**
+ * Program's strength plan detail: "2×8, RPE 6-7"; one set fewer when the coach
+ * eased it (e2e minor 13: an eased 1×8 read 2×8).
+ */
+export function strengthPlanDetail(label: string, contextJson: string | null | undefined): string {
+  if (!easedOneSet(contextJson)) return label
+  return label.replace(/^(\d+)×/, (_m, n: string) => `${Math.max(1, Number(n) - 1)}×`)
+}
+
+/** Page 33's to-do strength line: "Week 3: two sets of eight, about three left in the tank." (Block Zero). Eased: one set fewer. */
+export function strengthWeekLine(blockType: string | null | undefined, week: number | null | undefined, eased = false): string | null {
   if (blockType !== 'block_zero' || week == null || week < 1) return null
   const t = getStrengthWeekTarget(week)
   const left = Math.max(0, 10 - t.rpe[0])
-  return `Week ${week}: ${word(t.mainSets)} ${t.mainSets === 1 ? 'set' : 'sets'} of ${word(t.reps)}, about ${word(left)} left in the tank.`
+  const sets = eased ? Math.max(1, t.mainSets - 1) : t.mainSets
+  return `Week ${week}: ${word(sets)} ${sets === 1 ? 'set' : 'sets'} of ${word(t.reps)}, about ${word(left)} left in the tank.`
 }
 
 /** "Front Squat" → "Front squat" (the main squat), "Romanian Deadlift" → "RDL" (the coach screens' short names). */

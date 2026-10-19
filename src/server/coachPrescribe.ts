@@ -3,7 +3,7 @@
 // goes through planBlockZeroStrength with the same inputs. Pure apart from
 // the types; app.ts loads the state with loadSessionCoachState.
 
-import { backFriendlyVariation, singleRunCap } from '../lib/blockZero'
+import { backFriendlyVariation, restateSetCount, singleRunCap } from '../lib/blockZero'
 import { scaleSets } from '../lib/coach'
 import type { StrengthTemplate, TemplateSet } from '../lib/strengthTemplates'
 import type { SessionCoachState } from './coachData'
@@ -63,7 +63,7 @@ export function adjustFighterStrength(template: StrengthTemplate, state: Session
     const warm = next.sets.filter((s: TemplateSet) => s.isWarmup)
     const working = next.sets.filter((s: TemplateSet) => !s.isWarmup)
     const keep = Math.max(1, (ramp ? scaleSets(working.length, ramp.volumeFactor) : working.length) - dropSets)
-    return { ...next, sets: [...warm, ...working.slice(0, keep)], notes: `${note} ${next.notes ?? ''}`.trim() }
+    return { ...next, sets: [...warm, ...working.slice(0, keep)], notes: `${note} ${(keep < working.length ? restateSetCount(next.notes, keep) : next.notes) ?? ''}`.trim() }
   })
   return { template: { ...template, exercises }, loadMultiplier, noPush, notes }
 }

@@ -69,8 +69,9 @@ export function getWeekLabel(blockWeek: number, blockType: 'fighter' | 'block_ze
   const pct = Math.round(getWeekPercentage(blockWeek, blockType) * 100)
   const { sets, reps } = getWaveLoadingSetsReps(blockWeek, blockType)
   if (blockType === 'block_zero') {
+    // The week's working sets of 8 (a check set of 3-5 is not one of them: week 6 is 1×8).
     const t = getStrengthWeekTarget(blockWeek)
-    return `Block Zero · ${sets}×${reps}, RPE ${t.rpe[0] === t.rpe[1] ? t.rpe[0] : `${t.rpe[0]}-${t.rpe[1]}`}`
+    return `Block Zero · ${t.mainSets}×${t.reps}, RPE ${t.rpe[0] === t.rpe[1] ? t.rpe[0] : `${t.rpe[0]}-${t.rpe[1]}`}`
   }
   return `${pct}%, ${sets}×${reps}`
 }

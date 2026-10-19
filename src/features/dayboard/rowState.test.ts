@@ -1,3 +1,4 @@
+import { getWeekLabel } from '../../lib/strengthTemplates'
 import assert from 'node:assert/strict'
 
 import { cycleWeeks, dayStrip, readWeekAnalysis, splitWhy, weekDays, weekForDay, worldWeekPosts } from '../program/weekModel'
@@ -12,6 +13,7 @@ import {
   runWalkDetail,
   shortLift,
   strengthWeekLine,
+  strengthPlanDetail,
   topLiftsLine,
   zone2PlanLine,
   runDiffLines,
@@ -206,6 +208,14 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
 {
   assert.equal(strengthWeekLine('block_zero', 3), 'Week 3: two sets of eight, about three left in the tank.', 'page 33 to-do strength line')
   assert.equal(strengthWeekLine('fighter', 3), null)
+  // E2E minor 13: an eased session reads one set fewer; week 6's header is 1×8.
+  assert.equal(strengthWeekLine('block_zero', 2, true), 'Week 2: one set of eight, about four left in the tank.')
+  assert.equal(strengthPlanDetail('2×8, RPE 6-7', JSON.stringify({ coachEase: { kind: 'one_set', reason: 'x' } })), '1×8, RPE 6-7')
+  assert.equal(strengthPlanDetail('2×8, RPE 6-7', JSON.stringify({ coachEase: { kind: 'reduce', reason: 'x' } })), '1×8, RPE 6-7')
+  assert.equal(strengthPlanDetail('2×8, RPE 6-7', null), '2×8, RPE 6-7')
+  assert.equal(strengthPlanDetail('1×8, RPE 7', JSON.stringify({ coachEase: { kind: 'one_set' } })), '1×8, RPE 7', 'never below one set')
+  assert.equal(getWeekLabel(6, 'block_zero'), 'Block Zero · 1×8, RPE 7', 'week 6 is one set of 8 (the check set is apart)')
+  assert.equal(getWeekLabel(2, 'block_zero'), 'Block Zero · 2×8, RPE 6-7')
   assert.equal(shortLift('Front Squat'), 'Front squat')
   assert.equal(shortLift('Romanian Deadlift'), 'RDL')
   const lifts: WorkoutExercise[] = [

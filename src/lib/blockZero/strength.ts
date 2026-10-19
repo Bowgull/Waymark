@@ -104,6 +104,16 @@ export function getStrengthWeekTarget(weekNumber: number): StrengthWeekTarget {
 }
 
 /** Hard working sets per main lift that week, check set included. */
+/**
+ * The week note says the plan's sets ("2 sets of 8 at RPE 6-7"). When a lift
+ * keeps fewer working sets (an ease, the return ramp), the note says what is
+ * left, so it never reads "One set less" then "2 sets of 8" (e2e minor 13).
+ */
+export function restateSetCount(note: string | null | undefined, count: number): string | null {
+  if (!note) return note ?? null
+  return note.replace(/\b(\d+) sets? of (\d+)/, (_m, _n: string, reps: string) => `${count} ${count === 1 ? 'set' : 'sets'} of ${reps}`)
+}
+
 export function mainLiftHardSets(t: StrengthWeekTarget): number {
   return t.mainSets + (t.checkSet ? 1 : 0)
 }

@@ -43,6 +43,7 @@ import {
   type LoggedWorkingSet,
   type ReadinessReport,
   type WorkingLoad,
+  restateSetCount,
 } from '../lib/blockZero'
 import type { StrengthTemplate, TemplateSet } from '../lib/strengthTemplates'
 import { countsFromDay, inLeadIn, mtRampStartDay, runAllowanceBaseSec, scaleLoadKg, scaleSets, type CoachEase, type ReturnContext } from '../lib/coach'
@@ -240,10 +241,11 @@ export async function planBlockZeroStrength(
       const working = next.sets.filter((s: TemplateSet) => !s.isWarmup && s.loadMultiplier == null)
       const warm = next.sets.filter((s: TemplateSet) => s.isWarmup)
       const why = [eased.eased ? eased.reason : oneSet?.reason ?? null, ramp?.reason ?? null].filter(Boolean).join(' ')
+      const keep = Math.max(1, Math.min(easedSets, working.length))
       next = {
         ...next,
-        sets: [...warm, ...working.slice(0, Math.max(1, Math.min(easedSets, working.length)))],
-        notes: `${why} ${next.notes ?? ''}`.trim(),
+        sets: [...warm, ...working.slice(0, keep)],
+        notes: `${why} ${restateSetCount(next.notes, keep) ?? ''}`.trim(),
       }
     }
     return next
