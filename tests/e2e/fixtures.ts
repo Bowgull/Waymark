@@ -8,6 +8,19 @@ export interface Api {
   patch<T = unknown>(path: string, body?: unknown): Promise<T>
 }
 
+/**
+ * The browser's local time when each test starts: today (Toronto, see
+ * playwright.config.ts) at 10:00, a morning with the day still open. Today
+ * hides its board in the evening once the day is done (ALL DONE, page 43),
+ * and past noon the Add Session board offers PM rows only, so a real clock
+ * made the suite pass or fail by the hour it ran. The clock still runs from
+ * there (specs move it on with page.clock.fastForward).
+ */
+export const TEST_HOUR = 10
+export function testClockStart(now = new Date()): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), TEST_HOUR, 0, 0)
+}
+
 const LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//
 
 export const test = base.extend<{ api: Api; guard: void }>({
@@ -18,6 +31,7 @@ export const test = base.extend<{ api: Api; guard: void }>({
   // Windows WebKit has none, and the app's bells (src/lib/sounds.ts) go quiet
   // without it rather than crash, so the suite runs that path for real.
   guard: [async ({ page, context }, use) => {
+    await page.clock.install({ time: testClockStart() })
     await context.route(url => !LOCAL.test(url.toString()) && /^https?:/.test(url.toString()), route => route.abort('blockedbyclient'))
     page.on('pageerror', e => console.log(`[pageerror] ${e.message}`))
     await use()

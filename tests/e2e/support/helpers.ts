@@ -1,7 +1,7 @@
 import { expect, type Page, type Locator } from '@playwright/test'
 import type { Api } from '../fixtures'
 
-/** The athlete's local day (the browser runs in the same timezone as Node). */
+/** The athlete's local day (Node and the browser both run in E2E_TIMEZONE, playwright.config.ts). */
 export function todayISO(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }

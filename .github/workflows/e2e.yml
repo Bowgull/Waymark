@@ -2,14 +2,23 @@
 # wrangler dev + local D1 (tests/e2e/global-setup.ts). No secrets: the test
 # backend has an empty Anthropic key and a public dummy API key.
 #
-# Screenshot baselines are per platform (tests/e2e/__screenshots__/<platform>/).
-# The first run on ubuntu has no linux baselines: it writes them (the run passes
-# with "writing actual") and uploads them in the artifact; commit them from there
-# into tests/e2e/__screenshots__/linux/ to make later runs compare.
+# Screenshot baselines are per platform (tests/e2e/__screenshots__/<platform>/)
+# and CI compares against the committed ones: a missing or changed screenshot
+# fails the run. Baselines are only written in two cases, never silently:
+#   - no tests/e2e/__screenshots__/linux/ at all (the very first run): it
+#     records them with --update-snapshots=missing and uploads them in the
+#     artifact; commit them from there into tests/e2e/__screenshots__/linux/.
+#   - a manual run (workflow_dispatch) with update_snapshots ticked, to
+#     re-record after an intended visual change; commit them the same way.
 name: e2e (Playwright WebKit)
 
 on:
   workflow_dispatch:
+    inputs:
+      update_snapshots:
+        description: Re-record the linux screenshot baselines (commit them from the artifact)
+        type: boolean
+        default: false
   push:
     branches: [codex/roadtrip-coach]
 
@@ -37,12 +46,16 @@ jobs:
       - name: Run Playwright
         env:
           CI: '1'
+          UPDATE_SNAPSHOTS: ${{ inputs.update_snapshots && 'yes' || 'no' }}
         run: |
-          if [ -d tests/e2e/__screenshots__/linux ]; then
-            npm run test:e2e
+          if [ "$UPDATE_SNAPSHOTS" = yes ]; then
+            echo "::warning::Re-recording the linux baselines (manual run): commit them from the artifact."
+            npx playwright test --update-snapshots=changed
+          elif [ -d tests/e2e/__screenshots__/linux ]; then
+            npx playwright test --update-snapshots=none
           else
-            echo "No linux baselines yet: recording them (see the artifact)."
-            npm run test:e2e:update
+            echo "::warning::No linux baselines yet: recording them (see the artifact) and committing nothing."
+            npx playwright test --update-snapshots=missing
           fi
 
       - name: Upload report and screenshots

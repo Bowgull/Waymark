@@ -10,7 +10,6 @@ interface RunWalk { runSec: number; walkSec: number; rounds: number; warmupSec: 
  */
 test('Run-walk: warm-up, ready card, then run and walk intervals', async ({ page, api }) => {
   await setMorning(api)
-  await page.clock.install()
   const s = await insertSession(api, 'foundation_run', 'am')
   await enterFromToday(page, s.id)
 

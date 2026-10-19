@@ -8,7 +8,6 @@ import { enterFromToday, insertSession, timerSeconds } from './support/helpers'
  * digits can be a second apart run to run, so they are masked with the combos.
  */
 test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
-  await page.clock.install()
   const bag = await insertSession(api, 'bag_work')
   await enterFromToday(page, bag.id)
 
