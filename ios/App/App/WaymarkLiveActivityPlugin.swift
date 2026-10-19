@@ -371,8 +371,23 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             stepIndex: Self.intValue(dict["stepIndex"]),
             stepTotal: Self.intValue(dict["stepTotal"]),
             setIndex: Self.intValue(dict["setIndex"]),
-            setTotal: Self.intValue(dict["setTotal"])
+            setTotal: Self.intValue(dict["setTotal"]),
+            round: Self.intValue(dict["round"]),
+            roundTotal: Self.intValue(dict["roundTotal"]),
+            combo: Self.strikes(dict["combo"]),
+            nextCombo: Self.strikes(dict["nextCombo"]),
+            fromClass: dict["fromClass"] as? Bool,
+            comboSize: (dict["comboSize"] as? NSNumber)?.doubleValue
         )
+    }
+
+    // A combo's strikes from JS (an array of strings); nil when absent or empty.
+    private static func strikes(_ value: Any?) -> [String]? {
+        guard let list = value as? [Any] else { return nil }
+        let words = list.compactMap { $0 as? String }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return words.isEmpty ? nil : words
     }
 
     // JS numbers arrive as NSNumber (often a Double); accept any whole value.

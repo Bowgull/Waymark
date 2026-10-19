@@ -81,6 +81,22 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
         // Strength set counter shown in the big tiles (2/3).
         public var setIndex: Int?
         public var setTotal: Int?
+        // Page 55 (the bag round's lock card, approved 2026-10-19). Optional,
+        // so a state from an older build or JS bundle still decodes; without
+        // them the widget draws today's card.
+        // The round, kept apart from the step count: this round in a round
+        // and in the rest after it (the header then counts the round coming).
+        public var round: Int?
+        public var roundTotal: Int?
+        // This round's first combo as strikes (JAB, CROSS, HOOK).
+        public var combo: [String]?
+        // The next round's first combo: the card shows it in rest.
+        public var nextCombo: [String]?
+        // The combo on the card was found in an MT class (page 49's glove).
+        public var fromClass: Bool?
+        // The session's one combo size on the card (pt, 14-19), fitted in the
+        // app to the session's longest combo.
+        public var comboSize: Double?
 
         public init(
             phase: String,
@@ -97,7 +113,13 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             stepIndex: Int? = nil,
             stepTotal: Int? = nil,
             setIndex: Int? = nil,
-            setTotal: Int? = nil
+            setTotal: Int? = nil,
+            round: Int? = nil,
+            roundTotal: Int? = nil,
+            combo: [String]? = nil,
+            nextCombo: [String]? = nil,
+            fromClass: Bool? = nil,
+            comboSize: Double? = nil
         ) {
             self.phase = phase
             self.label = label
@@ -114,6 +136,12 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             self.stepTotal = stepTotal
             self.setIndex = setIndex
             self.setTotal = setTotal
+            self.round = round
+            self.roundTotal = roundTotal
+            self.combo = combo
+            self.nextCombo = nextCombo
+            self.fromClass = fromClass
+            self.comboSize = comboSize
         }
     }
 

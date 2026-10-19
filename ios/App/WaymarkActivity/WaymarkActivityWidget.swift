@@ -25,6 +25,17 @@ import WidgetKit
 //     content goes stale at endsAt (timerStaleDate), so the system redraws
 //     the card then with context.isStale, even with the app suspended.
 // Only the timer and the grass move (iOS draws no flip animation).
+//
+// The bag round's card (mockup page 55 "combo on two lines", approved
+// 2026-10-19), drawn when the state carries a combo: today's card tightened.
+//   header 18: crest, BAG WORK · 3/6 (counting rounds), the icon
+//   main row 44: the countdown on lg tiles, FIGHT (gold) / REST (teal), the
+//     stones (exactly 44)
+//   the combo: its own centred line, or two balanced centred lines broken at
+//     an arrow when long, at the session's one size (19 pt at most)
+//   glyph grass: three rows (21), unchanged
+// In rest it shows the next round's combo and counts that round. Nothing
+// changes in the last 10 s: iOS can't redraw then; the 10-second bell does it.
 
 // MARK: - Palette (mockups shared/flap.css + page 44)
 
@@ -60,6 +71,7 @@ extension Color {
     static let wmGrassRed = Color(wmHex: 0xE0623F)
     static let wmGrassOff = Color(wmHex: 0x6E9858, opacity: 0.45)
     static let wmTapNote = Color(wmHex: 0xF0E6C0, opacity: 0.6)
+    static let wmCardEdgeTeal = Color(wmHex: 0x5FA08C, opacity: 0.35)
 }
 
 // MARK: - Flap tiles
@@ -134,13 +146,15 @@ private func flapFont(_ size: CGFloat) -> Font {
 }
 
 // A static flap label: one tile per character; a space is a clear gap.
+// `gap` overrides the space between tiles (the lock combo's 1.5).
 private struct FlapText: View {
     let text: String
     let size: CGFloat
     var tone: FlapTone = .ink
+    var gap: CGFloat? = nil
 
     var body: some View {
-        HStack(spacing: flapGap(size)) {
+        HStack(spacing: gap ?? flapGap(size)) {
             ForEach(Array(text.enumerated()), id: \.offset) { item in
                 if item.element == " " {
                     Color.clear
@@ -543,6 +557,47 @@ private struct LAInfo {
     // Time ran out keeps the gold stone (page 44); rest and holds are teal.
     var runesTeal: Bool { isTeal && !timeUp }
 
+    // MARK: The bag round's card (page 55)
+
+    // The combo on the card: this round's in a round, the next round's in rest.
+    var shownCombo: [String]? {
+        let combo = isRest ? state.nextCombo : (phase == "active" ? state.combo : nil)
+        guard let c = combo, !c.isEmpty else { return nil }
+        return c
+    }
+
+    // The bag round's card is drawn whenever there is a combo to show.
+    var isBagCard: Bool { !isComplete && shownCombo != nil }
+
+    // The round the card is about (in rest, the round coming), kept apart
+    // from the step count; an older JS bundle falls back to the step.
+    var roundCount: (current: Int, total: Int)? {
+        if let r = state.round, let t = state.roundTotal, r > 0, t > 0 {
+            let n = isRest ? r + 1 : r
+            return (min(n, t), t)
+        }
+        return step
+    }
+
+    var bagHeaderText: String {
+        let session = sessionLabel.uppercased()
+        if let c = roundCount { return "\(session) · \(c.current)/\(c.total)" }
+        return session
+    }
+
+    // FIGHT (gold) or REST (teal) beside the clock; TIME (clay) when it ran out.
+    var bagPhaseFlap: String {
+        if timeUp { return "TIME" }
+        return isRest ? "REST" : "FIGHT"
+    }
+
+    // The session's one combo size, sent by the app (14-19 pt).
+    var comboSize: CGFloat {
+        let pt = state.comboSize ?? Double(LockComboSize.max)
+        guard pt.isFinite else { return LockComboSize.max }
+        return min(LockComboSize.max, max(LockComboSize.min, CGFloat(pt)))
+    }
+
     // Long-press island: ROUND 3 OF 12, SET 2 OF 3, REST, TIME.
     var islandFlap: String {
         if isComplete { return "WELL TRAVELED" }
@@ -688,6 +743,94 @@ private struct BigTiles: View {
     }
 }
 
+// MARK: - The combo on the lock card (page 55)
+
+private enum LockComboSize {
+    static let max: CGFloat = 19
+    static let min: CGFloat = 14
+}
+
+// Two balanced lines broken at an arrow (page 55 `split2`, and
+// lib/timers/bagRound.ts splitTwoLines): the break that makes the longer line
+// shortest, counting letters and 1.6 per strike. One strike stays one line.
+private func splitTwoLines(_ strikes: [String]) -> [[String]] {
+    guard strikes.count >= 2 else { return [strikes] }
+    func weight(_ part: ArraySlice<String>) -> Double {
+        Double(part.joined().count) + Double(part.count) * 1.6
+    }
+    var bestIndex = 1
+    var bestWeight = Double.infinity
+    for i in 1..<strikes.count {
+        let m = max(weight(strikes[0..<i]), weight(strikes[i...]))
+        if m < bestWeight {
+            bestWeight = m
+            bestIndex = i
+        }
+    }
+    return [Array(strikes[0..<bestIndex]), Array(strikes[bestIndex...])]
+}
+
+// The combo, centred: one line when it fits, else two balanced lines, at the
+// session's size. Strikes are ink flap tiles joined by gold (teal in rest) ›;
+// a combo found in class ends on the small MT glove (page 49). Only a phone
+// narrower than the app planned for steps the size down.
+private struct LockCombo: View {
+    let strikes: [String]
+    let size: CGFloat
+    let teal: Bool
+    let fromClass: Bool
+
+    var body: some View {
+        let two = splitTwoLines(strikes)
+        ViewThatFits(in: .horizontal) {
+            lines([strikes], size: size)
+            lines(two, size: size)
+            lines(two, size: max(LockComboSize.min, size - 1))
+            lines(two, size: max(LockComboSize.min, size - 2))
+            lines(two, size: LockComboSize.min)
+                .minimumScaleFactor(0.7)
+        }
+    }
+
+    private func lines(_ parts: [[String]], size: CGFloat) -> some View {
+        VStack(alignment: .center, spacing: 3) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { item in
+                line(item.element, more: item.offset < parts.count - 1, last: item.offset == parts.count - 1, size: size)
+            }
+        }
+    }
+
+    private func line(_ part: [String], more: Bool, last: Bool, size: CGFloat) -> some View {
+        HStack(spacing: 4) {
+            ForEach(Array(part.enumerated()), id: \.offset) { item in
+                if item.offset > 0 {
+                    arrow
+                }
+                FlapText(text: item.element, size: size, tone: .ink, gap: 1.5)
+            }
+            if more {
+                arrow
+            }
+            if last && fromClass {
+                Image("session-mt")
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+                    .accessibilityLabel(Text("From class"))
+            }
+        }
+        .fixedSize()
+    }
+
+    private var arrow: some View {
+        Text("›")
+            .font(.system(size: 14, weight: .heavy, design: .monospaced))
+            .foregroundStyle(teal ? Color.wmGrassTeal : Color.wmGrassGold)
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Lock screen
 
 @available(iOS 16.2, *)
@@ -696,6 +839,15 @@ private struct LockScreenView: View {
 
     var body: some View {
         let info = LAInfo(context: context)
+        if info.isBagCard {
+            bagCard(info)
+        } else {
+            card(info)
+        }
+    }
+
+    // Today's card (page 44): every session but a bag round with its combo.
+    private func card(_ info: LAInfo) -> some View {
         VStack(spacing: 0) {
             header(info)
             Spacer(minLength: 0)
@@ -717,6 +869,65 @@ private struct LockScreenView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.wmCardEdge, lineWidth: 1)
         )
+    }
+
+    // The bag round's card (page 55 "combo on two lines"): header 18, main row
+    // 44, the combo on one or two centred lines, the grass's three rows (21);
+    // padding 9 / 8 / 12; 160 pt tall.
+    private func bagCard(_ info: LAInfo) -> some View {
+        VStack(spacing: 0) {
+            bagHeader(info)
+            Spacer(minLength: 0)
+            bagMainRow(info)
+            Spacer(minLength: 0)
+            LockCombo(
+                strikes: info.shownCombo ?? [],
+                size: info.comboSize,
+                teal: info.isRest,
+                fromClass: info.state.fromClass ?? false
+            )
+            // The lines may run a little into the side padding (page 55).
+            .padding(.horizontal, -8)
+            .frame(maxWidth: .infinity)
+            Spacer(minLength: 0)
+            GrassStrip(fill: info.grass, tone: info.grassTone)
+                .padding(.horizontal, -2)
+                .frame(height: Grass.rowHeight * 3, alignment: .top)
+        }
+        .padding(.top, 9)
+        .padding(.bottom, 8)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .frame(height: 160)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(info.isRest ? Color.wmCardEdgeTeal : Color.wmCardEdge, lineWidth: 1)
+        )
+    }
+
+    // 18 pt: crest 16, BAG WORK · 3/6 on an xs flap, the icon 20.
+    private func bagHeader(_ info: LAInfo) -> some View {
+        HStack(spacing: 7) {
+            CrestImage()
+                .frame(width: 16, height: 18)
+            FitFlap(text: info.bagHeaderText, size: FlapSize.xs)
+                .layoutPriority(1)
+            Spacer(minLength: 4)
+            SessionIcon(context: context)
+                .frame(width: 20, height: 20)
+        }
+        .frame(height: 18)
+    }
+
+    // 44 pt: the lg countdown, FIGHT / REST beside it, the stones on the right.
+    private func bagMainRow(_ info: LAInfo) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            BigTiles(info: info, size: FlapSize.lg)
+            FitFlap(text: info.bagPhaseFlap, size: FlapSize.sm, tone: info.phaseTone)
+            Spacer(minLength: 0)
+            RuneRow(info: info, spacing: 8)
+        }
+        .frame(height: 44)
     }
 
     // 22 pt: crest 18, the session and count on an xs flap, the icon 24.
