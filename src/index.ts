@@ -40,7 +40,9 @@ export default {
       ctx.waitUntil(runDemoReset(env))
       return
     }
-    // scheduledTime: the cron's own time (wrangler dev --test-scheduled accepts ?time=).
+    // scheduledTime: the cron's own time. Local test: wrangler dev --test-scheduled, then
+    // /cdn-cgi/handler/scheduled?time=<ms> sets it. /__scheduled?time= ignores the time
+    // (wrangler's middleware), so that path runs with the real clock (e2e tooling 27).
     ctx.waitUntil(runNightlyReplan(env, event.scheduledTime || Date.now()))
   },
 }
