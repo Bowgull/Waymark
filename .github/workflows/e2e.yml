@@ -1,0 +1,58 @@
+# Layer 1 e2e: Playwright, WebKit with an iPhone 15 profile, against a scratch
+# wrangler dev + local D1 (tests/e2e/global-setup.ts). No secrets: the test
+# backend has an empty Anthropic key and a public dummy API key.
+#
+# Screenshot baselines are per platform (tests/e2e/__screenshots__/<platform>/).
+# The first run on ubuntu has no linux baselines: it writes them (the run passes
+# with "writing actual") and uploads them in the artifact; commit them from there
+# into tests/e2e/__screenshots__/linux/ to make later runs compare.
+name: e2e (Playwright WebKit)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/roadtrip-coach]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install WebKit
+        run: npx playwright install --with-deps webkit
+
+      - name: Run Playwright
+        env:
+          CI: '1'
+        run: |
+          if [ -d tests/e2e/__screenshots__/linux ]; then
+            npm run test:e2e
+          else
+            echo "No linux baselines yet: recording them (see the artifact)."
+            npm run test:e2e:update
+          fi
+
+      - name: Upload report and screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e
+          path: |
+            playwright-report/
+            test-results/
+            tests/e2e/__screenshots__/
+          retention-days: 3

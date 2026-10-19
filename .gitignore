@@ -34,3 +34,8 @@ dist-ssr
 
 # Athlete-state smoke throwaway DB
 _smoke.sqlite
+
+# Playwright e2e output
+/test-results/
+/playwright-report/
+/blob-report/
