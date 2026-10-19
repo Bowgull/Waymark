@@ -60,8 +60,10 @@ logs.post('/', async (c) => {
 
   // D1 caps bind params at 100 per statement. With 10 columns, 9 rows/chunk stays safe.
   const CHUNK = 9
+  // A batch re-sent after a lost response carries ids already stored: skip
+  // them, never 500 (e2e major 7: one "poison" batch jammed the log for good).
   for (let i = 0; i < rows.length; i += CHUNK) {
-    await db.insert(appLogs).values(rows.slice(i, i + CHUNK))
+    await db.insert(appLogs).values(rows.slice(i, i + CHUNK)).onConflictDoNothing({ target: appLogs.id })
   }
 
   // Opportunistic prune: only run ~5% of the time to avoid hot path cost
