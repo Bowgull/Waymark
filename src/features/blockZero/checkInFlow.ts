@@ -8,7 +8,7 @@
 // hours, alcohol on its 0-10 scale, herb on its 0-9 scale (0 none, 9 most;
 // page 51's herb card).
 
-export type CheckInKey =
+export type BaseCheckInKey =
   | 'sleepHours'
   | 'sleepQuality'
   | 'energy'
@@ -18,6 +18,10 @@ export type CheckInKey =
   | 'backToday'
   | 'alcoholScale'
   | 'herbScale'
+
+/** "<Place> today" while a place is on watch (page 57 item 6, kept on page 58): `region:knee`. */
+export type RegionCheckInKey = `region:${string}`
+export type CheckInKey = BaseCheckInKey | RegionCheckInKey
 
 export interface CheckInOption {
   value: number
@@ -36,7 +40,7 @@ export interface CheckInQuestion {
 const FIVE = (subs: [string, string, string, string, string]): CheckInOption[] =>
   subs.map((sub, i) => ({ value: i + 1, label: String(i + 1), sub }))
 
-export const CHECK_IN_QUESTIONS: readonly CheckInQuestion[] = [
+export const CHECK_IN_QUESTIONS: readonly (CheckInQuestion & { key: BaseCheckInKey })[] = [
   {
     key: 'sleepHours',
     title: 'Sleep',
@@ -83,11 +87,30 @@ export const CHECK_IN_QUESTIONS: readonly CheckInQuestion[] = [
 /** Back today at or below this asks what bothers it (back notes). */
 export const BACK_NOTES_AT = 2
 
+const REGION_FIVE = FIVE(['bad', 'sore', 'stiff', 'good', 'fine'])
+
+/**
+ * The day's cards: the nine, with a "<Place> today" card after Back today for
+ * each place on watch or flagged (page 57's card: the same five tiles as Back
+ * today), so the coach sees the trend between the raven's visits.
+ */
+export function checkInQuestions(regions: ReadonlyArray<{ region: string; label: string }> = []): CheckInQuestion[] {
+  const out: CheckInQuestion[] = []
+  for (const q of CHECK_IN_QUESTIONS) {
+    out.push(q)
+    if (q.key !== 'backToday') continue
+    for (const r of regions) out.push({ key: `region:${r.region}`, title: r.label, sub: 'How it feels right now', options: REGION_FIVE, columns: 5 })
+  }
+  return out
+}
+
 export type CheckInAnswers = Partial<Record<CheckInKey, number>>
 
 export interface CheckInState {
-  /** Card index; CHECK_IN_QUESTIONS.length = the back-notes card or done. */
+  /** Card index; total = the back-notes card or done. */
   index: number
+  /** How many cards today (nine, plus a card per place on watch). */
+  total: number
   answers: CheckInAnswers
   backNotes: string
   /** On the back-notes card (only when back today is low). */
@@ -103,14 +126,15 @@ export type CheckInAction =
   | { type: 'finishNotes' }
   | { type: 'jump'; index: number }
 
-export function initialCheckIn(existing?: CheckInAnswers | null, startAt = 0): CheckInState {
-  return { index: Math.max(0, Math.min(startAt, CHECK_IN_QUESTIONS.length - 1)), answers: { ...(existing ?? {}) }, backNotes: '', askingBackNotes: false, done: false }
+export function initialCheckIn(existing?: CheckInAnswers | null, startAt = 0, questions: ReadonlyArray<CheckInQuestion> = CHECK_IN_QUESTIONS): CheckInState {
+  const total = questions.length
+  return { index: Math.max(0, Math.min(startAt, total - 1)), total, answers: { ...(existing ?? {}) }, backNotes: '', askingBackNotes: false, done: false }
 }
 
 function advance(state: CheckInState): CheckInState {
   const next = state.index + 1
-  if (next < CHECK_IN_QUESTIONS.length) return { ...state, index: next, askingBackNotes: false }
-  return { ...state, index: CHECK_IN_QUESTIONS.length, askingBackNotes: false, done: true }
+  if (next < state.total) return { ...state, index: next, askingBackNotes: false }
+  return { ...state, index: state.total, askingBackNotes: false, done: true }
 }
 
 export function checkInReducer(state: CheckInState, action: CheckInAction): CheckInState {
@@ -133,7 +157,7 @@ export function checkInReducer(state: CheckInState, action: CheckInAction): Chec
       if (state.index <= 0) return state
       return { ...state, index: state.index - 1, askingBackNotes: false, done: false }
     case 'jump':
-      return { ...state, index: Math.max(0, Math.min(action.index, CHECK_IN_QUESTIONS.length - 1)), askingBackNotes: false, done: false }
+      return { ...state, index: Math.max(0, Math.min(action.index, state.total - 1)), askingBackNotes: false, done: false }
   }
 }
 
@@ -144,6 +168,10 @@ export function checkInPayload(state: Pick<CheckInState, 'answers' | 'backNotes'
     const v = state.answers[q.key]
     if (v != null) body[q.key] = v
   }
+  // "<Place> today" answers go together: { knee: 2 }.
+  const regions: Record<string, number> = {}
+  for (const [k, v] of Object.entries(state.answers)) if (k.startsWith('region:') && typeof v === 'number') regions[k.slice(7)] = v
+  if (Object.keys(regions).length > 0) body.regionRatings = regions
   const notes = state.backNotes.trim()
   if (notes && state.answers.backToday != null && state.answers.backToday <= BACK_NOTES_AT) body.backNotes = notes
   return body
@@ -154,13 +182,16 @@ export function answeredCount(answers: CheckInAnswers): number {
 }
 
 /** A saved daily log back into answers (for editing from the collapsed card). */
-export function answersFromLog(log: Partial<Record<CheckInKey, number | null | undefined>> | null | undefined): CheckInAnswers {
+export function answersFromLog(log: (Partial<Record<BaseCheckInKey, number | null | undefined>> & { regionRatingsJson?: string | null }) | null | undefined): CheckInAnswers {
   const out: CheckInAnswers = {}
   if (!log) return out
   for (const q of CHECK_IN_QUESTIONS) {
     const v = log[q.key]
     if (typeof v === 'number') out[q.key] = v
   }
+  try {
+    for (const [k, v] of Object.entries(JSON.parse(log.regionRatingsJson ?? '{}') as Record<string, unknown>)) if (typeof v === 'number') out[`region:${k}`] = v
+  } catch { /* unreadable: leave the places unanswered */ }
   return out
 }
 

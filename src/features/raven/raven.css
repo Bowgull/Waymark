@@ -1,0 +1,102 @@
+/* The raven and its boards (page 58, approved 2026-10-19), ported from the
+   mockup (58-injury-weather.html): the bird on the Morning Report, its flight,
+   its look round and the seal's glow; the centred note with rows flipping in;
+   the return's one question. */
+
+/* ── the raven: perched on the Morning Report's top edge ── */
+.rv-raven {
+  position: absolute; right: 70px; top: -45px; width: 58px; height: 51px; z-index: 3;
+  padding: 0; border: 0; background: none; cursor: pointer; transform-origin: 45% 96%;
+  -webkit-tap-highlight-color: transparent;
+}
+.rv-raven svg { width: 100%; height: 100%; display: block; overflow: visible; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.6)); }
+.rv-raven .rv-wup { opacity: 0; }
+.rv-raven.is-fly { animation: rv-fly 1.9s cubic-bezier(0.25, 0.75, 0.3, 1) both; }
+.rv-raven.is-fly .rv-wup { animation: rv-flap-a 0.28s steps(1) infinite; }
+.rv-raven.is-fly .rv-wing { animation: rv-flap-b 0.28s steps(1) infinite; }
+.rv-raven.is-fly .rv-legs { opacity: 0; animation: rv-legs 1.9s steps(1) both; }
+@keyframes rv-fly { 0% { transform: translate(250px, -330px) scale(0.55) rotate(-8deg); } 70% { transform: translate(18px, -26px) scale(1) rotate(-4deg); } 86% { transform: translate(0, 2px) rotate(3deg); } 100% { transform: none; } }
+@keyframes rv-flap-a { 0% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes rv-flap-b { 0% { opacity: 0; } 50% { opacity: 1; } }
+@keyframes rv-legs { 0%, 70% { opacity: 0; } 71%, 100% { opacity: 1; } }
+.rv-raven.is-watch { animation: rv-look 5.5s ease-in-out infinite 1s; }
+.rv-raven.is-watch .rv-seal { animation: rv-sealglow 2.6s ease-in-out infinite; }
+@keyframes rv-look { 0%, 72%, 100% { transform: none; } 78% { transform: rotate(-7deg); } 86% { transform: rotate(4deg) translateY(-1px); } 92% { transform: rotate(-2deg); } }
+@keyframes rv-sealglow { 0%, 100% { filter: drop-shadow(0 0 1px rgba(236, 204, 124, 0.5)); } 50% { filter: drop-shadow(0 0 3px rgba(236, 204, 124, 1)) drop-shadow(0 0 7px rgba(236, 204, 124, 0.6)); } }
+.rv-raven.is-settled .rv-seal { fill: #45796a; }
+.rv-raven.is-leave { animation: rv-leave 1.6s cubic-bezier(0.5, 0, 0.8, 0.6) both; pointer-events: none; }
+.rv-raven.is-leave .rv-wup { animation: rv-flap-a 0.28s steps(1) infinite; }
+.rv-raven.is-leave .rv-wing { animation: rv-flap-b 0.28s steps(1) infinite; }
+@keyframes rv-leave { 0% { transform: none; } 15% { transform: translate(-4px, 3px); } 100% { transform: translate(-260px, -360px) scale(0.5) rotate(10deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .rv-raven, .rv-raven * { animation: none !important; } .rv-raven.is-leave { opacity: 0; } }
+
+/* the Morning Report drops 34 px to make room for it; its brass line under the readiness line */
+.td-mr.has-raven { margin-top: 34px; overflow: visible; transition: margin-top 0.5s cubic-bezier(0.2, 0.9, 0.3, 1); }
+.td-mr .wl { margin: 3px 0 0; font: 600 15px/1.35 var(--font-body); color: #e8cf8c; }
+.td-mr .wl.is-settled { color: #9ee0c6; }
+.td-mr .wl[role='button'] { cursor: pointer; }
+
+/* ── the small raven in the corner of every board it brings ── */
+.rv-mark { position: relative; width: 58px; height: 52px; flex: none; border-radius: 50%; background: radial-gradient(circle at 50% 55%, rgba(232, 200, 120, 0.26), transparent 68%); }
+.rv-mark .rv-raven { position: absolute; inset: 0; width: 58px; height: 52px; cursor: default; pointer-events: none; animation: none; }
+.rv-mark .rv-raven svg { filter: drop-shadow(0 0 1px rgba(240, 224, 180, 0.75)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.6)); }
+
+/* ── the note: a centred board over the day, rows flip in ── */
+.rv-veil { position: fixed; inset: 0; z-index: 60; background: rgba(2, 8, 6, 0.45); animation: rv-vin 0.3s ease both; }
+@keyframes rv-vin { from { opacity: 0; } }
+.rv-adv {
+  position: fixed; left: 12px; right: 12px; z-index: 61;
+  top: max(56px, calc(env(safe-area-inset-top, 0px) + 9px)); bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  max-width: 406px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 8px; overflow: hidden;
+  padding: 11px 12px 12px !important;
+  background-color: rgba(8, 13, 11, 0.93) !important;
+  -webkit-backdrop-filter: blur(8px) !important; backdrop-filter: blur(8px) !important;
+  box-shadow: inset 0 0 0 1px rgba(232, 200, 120, 0.42), 0 18px 46px rgba(0, 0, 0, 0.75) !important;
+}
+.rv-adv.is-ask { top: 50%; bottom: auto; transform: translateY(-50%); gap: 12px; max-height: calc(100dvh - 80px); }
+.rv-adv > *, .rv-adv .rv-scr > * { animation: rv-rowin 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.05) both; transform-origin: 50% 0; }
+@keyframes rv-rowin { 0% { transform: rotateX(-80deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .rv-adv > *, .rv-adv .rv-scr > *, .rv-veil { animation: none !important; } }
+
+.rv-advt { display: flex; align-items: center; gap: 10px; }
+.rv-advt .tt { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; align-items: flex-start; }
+.rv-advt .from { font: 700 12px/1 var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; color: #c9a656; }
+.rv-x { align-self: flex-start; border: 0; background: none; padding: 2px 0 6px 8px; cursor: pointer; }
+
+.rv-scr { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; padding-bottom: 18px;
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 26px), transparent); mask-image: linear-gradient(#000 calc(100% - 26px), transparent); }
+.rv-scr::-webkit-scrollbar { display: none; }
+.rv-sl { font: 800 12px/1 var(--font-body); letter-spacing: 0.18em; text-transform: uppercase; color: #c9b27a; margin: 10px 0 5px; }
+.rv-sl:first-child { margin-top: 2px; }
+.rv-recl { display: flex; flex-direction: column; border-top: 1px solid rgba(0, 0, 0, 0.55); }
+.rv-recl .ln { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.55); align-items: baseline; }
+.rv-recl .ln .d { flex: none; width: 84px; white-space: nowrap; font: 800 12px/1.3 var(--font-body); letter-spacing: 0.1em; color: #c9b27a; }
+.rv-recl .ln .x { font: 500 15px/1.35 var(--font-body); color: #d6e0da; }
+.rv-recl .ln.is-mine .x { color: #a9bdb3; }
+.rv-recl .ln .x q { color: #e6efe9; }
+.rv-voice { margin: 0; font: 600 16px/1.4 var(--font-body); color: #e6efe9; }
+.rv-voice.is-dim { font-size: 15px; color: #a9bdb3; font-weight: 500; margin-top: 5px; }
+.rv-recs { margin: 0; padding: 0; list-style: none; counter-reset: rv; display: flex; flex-direction: column; gap: 5px; }
+.rv-recs li { counter-increment: rv; position: relative; padding-left: 26px; font: 500 15.5px/1.38 var(--font-body); color: #d6e0da; }
+.rv-recs li::before { content: counter(rv); position: absolute; left: 0; top: 1px; width: 18px; height: 20px; border-radius: 3px; display: grid; place-items: center; font: 800 12px var(--font-mono); color: #1c1608; background: linear-gradient(180deg, #b8984a 0 50%, #a0823c 50%); }
+.rv-recs li b { color: #f2e6c4; font-weight: 700; }
+.rv-chg { display: flex; align-items: center; gap: 9px; padding: 6px 0; border-top: 1px solid rgba(0, 0, 0, 0.55); }
+.rv-chg .cx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.rv-chg .dd2 { font: 800 12px var(--font-body); letter-spacing: 0.12em; color: #9ee0c6; display: flex; align-items: center; }
+.rv-chg .ba2 { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.rv-chg .ba2 .arr { font: 900 15px var(--font-mono); color: #e8c878; }
+.rv-chg .ba2 .old { position: relative; display: inline-flex; }
+.rv-chg .ba2 .old .wm-cell { color: rgba(240, 230, 192, 0.42) !important; }
+.rv-chg .ba2 .old::after { content: ''; position: absolute; left: -2px; right: -2px; top: 50%; height: 2px; background: #c4623f; }
+.rv-clr { margin: 0; font: 600 15px/1.35 var(--font-body); color: rgba(240, 230, 192, 0.66); }
+.rv-gotb { display: flex; gap: 8px; }
+.rv-gotb .wm-btn { flex: 1; min-height: 52px; }
+
+/* the return: one question, two big answers, and Not now */
+.rv-atiles { display: flex; flex-direction: column; gap: 8px; }
+.rv-atiles .wm-btn { min-height: 56px; }
+.rv-notnow { align-self: center; border: 0; background: none; padding: 4px; cursor: pointer; text-align: center; }
+
+/* Program's week line while a plan is on (page 58 4B): brass */
+.pg-weekl.is-w { color: #e8cf8c; }

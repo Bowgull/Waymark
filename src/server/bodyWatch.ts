@@ -632,6 +632,8 @@ export interface BodyWatchView {
   /** What a tap on the raven opens (the ask stages open the question instead). */
   board: BoardView | null
   programLine: string | null
+  /** The plan's days (DO IT's day to the return): Program shows its line on those weeks. */
+  planDays: [number, number] | null
 }
 
 export interface BodyWatchPayload {
@@ -678,6 +680,7 @@ async function viewOf(db: DB, row: AlertRow, today: number): Promise<BodyWatchVi
     weather: weatherFor(a, today), raven,
     arrivedOn: due ? (a.askOn as number) : a.openedAt,
     line: morningReportLine(a, today), askDue: due, ask, board, programLine: programLine(a, today),
+    planDays: a.appliedOn != null && a.askOn != null && (a.stage === 'plan1' || a.stage === 'plan2') ? [a.appliedOn, a.askOn] : null,
   }
 }
 

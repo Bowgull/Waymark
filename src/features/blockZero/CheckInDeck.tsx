@@ -6,8 +6,8 @@ import { apiFetch, idempotencyHeaders } from '@/lib/api'
 
 import { BzDots, BzOverlay, BzTiles } from './Bz'
 import {
-  CHECK_IN_QUESTIONS,
   checkInPayload,
+  checkInQuestions,
   checkInReducer,
   initialCheckIn,
   noteDayLabel,
@@ -32,6 +32,8 @@ export interface CheckInDeckProps {
   onNoteSaved?: (log: unknown) => void
   /** Design gallery only: open on the verdict. */
   previewSettled?: ReadinessIn | null
+  /** Places on watch (page 58): a "<Place> today" card after Back today. */
+  regions?: ReadonlyArray<{ region: string; label: string }>
 }
 
 const SWIPE_PX = 60
@@ -43,8 +45,9 @@ const SWIPE_PX = 60
  * TODAY clay / GOOD TO GO teal) with its line, then + ADD NOTE (the daily
  * log's note) and TO TODAY.
  */
-export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, onSkipToday, note, onNoteSaved, previewSettled }: CheckInDeckProps) {
-  const [state, dispatch] = useReducer(checkInReducer, undefined, () => initialCheckIn(existing, startAt))
+export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, onSkipToday, note, onNoteSaved, previewSettled, regions }: CheckInDeckProps) {
+  const [questions] = useState(() => checkInQuestions(regions ?? []))
+  const [state, dispatch] = useReducer(checkInReducer, undefined, () => initialCheckIn(existing, startAt, questions))
   const [phase, setPhase] = useState<'cards' | 'saving' | 'settled' | 'error'>(previewSettled !== undefined ? 'settled' : 'cards')
   const [line, setLine] = useState<ReturnType<typeof readinessLine>>(() => (previewSettled ? readinessLine(previewSettled) : null))
   const [noteOpen, setNoteOpen] = useState(false)
@@ -74,8 +77,8 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
     return () => { alive = false }
   }, [state, date, onSubmit])
 
-  const q = CHECK_IN_QUESTIONS[Math.min(state.index, CHECK_IN_QUESTIONS.length - 1)]
-  const total = CHECK_IN_QUESTIONS.length
+  const q = questions[Math.min(state.index, questions.length - 1)]
+  const total = questions.length
 
   function onPointerDown(e: React.PointerEvent) {
     touch.current = { x: e.clientX, y: e.clientY }

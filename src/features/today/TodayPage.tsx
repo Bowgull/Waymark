@@ -33,6 +33,8 @@ import { answersFromLog, answeredCount, shouldOpenCheckIn } from '@/features/blo
 import { CHECK_IN_EVENT, checkInSkippedOn, markCheckInSkipped, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
 import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessLine'
 import { MorningReportRow } from '@/features/blockZero/TodayPieces'
+import { useBodyWatch } from '@/features/raven/bodyWatch'
+import { useRavenOnToday } from '@/features/raven/useRaven'
 import './today.css'
 
 /** The day's fade out, and ALL DONE's fade in, after the last Strava confirm. */
@@ -53,6 +55,7 @@ interface DailyLog {
   backToday?: number | null
   backNotes?: string | null
   notes?: string | null
+  regionRatingsJson?: string | null
 }
 
 interface CurrentBlock {
@@ -92,6 +95,8 @@ export function TodayPage() {
   // The day's back (page 56 item 8): the day open under the strip.
   const [backDay, setBackDay] = useState<number | null>(null)
   const [changesVersion, setChangesVersion] = useState(0)
+  // The week strip read again when the raven's plan changes the week (page 58).
+  const [weekVersion, setWeekVersion] = useState(0)
   const [reassignFor, setReassignFor] = useState<{ activityId: number; sessionId: string } | null>(null)
   const [readiness, setReadiness] = useState<ReadinessIn | null>(null)
   const [block, setBlock] = useState<CurrentBlock | null>(null)
@@ -255,7 +260,7 @@ export function TodayPage() {
       apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${leadIn ? 1 : block.currentWeek + 1}`).then(w => { if (!cancelled) setNextWeek(w) }).catch(() => {})
     }
     return () => { cancelled = true }
-  }, [block?.id, block?.currentWeek, block?.trainingWeek?.leadIn, todayEpoch])
+  }, [block?.id, block?.currentWeek, block?.trainingWeek?.leadIn, todayEpoch, weekVersion])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
@@ -311,6 +316,9 @@ export function TodayPage() {
   const strip = useMemo(() => (week?.sessions ? weekStripDays(withoutReplaced(week.sessions), mondayOf(todayEpoch), todayEpoch, d => runeForDay(changes, d)) : null), [week, todayEpoch, changes])
   const rowRunes = useMemo(() => Object.fromEntries(sessions.map(s => [s.id, runeForSession(changes, s.id)])), [sessions, changes])
   const backList = useMemo(() => (backDay != null ? backChanges(changes, backDay) : []), [changes, backDay])
+  // The raven (page 58): on the Morning Report, its boards, and the return's question on top.
+  const bodyWatch = useBodyWatch()
+  const { raven, overlay: ravenOverlay } = useRavenOnToday(() => { void refreshSessions(); setChangesVersion(v => v + 1); setWeekVersion(v => v + 1) })
   const tomorrow = useMemo(() => {
     const pool = [...(week?.sessions ?? []), ...(nextWeek?.sessions ?? [])].filter(s => s.scheduledDate === todayEpoch + 1)
     return pool
@@ -640,7 +648,7 @@ export function TodayPage() {
       {mode === 'day' && (
         <>
           {/* page 56 item 14: the Morning Report row: CHECK IN, then LOGGED and the readiness line; tap for the why */}
-          <MorningReportRow logged={morningLogged} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: 0, firstOpen: false })} />
+          <MorningReportRow logged={morningLogged} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: 0, firstOpen: false })} raven={raven} />
           {/* the clearing and its lantern show between the top and the boards (pages 17, 35, 56) */}
           <div className="td-spacer" style={{ minHeight: strip ? '16dvh' : '24dvh' }} />
           <TodayDay
@@ -714,6 +722,8 @@ export function TodayPage() {
 
       {deck && (
         <CheckInDeck
+          // a place on watch adds its card (page 58): the deck starts over if the watch answers after it opened
+          key={(bodyWatch?.checkIn ?? []).map(c => c.region).join(',')}
           date={today}
           existing={dailyLog ? answersFromLog(dailyLog) : null}
           startAt={deck.startAt}
@@ -722,8 +732,11 @@ export function TodayPage() {
           onSkipToday={deck.firstOpen ? markCheckInSkipped : undefined}
           note={dailyLog?.notes ?? null}
           onNoteSaved={log => setDailyLog(log as DailyLog)}
+          regions={bodyWatch?.checkIn ?? []}
         />
       )}
+
+      {ravenOverlay}
 
 
       <ToastContainer />

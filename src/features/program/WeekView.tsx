@@ -5,7 +5,7 @@ import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker
 import { REPLACE_REASONS, SKIP_PLACES, SKIP_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
 import { submitBoardPick, submitReplace, submitSkip, submitSkipReason } from '@/lib/boardPick'
 import { DayBoardRow } from '@/features/dayboard/DayBoardRow'
-import { dowOfEpochDay, runWalkDetail, sessionDisplayName, strengthPlanDetail, withoutReplaced, type DayBoardSession } from '@/features/dayboard/rowState'
+import { bodyPlanDetail, dowOfEpochDay, runWalkDetail, sessionDisplayName, strengthPlanDetail, withoutReplaced, type DayBoardSession } from '@/features/dayboard/rowState'
 import { DayBack } from '@/features/coach/DayBack'
 import { ReasonTiles } from '@/features/coach/ReasonTiles'
 import { Rune } from '@/features/coach/Rune'
@@ -62,6 +62,9 @@ function planDetail(s: DayBoardSession, weekNumber: number): string | null {
 
 function planDetailOf(s: DayBoardSession, weekNumber: number): string | null {
   const blockType = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
+  // the raven's plan (page 58 4B): what it is now, and what it was
+  const body = bodyPlanDetail(s, weekNumber)
+  if (body) return body
   if (s.type === 'strength') return strengthPlanDetail(getWeekLabel(s.blockWeek ?? 1, blockType).replace(/^Block Zero · /, ''), s.contextJson)
   // page 33: a class reads by its type alone ("technical")
   if (s.type === 'mt_class') return null

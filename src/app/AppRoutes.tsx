@@ -45,6 +45,7 @@ import { startOutboxSync } from '../lib/outboxSync'
 import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
 import { Capacitor } from '@capacitor/core'
 import { CHECK_IN_EVENT } from '../features/blockZero/checkInTrigger'
+import { BodyWatchSync } from '../features/raven/bodyWatch'
 
 /** The morning alarm's one quiet line (page 56 item 12): what the coach moved, for the next alarm's day. */
 async function coachMorningLine(amReminder: string | null | undefined): Promise<string | null> {
@@ -152,6 +153,8 @@ export function AppRoutes() {
   return (
     <>
     <WorldLayer />
+    {/* the raven and the injury weather (page 58): read on every world tab */}
+    {location.pathname !== '/onboarding' && location.pathname !== '/design' && <BodyWatchSync />}
     <Routes>
       {/* Full-screen routes — no shell/nav */}
       <Route path="/onboarding" element={<OnboardingPage />} />

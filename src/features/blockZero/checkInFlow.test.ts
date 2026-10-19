@@ -8,6 +8,7 @@ import {
   answeredCount,
   answersFromLog,
   checkInPayload,
+  checkInQuestions,
   checkInReducer,
   initialCheckIn,
   noteDayLabel,
@@ -133,5 +134,23 @@ for (const q of CHECK_IN_QUESTIONS) {
 assert.equal(noteDayLabel('2026-10-18'), 'Sun 18')
 assert.equal(noteDayLabel('2026-10-01'), 'Thu 1')
 assert.equal(noteDayLabel('nope'), '')
+
+// ─── page 58: "Knee today" while the knee is on watch ──
+{
+  const qs = checkInQuestions([{ region: 'knee', label: 'KNEE TODAY' }])
+  assert.equal(qs.length, 10, 'ten cards while the knee is on watch')
+  assert.equal(qs[7].key, 'region:knee', 'Knee today is card 8 of 10, right after Back today')
+  assert.equal(qs[7].sub, 'How it feels right now')
+  assert.deepEqual(qs[7].options.map(o => o.sub), ['bad', 'sore', 'stiff', 'good', 'fine'], 'the same five tiles as Back today')
+  let s = initialCheckIn(null, 7, qs)
+  assert.equal(s.total, 10)
+  s = checkInReducer(s, { type: 'answer', key: 'region:knee', value: 2 })
+  assert.equal(s.index, 8, 'a tap answers and moves on')
+  const body = checkInPayload(s, '2026-10-23')
+  assert.deepEqual(body.regionRatings, { knee: 2 }, 'saved as { knee: 2 }')
+  assert.ok(dailyLogSchema.safeParse(body).success, 'the server takes it')
+  assert.equal(answersFromLog({ regionRatingsJson: '{"knee":4}' })['region:knee'], 4, 'read back from the log')
+  assert.equal(checkInQuestions().length, total, 'nine cards with nothing on watch')
+}
 
 console.log('checkInFlow tests passed')
