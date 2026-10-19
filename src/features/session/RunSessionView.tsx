@@ -28,6 +28,7 @@ import { setWorldBackdrop } from '@/world/worldStore'
 import '@/design/pickers.css'
 import './session.css'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
+import { NarutoEpisodeCard } from './NarutoEpisodeCard'
 
 const STRAVA_APP_STORE_URL = 'https://apps.apple.com/app/strava/id426826309'
 const STRAVA_DEEP_LINK = 'strava://record'
@@ -682,29 +683,19 @@ export function RunSessionView({
     )
   }
 
-  // ─── After an indoor Naruto run: one confirm tap (design-decisions "Naruto on indoor runs"; no mockup) ───
+  // ─── After an indoor Naruto run (page 46): NOW ON EP N?, the episode on drums, YES ───
   if (narutoConfirm) {
-    const arc = narutoArcForEp(narutoConfirm.proposed)
     return (
       <>
-        <CentredCard label="Naruto episode" head="Naruto" headRight={<FlapLabel text={`EP ${narutoConfirm.proposed}`} size="xs" tone="gold" />} className="ss-card">
-          <p className="wm-prose">
-            Watched about {narutoConfirm.watched} episode{narutoConfirm.watched === 1 ? '' : 's'} ({narutoConfirm.minutes} min). Now on ep {narutoConfirm.proposed}?
-          </p>
-          {narutoConfirm.adjusting && (
-            <div className="wm-stepper" role="group" aria-label="Episode">
-              <button type="button" aria-label="Earlier episode" onClick={() => stepNarutoProposed(-1)}>−</button>
-              <span className="v"><FlapLabel text={String(narutoConfirm.proposed)} size="lg" /></span>
-              <button type="button" aria-label="Later episode" onClick={() => stepNarutoProposed(1)}>+</button>
-            </div>
-          )}
-          {arc && <p className="tm-note" style={{ margin: 0 }}>{arc}</p>}
-          <SessionButton label={`YES, EP ${narutoConfirm.proposed}`} primary disabled={saving} onClick={() => void confirmNarutoEp()} />
-          <div className="wm-btns">
-            {!narutoConfirm.adjusting && <SessionButton label="ADJUST" disabled={saving} onClick={() => setNarutoConfirm(c => c && { ...c, adjusting: true })} />}
-            <SessionButton label="SKIP" disabled={saving} onClick={onComplete} />
-          </div>
-        </CentredCard>
+        <NarutoEpisodeCard
+          proposed={narutoConfirm.proposed}
+          watched={narutoConfirm.watched}
+          minutes={narutoConfirm.minutes}
+          saving={saving}
+          onStep={stepNarutoProposed}
+          onYes={() => void confirmNarutoEp()}
+          onSkip={onComplete}
+        />
         <ToastContainer />
       </>
     )

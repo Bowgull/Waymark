@@ -27,6 +27,10 @@ export interface LedgerData {
   sleep: { days: SleepDay[]; avg: number | null }
   weight: { points: WeeklyPoint[]; weighIns: number }
   streak: number
+  /** One per week, oldest first, ending this week: lit when the week counted (page 46). */
+  consistency?: boolean[]
+  /** The pond's reaction (the range's sessions); older servers leave it out. */
+  pond?: number | null
 }
 
 const RANGES: { key: LedgerRange; label: string; title: string }[] = [
@@ -68,11 +72,13 @@ export function HistoryPage() {
 
   // the water reacts to the week (page 32): brighter and more fireflies when it has gone well
   useEffect(() => {
-    if (data) setWorldPond(pondReaction(data.rings))
+    if (data) setWorldPond(data.pond !== undefined ? data.pond : pondReaction(data.rings))
   }, [data])
   useEffect(() => () => setWorldPond(null), [])
 
   const title = RANGES.find(r => r.key === range)!.title
+  // page 46: MONTH and SEASON count done / planned and say how far the charts reach
+  const spanLine = data && range !== 'week' ? `Charts show the last ${data.weeks} weeks.` : null
 
   return (
     <div className="lg-root">
@@ -91,7 +97,8 @@ export function HistoryPage() {
           </div>
           {data && (
             <>
-              <RingBoard rings={data.rings} title={title} />
+              <RingBoard rings={data.rings} title={title} sub={range === 'week' ? undefined : 'done / planned'} />
+              {spanLine && <p className="lg-span">{spanLine}</p>}
               <AerobicBoard points={data.aerobic.points} runs={data.aerobic.runs} />
             </>
           )}
@@ -104,7 +111,7 @@ export function HistoryPage() {
             </div>
             <div className="lg-page">
               <BodyWeightBoard points={data.weight.points} weighIns={data.weight.weighIns} />
-              <ConsistencyBoard streak={data.streak} />
+              <ConsistencyBoard streak={data.streak} weeks={data.consistency ?? []} />
             </div>
           </>
         )}

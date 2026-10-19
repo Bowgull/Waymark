@@ -285,7 +285,7 @@ export function SettingsPage() {
   const hold = () => navigate('/settings/logs')
 
   if (loading) {
-    return <SettingsScreen title="SETTINGS" onBack={back} onHold={hold}><div aria-busy="true" aria-label="Loading settings" /></SettingsScreen>
+    return <SettingsScreen title="SETTINGS" backLabel="TODAY" onBack={back} onHold={hold}><div aria-busy="true" aria-label="Loading settings" /></SettingsScreen>
   }
 
   const daysLeft = daysUntilRedeploy(Number(import.meta.env.VITE_BUILD_TIME), Date.now())
@@ -299,7 +299,7 @@ export function SettingsPage() {
   const stravaOk = !!strava?.connected && stravaLine.startsWith('Connected')
 
   return (
-    <SettingsScreen title="SETTINGS" onBack={back} onHold={hold}>
+    <SettingsScreen title="SETTINGS" backLabel="TODAY" onBack={back} onHold={hold}>
       {daysLeft !== null && (
         <div className="st-badge" aria-label={`${daysLeft} days until redeploy`}>
           <FlapLabel text={`${daysLeft}D`} size="sm" tone="gold" animate={false} />

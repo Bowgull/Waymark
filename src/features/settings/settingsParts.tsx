@@ -14,7 +14,7 @@ const HOLD_MS = 700
  * title on a flap) fixed at the top and the boards scrolling under it. Tap the
  * crest to go back; hold it for Logs when `onHold` is given.
  */
-export function SettingsScreen({ title, onBack, onHold, children }: { title: string; onBack: () => void; onHold?: () => void; children: ReactNode }) {
+export function SettingsScreen({ title, onBack, onHold, backLabel, children }: { title: string; onBack: () => void; onHold?: () => void; /** page 46: "‹ TODAY" in gold top left; the crest and title move right (the crest still goes back). */ backLabel?: string; children: ReactNode }) {
   const timer = useRef<number | null>(null)
   const held = useRef(false)
   const stop = () => { if (timer.current) window.clearTimeout(timer.current); timer.current = null }
@@ -27,7 +27,8 @@ export function SettingsScreen({ title, onBack, onHold, children }: { title: str
   return (
     <div className="st-screen">
       <div className="st-solid" aria-hidden />
-      <header className="st-hd">
+      <header className={`st-hd${backLabel ? ' is-back' : ''}`}>
+        {backLabel && <button type="button" className="st-bk" onClick={onBack}>‹ {backLabel}</button>}
         <button
           type="button"
           className="st-brand"
@@ -39,7 +40,7 @@ export function SettingsScreen({ title, onBack, onHold, children }: { title: str
           onContextMenu={e => e.preventDefault()}
           onClick={() => { if (!held.current) onBack() }}
         >
-          <span className="st-crest"><Crest width={52} /></span>
+          <span className="st-crest"><Crest width={backLabel ? 22 : 52} /></span>
           <FlapLabel text={title} size="sm" animate={false} />
         </button>
       </header>

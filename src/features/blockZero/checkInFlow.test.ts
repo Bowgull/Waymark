@@ -10,6 +10,7 @@ import {
   checkInPayload,
   checkInReducer,
   initialCheckIn,
+  noteDayLabel,
   shouldOpenCheckIn,
   type CheckInState,
 } from './checkInFlow'
@@ -109,5 +110,10 @@ for (const q of CHECK_IN_QUESTIONS) {
   assert.equal(shouldOpenCheckIn({ today, hasLogToday: false, skippedOn: '2026-10-17', requested: false }), true, 'yesterday’s skip is old')
   assert.equal(shouldOpenCheckIn({ today, hasLogToday: true, skippedOn: today, requested: true }), true, "the alarm's I'M UP always opens")
 }
+
+// + ADD NOTE opened (page 46): the board names the day as "Sun 18"
+assert.equal(noteDayLabel('2026-10-18'), 'Sun 18')
+assert.equal(noteDayLabel('2026-10-01'), 'Thu 1')
+assert.equal(noteDayLabel('nope'), '')
 
 console.log('checkInFlow tests passed')

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import {
   aerobicWeekly, buildRings, pondReaction, currentStreak, dayLetter, linePoints, mondayOf, paceAt140, paceDelta, paceFlap,
-  ringState, ringWindow, sleepWeek, spanWeeks, strengthWeekly, weightDelta, weightWeekly,
+  ringState, ringWindow, sleepWeek, seasonRings, sessionRings, consistencyWeeks, CONSISTENCY_WEEKS, SEASON_WEEKS, spanWeeks, strengthWeekly, weightDelta, weightWeekly,
 } from './ledger'
 import { isoToEpochDay } from './dates'
 
@@ -137,6 +137,68 @@ test('the pond reacts to how the week has gone', () => {
   assert.equal(pondReaction([]), null)
   assert.equal(pondReaction([{ key: 'strength', label: 'Strength', icon: 'strength', list: ['todo'] }]), null)
   assert.equal(pondReaction([{ key: 'strength', label: 'Strength', icon: 'strength', list: ['done', 'done', 'skip', 'todo'] }]), 2 / 3)
+})
+
+test('MONTH: one segment per planned session this calendar month', () => {
+  const rows = [
+    { id: 'a', type: 'strength', status: 'completed', scheduledDate: isoToEpochDay('2026-10-01') },
+    { id: 'b', type: 'strength', status: 'planned', scheduledDate: isoToEpochDay('2026-10-31') },
+    { id: 'c', type: 'strength', status: 'completed', scheduledDate: isoToEpochDay('2026-09-30') },
+    { id: 'd', type: 'mobility', status: 'skipped', scheduledDate: isoToEpochDay('2026-10-10') },
+  ]
+  const rings = buildRings(rows, 'month', SUN)
+  assert.deepEqual(rings.map(r => r.list), [['done', 'todo'], [], ['skip']])
+})
+
+test('SEASON: one segment per week of the last 13, lit when that week’s sessions of the type were done', () => {
+  const rows = [
+    // this week: strength both done -> lit; condition one done one planned -> dark
+    { id: 's1', type: 'strength', status: 'completed', scheduledDate: MON },
+    { id: 's2', type: 'strength', status: 'completed', scheduledDate: MON + 3 },
+    { id: 'c1', type: 'foundation_run', status: 'completed', scheduledDate: MON + 1 },
+    { id: 'c2', type: 'bag_work', status: 'planned', scheduledDate: MON + 5 },
+    // last week: strength skipped -> dark; recovery done -> lit
+    { id: 's3', type: 'strength', status: 'skipped', scheduledDate: MON - 7 },
+    { id: 'r1', type: 'mobility', status: 'completed', scheduledDate: MON - 6 },
+    // 13 weeks back is outside the season
+    { id: 'old', type: 'strength', status: 'completed', scheduledDate: MON - 13 * 7 },
+    // the first week of the season
+    { id: 'first', type: 'mobility', status: 'completed', scheduledDate: MON - 12 * 7 },
+  ]
+  const rings = buildRings(rows, 'season', SUN)
+  assert.deepEqual(rings, seasonRings(rows, SUN))
+  for (const r of rings) assert.equal(r.list.length, SEASON_WEEKS)
+  const [str, cond, rec] = rings
+  assert.equal(str.list[12], 'done')
+  assert.equal(str.list[11], 'todo')
+  assert.equal(str.list.filter(s => s === 'done').length, 1)
+  assert.equal(cond.list[12], 'todo')
+  assert.equal(rec.list[11], 'done')
+  assert.equal(rec.list[0], 'done')
+  // a week with nothing of the type planned stays dark
+  assert.equal(rec.list[12], 'todo')
+  // the pond still reads the sessions themselves
+  assert.deepEqual(sessionRings(rows, 'season', SUN)[0].list, ['skip', 'done', 'done'])
+})
+
+test('consistency: one bar per week ending this week, lit when a key session was done', () => {
+  const rows = [
+    { id: 'a', type: 'strength', status: 'completed', scheduledDate: MON + 2 },
+    { id: 'b', type: 'mobility', status: 'completed', scheduledDate: MON - 7 },
+    { id: 'c', type: 'foundation_run', status: 'skipped', scheduledDate: MON - 14 },
+    { id: 'd', type: 'bag_work', status: 'completed', scheduledDate: MON - 21 },
+    { id: 'e', type: 'strength', status: 'completed', scheduledDate: MON - 13 * 7 },
+  ]
+  const bars = consistencyWeeks(rows, CONSISTENCY_WEEKS.week, SUN)
+  assert.equal(bars.length, 13)
+  assert.equal(bars[12], true)
+  assert.equal(bars[11], false, 'mobility alone does not count the week')
+  assert.equal(bars[10], false, 'a skipped run does not count')
+  assert.equal(bars[9], true)
+  assert.equal(bars.filter(Boolean).length, 2, 'the 14th week back is outside')
+  assert.equal(consistencyWeeks(rows, CONSISTENCY_WEEKS.season, SUN).length, 52)
+  assert.equal(consistencyWeeks(rows, CONSISTENCY_WEEKS.season, SUN).filter(Boolean).length, 3)
+  assert.deepEqual(consistencyWeeks([], 3, SUN), [false, false, false])
 })
 
 console.log(`ledger: ${passed} passed`)

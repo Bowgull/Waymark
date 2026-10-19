@@ -3,6 +3,13 @@
 .td-page { position: relative; display: flex; flex-direction: column; gap: 10px; margin: 0 -2px; padding-top: env(safe-area-inset-top); padding-bottom: 12px; min-height: 100%; }
 /* the screen the mockups show (header to the Waybook line) fills the view; Settings waits below it */
 .td-fill { display: flex; flex-direction: column; gap: 10px; min-height: calc(100dvh - 81px - max(calc(env(safe-area-inset-bottom) - 4px), 10px) - env(safe-area-inset-top)); }
+/* a Strava confirm of the evening's last session (page 46): the day fades out, ALL DONE fades in */
+.td-fill.is-leaving > :not(.td-hd) { opacity: 0; transition: opacity 400ms var(--ease-out); }
+.td-fill.is-arriving > :not(.td-hd) { animation: wm-fade-in 800ms var(--ease-out) both; }
+@media (prefers-reduced-motion: reduce) {
+  .td-fill.is-leaving > :not(.td-hd) { transition: none; }
+  .td-fill.is-arriving > :not(.td-hd) { animation: none; }
+}
 .td-spacer { flex: 1 1 auto; min-height: 8px; }
 
 /* header: the crest and WAYMARK on a flap, the date on a flap */

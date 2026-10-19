@@ -74,6 +74,8 @@ body:has(.bz-deck) .wm-tabs { visibility: hidden; }
 .bz-verd > p { margin: 0; font: 600 16px/1.4 var(--font-body); color: #e6efe9; }
 .bz-verd > .wm-btns { align-self: stretch; }
 .bz-note { width: 100%; min-height: 74px; resize: none; border: 0; border-radius: 9px; padding: 10px 12px; background: rgba(4, 9, 7, 0.6); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); font: 500 16px/1.4 var(--font-body); color: #f0ead6; outline: none; text-align: left; }
+/* the morning note's box (page 46 textarea.nt): taller, a brighter brass edge */
+.bz-note.is-morning { min-height: 96px; box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3); }
 .bz-note::placeholder { color: rgba(240, 234, 214, 0.45); }
 
 /* ── + CLASS TONIGHT on the Coach board (page 13's placement) ── */
@@ -93,6 +95,7 @@ body:has(.bz-deck) .wm-tabs { visibility: hidden; }
 .bz-cmp { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; }
 .bz-cmp + .bz-cmp { margin-top: 4px; }
 .bz-cmp .n { flex: 1; font: 600 14.5px/normal var(--font-body); color: #e6efe9; }
+.bz-cmp .n small { display: block; margin-top: 2px; font: 600 12.5px/normal var(--font-body); color: #9fb2a8; }
 .bz-cmp .v { font: 700 13.5px/normal var(--font-mono); color: #d6c08a; white-space: nowrap; }
 .bz-cmp.is-up { background: linear-gradient(90deg, rgba(95, 160, 140, 0.42), rgba(95, 160, 140, 0.14)); box-shadow: inset 3px 0 0 #5fa08c; }
 .bz-cmp.is-dn { background: linear-gradient(90deg, rgba(196, 98, 64, 0.44), rgba(196, 98, 64, 0.14)); box-shadow: inset 3px 0 0 #c4623f; }

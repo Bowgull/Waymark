@@ -6,6 +6,11 @@
 .st-hd { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 16px 6px; }
 .st-brand { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .st-crest { width: 54px; height: 60px; display: grid; place-items: center; flex: none; }
+/* page 46 "A way back": ‹ TODAY in gold at the top left; the small crest and the title on the right (.hd2) */
+.st-hd.is-back { padding: 8px 16px 6px; gap: 10px; }
+.st-hd.is-back .st-crest { width: 30px; height: 34px; }
+.st-bk { position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 6px 0; border: 0; background: none; cursor: pointer; font: 800 14px/normal var(--font-body); letter-spacing: 0.1em; color: #e8c878; -webkit-tap-highlight-color: transparent; }
+.st-bk::before { content: ''; position: absolute; inset: -8px -10px; }
 .st-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; padding: 4px 12px calc(40px + env(safe-area-inset-bottom)); scrollbar-width: none; }
 .st-scroll::-webkit-scrollbar { display: none; }
 .st-scroll > * { flex: none; }

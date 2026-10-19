@@ -3,7 +3,7 @@
 // the talk-test HR, the verdict, and Program's one gate board.
 import assert from 'node:assert/strict'
 
-import { GATE_ROWS, gateBoardShows, gateOpen, retestComparison, shownValues, verdictFor } from './gate'
+import { GATE_ROWS, comparisonSource, gateBoardShows, gateOpen, retestComparison, shownValues, verdictFor } from './gate'
 import { formatTestValue, liftNameFromId } from './testWeek'
 
 // ─── formatting: lb for weights ──
@@ -42,6 +42,11 @@ import { formatTestValue, liftNameFromId } from './testWeek'
   assert.equal(c[1].span, '142 → 148 bpm', 'the latest week 6+ wins')
   assert.equal(c[1].delta, '+6')
   assert.equal(c[1].better, null, 'talk-test HR carries no judgement (neutral chip)')
+  // page 46: each row names where its first number is from
+  assert.equal(c[0].source, 'from week 3, when front squat starts')
+  assert.equal(c[1].source, 'week 1 → week 7', 'the weeks the two numbers came from')
+  assert.equal(retestComparison(rows.filter(r => r.week !== 7))[1].source, 'week 1 → week 6')
+  assert.equal(comparisonSource('e1rm:ex-front-squat', 4, 6), 'week 4 → week 6', 'a later first squat says its own week')
   const down = retestComparison([{ week: 1, testKey: 'e1rm:ex-front-squat', value: 80 }, { week: 6, testKey: 'e1rm:ex-front-squat', value: 76 }])
   assert.equal(down[0].better, false, 'a lower estimate is the clay band')
   assert.equal(down[0].delta, '−5%')

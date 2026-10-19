@@ -191,3 +191,13 @@ export function shouldOpenCheckIn(input: { today: string; hasLogToday: boolean; 
   if (input.hasLogToday) return false
   return input.skippedOn !== input.today
 }
+
+const NOTE_DAY3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** The note board's day (page 46): "Sun 18" for 2026-10-18. */
+export function noteDayLabel(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return ''
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
+  return `${NOTE_DAY3[d.getUTCDay()]} ${d.getUTCDate()}`
+}

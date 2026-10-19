@@ -49,6 +49,16 @@
 .lg-rows .r { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
 .lg-rows .grow { flex: 1; }
 
+/* page 46: a bar per week, lit = the week counted (.wbar: 52 px, 3 px apart, dim bars at 30%) */
+.lg-wbar { display: flex; align-items: flex-end; gap: 3px; height: 52px; margin-top: 8px; }
+.lg-wbar.is-mid { gap: 2px; }
+.lg-wbar.is-fine { gap: 1px; }
+.lg-wbar > i { flex: 1; height: 100%; border-radius: 2px; background: #c9a656; }
+.lg-wbar > i.off { height: 30%; background: rgba(240, 230, 192, 0.14); }
+.lg-wbar-k { display: flex; justify-content: space-between; margin-top: 4px; font: 700 11px/normal var(--font-mono); color: #8ea79b; }
+/* MONTH / SEASON: the charts' span under the rings (page 46) */
+.lg-span { margin: 0; font: 400 14px/1.55 var(--font-body); color: #c9d6cf; text-align: center; }
+
 /* the pond: the glow on the water and the rings resting on it, behind everything */
 .lg-pond { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .lg-glowwash { position: absolute; inset: 0; background: radial-gradient(ellipse 80% 22% at 50% 80%, rgba(120, 210, 200, 0.22), transparent 70%); }

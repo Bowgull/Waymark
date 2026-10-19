@@ -1,0 +1,19 @@
+/* After an indoor Naruto run (page 46 "Naruto: now on ep N?"): a centred board on the veil (.veil2 at .65, .center). */
+.ss-naruto {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(max(env(safe-area-inset-top), env(safe-area-inset-bottom)) + 12px) 12px;
+  background: rgba(2, 8, 6, 0.65);
+  animation: wm-fade-in var(--t-quick) var(--ease-out) both;
+}
+.ss-naruto-col { margin: auto 0; width: 100%; max-width: 406px; align-self: center; display: flex; flex-direction: column; gap: 10px; }
+.wm-board.ss-naruto-bd { background-color: rgba(10, 16, 13, 0.9); }
+.ss-naruto-q { margin: 6px 0 10px; }
+@media (prefers-reduced-motion: reduce) {
+  .ss-naruto { animation: none; }
+}

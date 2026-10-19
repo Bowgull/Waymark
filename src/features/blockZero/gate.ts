@@ -29,6 +29,17 @@ export interface ComparisonRow {
   delta: string
   /** true = better, false = worse, null = no judgement or no change. */
   better: boolean | null
+  /** Where the first number is from (page 46): "from week 3, when front squat starts", "week 1 → week 6". */
+  source: string
+}
+
+/** The front squat starts in week 3 (goblet squat before it), so its "then" is a week-3 set. */
+export const FRONT_SQUAT_START_WEEK = 3
+
+/** The row's small line under its name (page 46): which weeks the two numbers come from. */
+export function comparisonSource(key: string, beforeWeek: number, afterWeek: number): string {
+  if (key === GATE_ROWS[0].key && beforeWeek === FRONT_SQUAT_START_WEEK) return `from week ${beforeWeek}, when front squat starts`
+  return `week ${beforeWeek} → week ${afterWeek}`
 }
 
 function signed(n: number, digits = 0): string {
@@ -70,7 +81,7 @@ export function retestComparison(rows: readonly TestRowIn[]): ComparisonRow[] {
     const diff = b.value - a.value
     const delta = g.unit === 'kg' && a.value > 0 ? `${signed((diff / a.value) * 100)}%` : signed(diff, Number.isInteger(diff) ? 0 : 1)
     const better = diff === 0 || g.neutral ? null : diff > 0
-    out.push({ key: g.key, label: g.label, ...shownValues(a.value, a.unit ?? g.unit, b.value, b.unit ?? g.unit), delta, better })
+    out.push({ key: g.key, label: g.label, ...shownValues(a.value, a.unit ?? g.unit, b.value, b.unit ?? g.unit), delta, better, source: comparisonSource(g.key, a.week, b.week) })
   }
   return out
 }

@@ -67,7 +67,20 @@ export function ringState(status: string): RingState | null {
 
 const SLOT_ORDER: Record<string, number> = { am: 0, pm: 1 }
 
+/** Weeks in the SEASON range (one ring segment each). */
+export const SEASON_WEEKS = 13
+
+/**
+ * WEEK and MONTH: one segment per planned session in the range. SEASON (page 46): one segment per
+ * week of the last 13, lit when that week's planned sessions of the type were all done; the rest
+ * are dark (no clay strike: a week is lit or not).
+ */
 export function buildRings(rows: LedgerSessionRow[], range: LedgerRange, todayEpochDay: number): LedgerRing[] {
+  return range === 'season' ? seasonRings(rows, todayEpochDay) : sessionRings(rows, range, todayEpochDay)
+}
+
+/** One segment per planned session in the range's window, in date order (also what the pond reads). */
+export function sessionRings(rows: LedgerSessionRow[], range: LedgerRange, todayEpochDay: number): LedgerRing[] {
   const { from, to } = ringWindow(range, todayEpochDay)
   const inRange = rows
     .filter(r => r.scheduledDate != null && r.scheduledDate >= from && r.scheduledDate <= to)
@@ -80,6 +93,22 @@ export function buildRings(rows: LedgerSessionRow[], range: LedgerRange, todayEp
       .map(r => ringState(r.status))
       .filter((s): s is RingState => s != null),
   }))
+}
+
+export function seasonRings(rows: LedgerSessionRow[], todayEpochDay: number): LedgerRing[] {
+  const firstMon = mondayOf(todayEpochDay) - (SEASON_WEEKS - 1) * 7
+  return (Object.keys(RING_TYPES) as RingKey[]).map(key => {
+    const list: RingState[] = []
+    for (let w = 0; w < SEASON_WEEKS; w++) {
+      const mon = firstMon + w * 7
+      const states = rows
+        .filter(r => r.scheduledDate != null && r.scheduledDate >= mon && r.scheduledDate <= mon + 6 && RING_TYPES[key].includes(r.type))
+        .map(r => ringState(r.status))
+        .filter((st): st is RingState => st != null)
+      list.push(states.length > 0 && states.every(st => st === 'done') ? 'done' : 'todo')
+    }
+    return { key, ...RING_META[key], list }
+  })
 }
 
 /** How the range has gone for the pond: done of (done + skipped); null when nothing is decided yet. */
@@ -211,6 +240,29 @@ export function currentStreak(rows: LedgerSessionRow[], todayEpochDay: number): 
   let n = 0
   while (done.has(d)) { n++; d-- }
   return n
+}
+
+/** Key sessions: the ones that make a week count (Foundation is a habit, not a training dose; endGate's list). */
+const KEY_TYPES = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
+
+/** Consistency bars per toggle (page 46: 13 on WEEK; the chart spans on MONTH and SEASON). */
+export const CONSISTENCY_WEEKS: Record<LedgerRange, number> = { week: 13, month: 26, season: 52 }
+
+/**
+ * Consistency (page 46): one bar per week, oldest first, ending this week; lit when the week counted,
+ * i.e. a key session was done in it (the training-week counter's rule: a week with none is paused).
+ */
+export function consistencyWeeks(rows: LedgerSessionRow[], weeks: number, todayEpochDay: number): boolean[] {
+  const lastMon = mondayOf(todayEpochDay)
+  const firstMon = lastMon - (weeks - 1) * 7
+  const counted = new Set<number>()
+  for (const r of rows) {
+    if (r.status !== 'completed' || r.scheduledDate == null || !KEY_TYPES.has(r.type)) continue
+    if (r.scheduledDate > todayEpochDay) continue
+    const mon = mondayOf(r.scheduledDate)
+    if (mon >= firstMon && mon <= lastMon) counted.add(mon)
+  }
+  return Array.from({ length: weeks }, (_, i) => counted.has(firstMon + i * 7))
 }
 
 // ── formatting for the flaps and legends ──

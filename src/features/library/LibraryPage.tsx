@@ -18,6 +18,7 @@ import {
   exerciseCounts,
   isGroupKey,
   isMastered,
+  isMorningNote,
   masteryDots,
   matchCombo,
   matchEntry,
@@ -45,7 +46,16 @@ import './library.css'
 /** The whole book: every reflection, one page per month. */
 const BOOK_DAYS = 3650
 
-/** The header: the small crest and LIBRARY on a flap. With a group open, it goes back to the list. */
+/** A group open (page 46 "Getting back"): ‹ LIBRARY in gold, top left, back to the list. */
+function BackHeader({ onBack }: { onBack: () => void }) {
+  return (
+    <header className="lib-head is-back">
+      <button type="button" className="lib-bk" onClick={onBack} aria-label="Back to the Library">‹ LIBRARY</button>
+    </header>
+  )
+}
+
+/** The header: the small crest and LIBRARY on a flap. On the Waybook, the crest goes back to the list. */
 function LibraryHeader({ onBack }: { onBack?: () => void }) {
   const inner = (
     <>
@@ -195,7 +205,7 @@ function BookEntries({ page }: { page: Pick<BookPage, 'head' | 'entries'> }) {
       <h2 className="lib-book-h">{page.head}</h2>
       {page.entries.map(e => (
         <div key={e.id} className="lib-book-e">
-          <div className="lib-book-d">{entryDateLine(e)}</div>
+          <div className="lib-book-d">{entryDateLine(e)}{isMorningNote(e) && <span className="lib-book-tg">MORNING</span>}</div>
           {entryParagraphs(e.content).map((p, i) => (
             <p key={i} className={`lib-book-p${i === 0 ? ' has-cap' : ''}`}>{p}</p>
           ))}
@@ -312,7 +322,7 @@ export function LibraryPage() {
     const items = exercises.filter(ex => ex.category === open)
     return (
       <div className="lib-root">
-        <LibraryHeader onBack={back} />
+        <BackHeader onBack={back} />
         <div className="lib-body">
           <Board className="lib-bd is-open">
             <GroupHead name={g.name} count={String(items.length)} len={10} onClick={back} />
@@ -329,7 +339,7 @@ export function LibraryPage() {
     const shownTier = openTier === undefined ? currentTier(tiers) : openTier
     return (
       <div className="lib-root">
-        <LibraryHeader onBack={back} />
+        <BackHeader onBack={back} />
         <div className="lib-body">
           <Board className="lib-bd is-open">
             {tiers.map(t => {

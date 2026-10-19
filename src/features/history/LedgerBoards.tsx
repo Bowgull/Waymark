@@ -52,10 +52,11 @@ function SegRing({ ring }: { ring: LedgerRing }) {
   )
 }
 
-export function RingBoard({ rings, title }: { rings: LedgerRing[]; title: string }) {
+/** WEEK: one segment per session (page 32); MONTH and SEASON read "done / planned" (page 46). */
+export function RingBoard({ rings, title, sub = 'one segment per session' }: { rings: LedgerRing[]; title: string; sub?: string }) {
   return (
     <section className="lg-glass" aria-label={`${title}: ${rings.map(r => `${r.label} ${r.list.filter(s => s === 'done').length} of ${r.list.length}`).join(', ')}`}>
-      <div className="lg-head"><span>{title}</span><span>one segment per session</span></div>
+      <div className="lg-head"><span>{title}</span><span>{sub}</span></div>
       <div className="lg-rings">{rings.map(r => <SegRing key={r.key} ring={r} />)}</div>
     </section>
   )
@@ -171,10 +172,20 @@ export function BodyWeightBoard({ points, weighIns }: { points: WeeklyPoint[]; w
   )
 }
 
-export function ConsistencyBoard({ streak }: { streak: number }) {
+/** Consistency (page 46): the streak flap, then one bar per week (oldest first), lit when the week counted. */
+export function ConsistencyBoard({ streak, weeks }: { streak: number; weeks: boolean[] }) {
+  const lit = weeks.filter(Boolean).length
   return (
     <section className="lg-glass">
       <div className="lg-rows"><div className="r"><span className="lg-label grow">Consistency</span><FlapLabel text={`${streak}D STREAK`} size="xs" tone="gold" animate={false} /></div></div>
+      {weeks.length > 0 && (
+        <>
+          <div className={`lg-wbar${weeks.length > 26 ? ' is-fine' : weeks.length > 13 ? ' is-mid' : ''}`} role="img" aria-label={`${lit} of the last ${weeks.length} weeks counted`}>
+            {weeks.map((on, i) => <i key={i} className={on ? undefined : 'off'} />)}
+          </div>
+          <div className="lg-wbar-k"><span>{weeks.length} weeks ago</span><span>this week</span></div>
+        </>
+      )}
     </section>
   )
 }

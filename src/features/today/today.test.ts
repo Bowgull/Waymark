@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 
 import { askView, dayFlap, firstAsk, stepTm, tmAcceptBody } from './askView'
-import { EVENING_HOUR, lanternFor, shortWhy, showsHome, splitLead, todayMode, tomorrowLine, weekStripDays, epochDayToISO } from './weekStrip'
+import { ALL_DONE_AFTER_CONFIRM_MS, EVENING_HOUR, fadesToAllDone, lanternFor, shortWhy, showsHome, splitLead, todayMode, tomorrowLine, weekStripDays, epochDayToISO } from './weekStrip'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; void name }
@@ -46,6 +46,15 @@ test('today mode: rest, unprepared, all done in the evening, else the day', () =
   assert.equal(todayMode({ today: [{ id: '5', type: 'strength', status: 'skipped' }], weekSessions: week, hour: 21 }), 'day', 'only skipped: nothing was done')
   assert.equal(showsHome('rest') && showsHome('unprepared') && showsHome('allDone'), true)
   assert.equal(showsHome('day'), false)
+})
+
+test('a Strava confirm of the day’s last session fades to ALL DONE in the evening (page 46)', () => {
+  const done = [{ status: 'completed' }, { status: 'completed' }, { status: 'skipped' }]
+  assert.equal(fadesToAllDone(done, EVENING_HOUR), true)
+  assert.equal(fadesToAllDone(done, EVENING_HOUR - 1), false, 'daytime: the day board stays')
+  assert.equal(fadesToAllDone([...done, { status: 'planned' }], 20), false, 'not the last session')
+  assert.equal(fadesToAllDone([{ status: 'skipped' }], 20), false)
+  assert.equal(ALL_DONE_AFTER_CONFIRM_MS, 2000, 'about 2 s after LOGGED')
 })
 
 test('lantern dims on an eased day', () => {

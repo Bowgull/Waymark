@@ -13,7 +13,7 @@ const CHECK_TIMEOUT_MS = 170_000
 
 function ComparisonBoard({ rows }: { rows: ComparisonRow[] }) {
   return (
-    <Board className="bz-bd" head="Week 1 → week 6">
+    <Board className="bz-bd" head="Then → now">
       {rows.length === 0 ? (
         <p className="bz-q is-last">No week-6 talk test yet. Log it on an easy run.</p>
       ) : rows.map(r => {
@@ -21,7 +21,7 @@ function ComparisonBoard({ rows }: { rows: ComparisonRow[] }) {
         const tone = r.better == null ? 'nt' : r.better ? 'up' : 'dn'
         return (
           <div key={r.key} className={`bz-cmp${tone === 'nt' ? '' : ` is-${tone}`}`}>
-            <span className="n">{r.label}</span>
+            <span className="n">{r.label}<small>{r.source}</small></span>
             <span className="v">{r.span}</span>
             <i className={`bz-dv is-${tone}`}>{r.delta}</i>
           </div>

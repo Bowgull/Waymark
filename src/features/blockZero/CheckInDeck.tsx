@@ -10,6 +10,7 @@ import {
   checkInPayload,
   checkInReducer,
   initialCheckIn,
+  noteDayLabel,
   type CheckInAnswers,
 } from './checkInFlow'
 import { readinessLine, type ReadinessIn } from './readinessLine'
@@ -105,6 +106,34 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
   }
 
   const tone = line?.tone === 'bad' ? 'clay' : 'teal'
+
+  // + ADD NOTE opened (page 46): a centred board on the veil, MORNING NOTE and the day, the box,
+  // CANCEL / SAVE. It saves to the day's log; the Waybook shows it with the MORNING tag.
+  if (phase === 'settled' && noteOpen) {
+    return (
+      <div className="bz-deck">
+        <BzOverlay label="Morning note">
+          <Board className="bz-bd" head="Morning note" headRight={<span className="wm-label">{noteDayLabel(date)}</span>}>
+            <textarea
+              className="bz-note is-morning"
+              rows={3}
+              maxLength={1000}
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              placeholder="How does the body feel..."
+              aria-label="Morning note"
+              autoFocus
+            />
+            <div className="wm-btns" style={{ marginTop: 10 }}>
+              <FlapButton label="CANCEL" size="xs" onClick={() => { setNoteText(note ?? ''); setNoteOpen(false) }} disabled={noteSaving} />
+              <FlapButton label={noteSaving ? 'SAVING' : 'SAVE'} primary size="sm" onClick={() => void saveNote()} disabled={noteSaving} />
+            </div>
+          </Board>
+        </BzOverlay>
+      </div>
+    )
+  }
+
   return (
     <div className="bz-deck" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
       <BzOverlay label="Morning check-in">
@@ -186,29 +215,10 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
             <Board className="bz-bd bz-verd">
               <FlapLabel text={line ? (line.tone === 'bad' ? 'EASING TODAY' : 'GOOD TO GO') : 'LOGGED'} size="md" tone={tone} animate="mount" />
               {line && <p>{line.why}</p>}
-              {noteOpen ? (
-                <>
-                  <textarea
-                    className="bz-note"
-                    rows={3}
-                    maxLength={1000}
-                    value={noteText}
-                    onChange={e => setNoteText(e.target.value)}
-                    placeholder="How does the body feel..."
-                    aria-label="Note for today"
-                    autoFocus
-                  />
-                  <div className="wm-btns">
-                    <FlapButton label="CANCEL" size="xs" onClick={() => { setNoteText(note ?? ''); setNoteOpen(false) }} disabled={noteSaving} />
-                    <FlapButton label={noteSaving ? 'SAVING' : 'SAVE'} primary size="sm" onClick={() => void saveNote()} disabled={noteSaving} />
-                  </div>
-                </>
-              ) : (
-                <div className="wm-btns">
-                  <FlapButton label="+ ADD NOTE" size="sm" onClick={() => setNoteOpen(true)} />
-                  <FlapButton label="TO TODAY" primary size="sm" onClick={() => onClose(true)} />
-                </div>
-              )}
+              <div className="wm-btns">
+                <FlapButton label="+ ADD NOTE" size="sm" onClick={() => setNoteOpen(true)} />
+                <FlapButton label="TO TODAY" primary size="sm" onClick={() => onClose(true)} />
+              </div>
             </Board>
           </>
         )}

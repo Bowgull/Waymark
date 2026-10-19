@@ -25,7 +25,7 @@ import { BLOCK_ZERO_BASE_WEEKS, allowedClassTypes, blockZeroTrainingWeek, getRun
 import { KNOWN_SESSION_TYPES, bagRules, buildCoachSummary, estimatedMinutes, fallbackRoundTypes, governBagRounds, mergeContext, RAMP_LOAD_STEP, type SafeAlternative, type SessionChange } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
-import { CHART_WEEKS, aerobicWeekly, buildRings, currentStreak as ledgerStreak, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
+import { CHART_WEEKS, CONSISTENCY_WEEKS, aerobicWeekly, buildRings, consistencyWeeks, currentStreak as ledgerStreak, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
 import { computeSuggestions } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, coachSeenAt } from './weeklyPass'
 import { acceptCoachAsk, applyFeltHard, coachPushFrom, maybeRampUpAsk, proposeTmUpdate } from './coachAsks'
@@ -38,6 +38,7 @@ import { loadLiftTrends } from '../lib/athleteState/liftTrends'
 import { loadLatestAthleteState, resolveEffectiveLift } from '../lib/athleteState/store'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
+import { waybookEntries } from '../lib/waybook'
 import { runReactiveReplan, runReplaceSuggestions } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { clearCollectedTrainingData } from './trainingReset'
@@ -2885,11 +2886,17 @@ app.get('/api/journal/history', async (c) => {
   const cutoffDay = todayEpochDay - days
 
   const db = createDB(c.env)
-  const rows = await db.select().from(journalEntries)
-    .where(gte(journalEntries.date, cutoffDay))
-    .orderBy(desc(journalEntries.date))
+  const [rows, logs] = await Promise.all([
+    db.select().from(journalEntries)
+      .where(gte(journalEntries.date, cutoffDay))
+      .orderBy(desc(journalEntries.date)),
+    db.select({ id: dailyLogs.id, logDate: dailyLogs.logDate, notes: dailyLogs.notes, createdAt: dailyLogs.createdAt })
+      .from(dailyLogs)
+      .where(gte(dailyLogs.logDate, cutoffDay)),
+  ])
 
-  return c.json(rows)
+  // page 46: the check-in's morning notes (+ ADD NOTE, daily_logs.notes) are Waybook pages too, typed 'morning'
+  return c.json(waybookEntries(rows, logs, cutoffDay))
 })
 
 // ─── Settings (update) ─────────────────────────────────────────
@@ -3691,6 +3698,10 @@ app.get('/api/history/ledger', async (c) => {
     sleep: sleepWeek(logs, today),
     weight: weightWeekly(weights, weeks, today),
     streak: ledgerStreak(allSessions, today),
+    // page 46: a bar per week, lit when the week counted (13 on WEEK, the chart span otherwise)
+    consistency: consistencyWeeks(allSessions, CONSISTENCY_WEEKS[range], today),
+    // the pond reads the range's sessions (SEASON's rings are per week)
+    pond: pondReaction(sessionRings(allSessions, range, today)),
   })
 })
 

@@ -181,6 +181,14 @@ export function entryDateLine(e: Pick<LibraryJournalEntry, 'date' | 'type'>): st
   return e.type === 'weekly' ? `${base} · WEEKLY` : base
 }
 
+/** The Waybook's entry type for a morning note (the check-in's + ADD NOTE, daily_logs.notes). */
+export const MORNING_ENTRY_TYPE = 'morning'
+
+/** A morning note gets the small MORNING tag (page 46); reflections stay untagged. */
+export function isMorningNote(e: Pick<LibraryJournalEntry, 'type'>): boolean {
+  return e.type === MORNING_ENTRY_TYPE
+}
+
 export interface BookPage {
   /** "2026-10" */
   key: string
@@ -190,14 +198,15 @@ export interface BookPage {
 }
 
 /**
- * The book: one page per month, newest first, reflections only (the Body
- * Log's Morning Report notes are not on the page). Entries newest first.
+ * The book: one page per month, newest first. Reflections and the morning
+ * notes from the check-in (page 46, tagged MORNING); a day's morning note sits
+ * above that day's reflections. The Body Log's notes are not on the page.
  */
 export function bookPages(entries: ReadonlyArray<LibraryJournalEntry>): BookPage[] {
   const reflections = entries
     .filter(e => e.type !== 'wellness' && e.content.trim())
     .slice()
-    .sort((a, b) => b.date - a.date || b.createdAt - a.createdAt)
+    .sort((a, b) => b.date - a.date || Number(isMorningNote(b)) - Number(isMorningNote(a)) || b.createdAt - a.createdAt)
   const pages: BookPage[] = []
   for (const e of reflections) {
     const d = utc(e.date)

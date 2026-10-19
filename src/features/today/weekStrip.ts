@@ -79,13 +79,27 @@ export type TodayMode = 'loading' | 'day' | 'rest' | 'unprepared' | 'allDone'
  * session today is done (ALL DONE); otherwise the day board.
  * `weekSessions` = this week's planned sessions (any day), null when there's no week plan.
  */
+/** Every session the day still holds (skipped and missed set aside) is done. */
+export function dayAllDone(today: ReadonlyArray<Pick<StripSession, 'status'>>): boolean {
+  const live = today.filter(s => s.status !== 'skipped' && s.status !== 'missed')
+  return live.length > 0 && live.every(s => s.status === 'completed')
+}
+
+/**
+ * A Strava confirm (page 40 / 46): LOGGED and the row glow first; when that was the day's last
+ * session in the evening, the day fades to ALL DONE (page 43) this long after.
+ */
+export const ALL_DONE_AFTER_CONFIRM_MS = 2000
+
+export function fadesToAllDone(today: ReadonlyArray<Pick<StripSession, 'status'>>, hour: number): boolean {
+  return dayAllDone(today) && hour >= EVENING_HOUR
+}
+
 export function todayMode(input: { today: StripSession[]; weekSessions: StripSession[] | null; hour: number; showDayAnyway?: boolean }): TodayMode {
-  const live = input.today.filter(s => s.status !== 'skipped' && s.status !== 'missed')
   if (input.today.length === 0) {
     return input.weekSessions && input.weekSessions.length > 0 ? 'rest' : 'unprepared'
   }
-  const allDone = live.length > 0 && live.every(s => s.status === 'completed')
-  if (allDone && input.hour >= EVENING_HOUR && !input.showDayAnyway) return 'allDone'
+  if (dayAllDone(input.today) && input.hour >= EVENING_HOUR && !input.showDayAnyway) return 'allDone'
   return 'day'
 }
 

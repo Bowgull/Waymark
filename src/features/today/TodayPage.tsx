@@ -27,7 +27,7 @@ import { AskBoard } from './AskBoard'
 import { askView, isAsk, type AskRow, type AskView } from './askView'
 import { AllDoneBoard, CoachBoard, EmptyDayBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip, type CoachChangeLine, type CoachQuestionLine } from './TodayBoards'
 import { TodayDay, type TodaySession } from './TodayDay'
-import { lanternFor, shortWhy, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
+import { ALL_DONE_AFTER_CONFIRM_MS, fadesToAllDone, lanternFor, shortWhy, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
 import { answersFromLog, answeredCount, shouldOpenCheckIn } from '@/features/blockZero/checkInFlow'
 import { CHECK_IN_EVENT, checkInSkippedOn, markCheckInSkipped, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
@@ -35,6 +35,9 @@ import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessL
 import { MorningReportRow, type ClassTonightView } from '@/features/blockZero/TodayPieces'
 import { classTonightFrom } from '@/lib/blockZero/classTonight'
 import './today.css'
+
+/** The day's fade out, and ALL DONE's fade in, after the last Strava confirm. */
+const ALL_DONE_FADE_MS = 400
 
 type Session = TodaySession & { startedAt: number | null; completedAt: number | null; durationSec: number | null; rpe: number | null; notes: string | null }
 
@@ -119,14 +122,33 @@ export function TodayPage() {
     void endAllLiveActivities()
   }, [])
 
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (): Promise<Session[] | null> => {
     try {
       const next = await apiFetch<Session[]>(`/api/sessions/today?date=${today}`)
       setSessions(next)
+      return next
     } catch (e) {
       console.error('Failed to refresh sessions:', e)
+      return null
     }
   }, [today])
+
+  // A Strava confirm of the evening's last session (page 46): LOGGED and the row glow, then about
+  // 2 s later the day fades out and the evening ALL DONE (page 43) fades in.
+  const [allDoneFade, setAllDoneFade] = useState<'leaving' | 'arriving' | null>(null)
+  const fadeTimers = useRef<number[]>([])
+  useEffect(() => () => { fadeTimers.current.forEach(t => window.clearTimeout(t)) }, [])
+  const fadeToAllDone = useCallback(() => {
+    const at = (ms: number, fn: () => void) => { fadeTimers.current.push(window.setTimeout(fn, ms)) }
+    at(ALL_DONE_AFTER_CONFIRM_MS, () => setAllDoneFade('leaving'))
+    at(ALL_DONE_AFTER_CONFIRM_MS + ALL_DONE_FADE_MS, () => {
+      setShowDayAnyway(false)
+      setAllDoneFade('arriving')
+      // the home is drawn from the top (page 43), wherever the confirm left the scroll
+      document.querySelector('main')?.scrollTo({ top: 0 })
+    })
+    at(ALL_DONE_AFTER_CONFIRM_MS + ALL_DONE_FADE_MS * 3, () => setAllDoneFade(null))
+  }, [])
 
   const refreshReadiness = useCallback(async (): Promise<ReadinessIn | null> => {
     try {
@@ -638,10 +660,12 @@ export function TodayPage() {
       // The confirmed row stays on screen to answer the tap (page 40), even when it was the
       // evening's last session; ALL DONE (page 43) shows the next time Today opens.
       setShowDayAnyway(true)
-      await refreshSessions()
+      const next = await refreshSessions()
       // Page 40 phone 2: LOGGED drops in and the run's row, now done, glows teal.
       showToast('Logged.', 'success')
       requestAnimationFrame(() => glowRow(document.querySelector(`.td-row[data-sid="${CSS.escape(sessionId)}"]`), 'good'))
+      // The day's last session in the evening: then it fades to ALL DONE (page 46).
+      if (next && fadesToAllDone(next, new Date().getHours())) fadeToAllDone()
     } catch (e) {
       console.error('Failed to confirm match:', e)
       glowRow(card, 'bad')
@@ -746,7 +770,7 @@ export function TodayPage() {
 
   return (
     <div className="td-page">
-      <div className="td-fill">
+      <div className={`td-fill${allDoneFade ? ` is-${allDoneFade}` : ''}`}>
       <TodayHeader date={todayDate} />
       {strip && <WeekStrip days={strip} home={showsHome(mode)} />}
 
