@@ -85,7 +85,7 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   assert.equal(changed.swipeable, true, 'a changed row is still a to-do')
   assert.equal(dayRowState(base({ status: 'completed' }), { rune: 'seen' }).rune, 'seen', 'a done row keeps its dim rune')
   assert.equal(dayRowState(base({ status: 'skipped' }), { rune: 'seen' }).rune, null, 'a skipped row shows none')
-  assert.equal(dayRowState(base({ status: 'missed' }), { rune: 'miss' }).rune, 'miss', 'a missed session: Nauthiz')
+  assert.equal(dayRowState(base({ status: 'missed' }), { rune: 'miss' }).rune, 'miss', 'a missed session: Algiz')
   assert.equal(dayRowState(base()).rune, null)
 }
 

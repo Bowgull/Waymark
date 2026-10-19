@@ -29,7 +29,7 @@ export interface StripDay {
   rest: boolean
   /** name: what the session is called, for the spoken label (a run-walk is not "zone2", m9). */
   icons: Array<{ key: SessionIconKey; state: StripIconState; id: string; name: string }>
-  /** Page 56: Dagaz (the coach changed this day) or Nauthiz (a missed session), new or seen. */
+  /** Page 56: Dagaz (the coach changed this day) or Algiz (a missed session), new or seen. */
   rune: RuneState | null
 }
 

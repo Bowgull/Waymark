@@ -76,7 +76,7 @@ export const PARTIAL_CONTEXT_KEY = 'partial'
 
 /**
  * Josh, 2026-10-19: a session left in progress whose day has passed is done
- * (partial) with what was logged. Not missed: no Nauthiz, no missed fix, and
+ * (partial) with what was logged. Not missed: no Algiz, no missed fix, and
  * its logged sets count as real work. The finish time is the last logged set,
  * else the start. Returns the ids closed.
  */

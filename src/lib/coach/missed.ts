@@ -1,6 +1,6 @@
 // Missed sessions (page 56 §5, approved 2026-10-19): the coach never asks.
 // When a session is missed it applies its fix and marks the day with an ember
-// Nauthiz rune; tapping the day says what was missed, what the coach did, and
+// Algiz rune; tapping the day says what was missed, what the coach did, and
 // UNDO. Missed work is never crammed (F14):
 // - A missed strength session: its main lifts go into the next strength
 //   session within the next few days, one set fewer than the week's target;

@@ -70,7 +70,7 @@ test('tomorrow line', () => {
   assert.equal(tomorrowLine([{ type: 'mobility', label: 'Foundation', timeSlot: 'am' }, { type: 'strength', label: 'Strength A', timeSlot: 'pm' }], name, 4), 'Foundation, then Strength A. Week 4 starts.', 'page 43 B')
 })
 
-test('runes at the foot of the day tiles (page 56): Dagaz new, Nauthiz seen, none', () => {
+test('runes at the foot of the day tiles (page 56): Dagaz new, Algiz seen, none', () => {
   const runes: Record<number, 'new' | 'missseen'> = { [MON + 2]: 'new', [MON + 4]: 'missseen' }
   const days = weekStripDays([{ id: 'a', type: 'strength', status: 'planned', scheduledDate: MON + 2, timeSlot: 'am' }], MON, MON + 2, d => runes[d] ?? null)
   assert.deepEqual(days.map(d => d.rune), [null, null, 'new', null, 'missseen', null, null])

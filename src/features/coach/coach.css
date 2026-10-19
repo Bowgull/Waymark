@@ -2,7 +2,7 @@
    the day runes, the day's back, the week log, the optional reason tiles,
    the Morning Report's readiness line and the quiet lines. */
 
-/* ── the day runes: Dagaz (teal) = the coach changed this day; Nauthiz (ember) =
+/* ── the day runes: Dagaz (teal) = the coach changed this day; Algiz (ember) =
    a missed session. --c is the colour; new = soft pulse, seen = dim and still. ── */
 .wm-rune.is-new, .wm-rune.is-seen { --c: 143, 212, 184; }
 .wm-rune.is-miss, .wm-rune.is-missseen { --c: 236, 146, 98; }

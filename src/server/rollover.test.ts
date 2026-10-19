@@ -41,5 +41,5 @@ assert.equal((await get('fnd')).status, 'completed', 'bug 17: a Foundation left 
 assert.equal((await get('run')).status, 'missed', 'a planned session that never started is still missed')
 assert.equal((await get('today')).status, 'in_progress', 'today\'s session stays open')
 const missedRows = await db.select().from(weekAdjustments).where(eq(weekAdjustments.kind, 'missed'))
-assert.ok(!missedRows.some(r => r.targetSessionId === 'str' || r.targetSessionId === 'fnd'), 'decision a: no missed record (no Nauthiz) for a partial session')
+assert.ok(!missedRows.some(r => r.targetSessionId === 'str' || r.targetSessionId === 'fnd'), 'decision a: no missed record (no Algiz) for a partial session')
 console.log('rollover tests passed')

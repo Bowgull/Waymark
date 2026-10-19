@@ -40,7 +40,7 @@ export function TodayHeader({ date }: { date: Date }) {
 
 /**
  * The week strip: seven small day tiles under the header. A day with a rune
- * (page 56: Dagaz, the coach changed it; Nauthiz, a missed session) opens its
+ * (page 56: Dagaz, the coach changed it; Algiz, a missed session) opens its
  * back in place under the strip; any other day opens in Program.
  */
 export function WeekStrip({ days, home = false, openDay = null, onRune }: { days: StripDay[]; home?: boolean; openDay?: number | null; onRune?: (epochDay: number) => void }) {

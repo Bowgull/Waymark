@@ -4,7 +4,7 @@
 // - A row is a to-do, done, skipped or missed session. Only a to-do row
 //   swipes (REPLACE / SKIP); a done row shows what was actually done.
 // - A row the coach changed carries the small rune by its detail (page 56
-//   item 7: Dagaz teal, Nauthiz ember for a missed session); it replaces
+//   item 7: Dagaz teal, Algiz ember for a missed session); it replaces
 //   page 36's brass edge and reason line. Tap the day for what changed.
 // - A done summary lists plan vs actual: lines that differ get a band, teal
 //   up or clay for a miss (heart rate over the Zone 2 cap is a miss), with a

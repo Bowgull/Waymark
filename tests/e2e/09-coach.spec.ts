@@ -6,7 +6,7 @@ import { addDaysISO, gotoToday, insertSession, todayISO, todayRow } from './supp
  * The page 56 coach model on Today: REPLACE (with the optional ROUGH DAY tile)
  * swaps at once; SKIP is instant and then offers its reason tiles; + Add
  * always adds, MT Class included; the coach's own changes put a Dagaz rune on
- * their day, a missed session a Nauthiz; a rune day opens its back (before ->
+ * their day, a missed session an Algiz; a rune day opens its back (before ->
  * after, why, UNDO), UNDO puts it back; Program's week log lists it all.
  *
  * Runs last: it rolls today's sessions over to "missed" at the end. No
@@ -127,7 +127,7 @@ test('the week log in Program lists his changes and the coach ones', async ({ pa
   await expect(log).toBeHidden()
 })
 
-test('a missed session puts a Nauthiz on its day', async ({ page, api }) => {
+test('a missed session puts an Algiz on its day', async ({ page, api }) => {
   // A key session today that never happens: the day rolls over (the server's
   // rollover runs with the athlete's day, here tomorrow) and it reads missed.
   await insertSession(api, 'strength', 'pm')

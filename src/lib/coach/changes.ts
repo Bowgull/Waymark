@@ -6,7 +6,7 @@
 // server stores records in week_adjustments (0033) and the screens read the
 // views built here.
 //
-// Runes: Dagaz (teal) marks a day the coach changed, Nauthiz (ember) a missed
+// Runes: Dagaz (teal) marks a day the coach changed, Algiz (ember) a missed
 // session. New until seen, then dim. The athlete's own changes get no rune.
 // An undone change gives no rune.
 
@@ -238,7 +238,7 @@ export function changeLock(c: Pick<ChangeRowLike, 'before' | 'after' | 'undoneAt
 
 // ─── Runes ───────────────────────────────────────────────────
 
-/** Dagaz new / seen (teal), Nauthiz new / seen (ember). */
+/** Dagaz new / seen (teal), Algiz new / seen (ember). */
 export type RuneState = 'new' | 'seen' | 'miss' | 'missseen'
 
 /** A change's rune, or null (his own changes and undone ones have none). */

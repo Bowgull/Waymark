@@ -306,7 +306,7 @@ export function TodayPage() {
   useEffect(() => () => setWorldPlace('clearing'), [])
   useEffect(() => { setWorldLantern(lanternFor(readiness)) }, [readiness])
 
-  // The week's changes and runes (page 56): Dagaz where the coach changed a day, Nauthiz where a session was missed.
+  // The week's changes and runes (page 56): Dagaz where the coach changed a day, Algiz where a session was missed.
   const { week: changes, markSeen, undo } = useWeekChanges(block ? mondayOf(todayEpoch) : null, changesVersion)
   const strip = useMemo(() => (week?.sessions ? weekStripDays(withoutReplaced(week.sessions), mondayOf(todayEpoch), todayEpoch, d => runeForDay(changes, d)) : null), [week, todayEpoch, changes])
   const rowRunes = useMemo(() => Object.fromEntries(sessions.map(s => [s.id, runeForSession(changes, s.id)])), [sessions, changes])
