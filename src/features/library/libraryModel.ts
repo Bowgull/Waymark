@@ -148,12 +148,14 @@ export function muscleBadges(raw: string | null): string[] {
   return raw ? raw.split(',').map(muscleName).filter(Boolean) : []
 }
 
-/** "barbell,bench" → "Barbell, Bench"; "pull-up bar" → "Pull-up Bar". */
+/** "barbell,bench" → "Barbell, Bench"; "pull-up bar" → "Pull-up Bar"; "trap_bar" → "Trap Bar", "ez-bar" → "EZ Bar". */
 export function equipmentName(raw: string | null): string {
   if (!raw) return ''
   return raw
     .split(',')
-    .map(part => part.trim().split(' ').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' '))
+    // Library ids, not words (e2e minor 25: "Trap_bar", "Ez-bar").
+    .map(part => part.trim().replace(/_/g, ' ').replace(/^ez[- ]bar$/i, 'EZ bar'))
+    .map(part => part.split(' ').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' '))
     .filter(Boolean)
     .join(', ')
 }
