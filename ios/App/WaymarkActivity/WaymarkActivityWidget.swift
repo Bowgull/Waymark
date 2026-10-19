@@ -5,19 +5,26 @@ import UIKit
 import WidgetKit
 
 // The Live Activity and Dynamic Island, as approved on mockup page 44
-// (design-decisions.md, "Live Activity", reworked 2026-10-18):
-//   - the countdown in big split-flap digit tiles. The digits are the
-//     system's live timer text (fixed-width font) drawn over tiles, so they
-//     keep counting on the lock screen with no updates from the app;
-//   - a glyph grass strip that lights as the phase goes (gold for work, teal
-//     for rest). It is the system progress bar masked by the glyphs, so it
-//     fills by itself;
-//   - labels and buttons as flaps; the crest and the painted session icon
-//     (images in this extension's Assets.xcassets);
-//   - strength: the set counter in gold tiles and LOG SET →;
-//   - finish: the large lit crest, WELL TRAVELED, one line, the grass lit.
-// iOS limit: no flip animation. The lock-screen card must stay under the
-// system's 160 pt height, so the page-44 card is drawn at a smaller scale.
+// (design-decisions.md, "Live Activity", redrawn to iOS's 160 pt limit,
+// 2026-10-18). 1 px on the mockup = 1 pt here.
+//   - Lock screen card: exactly 160 pt tall, padding 10 / 12.
+//       header 22: crest, the session and count on an xs flap, the icon
+//       main row 58: the countdown on lg flap tiles (the system's live timer
+//         text drawn over tiles, so it counts with no updates from the app),
+//         the phase on an xs flap and one 14 pt line, the actions on the right
+//       glyph grass 28: the system progress bar masked to glyph rows; gold
+//         for work, teal for rest and holds, red when time ran out
+//   - Information stays on flaps. Actions are carved rune stones (look B):
+//     bundled PNGs (Assets.xcassets/rune-<pause|skip|play>-<gold|teal>),
+//     symbols only, wired to the App Intents in TimerIntents.swift.
+//   - Per state: round and rest = pause + skip; a strength set = no button,
+//     a quiet TAP TO LOG › (tapping the card opens the app); between holds =
+//     start; time ran out = skip only (ending belongs in the app); finish =
+//     no buttons, the crest, WELL TRAVELED, one line, the grass full.
+//   - "Time ran out" is drawn when the running timer's end has passed: the
+//     content goes stale at endsAt (timerStaleDate), so the system redraws
+//     the card then with context.isStale, even with the app suspended.
+// Only the timer and the grass move (iOS draws no flip animation).
 
 // MARK: - Palette (mockups shared/flap.css + page 44)
 
@@ -45,25 +52,27 @@ extension Color {
     static let wmTeal = Color(wmHex: 0x45796A)
     static let wmTeal2 = Color(wmHex: 0x3A6658)
     static let wmTealInk = Color(wmHex: 0xE8E2C8)
+    static let wmClay = Color(wmHex: 0x9C5A40)
+    static let wmClay2 = Color(wmHex: 0x864A34)
+    static let wmClayInk = Color(wmHex: 0xF2E4D6)
     static let wmGrassGold = Color(wmHex: 0xE8C878)
     static let wmGrassTeal = Color(wmHex: 0x8FD4B8)
+    static let wmGrassRed = Color(wmHex: 0xE0623F)
     static let wmGrassOff = Color(wmHex: 0x6E9858, opacity: 0.45)
-    static let wmBtn = Color(wmHex: 0x080D0B, opacity: 0.42)
-    static let wmBtnEdge = Color(wmHex: 0xE8C860, opacity: 0.26)
-    static let wmBtnPrimary = Color(wmHex: 0x1E1806, opacity: 0.50)
-    static let wmBtnPrimaryEdge = Color(wmHex: 0xE8C860, opacity: 0.55)
+    static let wmTapNote = Color(wmHex: 0xF0E6C0, opacity: 0.6)
 }
 
 // MARK: - Flap tiles
 
 private enum FlapTone {
-    case ink, dim, gold, teal
+    case ink, dim, gold, teal, clay
 
     var top: Color {
         switch self {
         case .ink, .dim: return .wmTile
         case .gold: return .wmGold
         case .teal: return .wmTeal
+        case .clay: return .wmClay
         }
     }
 
@@ -72,6 +81,7 @@ private enum FlapTone {
         case .ink, .dim: return .wmTile2
         case .gold: return .wmGold2
         case .teal: return .wmTeal2
+        case .clay: return .wmClay2
         }
     }
 
@@ -81,8 +91,22 @@ private enum FlapTone {
         case .dim: return Color.wmInk.opacity(0.74)
         case .gold: return .wmGoldInk
         case .teal: return .wmTealInk
+        case .clay: return .wmClayInk
         }
     }
+}
+
+// Flap sizes from the mockups (font size in pt): xs 14, sm 17, md 20, lg 32.
+private enum FlapSize {
+    static let xs: CGFloat = 14
+    static let sm: CGFloat = 17
+    static let md: CGFloat = 20
+    static let lg: CGFloat = 32
+}
+
+// Gap between tiles: lg 3, xs 1 (shared/flap.css).
+private func flapGap(_ size: CGFloat) -> CGFloat {
+    max(1, size * 0.09)
 }
 
 // One tile: two halves and the dark split line across the middle.
@@ -116,7 +140,7 @@ private struct FlapText: View {
     var tone: FlapTone = .ink
 
     var body: some View {
-        HStack(spacing: max(1, size * 0.09)) {
+        HStack(spacing: flapGap(size)) {
             ForEach(Array(text.enumerated()), id: \.offset) { item in
                 if item.element == " " {
                     Color.clear
@@ -223,7 +247,7 @@ private struct FlapClock: View {
         let n = clockCells(state)
         let tileW = max(size * 0.74, adv + 2)
         let tileH = size * 1.28
-        HStack(spacing: max(1, size * 0.08)) {
+        HStack(spacing: flapGap(size)) {
             ForEach(0..<n, id: \.self) { i in
                 clockText(state)
                     .font(flapFont(size))
@@ -252,6 +276,13 @@ private let grassRows: [String] = (0..<3).map { r in
         if r == 0 && i % 3 != 0 { return " " }
         return grassGlyphs[(i * 7 + r * 13 + (i * i) % 5) % grassGlyphs.count]
     })
+}
+
+// Page 44's grass: 10 pt glyphs on 7 pt rows (they overlap, as drawn).
+private enum Grass {
+    static let fontSize: CGFloat = 10
+    static let rowHeight: CGFloat = 7
+    static let band: CGFloat = 28
 }
 
 private struct GrassGlyphs: View {
@@ -284,22 +315,33 @@ private enum GrassFill {
     case value(Double)
 }
 
+private enum GrassTone {
+    case gold, teal, red
+
+    var lit: Color {
+        switch self {
+        case .gold: return .wmGrassGold
+        case .teal: return .wmGrassTeal
+        case .red: return .wmGrassRed
+        }
+    }
+}
+
 // The grass is a picture filled by the system's own progress bar: the bar,
 // stretched to the strip's height, shows only through the glyphs.
 private struct GrassStrip: View {
     let fill: GrassFill
-    let teal: Bool
-    var fontSize: CGFloat = 7.5
-    var rowHeight: CGFloat = 6
+    let tone: GrassTone
+    var fontSize: CGFloat = Grass.fontSize
+    var rowHeight: CGFloat = Grass.rowHeight
 
     var body: some View {
-        let lit = teal ? Color.wmGrassTeal : Color.wmGrassGold
         ZStack {
             GrassGlyphs(fontSize: fontSize, rowHeight: rowHeight)
                 .foregroundStyle(Color.wmGrassOff)
             bar
                 .progressViewStyle(.linear)
-                .tint(lit)
+                .tint(tone.lit)
                 .frame(maxWidth: .infinity)
                 .scaleEffect(x: 1, y: rowHeight * 3, anchor: .center)
                 .frame(height: rowHeight * 3)
@@ -365,16 +407,35 @@ private func iconAsset(_ context: ActivityViewContext<WaymarkActivityAttributes>
     }
 }
 
+// The actions a state offers (page 44, "Per state").
+private enum RuneAction {
+    case pause, resume, skip, startHold
+}
+
 @available(iOS 16.2, *)
 private struct LAInfo {
     let state: WaymarkActivityAttributes.ContentState
     let sessionLabel: String
+    // A running timer whose end has passed ("time ran out").
+    let timeUp: Bool
+
+    init(context: ActivityViewContext<WaymarkActivityAttributes>, now: Date = Date()) {
+        state = context.state
+        sessionLabel = context.attributes.sessionLabel
+        let s = context.state
+        let timer = s.phase != "complete" && s.phase != "exercise" && s.phase != "ready"
+        timeUp = timer && !s.isPaused && (context.isStale || s.endsAt <= now)
+    }
 
     var phase: String { state.phase }
     var isRest: Bool { phase == "rest" }
     var isComplete: Bool { phase == "complete" }
-    var isCard: Bool { phase == "exercise" || phase == "ready" }
+    var isExercise: Bool { phase == "exercise" }
+    var isReady: Bool { phase == "ready" }
+    var isCard: Bool { isExercise || isReady }
     var isTimer: Bool { !isComplete && !isCard }
+    // Rest and holds (the hold itself and between holds) are teal.
+    var isTeal: Bool { isRest || phase == "hold" || isReady }
 
     // Session-level count (round n of N, exercise n of N).
     var step: (current: Int, total: Int)? {
@@ -383,7 +444,7 @@ private struct LAInfo {
         return nil
     }
 
-    // Strength set (or mobility set) counter for the big tiles.
+    // Strength set (or mobility hold) counter for the big tiles.
     var setCount: (current: Int, total: Int)? {
         if let i = state.setIndex, let t = state.setTotal, i > 0, t > 0 { return (min(i, t), t) }
         if isCard { return parseCount(state.label) }
@@ -401,43 +462,62 @@ private struct LAInfo {
         return session
     }
 
-    // The phase on a flap: ROUND 3 (gold) / REST (teal) / the lift or hold.
+    // The phase on a flap: ROUND 3 (gold) / REST (teal) / SET 2 OF 3 (gold) /
+    // NEXT HOLD (teal) / TIME (clay).
     var phaseFlap: String {
+        if timeUp { return "TIME" }
         switch phase {
         case "rest": return "REST"
-        case "exercise", "ready":
+        case "exercise":
+            if let c = setCount { return "SET \(c.current) OF \(c.total)" }
             return (state.exerciseName ?? state.detail ?? state.label).uppercased()
+        case "ready": return "NEXT HOLD"
         default:
             if isRound, let c = step { return "ROUND \(c.current)" }
             return state.label.uppercased()
         }
     }
 
-    // The words beside the phase flap: the combo, what's next, the side.
-    var phaseDetail: String? {
-        switch phase {
-        case "exercise": return nil
-        case "ready":
-            return setCount == nil ? state.label : nil
-        default:
-            if let d = state.detail, !d.isEmpty { return d }
-            return nil
+    // The one line beside the phase flap: the combo, what's next, the lift,
+    // the hold, or what just finished.
+    var phaseLine: String? {
+        if timeUp {
+            if isRound, let c = step { return "Round \(c.current) done" }
+            let what = state.label.trimmingCharacters(in: .whitespaces)
+            return what.isEmpty ? nil : "\(what) done"
         }
+        let line: String?
+        switch phase {
+        case "exercise":
+            line = state.exerciseName ?? state.detail
+        case "ready":
+            line = state.exerciseName ?? state.detail ?? (setCount == nil ? state.label : nil)
+        default:
+            line = state.detail
+        }
+        guard let l = line, !l.isEmpty else { return nil }
+        return l
     }
 
     var phaseTone: FlapTone {
-        if isRest { return .teal }
-        if isCard { return .ink }
+        if timeUp { return .clay }
+        if isTeal { return .teal }
         return .gold
     }
 
     var clockTone: FlapTone {
-        if isRest { return .teal }
+        if timeUp { return .clay }
+        if isTeal { return .teal }
         return state.isPaused ? .dim : .ink
     }
 
+    var grassTone: GrassTone {
+        if timeUp { return .red }
+        return isTeal ? .teal : .gold
+    }
+
     var grass: GrassFill {
-        if isComplete { return .value(1) }
+        if isComplete || timeUp { return .value(1) }
         if isCard {
             if let c = setCount { return .value(Double(c.current) / Double(c.total)) }
             return .value(0)
@@ -449,19 +529,32 @@ private struct LAInfo {
         return .timer(safeRange(state))
     }
 
-    // Long-press island: ROUND 3 OF 12, SET 2 OF 3, REST, WELL TRAVELED.
+    // Round and rest: pause + skip. Other running timers: pause. Between
+    // holds: start. Time ran out: skip. Strength set and finish: none.
+    var actions: [RuneAction] {
+        if isComplete || isExercise { return [] }
+        if isReady { return [.startHold] }
+        if timeUp { return [.skip] }
+        let skips = isRound || isRest
+        let first: RuneAction = state.isPaused ? .resume : .pause
+        return skips ? [first, .skip] : [first]
+    }
+
+    // Time ran out keeps the gold stone (page 44); rest and holds are teal.
+    var runesTeal: Bool { isTeal && !timeUp }
+
+    // Long-press island: ROUND 3 OF 12, SET 2 OF 3, REST, TIME.
     var islandFlap: String {
         if isComplete { return "WELL TRAVELED" }
+        if timeUp { return "TIME" }
         if isRest { return "REST" }
-        if isCard, let c = setCount { return "SET \(c.current) OF \(c.total)" }
         if isRound, let c = step { return "ROUND \(c.current) OF \(c.total)" }
         return phaseFlap
     }
 
-    var islandDetail: String? {
+    var islandLine: String? {
         if isComplete { return state.completeMessage }
-        if isCard { return state.exerciseName ?? state.detail }
-        return state.detail
+        return phaseLine
     }
 }
 
@@ -490,83 +583,107 @@ private struct SessionIcon: View {
     }
 }
 
-// MARK: - Buttons (flaps on a board; primary = gold tiles)
+// MARK: - Rune stones (the actions)
 
-@available(iOS 17.0, *)
-private struct FlapButton<I: AppIntent>: View {
-    let intent: I
-    let text: String
-    let primary: Bool
-    var height: CGFloat = 28
+// The stone with its carved, glowing symbol, rendered from the mockup at 3x
+// (Assets.xcassets/rune-*). No words on them.
+private struct RuneStone: View {
+    let symbol: String  // "pause", "skip", "play"
+    let teal: Bool
+    var size: CGFloat = 44
 
     var body: some View {
-        Button(intent: intent) {
-            FitFlap(text: text, size: primary ? 12 : 11, tone: primary ? .gold : .ink)
-                .padding(.horizontal, 6)
-                .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(primary ? Color.wmBtnPrimary : Color.wmBtn)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(primary ? Color.wmBtnPrimaryEdge : Color.wmBtnEdge, lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
+        Image("rune-\(symbol)-\(teal ? "teal" : "gold")")
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: size, height: size)
     }
 }
 
-// Wording kept from the app: Pause / Resume, NEXT ROUND → and SKIP REST →
-// beside it on a round or a rest (page 44), Next → / Done → once the timer
-// has run out, LOG SET → on a strength set, START HOLD → between holds.
 @available(iOS 17.0, *)
-private struct ActionRow: View {
-    let info: LAInfo
+private struct RuneButton<I: AppIntent>: View {
+    let intent: I
+    let symbol: String
+    let teal: Bool
+    let name: String
+    var size: CGFloat = 44
 
     var body: some View {
-        let state = info.state
-        switch state.phase {
-        case "complete":
-            EmptyView()
-        case "exercise":
-            FlapButton(intent: CompleteSetIntent(), text: "LOG SET →", primary: true)
-        case "ready":
-            FlapButton(intent: StartHoldIntent(), text: "START HOLD →", primary: true)
-        default:
-            TimelineView(.periodic(from: Date(), by: 1.0)) { timeline in
-                timerButtons(now: timeline.date)
+        Button(intent: intent) {
+            RuneStone(symbol: symbol, teal: teal, size: size)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(name))
+    }
+}
+
+// The row of rune stones a state offers, wired to the existing intents.
+@available(iOS 16.2, *)
+private struct RuneRow: View {
+    let info: LAInfo
+    var spacing: CGFloat = 10
+    var size: CGFloat = 44
+
+    var body: some View {
+        if #available(iOS 17.0, *) {
+            HStack(spacing: spacing) {
+                ForEach(Array(info.actions.enumerated()), id: \.offset) { item in
+                    rune(item.element)
+                }
             }
         }
     }
 
-    // A round or a rest offers its skip beside Pause from the start (page
-    // 44); other timers show only Pause until they run out.
-    private var skipLabel: String? {
-        if info.isRest { return "SKIP REST →" }
-        if info.isRound {
-            if let c = info.step, c.current >= c.total { return "NEXT →" }
-            return "NEXT ROUND →"
-        }
-        return nil
-    }
-
+    @available(iOS 17.0, *)
     @ViewBuilder
-    private func timerButtons(now: Date) -> some View {
-        let state = info.state
-        if !state.isPaused && state.endsAt <= now {
-            FlapButton(intent: AdvancePhaseIntent(), text: state.phase == "hold" ? "DONE →" : "NEXT →", primary: true)
-        } else {
-            HStack(spacing: 8) {
-                if state.isPaused {
-                    FlapButton(intent: ResumeTimerIntent(), text: "RESUME", primary: skipLabel == nil)
-                } else {
-                    FlapButton(intent: PauseTimerIntent(), text: "PAUSE", primary: false)
-                }
-                if let skip = skipLabel {
-                    FlapButton(intent: AdvancePhaseIntent(), text: skip, primary: true)
-                }
+    private func rune(_ action: RuneAction) -> some View {
+        let teal = info.runesTeal
+        switch action {
+        case .pause:
+            RuneButton(intent: PauseTimerIntent(), symbol: "pause", teal: teal, name: "Pause", size: size)
+        case .resume:
+            RuneButton(intent: ResumeTimerIntent(), symbol: "play", teal: teal, name: "Resume", size: size)
+        case .skip:
+            RuneButton(intent: AdvancePhaseIntent(), symbol: "skip", teal: teal, name: "Skip", size: size)
+        case .startHold:
+            RuneButton(intent: StartHoldIntent(), symbol: "play", teal: teal, name: "Start hold", size: size)
+        }
+    }
+}
+
+// The quiet note on a strength set: the card itself opens the app to log.
+private struct TapToLog: View {
+    var body: some View {
+        Text("TAP TO LOG ›")
+            .font(.system(size: 11, weight: .heavy))
+            .tracking(1.5)
+            .foregroundStyle(Color.wmTapNote)
+            .lineLimit(1)
+            .fixedSize()
+    }
+}
+
+// MARK: - Big tiles (the countdown, or the set / hold counter)
+
+@available(iOS 16.2, *)
+private struct BigTiles: View {
+    let info: LAInfo
+    let size: CGFloat
+
+    var body: some View {
+        if info.timeUp {
+            FlapText(text: formatDuration(0), size: size, tone: .clay)
+        } else if info.isCard {
+            let tone: FlapTone = info.isReady ? .teal : .gold
+            if let c = info.setCount {
+                FlapText(text: "\(c.current)/\(c.total)", size: size, tone: tone)
+            } else {
+                FlapText(text: "GO", size: size, tone: tone)
             }
+        } else {
+            FlapClock(state: info.state, size: size, tone: info.clockTone)
         }
     }
 }
@@ -578,113 +695,115 @@ private struct LockScreenView: View {
     let context: ActivityViewContext<WaymarkActivityAttributes>
 
     var body: some View {
-        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
-        VStack(spacing: 4) {
+        let info = LAInfo(context: context)
+        VStack(spacing: 0) {
             header(info)
+            Spacer(minLength: 0)
             if info.isComplete {
                 finish(info)
             } else {
-                tiles(info)
-                phaseRow(info)
+                mainRow(info)
             }
-            GrassStrip(fill: info.grass, teal: info.isRest)
-                .padding(.horizontal, -4)
-            if !info.isComplete, #available(iOS 17.0, *) {
-                ActionRow(info: info)
-            }
+            Spacer(minLength: 0)
+            GrassStrip(fill: info.grass, tone: info.grassTone)
+                .padding(.horizontal, -2)
+                .frame(height: Grass.band, alignment: .top)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 9)
-        .padding(.bottom, 9)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .frame(height: 160)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.wmCardEdge, lineWidth: 0.75)
+                .stroke(Color.wmCardEdge, lineWidth: 1)
         )
     }
 
+    // 22 pt: crest 18, the session and count on an xs flap, the icon 24.
     private func header(_ info: LAInfo) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             CrestImage()
                 .frame(width: 18, height: 20)
-            FitFlap(text: info.headerText, size: 12)
+            FitFlap(text: info.headerText, size: FlapSize.xs)
                 .layoutPriority(1)
             Spacer(minLength: 4)
             SessionIcon(context: context)
-                .frame(width: 22, height: 22)
+                .frame(width: 24, height: 24)
         }
-        .frame(height: 20)
+        .frame(height: 22)
     }
 
-    // The countdown, or the set counter (2/3 in gold) on a strength set.
-    @ViewBuilder
-    private func tiles(_ info: LAInfo) -> some View {
-        if info.isCard {
-            if let c = info.setCount {
-                FlapText(text: "\(c.current)/\(c.total)", size: 28, tone: .gold)
-                    .frame(height: 36)
+    // 58 pt: the lg tiles, the phase flap and one line, the actions.
+    private func mainRow(_ info: LAInfo) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            BigTiles(info: info, size: FlapSize.lg)
+            VStack(alignment: .leading, spacing: 5) {
+                FitFlap(text: info.phaseFlap, size: FlapSize.xs, tone: info.phaseTone)
+                if let line = info.phaseLine {
+                    Text(line)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.wmBody)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+            if info.isExercise {
+                TapToLog()
             } else {
-                FlapText(text: "GO", size: 28, tone: .gold)
-                    .frame(height: 36)
-            }
-        } else {
-            FlapClock(state: info.state, size: 28, tone: info.clockTone)
-                .frame(height: 36)
-        }
-    }
-
-    private func phaseRow(_ info: LAInfo) -> some View {
-        HStack(spacing: 8) {
-            FitFlap(text: info.phaseFlap, size: 12, tone: info.phaseTone)
-                .layoutPriority(1)
-            if let detail = info.phaseDetail {
-                Text(detail)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.wmBody)
-                    .lineLimit(1)
+                RuneRow(info: info)
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 16)
+        .frame(height: 58)
     }
 
+    // The crest, WELL TRAVELED and one line (the grass below is full).
     private func finish(_ info: LAInfo) -> some View {
-        VStack(spacing: 3) {
+        HStack(alignment: .center, spacing: 12) {
             CrestImage(big: true)
-                .frame(height: 42)
+                .frame(width: 56, height: 62)
                 .shadow(color: Color.wmGrassGold.opacity(0.55), radius: 7)
-            FitFlap(text: "WELL TRAVELED", size: 12, tone: .gold)
-            if let msg = info.state.completeMessage, !msg.isEmpty {
-                Text(msg)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.wmBodyDim)
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 6) {
+                FitFlap(text: "WELL TRAVELED", size: FlapSize.sm, tone: .gold)
+                if let msg = info.state.completeMessage, !msg.isEmpty {
+                    Text(msg)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.wmBody)
+                        .lineLimit(1)
+                }
             }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
     }
 }
 
 // MARK: - Dynamic Island
 
-// Compact: the countdown on small gold flap tiles (teal in rest); the set
-// counter on a strength set; the crest at the finish.
+// Compact: the countdown on small gold flap tiles (teal in rest and holds);
+// the set counter on a strength set; the crest at the finish.
 @available(iOS 16.2, *)
 private struct CompactTrailing: View {
     let context: ActivityViewContext<WaymarkActivityAttributes>
 
     var body: some View {
-        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
+        let info = LAInfo(context: context)
         if info.isComplete {
             CrestImage()
                 .frame(width: 18, height: 20)
+        } else if info.timeUp {
+            FlapText(text: formatDuration(0), size: FlapSize.xs, tone: .clay)
         } else if info.isCard {
+            let tone: FlapTone = info.isReady ? .teal : .gold
             if let c = info.setCount {
-                FlapText(text: "\(c.current)/\(c.total)", size: 12, tone: .gold)
+                FlapText(text: "\(c.current)/\(c.total)", size: FlapSize.xs, tone: tone)
             } else {
-                FlapText(text: "GO", size: 12, tone: .gold)
+                FlapText(text: "GO", size: FlapSize.xs, tone: tone)
             }
         } else {
-            FlapClock(state: info.state, size: 12, tone: info.isRest ? .teal : (info.state.isPaused ? .dim : .gold))
+            // xs (14) for m:ss; smaller for the rare long timer so it fits.
+            let cells = clockCells(info.state)
+            let size: CGFloat = cells <= 4 ? FlapSize.xs : (cells == 5 ? 12 : 10)
+            FlapClock(state: info.state, size: size, tone: info.isTeal ? .teal : (info.state.isPaused ? .dim : .gold))
         }
     }
 }
@@ -694,17 +813,17 @@ private struct ExpandedCenter: View {
     let context: ActivityViewContext<WaymarkActivityAttributes>
 
     var body: some View {
-        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
+        let info = LAInfo(context: context)
         VStack(alignment: .leading, spacing: 4) {
-            FitFlap(text: info.islandFlap, size: 11, tone: info.isRest ? .teal : .gold)
-            if let detail = info.islandDetail, !detail.isEmpty {
-                Text(detail)
+            FitFlap(text: info.islandFlap, size: FlapSize.xs, tone: info.isComplete ? .gold : info.phaseTone)
+            if let line = info.islandLine, !line.isEmpty {
+                Text(line)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.wmBody)
                     .lineLimit(1)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
@@ -713,20 +832,14 @@ private struct ExpandedTrailing: View {
     let context: ActivityViewContext<WaymarkActivityAttributes>
 
     var body: some View {
-        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
+        let info = LAInfo(context: context)
         Group {
             if info.isComplete {
                 CrestImage(big: true)
                     .frame(width: 36, height: 40)
                     .shadow(color: Color.wmGrassGold.opacity(0.55), radius: 6)
-            } else if info.isCard {
-                if let c = info.setCount {
-                    FlapText(text: "\(c.current)/\(c.total)", size: 18, tone: .gold)
-                } else {
-                    FlapText(text: "GO", size: 18, tone: .gold)
-                }
             } else {
-                FlapClock(state: info.state, size: 18, tone: info.clockTone)
+                BigTiles(info: info, size: FlapSize.md)
             }
         }
         .frame(maxHeight: .infinity)
@@ -734,14 +847,21 @@ private struct ExpandedTrailing: View {
     }
 }
 
+// The grass, then the same rune stones centred under it.
 @available(iOS 16.2, *)
 private struct ExpandedBottom: View {
     let context: ActivityViewContext<WaymarkActivityAttributes>
 
     var body: some View {
-        let info = LAInfo(state: context.state, sessionLabel: context.attributes.sessionLabel)
-        GrassStrip(fill: info.grass, teal: info.isRest)
-            .padding(.top, 4)
+        let info = LAInfo(context: context)
+        VStack(spacing: 8) {
+            GrassStrip(fill: info.grass, tone: info.grassTone)
+            if !info.actions.isEmpty {
+                RuneRow(info: info, spacing: 16)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.top, 4)
     }
 }
 
@@ -752,13 +872,13 @@ struct WaymarkActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WaymarkActivityAttributes.self) { context in
             LockScreenView(context: context)
-                .activityBackgroundTint(Color.wmCard.opacity(0.93))
+                .activityBackgroundTint(Color.wmCard.opacity(0.94))
                 .activitySystemActionForegroundColor(Color.wmBody)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     SessionIcon(context: context)
-                        .frame(width: 42, height: 42)
+                        .frame(width: 36, height: 36)
                         .frame(maxHeight: .infinity)
                         .padding(.leading, 2)
                 }

@@ -125,3 +125,20 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
         self.sessionLabel = sessionLabel
     }
 }
+
+// Page 44's "time ran out" state. A running timer's content goes stale the
+// moment it ends, so the system redraws the Live Activity then (with
+// `context.isStale`), even when the app is suspended and sends nothing.
+// Paused timers, the strength card, between holds and the finish never go
+// stale on their own.
+@available(iOS 16.2, *)
+public extension WaymarkActivityAttributes.ContentState {
+    var timerStaleDate: Date? {
+        switch phase {
+        case "complete", "exercise", "ready":
+            return nil
+        default:
+            return isPaused ? nil : endsAt
+        }
+    }
+}

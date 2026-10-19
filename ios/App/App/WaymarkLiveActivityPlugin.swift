@@ -205,7 +205,7 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         )
 
         do {
-            let content = ActivityContent(state: contentState, staleDate: nil)
+            let content = ActivityContent(state: contentState, staleDate: contentState.timerStaleDate)
             let activity = try Activity<WaymarkActivityAttributes>.request(
                 attributes: attributes,
                 content: content
@@ -241,7 +241,7 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
         Task {
             if let activity = Activity<WaymarkActivityAttributes>.activities.first(where: { $0.id == id }) {
-                let content = ActivityContent(state: contentState, staleDate: nil)
+                let content = ActivityContent(state: contentState, staleDate: contentState.timerStaleDate)
                 await activity.update(content)
                 log.debug("update id=\(id, privacy: .public) phase=\(contentState.phase, privacy: .public)")
                 call.resolve()

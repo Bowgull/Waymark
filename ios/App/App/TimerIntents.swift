@@ -42,7 +42,7 @@ public struct PauseTimerIntent: LiveActivityIntent {
             newState.isPaused = true
             newState.pausedRemaining = remaining
             newState.endPending = false
-            let content = ActivityContent(state: newState, staleDate: nil)
+            let content = ActivityContent(state: newState, staleDate: newState.timerStaleDate)
             await activity.update(content)
         }
 
@@ -80,7 +80,7 @@ public struct ResumeTimerIntent: LiveActivityIntent {
             newState.isPaused = false
             newState.pausedRemaining = nil
             newState.endPending = false
-            let content = ActivityContent(state: newState, staleDate: nil)
+            let content = ActivityContent(state: newState, staleDate: newState.timerStaleDate)
             await activity.update(content)
         }
 
@@ -114,7 +114,7 @@ public struct RestartPhaseIntent: LiveActivityIntent {
             guard state.endPending else { continue }
             var newState = state
             newState.endPending = false
-            await activity.update(ActivityContent(state: newState, staleDate: nil))
+            await activity.update(ActivityContent(state: newState, staleDate: newState.timerStaleDate))
         }
 
         await MainActor.run {
@@ -140,7 +140,7 @@ public struct RequestEndIntent: LiveActivityIntent {
             guard !state.endPending, state.phase != "complete" else { continue }
             var newState = state
             newState.endPending = true
-            await activity.update(ActivityContent(state: newState, staleDate: nil))
+            await activity.update(ActivityContent(state: newState, staleDate: newState.timerStaleDate))
         }
 
         // Auto-revert after 3s if the user doesn't confirm.
@@ -151,7 +151,7 @@ public struct RequestEndIntent: LiveActivityIntent {
                 guard state.endPending else { continue }
                 var newState = state
                 newState.endPending = false
-                await activity.update(ActivityContent(state: newState, staleDate: nil))
+                await activity.update(ActivityContent(state: newState, staleDate: newState.timerStaleDate))
             }
         }
 
