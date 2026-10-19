@@ -202,24 +202,29 @@ export function writtenKeys(c: Pick<ChangeRowLike, 'before' | 'after'>): Set<str
 
 // ─── Lock: UNDO until the session starts ─────────────────────
 
-export type ChangeLock = 'open' | 'undone' | 'started' | 'done'
+export type ChangeLock = 'open' | 'undone' | 'started' | 'done' | 'missed' | 'passed'
 
 /**
  * Can this change still be undone? Not once it is undone; not once a session
  * it touched has started or been logged (started, done); not once the day of
- * a session it touched has passed (done). A session that no longer exists
- * locks nothing.
+ * a session it touched has passed: missed when a session it touched was
+ * missed, else passed (never "done" for work that didn't happen). A session
+ * that no longer exists locks nothing.
  */
 export function changeLock(c: Pick<ChangeRowLike, 'before' | 'after' | 'undoneAt' | 'kind'> & { undoUntil?: number | null }, sessions: ReadonlyMap<string, SessionNow>, todayDay: number): ChangeLock {
   if (c.undoneAt != null) return 'undone'
   const ids = [...touchedSessions(c), ...(c.after.watch ?? [])]
   let passed = false
+  let missed = false
   for (const id of ids) {
     const s = sessions.get(id)
     if (!s) continue
     if (s.status === 'completed') return 'done'
     if (s.status === 'in_progress') return 'started'
-    if (s.scheduledDate != null && s.scheduledDate < todayDay) passed = true
+    if (s.scheduledDate != null && s.scheduledDate < todayDay) {
+      passed = true
+      if (s.status === 'missed') missed = true
+    }
   }
   // The missed record stays undoable while its fix (a later session) is still to come.
   if (c.kind === 'missed') {
@@ -228,7 +233,7 @@ export function changeLock(c: Pick<ChangeRowLike, 'before' | 'after' | 'undoneAt
     if (fix.length === 0) return c.undoUntil != null && Math.floor(c.undoUntil / 86400) >= todayDay ? 'open' : 'done'
     return fix.some(s => s.scheduledDate != null && s.scheduledDate < todayDay) ? 'done' : 'open'
   }
-  return passed ? 'done' : 'open'
+  return missed ? 'missed' : passed ? 'passed' : 'open'
 }
 
 // ─── Runes ───────────────────────────────────────────────────
@@ -335,10 +340,14 @@ export function slotStart(epochDay: number, timeSlot: string | null | undefined,
   return epochDay * 86400 + ((h || 0) * 60 + (m || 0)) * 60
 }
 
-/** The day's back: "Until it starts, 7:00 AM" (today) or "Until it starts, Sat 7:00 AM". */
-export function untilLine(undoUntil: number | null, todayDay: number, missedFix?: { day: number; name: string } | null): string {
+/**
+ * The day's back: "Until it starts, 7:00 AM" (today) or "Until it starts, Sat
+ * 7:00 AM". Once the planned start has passed and it still hasn't started,
+ * just "Until it starts" (`nowLocalSec`: the phone's wall clock).
+ */
+export function untilLine(undoUntil: number | null, todayDay: number, missedFix?: { day: number; name: string } | null, nowLocalSec?: number): string {
   if (missedFix) return `Until ${DAY_LONG[dowOf(missedFix.day)]}'s ${missedFix.name.replace(/^Strength /, '')} starts`
-  if (undoUntil == null) return 'Until it starts'
+  if (undoUntil == null || (nowLocalSec != null && nowLocalSec >= undoUntil)) return 'Until it starts'
   const day = Math.floor(undoUntil / 86400)
   return day === todayDay ? `Until it starts, ${clockOf(undoUntil)}` : `Until it starts, ${DAY_NAMES[dowOf(day)]} ${clockOf(undoUntil)}`
 }
@@ -363,7 +372,7 @@ export function whoWord(c: Pick<ChangeRowLike, 'actor' | 'kind'>): 'YOU' | 'COAC
 }
 
 /** The week log's right side for an entry: UNDO, or a word. */
-export function logStatus(lock: ChangeLock): 'undo' | 'put back' | 'started' | 'done' {
+export function logStatus(lock: ChangeLock): 'undo' | 'put back' | 'started' | 'done' | 'missed' | 'passed' {
   if (lock === 'open') return 'undo'
   if (lock === 'undone') return 'put back'
   return lock

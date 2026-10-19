@@ -310,7 +310,7 @@ export async function undoChange(db: DB, id: string, todayDay: number, nowSec: n
   const now = await sessionsNow(db, all.flatMap(touched))
   const plan = planUndo(target, all, now, todayDay)
   if (!plan.ok) {
-    const words: Record<string, string> = { started: 'It has started. It stays.', done: 'Done is done. It stays.', undone: 'Already put back.' }
+    const words: Record<string, string> = { started: 'It has started. It stays.', done: 'Done is done. It stays.', missed: 'Missed. It stays.', passed: 'Its day has passed. It stays.', undone: 'Already put back.' }
     return { ok: false, status: 409, error: words[plan.lock] ?? 'It stays.', lock: plan.lock }
   }
   for (const step of plan.steps) {

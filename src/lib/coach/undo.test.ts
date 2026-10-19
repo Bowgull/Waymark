@@ -55,7 +55,7 @@ assert(!done.ok && done.lock === 'done', 'a done session locks its change')
 const started = planUndo(ease, [swap, ease], sessions({ b: { status: 'in_progress' } }), WED)
 assert(!started.ok && started.lock === 'started', 'UNDO lasts until the session starts')
 const passed = planUndo(ease, [swap, ease], sessions(), WED + 1)
-assert(!passed.ok && passed.lock === 'done', 'a passed day can\'t be undone')
+assert(!passed.ok && passed.lock === 'passed', 'a passed day can\'t be undone')
 const again = planUndo({ ...ease, undoneAt: 5 }, [swap, ease], sessions(), WED)
 assert(!again.ok && again.lock === 'undone', 'an undone change can\'t be undone again')
 

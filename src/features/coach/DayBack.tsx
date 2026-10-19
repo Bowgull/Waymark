@@ -76,7 +76,7 @@ export function DayBack({ day, changes, todayDay, onUndo, onClose }: {
                   <p className="voice" style={{ marginTop: 8 }}>{backWhy(c, todayDay)}</p>
                   {c.detail && <p className="voice dim" style={{ marginTop: 4 }}>{c.detail}</p>}
                   <div className="uline" style={{ marginTop: 8 }}>
-                    <span className="until">{backUntil(c, todayDay)}</span>
+                    <span className="until">{backUntil(c, todayDay, Math.floor(Date.now() / 1000) - new Date().getTimezoneOffset() * 60)}</span>
                     {c.lock === 'open' && (
                       <FlapButton
                         label="UNDO"

@@ -24,7 +24,7 @@ import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTem
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { BLOCK_ZERO_BASE_WEEKS, allowedClassTypes, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
 import { KEY_TYPES, KNOWN_SESSION_TYPES, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, estimatedMinutes, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
-import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, endActiveBlocks } from './blocks'
+import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, CONSISTENCY_WEEKS, aerobicWeekly, buildRings, consistencyWeeks, currentStreak as ledgerStreak, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
 import { computeSuggestions } from '../lib/sessionSuggestions'
@@ -611,7 +611,8 @@ app.get('/api/sessions/today', async (c) => {
   // Silent rollover: any planned session dated before today becomes 'missed'.
   // Runs before the read so the client sees the rolled-over state.
   await rolloverAndFix(db, epochDay)
-  const rows = await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay))
+  // m16: an ended block's sessions still planned are not today's (done ones stay as history).
+  const rows = await dropEndedBlockPlans(db, await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay)))
 
   // Attach run_sessions (Strava ingestion results) per session so Today can
   // render the confirm / orphan variants inline.
@@ -824,6 +825,8 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   const db = createDB(c.env)
   const todayDay = localToday(body.today, epochDay)
   if (epochDay < todayDay) return c.json({ error: 'That day has passed.' }, 400)
+  // m16: with no block running there is no week to add to (Today says to start one).
+  if (!(await getActiveBlock(db))) return c.json({ error: 'No block running. Start Block Zero first.', code: 'no_block' }, 409)
   const runTag = body.type === 'running' ? (body.runCategory ?? null) : null
 
   const ctx = await loadPlacementContext(db, epochDay, todayDay)
@@ -2424,7 +2427,8 @@ app.post('/api/blocks/block-zero', async (c) => {
   }
 
   // End any currently active block, then create Block Zero (6 base weeks)
-  await endActiveBlocks(db, nowSec)
+  // The old block's planned sessions from today on go with it (M2: no doubles).
+  await endActiveBlocks(db, nowSec, localToday(body.today))
   // The start day is the athlete's local date (D4): a Wednesday-evening start stays Wednesday.
   const block = await createTrainingBlock(db, { name: 'Block Zero', blockType: 'block_zero', totalWeeks: BLOCK_ZERO_BASE_WEEKS, nowSec, startedAt: startedAtForLocalDay(localToday(body.today)) })
   return c.json(block)

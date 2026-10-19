@@ -50,6 +50,12 @@ const touch = c({ before: { show: '', day: WED, sessions: [{ id: 'b', f: {} }] }
 assert(changeLock(touch, new Map([['b', { id: 'b', status: 'planned', scheduledDate: WED }]]), WED) === 'open', 'planned, today: open')
 assert(changeLock(touch, new Map([['b', { id: 'b', status: 'in_progress', scheduledDate: WED }]]), WED) === 'started', 'under way: started')
 assert(changeLock(touch, new Map([['b', { id: 'b', status: 'completed', scheduledDate: WED }]]), WED) === 'done', 'logged: done')
+// m3 / X9 (E2E 2026-10-19b): DONE only for work that was done.
+assert(changeLock(touch, new Map([['b', { id: 'b', status: 'missed', scheduledDate: WED }]]), WED + 1) === 'missed', 'm3: a missed session locks as missed, not done')
+assert(changeLock(touch, new Map([['b', { id: 'b', status: 'skipped', scheduledDate: WED }]]), WED + 1) === 'passed', 'm3: a passed day that was not done is not done')
+assert(logStatus('missed') === 'missed' && logStatus('passed') === 'passed', 'm3: the log says missed, not done')
+// m5: past the planned start and not started, the time goes.
+assert(untilLine(slotStart(WED, 'am'), WED, null, slotStart(WED, 'am') + 4 * 3600) === 'Until it starts', 'm5: no past time on the until line')
 assert(logStatus('open') === 'undo' && logStatus('undone') === 'put back' && logStatus('started') === 'started', 'the log\'s right side')
 
 // ─── Words ──────────────────────────────────────────────────

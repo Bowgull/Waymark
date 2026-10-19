@@ -17,7 +17,7 @@
 //    plan: "ask me each time"), never a scolding and never a reschedule.
 
 import { and, eq, inArray, lt } from 'drizzle-orm'
-import { sessions } from '../db/schema'
+import { sessions, strengthSessionExercises, strengthSets } from '../db/schema'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -36,6 +36,7 @@ export async function rolloverStaleSessions(
   db: DB,
   todayEpochDay: number,
 ): Promise<number> {
+  await closeStaleInProgress(db, todayEpochDay)
   const result = await db
     .update(sessions)
     .set({ status: 'missed' })
@@ -59,6 +60,7 @@ export async function rolloverStaleSessionIds(
   db: DB,
   todayEpochDay: number,
 ): Promise<string[]> {
+  await closeStaleInProgress(db, todayEpochDay)
   const stale = await db.select({ id: sessions.id }).from(sessions)
     .where(and(eq(sessions.status, 'planned'), lt(sessions.scheduledDate, todayEpochDay)))
   const ids = stale.map(s => s.id)
@@ -67,4 +69,37 @@ export async function rolloverStaleSessionIds(
       .where(and(eq(sessions.status, 'planned'), inArray(sessions.id, ids.slice(i, i + 50))))
   }
   return ids
+}
+
+/** context_json stamp on a session closed by the rollover with what was logged. */
+export const PARTIAL_CONTEXT_KEY = 'partial'
+
+/**
+ * Josh, 2026-10-19: a session left in progress whose day has passed is done
+ * (partial) with what was logged. Not missed: no Nauthiz, no missed fix, and
+ * its logged sets count as real work. The finish time is the last logged set,
+ * else the start. Returns the ids closed.
+ */
+export async function closeStaleInProgress(db: DB, todayEpochDay: number): Promise<string[]> {
+  const stale = await db.select().from(sessions)
+    .where(and(eq(sessions.status, 'in_progress'), lt(sessions.scheduledDate, todayEpochDay)))
+  for (const s of stale) {
+    const sets = s.type === 'strength'
+      ? await db.select({ at: strengthSets.completedAt }).from(strengthSets)
+        .innerJoin(strengthSessionExercises, eq(strengthSets.sessionExerciseId, strengthSessionExercises.id))
+        .where(eq(strengthSessionExercises.sessionId, s.id))
+      : []
+    const lastSet = sets.reduce<number | null>((m, r) => (r.at != null && (m == null || r.at > m) ? r.at : m), null)
+    const completedAt = lastSet ?? s.startedAt ?? ((s.scheduledDate as number) + 1) * 86400 - 1
+    let ctx: Record<string, unknown> = {}
+    try { ctx = s.contextJson ? JSON.parse(s.contextJson) as Record<string, unknown> : {} } catch { ctx = {} }
+    ctx[PARTIAL_CONTEXT_KEY] = { closedBy: 'rollover', loggedSets: sets.filter(r => r.at != null).length }
+    await db.update(sessions).set({
+      status: 'completed',
+      completedAt,
+      durationSec: s.startedAt != null && completedAt >= s.startedAt ? completedAt - s.startedAt : s.durationSec,
+      contextJson: JSON.stringify(ctx),
+    }).where(and(eq(sessions.id, s.id), eq(sessions.status, 'in_progress')))
+  }
+  return stale.map(s => s.id)
 }

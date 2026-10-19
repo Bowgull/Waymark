@@ -83,10 +83,12 @@ export function backPut(c: ChangeViewIn, todayDay: number): { line: string; dim:
 }
 
 /** "Until it starts, 7:00 AM", or the word that replaces UNDO once it's locked. */
-export function backUntil(c: ChangeViewIn, todayDay: number): string {
+export function backUntil(c: ChangeViewIn, todayDay: number, nowLocalSec?: number): string {
   if (c.lock === 'started') return 'Started. It stays.'
   if (c.lock === 'done') return 'Done. It stays.'
-  return untilLine(c.undoUntil, todayDay, c.kind === 'missed' ? c.fix : null)
+  if (c.lock === 'missed') return 'Missed. It stays.'
+  if (c.lock === 'passed') return 'Its day has passed. It stays.'
+  return untilLine(c.undoUntil, todayDay, c.kind === 'missed' ? c.fix : null, nowLocalSec)
 }
 
 export interface LogDay {
