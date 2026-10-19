@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon } from '@/design'
+import { SKIP_PLACES, SKIP_REASONS } from '@/components/ui/departures'
+import { ReasonTiles } from '@/features/coach/ReasonTiles'
+import { Rune } from '@/features/coach/Rune'
+import type { RuneState } from '@/lib/coach/changes'
 import { SessionSummary } from '@/features/dayboard/SessionSummary'
 import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
@@ -28,7 +32,9 @@ export interface RunSessionSummary {
 // Today's day board (pages 20, 35, 40): the AM / PM groups (sun / moon mark and
 // flap), a row per session (painted icon, name on a flap, minutes or ✓). Tap a
 // row: a session to do opens its plan with ENTER / REPLACE / SKIP; a finished
-// one shows the same summary as Program (bands, lifted values, chips).
+// one shows the same summary as Program (bands, lifted values, chips). Page 56:
+// a row the coach changed carries the small rune by its minutes; SKIP is
+// instant and the open row then offers the optional reason tiles.
 
 export interface TodaySession extends DayBoardSession {
   runSession?: (RunSessionSummary & DayBoardSession['runSession']) | null
@@ -45,6 +51,14 @@ export interface TodayDayProps {
   onReassignMatch: (activityId: number) => void
   onDismissMatch: (activityId: number) => void
   onAdd: () => void
+  /** The rune on each changed row (page 56 item 7). */
+  runes?: Readonly<Record<string, RuneState | null>>
+  /** A skip made here: its reason tiles in the open row (page 56 item 3). */
+  skipReasons?: Readonly<Record<string, { reason: string | null; detail: string | null }>>
+  onSkipReason?: (id: string, reason: string | null, detail: string | null) => void
+  /** The row to open (a skip just made opens its row for the tiles). */
+  openId?: string | null
+  onOpenChange?: (id: string | null) => void
 }
 
 /** Strava's run matched this planned run and waits for CONFIRM (page 40, phone 1). */
@@ -58,7 +72,9 @@ function stravaOrphan(s: TodaySession): boolean {
 }
 
 export function TodayDay(props: TodayDayProps) {
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [ownOpen, setOwnOpen] = useState<string | null>(null)
+  const openId = props.openId !== undefined ? props.openId : ownOpen
+  const setOpenId = (id: string | null) => { if (props.onOpenChange) props.onOpenChange(id); else setOwnOpen(id) }
   const day = props.sessions.filter(s => !stravaOrphan(s))
   const unplanned = props.sessions.filter(stravaOrphan)
   const groups: Array<['am' | 'pm' | null, TodaySession[]]> = [
@@ -82,13 +98,14 @@ export function TodayDay(props: TodayDayProps) {
           </div>
         ))}
         {unplanned.map((s, i) => <StravaCard key={s.id} s={s} kind="unplanned" ruled={i > 0 || day.length > 0} {...props} />)}
+        {/* page 56: + add session is a quiet line inside the day's board */}
+        <div className="td-addrow"><button type="button" className="td-addq" onClick={props.onAdd}>+ add session</button></div>
       </Board>
-      <FlapButton label="+ ADD SESSION" onClick={props.onAdd} />
     </>
   )
 }
 
-function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
+function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
   const rowRef = useRef<HTMLDivElement>(null)
   const [endOpen, setEndOpen] = useState(false)
   const actionable = isActionableTodaySession(s.status, false)
@@ -99,17 +116,30 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly }:
   // Page 40: a run confirmed from Strava reads its minutes and ✓ ("35min ✓").
   const mins = skipped ? '—' : `~${plannedRowMinutes(s)}min`
   const stravaMin = done && s.runSession?.stravaActivityId != null ? stravaMinutes(s) : null
+  const rune = !skipped ? runes?.[s.id] ?? null : null
+  const skip = skipped ? skipReasons?.[s.id] ?? null : null
+  const tiles = open && skip != null && onSkipReason != null
 
   return (
-    <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}`}>
+    <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${tiles ? ' is-openx' : ''}`}>
       <div role="button" tabIndex={0} aria-expanded={open} style={{ display: 'contents' }} onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}>
         <SessionIcon kind={iconFor(s)} size={40} />
         <span className="td-nm"><FlapLabel text={name} size="md" len={11} fit /></span>
         {stravaMin != null ? (
           <><span className="td-mins">{stravaMin}min</span><span className="td-stick" aria-label="done">✓</span></>
-        ) : done ? <span className={open ? 'td-tick' : 'td-mins'} aria-label="done">✓</span> : <span className="td-mins">{mins}</span>}
+        ) : done ? <>{rune && <Rune state={rune} size="row" />}<span className={open ? 'td-tick' : 'td-mins'} aria-label="done">✓</span></>
+          : tiles ? <span className="td-skd">SKIPPED</span>
+          : <>{rune && <Rune state={rune} size="row" />}<span className="td-mins">{mins}</span></>}
       </div>
-      {open && (
+      {tiles && skip && (
+        <div className="td-more2" onClick={e => e.stopPropagation()}>
+          <ReasonTiles tiles={SKIP_REASONS} value={skip.reason} onChange={r => onSkipReason!(s.id, r, null)} />
+          {skip.reason === 'injury' && (
+            <ReasonTiles label={false} tiles={SKIP_PLACES.map(p => ({ value: p, label: p.toUpperCase() }))} value={skip.detail} onChange={d => onSkipReason!(s.id, 'injury', d)} />
+          )}
+        </div>
+      )}
+      {open && !skipped && (
         <div className="td-sum" onClick={e => e.stopPropagation()}>
           <SessionSummary
             session={s}

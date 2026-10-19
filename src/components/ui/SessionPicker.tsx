@@ -5,19 +5,21 @@ import '@/design/pickers.css'
 import { mediumHaptic, selectHaptic } from '@/lib/haptics'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import { TRAINING_TARGETS } from '@/lib/trainingTargets'
+import { ReasonTiles } from '@/features/coach/ReasonTiles'
 
 import {
   buildDepartures,
   pickerOptions,
   selectionFor,
   type DepartureRow,
+  type ReasonTile,
   type SessionOption,
   type Slot,
 } from './departures'
 
 export type { SessionOption }
 
-// Built from the training targets (single source of truth); MT Class stays out.
+// Built from the training targets (single source of truth), MT Class included (page 56 item 15).
 const SESSION_OPTIONS = pickerOptions(TRAINING_TARGETS)
 
 interface SessionPickerProps {
@@ -26,17 +28,18 @@ interface SessionPickerProps {
   filter?: (option: SessionOption) => boolean
   suggestions?: SuggestionsResponse | null
   title?: string
-  subtitle?: string
+  /** REPLACE (page 56 item 1): the optional reason tiles on top of the same list. */
+  reasons?: { tiles: ReadonlyArray<ReasonTile>; value: string | null; onChange: (next: string | null) => void }
 }
 
 /**
- * Add Session and Replace "More options": a departures board on a centred
- * card (design-decisions.md, "Pickers and flows"). Coach picks first, lit by
- * the lantern; cautions as embers; each row has its painted icon, the name
- * on a flap, the reason, and an AM / PM slot (tap the slot to flip it, tap
- * the row to pick).
+ * Add Session, and REPLACE (page 56): a departures board on a centred card
+ * (design-decisions.md, "Pickers and flows"). Coach picks first, lit by the
+ * lantern, with their reason; everything else plain. Every row can be picked:
+ * nothing is refused or greyed out. Each row: its painted icon, the name on a
+ * flap and an AM / PM slot (tap the slot to flip it, tap the row to pick).
  */
-export function SessionPicker({ onSelect, onClose, filter, suggestions, title, subtitle }: SessionPickerProps) {
+export function SessionPicker({ onSelect, onClose, filter, suggestions, title, reasons }: SessionPickerProps) {
   const base = filter ? SESSION_OPTIONS.filter(filter) : SESSION_OPTIONS
   const board = buildDepartures(base, suggestions)
   const heading = title ?? 'Add Session'
@@ -52,9 +55,9 @@ export function SessionPicker({ onSelect, onClose, filter, suggestions, title, s
           Cancel
         </button>
       }
-      sub={subtitle}
+      className={reasons ? 'wm-repb' : ''}
     >
-      {board.flagsLine && <p className="wm-pk-flags">{board.flagsLine}</p>}
+      {reasons && <ReasonTiles tiles={reasons.tiles} value={reasons.value} onChange={reasons.onChange} />}
       <div className="wm-deps" role="list" aria-label={`${heading} options`}>
         {grouped && <div className="wm-grp is-lit" role="presentation">Coach picks</div>}
         {board.picks.map(row => (
@@ -71,11 +74,11 @@ export function SessionPicker({ onSelect, onClose, filter, suggestions, title, s
 
 function DepartureRowView({ row, len, onSelect }: { row: DepartureRow; len: number; onSelect: (option: SessionOption) => void }) {
   const [slot, setSlot] = useState<Slot>(row.timeSlot)
+  const [on, setOn] = useState(false)
 
   function pick() {
-    // A refused row says why; it is not a departure.
-    if (row.blocked) return
     mediumHaptic()
+    setOn(true)
     onSelect(selectionFor(row, slot))
   }
 
@@ -85,22 +88,18 @@ function DepartureRowView({ row, len, onSelect }: { row: DepartureRow; len: numb
   }
 
   const shownSlot = row.flexibleTimeSlot ? slot : row.timeSlot
-  const spoken = [
-    row.tone === 'pick' ? `Coach pick: ${row.label}` : row.label,
-    row.reason ? (row.tone === 'ember' ? `Caution: ${row.reason}` : row.reason) : null,
-    shownSlot.toUpperCase(),
-  ].filter(Boolean).join(', ')
+  const spoken = [row.tone === 'pick' ? `Coach pick: ${row.label}` : row.label, row.reason, shownSlot.toUpperCase()].filter(Boolean).join(', ')
 
   return (
-    <div className={`wm-dep${row.tone === 'pick' ? ' is-pick' : ''}`} role="listitem" onClick={pick}>
-      <button type="button" className="wm-dep-main" aria-label={row.blocked ? `Not today: ${spoken}` : `Add ${spoken}`} aria-disabled={row.blocked || undefined}>
-        <SessionIcon kind={row.icon} size={44} label="" />
+    <div className={`wm-dep${row.tone === 'pick' ? ' is-pick' : ''}${on ? ' is-on' : ''}`} role="listitem" onClick={pick}>
+      <button type="button" className="wm-dep-main" aria-label={`Pick ${spoken}`}>
+        <SessionIcon kind={row.icon} size={38} label="" />
         <span className="wm-dep-text">
-          <FlapLabel text={row.label} size="sm" len={len} fit />
-          {row.reason && <span className={`wm-dep-why${row.tone === 'ember' ? ' is-ember' : ''}`}>{row.reason}</span>}
+          <FlapLabel text={row.label.toUpperCase()} size="sm" len={len} fit />
+          {row.reason && <span className="wm-dep-why">{row.reason}</span>}
         </span>
       </button>
-      <AmPmFlap slot={shownSlot} onChange={row.flexibleTimeSlot && !row.blocked ? flip : undefined} />
+      <AmPmFlap slot={shownSlot} onChange={row.flexibleTimeSlot ? flip : undefined} />
     </div>
   )
 }

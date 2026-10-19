@@ -1,7 +1,6 @@
 /* Pickers and flows (design-decisions.md, pages 20 and 22; shared/flap.css .dep / .grp,
-   page 22 .board2 .brow / .num / .lamp / .post / .arm). Used by SessionPicker,
-   CoachSignpost, SkipReasonSheet and ReplaceReasonSheet. Uses the --sf-* tokens
-   from design.css. Reduce Motion rules at the bottom. */
+   page 56 .dep / .grp). Used by SessionPicker (Add Session and REPLACE) and the
+   week log. Uses the --sf-* tokens from design.css. Reduce Motion rules at the bottom. */
 
 /* ── card head bits ── */
 .wm-pk-cancel {
@@ -16,12 +15,11 @@
   color: var(--sf-label);
   -webkit-tap-highlight-color: transparent;
 }
-.wm-pk-flags { margin: -4px 0 2px; font: 500 14.5px/1.4 var(--font-body); color: #c9b27a; }
 
-/* ── departures board: lantern-lit coach picks, ember cautions ── */
+/* ── departures board: lantern-lit coach picks, everything else plain (page 56) ── */
 .wm-grp {
-  padding: 10px 2px 4px;
-  font: 700 11px/normal var(--font-body);
+  padding: 8px 2px 2px;
+  font: 700 12px/normal var(--font-body);
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: rgba(240, 230, 192, 0.5);
@@ -33,7 +31,7 @@
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 8px 2px;
+  padding: 6px 2px;
   border-top: 1px solid rgba(0, 0, 0, 0.55);
   cursor: pointer;
   transition: background var(--t-quick) ease-out;
@@ -64,80 +62,12 @@
   cursor: pointer;
 }
 .wm-dep-text { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; }
-.wm-dep-why { margin-top: 3px; font: 600 13px/1.25 var(--font-body); color: #d8bf86; }
-.wm-dep-why.is-ember { color: #d9906e; }
+.wm-dep-why { margin-top: 3px; font: 600 15px/1.3 var(--font-body); color: #d8bf86; }
+.wm-dep.is-on { background: rgba(184, 152, 74, 0.16); border-radius: 10px; }
 .wm-dep .wm-ampm { position: relative; padding: 0; }
 /* a fixed slot doesn't flip: a tap on it picks the row */
 .wm-dep .wm-ampm:disabled { pointer-events: none; }
 
-/* ── numbered reason board (Why skip, Where) ── */
-.wm-brows { display: flex; flex-direction: column; gap: 10px; }
-.wm-brow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 4px;
-  border: 0;
-  border-top: 1px solid rgba(0, 0, 0, 0.55);
-  border-radius: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--t-quick) ease-out;
-  -webkit-tap-highlight-color: transparent;
-}
-.wm-brow:first-child { border-top: 0; }
-.wm-brow.is-on { background: radial-gradient(ellipse 60% 120% at 12% 50%, rgba(184, 152, 74, 0.22), transparent 70%); }
-.wm-brow-num { flex: none; width: 22px; font: 800 13px/normal var(--font-mono); color: rgba(240, 230, 192, 0.5); }
-.wm-brow-label { flex: none; min-width: 0; }
-.wm-lamp { flex: none; font: 800 14px/1 var(--font-mono); color: #ffd08a; text-shadow: 0 0 8px rgba(255, 200, 120, 0.9); }
-.wm-words { min-height: 64px; resize: none; }
-
-/* ── Why swap (page 20 r2): six reasons as plain word tiles, two to a row ── */
-.wm-reason-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.wm-opt { min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 6px; border: 0; border-radius: 10px; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); font: 700 15px/1.2 var(--font-body); color: #efe6c8; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.wm-opt.is-on { background: rgba(184, 152, 74, 0.25); box-shadow: inset 0 0 0 2px #b8984a; color: #fff3cf; }
-
-/* ── the signpost: three roads on a waymark post, the crest on top (page 22 #rep, exactly) ──
-   The pole and the arms' wood are ASCII glyphs (pre text), like the world; arms all point right. */
-.wm-post { position: relative; height: 340px; overflow: hidden; }
-.wm-post-pole {
-  position: absolute; left: 16%; top: 60px; bottom: 0; width: 22px; margin: 0; transform: translateX(-50%);
-  border-radius: 3px; overflow: hidden; text-align: center; white-space: pre;
-  font: 700 10px/10px var(--font-mono); color: #8a6a44;
-  background: #2a1e12; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
-  user-select: none; pointer-events: none;
-}
-.wm-post-cap { position: absolute; left: 16%; top: 18px; width: 64px; height: 72px; transform: translateX(-50%); display: grid; place-items: center; }
-.wm-arm {
-  position: absolute; left: 16%;
-  display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 84%;
-  padding: 7px 30px 7px 10px; border: 0; white-space: nowrap; cursor: pointer; color: #f2e2c0;
-  background: linear-gradient(180deg, #5a3f24, #3f2c19);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 6px 14px rgba(0, 0, 0, 0.5);
-  clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 50%, calc(100% - 22px) 100%, 0 100%);
-  transition: transform var(--t-tap) ease-out;
-  -webkit-tap-highlight-color: transparent;
-}
-.wm-arm.is-lit { background: linear-gradient(180deg, #7a5a2e, #574022); box-shadow: inset 0 0 0 2px #c9a050, 0 0 22px rgba(201, 160, 80, 0.35), 0 6px 14px rgba(0, 0, 0, 0.5); }
-.wm-arm-wood { position: absolute; inset: 0; margin: 0; overflow: hidden; white-space: pre; font: 700 9px/9px var(--font-mono); color: rgba(0, 0, 0, 0.28); pointer-events: none; user-select: none; }
-.wm-arm > :not(.wm-arm-wood) { position: relative; }
-.wm-arm:active { transform: translateX(3px); }
-.wm-arm:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: 2px; }
-.wm-arm .wm-ampm { gap: 5px; }
-.wm-arm .wm-ampm:disabled { pointer-events: none; }
-
-/* ── the coach reading: the crest breathes ── */
-.wm-reading { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0 10px; text-align: center; }
-.wm-breathe { animation: wm-breathe 1.6s ease-in-out infinite; }
-@keyframes wm-breathe {
-  0%, 100% { filter: brightness(1) drop-shadow(0 0 6px rgba(184, 152, 74, 0.3)); transform: scale(1); }
-  50% { filter: brightness(1.35) drop-shadow(0 0 14px rgba(232, 200, 120, 0.55)); transform: scale(1.03); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .wm-breathe { animation: none; }
-  .wm-dep, .wm-brow, .wm-arm { transition: none; }
-  .wm-arm:active { transform: none; }
+  .wm-dep { transition: none; }
 }

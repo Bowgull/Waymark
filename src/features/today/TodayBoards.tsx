@@ -4,9 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { Board, Crest, FlapButton, FlapLabel, SessionIcon, showPop, type SessionIconKey } from '@/design'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { logger } from '@/lib/logger'
-import type { ReadinessLineView } from '@/features/blockZero/readinessLine'
-import { ClassTonightChip, type ClassTonightView } from '@/features/blockZero/TodayPieces'
-import { coachCount, dateFlap, splitLead, type StripDay } from './weekStrip'
+import { Rune } from '@/features/coach/Rune'
+import { dateFlap, type StripDay } from './weekStrip'
 
 // The pieces of Today (pages 35, 36, 43), on the split-flap boards over the forest.
 
@@ -39,8 +38,12 @@ export function TodayHeader({ date }: { date: Date }) {
   )
 }
 
-/** The week strip: seven small day tiles under the header. Tap a day to open it in Program. */
-export function WeekStrip({ days, home = false }: { days: StripDay[]; home?: boolean }) {
+/**
+ * The week strip: seven small day tiles under the header. A day with a rune
+ * (page 56: Dagaz, the coach changed it; Nauthiz, a missed session) opens its
+ * back in place under the strip; any other day opens in Program.
+ */
+export function WeekStrip({ days, home = false, openDay = null, onRune }: { days: StripDay[]; home?: boolean; openDay?: number | null; onRune?: (epochDay: number) => void }) {
   const navigate = useNavigate()
   return (
     <Board className={`td-strip${home ? ' is-home' : ''}`}>
@@ -50,80 +53,20 @@ export function WeekStrip({ days, home = false }: { days: StripDay[]; home?: boo
             key={d.epochDay}
             type="button"
             role="listitem"
-            className={`td-t7${d.isToday ? ' is-today' : ''}`}
-            onClick={() => navigate(`/program?day=${d.iso}`)}
-            aria-label={`${d.iso}${d.isToday ? ', today' : ''}${d.rest ? ', rest' : ''}. ${d.icons.map(i => `${i.key} ${i.state}`).join(', ')}. Open in Program.`}
+            data-day={d.epochDay}
+            className={`td-t7${d.isToday ? ' is-today' : ''}${d.rune ? ' has-rn' : ''}${openDay === d.epochDay ? ' is-open' : ''}`}
+            onClick={() => (d.rune && onRune ? onRune(d.epochDay) : navigate(`/program?day=${d.iso}`))}
+            aria-label={`${d.iso}${d.isToday ? ', today' : ''}${d.rest ? ', rest' : ''}. ${d.icons.map(i => `${i.key} ${i.state}`).join(', ')}.${d.rune ? (d.rune.startsWith('miss') ? ' A missed session. Tap to see what the coach did.' : ' The coach changed this day. Tap to see.') : ' Open in Program.'}`}
           >
             <span className="dn">{d.letter}</span>
             <span className="dd">{d.date}</span>
             {d.rest ? <span className="zz">REST</span> : d.icons.map(i => (
               <span key={i.id} className={`ic is-${i.state}`}><SessionIcon kind={i.key} size={18} label="" /></span>
             ))}
+            {d.rune && <Rune state={d.rune} size="tile" />}
           </button>
         ))}
       </div>
-    </Board>
-  )
-}
-
-export interface CoachChangeLine { id: string; line: string; lead?: string | null; body?: string | null; icon: SessionIconKey | null }
-export interface CoachQuestionLine { id: string; line: string; icon: SessionIconKey | null }
-
-/**
- * The Coach board (page 36): the why line first, each change with its reason,
- * open questions with a gold dot. The morning's readiness read sits under the
- * why line, written the same way (bold lead, then the rest); tap it for why.
- */
-export function CoachBoard({ why, readiness = null, classTonight = null, changes, questions, onOpen }: { why: string | null; readiness?: ReadinessLineView | null; classTonight?: ClassTonightView | null; changes: CoachChangeLine[]; questions: CoachQuestionLine[]; onOpen: (id: string) => void }) {
-  const [readyOpen, setReadyOpen] = useState(false)
-  if (!why && !readiness && !classTonight && changes.length === 0 && questions.length === 0) return null
-  const classLine = classTonight?.added ? classTonight.line : null
-  // The first sentence of the why line is the kind of week (bold), the rest the reason.
-  const w = splitLead(why ?? '', 'sentence')
-  return (
-    <Board className="td-coach" head="Coach" headRight={<span className="cnt">{coachCount(changes.length, questions.length)}</span>}>
-      {why && (
-        <div className="crow is-why" style={{ paddingTop: 0 }}>
-          <p>{w.rest ? <><b>{w.lead}</b> {w.rest}</> : why}</p>
-        </div>
-      )}
-      {readiness && (
-        <button
-          type="button"
-          className="crow is-ready"
-          style={why ? undefined : { paddingTop: 0 }}
-          aria-expanded={readyOpen}
-          onClick={() => setReadyOpen(o => !o)}
-        >
-          <p>{readiness.rest ? <><b>{readiness.lead}</b> {readiness.rest}</> : <b>{readiness.lead}</b>}</p>
-          {readyOpen && <p className="why">{readiness.why}</p>}
-        </button>
-      )}
-      {/* page 45 (page 13's place): + CLASS TONIGHT by the readiness line; once added, one line on how the day rebalanced */}
-      {classLine && (
-        <div className="crow is-class" style={why || readiness ? undefined : { paddingTop: 0 }}>
-          <p><b>{classLine.lead}</b> {classLine.rest}</p>
-        </div>
-      )}
-      {classTonight && <ClassTonightChip added={classTonight.added} onAdd={classTonight.onAdd} />}
-      {changes.map(c => {
-        // "Strength C eased: one set, 10% lighter. Soreness was 4 this morning." (lead in brass)
-        const parts = c.lead && c.body ? { lead: c.lead, rest: c.body } : splitLead(c.line, 'colon')
-        return (
-          <div key={c.id} className="crow">
-            {c.icon && <SessionIcon kind={c.icon} size={30} />}
-            <p>{parts.rest ? <><b>{parts.lead}</b>{parts.rest}</> : c.line}</p>
-          </div>
-        )
-      })}
-      {questions.map(q => (
-        <button key={q.id} type="button" className="crow is-q" onClick={() => onOpen(q.id)} aria-label={`${q.line} Open the question.`}>
-          {q.icon && <SessionIcon kind={q.icon} size={30} />}
-          <p>{q.line}</p>
-          <span className="td-qdot" aria-hidden />
-          <span className="td-chev" aria-hidden>›</span>
-        </button>
-      ))}
     </Board>
   )
 }

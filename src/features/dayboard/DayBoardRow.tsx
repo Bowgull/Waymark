@@ -1,8 +1,9 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 
-import { AmPmFlap, FlapChip, FlapLabel, SessionIcon } from '@/design'
+import { AmPmFlap, FlapLabel, SessionIcon } from '@/design'
+import { Rune } from '@/features/coach/Rune'
 
-import { dayRowState, type AskChip, type DayBoardSession, type RowAsk, type RowContext } from './rowState'
+import { dayRowState, type DayBoardSession, type RowContext } from './rowState'
 import { SessionSummary } from './SessionSummary'
 import './dayboard.css'
 
@@ -11,8 +12,8 @@ import './dayboard.css'
 // Tap: the summary opens in place (tap again to close). Swipe a to-do row
 // left: it tucks into a square around its icon and REPLACE / SKIP fill the
 // rest; tap the icon to put it back; let go short and it springs back. Done
-// rows don't swipe. A changed row has a brass edge, "was X" and one brass
-// reason line; a missed session's ask sits in the row with flap chips.
+// rows don't swipe. A row the coach changed carries the small rune before
+// its detail (page 56 item 7); a skipped row opened shows the reason tiles.
 
 /** The tucked face: a square around the icon. */
 const TUCK_PX = 62
@@ -21,29 +22,24 @@ const OPEN_AT_PX = 80
 
 export interface DayBoardRowProps {
   session: DayBoardSession
-  /** The week's changes and adjustments, and the plan line for a to-do. */
+  /** The plan line for a to-do and the row's rune. */
   context?: RowContext
-  /** Leave the missed-session ask out (it shows on today's board instead). */
-  hideAsk?: boolean
-  /** The ask on its own row (on today's board, for a session missed earlier). */
-  askOnly?: boolean
   open: boolean
   onToggle: () => void
   onReplace?: (session: DayBoardSession) => void
   onSkip?: (session: DayBoardSession) => void
-  /** A chip on the ask was tapped; the row element is for glowRow. */
-  onAnswer?: (ask: RowAsk, chip: AskChip, row: HTMLElement | null) => void
   /** The block week (Foundation's level in the summary). */
   weekNumber?: number | null
   /** Extra buttons inside the summary (Today's START). */
   summaryActions?: ReactNode
+  /** Shown in place of the summary when open (a skip's reason tiles). */
+  openContent?: ReactNode
 }
 
-export function DayBoardRow({ session, context, hideAsk = false, askOnly = false, open, onToggle, onReplace, onSkip, onAnswer, weekNumber, summaryActions }: DayBoardRowProps) {
+export function DayBoardRow({ session, context, open, onToggle, onReplace, onSkip, weekNumber, summaryActions, openContent }: DayBoardRowProps) {
   const base = dayRowState(session, context)
-  const ask = hideAsk ? null : base.ask
-  const variant = ask ? 'ask' : base.variant === 'ask' ? base.status : base.variant
-  const swipeable = base.swipeable && !askOnly && Boolean(onReplace || onSkip)
+  const variant = base.variant
+  const swipeable = base.swipeable && Boolean(onReplace || onSkip)
   const [swiped, setSwiped] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
   const faceRef = useRef<HTMLDivElement>(null)
@@ -96,7 +92,6 @@ export function DayBoardRow({ session, context, hideAsk = false, askOnly = false
   function onClick() {
     if (suppressClick.current) { suppressClick.current = false; return }
     if (tucked) { setSwiped(false); return }
-    if (askOnly) return
     onToggle()
   }
 
@@ -107,7 +102,7 @@ export function DayBoardRow({ session, context, hideAsk = false, askOnly = false
   }
 
   const nameTone = base.status === 'skipped' ? 'struck' : base.status === 'missed' ? 'dim' : 'ink'
-  const cls = ['db-row', `is-${variant}`, open && !tucked && !askOnly ? 'is-open' : '', tucked ? 'is-swiped' : ''].filter(Boolean).join(' ')
+  const cls = ['db-row', `is-${variant}`, open && !tucked ? 'is-open' : '', tucked ? 'is-swiped' : ''].filter(Boolean).join(' ')
   const a11y = `${base.name}, ${base.slot.toUpperCase()}, ${base.detail}${base.status === 'done' ? ', done' : ''}`
 
   return (
@@ -131,7 +126,7 @@ export function DayBoardRow({ session, context, hideAsk = false, askOnly = false
         className="db-face"
         role="button"
         tabIndex={0}
-        aria-expanded={askOnly ? undefined : open && !tucked}
+        aria-expanded={open && !tucked}
         aria-label={tucked ? `${base.name}, tap to put it back` : a11y}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -143,23 +138,13 @@ export function DayBoardRow({ session, context, hideAsk = false, askOnly = false
         <SessionIcon kind={base.icon} size={40} label={base.name} />
         <div className="db-txt">
           <span className="db-nm"><FlapLabel text={base.name.toUpperCase()} size="sm" tone={nameTone} /></span>
-          <span className="db-det">{base.detail}</span>
-          {base.reason && !askOnly && <span className="db-cnote">{base.reason}</span>}
+          <span className="db-det">{base.rune && <Rune state={base.rune} size="row" />}{base.detail}</span>
         </div>
         {base.status === 'done' && <span className="db-tick" aria-hidden>✓</span>}
         <span className="db-slot"><AmPmFlap slot={base.slot} size="xs" /></span>
-        {ask && (
-          <div className="db-q" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
-            <p>{ask.question}</p>
-            <div className="db-achips">
-              {ask.chips.map(chip => (
-                <FlapChip key={chip.label} label={chip.label} tone={chip.tone} className="db-achip" onClick={() => onAnswer?.(ask, chip, rowRef.current)} />
-              ))}
-            </div>
-          </div>
-        )}
       </div>
-      {open && !tucked && !askOnly && (
+      {open && !tucked && openContent}
+      {open && !tucked && !openContent && (
         <SessionSummary
           session={session}
           weekNumber={weekNumber}

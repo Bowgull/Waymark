@@ -40,24 +40,15 @@ import {
 } from '../lib/notifications'
 import { apiFetch } from '../lib/api'
 import { getTodayISO } from '../lib/dates'
+import { coachLine, nextAlarmDay } from '../lib/coachLine'
 import { startOutboxSync } from '../lib/outboxSync'
 import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
 import { Capacitor } from '@capacitor/core'
 import { CHECK_IN_EVENT } from '../features/blockZero/checkInTrigger'
 
-/**
- * The coach's "N changes, M questions" since the last open. Null when there
- * is nothing or the API is unreachable. Today marks the open (POST
- * /api/coach/seen) once it has shown the Coach board, so the board and this
- * line never race.
- */
-async function coachMorningLine(): Promise<string | null> {
-  try {
-    const summary = await apiFetch<{ line: string | null } | null>(`/api/coach/summary?date=${getTodayISO()}`)
-    return summary?.line ?? null
-  } catch {
-    return null
-  }
+/** The morning alarm's one quiet line (page 56 item 12): what the coach moved, for the next alarm's day. */
+async function coachMorningLine(amReminder: string | null | undefined): Promise<string | null> {
+  return coachLine('morning', nextAlarmDay(getTodayISO(), amReminder))
 }
 
 export function AppRoutes() {
@@ -106,7 +97,7 @@ export function AppRoutes() {
             pmSessionTime: string | null
             pmLeadMin: number | null
           } | null>('/api/settings')
-          if (settings) await syncAlarmsFromSettings(settings, await coachMorningLine())
+          if (settings) await syncAlarmsFromSettings(settings, await coachMorningLine(settings.amReminder))
         } catch {
           // settings unavailable at boot — Settings save will reschedule later
         }
@@ -148,7 +139,7 @@ export function AppRoutes() {
         if (settings.amReminder) {
           await handleForegroundAlarmCheck(settings.amReminder)
         }
-        await syncAlarmsFromSettings(settings, await coachMorningLine())
+        await syncAlarmsFromSettings(settings, await coachMorningLine(settings.amReminder))
       } catch {
         // settings unavailable, skip
       }

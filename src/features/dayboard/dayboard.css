@@ -51,8 +51,7 @@
 
 .db-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .db-nm { position: relative; align-self: flex-start; max-width: 100%; }
-.db-det { font: 600 13px/1.25 var(--font-body); color: #b7c6be; overflow-wrap: anywhere; }
-.db-cnote { display: block; margin-top: 3px; font: 600 12.5px/1.35 var(--font-body); color: #e8c878; }
+.db-det { display: flex; align-items: center; font: 600 13.5px/1.25 var(--font-body); color: #b7c6be; overflow-wrap: anywhere; }
 .db-tick { flex: none; font: 900 13px var(--font-mono); color: #8fd4b8; }
 /* the slot is a label here: taps go to the row */
 .db-slot { flex: none; pointer-events: none; }
@@ -64,17 +63,7 @@
 .db-row.is-skipped .db-face { opacity: 0.55; }
 .db-row.is-skipped .db-nm::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: #9c5a40; }
 .db-row.is-missed .db-face { opacity: 0.7; }
-/* changed by the coach: brass edge */
-.db-row.is-changed .db-face { box-shadow: inset 3px 0 0 #b8984a, inset 0 0 0 1px rgba(232, 200, 96, 0.3); }
-/* an ask: a brighter brass edge, the question and chips under the row */
-.db-row.is-ask .db-face { opacity: 1; box-shadow: inset 3px 0 0 #e8c878, inset 0 0 0 1px rgba(232, 200, 96, 0.45); background: linear-gradient(180deg, #1f2116, #171a12); }
-.db-q { width: 100%; padding-left: 50px; margin-top: 2px; cursor: default; }
-.db-q p { margin: 0 0 7px; font: 700 13.5px/1.35 var(--font-body); color: #fff0c8; }
-.db-achips { display: flex; flex-wrap: wrap; gap: 6px; }
-/* page 36: the ask's chips, one flap word each */
-.db-achip { min-height: 0 !important; padding: 6px 8px !important; border-radius: 8px !important; box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.35) !important; background: rgba(0, 0, 0, 0.35) !important; }
-.db-achip.is-on { background: rgba(184, 152, 74, 0.28) !important; box-shadow: inset 0 0 0 2px #b8984a !important; }
-.db-row.is-missed .db-nm .wm-cell, .db-row.is-ask .db-nm .wm-cell { color: rgba(240, 230, 192, 0.55); }
+.db-row.is-missed .db-nm .wm-cell { color: rgba(240, 230, 192, 0.55); }
 
 /* ── swipe left: the face tucks to a square around its icon, REPLACE / SKIP fill the rest ── */
 .db-acts { position: absolute; left: 70px; right: 0; top: 0; height: 62px; display: flex; gap: 6px; padding: 6px; visibility: hidden; background: rgba(0, 0, 0, 0.4); border-radius: 12px; }

@@ -1,10 +1,11 @@
-// Pure logic for the picker boards (design-decisions.md, "Pickers and flows",
-// pages 20 and 22): the Add Session / More options departures board, the
-// Replace signpost's three roads, and the Why skip / Why swap reason boards.
-// No React and no image imports, so the unit tests run it under node.
+// Pure logic for the picker board (design-decisions.md, "Pickers and flows",
+// pages 20 and 22; page 56, approved 2026-10-19): the Add Session departures
+// board, which REPLACE opens too, and the optional reason tiles on REPLACE and
+// SKIP. Every row can be picked, MT Class included; nothing is refused,
+// greyed out or previewed. No React and no image imports, so the unit tests
+// run it under node.
 
 import type { SessionSuggestion, SuggestionsResponse } from '@/lib/sessionSuggestions'
-import type { ReplaceSuggestion } from '@/lib/prompts/tools'
 
 import { sessionIconFor, type SessionIconKey } from '../../design/sessionIconKeys'
 
@@ -16,7 +17,7 @@ export interface SessionOption {
   label: string
   timeSlot: Slot
   runCategory?: string
-  /** Add, pull forward or replace (Part C); absent means a plain add. */
+  /** An add, or the week's next strength pulled to this day; absent means a plain add. */
   action?: SessionSuggestion['action']
 }
 
@@ -24,58 +25,49 @@ export interface PickerOption extends SessionOption {
   flexibleTimeSlot: boolean
 }
 
-/** pick = lantern-lit coach pick, ember = caution, plain = everything else. */
-export type DepartureTone = 'pick' | 'ember' | 'plain'
+/** pick = lantern-lit coach pick, plain = everything else. */
+export type DepartureTone = 'pick' | 'plain'
 
 export interface DepartureRow extends PickerOption {
   /** type, or type:runCategory (runs split by category). */
   key: string
   icon: SessionIconKey
-  /** The reason line under the name. Neutral rows carry none. */
+  /** The coach pick's reason line ("Easy, 20 min"). Other rows carry none. */
   reason: string | null
   tone: DepartureTone
-  /** The rules would refuse it: shown as an ember with its reason, not pickable. */
-  blocked?: boolean
 }
 
 export interface DepartureBoard {
   /** Coach picks, lit by the lantern (no gold dots). */
   picks: DepartureRow[]
-  /** "Everything else": neutral rows and ember cautions. */
+  /** "Everything else": every other session, plain. */
   rest: DepartureRow[]
-  /** The flags line ("Soreness is high · Sleep is low"), or null. */
-  flagsLine: string | null
   /** Pad names to this many tiles so the board lines up (never cuts longer names). */
   labelLen: number
 }
 
-/** MT Class is booked outside the app, so it never appears on a picker. */
-export const PICKER_EXCLUDED_TYPES: ReadonlySet<string> = new Set(['mt_class'])
-
-/** Names pad to at most this many tiles (page 20 / 22 rows use 11). */
-export const LABEL_PAD_MAX = 11
+/** Names pad to at most this many tiles (page 20 / 22 rows use 11; page 56 uses 15). */
+export const LABEL_PAD_MAX = 15
 
 export function optionKey(opt: { type: string; runCategory?: string }): string {
   return opt.runCategory ? `${opt.type}:${opt.runCategory}` : opt.type
 }
 
-/** Picker options from the training targets (single source of truth), MT Class out. */
+/** Picker options from the training targets (single source of truth), MT Class included (page 56 item 15). */
 export function pickerOptions(
   targets: ReadonlyArray<{ type: string; label: string; defaultTimeSlot: Slot; flexibleTimeSlot: boolean; runCategory?: string }>,
 ): PickerOption[] {
-  return targets
-    .filter(t => !PICKER_EXCLUDED_TYPES.has(t.type))
-    .map(t => ({
-      type: t.type,
-      label: t.label,
-      timeSlot: t.defaultTimeSlot,
-      flexibleTimeSlot: t.flexibleTimeSlot,
-      runCategory: t.runCategory,
-    }))
+  return targets.map(t => ({
+    type: t.type,
+    label: t.label,
+    timeSlot: t.defaultTimeSlot,
+    flexibleTimeSlot: t.flexibleTimeSlot,
+    runCategory: t.runCategory,
+  }))
 }
 
-function plainRow(opt: PickerOption): DepartureRow {
-  return { ...opt, key: optionKey(opt), icon: sessionIconFor(opt.type, opt.runCategory), reason: null, tone: 'plain' }
+function plainRow(opt: PickerOption, over: Partial<DepartureRow> = {}): DepartureRow {
+  return { ...opt, key: optionKey(opt), icon: sessionIconFor(opt.type, opt.runCategory), reason: null, tone: 'plain', ...over }
 }
 
 function padFor(rows: DepartureRow[]): number {
@@ -84,53 +76,30 @@ function padFor(rows: DepartureRow[]): number {
 }
 
 /**
- * Build the departures board. Same rules as the app's picker today:
- * - no suggestions (or an empty list): every option, plain, no flags line
- * - suggestions: only the suggested options that are on the base list, in
- *   the order given (suggested, neutral, caution); coach picks first with
- *   their reason; the rest show a reason only when it's a caution (an ember)
- * - suggestions that match nothing on the base list: every option, plain,
- *   with the flags line
- * - MT Class never appears
+ * Build the board:
+ * - no suggestions: every option, plain
+ * - suggestions: the coach's picks first with their reason, then every other
+ *   option on the base list, plain (no reason, nothing greyed out, no ember)
+ * - the pick's action (add / pull forward) travels with its row
  */
 export function buildDepartures(base: ReadonlyArray<PickerOption>, suggestions?: SuggestionsResponse | null): DepartureBoard {
-  const options = base.filter(o => !PICKER_EXCLUDED_TYPES.has(o.type))
-  if (!suggestions || suggestions.suggestions.length === 0) {
-    const rest = options.map(plainRow)
-    return { picks: [], rest, flagsLine: null, labelLen: padFor(rest) }
+  const list = suggestions?.suggestions ?? []
+  const byKey = new Map(list.map(s => [optionKey(s), s]))
+  const picks: DepartureRow[] = []
+  const rest: DepartureRow[] = []
+  for (const s of list) {
+    if (s.priority !== 'suggested') continue
+    const opt = base.find(o => optionKey(o) === optionKey(s))
+    if (!opt) continue
+    picks.push(plainRow({ ...opt, label: s.label, timeSlot: s.timeSlot, flexibleTimeSlot: s.flexibleTimeSlot ?? opt.flexibleTimeSlot }, { tone: 'pick', reason: s.reason ?? null, ...(s.action ? { action: s.action } : {}) }))
   }
-  const flagsLine = suggestions.flags.length > 0 ? suggestions.flags.join(' · ') : null
-  const byKey = new Map(options.map(o => [optionKey(o), o]))
-  const rows: DepartureRow[] = []
-  for (const s of suggestions.suggestions) {
-    if (PICKER_EXCLUDED_TYPES.has(s.type)) continue
-    const baseOpt = byKey.get(optionKey(s))
-    if (!baseOpt) continue
-    const tone: DepartureTone = s.blocked ? 'ember' : s.priority === 'suggested' ? 'pick' : s.priority === 'caution' ? 'ember' : 'plain'
-    // A pull forward or a swap always says what it does, even on a plain row.
-    const says = s.action != null && s.action.kind !== 'add'
-    rows.push({
-      type: s.type,
-      label: s.label,
-      timeSlot: s.timeSlot,
-      runCategory: s.runCategory,
-      flexibleTimeSlot: s.flexibleTimeSlot ?? baseOpt.flexibleTimeSlot ?? false,
-      key: optionKey(s),
-      icon: sessionIconFor(s.type, s.runCategory),
-      reason: tone === 'plain' && !says ? null : (s.reason ?? null),
-      tone,
-      ...(s.blocked ? { blocked: true } : {}),
-      ...(s.action ? { action: s.action } : {}),
-    })
+  const picked = new Set(picks.map(p => p.key))
+  for (const opt of base) {
+    if (picked.has(optionKey(opt))) continue
+    const s = byKey.get(optionKey(opt))
+    rest.push(plainRow(s ? { ...opt, label: s.label, timeSlot: s.timeSlot, flexibleTimeSlot: s.flexibleTimeSlot ?? opt.flexibleTimeSlot } : opt, s?.action ? { action: s.action } : {}))
   }
-  if (rows.length === 0) {
-    const rest = options.map(plainRow)
-    return { picks: [], rest, flagsLine, labelLen: padFor(rest) }
-  }
-  const picks = rows.filter(r => r.tone === 'pick')
-  // Refused rows sit last: they say why, but can't be picked.
-  const rest = [...rows.filter(r => r.tone !== 'pick' && !r.blocked), ...rows.filter(r => r.blocked)]
-  return { picks, rest, flagsLine, labelLen: padFor(rows) }
+  return { picks, rest, labelLen: padFor([...picks, ...rest]) }
 }
 
 export function flipSlot(slot: Slot): Slot {
@@ -144,96 +113,42 @@ export function selectionFor(row: DepartureRow, slot: Slot): SessionOption {
   return { type: row.type, label: row.label, timeSlot, runCategory: row.runCategory, ...(action ? { action } : {}) }
 }
 
-// ─── Replace signpost: the coach's three roads ───────────────
+// ─── Optional reason tiles (page 56 items 1-3) ───────────────
 
-export const SIGNPOST_ROADS = 3
-
-export interface SignpostRoad {
-  suggestion: ReplaceSuggestion
-  icon: SessionIconKey
-  /** The coach's first choice is lit. */
-  lit: boolean
+export interface ReasonTile {
+  /** The code the server receives. */
+  value: string
+  /** The words on the tile's flap. */
+  label: string
 }
 
-/** Only the coach's top 3 go on the post (MT Class never), the first one lit. */
-export function signpostRoads(suggestions: ReadonlyArray<ReplaceSuggestion> | null | undefined): SignpostRoad[] {
-  return (suggestions ?? [])
-    .filter(s => !PICKER_EXCLUDED_TYPES.has(s.type))
-    .slice(0, SIGNPOST_ROADS)
-    .map((s, i) => ({ suggestion: s, icon: sessionIconFor(s.type, s.runCategory), lit: i === 0 }))
-}
+/** On REPLACE: the six real reasons plus ROUGH DAY, first. */
+export const REPLACE_REASONS: ReadonlyArray<ReasonTile> = [
+  { value: 'rough_day', label: 'ROUGH DAY' },
+  { value: 'too_sore', label: 'TOO SORE' },
+  { value: 'low_sleep', label: 'LOW ON SLEEP' },
+  { value: 'schedule', label: 'SHORT ON TIME' },
+  { value: 'low_drive', label: 'NOT FEELING IT' },
+  { value: 'illness', label: 'BODY SIGNAL' },
+  { value: 'variety', label: 'CHANGING IT UP' },
+]
 
-// ─── Why skip: the numbered reason board ─────────────────────
-
-export type SkipReasonValue =
-  | 'too_sore'
-  | 'tired'
-  | 'injury'
-  | 'schedule'
-  | 'sick'
-  | 'low_drive'
-  | 'other'
-
-/** The codes the server receives (unchanged), and the words on each row. */
-export const SKIP_REASONS: ReadonlyArray<{ value: SkipReasonValue; label: string }> = [
-  { value: 'too_sore', label: 'Sore' },
-  { value: 'tired', label: 'Tired' },
-  { value: 'injury', label: 'Injury / pain' },
-  { value: 'schedule', label: 'Time' },
-  { value: 'sick', label: 'Sick' },
-  { value: 'low_drive', label: 'Low motivation' },
-  { value: 'other', label: 'Other' },
+/** On SKIP: the skip reasons plus ROUGH DAY, first. INJURY / PAIN opens the seven places. */
+export const SKIP_REASONS: ReadonlyArray<ReasonTile> = [
+  { value: 'rough_day', label: 'ROUGH DAY' },
+  { value: 'too_sore', label: 'SORE' },
+  { value: 'tired', label: 'TIRED' },
+  { value: 'injury', label: 'INJURY / PAIN' },
+  { value: 'schedule', label: 'TIME' },
+  { value: 'sick', label: 'SICK' },
+  { value: 'low_drive', label: 'LOW MOTIVATION' },
+  { value: 'other', label: 'OTHER' },
 ]
 
 /** The seven real places (plain list, no body map). Sent as written here. */
 export const SKIP_PLACES: ReadonlyArray<string> = ['Lower back', 'Knee', 'Hip', 'Shoulder', 'Ankle', 'Neck', 'Other']
 
-export interface SkipReasonCommit {
-  reason: SkipReasonValue
-  detail: string | null
-}
-
-/** Does this choice still need a few words? (Other, or Injury at Other.) */
-export function skipNeedsWords(reason: SkipReasonValue | null, place: string | null): boolean {
-  return reason === 'other' || (reason === 'injury' && place === 'Other')
-}
-
-/**
- * The commit for a complete choice, or null while it isn't complete
- * (COMMIT stays off). Injury needs a place; Other (and Injury at Other)
- * needs a few words. The detail is exactly what the app sent before.
- */
-export function skipCommit(reason: SkipReasonValue | null, place: string | null, words: string): SkipReasonCommit | null {
-  if (!reason) return null
-  const text = words.trim()
-  if (reason === 'injury') {
-    if (!place) return null
-    if (place === 'Other') return text ? { reason, detail: text } : null
-    return { reason, detail: place }
-  }
-  if (reason === 'other') return text ? { reason, detail: text } : null
-  return { reason, detail: null }
-}
-
-/** Two-digit departures numbering: 01, 02 … */
-export function boardNumber(i: number): string {
-  return String(i + 1).padStart(2, '0')
-}
-
-// ─── Why swap ────────────────────────────────────────────────
-
-/** The six real reasons. The label is what the server receives. */
-export const REPLACE_REASONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: 'too_sore', label: 'Too sore' },
-  { value: 'low_sleep', label: 'Low on sleep' },
-  { value: 'schedule', label: 'Short on time' },
-  { value: 'low_drive', label: 'Not feeling it' },
-  { value: 'illness', label: 'Body signal' },
-  { value: 'variety', label: 'Changing it up' },
-]
-
-/** What ReplaceReasonSheet's onCommit receives: the label, and the fast path for "Changing it up". */
-export function replaceCommit(value: string): { reason: string; fastPath: boolean } {
-  const found = REPLACE_REASONS.find(r => r.value === value)
-  return { reason: found?.label ?? value, fastPath: value === 'variety' }
+/** One tap lights a tile; a tap on the lit one clears it. */
+export function toggleTile(current: string | null, value: string): string | null {
+  return current === value ? null : value
 }

@@ -1,63 +1,33 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 
-import { Board, FlapLabel, glowRow } from '@/design'
+import { Board, FlapLabel } from '@/design'
+import type { ReadinessLineView } from './readinessLine'
 
 import './blockZero.css'
+import '@/features/coach/coach.css'
 
 /**
- * The Morning Report, collapsed on Today (page 17, "Today · the day"): one
- * row, "Morning Report" and a LOGGED flap. Tap it to edit (the cards open on
- * the first question). Before today's check-in the same row reads CHECK IN
- * on a gold flap (page 45).
+ * The Morning Report on Today (page 17; page 56 item 14): one row,
+ * "Morning Report" and a flap. Before today's check-in it reads CHECK IN
+ * (gold) and a tap opens the cards. After it: LOGGED (teal) and the app's
+ * own readiness line under the row ("Good to go." / "Easing today. Sleep off
+ * trend."); a tap shows the why. The LOGGED flap itself opens the cards to edit.
  */
-export function MorningReportRow({ logged, onOpen }: { logged: boolean; onOpen: () => void }) {
+export function MorningReportRow({ logged, readiness, onOpen }: { logged: boolean; readiness: ReadinessLineView | null; onOpen: () => void }) {
+  const [why, setWhy] = useState(false)
+  const line = logged ? readiness : null
   return (
-    <Board className="td-mr" onClick={onOpen}>
-      <div className="td-mr-row" aria-label={logged ? 'Morning Report, logged. Tap to edit.' : 'Morning Report, not logged yet. Tap to check in.'}>
+    <Board className="td-mr" onClick={line ? () => setWhy(w => !w) : onOpen}>
+      <div className="td-mr-row" aria-label={logged ? `Morning Report, logged. ${line?.text ?? ''} Tap for why.` : 'Morning Report, not logged yet. Tap to check in.'}>
         <span className="wm-label td-mr-grow">Morning Report</span>
-        <FlapLabel text={logged ? 'LOGGED' : 'CHECK IN'} size="xs" tone={logged ? 'teal' : 'gold'} animate={false} />
+        {logged ? (
+          <button type="button" className="td-mr-flap" aria-label="Edit the Morning Report" onClick={e => { e.stopPropagation(); onOpen() }}>
+            <FlapLabel text="LOGGED" size="xs" tone="teal" animate={false} />
+          </button>
+        ) : <FlapLabel text="CHECK IN" size="xs" tone="gold" animate={false} />}
       </div>
+      {line && <p className={`rd${line.tone === 'bad' ? ' is-bad' : ''}`}>{line.text}</p>}
+      {line && why && <p className="rwhy">{line.why}</p>}
     </Board>
-  )
-}
-
-export interface ClassTonightView {
-  added: boolean
-  /** How the day rebalanced (the server's line, stored on the class). */
-  line: { lead: string; rest: string } | null
-  /** Adds the class and rebalances the day. Resolves with the refusal line, or null when added. */
-  onAdd: () => Promise<string | null>
-}
-
-/**
- * + CLASS TONIGHT on the Coach board (page 45, at page 13's place): a small
- * chip by the readiness line. Tapped, it turns ✓ CLASS TONIGHT (teal) and the
- * Coach line above it says how the day rebalanced. A refusal glows the chip
- * clay with its line under it.
- */
-export function ClassTonightChip({ added, onAdd }: Pick<ClassTonightView, 'added' | 'onAdd'>) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [busy, setBusy] = useState(false)
-  const [refusal, setRefusal] = useState<string | null>(null)
-  return (
-    <div ref={ref} className="bz-class">
-      <button
-        type="button"
-        className="bz-chip"
-        aria-label={added ? 'Class tonight, added.' : 'Add a class tonight.'}
-        disabled={added || busy}
-        onClick={async () => {
-          setBusy(true)
-          setRefusal(null)
-          const refused = await onAdd()
-          setBusy(false)
-          setRefusal(refused)
-          glowRow(ref.current, refused ? 'bad' : 'good')
-        }}
-      >
-        <FlapLabel text={added ? '✓ CLASS TONIGHT' : '+ CLASS TONIGHT'} size="xs" tone={added ? 'teal' : 'gold'} />
-      </button>
-      {refusal && <p className="wm-row-note" role="alert">{refusal}</p>}
-    </div>
   )
 }

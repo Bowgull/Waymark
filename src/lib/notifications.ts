@@ -115,13 +115,14 @@ interface AlarmPulse {
 }
 
 /**
- * The first pulse with the coach's line ("2 changes, 1 question") when there
- * is one. No push on a free Apple account: the line is whatever was pending
- * when the app was last opened. Pure.
+ * The first pulse with the coach's one quiet line when there is one (page 56:
+ * "STRENGTH B IS 2×8 TODAY. TAP TO SEE."). No push on a free Apple account:
+ * the line names what was known when the app was last opened. Pure.
  */
 export function withCoachLine(body: string, coachLine: string | null | undefined): string {
   if (!coachLine) return body
-  return `${body} ${coachLine.toUpperCase()}.`
+  const line = coachLine.trim().toUpperCase()
+  return `${body} ${/[.!?]$/.test(line) ? line : `${line}.`}`
 }
 
 function buildMorningSequence(baseTimeStr: string, coachLine?: string | null): AlarmPulse[] {

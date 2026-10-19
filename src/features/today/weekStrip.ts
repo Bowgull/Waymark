@@ -1,7 +1,8 @@
 // Today's week strip (page 35 #5, A: the Program day tiles, small, under the
-// header) and the day states that pick what Today shows (page 43). Pure.
+// header, with the page 56 runes at the tile's foot) and the day states that pick what Today shows (page 43). Pure.
 
 import { sessionIconFor, type SessionIconKey } from '@/design/sessionIconKeys'
+import type { RuneState } from '../../lib/coach/changes'
 
 export interface StripSession {
   id: string
@@ -27,6 +28,8 @@ export interface StripDay {
   /** A prepared week with nothing on this day: REST. */
   rest: boolean
   icons: Array<{ key: SessionIconKey; state: StripIconState; id: string }>
+  /** Page 56: Dagaz (the coach changed this day) or Nauthiz (a missed session), new or seen. */
+  rune: RuneState | null
 }
 
 const LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -51,7 +54,7 @@ export function runCategoryOf(s: Pick<StripSession, 'type' | 'notes'>): string |
  * each tile. `prepared` = the week has a plan with sessions in it, so an empty
  * day is a planned REST, not a day nobody prepared.
  */
-export function weekStripDays(sessions: StripSession[], mondayEpoch: number, todayEpoch: number): StripDay[] {
+export function weekStripDays(sessions: StripSession[], mondayEpoch: number, todayEpoch: number, runeOf: (epochDay: number) => RuneState | null = () => null): StripDay[] {
   const prepared = sessions.length > 0
   return Array.from({ length: 7 }, (_, i) => {
     const day = mondayEpoch + i
@@ -67,6 +70,7 @@ export function weekStripDays(sessions: StripSession[], mondayEpoch: number, tod
       isToday: day === todayEpoch,
       rest: prepared && list.length === 0,
       icons: list.map(s => ({ key: sessionIconFor(s.type, runCategoryOf(s)), state: iconState(s.status), id: s.id })),
+      rune: runeOf(day),
     }
   })
 }
@@ -132,40 +136,4 @@ const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 /** The header's date flap: "SAT 18 OCT". */
 export function dateFlap(d: Date): string {
   return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`
-}
-
-/** The Coach board's count: "2 changes · 1 question". */
-export function coachCount(changes: number, questions: number): string {
-  const p = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
-  return [changes > 0 ? p(changes, 'change') : null, questions > 0 ? p(questions, 'question') : null].filter(Boolean).join(' · ')
-}
-
-/**
- * A line's bold lead (page 36). 'sentence': the first sentence ("Lighter
- * week.") and the rest after a space. 'colon': the words before a colon
- * ("Strength C eased") and the rest from the colon on. No lead: rest is ''.
- */
-export function splitLead(line: string, by: 'sentence' | 'colon'): { lead: string; rest: string } {
-  if (by === 'sentence') {
-    const cut = line.indexOf('. ')
-    return cut > 0 ? { lead: line.slice(0, cut + 1), rest: line.slice(cut + 2) } : { lead: line, rest: '' }
-  }
-  const cut = line.indexOf(': ')
-  return cut > 0 && cut <= 40 ? { lead: line.slice(0, cut), rest: line.slice(cut) } : { lead: line, rest: '' }
-}
-
-/**
- * The why line, shorter, for the first line of Today's Coach board (page 36:
- * "Lighter week. Two short nights and a sore Thursday."): the first two
- * sentences, the second cut before its ", so ..." consequence.
- */
-export function shortWhy(why: string | null): string | null {
-  if (!why) return null
-  const sentences = why.split(/(?<=\.)\s+/).filter(Boolean)
-  const head = sentences.slice(0, 2)
-  if (head.length === 2) {
-    const so = head[1].search(/,\s+so\s/i)
-    if (so > 0) head[1] = `${head[1].slice(0, so)}.`
-  }
-  return head.join(' ')
 }

@@ -63,6 +63,7 @@ import type { StrengthSection } from './strengthMicrocopy'
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 import { endLiveActivity, endAllLiveActivities } from '@/lib/liveActivity'
+import { coachLine } from '@/lib/coachLine'
 
 // ─── Shared types ──────────────────────────────────────────────
 
@@ -907,20 +908,24 @@ export function WorkoutPage() {
       clearResume(resumeStorage(), id)
       storageRemoveItem(roundSecsKey(id))
       void cancelAllCues()
-      // Let the Live Activity show a ✓ completion frame for 4s before it
-      // dismisses itself from the lock screen.
-      const now = Date.now()
-      void endLiveActivity(
-        {
-          phase: 'complete',
-          label: 'Session Complete',
-          startedAt: now,
-          endsAt: now,
-          isPaused: false,
-          completeMessage: 'Session complete',
-        },
-        4000,
-      )
+      // Let the Live Activity show its finish card for 4s before it dismisses
+      // itself from the lock screen. Its one line names what the coach moved
+      // around tonight's session (page 56 item 12), in the existing detail field.
+      void coachLine('finish').then(line => {
+        const now = Date.now()
+        return endLiveActivity(
+          {
+            phase: 'complete',
+            label: 'Session Complete',
+            startedAt: now,
+            endsAt: now,
+            isPaused: false,
+            completeMessage: line ?? 'Session complete',
+            ...(line ? { detail: line } : {}),
+          },
+          4000,
+        )
+      })
       setMoment(momentLine(sessionLabel ?? SESSION_ICON_NAME[sessionIconFor(sessionType ?? 'strength', runCategory)], rpe))
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)

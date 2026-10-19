@@ -1,8 +1,8 @@
 // The readiness line (Block Zero Phase C, direction 5): one line from
-// GET /api/readiness/today; tap it to see why. On Today it is a line of the
-// Coach board (page 36), written like the why line: the bold lead, then the
-// rest ("**Easing today.** Soreness off trend."). The lantern dims on eased
-// days (the world). Pure.
+// GET /api/readiness/today; tap it to see why. On Today it sits on the Morning
+// Report row (page 56 item 14): LOGGED, then "Good to go." or "Easing today.
+// Sleep off trend."; a tap shows the why. The lantern dims on eased days (the
+// world). Pure.
 
 export interface ReadinessItemIn {
   item: string

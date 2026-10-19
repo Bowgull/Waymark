@@ -3,15 +3,13 @@ import assert from 'node:assert/strict'
 import { cycleWeeks, dayStrip, readWeekAnalysis, splitWhy, weekDays, weekForDay, worldWeekPosts } from '../program/weekModel'
 import {
   MINUS,
-  askDay,
-  askRequest,
   dayRowState,
   doneHeadline,
-  missedAskChips,
   minutesLine,
   plannedRowMinutes,
   roundDiffLines,
   rowDetail,
+  runWalkDetail,
   shortLift,
   strengthWeekLine,
   topLiftsLine,
@@ -19,7 +17,6 @@ import {
   runDiffLines,
   sessionDisplayName,
   strengthDiffLines,
-  type AdjustmentLike,
   type DayBoardSession,
   type WorkoutExercise,
 } from './rowState'
@@ -28,7 +25,6 @@ const day = (iso: string) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 8640000
 const MON = day('2025-10-13')
 const THU = day('2025-10-16')
 const SAT = day('2025-10-18')
-const SUN = day('2025-10-19')
 
 function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   return { id: 's1', type: 'strength', status: 'planned', timeSlot: 'am', label: 'Strength C', scheduledDate: SAT, ...over }
@@ -70,78 +66,31 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
 {
   assert.equal(sessionDisplayName({ type: 'mobility', label: 'Foundation' }), 'Foundation')
   assert.equal(sessionDisplayName({ type: 'active_recovery', label: null }), 'Reset')
-  assert.equal(sessionDisplayName({ type: 'foundation_run', label: 'Run-Walk' }), 'Zone 2')
+  assert.equal(sessionDisplayName({ type: 'foundation_run', label: null }), 'Zone 2', 'an unlabelled easy run is Zone 2')
   assert.equal(sessionDisplayName({ type: 'running', notes: 'zone2' }), 'Zone 2')
   assert.equal(sessionDisplayName({ type: 'running', notes: 'progression', label: null }), 'Run')
   assert.equal(sessionDisplayName({ type: 'strength', label: null }), 'Strength')
-  assert.equal(rowDetail({ id: 'x', type: 'foundation_run', status: 'planned', timeSlot: 'pm', label: 'Run-Walk' }, 'todo', { planDetail: '35 min' }), 'run-walk 35 min', 'page 33: a label that says more reads with the plan ("run-walk 30 min")')
+  assert.equal(sessionDisplayName({ type: 'foundation_run', label: 'Run-Walk' }), 'Run-Walk', 'page 56: the run-walk reads RUN-WALK')
+  assert.equal(rowDetail({ id: 'x', type: 'foundation_run', status: 'planned', timeSlot: 'pm', label: 'Run-Walk' }, 'todo', { planDetail: '35 min' }), '35 min', 'its name already says run-walk')
 }
 
-// ─── changed rows: brass edge, "was X", one reason line ──
+// ─── changed rows: the small rune by the detail (page 56 item 7) ──
 {
-  const weekly = dayRowState(base(), {
-    planDetail: '1×8 RPE 6',
-    changes: [{ sessionId: 's1', reason: 'Eased: one set, 10% lighter. Soreness was 4 this morning.', was: '2×8', source: 'rules' }],
-  })
-  assert.equal(weekly.variant, 'changed')
-  assert.equal(weekly.detail, '1×8 RPE 6 · was 2×8')
-  assert.equal(weekly.reason, 'Eased: one set, 10% lighter. Soreness was 4 this morning.')
-  assert.equal(weekly.swipeable, true, 'a changed row is still a to-do')
-
-  const placement = dayRowState(base(), { changes: [{ sessionId: 's1', reason: 'moved', was: null, source: 'placement' }] })
-  assert.equal(placement.variant, 'todo', 'placement shuffles are not coach changes')
-
-  const auto: AdjustmentLike = { id: 'a1', adjustmentType: 'felt_hard', status: 'accepted', auto: 1, reason: 'Felt hard.', targetSessionId: 's1', detail: { note: 'Felt hard on Monday. One set less.', was: 'Planned sets and load' } }
-  const eased = dayRowState(base(), { adjustments: [auto] })
-  assert.equal(eased.reason, 'Felt hard on Monday. One set less.')
-  assert.equal(eased.was, 'Planned sets and load')
-
-  const moved = dayRowState(base({ adjustmentId: 'a2', contextJson: JSON.stringify({ movedFrom: { epochDay: THU, timeSlot: 'pm' } }) }), {
-    adjustments: [{ id: 'a2', adjustmentType: 'skip_reschedule', status: 'accepted', reason: 'Moved to Saturday after a skip.' }],
-  })
-  assert.equal(moved.reason, 'Moved to Saturday after a skip.')
-  assert.equal(moved.was, 'THU PM')
-
-  const fitIn = dayRowState(base({ adjustmentId: 'a3' }), {
-    adjustments: [{ id: 'a3', adjustmentType: 'missed_session', status: 'accepted', reason: 'x', detail: { missedDay: THU } }],
-  })
-  assert.equal(fitIn.reason, "Fit in after Thursday's was missed.")
-
-  const doneChanged = dayRowState(base({ status: 'completed' }), { changes: [{ sessionId: 's1', reason: 'r', was: '2×8' }] })
-  assert.equal(doneChanged.variant, 'done', 'a done row shows actuals, not the change')
-  assert.equal(doneChanged.reason, null)
+  const changed = dayRowState(base(), { planDetail: '2×8 RPE 7-8', rune: 'new' })
+  assert.equal(changed.rune, 'new', 'a row the coach changed carries the rune')
+  assert.equal(changed.detail, '2×8 RPE 7-8', 'no "was X" any more: the day\'s back says it')
+  assert.equal(changed.variant, 'todo', 'no brass edge variant: the rune replaces it')
+  assert.equal(changed.swipeable, true, 'a changed row is still a to-do')
+  assert.equal(dayRowState(base({ status: 'completed' }), { rune: 'seen' }).rune, 'seen', 'a done row keeps its dim rune')
+  assert.equal(dayRowState(base({ status: 'skipped' }), { rune: 'seen' }).rune, null, 'a skipped row shows none')
+  assert.equal(dayRowState(base({ status: 'missed' }), { rune: 'miss' }).rune, 'miss', 'a missed session: Nauthiz')
+  assert.equal(dayRowState(base()).rune, null)
 }
 
-// ─── the missed-session ask: chips in the row ──
+// ─── Program's run-walk detail (page 56): rounds, intervals, minutes ──
 {
-  const options = [
-    { kind: 'drop' as const },
-    { kind: 'move' as const, epochDay: SUN, date: '2025-10-19', timeSlot: 'am' as const },
-    { kind: 'swap' as const, type: 'foundation_run', label: 'Walk', epochDay: SAT, timeSlot: 'pm' as const },
-  ]
-  const chips = missedAskChips(options)
-  assert.deepEqual(chips.map(c => c.label), ['SUN AM', 'WALK SAT PM', 'DROP IT'], 'moves first, DROP IT last')
-  assert.deepEqual(chips[0].request, { kind: 'accept', option: 1 }, 'the option index is the server index')
-  assert.deepEqual(chips[1].request, { kind: 'accept', option: 2 })
-  assert.deepEqual(chips[2].request, { kind: 'reject' }, 'drop it lets it go')
-  assert.equal(chips[0].tone, 'gold')
-  assert.equal(chips[2].tone, 'ink')
-  assert.deepEqual(askRequest('adj', chips[0], '2025-10-18'), { path: '/api/adjustments/adj/accept', body: { option: 1, today: '2025-10-18' } })
-  assert.deepEqual(askRequest('adj', chips[2], '2025-10-18'), { path: '/api/adjustments/adj/reject', body: null })
-  assert.deepEqual(missedAskChips([]).map(c => c.label), ['DROP IT'])
-
-  const s = base({ status: 'missed', scheduledDate: THU, label: 'Strength B' })
-  const row = dayRowState(s, { adjustments: [{ id: 'q1', adjustmentType: 'missed_session', status: 'proposed', reason: 'x', targetSessionId: 's1', options }] })
-  assert.equal(row.variant, 'ask')
-  assert.equal(row.ask?.question, "You missed Thursday's Strength B. Fit it in?")
-  assert.equal(row.ask?.chips.length, 3)
-  assert.equal(row.swipeable, false)
-  const answered = dayRowState(s, { adjustments: [{ id: 'q1', adjustmentType: 'missed_session', status: 'rejected', reason: 'x', targetSessionId: 's1', options }] })
-  assert.equal(answered.ask, null, 'an answered ask is gone')
-
-  const days = weekDays(MON)
-  assert.equal(askDay(s, SAT, days), SAT, 'asks sit on today when today is in the week')
-  assert.equal(askDay(s, SAT + 7, days), THU, 'otherwise on the missed day')
+  assert.equal(runWalkDetail({ contextJson: null }, 4), '5 rounds · run 3:30, walk 1:00 · 28 min')
+  assert.equal(runWalkDetail({ contextJson: JSON.stringify({ coachEase: { kind: 'rounds', rounds: 4, reason: 'x' } }) }, 4), '4 rounds · run 3:30, walk 1:00 · 23 min', 'the coach\'s rounds')
 }
 
 // ─── done strength: bands, lifted values, chips ──

@@ -1,0 +1,101 @@
+/* The coach model (page 56, approved 2026-10-19), ported from the mockup:
+   the day runes, the day's back, the week log, the optional reason tiles,
+   the Morning Report's readiness line and the quiet lines. */
+
+/* ── the day runes: Dagaz (teal) = the coach changed this day; Nauthiz (ember) =
+   a missed session. --c is the colour; new = soft pulse, seen = dim and still. ── */
+.wm-rune.is-new, .wm-rune.is-seen { --c: 143, 212, 184; }
+.wm-rune.is-miss, .wm-rune.is-missseen { --c: 236, 146, 98; }
+.wm-rn { position: absolute; bottom: 4px; left: 50%; margin-left: -7.5px; width: 15px; height: 19px; pointer-events: none; }
+.wm-rmk { display: inline-block; flex: none; width: 10px; height: 13px; margin-right: 6px; }
+.wm-lrn { display: inline-block; flex: none; width: 9px; height: 12px; margin-right: 6px; vertical-align: -1px; }
+.wm-rune svg { width: 100%; height: 100%; display: block; overflow: visible; fill: none; stroke-linecap: square; stroke-linejoin: miter; }
+.wm-rune .groove { stroke: rgba(0, 0, 0, 0.65); stroke-width: 3.6; transform: translate(0.5px, 0.7px); }
+.wm-rune .cut { stroke: rgb(var(--c)); stroke-width: 2.2; }
+.wm-rune .chip { stroke: rgba(255, 255, 255, 0.35); stroke-width: 0.7; }
+.wm-rune.is-new svg, .wm-rune.is-miss svg { animation: wm-rpulse 3.4s ease-in-out infinite; }
+.wm-rune.is-seen .cut, .wm-rune.is-missseen .cut { stroke: rgba(var(--c), 0.5); }
+.wm-rune.is-seen .chip, .wm-rune.is-missseen .chip { stroke: rgba(255, 255, 255, 0.12); }
+@keyframes wm-rpulse {
+  0%, 100% { opacity: 0.75; filter: drop-shadow(0 0 1.5px rgba(var(--c), 0.55)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 4px rgba(var(--c), 0.95)) drop-shadow(0 0 9px rgba(var(--c), 0.45)); }
+}
+@media (prefers-reduced-motion: reduce) { .wm-rune svg { animation: none !important; } }
+
+/* a tile with a rune at its foot */
+.td-t7.has-rn, .pg-t7.has-rn { position: relative; padding-bottom: 28px; }
+.td-t7.is-open { box-shadow: inset 0 0 0 1px rgba(143, 212, 184, 0.55); }
+.td-t7.is-today.is-open { box-shadow: inset 0 0 0 2px #b8984a; }
+
+/* ── the day's back: opens in place under the strip, the way a day opens ── */
+.wm-backwrap { position: relative; }
+.wm-veil3 { position: fixed; inset: 0; z-index: 7; background: rgba(2, 8, 6, 0.6); }
+.wm-veil3.is-lite { background: rgba(2, 8, 6, 0.42); }
+.wm-tback {
+  position: absolute; left: 0; right: 0; top: calc(100% + 10px); z-index: 8;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px !important;
+  background-color: rgba(10, 16, 13, 0.95) !important;
+  box-shadow: inset 0 0 0 1px rgba(143, 212, 184, 0.4), 0 16px 40px rgba(0, 0, 0, 0.7) !important;
+  transform-origin: 50% 0; animation: wm-drop 0.38s cubic-bezier(0.2, 0.9, 0.3, 1.05) both;
+}
+.wm-tback.is-ember { box-shadow: inset 0 0 0 1px rgba(226, 140, 96, 0.5), 0 16px 40px rgba(0, 0, 0, 0.7) !important; }
+@keyframes wm-drop { 0% { transform: rotateX(-70deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .wm-tback { animation: none; } }
+.wm-tback .notch { position: absolute; top: -8px; width: 14px; height: 8px; clip-path: polygon(50% 0, 100% 100%, 0 100%); background: rgba(143, 212, 184, 0.5); }
+.wm-tback.is-ember .notch { background: rgba(226, 140, 96, 0.6); }
+.wm-tchange.is-ruled { border-top: 1px solid rgba(0, 0, 0, 0.55); padding-top: 10px; }
+.wm-tback .who, .wm-logb .who { font: 800 12px/1 var(--font-body); letter-spacing: 0.14em; color: rgba(240, 230, 192, 0.62); display: flex; align-items: center; }
+.wm-tback .who b, .wm-logb .who b { color: #9ee0c6; font-weight: 800; }
+.wm-tback .who b.e, .wm-logb .who b.e { color: #eea27a; }
+.wm-tback .who b.y, .wm-logb .who b.y { color: #e8c878; }
+.wm-tback .chx { display: flex; gap: 10px; align-items: center; }
+.wm-tback .chx .cx { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.wm-tback .ba2, .wm-logb .ba2 { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.wm-tback .ba2 .arr, .wm-logb .ba2 .arr { font: 900 15px var(--font-mono); color: #e8c878; }
+.wm-tback .ba2 .old, .wm-logb .ba2 .old { position: relative; display: inline-flex; }
+.wm-tback .ba2 .old .wm-cell, .wm-logb .ba2 .old .wm-cell { color: rgba(240, 230, 192, 0.42) !important; }
+.wm-tback .ba2 .old::after, .wm-logb .ba2 .old::after { content: ''; position: absolute; left: -2px; right: -2px; top: 50%; height: 2px; background: #c4623f; }
+.wm-tback .voice { margin: 0; font: 600 16px/1.4 var(--font-body); color: #e6efe9; }
+.wm-tback .voice.dim { font-size: 15px; color: #a9bdb3; font-weight: 500; }
+.wm-tback .uline { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.wm-tback .uline .wm-btn, .wm-logb .le .wm-btn { width: auto; min-height: 0; padding: 9px 12px; flex: none; }
+.wm-tback .until { font: 600 15px var(--font-body); color: rgba(240, 230, 192, 0.55); }
+.wm-tback .putb { display: flex; flex-direction: column; gap: 6px; }
+.wm-tback .putb p { margin: 0; }
+
+/* ── the week log ── */
+.wm-logb .lday { font: 800 12px var(--font-body); letter-spacing: 0.2em; color: #c9b27a; padding: 9px 0 1px; }
+.wm-logb .le { display: flex; gap: 9px; padding: 8px 0; border-top: 1px solid rgba(0, 0, 0, 0.55); }
+.wm-logb .le .wm-sicon { flex: none; margin-top: 16px; }
+.wm-logb .le .lt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.wm-logb .le .top2 { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.wm-logb .le small { font: 600 15px/1.35 var(--font-body); color: #c9d6cf; }
+.wm-logb .le .wm-btn { padding: 7px 10px; }
+.wm-logb .st { font: 700 12px var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: rgba(240, 230, 192, 0.5); flex: none; }
+.wm-logb .le.is-off .lt > :not(.top2) { opacity: 0.42; }
+
+/* ── optional reason tiles: one tap, no step of their own ── */
+.wm-whyl { font: 700 12px var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(240, 230, 192, 0.7); display: flex; justify-content: space-between; }
+.wm-whyl i { font-style: normal; letter-spacing: 0.06em; text-transform: none; font-weight: 600; font-size: 13px; color: rgba(240, 230, 192, 0.5); }
+.wm-rtiles { display: flex; flex-wrap: wrap; gap: 6px; }
+.wm-rtile { padding: 6px 7px; border: 0; border-radius: 8px; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.2); cursor: pointer; line-height: 0; -webkit-tap-highlight-color: transparent; }
+.wm-rtile.is-on { background: rgba(184, 152, 74, 0.2); box-shadow: inset 0 0 0 2px #b8984a; }
+.wm-repb .wm-whyl { margin-bottom: 6px; }
+.wm-repb .wm-rtiles { margin-bottom: 4px; }
+
+/* the open row on Today: SKIPPED, then the tiles */
+.td-skd { font: 800 12px var(--font-body); letter-spacing: 0.16em; color: #c08a70; flex: none; }
+.td-more2 { width: 100%; display: flex; flex-direction: column; gap: 8px; padding: 4px 0 2px 48px; box-sizing: border-box; }
+.td-row.is-openx { background: rgba(0, 0, 0, 0.18); border-radius: 8px; }
+
+/* ── Morning Report: LOGGED plus the readiness line; tap for the why ── */
+.td-mr .rd { margin: 6px 0 0; font: 600 16px/1.35 var(--font-body); color: #e6efe9; }
+.td-mr .rd.is-bad { color: #f0b493; }
+.td-mr .rwhy { margin: 4px 0 0; font: 500 15px/1.4 var(--font-body); color: #a9bdb3; }
+.td-mr .td-mr-flap { border: 0; background: none; padding: 0; cursor: pointer; line-height: 0; }
+
+/* ── the quiet lines ── */
+.td-addrow { display: flex; justify-content: center; margin-top: 6px; }
+.td-addq { border: 0; background: none; padding: 4px 8px; font: 600 15px var(--font-body); color: rgba(201, 178, 122, 0.8); cursor: pointer; }
+.pg-weekl { margin: 9px 2px 0; font: 600 15px/1.4 var(--font-body); color: #c9d6cf; text-align: left; }
+.pg-loglink { display: block; width: 100%; margin-top: 7px; border: 0; background: none; text-align: right; font: 600 15px var(--font-body); color: rgba(201, 178, 122, 0.85); cursor: pointer; padding: 2px 2px 0; }

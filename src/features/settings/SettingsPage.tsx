@@ -7,6 +7,8 @@ import { Capacitor } from '@capacitor/core'
 import { Board, FlapButton, FlapLabel, FlapSwitch } from '@/design'
 import { apiFetch } from '@/lib/api'
 import { scheduleAlarms } from '@/lib/notifications'
+import { coachLine, nextAlarmDay } from '@/lib/coachLine'
+import { getTodayISO } from '@/lib/dates'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
 import { NARUTO_ARC_NAMES, NARUTO_EPISODES, narutoArcForEp } from '@/lib/naruto'
 import { isHapticsEnabled, setHapticsEnabled, tapHaptic } from '@/lib/haptics'
@@ -247,7 +249,10 @@ export function SettingsPage() {
         })
         if (controller.signal.aborted) return
 
-        scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, { amEnabled, pmEnabled }).catch(() => {})
+        // The alarm keeps its one quiet line (page 56 item 12).
+        coachLine('morning', nextAlarmDay(getTodayISO(), amReminder))
+          .then(line => scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, { amEnabled, pmEnabled, coachLine: line }))
+          .catch(() => {})
 
         if (updated.cascade && updated.cascade.removed > 0) {
           const days = updated.cascade.freedDays?.join(', ') ?? ''

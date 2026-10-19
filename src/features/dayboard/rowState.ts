@@ -3,9 +3,9 @@
 //
 // - A row is a to-do, done, skipped or missed session. Only a to-do row
 //   swipes (REPLACE / SKIP); a done row shows what was actually done.
-// - A changed row (the coach eased, swapped or moved it) gets a brass edge,
-//   "was X" in its detail and one brass reason line.
-// - A missed session's ask sits in a row with flap chips (SUN AM / DROP IT).
+// - A row the coach changed carries the small rune by its detail (page 56
+//   item 7: Dagaz teal, Nauthiz ember for a missed session); it replaces
+//   page 36's brass edge and reason line. Tap the day for what changed.
 // - A done summary lists plan vs actual: lines that differ get a band, teal
 //   up or clay for a miss (heart rate over the Zone 2 cap is a miss), with a
 //   chip (+5, −1 rep, +7 min, +4 over cap). Plain lines stay plain.
@@ -18,6 +18,8 @@ import { getStrengthTemplate } from '../../lib/strengthTemplates'
 import { getStrengthWeekTarget } from '../../lib/blockZero/strength'
 import { estimatedMinutes } from '../../lib/coach/sessions'
 import { plannedStrengthMinutes } from '../../lib/plannedLength'
+import type { RuneState } from '../../lib/coach/changes'
+import { getRunWalkWeek, runWalkTotalSec } from '../../lib/blockZero/running'
 
 // ─── Inputs (the shapes the existing endpoints return) ─────────
 
@@ -53,39 +55,8 @@ export interface DayBoardSession {
   runSession?: RunActuals | null
 }
 
-/** One change from the week's prepared plan (weekly pass v2 `changes`). */
-export interface WeekChangeLike {
-  sessionId: string | null
-  reason: string
-  was?: string | null
-  now?: string | null
-  source?: string
-}
-
-/** A row of GET /api/adjustments?weekPlanId= (options and detail parsed by the server). */
-export interface AdjustmentLike {
-  id: string
-  adjustmentType: string
-  status: string
-  reason: string
-  sessionType?: string
-  action?: string
-  targetSessionId?: string | null
-  auto?: number | boolean | null
-  options?: unknown
-  detail?: Record<string, unknown> | null
-  createdAt?: number
-}
-
-/** MissedOption (src/lib/coach/missed.ts) as the server stores it. */
-export type MissedOptionLike =
-  | { kind: 'drop' }
-  | { kind: 'move'; epochDay: number; date?: string; timeSlot: 'am' | 'pm' }
-  | { kind: 'swap'; type: string; label: string; notes?: string | null; epochDay: number; date?: string; timeSlot: 'am' | 'pm' }
-
 // ─── Small helpers ─────────────────────────────────────────────
 
-const DAY3 = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 /** The minus sign on chips (−1 rep), not a hyphen. */
 export const MINUS = '−'
@@ -120,6 +91,8 @@ export function iconFor(s: Pick<DayBoardSession, 'type' | 'notes'>): SessionIcon
 export function sessionDisplayName(s: Pick<DayBoardSession, 'type' | 'label' | 'notes'>): string {
   const label = s.label?.trim() || null
   if (s.type === 'strength') return label ?? 'Strength'
+  // page 56: Block Zero's run-walk reads RUN-WALK on its row.
+  if (s.type === 'foundation_run' && label && /run-walk/i.test(label)) return label
   const key = iconFor(s)
   if (key === 'run') return label ?? 'Run'
   return SESSION_ICON_NAME[key]
@@ -153,6 +126,7 @@ const SKIP_WORDS: Record<string, string> = {
   low_sleep: 'low on sleep',
   illness: 'body signal',
   variety: 'changing it up',
+  rough_day: 'rough day',
   other: 'other',
 }
 
@@ -166,50 +140,47 @@ function parseContext(raw: string | null | undefined): Record<string, unknown> {
   }
 }
 
-// ─── Row state ─────────────────────────────────────────────────
+function mmss(sec: number): string {
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+}
+
+/**
+ * Page 56's Program detail for a Block Zero run-walk: "4 rounds · run 3:30,
+ * walk 1:00 · 23 min", the coach's rounds when it eased the session.
+ */
+export function runWalkDetail(session: Pick<DayBoardSession, 'contextJson'>, weekNumber: number): string {
+  const w = getRunWalkWeek(weekNumber)
+  const ease = parseContext(session.contextJson).coachEase as { kind?: string; rounds?: number } | undefined
+  const rounds = ease?.kind === 'rounds' && typeof ease.rounds === 'number' ? ease.rounds : w.rounds
+  return `${rounds} rounds · run ${mmss(w.runSec)}, walk ${mmss(w.walkSec)} · ${Math.round(runWalkTotalSec({ ...w, rounds }) / 60)} min`
+}
+
+// ─── Row state ──
 
 export type RowStatus = 'todo' | 'done' | 'skipped' | 'missed'
-/** What the row looks like: an ask beats a change beats the plain status. */
-export type RowVariant = RowStatus | 'changed' | 'ask'
-
-export interface AskChip {
-  /** The flap word: SUN AM, WALK SAT PM, DROP IT. */
-  label: string
-  tone: 'gold' | 'ink'
-  /** What tapping it sends. */
-  request: { kind: 'accept'; option: number } | { kind: 'reject' }
-}
-
-export interface RowAsk {
-  adjustmentId: string
-  question: string
-  chips: AskChip[]
-}
+export type RowVariant = RowStatus
 
 export interface DayRowState {
   status: RowStatus
   variant: RowVariant
-  /** Only a to-do row swipes (REPLACE / SKIP); done rows show actuals instead. */
+  /** Only a to-do row swipes (REPLACE / SKIP); done rows show what was done instead. */
   swipeable: boolean
   /** Started but not finished: still a to-do. */
   live: boolean
   slot: 'am' | 'pm'
   icon: SessionIconKey
   name: string
-  /** One line under the name ("12 min · RPE 3", "1×8 RPE 6 · was 2×8"). */
+  /** One line under the name ("12 min · back and neck", "4 rounds · run 3:30, walk 1:00 · 23 min"). */
   detail: string
-  /** "was X" when the coach changed it. */
-  was: string | null
-  /** The brass reason line on a changed row. */
-  reason: string | null
-  ask: RowAsk | null
+  /** The rune by the detail when the coach changed this session (page 56 item 7). */
+  rune: RuneState | null
 }
 
 export interface RowContext {
-  changes?: ReadonlyArray<WeekChangeLike>
-  adjustments?: ReadonlyArray<AdjustmentLike>
-  /** The plan line for a to-do ("2×8 RPE 6-7", "~35 min"); the caller knows the template. */
+  /** The plan line for a to-do; the caller knows the template. */
   planDetail?: string | null
+  /** The coach change on this session, as a rune (GET /api/weeks/:monday/changes). */
+  rune?: RuneState | null
 }
 
 export function rowStatus(status: string): RowStatus {
@@ -219,73 +190,8 @@ export function rowStatus(status: string): RowStatus {
   return 'todo'
 }
 
-/** Why and what-it-was for a changed session, newest source first. */
-export function changeFor(session: DayBoardSession, ctx: RowContext): { reason: string; was: string | null } | null {
-  const adjustments = ctx.adjustments ?? []
-  // A small change the coach applied on its own (felt hard, an ease): auto = 1, accepted.
-  const auto = adjustments
-    .filter(a => a.targetSessionId === session.id && a.status === 'accepted' && (a.auto === 1 || a.auto === true))
-    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0]
-  if (auto) {
-    const note = typeof auto.detail?.note === 'string' ? auto.detail.note : null
-    const was = typeof auto.detail?.was === 'string' ? auto.detail.was : null
-    return { reason: note || auto.reason, was }
-  }
-  // The coach created or moved this session through an accepted adjustment.
-  if (session.adjustmentId) {
-    const adj = adjustments.find(a => a.id === session.adjustmentId && a.status === 'accepted')
-    if (adj) {
-      if (adj.adjustmentType === 'missed_session') {
-        const missedDay = typeof adj.detail?.missedDay === 'number' ? adj.detail.missedDay : null
-        return { reason: missedDay != null ? `Fit in after ${DAY_LONG[dowOfEpochDay(missedDay)]}'s was missed.` : 'Fit in after a missed session.', was: null }
-      }
-      const movedFrom = parseContext(session.contextJson).movedFrom as { epochDay?: number; timeSlot?: string } | undefined
-      const was = movedFrom?.epochDay != null ? `${DAY3[dowOfEpochDay(movedFrom.epochDay)]} ${slotOf(movedFrom.timeSlot).toUpperCase()}` : null
-      return { reason: adj.reason, was }
-    }
-  }
-  // The week's prepared changes (weekly pass v2), placement shuffles left out.
-  const change = (ctx.changes ?? []).find(c => c.sessionId === session.id && c.source !== 'placement')
-  if (change) return { reason: change.reason, was: change.was ?? null }
-  return null
-}
-
-/** The open missed-session ask about this session, as chips. */
-export function askFor(session: DayBoardSession, ctx: RowContext): RowAsk | null {
-  const adj = (ctx.adjustments ?? []).find(a => a.adjustmentType === 'missed_session' && a.status === 'proposed' && a.targetSessionId === session.id)
-  if (!adj) return null
-  const day = session.scheduledDate != null ? DAY_LONG[dowOfEpochDay(session.scheduledDate)] : null
-  return {
-    adjustmentId: adj.id,
-    question: day ? `You missed ${day}'s ${sessionDisplayName(session)}. Fit it in?` : `You missed ${sessionDisplayName(session)}. Fit it in?`,
-    chips: missedAskChips(Array.isArray(adj.options) ? (adj.options as MissedOptionLike[]) : []),
-  }
-}
-
-/**
- * MissedOption -> chips: a move is its day and slot (SUN AM), a swap names
- * the easier session too (WALK SAT PM), and DROP IT comes last (it rejects:
- * the server's "let it go"). Each accept chip carries its option index.
- */
-export function missedAskChips(options: ReadonlyArray<MissedOptionLike>): AskChip[] {
-  const chips: AskChip[] = []
-  options.forEach((o, i) => {
-    if (o.kind === 'move') chips.push({ label: `${DAY3[dowOfEpochDay(o.epochDay)]} ${o.timeSlot.toUpperCase()}`, tone: 'gold', request: { kind: 'accept', option: i } })
-    else if (o.kind === 'swap') chips.push({ label: `${o.label.toUpperCase()} ${DAY3[dowOfEpochDay(o.epochDay)]} ${o.timeSlot.toUpperCase()}`, tone: 'gold', request: { kind: 'accept', option: i } })
-  })
-  chips.push({ label: 'DROP IT', tone: 'ink', request: { kind: 'reject' } })
-  return chips
-}
-
-/** The request a chip sends: POST /api/adjustments/:id/accept {option, today}, or /reject. */
-export function askRequest(adjustmentId: string, chip: AskChip, todayIso: string): { path: string; body: Record<string, unknown> | null } {
-  return chip.request.kind === 'accept'
-    ? { path: `/api/adjustments/${adjustmentId}/accept`, body: { option: chip.request.option, today: todayIso } }
-    : { path: `/api/adjustments/${adjustmentId}/reject`, body: null }
-}
-
 /** The one line under the name. */
-export function rowDetail(session: DayBoardSession, status: RowStatus, opts: { planDetail?: string | null; was?: string | null } = {}): string {
+export function rowDetail(session: DayBoardSession, status: RowStatus, opts: { planDetail?: string | null } = {}): string {
   const parts: string[] = []
   const extra = labelDetail(session)
   // page 33 / 36: the label word and the plan read as one ("run-walk 30 min"), then "· was X"
@@ -306,38 +212,22 @@ export function rowDetail(session: DayBoardSession, status: RowStatus, opts: { p
     return day ? `missed ${day}` : 'missed'
   }
   if (plan) parts.push(plan)
-  if (opts.was) parts.push(`was ${opts.was}`)
   return parts.join(' · ')
 }
 
 export function dayRowState(session: DayBoardSession, ctx: RowContext = {}): DayRowState {
   const status = rowStatus(session.status)
-  const ask = status === 'missed' ? askFor(session, ctx) : null
-  const change = status === 'todo' || status === 'done' ? changeFor(session, ctx) : null
-  const was = status === 'todo' ? change?.was ?? null : null
-  const variant: RowVariant = ask ? 'ask' : change && status === 'todo' ? 'changed' : status
   return {
     status,
-    variant,
+    variant: status,
     swipeable: status === 'todo',
     live: session.status === 'in_progress',
     slot: slotOf(session.timeSlot),
     icon: iconFor(session),
     name: sessionDisplayName(session),
-    detail: rowDetail(session, status, { planDetail: ctx.planDetail, was }),
-    was,
-    reason: change && status === 'todo' ? change.reason : null,
-    ask,
+    detail: rowDetail(session, status, { planDetail: ctx.planDetail }),
+    rune: status === 'skipped' ? null : ctx.rune ?? null,
   }
-}
-
-/**
- * Where each open ask shows: on today's board when today is in the shown
- * week (the athlete answers it today), else on the missed session's own day.
- */
-export function askDay(session: Pick<DayBoardSession, 'scheduledDate'>, todayEpochDay: number, weekDays: ReadonlyArray<number>): number | null {
-  if (weekDays.includes(todayEpochDay)) return todayEpochDay
-  return session.scheduledDate ?? null
 }
 
 // ─── Done summary: plan vs actual ──────────────────────────────

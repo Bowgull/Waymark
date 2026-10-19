@@ -12,15 +12,20 @@ import { setWorldWeeks } from '@/world/worldStore'
 
 import { BlockZeroExtras } from './BlockZeroExtras'
 import { WeekView } from './WeekView'
-import { cycleWeeks, readWeekAnalysis, splitWhy, weekDays, weekForDay, weekState, worldWeekPosts } from './weekModel'
+import { cycleWeeks, readWeekAnalysis, weekDays, weekForDay, weekState, worldWeekPosts } from './weekModel'
+import { WeekLog } from '@/features/coach/WeekLog'
+import { weekChangesLine } from '@/features/coach/changeView'
+import { useWeekChanges } from '@/features/coach/useWeekChanges'
 import './program.css'
 import '@/features/dayboard/dayboard.css'
+import '@/features/coach/coach.css'
 
 // Program (page 33, approved): the road with the week wayposts is the world
 // behind this page (top band left clear), then boards on glass: the week
-// nav with six week flap tiles and the "why this week" line (page 36), the
-// seven-day strip and the open day board (WeekView). Weeks are prepared
-// and simply shown: no draft, no approval step.
+// nav with six week flap tiles, the week line in plain words and one quiet
+// "N changes ›" line that opens the week log (page 56), the seven-day strip
+// with its runes and the open day board (WeekView). Weeks are prepared and
+// simply shown: no draft, no approval step.
 
 interface Block {
   id: string
@@ -124,8 +129,14 @@ export function ProgramPage() {
   const [confirmFreshStart, setConfirmFreshStart] = useState(false)
   const [openDay, setOpenDay] = useState<number | null>(dayParam)
   const [pastDone, setPastDone] = useState<{ key: string; counts: Map<number, number> } | null>(null)
+  const [logOpen, setLogOpen] = useState(false)
+  const [changesVersion, setChangesVersion] = useState(0)
 
   const todayEpochDay = isoToEpochDay(getTodayISO())
+  // The viewed week's changes and runes (page 56): its Monday from its sessions, else the calendar.
+  const weekFirstDay = (weekData?.sessions ?? []).reduce<number | null>((m, s) => (s.scheduledDate != null && (m == null || s.scheduledDate < m) ? s.scheduledDate : m), null)
+  const changesMonday = block && weekData ? (weekFirstDay != null ? mondayOf(weekFirstDay) : mondayOf(todayEpochDay) + (weekNumber - currentWeekOf(block)) * 7) : null
+  const { week: changes, markSeen, undo, refresh: refreshChanges } = useWeekChanges(changesMonday, changesVersion)
 
   const loadWeek = useCallback(async (b: Block, wn: number) => {
     let wd = await apiFetch<WeekData | null>(`/api/weeks/current?blockId=${b.id}&weekNumber=${wn}`)
@@ -423,7 +434,7 @@ export function ProgramPage() {
     ? `${weekInfo} · week ${weekNumber} of ${block.totalWeeks}`
     : `Fighter · ${weekInfo} · block week ${blockWeek} of 6`
   const read = readWeekAnalysis(weekData?.week.analysisJson, weekData?.week.whyLine)
-  const why = read.why ? splitWhy(read.why) : null
+  const changesLine = weekChangesLine(changes)
 
   // Monday to Sunday of the viewed week: from its sessions, else the calendar.
   const firstDay = viewedSessions.reduce<number | null>((m, s) => (s.scheduledDate != null && (m == null || s.scheduledDate < m) ? s.scheduledDate : m), null)
@@ -460,9 +471,9 @@ export function ProgramPage() {
             )
           })}
         </div>
-        {why && (
-          <p className="pg-why">{why.lead && <b>{why.lead}</b>}{why.lead ? ' ' : ''}{why.rest}</p>
-        )}
+        {/* page 56 item 16: the week line, plain text, no frame; then one quiet line that opens the week log */}
+        {read.why && <p className="pg-weekl">{read.why}</p>}
+        {changesLine && <button type="button" className="pg-loglink" onClick={() => setLogOpen(true)}>{changesLine}</button>}
       </div>
 
       {isBlockZero && (
@@ -486,8 +497,14 @@ export function ProgramPage() {
         <WeekView
           key={weekData.week.id}
           sessions={viewedSessions}
-          weekPlanId={weekData.week.id}
-          changes={read.changes}
+          changes={changes}
+          markSeen={markSeen}
+          onUndo={async id => {
+            const ok = await undo(id)
+            if (ok && block) await loadWeek(block, weekNumber).catch(() => {})
+            return ok
+          }}
+          onChanged={() => setChangesVersion(v => v + 1)}
           weekNumber={weekNumber}
           days={days}
           todayEpochDay={todayEpochDay}
@@ -499,6 +516,20 @@ export function ProgramPage() {
           onSessionAdded={session => {
             setWeekData(prev => prev ? { ...prev, sessions: [...prev.sessions.filter(s => s.id !== session.id), session] } : null)
           }}
+        />
+      )}
+
+      {logOpen && (
+        <WeekLog
+          week={changes}
+          weekNumber={weekNumber}
+          onUndo={async id => {
+            const ok = await undo(id)
+            if (ok && block) await loadWeek(block, weekNumber).catch(() => {})
+            refreshChanges()
+            return ok
+          }}
+          onClose={() => setLogOpen(false)}
         />
       )}
 

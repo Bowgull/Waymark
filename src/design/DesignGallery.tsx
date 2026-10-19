@@ -125,8 +125,8 @@ function Gallery({ screen }: { screen: string }) {
     case 'today':
       return (
         <Phone>
-          <MorningReportRow logged onOpen={noop} />
-          <MorningReportRow logged={false} onOpen={noop} />
+          <MorningReportRow logged readiness={{ tone: 'good', text: 'Good to go.', lead: 'Good to go.', rest: '', why: 'Everything is near your 7-day average.' }} onOpen={noop} />
+          <MorningReportRow logged={false} readiness={null} onOpen={noop} />
         </Phone>
       )
     case 'effort':
