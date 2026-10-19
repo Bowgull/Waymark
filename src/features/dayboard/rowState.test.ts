@@ -218,6 +218,8 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   assert.equal(getWeekLabel(2, 'block_zero'), 'Block Zero · 2×8, RPE 6-7')
   assert.equal(shortLift('Front Squat'), 'Front squat')
   assert.equal(shortLift('Romanian Deadlift'), 'RDL')
+  assert.equal(shortLift('Bench Press'), 'Bench press', 'm14: one case for every lift')
+  assert.equal(shortLift('DB Bench Press'), 'DB bench press')
   const lifts: WorkoutExercise[] = [
     { exerciseId: 'sq', section: 'main', name: 'Front Squat', prescription: { prescribedWeightKg: 61.2, setsReps: '2×8' } },
     { exerciseId: 'rdl', section: 'main', name: 'Romanian Deadlift', prescription: { prescribedWeightKg: 52.2, setsReps: '2×8' } },
@@ -228,7 +230,12 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   assert.equal(zone2PlanLine('Run-walk', 142, 35), 'Easy, conversational pace. Heart rate under 142, nasal breathing. Run-walk, 35 min.', 'page 33 Zone 2 line')
   const sat = 20379 // a Saturday (2025-10-18)
   const bz = plannedRowMinutes({ type: 'strength', label: 'Strength C', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null })
-  assert.ok(bz >= 30 && bz <= 75, `strength row minutes from its template: ${bz}`)
+  assert.ok(bz >= 30 && bz <= 90, `strength row minutes from its template: ${bz}`)
+  // m6 / X5 (E2E 2026-10-19b): sets count. Week 4 Strength B (Wed 21 Oct 2026) reads ~60 at 3x8, less when eased to 2x8.
+  const wedB = { type: 'strength', label: 'Strength B', scheduledDate: 20747, blockWeek: 4, blockType: 'block_zero', notes: null }
+  assert.equal(plannedRowMinutes(wedB), 60, 'X5: Strength B at 3x8 is ~60 min')
+  assert.ok(plannedRowMinutes({ ...wedB, contextJson: '{"coachEase":{"kind":"one_set"}}' }) < 60, 'm6: one set fewer, fewer minutes')
+  assert.ok(plannedRowMinutes({ ...wedB, blockWeek: 1 }) < 60, 'm6: 2x8 in week 1 is shorter than 3x8 in week 4')
   assert.equal(plannedRowMinutes({ type: 'mobility', label: 'Foundation', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null }), 12)
   // done headline: Today says "effort 7" (page 35), Program "RPE 7" (page 33)
   assert.equal(doneHeadline(52, 45, { rpe: 7, effortWord: 'effort' }).parts.map(p => p.text).join(''), 'Done · 52 min · effort 7')

@@ -26,6 +26,37 @@ export function plannedStrengthMinutes(sets: ReadonlyArray<PlannedSet>): number 
   return Math.max(1, Math.round(sec / 60))
 }
 
+/** A main lift's warm-up ramp before its first heavy set (lib/strengthLoads: up to 3 sets, 60 s apart). */
+export const ROW_RAMP_SETS = 3
+/** Moving between exercises: set up, load the bar, find the bench. */
+export const ROW_TRANSITION_SEC = 120
+
+/**
+ * The "~60min" on a strength row (m6): every set the template plans, one
+ * main set fewer on each main lift when the coach eased it, the main lifts'
+ * warm-up ramps and the moves between exercises, to the nearest 5 min.
+ */
+export function plannedRowStrengthMinutes(exercises: ReadonlyArray<{ section: string; sets: ReadonlyArray<PlannedSet> }>, opts: { oneSetLess?: boolean } = {}): number | null {
+  if (exercises.length === 0) return null
+  const sets: PlannedSet[] = []
+  let mains = 0
+  for (const e of exercises) {
+    let list = [...e.sets]
+    if (e.section === 'main') {
+      mains++
+      if (opts.oneSetLess) {
+        const work = list.filter(st => !(st.isWarmup === true || st.isWarmup === 1)).length
+        if (work > 1) list = list.slice(0, -1)
+      }
+    }
+    sets.push(...list)
+  }
+  const base = plannedStrengthMinutes(sets)
+  if (base == null) return null
+  const extraSec = mains * ROW_RAMP_SETS * (WARMUP_SET_SEC + 60) + Math.max(0, exercises.length - 1) * ROW_TRANSITION_SEC
+  return Math.max(5, Math.round((base * 60 + extraSec) / 300) * 5)
+}
+
 /** Minutes for timed rounds: every round, and the rest between rounds (none after the last). */
 export function plannedRoundMinutes(rounds: ReadonlyArray<{ durationSec: number; restSec?: number | null }>): number | null {
   if (rounds.length === 0) return null

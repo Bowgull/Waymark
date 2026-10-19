@@ -17,7 +17,7 @@ import { kgToLbs } from '../../lib/units'
 import { getStrengthTemplate } from '../../lib/strengthTemplates'
 import { getStrengthWeekTarget } from '../../lib/blockZero/strength'
 import { estimatedMinutes } from '../../lib/coach/sessions'
-import { plannedStrengthMinutes } from '../../lib/plannedLength'
+import { plannedRowStrengthMinutes } from '../../lib/plannedLength'
 import type { RuneState } from '../../lib/coach/changes'
 import { getRunWalkWeek, runWalkTotalSec } from '../../lib/blockZero/running'
 
@@ -434,12 +434,12 @@ const word = (n: number) => NUM_WORDS[n] ?? String(n)
  * from its template's sets and rests, everything else from the plan's own
  * numbers (run-walk week, Foundation's routine).
  */
-export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'label' | 'scheduledDate' | 'blockWeek' | 'blockType'>, weekNumber?: number | null): number {
+export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'label' | 'scheduledDate' | 'blockWeek' | 'blockType'> & { contextJson?: string | null }, weekNumber?: number | null): number {
   const kind = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
   const week = s.blockWeek ?? weekNumber ?? 1
   if (s.type === 'strength' && s.scheduledDate != null) {
     const t = getStrengthTemplate(dowOfEpochDay(s.scheduledDate), week, kind, s.label ?? null)
-    const min = plannedStrengthMinutes(t.exercises.flatMap(e => e.sets.map(st => ({ isWarmup: st.isWarmup, restSec: st.restSec }))))
+    const min = plannedRowStrengthMinutes(t.exercises, { oneSetLess: easedOneSet(s.contextJson) })
     if (min != null) return min
   }
   return estimatedMinutes({ type: s.type, notes: s.notes ?? null, estimatedMin: null }, kind, weekNumber ?? week)
@@ -469,10 +469,14 @@ export function strengthWeekLine(blockType: string | null | undefined, week: num
   return `Week ${week}: ${word(sets)} ${sets === 1 ? 'set' : 'sets'} of ${word(t.reps)}, about ${word(left)} left in the tank.`
 }
 
-/** "Front Squat" → "Front squat" (the main squat), "Romanian Deadlift" → "RDL" (the coach screens' short names). */
+/**
+ * "Front Squat" → "Front squat", "Bench Press" → "Bench press" (one case for
+ * every lift, m14), "Romanian Deadlift" → "RDL" (the coach screens' short
+ * names). Short capitals (DB, EZ) stay.
+ */
 export function shortLift(name: string): string {
   if (/romanian deadlift/i.test(name)) return 'RDL'
-  return name.replace(/^front squat$/i, 'Front squat')
+  return name.split(' ').map((w, i) => (/^[A-Z]{2,3}$/.test(w) ? w : i === 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase())).join(' ')
 }
 
 /** Page 20's top lifts on Today: "Front squat 2×135lbs · RDL 2×115lbs" (main lifts: sets × load). */
