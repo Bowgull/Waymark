@@ -1,0 +1,3 @@
+/* Applied only while toHaveScreenshot captures: the WebGL world and the timer
+   grass are live canvases (shaders, time-driven), never pixel-stable. */
+canvas { visibility: hidden !important; }

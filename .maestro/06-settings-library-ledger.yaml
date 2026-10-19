@@ -1,0 +1,27 @@
+appId: com.joshbocas.app
+name: Settings, the Library, the Ledger
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "\\+ add session"
+    timeout: 60000
+- tapOn: "Settings"
+- assertVisible: "MT class days"
+- takeScreenshot: 06-settings
+- scroll
+- takeScreenshot: 06-settings-2
+- tapOn: "‹ TODAY"
+- tapOn: "library"
+- assertVisible: "strength"
+- takeScreenshot: 06-library
+- tapOn: "strength"
+- takeScreenshot: 06-library-strength
+- tapOn: "Back to the Library"
+- tapOn: "ledger"
+- assertVisible: "WEEK"
+- takeScreenshot: 06-ledger-week
+- tapOn: "MONTH"
+- takeScreenshot: 06-ledger-month
+- tapOn: "SEASON"
+- takeScreenshot: 06-ledger-season

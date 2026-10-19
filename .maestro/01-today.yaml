@@ -1,0 +1,22 @@
+appId: com.joshbocas.app
+name: Today - week strip, Morning Report, no Coach board
+---
+- launchApp:
+    stopApp: true
+    permissions:
+      notifications: allow
+- tapOn:
+    text: "Allow"
+    optional: true
+- extendedWaitUntil:
+    visible: "\\+ add session"
+    timeout: 60000
+- takeScreenshot: 01-today
+- assertVisible: "This week"
+- assertVisible: "Morning Report, logged.*"
+- assertNotVisible: "COACH"
+- scrollUntilVisible:
+    element: "\\+ add session"
+    direction: DOWN
+    optional: true
+- takeScreenshot: 01-today-board
