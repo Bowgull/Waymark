@@ -6,7 +6,7 @@
 // fresh start works after any replace. Stored idempotency replies go too:
 // they describe rows that no longer exist. Strava dismissals stay.
 
-import { activeRecoverySessions, idempotencyKeys, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, journalEntries, mtClassLogs, postureSessionExercises, runningPlanWeeks, runSessions, runSplits, sessions, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
+import { activeRecoverySessions, idempotencyKeys, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyAlerts, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, journalEntries, mtClassLogs, postureSessionExercises, runningPlanWeeks, runSessions, runSplits, sessions, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -35,6 +35,7 @@ export async function clearCollectedTrainingData(db: DB) {
     db.delete(weeklyJournals),
     db.delete(journalEntries),
     db.delete(bodyMetrics),
+    db.delete(bodyAlerts),
     db.delete(idempotencyKeys),
     db.update(combos).set({ isFavourite: 0, masteryScore: 0, timesSharp: 0 }),
   ])

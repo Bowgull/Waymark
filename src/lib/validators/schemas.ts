@@ -39,6 +39,8 @@ export const dailyLogSchema = z.object({
   backToday: z.number().int().min(1).max(5).optional().nullable(),
   backNotes: z.string().max(500).optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
+  // "<Place> today" while a place is on watch (page 58 / 57): { knee: 2 }, 1 bad .. 5 fine; null clears one.
+  regionRatings: z.record(z.string().max(20), z.number().int().min(1).max(5).nullable()).optional().nullable(),
 })
 
 // PATCH /api/strength-sets/:id. reps also carries seconds for timed holds.

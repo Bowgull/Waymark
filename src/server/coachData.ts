@@ -389,11 +389,34 @@ export interface SessionCoachState {
 export async function loadSessionCoachState(db: DB, session: Pick<SessionRow, 'type' | 'scheduledDate' | 'contextJson'>, fallbackDay: number): Promise<SessionCoachState> {
   const day = session.scheduledDate ?? fallbackDay
   const injury = await loadInjuryFlag(db, day)
-  return {
+  const state: SessionCoachState = {
     returnCtx: await returnContextFor(db, day),
     coachEase: coachEaseFrom(session.contextJson),
     injury,
     injuryAction: injuryActionFor(session.type, injury),
+  }
+  // A raven's plan on this session (page 58, server/bodyWatch.ts): bag work and MT technique only,
+  // back-friendly lifts, or the bad-neck Foundation, through the same eases an injury flag uses.
+  const plan = bodyPlanMark(session.contextJson)
+  if (plan && state.injuryAction.action === 'none') {
+    const region = plan.op === 'back' ? 'back' : plan.op === 'badday' && plan.which === 'neck' ? 'neck' : (injury?.region ?? 'knee')
+    const flag: InjuryFlag = { region, since: day, reason: `${region.charAt(0).toUpperCase()}${region.slice(1)} plan.` }
+    if (plan.op === 'technique' || plan.op === 'back' || (plan.op === 'badday' && plan.which === 'neck')) {
+      return { ...state, injury: flag, injuryAction: injuryActionFor(session.type, flag) }
+    }
+  }
+  return state
+}
+
+/** The raven's plan mark on a session (context_json.bodyPlan), read without the body-watch module. */
+export function bodyPlanMark(contextJson: string | null | undefined): { op: string; which?: string; shapeWeek?: number } | null {
+  if (!contextJson) return null
+  try {
+    const v = (JSON.parse(contextJson) as { bodyPlan?: { op?: unknown; which?: unknown; shapeWeek?: unknown } }).bodyPlan
+    if (!v || typeof v.op !== 'string') return null
+    return { op: v.op, ...(typeof v.which === 'string' ? { which: v.which } : {}), ...(typeof v.shapeWeek === 'number' ? { shapeWeek: v.shapeWeek } : {}) }
+  } catch {
+    return null
   }
 }
 

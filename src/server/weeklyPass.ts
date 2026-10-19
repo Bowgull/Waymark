@@ -68,6 +68,7 @@ import {
 } from './coachData'
 import { applyTmUpdate, loadEffortReads, maybeMakeRegular } from './coachAsks'
 import { applyPendingMerges, pmStart, recordChanges, snap } from './changes'
+import { applyPendingBodyPlans } from './bodyWatch'
 
 type DB = ReturnType<typeof createDB>
 type Block = typeof trainingBlocks.$inferSelect
@@ -354,6 +355,8 @@ export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptio
 
   // A missed session's lifts waiting for this week land on its strength day.
   await applyPendingMerges(db, ids)
+  // A raven's plan that waited for this week lands on its days (page 58).
+  await applyPendingBodyPlans(db, ids)
 
   // The week line is the rules' own, in plain words (page 56 item 16); the planner's narrative is stored only.
   const rulesWhy = whyThisWeek(signals, eases.map(e => ({ cause: e.cause, epochDay: planned[e.index].epochDay, name: sessionName(planned[e.index]), type: planned[e.index].type })))

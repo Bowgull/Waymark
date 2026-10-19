@@ -58,7 +58,7 @@ type AdjRow = typeof weekAdjustments.$inferSelect
 const DAY_SEC = 86400
 
 /** Context keys a change may write, and an undo puts back. */
-export const CHANGE_CTX_KEYS = ['coachEase', 'coachPush', 'mergedLifts', 'movedFrom', 'movedFor', 'pulledForward', 'classTonight'] as const
+export const CHANGE_CTX_KEYS = ['coachEase', 'coachPush', 'mergedLifts', 'movedFrom', 'movedFor', 'pulledForward', 'classTonight', 'bodyPlan'] as const
 
 // ─── Snapshots ────────────────────────────────────────────────
 

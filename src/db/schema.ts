@@ -317,6 +317,8 @@ export const dailyLogs = sqliteTable('daily_logs', {
   backToday: integer('back_today'),
   backNotes: text('back_notes'),
   notes: text('notes'),
+  // 0036: "<Place> today" while a place is on watch: { "knee": 2 }, 1 bad .. 5 fine.
+  regionRatingsJson: text('region_ratings_json'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_daily_log_date').on(t.logDate),
@@ -381,6 +383,8 @@ export const weekAdjustments = sqliteTable('week_adjustments', {
   seenAt: integer('seen_at'),
   // 1 = he undid this coach change: the coach leaves the session alone that week.
   held: integer('held').notNull().default(0),
+  // 0036: his pick of what the coach left out for a place on watch (the region).
+  againstFlag: text('against_flag'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_wa_week').on(t.weekPlanId),
@@ -527,3 +531,39 @@ export const stravaDismissed = sqliteTable('strava_dismissed', {
   activityId: integer('activity_id').primaryKey(),
   dismissedAt: integer('dismissed_at').notNull(),
 })
+
+// ─── Injury weather and the raven (0036, page 58) ──────────────
+
+// One row per episode per body place (lib/coach/bodyWatch.ts). Days are local
+// epoch days; seen_at is unix seconds.
+export const bodyAlerts = sqliteTable('body_alerts', {
+  id: text('id').primaryKey(),
+  region: text('region').notNull(),
+  trigger: text('trigger').notNull(),
+  triggersJson: text('triggers_json'),
+  openedAt: integer('opened_at').notNull(),
+  seenAt: integer('seen_at'),
+  clearedAt: integer('cleared_at'),
+  clearReason: text('clear_reason'),
+  evidenceJson: text('evidence_json'),
+  contextLine: text('context_line'),
+  level: integer('level').notNull().default(1),
+  ackedLevel: integer('acked_level').notNull().default(0),
+  levelAt: integer('level_at'),
+  stage: text('stage').notNull().default('watch'),
+  planRound: integer('plan_round').notNull().default(0),
+  plan1Start: integer('plan1_start'),
+  planStartedAt: integer('plan_started_at'),
+  planEndsAt: integer('plan_ends_at'),
+  appliedOn: integer('applied_on'),
+  askOn: integer('ask_on'),
+  answersJson: text('answers_json'),
+  planChangeIds: text('plan_change_ids'),
+  pendingJson: text('pending_json'),
+  planJson: text('plan_json'),
+  stepJson: text('step_json'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [
+  index('idx_body_alerts_region').on(t.region, t.clearedAt),
+])
