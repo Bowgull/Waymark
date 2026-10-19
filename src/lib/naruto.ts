@@ -30,6 +30,18 @@ export function narutoArcForEp(ep: number | null | undefined): string | null {
 }
 
 /**
+ * Where the Settings episode drum opens: the saved episode when it sits in the
+ * chosen arc, else the arc's first episode (e2e minor 19: picking Chunin Exams
+ * then opening the drum at 1 snapped the arc back to Land of Waves).
+ */
+export function narutoEpDrumStart(arc: string | null | undefined, ep: number | null | undefined): number {
+  const a = NARUTO_ARCS.find(x => x.name === arc)
+  const valid = ep != null && Number.isInteger(ep) && ep >= 1 && ep <= NARUTO_EPISODES
+  if (!a) return valid ? ep : 1
+  return valid && ep >= a.first && ep <= a.last ? ep : a.first
+}
+
+/**
  * Episodes watched during a run: round(minutes / 23), at least 1 when the run
  * was 15 min or more, 0 below that (0 = no prompt).
  */

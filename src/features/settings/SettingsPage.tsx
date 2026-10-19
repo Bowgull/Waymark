@@ -10,7 +10,7 @@ import { scheduleAlarms } from '@/lib/notifications'
 import { coachLine, nextAlarmDay } from '@/lib/coachLine'
 import { getTodayISO } from '@/lib/dates'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
-import { NARUTO_ARC_NAMES, NARUTO_EPISODES, narutoArcForEp } from '@/lib/naruto'
+import { NARUTO_ARC_NAMES, NARUTO_EPISODES, narutoArcForEp, narutoEpDrumStart } from '@/lib/naruto'
 import { isHapticsEnabled, setHapticsEnabled, tapHaptic } from '@/lib/haptics'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { useToast } from '@/components/ui/Toast'
@@ -405,7 +405,7 @@ export function SettingsPage() {
         <ArcCard title="One Pace arc" arcs={ONE_PACE_ARCS} value={(ONE_PACE_ARCS as readonly string[]).includes(onePaceArc) ? onePaceArc : ONE_PACE_ARCS[0]} onCancel={() => setCard(null)} onDone={a => { setOnePaceArc(a); setCard(null) }} />
       )}
       {card === 'opEp' && (
-        <NumberCard title="One Pace episode" value={Number(onePaceEp) || 0} min={0} max={999} onCancel={() => setCard(null)} onDone={v => { setOnePaceEp(String(v)); setCard(null) }} />
+        <NumberCard title="One Pace episode" value={Number(onePaceEp) || 1} min={1} max={999} onCancel={() => setCard(null)} onDone={v => { setOnePaceEp(String(v)); setCard(null) }} />
       )}
       {card === 'nArc' && (
         <ArcCard title="Naruto arc" arcs={NARUTO_ARC_NAMES} value={NARUTO_ARC_NAMES.includes(narutoArc) ? narutoArc : (narutoArcForEp(Number(narutoEp)) ?? NARUTO_ARC_NAMES[0])} onCancel={() => setCard(null)} onDone={a => { setNarutoArc(a); setCard(null) }} />
@@ -414,7 +414,7 @@ export function SettingsPage() {
         <NumberCard
           title="Naruto episode"
           sub="The arc follows the episode (approximate). Netflix resumes the episode itself."
-          value={Number(narutoEp) || 1}
+          value={narutoEpDrumStart(narutoArc, narutoEp === '' ? null : Number(narutoEp))}
           min={1}
           max={NARUTO_EPISODES}
           onCancel={() => setCard(null)}
