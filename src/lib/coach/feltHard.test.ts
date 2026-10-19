@@ -4,7 +4,7 @@
 // Consistently easier than target feeds the ramp-up ask.
 import { consistentlyEasier, effortVerdict, feltHardEase, summarizeEffort, TARGET_RIR } from './feltHard'
 import { MON, assert, s } from './testUtil'
-import { nameInSentence } from './sessions'
+import { nameInSentence, typicalRpe } from './sessions'
 
 const houseVoice = (t: string) => !t.includes('!') && !t.includes('—')
 
@@ -40,5 +40,8 @@ assert(!consistentlyEasier(summarizeEffort([{ epochDay: MON, type: 'strength', r
 
 // E2E minor 14: names inside a sentence keep their letter ("Mon strength A eases", not "strength a").
 assert(nameInSentence('Strength A') === 'strength A' && nameInSentence('MT Technique') === 'MT technique' && nameInSentence('Run-Walk') === 'run-walk', 'session names in a sentence')
+
+// E2E minor 21: the finish sheet opens on the session's own effort, not 7 for everything.
+assert(typicalRpe({ type: 'foundation_run', label: 'Run-Walk', notes: null }) === 4 && typicalRpe({ type: 'mt_class', label: 'MT Technique', notes: null }) === 5 && typicalRpe({ type: 'strength', label: 'Strength A', notes: null }) === 7, 'finish sheet start: easy run 4, technique class 5, strength 7')
 
 console.log('feltHard tests passed')

@@ -12,6 +12,7 @@ import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
 import { EffortCard } from '@/features/blockZero/EffortCard'
 import { asksEffort, effortWrite } from '@/features/blockZero/effort'
 import { setPlace } from '@/lib/setPlace'
+import { typicalRpe } from '@/lib/coach/sessions'
 import { kgToLbs } from '@/lib/units'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd, cancelAllCues } from '@/lib/notifications'
 import { loadOutbox } from '@/lib/outbox'
@@ -1029,7 +1030,7 @@ export function WorkoutPage() {
   const closing = phase === 'complete' || phase === 'mark-earned'
   const closeScreen = (
     <>
-      <SessionComplete sessionType={sessionType ?? 'strength'} onFinish={handleFinish} submitting={submitting} />
+      <SessionComplete sessionType={sessionType ?? 'strength'} startRpe={typicalRpe({ type: sessionType ?? 'strength', label: sessionLabel, notes: runCategory })} onFinish={handleFinish} submitting={submitting} />
       <ToastContainer />
     </>
   )

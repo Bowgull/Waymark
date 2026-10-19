@@ -10,6 +10,8 @@ import './session.css'
 
 interface SessionCompleteProps {
   sessionType: string
+  /** The pick it opens on: the session's own typical effort (an easy Zone 2 is 4, not 7). */
+  startRpe?: number
   onFinish: (rpe: number, notes: string) => void
   submitting: boolean
 }
@@ -24,8 +26,8 @@ interface SessionCompleteProps {
  * opens the box in the card; the note saves with the session (sessions.notes),
  * where the coach reads it.
  */
-export function SessionComplete({ onFinish, submitting }: SessionCompleteProps) {
-  const [rpe, setRpe] = useState(7)
+export function SessionComplete({ startRpe = 7, onFinish, submitting }: SessionCompleteProps) {
+  const [rpe, setRpe] = useState(() => Math.min(10, Math.max(1, Math.round(startRpe))))
   const [noteOpen, setNoteOpen] = useState(false)
   const [notes, setNotes] = useState('')
   const noteRef = useRef<HTMLTextAreaElement>(null)
