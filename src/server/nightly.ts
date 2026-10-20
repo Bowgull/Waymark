@@ -10,6 +10,7 @@ import { pruneIdempotencyKeys } from './idempotency'
 import { applyFeltHard, maybeRampUp } from './coachAsks'
 import { runWeeklyPass } from './weeklyPass'
 import { isoToEpochDay } from '../lib/dates'
+import { refreshAthleteModel } from './athleteModel'
 
 export interface NightlyEnv {
   DB: D1Database
@@ -26,7 +27,10 @@ export interface NightlyEnv {
 //    catches up a missed run; idempotent per block and week),
 // 6. how sessions felt (effort, next-morning soreness) eases the next similar
 //    one, and a fresh streak gets one push (at most once a week),
-// 7. stored Idempotency-Key replies older than 7 days are pruned.
+// 7. the athlete model (coach brain P1) is rebuilt from the active block's
+//    events and stored in athlete_estimates: shadow only, nothing reads it to
+//    decide a session or a dose yet,
+// 8. stored Idempotency-Key replies older than 7 days are pruned.
 export async function runNightlyReplan(env: NightlyEnv, nowMs: number = Date.now()): Promise<void> {
   const db = createDB(env)
   const todayEpochDay = isoToEpochDay(new Date(nowMs).toISOString().split('T')[0])
@@ -45,6 +49,12 @@ export async function runNightlyReplan(env: NightlyEnv, nowMs: number = Date.now
     console.log(`[cron] felt-hard eases=${eased} ramp-up=${ramp ? 'yes' : 'no'}`)
   } catch (err) {
     console.warn('[cron] session-feel rules failed', err)
+  }
+  try {
+    const model = await refreshAthleteModel(db, todayEpochDay, nowSec)
+    console.log(`[cron] athlete model: lifts=${Object.keys(model.lifts).length} run=${model.run.state} recovery=${model.recovery.state} when=${model.adherence.state}`)
+  } catch (err) {
+    console.warn('[cron] athlete model failed', err)
   }
   try {
     await pruneIdempotencyKeys(db, nowSec)

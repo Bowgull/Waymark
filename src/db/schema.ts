@@ -649,6 +649,26 @@ export const stravaDismissed = sqliteTable('strava_dismissed', {
   dismissedAt: integer('dismissed_at').notNull(),
 })
 
+// ─── Coach brain: the athlete model (0043, coach-brain.md §4) ──
+
+// One row per area and key, rebuilt nightly from the logged history
+// (server/athleteModel.ts, lib/brain/athleteModel.ts). Shadow only in P1.
+export const athleteEstimates = sqliteTable('athlete_estimates', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(), // 'lift' | 'run' | 'bag' | 'class' | 'recovery' | 'back' | 'adherence'
+  key: text('key').notNull(),
+  valueJson: text('value_json').notNull(),
+  state: text('state').notNull(), // 'GUESS' | 'LEARNING' | 'KNOWN'
+  n: integer('n').notNull().default(0),
+  uncertainty: real('uncertainty').notNull(),
+  modelVersion: integer('model_version').notNull().default(1),
+  // Local epoch day the estimates were aged to.
+  asOfDay: integer('as_of_day').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_athlete_estimates_kind_key').on(t.kind, t.key),
+])
+
 // ─── Injury weather and the raven (0036, page 58) ──────────────
 
 // One row per episode per body place (lib/coach/bodyWatch.ts). Days are local
