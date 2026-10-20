@@ -98,14 +98,22 @@ test('A combo: five dots and "N of 15 to mastered", WATCH from 0:08, the teal cu
   await expect(top.locator('.lib-mast')).toHaveText(/●+\d+ of 15 to mastered$|Mastered$/)
   // no MASTERY board
   await expect(page.getByText('Sharp ratings')).toHaveCount(0)
-  await expect(top.getByRole('link', { name: 'Watch on YouTube: Empower Gym Tampa' })).toHaveAttribute('href', 'https://www.youtube.com/watch?v=SOgUZwx5bw4&t=8')
-  await expect(top.locator('.lib-vline')).toHaveText('1:20 · from 0:08')
-  await expect(top.getByRole('link', { name: 'also on TikTok ›' })).toHaveAttribute('href', /tiktok\.com\/@trainor103/)
+  // the TikTok pass (0041): a TikTok main, no start time, the YouTube it replaced quietly under it
+  await expect(top.getByRole('link', { name: 'Watch on TikTok: Damien Trainor' })).toHaveAttribute('href', 'https://www.tiktok.com/@trainor103/video/7499869748306513174')
+  await expect(top.locator('.lib-pf rect')).toHaveAttribute('fill', '#111')
+  await expect(top.locator('.lib-vline')).toHaveText('0:26')
+  await expect(top.getByRole('link', { name: 'also on YouTube ›' })).toHaveAttribute('href', 'https://www.youtube.com/watch?v=SOgUZwx5bw4&t=8')
   await expect(page.locator('.lib-cuef').getByRole('img', { name: 'TURN THE HIP OVER' })).toBeVisible()
   // the per-tier coach hint is cut
   await expect(page.getByText(/it comes up more until it is Solid/)).toHaveCount(0)
   const more = await openMore(page)
   await expect(more.locator('.lib-mtips li')).toHaveCount(2)
+
+  // a YouTube main with a start time: "from 0:04" under the length, the TikTok quietly under it (0041)
+  await page.goto('/library?open=bag&item=combo-f09')
+  await expect(page.getByRole('link', { name: 'Watch on YouTube: fightTIPS' })).toHaveAttribute('href', 'https://www.youtube.com/watch?v=Bp_QVO7kYtg&t=4')
+  await expect(page.locator('.lib-vline')).toHaveText('4:17 · from 0:04')
+  await expect(page.getByRole('link', { name: 'also on TikTok ›' })).toHaveAttribute('href', 'https://www.tiktok.com/@fighttips/video/7660290014294723854')
 
   // a technique: "in N of your combos", the short cue line, three combos then "and N more ›" (the search)
   const unlocked = (await api.get<Array<{ unlocked: number; text: string }>>('/api/combos')).filter(c => c.unlocked)
@@ -163,9 +171,10 @@ test('0039: start times, the swapped videos with their TikTok, and the corrected
   await expect(page.locator('.lib-vline')).toHaveText(/ · from 0:14$/)
   await expect(page.getByText(/Fagan/)).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'also on TikTok ›' })).toHaveAttribute('href', 'https://www.tiktok.com/@trainor103/video/7468272181814873376')
-  // combo-w12 keeps its video
+  // combo-w12: the TikTok pass (0041) made its TikTok the main video, the YouTube (at 0:57) the second link
   await page.goto('/library?open=bag&item=combo-w12')
-  await expect(page.locator('.lib-watch')).toHaveAttribute('href', 'https://www.youtube.com/watch?v=rTTEn0RQQsw&t=57')
+  await expect(page.locator('.lib-watch')).toHaveAttribute('href', 'https://www.tiktok.com/@trainor103/video/7143247780805479685')
+  await expect(page.getByRole('link', { name: 'also on YouTube ›' })).toHaveAttribute('href', 'https://www.youtube.com/watch?v=rTTEn0RQQsw&t=57')
 })
 
 test('Live numbers: his last set on top, this week\'s run-walk (page 60, page 65)', async ({ page, api }) => {

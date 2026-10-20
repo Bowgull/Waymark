@@ -30,7 +30,8 @@ async function main() {
   const calls: string[] = []
   const fetcher: Fetcher = async url => {
     calls.push(url)
-    if (url.includes('tiktok.com')) return { status: 200, ok: true, text: async () => '{"statusCode":10204}' }
+    // the test's TikTok is gone; the Library's own TikTok mains (0041) are live
+    if (url.includes('tiktok.com')) return { status: 200, ok: true, text: async () => (url.includes('@coach/video/123') ? '{"statusCode":10204}' : '{"statusCode":0}') }
     const dead = url.includes('deadone') || url.includes('deadtwo')
     return { status: dead ? 404 : 200, ok: !dead, text: async () => '' }
   }

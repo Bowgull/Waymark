@@ -721,6 +721,8 @@ lines.push(...readFileSync('src/db/libraryContent.sql', 'utf8').split('\n').filt
 lines.push(...readFileSync('src/db/libraryVideos.sql', 'utf8').split('\n').filter(l => l.trim()))
 // Then the short cue lines and the squat's coach note (0040, page 65, approved 2026-10-20).
 lines.push(...readFileSync('src/db/libraryPolish.sql', 'utf8').split('\n').filter(l => l.trim()))
+// Then the TikTok pass (0041, approved 2026-10-20).
+lines.push(...readFileSync('src/db/libraryTiktok.sql', 'utf8').split('\n').filter(l => l.trim()))
 
 const sql = lines.join('\n')
 writeFileSync('src/db/seed.sql', sql)

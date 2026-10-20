@@ -2,7 +2,8 @@
 // 0039 (approved by Josh 2026-10-20) on a real in-memory database: every
 // migration, then the seed (the Library's rows as production has them), then
 // 0039 once more, as wrangler would apply it on top. The start times and the
-// swaps land by id; nothing is wiped; combo-w12 keeps its video.
+// swaps land by id; nothing is wiped; combo-w12 keeps its video. (0041's
+// TikTok pass, later, is left out of the seed here: libraryTiktok.test.ts.)
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -49,8 +50,10 @@ assert.equal(files[files.indexOf('0038_library_content.sql') + 1], '0039_library
 
 const db = new Database(':memory:')
 for (const f of files) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
-db.exec(seed)
-const count = () => ['exercises', 'combos', 'techniques', 'run_types'].map(t => (db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n)
+// the Library as 0039 found it: the seed without the later passes' rows (0041 moves some of these videos on)
+const LATER = readFileSync(join(ROOT, 'drizzle/0041_library_tiktok.sql'), 'utf8').split(/\r?\n/).filter(l => l.startsWith('UPDATE'))
+db.exec(seed.split(/\r?\n/).filter(l => !LATER.includes(l)).join('\n'))
+const count =() => ['exercises', 'combos', 'techniques', 'run_types'].map(t => (db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n)
 const before = count()
 assert.ok(before[0] > 50 && before[1] > 50, `the seed filled the Library: ${before}`)
 db.exec(MIGRATION)
