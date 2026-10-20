@@ -36,7 +36,7 @@ const swaps = csv('docs/library/library-video-replacements.csv')
 const TABLE = (id: string) => (id.startsWith('ex-') ? 'exercises' : id.startsWith('combo-') ? 'combos' : id.startsWith('tech-') ? 'techniques' : 'run_types')
 
 // additive: updates by id only
-const statements = MIGRATION.split('\n').filter(l => l.trim() && !l.startsWith('--'))
+const statements = MIGRATION.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('--'))
 assert.ok(statements.length > 0)
 for (const s of statements) assert.match(s, /^UPDATE (exercises|combos|techniques|run_types) SET .+ WHERE id = '[a-z0-9-]+';$/, `only updates by id: ${s.slice(0, 80)}`)
 assert.doesNotMatch(MIGRATION, /\b(DELETE|DROP|INSERT|ALTER)\b/i, 'nothing wiped, no schema change')
