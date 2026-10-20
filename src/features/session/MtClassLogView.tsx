@@ -7,7 +7,7 @@ import { setWorldBackdrop } from '@/world/worldStore'
 
 import { MtClassLogCard } from '@/features/blockZero/ClassTypeCard'
 import { refreshBagLibrary } from './classCombosClient'
-import { clampClassMinutes, classLogPatch, defaultClassType, type ClassTypeValue } from '@/features/blockZero/classType'
+import { classLogPatch, defaultClassType, type ClassTypeValue } from '@/features/blockZero/classType'
 
 interface MtLog {
   id: string
@@ -21,7 +21,7 @@ interface MtLog {
 
 interface MtClassLogViewProps {
   mtLog: MtLog
-  /** Planned class length in minutes: the stepper's start. */
+  /** Planned class length (a fixed hour; kept for callers). */
   plannedMin?: number | null
   /** The block (kept for callers; the class type is never refused). */
   blockType?: string | null
@@ -40,11 +40,9 @@ const COULDNT_SAVE = "Couldn't save. Check your connection."
  * centred board over the forest. Everything is saved with SAVE CLASS LOG; the
  * type is his record of the class, never refused (coach-brain §14).
  */
-export function MtClassLogView({ mtLog, plannedMin, onComplete, onExit, resume, onPersist }: MtClassLogViewProps) {
+export function MtClassLogView({ mtLog, onComplete, onExit, resume, onPersist }: MtClassLogViewProps) {
   const draft = resume?.draft ?? {}
   const [classType, setClassType] = useState<ClassTypeValue>(() => defaultClassType(draft.classType ?? mtLog.classType))
-  // Class minutes drive the session load (minutes x RPE), so the class length is sent, not the time on this screen.
-  const [minutes, setMinutes] = useState(() => clampClassMinutes(Number(draft.durationMin ?? mtLog.durationMin ?? plannedMin ?? 60)))
   const [note, setNote] = useState(draft.weakness ?? mtLog.weakness ?? '')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -59,15 +57,15 @@ export function MtClassLogView({ mtLog, plannedMin, onComplete, onExit, resume, 
   }, [])
 
   useEffect(() => {
-    onPersist?.({ kind: 'mt', draft: { classType, durationMin: String(minutes), weakness: note } })
-  }, [onPersist, classType, minutes, note])
+    onPersist?.({ kind: 'mt', draft: { classType, weakness: note } })
+  }, [onPersist, classType, note])
 
   async function save(button: HTMLElement | null) {
     if (saving) return
     setSaving(true)
     setError(null)
     try {
-      await apiFetch(`/api/mt-class-logs/${mtLog.id}`, { method: 'PATCH', body: JSON.stringify(classLogPatch({ classType, minutes, note })) })
+      await apiFetch(`/api/mt-class-logs/${mtLog.id}`, { method: 'PATCH', body: JSON.stringify(classLogPatch({ classType, note })) })
       onComplete()
     } catch (err) {
       console.error('Failed to save MT class log:', err)
@@ -81,12 +79,10 @@ export function MtClassLogView({ mtLog, plannedMin, onComplete, onExit, resume, 
   return (
     <MtClassLogCard
       classType={classType}
-      minutes={minutes}
       note={note}
       error={error}
       saving={saving}
       onType={t => setClassType(t)}
-      onMinutes={setMinutes}
       onNote={setNote}
       onSave={b => void save(b)}
       onClose={onExit}

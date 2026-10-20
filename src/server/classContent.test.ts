@@ -113,9 +113,12 @@ try {
   assert.doesNotMatch(coach?.note ?? '', CONTENT)
   // Logging what the class was is never refused, whatever it was.
   const log = started.json.mtLog as { id: string }
-  const patched = await call('PATCH', `/api/mt-class-logs/${log.id}`, { classType: 'sparring', durationMin: 60 })
+  const patched = await call('PATCH', `/api/mt-class-logs/${log.id}`, { classType: 'sparring', durationMin: 90 })
   assert.equal(patched.status, 200, 'a sparring class logs like any other (the old ramp refused it)')
   assert.equal(patched.json.classType, 'sparring')
+  assert.equal(patched.json.durationMin, 60, 'every class logs as an hour, whatever an old client sends')
+  const done = await call('POST', `/api/sessions/${added.json.id as string}/complete`, { rpe: 8 })
+  assert.equal(done.json.durationSec, 3600, 'a finished class counts 60 min for load, not the screen time')
 } finally {
   uninstallClock()
 }

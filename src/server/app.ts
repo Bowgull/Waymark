@@ -1486,11 +1486,8 @@ app.post('/api/sessions/:id/complete', async (c) => {
     ? Math.min(body.completedAt, nowSec)
     : nowSec
   let durationSec = session.startedAt ? completedAt - session.startedAt : null
-  // MT class: the class length the athlete entered beats the logging-screen wall clock.
-  if (session.type === 'mt_class') {
-    const [mt] = await db.select({ durationMin: mtClassLogs.durationMin }).from(mtClassLogs).where(eq(mtClassLogs.sessionId, sessionId))
-    if (mt?.durationMin != null && mt.durationMin > 0) durationSec = mt.durationMin * 60
-  }
+  // MT class: a fixed hour (Josh, 2026-10-20), never the logging-screen wall clock.
+  if (session.type === 'mt_class') durationSec = CLASS_MINUTES * 60
 
   // Bag work and rope keep the seconds of each round with the session (the done summary reads them).
   const roundSecs = (session.type === 'bag_work' || session.type === 'skip_rope') && body.roundSecs && body.roundSecs.length > 0 ? body.roundSecs : null
@@ -2267,7 +2264,8 @@ app.patch('/api/mt-class-logs/:id', async (c) => {
   // (what is taught is the gym's call, coach-brain §14).
   const updates: Record<string, unknown> = {}
   if (body.classType !== undefined) updates.classType = body.classType
-  if (body.durationMin !== undefined) updates.durationMin = body.durationMin
+  // Every class logs as a fixed hour, whatever an old client sends.
+  if (body.durationMin !== undefined) updates.durationMin = CLASS_MINUTES
   if (body.focusSkill !== undefined) updates.focusSkill = body.focusSkill
   if (body.weakness !== undefined) updates.weakness = body.weakness
   if (body.concept !== undefined) updates.concept = body.concept

@@ -3,7 +3,7 @@
 // results (readiness, auto-ease, RIR loads, back swaps, MT class checks, tests).
 
 import { and, asc, eq, gte, inArray, isNotNull, lte, ne } from 'drizzle-orm'
-import { blockTests, dailyLogs, exercises, mtClassLogs, runSessions, sessions, strengthSessionExercises, strengthSets, trainingBlocks, userProfile, weekPlans } from '../db/schema'
+import { blockTests, dailyLogs, exercises, runSessions, sessions, strengthSessionExercises, strengthSets, trainingBlocks, userProfile, weekPlans } from '../db/schema'
 import {
   BLOCK_ZERO_BASE_WEEKS,
   ageFromDob,
@@ -44,7 +44,7 @@ import {
   restateSetCount,
 } from '../lib/blockZero'
 import type { StrengthTemplate, TemplateSet } from '../lib/strengthTemplates'
-import { countsFromDay, inLeadIn, mtRampStartDay, runAllowanceBaseSec, scaleLoadKg, scaleSets, type CoachEase, type ReturnContext } from '../lib/coach'
+import { CLASS_MINUTES, countsFromDay, inLeadIn, mtRampStartDay, runAllowanceBaseSec, scaleLoadKg, scaleSets, type CoachEase, type ReturnContext } from '../lib/coach'
 import type { InjuryAction } from '../lib/coach/injury'
 import { trainingWeekFor } from './coachData'
 import { zone2CeilingBpm } from '../lib/hrAnalysis'
@@ -79,7 +79,7 @@ function blockStartDay(block: { startedAt: number | null; createdAt: number }): 
 
 /**
  * sRPE load entries (session RPE x minutes) for completed sessions in a day
- * range. MT classes use the logged class minutes, not the app timer.
+ * range. An MT class is a fixed hour, never the app timer.
  */
 export async function loadSessionLoadEntries(db: DB, fromDay: number, toDay: number): Promise<LoadEntry[]> {
   const rows = await db
@@ -89,16 +89,15 @@ export async function loadSessionLoadEntries(db: DB, fromDay: number, toDay: num
       scheduledDate: sessions.scheduledDate,
       rpe: sessions.rpe,
       durationSec: sessions.durationSec,
-      classMin: mtClassLogs.durationMin,
     })
     .from(sessions)
-    .leftJoin(mtClassLogs, eq(mtClassLogs.sessionId, sessions.id))
     .where(and(eq(sessions.status, 'completed'), gte(sessions.scheduledDate, fromDay), lte(sessions.scheduledDate, toDay)))
   return rows.map(r => ({
     epochDay: r.scheduledDate as number,
     rpe: r.rpe,
-    minutes: r.type === 'mt_class' && r.classMin != null
-      ? r.classMin
+    // A class is a fixed hour of hard work (Josh, 2026-10-20), logged or not.
+    minutes: r.type === 'mt_class'
+      ? CLASS_MINUTES
       : r.durationSec != null ? Math.round(r.durationSec / 60) : null,
   }))
 }

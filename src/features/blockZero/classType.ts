@@ -28,21 +28,16 @@ export function defaultClassType(saved: string | null | undefined): ClassTypeVal
   return known ?? 'general'
 }
 
-export const CLASS_MIN = { min: 5, max: 300, step: 5 } as const
-
-/** Class length in minutes, on the stepper's 5-minute steps, 5 to 300. */
-export function clampClassMinutes(v: number): number {
-  if (!Number.isFinite(v)) return 60
-  return Math.min(CLASS_MIN.max, Math.max(CLASS_MIN.min, Math.round(v / CLASS_MIN.step) * CLASS_MIN.step))
-}
+/** Every class logs as a fixed hour (Josh, 2026-10-20): no length to pick. */
+export const CLASS_LOG_MINUTES = 60
 
 /**
  * The PATCH body for SAVE CLASS LOG. Page 31's one note ("What to work on",
  * e.g. "Guard dropping after combos") is the log's weakness field, which the
- * weekly plan and bag work already read. The other note fields are left as
- * they are (not sent).
+ * weekly plan and bag work already read. The length is always the fixed hour.
+ * The other note fields are left as they are (not sent).
  */
-export function classLogPatch(input: { classType: ClassTypeValue; minutes: number; note: string }): { classType: ClassTypeValue; durationMin: number; weakness?: string } {
+export function classLogPatch(input: { classType: ClassTypeValue; note: string }): { classType: ClassTypeValue; durationMin: number; weakness?: string } {
   const note = input.note.trim()
-  return { classType: input.classType, durationMin: clampClassMinutes(input.minutes), ...(note ? { weakness: note } : {}) }
+  return { classType: input.classType, durationMin: CLASS_LOG_MINUTES, ...(note ? { weakness: note } : {}) }
 }

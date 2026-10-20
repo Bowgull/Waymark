@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import { normaliseClassType } from '../../lib/blockZero/muayThai'
 import { strengthSetPatchSchema, mtClassLogPatchSchema, userProfilePatchSchema } from '../../lib/validators/schemas'
-import { CLASS_TYPES, clampClassMinutes, classLogPatch, defaultClassType } from './classType'
+import { CLASS_LOG_MINUTES, CLASS_TYPES, classLogPatch, defaultClassType } from './classType'
 import { EFFORT_TILES, asksEffort, effortWrite, labelForRir, rirFromLabel } from './effort'
 import { readinessLine } from './readinessLine'
 
@@ -41,14 +41,11 @@ import { readinessLine } from './readinessLine'
   assert.equal(defaultClassType('technique'), 'technical', 'older Block Zero names still map')
   assert.equal(defaultClassType('pads'), 'padwork')
   assert.equal(defaultClassType('Sparring'), 'sparring')
-  assert.equal(clampClassMinutes(62), 60)
-  assert.equal(clampClassMinutes(0), 5)
-  assert.equal(clampClassMinutes(999), 300)
-  assert.equal(clampClassMinutes(Number.NaN), 60)
-  const body = classLogPatch({ classType: 'padwork', minutes: 75, note: '  Guard dropping after combos ' })
-  assert.deepEqual(body, { classType: 'padwork', durationMin: 75, weakness: 'Guard dropping after combos' }, 'the one note is the weakness field')
+  assert.equal(CLASS_LOG_MINUTES, 60, 'every class logs as an hour')
+  const body = classLogPatch({ classType: 'padwork', note: '  Guard dropping after combos ' })
+  assert.deepEqual(body, { classType: 'padwork', durationMin: 60, weakness: 'Guard dropping after combos' }, 'the one note is the weakness field; the length is the fixed hour')
   assert.ok(mtClassLogPatchSchema.safeParse(body).success, 'the save body passes the PATCH schema')
-  assert.deepEqual(classLogPatch({ classType: 'technical', minutes: 60, note: ' ' }), { classType: 'technical', durationMin: 60 }, 'an empty note leaves the field alone')
+  assert.deepEqual(classLogPatch({ classType: 'technical', note: ' ' }), { classType: 'technical', durationMin: 60 }, 'an empty note leaves the field alone')
 }
 
 // ─── the readiness line (a line of Today's Coach board) ──

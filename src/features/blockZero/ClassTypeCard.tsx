@@ -2,35 +2,31 @@ import { useRef } from 'react'
 
 import { CentredCard, FlapButton, FlapLabel, SessionIcon } from '@/design'
 
-import { CLASS_MIN, CLASS_TYPES, clampClassMinutes, type ClassTypeValue } from './classType'
+import { CLASS_TYPES, type ClassTypeValue } from './classType'
 
 /**
  * The MT Class Log (page 31, "MT Class Log"): one centred board over the
- * forest. CLASS TYPE flap chips (the lit one gold), CLASS LENGTH (MIN) on a
- * − / + stepper, WHAT TO WORK ON, then SAVE CLASS LOG. The type is what he
+ * forest. CLASS TYPE flap chips (the lit one gold), WHAT TO WORK ON, then
+ * SAVE CLASS LOG. No length: every class logs as a fixed hour. The type is what he
  * logs about the class: the coach never refuses or judges it (what is taught
  * is the gym's call). Controlled: MtClassLogView owns the state.
  */
 export function MtClassLogCard({
   classType,
-  minutes,
   note,
   error,
   saving,
   onType,
-  onMinutes,
   onNote,
   onSave,
   onClose,
 }: {
   classType: ClassTypeValue
-  minutes: number
   note: string
   /** A save that failed for another reason (connection). */
   error: string | null
   saving: boolean
   onType: (t: ClassTypeValue, chips: HTMLElement | null) => void
-  onMinutes: (m: number) => void
   onNote: (text: string) => void
   onSave: (button: HTMLElement | null) => void
   onClose?: () => void
@@ -57,13 +53,6 @@ export function MtClassLogCard({
             </button>
           )
         })}
-      </div>
-
-      <div className="wm-mlabel" style={{ marginTop: 10 }}>CLASS LENGTH (MIN)</div>
-      <div className="wm-stepper" role="group" aria-label="Class length in minutes">
-        <button type="button" aria-label="Shorter" disabled={saving || minutes <= CLASS_MIN.min} onClick={() => onMinutes(clampClassMinutes(minutes - CLASS_MIN.step))}>−</button>
-        <span className="v" aria-live="polite"><FlapLabel text={String(minutes)} size="lg" /></span>
-        <button type="button" aria-label="Longer" disabled={saving || minutes >= CLASS_MIN.max} onClick={() => onMinutes(clampClassMinutes(minutes + CLASS_MIN.step))}>+</button>
       </div>
 
       <div className="wm-mlabel" style={{ marginTop: 10 }}>WHAT TO WORK ON</div>

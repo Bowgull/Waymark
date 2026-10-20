@@ -132,7 +132,7 @@ function Gallery({ screen }: { screen: string }) {
     case 'effort':
       return <Phone><EffortCard setLabel="Set 2 of 3" onPick={noop} onSkip={noop} /></Phone>
     case 'class':
-      return <Phone><MtClassLogCard classType="general" minutes={60} note="" error={null} saving={false} onType={noop} onMinutes={noop} onNote={noop} onSave={noop} /></Phone>
+      return <Phone><MtClassLogCard classType="general" note="" error={null} saving={false} onType={noop} onNote={noop} onSave={noop} /></Phone>
     case 'gate':
       return (
         <EndGateView
