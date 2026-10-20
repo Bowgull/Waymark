@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Board, CloseWord, Crest, FlapButton, FlapLabel } from '@/design'
+import { Board, CloseWord, Crest, FlapButton, FlapLabel, showPop } from '@/design'
 import type { DayBoardSession } from '@/features/dayboard/rowState'
 import { apiFetch } from '@/lib/api'
 import { lbText } from '@/lib/units'
-import { getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
+import { epochDayToISO, getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
 import { getWeekLabel } from '@/lib/strengthTemplates'
 import { strengthBlockWeek } from '@/lib/weeklyTemplate'
 import { setWorldWeeks } from '@/world/worldStore'
+import { isPendingStart, startDayOf } from '@/lib/coach/startDay'
 
 import { BlockZeroExtras } from './BlockZeroExtras'
+import { StartDayBoard, StartWaitBoard } from './StartDay'
+import { moveStartDay, prepareStartWeek } from './startDayApi'
 import { WeekView } from './WeekView'
 import { programPath } from '@/lib/programWeeks'
 import { cycleWeeks, readWeekAnalysis, weekDays, weekForDay, weekState, worldWeekPosts } from './weekModel'
@@ -91,6 +94,13 @@ function hasLeadIn(b: Block): boolean {
   if (b.blockType !== 'block_zero' || !b.startedAt) return false
   const startDay = Math.floor(b.startedAt / 86400)
   return new Date(startDay * 86400000).getUTCDay() !== 1
+}
+
+/** Page 64: a Block Zero whose start day is still ahead (nothing planned yet): its start day, else null. */
+function waitingStart(b: Block): number | null {
+  if (b.blockType !== 'block_zero') return null
+  const day = startDayOf(b.startedAt)
+  return isPendingStart(day, isoToEpochDay(getTodayISO())) ? day : null
 }
 
 function firstWeekOf(b: Block): number {
@@ -175,6 +185,11 @@ export function ProgramPage() {
   const [pastDone, setPastDone] = useState<{ key: string; counts: Map<number, number> } | null>(null)
   const [logOpen, setLogOpen] = useState(false)
   const [changesVersion, setChangesVersion] = useState(0)
+  // Page 64: START WHEN? from the prompt (fresh: clears history), and CHANGE DAY while it waits.
+  const [startPick, setStartPick] = useState<{ fresh: boolean } | null>(null)
+  const [changeOpen, setChangeOpen] = useState(false)
+  const [savingStart, setSavingStart] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const todayEpochDay = isoToEpochDay(getTodayISO())
   // The viewed week's changes and runes (page 56): its Monday from its sessions, else the calendar.
@@ -226,7 +241,9 @@ export function ProgramPage() {
               const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST' }).catch(() => null)
               setAssessmentLoading(false)
               if (result) setAssessment(result)
-              // No assessment (AI offline): prepare the current week as any open does, no tap needed.
+              // No assessment (AI offline): prepare the current week as any open does, no tap needed
+              // (a start still ahead: its own week, page 64).
+              else if (waitingStart(existingBlock) != null) await prepareStartWeek(existingBlock.id, waitingStart(existingBlock)!, getTodayISO()).catch(() => {})
               else await loadWeek(existingBlock, currentWeekOf(existingBlock)).catch(() => {})
               return
             }
@@ -239,6 +256,8 @@ export function ProgramPage() {
         if (existingBlock.returnPlan?.offerBlockZero) setBlockZeroPrompt('return_from_break')
 
         setBlock(existingBlock)
+        // Page 64: a Block Zero waiting for its start shows only the waiting board.
+        if (waitingStart(existingBlock) != null) return
         const cw = currentWeekOf(existingBlock)
         // A deep link (/program?day=YYYY-MM-DD) opens the week holding that day.
         const day = parseDayParam(new URLSearchParams(window.location.search).get('day'))
@@ -255,7 +274,7 @@ export function ProgramPage() {
       }
     }
     void load()
-  }, [loadWeek])
+  }, [loadWeek, reloadKey])
 
   // A deep link while Program is open (Today's week strip): go to that day.
   useEffect(() => {
@@ -301,20 +320,28 @@ export function ProgramPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [block?.id, pastKey, doneCounts, currentDone, currentWeek])
 
-  async function handleStartBlockZero(freshStart = false) {
+  async function handleStartBlockZero(freshStart = false, startDay?: number) {
     // Fresh start clears all history, so it takes a second tap to confirm.
     if (freshStart && !confirmFreshStart) {
       setConfirmFreshStart(true)
       return
     }
+    // Page 64: START BLOCK ZERO first asks which day (START WHEN?).
+    if (startDay == null) {
+      setStartPick({ fresh: freshStart })
+      return
+    }
     setStartingBlockZero(true)
     try {
+      // The start is the athlete's local day (an evening start stays that day), today or up to six days on.
+      const today = getTodayISO()
+      const startDate = epochDayToISO(startDay)
       const newBlock = await apiFetch<Block>('/api/blocks/block-zero', {
         method: 'POST',
-        // The athlete's local date is the start day (an evening start stays that day).
-        body: JSON.stringify(freshStart ? { freshStart: true, confirmReset: true, today: getTodayISO() } : { today: getTodayISO() }),
+        body: JSON.stringify(freshStart ? { freshStart: true, confirmReset: true, today, startDate } : { today, startDate }),
       })
       setBlock(newBlock)
+      setStartPick(null)
       setBlockZeroPrompt(null)
       setStartingBlockZero(false)
       setConfirmFreshStart(false)
@@ -322,8 +349,9 @@ export function ProgramPage() {
       const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST' }).catch(() => null)
       setAssessmentLoading(false)
       setAssessment(result)
-      // No assessment (AI offline): prepare the current week now, as any open does.
-      if (!result) await loadWeek(newBlock, currentWeekOf(newBlock)).catch(() => {})
+      // No assessment (AI offline): prepare the current week now, as any open does (a start ahead: its own week).
+      if (!result && waitingStart(newBlock) != null) await prepareStartWeek(newBlock.id, startDay, getTodayISO()).catch(() => {})
+      else if (!result) await loadWeek(newBlock, currentWeekOf(newBlock)).catch(() => {})
     } catch (e) {
       console.error('Failed to start Block Zero:', e)
       setStartingBlockZero(false)
@@ -335,6 +363,13 @@ export function ProgramPage() {
     if (!block) return
     setGenerating(true)
     try {
+      // Page 64: a start still ahead prepares its own week; the waiting board shows until the day.
+      const ahead = waitingStart(block)
+      if (ahead != null) {
+        await prepareStartWeek(block.id, ahead, getTodayISO())
+        setAssessment(null)
+        return
+      }
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {
         method: 'POST',
         body: JSON.stringify({ blockId: block.id, weekNumber: 1, startDate: getMonday(0), today: getTodayISO() }),
@@ -409,7 +444,14 @@ export function ProgramPage() {
 
   if (assessment) {
     // page 61: CLOSE back to the week (the plan is prepared as any open does)
-    const closeAssessment = () => { setAssessment(null); if (block) void loadWeek(block, currentWeekOf(block)).catch(() => {}) }
+    const closeAssessment = () => {
+      setAssessment(null)
+      if (!block) return
+      // a start still ahead: its week is prepared and the waiting board shows (page 64)
+      const ahead = waitingStart(block)
+      if (ahead != null) void prepareStartWeek(block.id, ahead, getTodayISO()).catch(() => {})
+      else void loadWeek(block, currentWeekOf(block)).catch(() => {})
+    }
     return (
       <Frame road={false}>
         <Board head="Block Zero" solid headRight={<CloseWord onClose={closeAssessment} />}>
@@ -474,6 +516,15 @@ export function ProgramPage() {
             </button>
           </div>
         </Board>
+        {startPick && (
+          <StartDayBoard
+            todayDay={todayEpochDay}
+            selected={todayEpochDay}
+            busy={startingBlockZero}
+            onPick={day => { void handleStartBlockZero(startPick.fresh, day) }}
+            onDismiss={() => { setStartPick(null); setConfirmFreshStart(false) }}
+          />
+        )}
       </Frame>
     )
   }
@@ -482,6 +533,36 @@ export function ProgramPage() {
     return (
       <Frame>
         <div className="db-glass"><p className="wm-prose">Failed to load program.</p></div>
+      </Frame>
+    )
+  }
+
+  // ─── Block Zero: waiting for its start day (page 64) ───────────
+
+  const ahead = waitingStart(block)
+  if (ahead != null) {
+    const saveStart = async (day: number) => {
+      setSavingStart(true)
+      try {
+        const moved = await moveStartDay<Block>(block.id, day, getTodayISO())
+        setChangeOpen(false)
+        // TODAY starts now: Program opens on the week as usual.
+        if (waitingStart(moved) == null) { setLoading(true); setReloadKey(k => k + 1) }
+        else setBlock(b => (b ? { ...b, startedAt: moved.startedAt } : b))
+      } catch (e) {
+        console.error('Failed to change the start day:', e)
+        showPop("Couldn't save. Check your connection.", 'bad', { title: "COULDN'T SAVE", durationMs: 4000 })
+      } finally {
+        setSavingStart(false)
+      }
+    }
+    return (
+      <Frame>
+        <div className="sd-gap" />
+        <StartWaitBoard startDay={ahead} todayDay={todayEpochDay} onChange={() => setChangeOpen(true)} />
+        {changeOpen && (
+          <StartDayBoard todayDay={todayEpochDay} selected={ahead} change busy={savingStart} onPick={day => { void saveStart(day) }} onDismiss={() => setChangeOpen(false)} />
+        )}
       </Frame>
     )
   }

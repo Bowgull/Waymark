@@ -27,8 +27,8 @@ import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTem
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { BLOCK_ZERO_BASE_WEEKS, allowedClassTypes, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
 import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, gotBodyNote, lowerLegOnWatch, markAgainstFlag, ravenLineFor, seenBodyNote } from './bodyWatch'
-import { KEY_TYPES, KNOWN_SESSION_TYPES, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, estimatedMinutes, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
-import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks } from './blocks'
+import { KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, estimatedMinutes, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
+import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
 import { allBoardRows, boardSuggestions, computeSuggestions } from '../lib/sessionSuggestions'
@@ -2530,7 +2530,13 @@ app.post('/api/blocks', async (c) => {
 app.post('/api/blocks/block-zero', async (c) => {
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
-  const body: { freshStart?: boolean; confirmReset?: boolean; today?: string } = await c.req.json<{ freshStart?: boolean; confirmReset?: boolean; today?: string }>().catch(() => ({}))
+  const body: { freshStart?: boolean; confirmReset?: boolean; today?: string; startDate?: string } = await c.req.json<{ freshStart?: boolean; confirmReset?: boolean; today?: string; startDate?: string }>().catch(() => ({}))
+  const todayDay = localToday(body.today)
+  // Page 64: the start can be a day ahead (up to six); nothing is planned before it.
+  if (body.startDate != null && (typeof body.startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate) || !isChoosableStart(isoToEpochDay(body.startDate), todayDay))) {
+    return c.json({ error: 'startDate must be today or one of the next six days' }, 400)
+  }
+  const startDay = body.startDate != null ? isoToEpochDay(body.startDate) : todayDay
 
   // Fresh start wipes all collected history first, so it needs an explicit confirm
   if (body.freshStart === true) {
@@ -2542,10 +2548,20 @@ app.post('/api/blocks/block-zero', async (c) => {
 
   // End any currently active block, then create Block Zero (6 base weeks)
   // The old block's planned sessions from today on go with it (M2: no doubles).
-  await endActiveBlocks(db, nowSec, localToday(body.today))
+  await endActiveBlocks(db, nowSec, todayDay)
   // The start day is the athlete's local date (D4): a Wednesday-evening start stays Wednesday.
-  const block = await createTrainingBlock(db, { name: 'Block Zero', blockType: 'block_zero', totalWeeks: BLOCK_ZERO_BASE_WEEKS, nowSec, startedAt: startedAtForLocalDay(localToday(body.today)) })
+  const block = await createTrainingBlock(db, { name: 'Block Zero', blockType: 'block_zero', totalWeeks: BLOCK_ZERO_BASE_WEEKS, nowSec, startedAt: startedAtForLocalDay(startDay) })
   return c.json(block)
+})
+
+// CHANGE DAY (page 64): a Block Zero waiting for its start moves to another
+// day. The client then prepares the new start's week (/api/weeks/generate).
+app.post('/api/blocks/:id/start-day', async (c) => {
+  const body = await c.req.json<{ startDate?: string; today?: string }>().catch(() => ({} as { startDate?: string; today?: string }))
+  if (typeof body.startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate)) return c.json({ error: 'startDate (YYYY-MM-DD) required' }, 400)
+  const result = await moveBlockZeroStart(createDB(c.env), c.req.param('id'), isoToEpochDay(body.startDate), localToday(body.today))
+  if (!result.ok) return c.json({ error: result.error }, result.status)
+  return c.json(result.block)
 })
 
 // ─── Last completed session (for return-from-break detection) ─

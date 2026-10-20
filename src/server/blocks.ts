@@ -5,6 +5,8 @@
 import { and, eq, gte, inArray } from 'drizzle-orm'
 import { mtClassLogs, postureSessionExercises, runSessions, sessions, strengthSessionExercises, trainingBlocks, weekAdjustments, weekPlans } from '../db/schema'
 import { FIGHTER_DEFAULT_TOTAL_WEEKS } from '../lib/blockZero'
+import { startedAtForLocalDay } from '../lib/coach/leadIn'
+import { isChoosableStart, isPendingStart, startDayOf } from '../lib/coach/startDay'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -44,28 +46,59 @@ export async function endActiveBlocks(db: DB, nowSec: number, todayDay = Math.fl
     await db.update(trainingBlocks)
       .set({ status: 'ended', endedAt: nowSec })
       .where(eq(trainingBlocks.id, active.id))
-    const plans = await db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, active.id))
-    if (plans.length === 0) continue
-    const doomed = await db.select({ id: sessions.id }).from(sessions)
-      .where(and(inArray(sessions.weekPlanId, plans.map(p => p.id)), eq(sessions.status, 'planned'), gte(sessions.scheduledDate, todayDay)))
-    // A session opened before (exercise rows, a run, a class log) stays.
-    const opened = new Set<string>()
-    for (let i = 0; i < doomed.length; i += 50) {
-      const chunk = doomed.slice(i, i + 50).map(r => r.id)
-      for (const t of [strengthSessionExercises, postureSessionExercises, runSessions, mtClassLogs]) {
-        for (const r of await db.select({ id: t.sessionId }).from(t).where(inArray(t.sessionId, chunk))) opened.add(r.id)
-      }
-    }
-    const ids = doomed.map(r => r.id).filter(id => !opened.has(id))
-    for (let i = 0; i < ids.length; i += 50) {
-      const chunk = ids.slice(i, i + 50)
-      // sessions.adjustment_id points at week_adjustments: unlink, then children first.
-      const changeIds = (await db.select({ id: weekAdjustments.id }).from(weekAdjustments).where(inArray(weekAdjustments.targetSessionId, chunk))).map(r => r.id)
-      if (changeIds.length > 0) await db.update(sessions).set({ adjustmentId: null }).where(inArray(sessions.adjustmentId, changeIds))
-      await db.delete(sessions).where(inArray(sessions.id, chunk))
-      if (changeIds.length > 0) await db.delete(weekAdjustments).where(inArray(weekAdjustments.id, changeIds))
+    await dropPlannedSessions(db, active.id, todayDay)
+  }
+}
+
+/**
+ * A block's sessions still planned from `fromDay` on, never opened (no
+ * exercise rows, run, or class log), go, with their change rows. Used when a
+ * block ends and when a waiting Block Zero moves its start day (page 64).
+ */
+export async function dropPlannedSessions(db: DB, blockId: string, fromDay: number): Promise<number> {
+  const plans = await db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, blockId))
+  if (plans.length === 0) return 0
+  const doomed = await db.select({ id: sessions.id }).from(sessions)
+    .where(and(inArray(sessions.weekPlanId, plans.map(p => p.id)), eq(sessions.status, 'planned'), gte(sessions.scheduledDate, fromDay)))
+  // A session opened before (exercise rows, a run, a class log) stays.
+  const opened = new Set<string>()
+  for (let i = 0; i < doomed.length; i += 50) {
+    const chunk = doomed.slice(i, i + 50).map(r => r.id)
+    for (const t of [strengthSessionExercises, postureSessionExercises, runSessions, mtClassLogs]) {
+      for (const r of await db.select({ id: t.sessionId }).from(t).where(inArray(t.sessionId, chunk))) opened.add(r.id)
     }
   }
+  const ids = doomed.map(r => r.id).filter(id => !opened.has(id))
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50)
+    // sessions.adjustment_id points at week_adjustments: unlink, then children first.
+    const changeIds = (await db.select({ id: weekAdjustments.id }).from(weekAdjustments).where(inArray(weekAdjustments.targetSessionId, chunk))).map(r => r.id)
+    if (changeIds.length > 0) await db.update(sessions).set({ adjustmentId: null }).where(inArray(sessions.adjustmentId, changeIds))
+    await db.delete(sessions).where(inArray(sessions.id, chunk))
+    if (changeIds.length > 0) await db.delete(weekAdjustments).where(inArray(weekAdjustments.id, changeIds))
+  }
+  return ids.length
+}
+
+export type MoveStartResult =
+  | { ok: true; block: typeof trainingBlocks.$inferSelect }
+  | { ok: false; status: 400 | 404 | 409; error: string }
+
+/**
+ * CHANGE DAY (page 64): a Block Zero still waiting for its start moves to
+ * another day (today up to six days on). Its sessions planned so far go (none
+ * can have started), and the start is stored as the local day at noon UTC.
+ * The caller prepares the new start's week, as BEGIN does.
+ */
+export async function moveBlockZeroStart(db: DB, blockId: string, startDay: number, todayDay: number): Promise<MoveStartResult> {
+  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
+  if (!block || block.status !== 'active' || block.blockType !== 'block_zero') return { ok: false, status: 404, error: 'no waiting block zero' }
+  if (!isPendingStart(startDayOf(block.startedAt), todayDay)) return { ok: false, status: 409, error: 'block zero has started' }
+  if (!isChoosableStart(startDay, todayDay)) return { ok: false, status: 400, error: 'start must be today or one of the next six days' }
+  await dropPlannedSessions(db, block.id, todayDay)
+  await db.update(trainingBlocks).set({ startedAt: startedAtForLocalDay(startDay) }).where(eq(trainingBlocks.id, block.id))
+  const [moved] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, block.id))
+  return { ok: true, block: moved }
 }
 
 /**

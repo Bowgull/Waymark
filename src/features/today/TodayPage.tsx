@@ -39,6 +39,9 @@ import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessL
 import { MorningReportRow } from '@/features/blockZero/TodayPieces'
 import { useBodyWatch } from '@/features/raven/bodyWatch'
 import { useRavenOnToday } from '@/features/raven/useRaven'
+import { DayOneLine, StartDayBoard, StartWaitBoard } from '@/features/program/StartDay'
+import { moveStartDay } from '@/features/program/startDayApi'
+import { dayOneLine, isPendingStart, startDayOf } from '@/lib/coach/startDay'
 import './today.css'
 
 /** The day's fade out, and ALL DONE's fade in, after the last Strava confirm. */
@@ -65,6 +68,8 @@ interface DailyLog {
 interface CurrentBlock {
   id: string
   blockType: string
+  /** The start (noon UTC of the local day); a Block Zero's may be up to six days ahead (page 64). */
+  startedAt?: number | null
   currentWeek?: number
   /** Today's training week; leadIn on a mid-week start's days before week 1. */
   trainingWeek?: { leadIn?: boolean }
@@ -110,6 +115,9 @@ export function TodayPage() {
   const [nextWeek, setNextWeek] = useState<WeekPayload | null>(null)
   const [showDayAnyway, setShowDayAnyway] = useState(false)
   const [deck, setDeck] = useState<{ startAt: number | 'resume' } | null>(null)
+  // Page 64: CHANGE DAY on the waiting board.
+  const [changeStart, setChangeStart] = useState(false)
+  const [savingStart, setSavingStart] = useState(false)
   // + What you learned on tonight's class row (page 49, if skipped): the same box.
   const [learned, setLearned] = useState<{ sessionId: string; mtLogId: string } | null>(null)
   const [learnedDone, setLearnedDone] = useState<ReadonlySet<string>>(() => new Set())
@@ -310,7 +318,10 @@ export function TodayPage() {
 
   // ── what Today shows, and the world behind it ──
   const weekSessions = week === undefined ? null : (week?.sessions ?? null)
-  const mode = !loaded ? 'loading' : todayMode({ today: sessions, weekSessions, hour: new Date().getHours(), showDayAnyway })
+  // Page 64: a Block Zero waiting for its start day: nothing planned, the waiting board instead of the day.
+  const blockStart = block?.blockType === 'block_zero' ? startDayOf(block.startedAt) : null
+  const waitingFor = isPendingStart(blockStart, todayEpoch) && sessions.length === 0 ? blockStart : null
+  const mode = !loaded ? 'loading' : waitingFor != null ? 'unprepared' : todayMode({ today: sessions, weekSessions, hour: new Date().getHours(), showDayAnyway })
   useEffect(() => {
     if (mode === 'loading') return
     setWorldPlace(showsHome(mode) ? 'home' : 'clearing')
@@ -642,6 +653,24 @@ export function TodayPage() {
 
   const handleCheckInClose = useCallback(() => setDeck(null), [])
 
+  // CHANGE DAY → SAVE (page 64): the waiting block moves; TODAY starts it now.
+  async function saveStartDay(day: number) {
+    if (!block) return
+    setSavingStart(true)
+    try {
+      await moveStartDay(block.id, day, today)
+      setChangeStart(false)
+      const [b] = await Promise.all([apiFetch<CurrentBlock | null>(`/api/blocks/current?date=${today}`), refreshSessions()])
+      setBlock(b)
+      setWeekVersion(v => v + 1)
+    } catch (e) {
+      console.error('Failed to change the start day:', e)
+      showPop("Couldn't save. Check your connection.", 'bad', { title: "COULDN'T SAVE", durationMs: 4000 })
+    } finally {
+      setSavingStart(false)
+    }
+  }
+
   if (loading) {
     // A quick load shows the world alone; only a slow one brings the crest apart (it snaps together when done).
     if (!slowLoad) return loaded ? <LoadedNow onReady={() => setLoading(false)} /> : null
@@ -657,6 +686,7 @@ export function TodayPage() {
   const newWeekTomorrow = todayEpoch + 1 > mondayOf(todayEpoch) + 6 ? nextWeek?.week?.weekNumber ?? null : null
   const tomorrowText = tomorrowLine(tomorrow, s => sessionDisplayName({ type: s.type, label: s.label ?? null, notes: s.notes ?? null }), newWeekTomorrow)
   const home = showsHome(mode)
+  const dayOne = mode === 'day' && block?.blockType === 'block_zero' ? dayOneLine(blockStart, todayEpoch, withoutReplaced(sessions).length) : null
   // CHECK IN until all nine are in; partial answers don't count as logged.
   const morningAnswers = checkInAnswersFor(dailyLog ?? null, today)
   const morningLogged = isCheckInComplete(morningAnswers)
@@ -665,7 +695,7 @@ export function TodayPage() {
     <div className="td-page">
       <div className={`td-fill${allDoneFade ? ` is-${allDoneFade}` : ''}`}>
       <TodayHeader date={todayDate} />
-      {strip && (
+      {strip && waitingFor == null && (
         <div className="wm-backwrap">
           <WeekStrip
             days={strip}
@@ -701,6 +731,8 @@ export function TodayPage() {
           <MorningReportRow logged={morningLogged} answered={answeredCount(morningAnswers)} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: morningLogged ? 0 : 'resume' })} raven={raven} />
           {/* the clearing and its lantern show between the top and the boards (pages 17, 35, 56) */}
           <div className="td-spacer" style={{ minHeight: strip ? '16dvh' : '24dvh' }} />
+          {/* page 64 §3: the start day's morning, one line on top (day 1 only) */}
+          {dayOne && <DayOneLine flap={dayOne.flap} line={dayOne.line} />}
           <TodayDay
             sessions={withoutReplaced(sessions)}
             weekNumber={block?.currentWeek ?? null}
@@ -730,7 +762,9 @@ export function TodayPage() {
           {/* page 43: the hobbit home fills the screen behind; the boards sit low, the Waybook last */}
           <div className="td-spacer" />
           {mode === 'rest' && <RestDayBoards tomorrow={tomorrowIcons} tomorrowLine={tomorrowText} />}
-          {mode === 'unprepared' && (blockChecked && !block
+          {mode === 'unprepared' && (waitingFor != null
+            ? <><StartWaitBoard startDay={waitingFor} todayDay={todayEpoch} onChange={() => setChangeStart(true)} /><div className="td-spacer" /></>
+            : blockChecked && !block
             ? <NoBlockBoard onStart={() => navigate('/program')} />
             : <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} />)}
           {mode === 'allDone' && <AllDoneBoard icons={doneIcons} onShowDay={() => setShowDayAnyway(true)} />}
@@ -742,6 +776,17 @@ export function TodayPage() {
       <button type="button" onClick={() => navigate('/settings')} aria-label="Settings" className="td-settings">
         <FlapLabel text="SETTINGS" size="xs" tone="dim" animate={false} />
       </button>
+
+      {changeStart && block && waitingFor != null && (
+        <StartDayBoard
+          todayDay={todayEpoch}
+          selected={waitingFor}
+          change
+          busy={savingStart}
+          onPick={day => { void saveStartDay(day) }}
+          onDismiss={() => setChangeStart(false)}
+        />
+      )}
 
       {showPicker && (
         <SessionPicker

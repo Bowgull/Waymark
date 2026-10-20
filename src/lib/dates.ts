@@ -49,3 +49,8 @@ export function mondayOf(epochDay: number): number {
 export function serverRolloverDay(nowMs: number = Date.now()): number {
   return Math.floor(nowMs / 86400000) - 1
 }
+
+/** An epoch day as YYYY-MM-DD (the inverse of isoToEpochDay). */
+export function epochDayToISO(epochDay: number): string {
+  return new Date(epochDay * 86400000).toISOString().slice(0, 10)
+}

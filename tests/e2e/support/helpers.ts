@@ -19,7 +19,7 @@ export async function gotoToday(page: Page) {
   // a spec run on its own may meet them first. Close them (they keep what was answered).
   const add = page.getByRole('button', { name: '+ add session' })
   const deck = page.getByRole('dialog', { name: 'Morning check-in' })
-  await expect(add.or(deck)).toBeVisible({ timeout: 20_000 })
+  await expect(add.or(deck).first()).toBeVisible({ timeout: 20_000 })
   if (await deck.isVisible()) await deck.getByRole('button', { name: 'Close', exact: true }).tap()
   await expect(add).toBeVisible({ timeout: 20_000 })
 }
