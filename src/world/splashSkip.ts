@@ -1,6 +1,7 @@
 // The splash's skip (page 38 A, changed by Josh 2026-10-19), pure:
 //   ONE TAP skips the crest building itself: straight to the title screen
 //   (the crest whole, its eye lit, WAYMARK under it), which then lifts as usual;
+//   A SECOND TAP (once the title shows) skips the title too: it lifts at once (Josh 2026-10-20);
 //   HOLD skips the whole splash: straight into the app.
 
 // Page 38 A's own timeline (38-splash-loading-error.html, wA): Today fades up over the crest
@@ -36,11 +37,12 @@ export interface SplashSkip {
 /**
  * The rest of the splash after a skip at `elapsed` seconds into it, against
  * its timeline (leave, gone, end). A tap before the title jumps to the title
- * and plays out from there; a tap once the title shows changes nothing; a hold
- * ends it at once (a short fade).
+ * and plays out from there; a tap once the title shows lifts it at once (the
+ * usual lift, no wait); a hold ends it at once (a short fade).
  */
-export function splashSkip(gesture: SplashGesture, elapsed: number, timeline: { leave: number; gone: number; end: number }): SplashSkip {
+export function splashSkip(gesture: SplashGesture, elapsed: number, timeline: { leave: number; gone: number; end: number }, titleUp = false): SplashSkip {
   if (gesture === 'hold') return { crestAt: null, word: 0, leave: 0, gone: 0.2, end: 0.3 }
+  if (titleUp || elapsed >= SPLASH_TITLE_AT) return { crestAt: null, word: 0, leave: 0, gone: timeline.gone - timeline.leave, end: timeline.end - timeline.leave }
   const from = Math.max(elapsed, SPLASH_TITLE_AT)
   return {
     crestAt: elapsed < SPLASH_TITLE_AT ? SPLASH_TITLE_AT : null,

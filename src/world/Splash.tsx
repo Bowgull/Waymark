@@ -31,6 +31,8 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const done = useRef(onDone)
   useEffect(() => { done.current = onDone }, [onDone])
   const timers = useRef<number[]>([])
+  /** The title screen is up (WAYMARK showing): a tap now lifts it. */
+  const titleUp = useRef(false)
   const playedAt = useRef(0)
   const skipped = useRef<SplashGesture | null>(null)
   const press = useRef<{ timer: number; at: number } | null>(null)
@@ -63,13 +65,13 @@ export function Splash({ onDone }: { onDone: () => void }) {
   /** The rest of the splash after a tap or a hold `elapsed` seconds into it. */
   function playSkip(g: SplashGesture, elapsed: number) {
     const still = phase === 'fallback' || stillRef.current
-    // Still (Reduce Motion, no WebGL): the title is already up; only a hold changes anything.
-    if (still && g === 'tap') return
-    const plan = splashSkip(g, elapsed, SPLASH_TIMELINE)
+    // Still (Reduce Motion, no WebGL): the title is already up, so a tap lifts it.
+    const plan = splashSkip(g, elapsed, SPLASH_TIMELINE, still || titleUp.current)
     clear()
     if (plan.crestAt != null) stageRef.current?.jumpTo(plan.crestAt)
     setFlare(false)
     setWord(true)
+    titleUp.current = true
     at(plan.leave, lift)
     at(plan.gone, () => setGone(true))
     at(plan.end, () => done.current())
@@ -88,11 +90,11 @@ export function Splash({ onDone }: { onDone: () => void }) {
       return clear
     }
     if (phase === 'fallback' || stillRef.current) {
-      at(0, () => setWord(true)); at(1.5, lift); at(2.2, () => setGone(true)); at(2.5, () => done.current())
+      at(0, () => { setWord(true); titleUp.current = true }); at(1.5, lift); at(2.2, () => setGone(true)); at(2.5, () => done.current())
     } else {
       at(SPLASH_TIMELINE.flareOn, () => setFlare(true))
       at(SPLASH_TIMELINE.flareOff, () => setFlare(false))
-      at(SPLASH_TIMELINE.word, () => setWord(true))
+      at(SPLASH_TIMELINE.word, () => { setWord(true); titleUp.current = true })
       at(SPLASH_TIMELINE.leave, lift)
       at(SPLASH_TIMELINE.gone, () => setGone(true))
       at(SPLASH_TIMELINE.end, () => done.current())

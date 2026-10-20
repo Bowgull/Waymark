@@ -170,10 +170,14 @@ test('the splash: one tap skips to the title screen, a hold skips it all (page 3
   assert.ok(Math.abs(t.leave - (SPLASH_TIMELINE.leave - SPLASH_TITLE_AT)) < 1e-9)
   assert.ok(Math.abs(t.end - (SPLASH_TIMELINE.end - SPLASH_TITLE_AT)) < 1e-9)
   assert.ok(t.end < 3, 'a tap reaches the app in under 3 s, not 10')
-  // a tap once the title is up changes nothing
+  // a second tap, once the title is up, lifts it at once (Josh 2026-10-20)
   const late = splashSkip('tap', 8, SPLASH_TIMELINE)
   assert.equal(late.crestAt, null)
-  assert.ok(Math.abs(late.leave - (SPLASH_TIMELINE.leave - 8)) < 1e-9)
+  assert.equal(late.leave, 0, 'the lift starts now')
+  assert.ok(Math.abs(late.end - (SPLASH_TIMELINE.end - SPLASH_TIMELINE.leave)) < 1e-9)
+  const second = splashSkip('tap', 1, SPLASH_TIMELINE, true)
+  assert.equal(second.leave, 0, 'right after a first tap, the title is up: the second tap lifts it')
+  assert.equal(second.crestAt, null)
   // a hold: straight into the app
   const h = splashSkip('hold', 2, SPLASH_TIMELINE)
   assert.equal(h.leave, 0)
