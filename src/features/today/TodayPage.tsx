@@ -13,7 +13,7 @@ import { endAllLiveActivities } from '@/lib/liveActivity'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 
-import { AutoHeight, FlapLabel, glowRow, showPop } from '@/design'
+import { AutoHeight, FlapLabel, glowRow, SCENE, SceneWindow, showPop } from '@/design'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { REPLACE_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
 import { useToast } from '@/components/ui/Toast'
@@ -693,8 +693,10 @@ export function TodayPage() {
 
   return (
     <div className="td-page">
-      <div className={`td-fill${allDoneFade ? ` is-${allDoneFade}` : ''}`}>
+      <div className={`td-fill${mode === 'day' ? ' is-window' : ''}${allDoneFade ? ` is-${allDoneFade}` : ''}`}>
       <TodayHeader date={todayDate} />
+      {/* page 67: the clearing in the top 40%, the boards start under it and scroll up over it */}
+      {mode === 'day' && <SceneWindow at={SCENE.boardsAtToday} />}
       {strip && waitingFor == null && (
         <div className="wm-backwrap">
           <WeekStrip
@@ -729,8 +731,6 @@ export function TodayPage() {
         <>
           {/* page 56 item 14: the Morning Report row: CHECK IN, then LOGGED and the readiness line; tap for the why */}
           <MorningReportRow logged={morningLogged} answered={answeredCount(morningAnswers)} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: morningLogged ? 0 : 'resume' })} raven={raven} />
-          {/* the clearing and its lantern show between the top and the boards (pages 17, 35, 56) */}
-          <div className="td-spacer" style={{ minHeight: strip ? '16dvh' : '24dvh' }} />
           {/* page 64 §3: the start day's morning, one line on top (day 1 only) */}
           {dayOne && <DayOneLine flap={dayOne.flap} line={dayOne.line} />}
           <TodayDay

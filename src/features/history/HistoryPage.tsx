@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { Crest, FlapLabel } from '@/design'
+import { Crest, FlapLabel, SceneWindow } from '@/design'
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { logger } from '@/lib/logger'
@@ -43,7 +43,7 @@ const RANGES: { key: LedgerRange; label: string; title: string }[] = [
 
 function LedgerHeader({ week }: { week: number | null }) {
   return (
-    <header className="lg-hd">
+    <header className="lg-hd wm-scene-hd">
       <Link to="/today" className="lg-brand" aria-label="Today">
         <span className="lg-crest"><Crest width={52} /></span>
         <FlapLabel text="LEDGER" size="sm" />
@@ -86,37 +86,28 @@ export function HistoryPage() {
     <div className="lg-root">
       {data && <PondRings rings={data.rings} />}
       <LedgerHeader week={week} />
-      {/* page 32: the boards scroll under the header in screens (the top of the Ledger, then
-          "scrolled down"), each leaving the still water open below it */}
+      {/* page 67 (Scroll reveals): the pond in the top 46%; the boards start under it, one column,
+          and scroll up over it (page 32's screens are one page now) */}
+      <SceneWindow />
       <div className="lg-body">
-        <div className="lg-page">
-          <div className="lg-segl" role="tablist" aria-label="Range">
-            {RANGES.map(r => (
-              <button key={r.key} type="button" role="tab" aria-selected={range === r.key} className="lg-segb" onClick={() => setRange(r.key)}>
-                <FlapLabel text={r.label} size="xs" tone={range === r.key ? 'gold' : 'ink'} />
-              </button>
-            ))}
-          </div>
-          {data && (
-            <>
-              <RingBoard rings={data.rings} title={title} sub={range === 'week' ? undefined : 'done / planned'} />
-              {spanLine && <p className="lg-span">{spanLine}</p>}
-              {/* page 63: between the week rings and Aerobic base */}
-              {data.consistencyBoard && <ConsistencyBoard view={data.consistencyBoard} />}
-              <AerobicBoard points={data.aerobic.points} runs={data.aerobic.runs} />
-            </>
-          )}
+        <div className="lg-segl" role="tablist" aria-label="Range">
+          {RANGES.map(r => (
+            <button key={r.key} type="button" role="tab" aria-selected={range === r.key} className="lg-segb" onClick={() => setRange(r.key)}>
+              <FlapLabel text={r.label} size="xs" tone={range === r.key ? 'gold' : 'ink'} />
+            </button>
+          ))}
         </div>
         {data && (
           <>
-            <div className="lg-page">
-              <StrengthBoard lifts={data.strength.lifts} sets={data.strength.sets} />
-              <SleepBoard days={data.sleep.days} avg={data.sleep.avg} />
-            </div>
-            <div className="lg-page">
-              {/* page 62 B: right after Sleep + soreness, at the top of the third screen */}
-              {data.herb && <HerbBoard days={data.herb.days} avg7={data.herb.avg7} avg28={data.herb.avg28} line={data.herb.line} />}
-            </div>
+            <RingBoard rings={data.rings} title={title} sub={range === 'week' ? undefined : 'done / planned'} />
+            {spanLine && <p className="lg-span">{spanLine}</p>}
+            {/* page 63: between the week rings and Aerobic base */}
+            {data.consistencyBoard && <ConsistencyBoard view={data.consistencyBoard} />}
+            <AerobicBoard points={data.aerobic.points} runs={data.aerobic.runs} />
+            <StrengthBoard lifts={data.strength.lifts} sets={data.strength.sets} />
+            <SleepBoard days={data.sleep.days} avg={data.sleep.avg} />
+            {/* page 62 B: right after Sleep + soreness */}
+            {data.herb && <HerbBoard days={data.herb.days} avg7={data.herb.avg7} avg28={data.herb.avg28} line={data.herb.line} />}
           </>
         )}
       </div>

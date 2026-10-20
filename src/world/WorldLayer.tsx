@@ -4,8 +4,9 @@ import { App as CapApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 
 import { useReducedMotion } from '@/design/motion'
+import { registerSceneLayer, registerSceneVeil, sceneCovered, subscribeSceneCovered } from '@/design/sceneScroll'
 import { useNetworkStatus } from '@/lib/network'
-import { GLIDE_MS, placeForPath } from './places'
+import { GLIDE_MS, SCENE_OVERSCAN_PX, placeForPath } from './places'
 import { useWorldMode } from './useWorldTime'
 import { getWorldState, setWorldOffline, subscribeWorld, type WorldPlace } from './worldStore'
 import { weatherMode, weatherParams } from './weather'
@@ -32,6 +33,10 @@ export function WorldLayer() {
   const mode = weatherMode(useWorldMode(), ws.weather)
   const online = useNetworkStatus()
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  // page 67: the scene drifts up with the scroll (parallax) and a veil darkens it as the boards cover it
+  const sceneRef = useRef<HTMLDivElement>(null)
+  const veilRef = useRef<HTMLDivElement>(null)
+  const covered = useSyncExternalStore(subscribeSceneCovered, sceneCovered, () => false)
   const handleRef = useRef<WorldHandle | null>(null)
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -79,7 +84,7 @@ export function WorldLayer() {
     creating.current = true
     const s = getWorldState()
     loadWorldEngine()
-      .then(m => m.createWorld(canvas, { place: firstPlace.current, mode: firstMode.current, weeks: s.weeks, lantern: s.lantern, offline: s.offline, reducedMotion: firstReduced.current, weather: s.weather }))
+      .then(m => m.createWorld(canvas, { place: firstPlace.current, mode: firstMode.current, weeks: s.weeks, lantern: s.lantern, offline: s.offline, reducedMotion: firstReduced.current, weather: s.weather, overscan: SCENE_OVERSCAN_PX }))
       .then(h => {
         if (!mounted.current) { h.dispose(); return }
         handleRef.current = h
@@ -120,6 +125,15 @@ export function WorldLayer() {
   useEffect(() => { handleRef.current?.setOffline(ws.offline) }, [ws.offline, ready])
   useEffect(() => { handleRef.current?.setWeather(ws.weather) }, [ws.weather, ready])
   useEffect(() => { handleRef.current?.setReducedMotion(reduced) }, [reduced, ready])
+  // the boards cover the window fully: the world idles at 15 fps (page 67 item 9)
+  useEffect(() => { handleRef.current?.setCovered(covered) }, [covered, ready])
+  useEffect(() => {
+    const scene = sceneRef.current, veil = veilRef.current
+    if (!scene || !veil) return
+    const offScene = registerSceneLayer(scene)
+    const offVeil = registerSceneVeil(veil)
+    return () => { offScene(); offVeil() }
+  }, [])
   useEffect(() => {
     const h = handleRef.current
     if (!h) return
@@ -139,7 +153,11 @@ export function WorldLayer() {
   const wx = weatherParams(ws.weather, ws.offline)
   return (
     <div className={cls} data-place={place ?? shown ?? 'none'} data-mode={mode} data-weather={ws.weather.clearing ? 'clearing' : ws.weather.level > 0 ? `${ws.weather.level}${ws.weather.quiet ? 'q' : ''}` : 'none'} aria-hidden="true">
-      <canvas ref={canvasRef} className="wm-world-canvas" />
+      <div ref={sceneRef} className="wm-world-scene">
+        <canvas ref={canvasRef} className="wm-world-canvas" />
+        {/* page 67's scene: below its window each place fades to the dark (it moves with the scene) */}
+        <div className="wm-world-fade" />
+      </div>
       <div className="wm-weather wm-weather-grade" style={{ opacity: ready && visible && !failed ? wx.grade : 0 }} />
       <div className="wm-weather wm-weather-dark" style={{ opacity: ready && visible && !failed ? wx.dark * 0.95 : 0 }} />
       {/* the clearing's sun shafts breaking through (page 58), soft light from the upper right */}
@@ -157,6 +175,7 @@ export function WorldLayer() {
           return <polygon key={i} className={`s${i}`} points={`${tx - 16},-10 ${tx + 16},-10 ${bx + 60},${by} ${bx - 60},${by}`} fill={`url(#wmShaft${i})`} />
         })}
       </svg>
+      <div ref={veilRef} className="wm-world-veil" />
       <div className="wm-world-scrim" />
     </div>
   )

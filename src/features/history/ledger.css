@@ -1,16 +1,13 @@
 /* The Ledger (page 32, "The Ledger · together"): the pond fills the screen; boards on glass up top.
    The page has no background: the world's pond shows through. */
 
-.lg-root { position: relative; display: flex; flex-direction: column; height: calc(100% + 16px); margin: 0 -4px -16px; padding-top: env(safe-area-inset-top); background: transparent; }
-.lg-hd { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px 6px; }
+.lg-root { position: relative; display: flex; flex-direction: column; margin: 0 -4px; padding-top: env(safe-area-inset-top); background: transparent; }
+.lg-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px 6px; }
 .lg-brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; -webkit-tap-highlight-color: transparent; }
 .lg-crest { width: 54px; height: 60px; display: grid; place-items: center; flex: none; }
 
-/* page 32 .lbody: 6px top, 12px sides, 10px apart */
-.lg-body { position: relative; z-index: 1; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y mandatory; scrollbar-width: none; }
-.lg-body::-webkit-scrollbar { display: none; }
-/* one screen of boards: they sit up top, the water stays open below */
-.lg-page { min-height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 6px 0 12px; scroll-snap-align: start; }
+/* page 67: one column of boards under the window (the mockup's stack: 10 px apart), scrolled by the shell */
+.lg-body { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 10px; padding: 0 0 12px; }
 
 .lg-segl { display: flex; gap: 6px; justify-content: center; }
 .lg-segb { display: flex; padding: 0; border: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }

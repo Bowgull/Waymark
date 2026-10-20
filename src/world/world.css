@@ -1,14 +1,20 @@
 /* The world layer: a fixed canvas behind the shell, faded in once drawn.
-   Scrims darken only where boards sit, per place (mockups: flap.css .scrim on
-   Today; page 33's road band fading to dark under the Program boards). */
+   Page 67 (Scroll reveals): each place sits in its window at the top of the
+   screen; the scene (canvas + its fade to the dark) drifts up at 40% of the
+   scroll, a veil darkens it to 60% as the boards cover it, and the header
+   reads over a soft top scrim (design/sceneScroll.ts drives the scroll). */
 
 .wm-world {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  overflow: hidden;
   background: #020a08;
 }
+/* page 67 .scene: the screen and 260 px more below it, so the parallax never shows its bottom edge
+   (places.ts SCENE_OVERSCAN_PX); the camera frames the screen above the overscan */
+.wm-world-scene { position: absolute; left: 0; right: 0; top: 0; height: calc(100% + 260px); background: #050b09; }
 .wm-world-canvas {
   position: absolute;
   inset: 0;
@@ -19,8 +25,39 @@
   transition: opacity var(--t-moment, 700ms) ease-out, filter 400ms ease-out;
 }
 .wm-world.is-ready .wm-world-canvas { opacity: 1; }
-/* Today's mockups draw the forest still at brightness .8 under their scrim (flap.css .stillbg) */
-.wm-world[data-place='clearing'] .wm-world-canvas { filter: brightness(0.8); }
+/* page 67 draws Today's forest still at brightness .95 and the Library's arch at .86 */
+.wm-world[data-place='clearing'] .wm-world-canvas { filter: brightness(0.95); }
+.wm-world[data-place='arch'] .wm-world-canvas { filter: brightness(0.86); }
+
+/* below its window each place fades to the dark, as page 67's scene does (positions on its 844 phone):
+   Today's .fadeb from 545 px over 60 px; Program's .roadfade from 330 to 470 px (the road band ends);
+   the Ledger's pond render ends at 394 px; the Library's arch still at 778 px */
+.wm-world-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: none;
+  pointer-events: none;
+  top: calc(var(--fade-at) * (100% - 260px));
+  background: linear-gradient(rgba(5, 11, 9, 0), #050b09 var(--fade-px));
+}
+.wm-world[data-place='clearing'] .wm-world-fade { display: block; --fade-at: 0.6457; --fade-px: 60px; }
+.wm-world[data-place='road'] .wm-world-fade { display: block; --fade-at: 0.391; --fade-px: 140px; }
+.wm-world[data-place='pond'] .wm-world-fade { display: block; --fade-at: 0.4668; --fade-px: 0px; }
+.wm-world[data-place='arch'] .wm-world-fade { display: block; --fade-at: 0.9227; --fade-px: 0px; }
+/* page 67's pond: the water's soft light in the window */
+.wm-world[data-place='pond'] .wm-world-scene::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 80% 14% at 50% 33%, rgba(120, 210, 200, 0.2), transparent 70%);
+}
+
+/* the veil: #030806 from 0 to 60% as the boards cover the window (sceneScroll.ts sets its opacity) */
+.wm-world-veil { position: absolute; inset: 0; pointer-events: none; background: #030806; opacity: 0; }
+.wm-world.is-bare .wm-world-veil { opacity: 0 !important; }
 .wm-world.is-dip .wm-world-canvas { opacity: 0; transition-duration: 160ms; }
 /* the session entrance: the forest dimmed and blurred behind the session's icon */
 .wm-world.is-bare .wm-world-canvas { filter: none; }
@@ -31,26 +68,23 @@
   pointer-events: none;
   transition: opacity 400ms ease-out;
 }
-/* Today, the rest-day home and the Ledger pond: the mockups' scrim (darker top and bottom, clear in the middle) */
+/* page 67: the header reads over a soft top scrim on every world tab (66% to 0 over 190 px) */
 .wm-world[data-place='clearing'] .wm-world-scrim,
-.wm-world[data-place='home'] .wm-world-scrim,
+.wm-world[data-place='road'] .wm-world-scrim,
+.wm-world[data-place='arch'] .wm-world-scrim,
 .wm-world[data-place='pond'] .wm-world-scrim {
+  bottom: auto;
+  height: 190px;
+  background: linear-gradient(rgba(2, 10, 8, 0.66), rgba(2, 10, 8, 0.32) 55%, rgba(2, 10, 8, 0));
+}
+/* the rest-day home (page 43): the mockups' scrim (darker top and bottom, clear in the middle) */
+.wm-world[data-place='home'] .wm-world-scrim {
   background: linear-gradient(rgba(2, 10, 8, 0.55), rgba(2, 10, 8, 0.12) 26%, rgba(2, 10, 8, 0.35) 55%, rgba(2, 10, 8, 0.85));
-}
-/* The Library's arch (page 14b's close-up): page 65's lighter scrim at the top so the arch shows over the
-   list; inside the Library a second veil makes it page 65's darker item scrim (library.css .is-deep) */
-.wm-world[data-place='arch'] .wm-world-scrim {
-  background: linear-gradient(rgba(2, 10, 8, 0.55), rgba(2, 10, 8, 0.18) 22%, rgba(2, 10, 8, 0.25) 45%, rgba(2, 10, 8, 0.8));
-}
-/* Program: the road band up top, then dark under the boards (page 33 .roadfade) */
-.wm-world[data-place='road'] .wm-world-scrim {
-  background: linear-gradient(rgba(2, 10, 8, 0.4), transparent 9%, transparent 30%, rgba(4, 9, 7, 0.9) 47%, #050b09 64%);
 }
 /* Night on Today (the clearing, the rest-day home): page 14 #c's exposure. The forest is already dark,
    so no dimming filter and only a light veil under the header and the tabs; the red path, the lantern's
    spill and the fireflies read as on page 14. */
 .wm-world[data-mode='night'][data-place='clearing'] .wm-world-canvas { filter: none; }
-.wm-world[data-mode='night'][data-place='clearing'] .wm-world-scrim,
 .wm-world[data-mode='night'][data-place='home'] .wm-world-scrim {
   background: linear-gradient(rgba(2, 10, 8, 0.4), rgba(2, 10, 8, 0) 16%, rgba(2, 10, 8, 0) 72%, rgba(2, 10, 8, 0.6));
 }
@@ -63,7 +97,7 @@
 .wm-weather { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 3s ease-in-out; }
 .wm-weather-grade { mix-blend-mode: color; background: linear-gradient(#8ccf5c, #5c9a3e 60%, #3e7030); }
 .wm-weather-dark { mix-blend-mode: multiply; background: linear-gradient(#1c2c1a, #2a3a24 50%, #121a10); }
-.wm-world[data-place='clearing'] .wm-weather-grade, .wm-world[data-place='clearing'] .wm-weather-dark { filter: brightness(0.8); }
+.wm-world[data-place='clearing'] .wm-weather-grade, .wm-world[data-place='clearing'] .wm-weather-dark { filter: brightness(0.95); }
 .wm-weather-shafts { width: 100%; height: 100%; mix-blend-mode: screen; z-index: 1; }
 .wm-weather-shafts polygon { animation: wm-shaft 25s ease-in-out infinite; transform-box: fill-box; }
 .wm-weather-shafts .s1 { animation-delay: -8s; }

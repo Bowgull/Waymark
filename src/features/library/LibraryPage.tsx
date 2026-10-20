@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode, type TouchEvent } from 'react'
 
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Board, Crest, FlapLabel, SessionIcon, showPop, useEdgeBack } from '@/design'
+import { Board, Crest, FlapLabel, SceneWindow, SessionIcon, showPop, useEdgeBack } from '@/design'
 import { apiFetch } from '@/lib/api'
 import type { LibraryHintData } from '@/lib/libraryHints'
 import { markWaybookOpen, requireUnlock, setWaybookShown } from '@/lib/waybookGate'
@@ -59,7 +59,7 @@ const BOOK_DAYS = 3650
 /** A group open (page 46 "Getting back"): ‹ LIBRARY in gold, top left, back to the list; on an item, ‹ and its kind (page 52). */
 function BackHeader({ onBack, label = 'LIBRARY' }: { onBack: () => void; label?: string }) {
   return (
-    <header className="lib-head is-back">
+    <header className="lib-head is-back wm-scene-hd">
       <button type="button" className="lib-bk" onClick={onBack} aria-label={label === 'LIBRARY' ? 'Back to the Library' : `Back to ${label.toLowerCase()}`}>‹ {label}</button>
     </header>
   )
@@ -74,7 +74,7 @@ function LibraryHeader({ onBack }: { onBack?: () => void }) {
     </>
   )
   return (
-    <header className="lib-head">
+    <header className="lib-head wm-scene-hd">
       {onBack
         ? <button type="button" className="lib-brand" onClick={onBack} aria-label="Library">{inner}</button>
         : <span className="lib-brand">{inner}</span>}
@@ -510,6 +510,8 @@ export function LibraryPage() {
   return (
     <div className="lib-root">
       <LibraryHeader />
+      {/* page 67 (Scroll reveals): the rune arch in the top 46%; search and the kinds start under it */}
+      <SceneWindow />
       <div className="lib-body">
         <input
           type="search"
@@ -520,7 +522,7 @@ export function LibraryPage() {
           aria-label="Search everything"
           enterKeyHint="search"
         />
-        {/* page 65: compact rows (46 px, 32 px icons, 17 px flaps), the board low so the arch shows */}
+        {/* page 65: compact rows (46 px, 32 px icons, 17 px flaps) */}
         {!q && (
           <Board className="lib-bd lib-list">
             {GROUPS.map(g => {

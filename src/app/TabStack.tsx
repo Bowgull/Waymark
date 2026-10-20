@@ -4,6 +4,7 @@ import { Outlet, UNSAFE_LocationContext, useLocation } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { arrivePane, riseDelayMs, sinkPane, SWITCH } from '../design/choreography'
 import { useReducedMotion } from '../design/motion'
+import { landAtWindow } from '../design/sceneScroll'
 import { HistoryPage } from '../features/history/HistoryPage'
 import { LibraryPage } from '../features/library/LibraryPage'
 import { ProgramPage } from '../features/program/ProgramPage'
@@ -12,13 +13,15 @@ import { SPLASH_LEAVING_EVENT } from '../world/splashSkip'
 import { prefetchTabs, tabForPath, type TabKey } from './tabPrefetch'
 
 // The four tabs stay alive (page 59 §6 item 4): each tab's page is kept,
-// hidden, once visited (React's <Activity>), with its state, its scroll and its
+// hidden, once visited (React's <Activity>), with its state and its
 // data, so coming back shows real boards at once and refreshes in the
 // background. A hidden tab's effects are paused and it keeps the location it
 // last had, so it never reacts to another tab's route.
 //
 // The switch is option A, "World first" (design/choreography.ts): the old
-// boards sink, the camera glides, then the new boards rise and flip in.
+// boards sink, the camera glides, then the new boards rise and flip in. A tab
+// always lands at its window (page 67): the place on top, the boards rising to
+// the window's edge, whatever was scrolled when it was left.
 
 const TABS: ReadonlyArray<{ key: TabKey; page: ComponentType }> = [
   { key: 'today', page: TodayPage },
@@ -37,7 +40,6 @@ const PREFETCH_AFTER_MS = 2500
 type LocationValue = React.ContextType<typeof UNSAFE_LocationContext>
 
 const worldShown = () => typeof document !== 'undefined' && document.querySelector('.wm-world.is-ready') != null
-const scroller = () => document.querySelector<HTMLElement>('main.waymark-scroll')
 
 export function TabStack() {
   const location = useLocation()
@@ -52,7 +54,6 @@ export function TabStack() {
   if (shown && !visited.has(shown)) setVisited(v => new Set(v).add(shown))
 
   const panes = useRef(new Map<TabKey, HTMLElement>())
-  const scrolls = useRef(new Map<TabKey, number>())
   const tapAt = useRef(0)
   const land = useRef<(() => void) | null>(null)
   const firstArrival = useRef(true)
@@ -65,8 +66,6 @@ export function TabStack() {
     tapAt.current = performance.now()
     land.current?.()
     const old = shown ? panes.current.get(shown) : null
-    const main = scroller()
-    if (shown && main) scrolls.current.set(shown, main.scrollTop)
     const go = () => startTransition(() => setShown(active))
     const sink = old ? sinkPane(old, reduced) : null
     if (!sink) { go(); return }
@@ -74,13 +73,12 @@ export function TabStack() {
     return () => { window.clearTimeout(t); sink.cancel() }
   }, [active, shown, reduced])
 
-  // The shown tab arrives: its scroll back, then its boards rise and flip in.
+  // The shown tab arrives at its window (page 67), then its boards rise and flip in.
   useLayoutEffect(() => {
     if (!shown) return
     const pane = panes.current.get(shown)
     if (!pane) return
-    const main = scroller()
-    if (main) main.scrollTop = scrolls.current.get(shown) ?? 0
+    landAtWindow()
     const first = firstArrival.current
     firstArrival.current = false
     const riseAt = first ? performance.now() + FIRST_RISE_MS : tapAt.current + riseDelayMs(worldShown())

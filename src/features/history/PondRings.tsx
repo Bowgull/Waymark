@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { useReducedMotion } from '@/design'
+import { registerSceneLayer, useReducedMotion } from '@/design'
 import { RING_COLOUR, type LedgerRing } from '@/lib/ledger'
 
 // The same three rings resting on the pond (page 32, "The Ledger · together" and its close-up):
@@ -11,10 +11,14 @@ import { RING_COLOUR, type LedgerRing } from '@/lib/ledger'
 
 const SPLASH = '<>YX|^*+.~:'
 
-/** Page 32 draws the rings in the phone's 390×844 space; the pond view scales with the height. */
+/**
+ * Page 32 draws the rings in the phone's 390×844 space; the pond view scales with the height.
+ * Page 67 frames the pond 450 px higher (its water in the window), so the rings rest 450 px up too.
+ */
+const POND_LIFT_PX = 450
 function geometry(w: number, h: number) {
   const k = h / 844
-  return { k, cx: w / 2 + 5 * k, cy: h / 2 + 268 * k }
+  return { k, cx: w / 2 + 5 * k, cy: h / 2 + (268 - POND_LIFT_PX) * k }
 }
 
 export function PondRings({ rings }: { rings: LedgerRing[] }) {
@@ -30,6 +34,12 @@ export function PondRings({ rings }: { rings: LedgerRing[] }) {
   }, [])
 
   const { k, cx, cy } = geometry(size.w, size.h)
+
+  // the rings ride the water: they follow the scene's parallax and darken with its veil (page 67)
+  useEffect(() => {
+    const el = host.current
+    return el ? registerSceneLayer(el, { dim: true }) : undefined
+  }, [])
 
   useEffect(() => {
     if (reduced) return

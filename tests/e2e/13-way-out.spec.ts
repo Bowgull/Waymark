@@ -105,7 +105,7 @@ test('The Waybook box: CLOSE and tap outside fold it; the words are kept as a DR
   await box.fill('Knee felt fine on the stairs today.')
 
   // A tap outside folds it; the line says DRAFT, not the words.
-  await page.locator('.td-spacer').click()
+  await page.locator('.wm-scene-window').click()
   await expect(box).toBeHidden()
   await expect(line.getByRole('img', { name: 'DRAFT' })).toBeVisible()
   await expect(page.getByText('Knee felt fine on the stairs today.')).toHaveCount(0)
@@ -123,7 +123,7 @@ test('The Waybook box: CLOSE and tap outside fold it; the words are kept as a DR
   await expect(page.getByRole('textbox', { name: 'Waybook entry' })).toHaveValue('Knee felt fine on the stairs today.')
   await page.getByRole('button', { name: 'SAVE', exact: true }).tap()
   await expect(page.getByText('Saved to the Waybook.')).toBeVisible()
-  await page.locator('.td-spacer').click()
+  await page.locator('.wm-scene-window').click()
   await expect(page.locator('button.td-wline').getByRole('img', { name: 'DRAFT' })).toHaveCount(0)
 })
 

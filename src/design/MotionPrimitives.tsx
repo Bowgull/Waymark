@@ -5,6 +5,7 @@ import { prefersReducedMotion } from './motion'
 import { flipInLabels, play, riseIn, sinkOut, SWAP, type SwapState } from './motionKit'
 import { glowRow } from './popFlap'
 import { MOTION } from './tokens'
+import { registerSceneWindow, SCENE } from './sceneScroll'
 import { completeHaptic, tapHaptic } from '@/lib/haptics'
 
 // The shared motion primitives (page 59 §5.3, approved 2026-10-19). One system
@@ -204,4 +205,20 @@ export function Rise({ show, children, className = '' }: { show: boolean; childr
   }, [show, mounted])
   if (!mounted) return null
   return <div ref={ref} className={className || undefined}>{children}</div>
+}
+
+/**
+ * The window (page 67, Scroll reveals): the open stretch between a world tab's
+ * header and its first board, sized so the boards start `at` of the screen
+ * down (46%, Today 40%). It is outside every board, so a tap on it closes an
+ * open one (page 61); it takes no tap of its own. See sceneScroll.ts.
+ */
+export function SceneWindow({ at = SCENE.boardsAt }: { at?: number }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    return registerSceneWindow(el, at)
+  }, [at])
+  return <div ref={ref} className="wm-scene-window" aria-hidden />
 }

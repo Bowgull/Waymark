@@ -262,10 +262,18 @@ export function ConsistencyBoard({ view }: { view: ConsistencyView }) {
   const toggle = (on: boolean) => {
     setOpen(on)
     const el = ref.current
-    const scroller = el?.closest('.lg-body') as HTMLElement | null
+    // page 63 in page 67's one column: opened, it scrolls up to just under the header (the pond slides
+    // away behind it); closed, back to the window
+    const scroller = el?.closest('main') as HTMLElement | null
     if (!el || !scroller) return
-    if (on) window.setTimeout(() => scroller.scrollTo({ top: el.offsetTop - 6, behavior: 'smooth' }), 90)
-    else scroller.scrollTo({ top: 0, behavior: 'smooth' })
+    if (on) {
+      window.setTimeout(() => {
+        const box = scroller.getBoundingClientRect()
+        const hd = el.closest('.lg-root')?.querySelector('.wm-scene-hd')
+        const under = hd ? hd.getBoundingClientRect().bottom - box.top : 0
+        scroller.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top - box.top + scroller.scrollTop - under - 6), behavior: 'smooth' })
+      }, 90)
+    } else scroller.scrollTo({ top: 0, behavior: 'smooth' })
   }
   useOutsideClose(ref, open, () => toggle(false))
 

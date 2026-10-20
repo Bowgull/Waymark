@@ -9,6 +9,33 @@
   .wm-pane { display: block; }
   .wm-pane.is-waiting { visibility: hidden; }
 
+  /* ── Scroll reveals (page 67): the window between a world tab's header and its boards; the header stays
+     over the scene (sticky, under the status bar) and a dark backing fades in (--t-quick) once the boards
+     slide under it (sceneScroll.ts toggles .is-solid). The backing spans the screen and the status bar. ── */
+  .wm-scene-window { flex: none; height: 0; }
+  /* what scrolls into view (focus, a find) lands under the sticky header, not behind it */
+  main.waymark-scroll { scroll-padding-top: calc(env(safe-area-inset-top) + 76px); }
+  .wm-scene-hd { position: sticky; top: env(safe-area-inset-top); z-index: 20; isolation: isolate; }
+  .wm-scene-hd::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: 50%;
+    top: calc(-1 * env(safe-area-inset-top));
+    bottom: 0;
+    width: min(100vw, 430px);
+    transform: translateX(-50%);
+    pointer-events: none;
+    background-color: rgba(6, 10, 8, 0);
+    transition: background-color var(--t-quick) ease, box-shadow var(--t-quick) ease;
+  }
+  .wm-scene-hd.is-solid::before {
+    background-color: rgba(6, 10, 8, 0.82);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 1px 0 rgba(232, 200, 96, 0.14), 0 10px 24px rgba(0, 0, 0, 0.45);
+  }
+
   /* ── Expand / Collapse: height 0fr -> 1fr (320 ms out), content fades in and drops 4 px 60 ms late;
      closing, the content fades first (120 ms), then the height (240 ms in-out) ── */
   .wm-expand {

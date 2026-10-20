@@ -21,7 +21,7 @@ export function TodayHeader({ date }: { date: Date }) {
   const stop = () => { if (timer.current) window.clearTimeout(timer.current); timer.current = null }
   useEffect(() => stop, [])
   return (
-    <header className="td-hd">
+    <header className="td-hd wm-scene-hd">
       <button
         type="button"
         className="td-brand"
