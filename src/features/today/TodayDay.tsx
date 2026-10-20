@@ -61,6 +61,10 @@ export interface TodayDayProps {
   onOpenChange?: (id: string | null) => void
   /** The block's training week (a run-walk's rounds and minutes come from it). */
   weekNumber?: number | null
+  /** + What you learned on a class row finished today without it (page 49). */
+  onLearned?: (sessionId: string, mtLogId: string) => void
+  /** Classes whose note was written here since Today loaded (the line goes). */
+  learnedSaved?: ReadonlySet<string>
 }
 
 /** Strava's run matched this planned run and waits for CONFIRM (page 40, phone 1). */
@@ -107,7 +111,7 @@ export function TodayDay(props: TodayDayProps) {
   )
 }
 
-function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason, weekNumber }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
+function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason, weekNumber, onLearned, learnedSaved }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
   const rowRef = useRef<HTMLDivElement>(null)
   const [endOpen, setEndOpen] = useState(false)
   const actionable = isActionableTodaySession(s.status, false)
@@ -147,6 +151,7 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
             session={s}
             weekNumber={weekNumber}
             variant="today"
+            onLearned={onLearned && done && s.type === 'mt_class' && !learnedSaved?.has(s.id) ? mtLogId => onLearned(s.id, mtLogId) : undefined}
             actions={actionable ? (
               <>
                 <FlapButton label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'} primary onClick={() => onStart(s.id)} />

@@ -67,6 +67,7 @@ export const mtClassLogPatchSchema = z.object({
   weakness: z.string().max(1000).optional(),
   concept: z.string().max(1000).optional(),
   actionItems: z.string().max(2000).optional(),
+  learnedNote: z.string().max(4000).optional(),
 })
 
 // POST /api/blocks/:id/tests: one result, an array, or { results: [...] }.

@@ -248,6 +248,9 @@ export const mtClassLogs = sqliteTable('mt_class_logs', {
   concept: text('concept'),
   actionItems: text('action_items'),
   durationMin: integer('duration_min'),
+  // 0037: "What you learned" after class (page 49), and when it was written (unix seconds).
+  learnedNote: text('learned_note'),
+  learnedAt: integer('learned_at'),
 }, (t) => [
   uniqueIndex('idx_mt_session').on(t.sessionId),
 ])
@@ -281,8 +284,23 @@ export const combos = sqliteTable('combos', {
   isFavourite: integer('is_favourite').notNull().default(0),
   timesSharp: integer('times_sharp').notNull().default(0),
   createdAt: integer('created_at').notNull(),
+  // 0037: 'class' when added or unlocked from an MT class (the glove); NULL = the library's own.
+  source: text('source'),
+  // 0037: the class's local epoch day.
+  classDate: integer('class_date'),
 }, (t) => [
   index('idx_combos_tier').on(t.tier, t.level),
+])
+
+// 0037: NOT NOW on a combo found in a class note, so it isn't offered again.
+export const comboDeclines = sqliteTable('combo_declines', {
+  id: text('id').primaryKey(),
+  strikesKey: text('strikes_key').notNull(),
+  strikesJson: text('strikes_json').notNull(),
+  sessionId: text('session_id'),
+  createdAt: integer('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_combo_declines_key').on(t.strikesKey),
 ])
 
 export const comboPerformance = sqliteTable('combo_performance', {

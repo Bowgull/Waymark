@@ -24,6 +24,8 @@ export interface LibraryCombo {
   formTips: string | null
   isFavourite: number
   timesSharp: number
+  /** 'class': added or unlocked from an MT class (the glove, page 49 section 3). */
+  source?: string | null
 }
 
 export interface LibraryJournalEntry {

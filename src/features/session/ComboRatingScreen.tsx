@@ -13,6 +13,8 @@ interface ComboForRating {
   comboId: string
   roundId: string
   text: string
+  /** 'class': from an MT class, so it carries the glove (page 49 section 3). */
+  source?: string | null
 }
 
 interface ComboRatingScreenProps {
@@ -142,7 +144,7 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
         className="ss-card ss-rate"
       >
         <div className="ss-rate-combo">
-          <ComboStrikes key={shown.comboId} text={shown.text} size="sm" />
+          <ComboStrikes key={shown.comboId} text={shown.text} size="sm" glove={shown.source === 'class'} />
         </div>
         <div role="radiogroup" aria-label="How did it go?">
           {OPTIONS.map(o => {

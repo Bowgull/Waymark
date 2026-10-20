@@ -126,16 +126,18 @@ export function Pips({ total, now, small = false }: { total: number; now: number
  * A combo (design-decisions "Combos"): separate strike tiles joined by ›, on
  * page 31's board tiles. No combo letters (page 55, 2026-10-19).
  */
-export function ComboStrikes({ text, size = 'xs', className = '' }: { text: string; size?: 'xs' | 'sm' | 'md'; className?: string }) {
+export function ComboStrikes({ text, size = 'xs', className = '', glove = false }: { text: string; size?: 'xs' | 'sm' | 'md'; className?: string; glove?: boolean }) {
   const strikes = comboStrikes(text)
   return (
-    <span className={`tm-combo ${className}`} role="img" aria-label={strikes.join(', ')}>
+    <span className={`tm-combo ${className}`} role="img" aria-label={`${strikes.join(', ')}${glove ? ', from class' : ''}`}>
       {strikes.map((s, i) => (
         <span key={i} style={{ display: 'contents' }}>
           {i > 0 && <span className="arr" aria-hidden>›</span>}
           <span className="stk"><FlapLabel text={s} size={size} /></span>
         </span>
       ))}
+      {/* page 49 section 3: a combo from class carries the MT Class glove, small, after its strikes */}
+      {glove && <SessionIcon kind="mt" size={20} className="tm-glove" label="" />}
     </span>
   )
 }

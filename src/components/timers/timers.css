@@ -61,3 +61,5 @@
   .tm-clock, .tm-screen { transition: none; }
   .tm-x.is-hold::before { transition: width 1.5s linear; }
 }
+/* Page 49 section 3: the glove on a combo from class (the MT Class icon, small, after the strikes). */
+.tm-combo .tm-glove { width: 20px; height: 20px; flex: none; margin-left: 4px; }

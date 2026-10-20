@@ -56,6 +56,7 @@ import { BreatheScreen } from './BreatheScreen'
 import { ComboRatingScreen } from './ComboRatingScreen'
 import { ComboUnlockSuggestion } from './ComboUnlockSuggestion'
 import { MtClassLogView } from './MtClassLogView'
+import { ClassLearnedFlow } from './ClassLearnedFlow'
 import { MobilityExerciseView } from './MobilityExerciseView'
 import { RitualEntrance } from './RitualEntrance'
 import { RunSessionView } from './RunSessionView'
@@ -154,7 +155,7 @@ interface MobilityWorkoutData {
 interface BagComboData {
   id: string
   orderIndex: number
-  combo: { id: string; text: string; tier: string; level: string; masteryScore?: number; isFavourite?: number; techniques?: string } | null
+  combo: { id: string; text: string; tier: string; level: string; masteryScore?: number; isFavourite?: number; techniques?: string; source?: string | null } | null
 }
 
 interface UnlockSuggestion {
@@ -400,6 +401,8 @@ export function WorkoutPage() {
   const [entranceDetail, setEntranceDetail] = useState<string | null>(null)
   // The close (page 19 #6): after the effort is saved, the moment plays, then Today.
   const [moment, setMoment] = useState<string | null>(null)
+  // An MT class (page 49): after CLOSE SESSION, "What you learned" comes before the moment.
+  const [learnedNext, setLearnedNext] = useState<string | null>(null)
   // Block Zero week 1 / 6: the week's first easy run-walk asks the talk-test HR on its log (page 45 #3).
   const [talkTest, setTalkTest] = useState<{ blockId: string; week: number } | null>(null)
   const [strengthData, setStrengthData] = useState<StrengthWorkoutData | null>(null)
@@ -944,7 +947,9 @@ export function WorkoutPage() {
           4000,
         )
       })
-      setMoment(momentLine(sessionLabel ?? SESSION_ICON_NAME[sessionIconFor(sessionType ?? 'strength', runCategory)], rpe))
+      const line = momentLine(sessionLabel ?? SESSION_ICON_NAME[sessionIconFor(sessionType ?? 'strength', runCategory)], rpe)
+      if (sessionType === 'mt_class' && mtData?.mtLog) setLearnedNext(line)
+      else setMoment(line)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to complete session:', e)
@@ -1006,6 +1011,17 @@ export function WorkoutPage() {
   }
 
   // ─── The moment (page 19 #6): after the close is saved ────
+
+  // ─── What you learned (page 49): the next step of finishing a class ───
+
+  if (learnedNext && id && mtData?.mtLog) {
+    return (
+      <>
+        <ClassLearnedFlow sessionId={id} mtLogId={mtData.mtLog.id} onDone={() => { setMoment(learnedNext); setLearnedNext(null) }} />
+        <ToastContainer />
+      </>
+    )
+  }
 
   if (moment) {
     return <SessionMoment line={moment} onDone={() => navigate('/today', { replace: true })} />
@@ -1266,6 +1282,7 @@ export function WorkoutPage() {
         comboId: rc.combo!.id,
         roundId: r.id,
         text: rc.combo!.text,
+        source: rc.combo!.source ?? null,
       }))
     )
 

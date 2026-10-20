@@ -26,6 +26,7 @@ import { pickToast } from '@/features/coach/pickToast'
 import { CrestLoading } from '@/world/CrestLoading'
 import { setWorldLantern, setWorldPlace } from '@/world/worldStore'
 
+import { ClassLearnedFlow } from '@/features/session/ClassLearnedFlow'
 import { ReassignRunSheet } from './ReassignRunSheet'
 import { AllDoneBoard, EmptyDayBoard, NoBlockBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip } from './TodayBoards'
 import { TodayDay, type TodaySession } from './TodayDay'
@@ -107,7 +108,13 @@ export function TodayPage() {
   const [week, setWeek] = useState<WeekPayload | null | undefined>(undefined)
   const [nextWeek, setNextWeek] = useState<WeekPayload | null>(null)
   const [showDayAnyway, setShowDayAnyway] = useState(false)
-  const [deck, setDeck] = useState<{ startAt: number; firstOpen: boolean } | null>(null)
+  const [deck, setDeck] = useState<{ startAt: number | 'resume' } | null>(null)
+  // + What you learned on tonight's class row (page 49, if skipped): the same box.
+  const [learned, setLearned] = useState<{ sessionId: string; mtLogId: string } | null>(null)
+  const [learnedDone, setLearnedDone] = useState<ReadonlySet<string>>(() => new Set())
+  // Read by the foreground listener: never stack a second deck on an open one.
+  const deckOpenRef = useRef(false)
+  useEffect(() => { deckOpenRef.current = deck != null }, [deck])
   const autoResumeAttempted = useRef(false)
   const [slowLoad, setSlowLoad] = useState(false)
   useEffect(() => {
@@ -701,6 +708,8 @@ export function TodayPage() {
             onSkip={id => { void handleSkip(id) }}
             onReplace={handleReplaceStart}
             onEndEarly={handleEndEarly}
+            onLearned={(sessionId, mtLogId) => setLearned({ sessionId, mtLogId })}
+            learnedSaved={learnedDone}
             onConfirmMatch={handleConfirmMatch}
             onReassignMatch={handleReassignStart}
             onDismissMatch={handleDismissMatch}
@@ -777,6 +786,18 @@ export function TodayPage() {
           note={dailyLog?.notes ?? null}
           onNoteSaved={log => setDailyLog(log as DailyLog)}
           regions={bodyWatch?.checkIn ?? []}
+        />
+      )}
+
+      {learned && (
+        <ClassLearnedFlow
+          sessionId={learned.sessionId}
+          mtLogId={learned.mtLogId}
+          backdrop={false}
+          onDone={outcome => {
+            if (outcome === 'saved') setLearnedDone(d => new Set(d).add(learned.sessionId))
+            setLearned(null)
+          }}
         />
       )}
 

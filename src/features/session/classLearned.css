@@ -1,0 +1,30 @@
+/* Class to combo (page 49 sections 1-2): the write box, the found list, NO COMBOS FOUND. */
+.cl-card { gap: 0; }
+.cl-dim { margin: -2px 0 8px; font: 600 15px/1.4 var(--font-body); color: #9fb2a8; }
+.cl-note { display: block; width: 100%; box-sizing: border-box; min-height: 150px; resize: none; border: 0; border-radius: 9px; padding: 10px 12px; background: rgba(4, 9, 7, 0.6); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3); font: 500 16px/1.45 var(--font-body); color: #f0ead6; outline: none; }
+.cl-note:focus-visible { box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.6); }
+.cl-btns { margin-top: 12px; }
+.cl-btns.is-done { margin-top: 6px; }
+.cl-skip { text-align: center; margin-top: 8px; }
+.cl-lnk { position: relative; padding: 0; border: 0; background: none; cursor: pointer; font: 700 14px var(--font-body); letter-spacing: 0.06em; color: #c9b27a; -webkit-tap-highlight-color: transparent; }
+.cl-lnk::before { content: ''; position: absolute; inset: -14px -10px; }
+
+/* the found list: one combo a line */
+.cl-fl { padding: 10px 0; }
+.cl-fl + .cl-fl { border-top: 1px solid rgba(0, 0, 0, 0.6); }
+.cl-ln { font: 700 16px/1.35 var(--font-body); color: #f2e8cc; }
+.cl-ln b { font-weight: 800; color: #e8c878; }
+.cl-st { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.cl-stat { display: flex; align-items: center; gap: 8px; }
+.cl-stat small { font: 600 14px/1.3 var(--font-body); color: #9fb2a8; }
+.cl-mini { display: flex; gap: 6px; margin-top: 8px; }
+.cl-mini .wm-btn { flex: 1; min-height: 44px; padding: 0 8px; }
+.cl-fl.is-out .cl-ln { color: #f0a684; }
+.cl-glove { width: 24px; height: 24px; flex: none; }
+
+/* nothing found */
+.cl-none { text-align: center; align-items: center; gap: 8px; }
+.cl-none .cl-btns { align-self: stretch; margin-top: 6px; }
+.cl-q { font: 600 16px/1.4 var(--font-body); color: #e6efe9; margin: 4px 0 0; }
+.cl-out { color: #f0a684; margin: 0; }
+

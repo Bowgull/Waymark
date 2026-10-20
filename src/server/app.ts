@@ -47,6 +47,7 @@ import { strava } from './routes/strava'
 import { clearCollectedTrainingData } from './trainingReset'
 import { checkMtClassForBlockZero, easeForReadiness, getActiveBlock, loadMtRamp, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, todayEpochDayUtc, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
 import { logs } from './routes/logs'
+import { classCombos } from './routes/classCombos'
 import {
   blockDayPlan,
   bodyPlanMark,
@@ -130,9 +131,13 @@ for (const path of [
   '/api/body-metrics',
   '/api/daily-logs',
   '/api/journal',
+  '/api/class-combos/add',
+  '/api/class-combos/decline',
 ]) {
   app.use(path, idempotent())
 }
+
+app.route('/api/class-combos', classCombos)
 
 app.onError((err, c) => {
   console.error('[Waymark API Error]', err.message, err.stack)
@@ -2258,6 +2263,8 @@ app.patch('/api/mt-class-logs/:id', async (c) => {
   if (body.weakness !== undefined) updates.weakness = body.weakness
   if (body.concept !== undefined) updates.concept = body.concept
   if (body.actionItems !== undefined) updates.actionItems = body.actionItems
+  // "What you learned" sent from the phone's queue (written offline after class, page 49).
+  if (body.learnedNote !== undefined) { updates.learnedNote = body.learnedNote; updates.learnedAt = Math.floor(Date.now() / 1000) }
   if (Object.keys(updates).length > 0) await db.update(mtClassLogs).set(updates).where(eq(mtClassLogs.id, logId))
   const [row] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
   return c.json(blockZeroNote ? { ...row, blockZero: blockZeroNote } : row)

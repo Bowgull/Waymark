@@ -75,16 +75,18 @@ function LibraryHeader({ onBack }: { onBack?: () => void }) {
 // ─── pieces ───────────────────────────────────────────────────
 
 /** A combo: each strike its own tile, joined by ›. */
-function ComboStrikes({ text }: { text: string }) {
+function ComboStrikes({ text, glove = false }: { text: string; glove?: boolean }) {
   const strikes = comboStrikes(text)
   return (
-    <span className="lib-strikes" aria-label={strikes.join(', ')}>
+    <span className="lib-strikes" aria-label={`${strikes.join(', ')}${glove ? ', from class' : ''}`}>
       {strikes.map((s, i) => (
         <Fragment key={i}>
           {i > 0 && <span className="lib-arr" aria-hidden>›</span>}
           <span className="lib-stk"><FlapLabel text={s} size="xs" /></span>
         </Fragment>
       ))}
+      {/* page 49 section 3: from class, the MT Class glove after the strikes */}
+      {glove && <SessionIcon kind="mt" size={20} className="lib-glove" label="" />}
     </span>
   )
 }
@@ -118,7 +120,7 @@ function ComboRow({ combo, open, onOpen, onFavourite }: { combo: LibraryCombo; o
   if (!combo.unlocked) {
     return (
       <div className="lib-combo is-locked">
-        <ComboStrikes text={combo.text} />
+        <ComboStrikes text={combo.text} glove={combo.source === 'class'} />
         <span className="lib-lock" aria-label="Locked">⚿</span>
       </div>
     )
@@ -132,7 +134,7 @@ function ComboRow({ combo, open, onOpen, onFavourite }: { combo: LibraryCombo; o
       onClick={onOpen}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
     >
-      <ComboStrikes text={combo.text} />
+      <ComboStrikes text={combo.text} glove={combo.source === 'class'} />
       <Dots score={combo.masteryScore} />
       <Anvil combo={combo} onToggle={onFavourite} />
       {open && (

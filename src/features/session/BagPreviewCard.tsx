@@ -9,7 +9,7 @@ import './session.css'
 interface PreviewRound {
   id: string
   roundNumber: number
-  combos: { id: string; combo: { id: string; text: string } | null }[]
+  combos: { id: string; combo: { id: string; text: string; source?: string | null } | null }[]
 }
 
 /**
@@ -34,7 +34,7 @@ export function BagPreviewCard({ rounds, onBegin, onBack }: { rounds: PreviewRou
           <span className="ss-num">{String(i + 1).padStart(2, '0')}</span>
           <div className="ss-rcombos">
             {r.combos.filter(rc => rc.combo).map(rc => (
-              <ComboStrikes key={rc.id} text={rc.combo!.text} size="xs" />
+              <ComboStrikes key={rc.id} text={rc.combo!.text} size="xs" glove={rc.combo!.source === 'class'} />
             ))}
           </div>
         </div>

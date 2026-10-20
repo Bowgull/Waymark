@@ -178,3 +178,4 @@
   .lib-book.is-turn { animation: none; }
   .lib-anvil path { transition: none; }
 }
+.lib-strikes .lib-glove { width: 20px; height: 20px; flex: none; margin-left: 4px; }
