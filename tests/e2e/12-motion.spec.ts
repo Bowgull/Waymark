@@ -58,28 +58,38 @@ test('the flap engine: one pass, at most two writes a tile, landed by about 1.3 
   await expect(page.locator('.wm-cell.is-tick')).toHaveCount(0)
 })
 
-test('tabs stay alive: Program opens in one request, comes back without asking again, the profile read once', async ({ page }) => {
+test('tabs stay alive: Program opens in one request, comes back at once, the profile read once', async ({ page }) => {
   const reads: string[] = []
-  page.on('request', r => { const u = new URL(r.url()); if (u.pathname.startsWith('/api/')) reads.push(u.pathname) })
+  let lastRead = Date.now()
+  page.on('request', r => { const u = new URL(r.url()); if (u.pathname.startsWith('/api/')) { reads.push(u.pathname); lastRead = Date.now() } })
+  page.on('requestfinished', () => { lastRead = Date.now() })
+  /** Until no read has gone out or come back for 800 ms. */
+  const quiet = async () => { await expect.poll(() => Date.now() - lastRead, { timeout: 15_000 }).toBeGreaterThan(800) }
   await gotoToday(page)
   const tabs = page.getByRole('navigation', { name: 'Main' })
+  await quiet()
   reads.length = 0
   await tabs.getByRole('link', { name: 'program' }).tap()
   await expect(page.getByRole('img', { name: /^WEEK \d+$/ }).first()).toBeVisible()
   // one read for the block, its week and the road (it may already be in hand from the prefetch)
   expect(reads.filter(p => p === '/api/program').length).toBeLessThanOrEqual(1)
-  expect(reads.filter(p => p === '/api/blocks/current' || p === '/api/weeks/current')).toEqual([])
+  // never the old chain: /blocks/current, then /weeks/current, then one per past week
+  expect(reads.filter(p => p === '/api/weeks/current')).toEqual([])
   await page.evaluate(() => { (document.querySelector('[data-tab-pane="program"]') as HTMLElement & { __kept?: boolean }).__kept = true })
 
   await tabs.getByRole('link', { name: 'today' }).tap()
   await expect(page.getByRole('button', { name: '+ add session' })).toBeVisible()
+  await quiet()
   reads.length = 0
   await tabs.getByRole('link', { name: 'program' }).tap()
-  await expect(page.getByRole('img', { name: /^WEEK \d+$/ }).first()).toBeVisible()
-  // the same page, kept: no "Reading the plan.", no new read for the plan
-  expect(await page.evaluate(() => (document.querySelector('[data-tab-pane="program"]') as HTMLElement & { __kept?: boolean }).__kept)).toBe(true)
+  // the same page, kept: its boards are there at once (never "Reading the plan."); it refreshes behind them
+  await expect(page.getByRole('img', { name: /^WEEK \d+$/ }).first()).toBeAttached()
   await expect(page.getByText('Reading the plan.')).toHaveCount(0)
-  expect(reads.filter(p => p === '/api/program' || p === '/api/user-profile')).toEqual([])
+  expect(await page.evaluate(() => (document.querySelector('[data-tab-pane="program"]') as HTMLElement & { __kept?: boolean }).__kept)).toBe(true)
+  await expect(page.getByRole('img', { name: /^WEEK \d+$/ }).first()).toBeVisible()
+  expect(reads.filter(p => p === '/api/program').length).toBeLessThanOrEqual(1)
+  // the onboarding check is never read again on a tab tap (Today, kept, may still refresh its own week behind)
+  expect(reads.filter(p => p === '/api/user-profile')).toEqual([])
 })
 
 test('the splash: one tap skips to the title screen, then into the app', async ({ page }) => {

@@ -120,10 +120,6 @@ export function Splash({ onDone }: { onDone: () => void }) {
     window.clearTimeout(p.timer)
     skip(splashGesture(performance.now() - p.at))
   }
-  function onPointerCancel() {
-    if (press.current) window.clearTimeout(press.current.timer)
-    press.current = null
-  }
 
   return (
     <div
@@ -132,7 +128,6 @@ export function Splash({ onDone }: { onDone: () => void }) {
       role="img"
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
       onContextMenu={e => e.preventDefault()}
     >
       <div className="wm-splash-stage">

@@ -507,7 +507,8 @@
   .wm-entrance-icon.is-sway { animation: wm-crest-turn 9s ease-in-out infinite; }
 
   /* ── splash (page 38, A): the crest suits up, WAYMARK flaps in, Today fades up ── */
-  .wm-splash { position: fixed; inset: 0; z-index: 95; }
+  /* the splash takes a tap (skip to the title) or a hold (skip it all): no callout, no selection, no scroll */
+  .wm-splash { position: fixed; inset: 0; z-index: 95; -webkit-touch-callout: none; user-select: none; touch-action: none; }
   .wm-splash.is-leaving { pointer-events: none; }
   /* page 38 A: Today fades up over the crest (0.7 s) while WAYMARK stays on top, then the word goes */
   .wm-splash-stage { position: absolute; inset: 0; background: #020a08; transition: opacity 700ms ease; }
