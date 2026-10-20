@@ -104,8 +104,10 @@ test('the splash: one tap skips to the title screen, then into the app', async (
   await page.mouse.click((box?.width ?? 390) / 2, 300)
   // the title screen at once: WAYMARK under the whole crest
   await expect(splash.getByRole('img', { name: 'WAYMARK' })).toBeVisible({ timeout: 1500 })
-  // then it lifts as usual, in under 3 s instead of 10
-  await expect(splash).toHaveCount(0, { timeout: 4000 })
+  // then it lifts as usual, in under 3 s instead of 10 (the untouched splash
+  // would still run about 8 s more; 6 s leaves room for the runner's slow
+  // first WebGL frames and still tells the two apart)
+  await expect(splash).toHaveCount(0, { timeout: 6000 })
   await expect(page.getByRole('button', { name: '+ add session' })).toBeVisible()
 })
 
