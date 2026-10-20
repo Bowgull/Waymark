@@ -9,7 +9,7 @@ import { cors } from 'hono/cors'
 import { createDB } from '../db/client'
 import { CONSISTENCY_SPAN, blockConsistency, weeksConsistency } from '../lib/ledgerConsistency'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, runTypes, techniques, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
-import { isoToEpochDay, mondayOf } from '../lib/dates'
+import { athleteDayFrom, isoToEpochDay, mondayOf, TODAY_HEADER } from '../lib/dates'
 import { cycleWeeks } from '../lib/programWeeks'
 import { loggedAtSec } from '../lib/units'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
@@ -48,7 +48,7 @@ import { waybookEntries } from '../lib/waybook'
 import { runReactiveReplan } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { clearCollectedTrainingData } from './trainingReset'
-import { checkMtClassForBlockZero, easeForReadiness, getActiveBlock, loadMtRamp, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, todayEpochDayUtc, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
+import { checkMtClassForBlockZero, easeForReadiness, getActiveBlock, loadMtRamp, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
 import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
 import { pendingReviews } from './linkHealth'
@@ -271,7 +271,7 @@ async function isLeadInStrength(db: DrizzleDB, session: { blockType: string | nu
   return isBlockLeadInDay(await getActiveBlock(db), session.scheduledDate)
 }
 
-async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
+async function buildStrengthPreview(db: DrizzleDB, sessionId: string, todayDay: number) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return null
 
@@ -286,7 +286,7 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string) {
   template = withMergedLifts(template, session.contextJson, blockWeek, blockType)
   const wavePct = getWeekPercentage(blockWeek, blockType)
   // Same coach and Block Zero adjustments start-strength applies.
-  const state = await loadSessionCoachState(db, session, Math.floor(Date.now() / 86400000))
+  const state = await loadSessionCoachState(db, session, todayDay)
   const push = applyCoachPush(template, coachPushFrom(session.contextJson), state)
   template = push.template
   const bzPlan = blockType === 'block_zero' ? await planBlockZeroStrength(db, session, template, coachStrengthInputs(state)) : null
@@ -497,8 +497,7 @@ async function loadRunGuardInputs(db: DrizzleDB, sessionId: string | null, weekP
 // Block Zero run-walk: week shape from the rules module, capped by the run
 // guards and the return ramp, under the shared easy-run HR ceiling. runType
 // stays 'zone2' so the run screen keeps its easy-run framing and HR ceiling.
-async function getBlockZeroRunPrescription(db: DrizzleDB, session: RunSessionInput, weekNumber: number, state: SessionCoachState) {
-  const todayEpochDay = Math.floor(Date.now() / 86400000)
+async function getBlockZeroRunPrescription(db: DrizzleDB, session: RunSessionInput, weekNumber: number, state: SessionCoachState, todayEpochDay: number) {
   const epochDay = session.scheduledDate ?? todayEpochDay
   const guards = await loadRunGuardInputs(db, session.id ?? null, session.weekPlanId, epochDay)
   // R9: talk test, else HRmax, else age. Compliance scoring reads the same ceiling.
@@ -556,9 +555,8 @@ interface RunSessionInput {
 }
 
 // Helper: get running prescription for a session based on its training week and run category
-async function getRunPrescription(db: DrizzleDB, session: RunSessionInput) {
+async function getRunPrescription(db: DrizzleDB, session: RunSessionInput, todayEpochDay: number) {
   let weekNumber: number | null = null
-  const todayEpochDay = Math.floor(Date.now() / 86400000)
   const epochDay = session.scheduledDate ?? todayEpochDay
 
   if (session.weekPlanId) {
@@ -577,7 +575,7 @@ async function getRunPrescription(db: DrizzleDB, session: RunSessionInput) {
   const state = await loadSessionCoachState(db, { type: session.type ?? 'running', scheduledDate: session.scheduledDate ?? null, contextJson: session.contextJson ?? null }, todayEpochDay)
 
   if (session.blockType === 'block_zero') {
-    return getBlockZeroRunPrescription(db, session, weekNumber, state)
+    return getBlockZeroRunPrescription(db, session, weekNumber, state, todayEpochDay)
   }
 
   const { longestLast30Sec } = await loadRunGuardInputs(db, session.id ?? null, session.weekPlanId, epochDay)
@@ -608,11 +606,13 @@ async function getRunPrescription(db: DrizzleDB, session: RunSessionInput) {
   }, state, longestLast30Sec)
 }
 
-/** The athlete's local today: `today` (YYYY-MM-DD) when sent, else the target day capped at UTC today, so tonight never reads as past. */
-function localToday(today: unknown, targetDay?: number): number {
-  if (typeof today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(today)) return isoToEpochDay(today)
-  const utc = Math.floor(Date.now() / 86400000)
-  return targetDay != null ? Math.min(targetDay, utc) : utc
+/**
+ * The athlete's local today for this request (lib/dates athleteDayFrom): an
+ * explicit `today` first, then the X-Waymark-Today header every app request
+ * carries, else the target day capped at UTC today. Never the raw UTC day.
+ */
+function athleteDay(c: { req: { header: (name: string) => string | undefined } }, today?: unknown, targetDay?: number | null): number {
+  return athleteDayFrom({ today, header: c.req.header(TODAY_HEADER), targetDay, nowMs: Date.now() })
 }
 
 app.get('/', (c) => {
@@ -743,7 +743,7 @@ app.get('/api/sessions/suggestions', async (c) => {
   if (!date) return c.json({ error: 'date query param required' }, 400)
 
   const targetEpochDay = isoToEpochDay(date)
-  const todayDay = localToday(c.req.query('today'), targetEpochDay)
+  const todayDay = athleteDay(c, c.req.query('today'), targetEpochDay)
   // The Replace board picks a swap, not an add: it keeps the wellness-only rows.
   const forReplace = c.req.query('mode') === 'replace'
   const db = createDB(c.env)
@@ -853,7 +853,7 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   const epochDay = isoToEpochDay(body.date)
   const nowSec = Math.floor(Date.now() / 1000)
   const db = createDB(c.env)
-  const todayDay = localToday(body.today, epochDay)
+  const todayDay = athleteDay(c, body.today, epochDay)
   if (epochDay < todayDay) return c.json({ error: 'That day has passed.' }, 400)
   // m16: with no block running there is no week to add to (Today says to start one).
   if (!(await getActiveBlock(db))) return c.json({ error: 'No block running. Start Block Zero first.', code: 'no_block' }, 409)
@@ -932,7 +932,7 @@ app.post('/api/sessions/:id/pull-forward', async (c) => {
   if (!session || session.scheduledDate == null) return c.json({ error: 'session not found' }, 404)
   if (session.status !== 'planned' || session.type !== 'strength') return c.json({ error: 'Only a planned strength session can come forward.' }, 400)
   const epochDay = isoToEpochDay(body.date)
-  const todayDay = localToday(body.today, epochDay)
+  const todayDay = athleteDay(c, body.today, epochDay)
   const from = session.scheduledDate
   const displacedRows = (await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay)))
     .filter(s => s.status === 'planned' && KEY_TYPES.has(s.type))
@@ -989,7 +989,7 @@ app.post('/api/sessions/:id/replace', async (c) => {
   if (body.timeSlot !== 'am' && body.timeSlot !== 'pm') return c.json({ error: 'timeSlot must be am or pm' }, 400)
 
   const scheduledDate = original.scheduledDate ?? isoToEpochDay(new Date().toISOString().split('T')[0])
-  const todayDay = localToday(body.today, scheduledDate)
+  const todayDay = athleteDay(c, body.today, scheduledDate)
   const reasonCode = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null
   const words = reasonWords(reasonCode)
   const skipLine = words ? `Replaced: ${words.toLowerCase()}` : 'Replaced'
@@ -1089,7 +1089,7 @@ app.patch('/api/sessions/:id', async (c) => {
   // SKIP is instant (page 56 item 3): recorded as his change, then the coach rebalances.
   if (body.status === 'skipped' && row && before && before.status === 'planned' && row.scheduledDate != null) {
     const nowSec = Math.floor(Date.now() / 1000)
-    const todayDay = localToday(body.today, row.scheduledDate)
+    const todayDay = athleteDay(c, body.today, row.scheduledDate)
     const setId = crypto.randomUUID()
     const words = reasonWords(row.skipReason)
     const [changeId] = await recordChanges(db, [{
@@ -1132,7 +1132,7 @@ app.get('/api/weeks/:monday/changes', async (c) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(monday)) return c.json({ error: 'monday must be YYYY-MM-DD' }, 400)
   const db = createDB(c.env)
   const day = isoToEpochDay(monday)
-  return c.json(await weekChangeViews(db, mondayOf(day), localToday(c.req.query('today'), day)))
+  return c.json(await weekChangeViews(db, mondayOf(day), athleteDay(c, c.req.query('today'), day)))
 })
 
 // The day's back opened: its changes are seen (the rune dims).
@@ -1148,7 +1148,7 @@ app.post('/api/changes/seen', async (c) => {
 app.post('/api/changes/:id/undo', async (c) => {
   const body = await c.req.json<{ today?: string }>().catch(() => ({} as { today?: string }))
   const db = createDB(c.env)
-  const out = await undoChange(db, c.req.param('id'), localToday(body.today), Math.floor(Date.now() / 1000))
+  const out = await undoChange(db, c.req.param('id'), athleteDay(c, body.today), Math.floor(Date.now() / 1000))
   if (!out.ok) return c.json({ error: out.error, lock: out.lock ?? null }, out.status)
   return c.json(out)
 })
@@ -1174,7 +1174,7 @@ app.patch('/api/changes/:id/reason', async (c) => {
   const why = words ? `Skipped. ${words}${detail ? `: ${detail}` : ''}.` : 'Skipped.'
   await db.update(weekAdjustments).set({ why, reason: why, afterJson: JSON.stringify({ ...after, sessions: fixed }) }).where(eq(weekAdjustments.id, row.id))
   const added = reason && STRESS_REASONS.has(reason) && row.changeSetId && session.scheduledDate != null
-    ? await rebalanceAfter(db, { kind: 'skip', sessionId: session.id, reason }, row.changeSetId, localToday(body.today, session.scheduledDate), nowSec)
+    ? await rebalanceAfter(db, { kind: 'skip', sessionId: session.id, reason }, row.changeSetId, athleteDay(c, body.today, session.scheduledDate), nowSec)
     : []
   return c.json({ ok: true, coachChanges: added.length })
 })
@@ -1183,7 +1183,7 @@ app.patch('/api/changes/:id/reason', async (c) => {
 // alarm's day) and the Live Activity finish card (?for=finish&day=today).
 app.get('/api/coach/line', async (c) => {
   const db = createDB(c.env)
-  const today = localToday(c.req.query('today'))
+  const today = athleteDay(c, c.req.query('today'))
   const dayQ = c.req.query('day')
   const day = dayQ && /^\d{4}-\d{2}-\d{2}$/.test(dayQ) ? isoToEpochDay(dayQ) : today
   const changes = await lineChanges(db, day, today)
@@ -1199,7 +1199,7 @@ app.get('/api/coach/line', async (c) => {
 // Program, the Ledger and the Library (and the check-in's "<Place> today").
 app.get('/api/body/watch', async (c) => {
   const db = createDB(c.env)
-  const today = localToday(c.req.query('today'))
+  const today = athleteDay(c, c.req.query('today'))
   return c.json(await bodyWatchPayload(db, today, Math.floor(Date.now() / 1000)))
 })
 
@@ -1207,7 +1207,7 @@ app.get('/api/body/watch', async (c) => {
 app.post('/api/body/watch/:id/apply', async (c) => {
   const db = createDB(c.env)
   const body = await c.req.json<{ today?: string }>().catch(() => ({} as { today?: string }))
-  const out = await applyBodyPlan(db, c.req.param('id'), localToday(body.today), Math.floor(Date.now() / 1000))
+  const out = await applyBodyPlan(db, c.req.param('id'), athleteDay(c, body.today), Math.floor(Date.now() / 1000))
   return out.ok ? c.json(out) : c.json({ error: out.error }, out.status)
 })
 
@@ -1231,7 +1231,7 @@ app.post('/api/body/watch/:id/answer', async (c) => {
   const body = await c.req.json<{ answer?: string; today?: string }>().catch(() => ({} as { answer?: string; today?: string }))
   const answer = body.answer === 'better' || body.answer === 'sore' || body.answer === 'not_now' ? body.answer : null
   if (!answer) return c.json({ error: 'answer must be better, sore or not_now' }, 400)
-  const out = await answerBody(db, c.req.param('id'), answer, localToday(body.today), Math.floor(Date.now() / 1000))
+  const out = await answerBody(db, c.req.param('id'), answer, athleteDay(c, body.today), Math.floor(Date.now() / 1000))
   return out.ok ? c.json(out) : c.json({ error: out.error }, out.status)
 })
 
@@ -1266,7 +1266,7 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   const weekPct = getWeekPercentage(blockWeek, blockType)
 
   // Coach state: return ramp after a gap (F12/F13), an applied coach ease, injury flags (F16).
-  const state = await loadSessionCoachState(db, session, Math.floor(Date.now() / 86400000))
+  const state = await loadSessionCoachState(db, session, athleteDay(c))
 
   // Block Zero: back swaps, auto-ease, the return ramp and RIR-based loads for today.
   // An accepted push (ramp-up ask), skipped on a day the rules ease.
@@ -1293,7 +1293,7 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   const maxes = await db.select().from(trainingMaxes)
   const maxMap = new Map(maxes.map(m => [m.exerciseId, m.weightKg]))
   const equipmentById = equipmentMap(await db.select({ id: exercises.id, equipment: exercises.equipment }).from(exercises))
-  const liftTrends = await loadLiftTrends(db, Math.floor(Date.now() / 86400000))
+  const liftTrends = await loadLiftTrends(db, athleteDay(c))
   // Phase 3: the AI verdict from the latest AthleteState wins per-lift; fall back
   // to the deterministic trend when no state has assessed that lift.
   const latestState = await loadLatestAthleteState(db)
@@ -1418,7 +1418,7 @@ app.get('/api/sessions/:id/strength-preview', async (c) => {
     return c.json(await buildWorkoutResponse(db, sessionId))
   }
 
-  const preview = await buildStrengthPreview(db, sessionId)
+  const preview = await buildStrengthPreview(db, sessionId, athleteDay(c))
   if (!preview) return c.json({ error: 'session not found' }, 404)
   return c.json(preview)
 })
@@ -1550,7 +1550,7 @@ app.post('/api/sessions/:id/complete', async (c) => {
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
 
-  const todayEpochDay = Math.floor(Date.now() / 86400000)
+  const todayEpochDay = athleteDay(c)
   c.executionCtx.waitUntil(
     runReactiveReplan(db, c.env.ANTHROPIC_API_KEY, {
       trigger: 'session_completed',
@@ -1592,7 +1592,7 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
   const existingRun = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
   const existingCooldown = await db.select().from(postureSessionExercises).where(eq(postureSessionExercises.sessionId, sessionId))
   if (existingRun.length > 0 && existingCooldown.length > 0) {
-    const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' })
+    const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' }, athleteDay(c))
     const mobilityResponse = await buildMobilityWorkoutResponse(db, sessionId)
     return c.json({ session, runSession: existingRun[0], prescription, postureExercises: mobilityResponse.exercises })
   }
@@ -1607,7 +1607,7 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
     }, 409)
   }
 
-  const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' })
+  const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' }, athleteDay(c))
 
   // Create run session (Zone 2)
   const runId = crypto.randomUUID()
@@ -1640,7 +1640,7 @@ app.get('/api/sessions/:id/foundation-run-workout', async (c) => {
   if (!session) return c.json({ error: 'session not found' }, 404)
 
   const [run] = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
-  const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' })
+  const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' }, athleteDay(c))
   const mobilityResponse = await buildMobilityWorkoutResponse(db, sessionId)
 
   return c.json({ session, runSession: run ?? null, prescription, postureExercises: mobilityResponse.exercises })
@@ -1674,7 +1674,7 @@ app.post('/api/sessions/:id/start-mobility', async (c) => {
   let rows: MobilityExerciseTemplate[] = DAILY_MOBILITY_TEMPLATE
   let foundation: FoundationInput | null = null
   if (isFoundation) {
-    const day = session.scheduledDate ?? Math.floor(nowSec / 86400)
+    const day = session.scheduledDate ?? athleteDay(c)
     const dayOfWeek = new Date(day * 86400000).getUTCDay()
     const blockZero = session.blockType === 'block_zero'
     const week = blockZero ? await blockWeekForSession(db, session, day) : null
@@ -1769,7 +1769,7 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
   }
 
   // Governance (map #9): ease day, injury flag, gap and block decide finishers and round count.
-  const bagDay = session.scheduledDate ?? Math.floor(nowSec / 86400)
+  const bagDay = session.scheduledDate ?? athleteDay(c)
   const bagState = await loadSessionCoachState(db, session, bagDay)
   const bagReport = await readinessFor(db, bagDay)
   const bagEase = easeForReadiness(bagReport, { type: 'bag_work', label: 'Bag Work', timeSlot: session.timeSlot === 'pm' ? 'pm' : 'am', estimatedMin: 30 })
@@ -1791,7 +1791,7 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
   let prescribed: Awaited<ReturnType<typeof runBagPrescription>> = null
   if (apiKey) {
     try {
-      const todayEpochDay = Math.floor(nowSec / 86400)
+      const todayEpochDay = athleteDay(c)
       prescribed = await runBagPrescription(db, apiKey, { sessionId, todayEpochDay, rules })
     } catch (err) {
       console.warn('[start-bag-work] prescription failed', err)
@@ -2028,12 +2028,12 @@ app.post('/api/sessions/:id/start-run', async (c) => {
   // Idempotent
   const existing = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
   if (existing.length > 0) {
-    const prescription = await getRunPrescription(db, session)
+    const prescription = await getRunPrescription(db, session, athleteDay(c))
     return c.json({ session, runSession: existing[0], prescription })
   }
 
   // Get prescription from running plan
-  const prescription = await getRunPrescription(db, session)
+  const prescription = await getRunPrescription(db, session, athleteDay(c))
 
   const runId = crypto.randomUUID()
   await db.insert(runSessions).values({
@@ -2060,7 +2060,7 @@ app.get('/api/sessions/:id/run-workout', async (c) => {
   if (!session) return c.json({ error: 'session not found' }, 404)
 
   const [run] = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
-  const prescription = await getRunPrescription(db, session)
+  const prescription = await getRunPrescription(db, session, athleteDay(c))
   return c.json({ session, runSession: run ?? null, prescription })
 })
 
@@ -2125,8 +2125,8 @@ app.post('/api/sessions/:id/start-skip-rope', async (c) => {
   }
 
   // Rope is lower-leg load (F11): fewer rounds on an ease day, an injury flag or the return ramp.
-  const state = await loadSessionCoachState(db, session, Math.floor(nowSec / 86400))
-  const report = await readinessFor(db, session.scheduledDate ?? Math.floor(nowSec / 86400))
+  const state = await loadSessionCoachState(db, session, athleteDay(c))
+  const report = await readinessFor(db, session.scheduledDate ?? athleteDay(c))
   const eased = report.readinessEase || state.coachEase != null || state.injuryAction.action === 'walk_or_bike'
   const roundCount = eased ? 3 : state.returnCtx.active ? Math.max(2, Math.round(5 * state.returnCtx.volumeFactor)) : 5
   const ropeNote = eased ? (state.injuryAction.note ?? state.coachEase?.reason ?? report.reason ?? 'Easy day.') : state.returnCtx.reason
@@ -2222,7 +2222,7 @@ app.post('/api/sessions/:id/start-mt-class', async (c) => {
   }
 
   // Ease day, applied coach ease, injury flag or the return ramp: keep it technical (R10, F16).
-  const day = session.scheduledDate ?? Math.floor(nowSec / 86400)
+  const day = session.scheduledDate ?? athleteDay(c)
   const state = await loadSessionCoachState(db, session, day)
   const report = await readinessFor(db, day)
   const eased = easeForReadiness(report, { type: 'mt_class', label: session.label ?? 'MT Class', timeSlot: session.timeSlot === 'am' ? 'am' : 'pm', estimatedMin: 90 })
@@ -2351,7 +2351,7 @@ app.post('/api/daily-logs', async (c) => {
       // The check-in built up card by card (partial saves) is complete now: the replan a fresh log gets.
       if (!checkInComplete(prev)) {
         c.executionCtx.waitUntil(
-          runReactiveReplan(createDB(c.env), c.env.ANTHROPIC_API_KEY, { trigger: 'wellness_logged', todayEpochDay: Math.floor(Date.now() / 86400000) })
+          runReactiveReplan(createDB(c.env), c.env.ANTHROPIC_API_KEY, { trigger: 'wellness_logged', todayEpochDay: epochDay })
             .catch(err => console.warn('[reactive] wellness_logged failed', err))
         )
       }
@@ -2383,7 +2383,8 @@ app.post('/api/daily-logs', async (c) => {
   const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, id))
   if (body.partial) return c.json(row)
 
-  const todayEpochDay = Math.floor(Date.now() / 86400000)
+  // The check-in's own day is his today (never the UTC day: an evening check-in is still today).
+  const todayEpochDay = epochDay
   c.executionCtx.waitUntil(
     runReactiveReplan(createDB(c.env), c.env.ANTHROPIC_API_KEY, {
       trigger: 'wellness_logged',
@@ -2419,7 +2420,7 @@ async function checkInCoachRules(db: DrizzleDB, logDay: number, nowSec: number):
 app.get('/api/readiness/today', async (c) => {
   const date = c.req.query('date')
   if (date != null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400)
-  const epochDay = date ? isoToEpochDay(date) : todayEpochDayUtc()
+  const epochDay = athleteDay(c, date)
   const db = createDB(c.env)
   const report = await readinessFor(db, epochDay)
   return c.json({ date: new Date(epochDay * 86400000).toISOString().slice(0, 10), ...report })
@@ -2466,7 +2467,7 @@ app.post('/api/blocks/:id/tests', async (c) => {
   }
   // A retest refreshes the athlete model (guarded: no push after a gap or on an ease day).
   if (valid.some(v => v.week > 1)) {
-    const today = Math.floor(nowSec / 86400)
+    const today = athleteDay(c)
     c.executionCtx.waitUntil((async () => {
       const ret = await returnContextFor(db, today)
       const report = await readinessFor(db, today)
@@ -2482,8 +2483,7 @@ app.post('/api/blocks/:id/tests', async (c) => {
 // return plan after a gap. ?date=YYYY-MM-DD is the athlete's local today.
 // offerBlockZero: a Fighter block after 4+ weeks off (F13: mini Block Zero).
 /** GET /api/blocks/current's answer: the running block, its training week and any return plan (null: none). */
-async function currentBlockJson(db: ReturnType<typeof createDB>, date: string | undefined) {
-  const todayDay = localToday(date)
+async function currentBlockJson(db: ReturnType<typeof createDB>, todayDay: number) {
   const current = await currentBlockWeek(db, todayDay)
   if (!current) return null
   const ret = await returnContextFor(db, todayDay)
@@ -2506,7 +2506,7 @@ async function currentBlockJson(db: ReturnType<typeof createDB>, date: string | 
 }
 
 app.get('/api/blocks/current', async (c) => {
-  return c.json(await currentBlockJson(createDB(c.env), c.req.query('date')))
+  return c.json(await currentBlockJson(createDB(c.env), athleteDay(c, c.req.query('date'))))
 })
 
 app.post('/api/blocks', async (c) => {
@@ -2520,7 +2520,7 @@ app.post('/api/blocks', async (c) => {
     blockType,
     totalWeeks: body.totalWeeks ?? FIGHTER_DEFAULT_TOTAL_WEEKS,
     nowSec,
-    startedAt: typeof body.today === 'string' ? startedAtForLocalDay(localToday(body.today)) : null,
+    startedAt: typeof body.today === 'string' ? startedAtForLocalDay(athleteDay(c, body.today)) : null,
   })
   return c.json(block)
 })
@@ -2531,7 +2531,7 @@ app.post('/api/blocks/block-zero', async (c) => {
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
   const body: { freshStart?: boolean; confirmReset?: boolean; today?: string; startDate?: string } = await c.req.json<{ freshStart?: boolean; confirmReset?: boolean; today?: string; startDate?: string }>().catch(() => ({}))
-  const todayDay = localToday(body.today)
+  const todayDay = athleteDay(c, body.today)
   // Page 64: the start can be a day ahead (up to six); nothing is planned before it.
   if (body.startDate != null && (typeof body.startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate) || !isChoosableStart(isoToEpochDay(body.startDate), todayDay))) {
     return c.json({ error: 'startDate must be today or one of the next six days' }, 400)
@@ -2559,7 +2559,7 @@ app.post('/api/blocks/block-zero', async (c) => {
 app.post('/api/blocks/:id/start-day', async (c) => {
   const body = await c.req.json<{ startDate?: string; today?: string }>().catch(() => ({} as { startDate?: string; today?: string }))
   if (typeof body.startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate)) return c.json({ error: 'startDate (YYYY-MM-DD) required' }, 400)
-  const result = await moveBlockZeroStart(createDB(c.env), c.req.param('id'), isoToEpochDay(body.startDate), localToday(body.today))
+  const result = await moveBlockZeroStart(createDB(c.env), c.req.param('id'), isoToEpochDay(body.startDate), athleteDay(c, body.today))
   if (!result.ok) return c.json({ error: result.error }, result.status)
   return c.json(result.block)
 })
@@ -2613,7 +2613,7 @@ app.get('/api/weeks/current', async (c) => {
  */
 app.get('/api/program', async (c) => {
   const db = createDB(c.env)
-  const block = await currentBlockJson(db, c.req.query('date'))
+  const block = await currentBlockJson(db, athleteDay(c, c.req.query('date')))
   if (!block) return c.json({ block: null, weekNumber: null, week: null, week1: false, pastDone: {} })
   const leadIn = block.trainingWeek.leadIn === true
   const weekNumber = leadIn ? 0 : block.currentWeek
@@ -2648,7 +2648,7 @@ app.post('/api/weeks/generate', async (c) => {
   // The server decides the training week for this Monday-Sunday week (paused
   // through gaps); the client's number is only a hint.
   const mondayDay = mondayOf(isoToEpochDay(body.startDate))
-  const stamps = weekStamps(blockRow, await trainingWeekFor(db, blockRow, mondayDay, localToday(body.today, mondayDay + 6)))
+  const stamps = weekStamps(blockRow, await trainingWeekFor(db, blockRow, mondayDay, athleteDay(c, body.today, mondayDay + 6)))
   const weekNumber = stamps.weekNumber
   const weekId = (await resolveWeekPlan(db, body.blockId, weekNumber, mondayDay, nowSec)) as string
   const weekSessions = await db.select().from(sessions).where(eq(sessions.weekPlanId, weekId))
@@ -2730,7 +2730,7 @@ app.post('/api/weeks/auto-generate', async (c) => {
 
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
-  const todayDay = localToday(body.today)
+  const todayDay = athleteDay(c, body.today)
   const monday = mondayOf(body.startDate ? isoToEpochDay(body.startDate) : todayDay)
   const result = await prepareWeek(db, c.env.ANTHROPIC_API_KEY, { blockId: body.blockId, monday, todayDay, nowSec, useAi: monday > todayDay })
   if (!result) return c.json({ error: 'block not found' }, 404)
@@ -2779,7 +2779,7 @@ app.get('/api/history/stats', async (c) => {
   const avgRpe = rpeValues.length > 0 ? Math.round(rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length * 10) / 10 : null
 
   // Streak: count from ALL completed sessions, not just the days window
-  const todayEpochDay = Math.floor(nowSec / 86400)
+  const todayEpochDay = athleteDay(c, c.req.query('today'))
   const allCompletedDays = new Set(
     allSessions.filter(s => s.status === 'completed').map(s => s.scheduledDate).filter(Boolean)
   )
@@ -2801,7 +2801,7 @@ app.get('/api/history/stats', async (c) => {
 app.get('/api/history/wellness', async (c) => {
   const days = parseInt(c.req.query('days') ?? '7')
   const db = createDB(c.env)
-  const nowEpochDay = Math.floor(Date.now() / 1000 / 86400)
+  const nowEpochDay = athleteDay(c, c.req.query('today'))
   const cutoffDay = nowEpochDay - days
 
   const logs = await db.select().from(dailyLogs)
@@ -2942,8 +2942,7 @@ app.patch('/api/journal/:id', async (c) => {
 
 app.get('/api/journal/history', async (c) => {
   const days = parseInt(c.req.query('days') ?? '14', 10)
-  const today = new Date()
-  const todayEpochDay = Math.floor(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 1000 / 86400)
+  const todayEpochDay = athleteDay(c, c.req.query('today'))
   const cutoffDay = todayEpochDay - days
 
   const db = createDB(c.env)
@@ -3010,7 +3009,7 @@ app.patch('/api/settings', async (c) => {
     const removedDays = oldMtDays.split(',').filter(Boolean).map(Number).filter(d => !newMtDays.has(d))
 
     if (removedDays.length > 0) {
-      const todayEpochDay = Math.floor(Date.now() / 1000 / 86400)
+      const todayEpochDay = athleteDay(c)
       // Find future planned MT class sessions on removed days
       const futureMtSessions = await db.select().from(sessions).where(
         and(
@@ -3210,7 +3209,7 @@ app.post('/api/blocks/:id/progress-tm', async (c) => {
   if (!block) return c.json({ error: 'block not found' }, 404)
   if (block.blockType !== 'fighter') return c.json({ error: 'Training max progression is for Fighter blocks.' }, 400)
 
-  const result = await applyTmUpdate(db, block, Math.floor(nowSec / 86400), nowSec)
+  const result = await applyTmUpdate(db, block, athleteDay(c), nowSec)
   return c.json({
     changeId: result.changeId,
     decisions: result.decisions,
@@ -3260,7 +3259,7 @@ app.get('/api/library/hints', async (c) => {
   let runWalk: LibraryHintData['runWalk'] = null
   const block = await getActiveBlock(db)
   if (block?.blockType === 'block_zero') {
-    const today = Math.floor(Date.now() / 86400000)
+    const today = athleteDay(c, c.req.query('today'))
     const week = (await trainingWeekFor(db, block, today, today)).week
     const shape = getRunWalkWeek(week)
     runWalk = { week, runSec: shape.runSec, walkSec: shape.walkSec, rounds: shape.rounds, warmupSec: shape.warmupSec }
@@ -3378,8 +3377,7 @@ app.get('/api/history/volume-trends', async (c) => {
 app.get('/api/history/consistency', async (c) => {
   const weeks = parseInt(c.req.query('weeks') ?? '8')
   const db = createDB(c.env)
-  const nowSec = Math.floor(Date.now() / 1000)
-  const todayEpochDay = Math.floor(nowSec / 86400)
+  const todayEpochDay = athleteDay(c, c.req.query('today'))
 
   const allSessions = await db.select().from(sessions)
 
@@ -3443,7 +3441,7 @@ app.get('/api/history/consistency', async (c) => {
 app.get('/api/history/category-completion', async (c) => {
   const days = parseInt(c.req.query('days') ?? '7')
   const db = createDB(c.env)
-  const nowEpochDay = Math.floor(Date.now() / 1000 / 86400)
+  const nowEpochDay = athleteDay(c, c.req.query('today'))
   const cutoffDay = nowEpochDay - days
 
   const allSessions = await db.select().from(sessions)
@@ -3535,7 +3533,7 @@ app.get('/api/history/prs', async (c) => {
 app.get('/api/history/correlations', async (c) => {
   const days = parseInt(c.req.query('days') ?? '30')
   const db = createDB(c.env)
-  const nowEpochDay = Math.floor(Date.now() / 1000 / 86400)
+  const nowEpochDay = athleteDay(c, c.req.query('today'))
   const cutoffDay = nowEpochDay - days
 
   const logs = await db.select().from(dailyLogs)
@@ -3719,7 +3717,7 @@ app.get('/api/history/ledger', async (c) => {
   const rangeRaw = c.req.query('range')
   const range: LedgerRange = rangeRaw === 'month' || rangeRaw === 'season' ? rangeRaw : 'week'
   const todayRaw = c.req.query('today')
-  const today = todayRaw && /^\d{4}-\d{2}-\d{2}$/.test(todayRaw) ? isoToEpochDay(todayRaw) : Math.floor(Date.now() / 86400000)
+  const today = athleteDay(c, todayRaw)
   const weeks = CHART_WEEKS[range]
   const db = createDB(c.env)
 
@@ -3791,7 +3789,7 @@ app.get('/api/history/ledger', async (c) => {
 app.get('/api/history/dashboard', async (c) => {
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
-  const todayEpochDay = Math.floor(nowSec / 86400)
+  const todayEpochDay = athleteDay(c, c.req.query('today'))
 
   const daysRaw = Number(c.req.query('days') ?? 7)
   const periodDays = [7, 30, 90].includes(daysRaw) ? daysRaw : 7
@@ -4026,7 +4024,6 @@ app.patch('/api/user-profile', async (c) => {
 
 app.post('/api/ai/summarize-old-weeks', async (c) => {
   const db = createDB(c.env)
-  const nowSec = Math.floor(Date.now() / 1000)
 
   const [block] = await db
     .select()
@@ -4035,7 +4032,7 @@ app.post('/api/ai/summarize-old-weeks', async (c) => {
 
   if (!block) return c.json({ error: 'no active block' }, 404)
 
-  const todayDay = Math.floor(nowSec / 86400)
+  const todayDay = athleteDay(c)
   const currentWeekNumber = (await trainingWeekFor(db, block, todayDay, todayDay)).week
 
   const summarized = await summarizeOldWeeks(db, c.env.ANTHROPIC_API_KEY, block.id, currentWeekNumber)

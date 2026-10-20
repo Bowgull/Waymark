@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from './apiBase'
+import { getTodayISO, TODAY_HEADER } from './dates'
 import { logger } from './logger'
 import { maxAttemptsFor } from './retryPolicy'
 import { dropPrefetched, putPrefetch, takePrefetched } from './prefetchCache'
@@ -68,6 +69,8 @@ async function requestApi<T>(path: string, options?: ApiFetchOptions): Promise<T
     headers: {
       'Content-Type': 'application/json',
       ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
+      // The phone's local date: the server's "today" is his day, never the UTC day (coach-brain P0).
+      [TODAY_HEADER]: getTodayISO(),
       ...options?.headers,
     },
   }

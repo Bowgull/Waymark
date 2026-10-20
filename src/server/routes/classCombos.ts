@@ -14,6 +14,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { createDB } from '../../db/client'
+import { athleteDayFrom, TODAY_HEADER } from '../../lib/dates'
 import { comboDeclines, combos, mtClassLogs, sessions, settings } from '../../db/schema'
 import {
   categoriesFor,
@@ -101,21 +102,21 @@ function knownStrikes(strikes: string[], techniques: Technique[], enabled: Set<s
   return { ok: true, names }
 }
 
-async function classDay(db: DB, sessionId: string | null | undefined): Promise<number> {
+async function classDay(db: DB, sessionId: string | null | undefined, todayDay: number): Promise<number> {
   if (sessionId) {
     const [s] = await db.select({ day: sessions.scheduledDate }).from(sessions).where(eq(sessions.id, sessionId))
     if (s?.day != null) return s.day
   }
-  return Math.floor(Date.now() / 86400000)
+  return todayDay
 }
 
 /** ADD TO BAG: a new combo in the library, or a locked one unlocked; both carry the glove. */
-export async function addToBag(db: DB, strikes: string[], sessionId: string | null | undefined) {
+export async function addToBag(db: DB, strikes: string[], sessionId: string | null | undefined, todayDay: number = athleteDayFrom({ nowMs: Date.now() })) {
   const bag = await loadBag(db)
   const known = knownStrikes(strikes, bag.techniques, bag.enabled)
   if (!known.ok) return { error: `"${known.strike}" isn't a technique the app knows.` }
   const key = matchKey(known.names)
-  const day = await classDay(db, sessionId)
+  const day = await classDay(db, sessionId, todayDay)
 
   const same = bag.rows.filter(r => matchKey(splitComboText(r.text)) === key)
   const inBag = same.find(r => r.unlocked)
@@ -153,7 +154,7 @@ export async function addToBag(db: DB, strikes: string[], sessionId: string | nu
 classCombos.post('/add', async (c) => {
   const parsed = strikesSchema.safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
-  const out = await addToBag(createDB(c.env), parsed.data.strikes, parsed.data.sessionId)
+  const out = await addToBag(createDB(c.env), parsed.data.strikes, parsed.data.sessionId, athleteDayFrom({ header: c.req.header(TODAY_HEADER), nowMs: Date.now() }))
   if ('error' in out) return c.json(out, 400)
   return c.json(out)
 })
