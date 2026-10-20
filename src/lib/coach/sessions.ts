@@ -21,8 +21,8 @@ export const KNOWN_SESSION_TYPES: ReadonlySet<string> = new Set([
   'active_recovery',
 ])
 
-/** Sessions that count as training exposure (F15). Foundation and recovery are habits, not doses. */
-export const KEY_TYPES: ReadonlySet<string> = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
+/** Sessions that count as training exposure (F15): the one list, in lib/keyTypes. */
+export { KEY_TYPES } from '../keyTypes'
 
 export const RUN_TYPES: ReadonlySet<string> = new Set(['foundation_run', 'running'])
 

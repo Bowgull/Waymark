@@ -21,6 +21,7 @@ import { getBlockZeroWeekTemplate, type BlockZeroTemplateSession } from './weekP
 import { BLOCK_ZERO_BASE_WEEKS, blockZeroPhase } from './weeks'
 import { FOUNDATION_LABEL } from '../foundation'
 import { lbText } from '../units'
+import { KEY_TYPES } from '../keyTypes'
 
 export const GUARDRAIL_TAG = '[bz-guardrail]'
 
@@ -90,7 +91,8 @@ function voiced(s: string | undefined, field: string, clamps: Clamp[]): string |
 
 // ─── Shared limits ────────────────────────────────────────────
 
-export const HARD_TYPES: ReadonlySet<string> = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
+/** Hard sessions for the guardrails: the key list, lib/keyTypes. */
+export const HARD_TYPES: ReadonlySet<string> = KEY_TYPES
 const RUN_TYPES: ReadonlySet<string> = new Set(['foundation_run', 'running'])
 
 /** Sane minutes per session type. Runs are also bounded by the plan and the caps. */

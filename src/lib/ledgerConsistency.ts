@@ -8,10 +8,12 @@
 // Open: four groups (next block, when you train, what gets done, why missed).
 // After Block Zero: the last 4 / 8 / 13 weeks (WEEK / MONTH / SEASON), no line.
 
+import { KEY_TYPES } from './keyTypes'
+
 const reasonWords = (code: string): string => code.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
 
-/** The sessions that count (endGate.ts's key list). Foundation is shown, not counted. */
-export const COUNTED_TYPES = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
+/** The sessions that count: lib/keyTypes (the end gate's list too). Foundation is shown, not counted. */
+export const COUNTED_TYPES = KEY_TYPES
 /** The share of the block done that reaches the next block (endGate MIN_COMPLETION_RATE). */
 export const NEXT_BLOCK_RATE = 0.7
 

@@ -15,12 +15,12 @@
 import { and, desc, eq, gte } from 'drizzle-orm'
 import { runSessions, sessions } from '../db/schema'
 import type { createDB } from '../db/client'
+import { KEY_TYPES } from './keyTypes'
 
 type DB = ReturnType<typeof createDB>
 
 /** Completed key sessions (strength, runs, rope, bag, muay thai) that end the starter window. */
 export const STARTER_EXPOSURE_SESSIONS = 24
-const KEY_TYPES = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
 const HR_GRAD_STREAK = 3
 const HR_GRAD_CEILING = 150
 
