@@ -1,3 +1,5 @@
+import { COMBO_CUE_CONTENT } from './comboCueContent'
+
 /**
  * The bag round's cue (page 47): the combo's own written form tip, cut to a
  * few words for a teal flap under the strikes (CUE · TURN THE HIP). Nothing
@@ -114,5 +116,6 @@ export function deriveCue(formTips: string | null | undefined): string {
 /** The cue for a combo: the hand-picked one, else one derived from its tip. */
 export function comboCue(combo: { id: string; formTips?: string | null } | null | undefined): string {
   if (!combo) return ''
-  return COMBO_CUES[combo.id] ?? deriveCue(combo.formTips)
+  // the approved Library content (page 60) first, then the hand-cut cues, then one cut from the tip
+  return COMBO_CUE_CONTENT[combo.id] ?? COMBO_CUES[combo.id] ?? deriveCue(combo.formTips)
 }

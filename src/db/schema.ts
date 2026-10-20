@@ -266,6 +266,21 @@ export const exercises = sqliteTable('exercises', {
   formCues: text('form_cues'),
   formVideoUrl: text('form_video_url'),
   createdAt: integer('created_at').notNull(),
+  // 0038 (page 60): tips (" | "), the coach hint, the video's details and the link check.
+  tips: text('tips'),
+  coachHint: text('coach_hint'),
+  videoStartSec: integer('video_start_sec'),
+  videoSource: text('video_source'),
+  videoTitle: text('video_title'),
+  videoLength: text('video_length'),
+  videoStatus: text('video_status'),
+  videoCheckedAt: integer('video_checked_at'),
+  altVideoUrl: text('alt_video_url'),
+  altVideoSource: text('alt_video_source'),
+  altVideoStatus: text('alt_video_status'),
+  tiktokUrl: text('tiktok_url'),
+  // Folded into another item (hidden from the Library).
+  mergedInto: text('merged_into'),
 }, (t) => [
   index('idx_exercises_category').on(t.category),
 ])
@@ -288,8 +303,85 @@ export const combos = sqliteTable('combos', {
   source: text('source'),
   // 0037: the class's local epoch day.
   classDate: integer('class_date'),
+  // 0038 (page 60): the cue flap, the coach hint and a video.
+  cue: text('cue'),
+  coachHint: text('coach_hint'),
+  formVideoUrl: text('form_video_url'),
+  videoStartSec: integer('video_start_sec'),
+  videoSource: text('video_source'),
+  videoTitle: text('video_title'),
+  videoLength: text('video_length'),
+  videoStatus: text('video_status'),
+  videoCheckedAt: integer('video_checked_at'),
+  altVideoUrl: text('alt_video_url'),
+  altVideoSource: text('alt_video_source'),
+  altVideoStatus: text('alt_video_status'),
+  tiktokUrl: text('tiktok_url'),
 }, (t) => [
   index('idx_combos_tier').on(t.tier, t.level),
+])
+
+// 0038: Techniques (page 52/60, new kind): the 23 strikes behind the combos' names.
+export const techniques = sqliteTable('techniques', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  kind: text('kind').notNull(),
+  /** The combo names that mean this one, JSON array. */
+  aliases: text('aliases').notNull().default('[]'),
+  cue: text('cue'),
+  tips: text('tips'),
+  coachHint: text('coach_hint'),
+  formVideoUrl: text('form_video_url'),
+  videoStartSec: integer('video_start_sec'),
+  videoSource: text('video_source'),
+  videoTitle: text('video_title'),
+  videoLength: text('video_length'),
+  videoStatus: text('video_status'),
+  videoCheckedAt: integer('video_checked_at'),
+  altVideoUrl: text('alt_video_url'),
+  altVideoSource: text('alt_video_source'),
+  altVideoStatus: text('alt_video_status'),
+  tiktokUrl: text('tiktok_url'),
+  sort: integer('sort').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+})
+
+// 0038: Runs (page 52/60, new kind): the 7 run types, keyed by the plan's runType.
+export const runTypes = sqliteTable('run_types', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  runType: text('run_type').notNull(),
+  sub: text('sub'),
+  what: text('what'),
+  tips: text('tips'),
+  coachHint: text('coach_hint'),
+  formVideoUrl: text('form_video_url'),
+  videoStartSec: integer('video_start_sec'),
+  videoSource: text('video_source'),
+  videoTitle: text('video_title'),
+  videoLength: text('video_length'),
+  videoStatus: text('video_status'),
+  videoCheckedAt: integer('video_checked_at'),
+  altVideoUrl: text('alt_video_url'),
+  altVideoSource: text('alt_video_source'),
+  altVideoStatus: text('alt_video_status'),
+  tiktokUrl: text('tiktok_url'),
+  sort: integer('sort').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+})
+
+// 0038: the weekly link check's dead links and proposed replacements, waiting for Josh's OK.
+export const videoReviews = sqliteTable('video_reviews', {
+  id: text('id').primaryKey(),
+  itemKind: text('item_kind').notNull(),
+  itemId: text('item_id').notNull(),
+  url: text('url').notNull(),
+  foundDeadAt: integer('found_dead_at').notNull(),
+  proposal: text('proposal'),
+  status: text('status').notNull().default('proposed'),
+  createdAt: integer('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_video_reviews_item_url').on(t.itemKind, t.itemId, t.url),
 ])
 
 // 0037: NOT NOW on a combo found in a class note, so it isn't offered again.

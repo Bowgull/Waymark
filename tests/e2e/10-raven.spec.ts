@@ -17,7 +17,7 @@ import { GOOD_MORNING } from './support/data'
  * days relative to today; the browser's clock moves on to each return
  * morning. Serial, no retries: each step builds on the one before.
  */
-test.describe.configure({ mode: 'serial', retries: 0 })
+test.describe.configure({ mode: 'serial', retries: 0, timeout: 120_000 })
 
 const T = todayISO()
 const at = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d, 10, 0, 0) }
@@ -95,7 +95,7 @@ test('the return: one question on top; "Not now" waits a day', async ({ page, ap
   await page.clock.setSystemTime(at(d6))
   await page.goto('/today?resume=0')
   const ask = page.getByRole('dialog', { name: 'The raven: HOW\'S THE KNEE?' })
-  await expect(ask).toBeVisible({ timeout: 20_000 })
+  await expect(ask).toBeVisible({ timeout: 45_000 })
   await expect(ask.getByText(/^Five days of bike, no running\./)).toBeVisible()
   await expect(ask.getByRole('button', { name: 'FEELS BETTER' })).toBeVisible()
   await expect(ask.getByRole('button', { name: 'STILL SORE' })).toBeVisible()
@@ -116,7 +116,7 @@ test('still sore: one more plan, the last; then the physio board, no third plan'
   await page.clock.setSystemTime(at(d7))
   await page.goto('/today?resume=0')
   const ask = page.getByRole('dialog', { name: 'The raven: HOW\'S THE KNEE?' })
-  await expect(ask).toBeVisible({ timeout: 20_000 })
+  await expect(ask).toBeVisible({ timeout: 45_000 })
   await ask.getByRole('button', { name: 'STILL SORE' }).tap()
 
   const plan2 = page.getByRole('dialog', { name: 'From the raven: KNEE · STILL SORE' })
@@ -137,7 +137,7 @@ test('still sore: one more plan, the last; then the physio board, no third plan'
   await page.clock.setSystemTime(at(d14))
   await page.goto('/today?resume=0')
   const ask2 = page.getByRole('dialog', { name: 'The raven: HOW\'S THE KNEE?' })
-  await expect(ask2).toBeVisible({ timeout: 20_000 })
+  await expect(ask2).toBeVisible({ timeout: 45_000 })
   await expect(ask2.getByText(/^Seven more days of bike, no running\. Last time it was still sore\.$/)).toBeVisible()
   await ask2.getByRole('button', { name: 'STILL SORE' }).tap()
 

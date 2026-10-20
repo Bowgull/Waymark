@@ -17,15 +17,26 @@ import {
   matchEntry,
   muscleBadges,
   tierViews,
+  aliasesOf,
+  classDayLabel,
+  combosUsing,
+  hintParts,
+  listed,
+  techniqueFor,
+  techniqueHits,
+  techniqueSub,
+  tipList,
   type LibraryCombo,
   type LibraryJournalEntry,
+  type LibraryTechnique,
 } from './libraryModel'
 
 const day = (iso: string) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86400000)
 
-// page 39: six groups in order, each with its approved icon (Core = kettlebell, Mobility = roller)
-assert.deepEqual(GROUPS.map(g => g.name), ['STRENGTH', 'CORE', 'FOUNDATION', 'MOBILITY', 'BAGWORK', 'WAYBOOK'])
-assert.deepEqual(GROUPS.map(g => g.icon), ['strength', 'core', 'foundation', 'mobility', 'bag', 'waybook'])
+// page 39's groups in order, with page 52's two new kinds (Techniques: the MT glove; Runs: the shoe)
+assert.deepEqual(GROUPS.map(g => g.name), ['STRENGTH', 'CORE', 'FOUNDATION', 'MOBILITY', 'BAGWORK', 'TECHNIQUES', 'RUNS', 'WAYBOOK'])
+assert.deepEqual(GROUPS.map(g => g.icon), ['strength', 'core', 'foundation', 'mobility', 'bag', 'mt', 'run', 'waybook'])
+assert.deepEqual(GROUPS.filter(g => g.isNew).map(g => g.key), ['techniques', 'runs'])
 assert.equal(isGroupKey('posture'), true)
 assert.equal(isGroupKey('history'), false)
 assert.equal(isGroupKey(null), false)
@@ -98,3 +109,35 @@ assert.equal(matchEntry(E('x', '2026-10-18', 'daily', 'Squat felt honest'), 'hon
 assert.equal(matchEntry(E('x', '2026-10-18', 'daily', 'Squat felt honest'), ''), false)
 
 console.log('libraryModel tests passed')
+
+// ── page 52 / 60: techniques, items ──
+{
+  const tech = (id: string, name: string, kind: string, aliases: string[]): LibraryTechnique => ({ id, name, kind, aliases: JSON.stringify(aliases), cue: null, tips: null, formVideoUrl: null })
+  const T = [
+    tech('tech-jab', 'Jab', 'Punch', ['Jab', 'Double Jab', 'Jab x 3', 'Feint Jab']),
+    tech('tech-cross', 'Cross', 'Punch', ['Cross', 'Body Cross']),
+    tech('tech-roundhouse', 'Rear Roundhouse', 'Kick', ['Rear Roundhouse', 'Right Kick', 'Body Kick', 'Rear Kick']),
+    tech('tech-switch-kick', 'Switch Kick', 'Kick', ['Switch Kick', 'Left Kick', 'Left Body Kick']),
+    tech('tech-teep', 'Teep', 'Kick', ['Teep', 'Lead Teep', 'Fake Teep', 'Feint Teep']),
+  ]
+  assert.equal(techniqueFor('Left Kick', T)?.id, 'tech-switch-kick', '"Left Kick" is the switch kick')
+  assert.equal(techniqueFor('JAB × 3', T)?.id, 'tech-jab')
+  assert.equal(techniqueFor('Body kick', T)?.id, 'tech-roundhouse')
+  assert.equal(techniqueFor('Superman Punch', T), null)
+  assert.equal(techniqueSub(T[2]), 'Kick · also Right Kick, Body Kick, Rear Kick', "page 60's sub-line")
+  assert.equal(techniqueSub(tech('t', 'Parry', 'Defence', ['Parry'])), 'Defence')
+  assert.deepEqual(aliasesOf({ aliases: 'nope' }), [])
+  const C = [{ text: 'Jab → Cross → Body Kick' }, { text: 'Double Jab → Cross → Right Kick' }, { text: 'Teep → Jab → Cross' }]
+  assert.equal(combosUsing(T[2], C, T).length, 2, 'every combo that means the roundhouse')
+  assert.equal(combosUsing(T[0], C, T).length, 3)
+  assert.deepEqual(techniqueHits(T, 'teep').map(h => h.label), ['Teep', 'Lead Teep', 'Fake Teep', 'Feint Teep'])
+  assert.deepEqual(techniqueHits(T, '  '), [])
+}
+assert.deepEqual(tipList('One. | Two. |  | Three. | Four.'), ['One.', 'Two.', 'Three.'], 'at most three tips')
+assert.deepEqual(tipList(null), [])
+assert.deepEqual(hintParts('Your main squat. Goblet squats in weeks 1-2.'), ['Your main squat.', 'Goblet squats in weeks 1-2.'])
+assert.deepEqual(hintParts('No full stop'), ['No full stop', ''])
+assert.equal(classDayLabel(day('2026-10-20')), 'Tue 20 Oct')
+assert.equal(listed({ mergedInto: 'ex-worlds-greatest-stretch' }), false, "Spiderman + T-Spine folds into the World's Greatest Stretch")
+assert.equal(listed({ mergedInto: null }), true)
+console.log('libraryModel: page 52 / 60 ok')

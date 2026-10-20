@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
 import { applyStoredBlockZeroTransition, getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
 import { rebalanceForClassTonight } from './classTonight'
@@ -8,7 +8,7 @@ import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
 import { CONSISTENCY_SPAN, blockConsistency, weeksConsistency } from '../lib/ledgerConsistency'
-import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
+import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, runTypes, techniques, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay, mondayOf } from '../lib/dates'
 import { loggedAtSec } from '../lib/units'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
@@ -49,6 +49,7 @@ import { clearCollectedTrainingData } from './trainingReset'
 import { checkMtClassForBlockZero, easeForReadiness, getActiveBlock, loadMtRamp, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, todayEpochDayUtc, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
 import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
+import { pendingReviews } from './linkHealth'
 import {
   blockDayPlan,
   blockStartDay,
@@ -3174,6 +3175,20 @@ app.get('/api/exercises', async (c) => {
   const rows = await db.select().from(exercises)
   return c.json(rows)
 })
+
+// The Library's new kinds (page 52 / 60): techniques and run types, in their order.
+app.get('/api/library/techniques', async (c) => {
+  const db = createDB(c.env)
+  return c.json(await db.select().from(techniques).orderBy(asc(techniques.sort)))
+})
+
+app.get('/api/library/runs', async (c) => {
+  const db = createDB(c.env)
+  return c.json(await db.select().from(runTypes).orderBy(asc(runTypes.sort)))
+})
+
+// Dead links found by the weekly check and the replacement proposed for each: they wait for Josh's OK.
+app.get('/api/library/video-reviews', async (c) => c.json(await pendingReviews(createDB(c.env))))
 
 app.get('/api/combos', async (c) => {
   const db = createDB(c.env)
