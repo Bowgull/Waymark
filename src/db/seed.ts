@@ -717,6 +717,8 @@ lines.push(
 
 // The Library's approved content (page 60): the INSERT OR REPLACE above would drop it, so it goes back on.
 lines.push(...readFileSync('src/db/libraryContent.sql', 'utf8').split('\n').filter(l => l.trim()))
+// Then its video start times and swaps (0039, approved 2026-10-20).
+lines.push(...readFileSync('src/db/libraryVideos.sql', 'utf8').split('\n').filter(l => l.trim()))
 
 const sql = lines.join('\n')
 writeFileSync('src/db/seed.sql', sql)

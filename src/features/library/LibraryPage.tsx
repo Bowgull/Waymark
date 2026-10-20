@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode, type To
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Board, Crest, FlapLabel, SessionIcon, showPop, useEdgeBack } from '@/design'
 import { apiFetch } from '@/lib/api'
+import type { LibraryHintData } from '@/lib/libraryHints'
 import { markWaybookOpen, requireUnlock, setWaybookShown } from '@/lib/waybookGate'
 
 import {
@@ -242,6 +243,8 @@ export function LibraryPage() {
   const [techniques, setTechniques] = useState<LibraryTechnique[]>([])
   const [runs, setRuns] = useState<LibraryRun[]>([])
   const [loaded, setLoaded] = useState(false)
+  // page 60's live hints (his last set, this week's run-walk); the static hint until they load
+  const [hints, setHints] = useState<LibraryHintData | null>(null)
   const [entries, setEntries] = useState<LibraryJournalEntry[]>([])
   const [entriesLoaded, setEntriesLoaded] = useState(false)
   const [search, setSearch] = useState('')
@@ -267,6 +270,9 @@ export function LibraryPage() {
       setRuns(Array.isArray(ru) ? ru : [])
       setLoaded(true)
     })
+    apiFetch<LibraryHintData>('/api/library/hints')
+      .then(h => { if (live && h && typeof h === 'object' && h.lastSets) setHints(h) })
+      .catch(() => { /* the static hints stand */ })
     return () => { live = false }
   }, [])
 
@@ -354,7 +360,7 @@ export function LibraryPage() {
     let body: ReactNode = null
     if (EXERCISE_GROUPS.includes(open)) {
       const ex = exercises.find(e => e.id === itemId)
-      if (ex) body = <ExercisePage ex={ex} />
+      if (ex) body = <ExercisePage ex={ex} last={hints?.lastSets[ex.id] ?? null} />
     } else if (open === 'bag') {
       const c = combos.find(x => x.id === itemId)
       if (c) body = <ComboPage combo={c} techniques={techniques} onFavourite={() => void toggleFavourite(c.id)} />
@@ -363,7 +369,7 @@ export function LibraryPage() {
       if (t) body = <TechniquePage t={t} combos={combos} techniques={techniques} />
     } else if (open === 'runs') {
       const r = runs.find(x => x.id === itemId)
-      if (r) body = <RunPage r={r} />
+      if (r) body = <RunPage r={r} runWalk={hints?.runWalk ?? null} />
     }
     return (
       <div className="lib-root">

@@ -1,0 +1,26 @@
+id,url,start_seconds,evidence,confidence
+ex-bent-over-row,https://www.youtube.com/watch?v=RQU8wZPbioA,105,Transcript 107s 'we can set up for the barbell row the same way'; 122s 'now pull the barbell to your body' (first 60s is variations talk + deadlift recap),high
+ex-block-pull,https://www.youtube.com/watch?v=jfSxbT-65ow,156,"Chapter 158s 'Proper setup and technique'; transcript 158s 'before you do rack pulls...five step deadlift setup', silent demo 165-198s",high
+ex-pullup-band,https://www.youtube.com/watch?v=69VMtv3YN-Q,70,"Chapter 73s 'Band assisted pullups'; transcript 72s 'band assisted pull-ups, I'll show you two ways'",high
+ex-hanging-leg-raise,https://www.youtube.com/watch?v=Pr1ieGZ5atk,85,Transcript 87s 'to do the abs...jump up on the bar...curl your pelvis up' (matches cue). Chapter 22s 'How To Do the Hanging Leg Raise' starts with the hip-flexor version,high
+ex-cable-woodchop,https://www.youtube.com/watch?v=pAplQXk3dkU,21,"Chapter 24s 'take the cables of pulleys'; transcript 23s setup, twist shown from 89s",high
+ex-a-skips,https://www.youtube.com/watch?v=GQg9L28bi1g,117,Chapter 110s 'Skip Drill'; transcript 119s 'Next I'll be doing the actual drill of a-skip' (walking version from 64s),high
+ex-pigeon-stretch,https://www.youtube.com/watch?v=2msg4jdu0vk,131,Chapter 128s 'Proper setup and progressions'; transcript 133s 'the main way to enter into the pigeon pose',high
+combo-f02,https://www.youtube.com/watch?v=9oN2RCx5peY,80,"Exact combo not in video. Transcript 82s 'basic combination number two' = jab, jab, cross to body, hook to head (cross then hook shown)",medium
+combo-f04,https://www.youtube.com/watch?v=9oN2RCx5peY,80,"Exact combo not in video. Transcript 82s combination two (jab, jab, cross body, hook); 103s 'bring this two back to your face' matches the hands-back cue",medium
+combo-f09,https://www.youtube.com/watch?v=Bp_QVO7kYtg,4,Transcript 6s 'let's first demonstrate what it looks like to do it correctly' (roundhouse to body/legs/head); chapter 25s 'Turning the hips over',high
+combo-w01,https://www.youtube.com/watch?v=Bp_QVO7kYtg,218,Chapter 204s 'Setting up with punches'; transcript 221s 'jab cross hook body kick' (closest; not exact jab-cross-kick),medium
+combo-w06,https://www.youtube.com/watch?v=Bp_QVO7kYtg,218,Chapter 204s 'Setting up with punches'; transcript 221s 'jab cross hook body kick' (adds a hook),medium
+combo-w11,https://www.youtube.com/watch?v=KbJmMN6rUno,145,No captions (YouTube 429 after 3 retries). Chapter 147s 'The role of the teep' (knees chapter at 74s); exact teep-knee sequence unverified,medium
+combo-w12,https://www.youtube.com/watch?v=rTTEn0RQQsw,57,Combo not shown; video teaches the overhand only. Transcript 59s 'let's break down the punch step by step'; no jab or kick follow-up,low
+combo-w17,https://www.youtube.com/watch?v=Xg9W4bIXOr0,9,Chapter 11s 'The Axe Kick'; transcript 10s 'two ways of throwing the axe kick...looks like this',high
+combo-fl02,https://www.youtube.com/watch?v=Bp_QVO7kYtg,218,Chapter 204s 'Setting up with punches'; transcript 221s 'jab cross hook body kick...even if it's just a single jab' (no double jab shown),medium
+combo-d03,https://www.youtube.com/watch?v=7h95QIsXJRI,292,"Sparring breakdown (Jeff Chan, MMAShredded guest post, not a Fagan lesson). Transcript 294s 'ducked my head low to fake a low attack and kicked high'; exact combo not shown",low
+combo-m03,https://www.youtube.com/watch?v=7h95QIsXJRI,265,"Sparring breakdown, not instruction. Transcript 267s 'lifted my lead leg up, step down with the left hook and scored a low kick' (feint then low kick); jab-cross at 254s is a separate exchange",low
+combo-m07,https://www.youtube.com/watch?v=ZWh2W3QuOUQ,141,Video is a 6-elbow combo; no punches or knee. Transcript 143s 'now I'm going to throw a slashing left elbow' (the lead elbow). Elbow breakdown starts 51s,low
+tech-overhand,https://www.youtube.com/watch?v=rTTEn0RQQsw,57,"Transcript 59s 'let's break down the punch step by step'; 73s 'overhand right, step one'",high
+tech-roundhouse,https://www.youtube.com/watch?v=Bp_QVO7kYtg,4,Transcript 6s 'let's first demonstrate what it looks like to do it correctly'; chapter 0s 'Muay Thai kick basics',high
+tech-axe-kick,https://www.youtube.com/watch?v=Xg9W4bIXOr0,9,Chapter 11s 'The Axe Kick'; transcript 10s 'two ways of throwing the axe kick...looks like this',high
+tech-horizontal-elbow,https://www.youtube.com/watch?v=b2EaxgTDWZc,132,"Chapter 134s 'Creating an angle'; transcript 141s 'it's a horizontal elbow', 151s 'step out to the left...left elbow'. General elbow demo from 14s",high
+run-walk,https://www.youtube.com/watch?v=65_LMjoYFaI,21,"Chapter 0s 'Introduction to Jeffing'; transcript 23s 'Jeff is the name of the run walk method'. Talking, not a demo; practical tips recap at 218s",medium
+run-5k-test,https://www.youtube.com/watch?v=QTL8CYkooxQ,55,No chapters. Transcript 57s 'first mile very very easy...second mile speed up...third mile drop the hammer' (screen walkthrough of a client's 5K data),medium

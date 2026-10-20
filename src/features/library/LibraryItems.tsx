@@ -1,7 +1,8 @@
 import { Fragment, type ReactNode } from 'react'
 
 import { Board, FlapLabel, SessionIcon, type SessionIconKey } from '@/design'
-import { videoButton, type VideoFields } from '@/lib/videoLinks'
+import { comboHint, exerciseHint, runHint, type LastSet, type RunWalkNow } from '@/lib/libraryHints'
+import { secondLink, videoButton, type VideoFields } from '@/lib/videoLinks'
 
 import {
   MASTERY_MAX,
@@ -65,10 +66,11 @@ function Tips({ tips }: { tips: string | null | undefined }) {
   return <ItemBoard head="Tips"><ul className="lib-tips">{list.map(t => <li key={t}>{t}</li>)}</ul></ItemBoard>
 }
 
-function Hint({ hint }: { hint: string | null | undefined }) {
+/** The coach hint, its first sentence bold. `lastDay`: the day of the set its "Last time" names (on hover). */
+function Hint({ hint, lastDay }: { hint: string | null | undefined; lastDay?: number | null }) {
   if (!hint) return null
   const [lead, rest] = hintParts(hint)
-  return <ItemBoard head="Coach hint"><p className="lib-hint"><b>{lead}</b>{rest ? ` ${rest}` : ''}</p></ItemBoard>
+  return <ItemBoard head="Coach hint"><p className="lib-hint" title={lastDay != null ? `Last time: ${classDayLabel(lastDay)}` : undefined}><b>{lead}</b>{rest ? ` ${rest}` : ''}</p></ItemBoard>
 }
 
 const PLAY = <svg viewBox="0 0 10 10" fill="none" stroke="#e8c878" strokeWidth="1.4" strokeLinejoin="round" aria-hidden><path d="M2.5 1.5 L8 5 L2.5 8.5 Z" /></svg>
@@ -92,13 +94,13 @@ function videoOf(x: HasVideo): VideoFields {
 
 /**
  * The video board (page 60): WATCH ON YOUTUBE (or TIKTOK), then who and how
- * long; a TikTok as a quiet second link. A dead link never shows a broken
+ * long; the second link quietly under it (a TikTok, or YouTube under a TikTok). A dead link never shows a broken
  * WATCH: the backup, the technique's video, then SEARCH ON YOUTUBE.
  */
 function VideoBoard({ name, video, technique }: { name: string; video: VideoFields; technique?: VideoFields | null }) {
   const b = videoButton(name, video, technique)
   if (!b) return null
-  const tiktok = b.kind === 'watch' && video.tiktokUrl && !b.href.includes('tiktok.com') ? video.tiktokUrl : null
+  const also = secondLink(video, b)
   return (
     <Board className="lib-bd lib-vid-bd">
       {b.note && <p className="lib-gone">{b.note}</p>}
@@ -112,22 +114,20 @@ function VideoBoard({ name, video, technique }: { name: string; video: VideoFiel
           {b.detail && <span className="what">{b.detail}</span>}
         </div>
       )}
-      {tiktok && (
-        <a className="lib-also" href={tiktok} target="_blank" rel="noopener noreferrer">
-          {PLAY}<span>Also on TikTok{video.source ? ` · ${tiktokWho(tiktok)}` : ''}</span>
+      {also && (
+        <a className="lib-also" href={also.href} target="_blank" rel="noopener noreferrer">
+          {PLAY}<span>{also.label}{also.who ? ` · ${also.who}` : ''}</span>
         </a>
       )}
     </Board>
   )
 }
 
-const tiktokWho = (url: string) => /tiktok\.com\/@([^/]+)/.exec(url)?.[1] ?? 'TikTok'
-
 // ─── the four item pages ──────────────────────────────────────
 
 const GROUP_ICON: Record<string, SessionIconKey> = { strength: 'strength', core: 'core', posture: 'foundation', mobility: 'mobility' }
 
-export function ExercisePage({ ex }: { ex: LibraryExercise }) {
+export function ExercisePage({ ex, last = null }: { ex: LibraryExercise; last?: LastSet | null }) {
   const eq = equipmentName(ex.equipment)
   const sub = [eq, muscleBadges(ex.muscleGroups).join(', ')].filter(Boolean).join(' · ')
   return (
@@ -135,7 +135,7 @@ export function ExercisePage({ ex }: { ex: LibraryExercise }) {
       <Hero icon={GROUP_ICON[ex.category] ?? 'strength'} title={ex.name} sub={sub} />
       {ex.formCues && <ItemBoard head="Cue"><p className="lib-cue2">{ex.formCues}</p></ItemBoard>}
       <Tips tips={ex.tips} />
-      <Hint hint={ex.coachHint} />
+      <Hint hint={exerciseHint(ex.coachHint, last)} lastDay={last?.day ?? null} />
       <VideoBoard name={ex.name} video={videoOf(ex)} />
     </>
   )
@@ -145,7 +145,7 @@ export function ComboPage({ combo, techniques, onFavourite }: { combo: LibraryCo
   const fromClass = combo.source === 'class'
   const fav = combo.isFavourite === 1
   // a class combo still new: page 52's hint
-  const hint = fromClass && combo.masteryScore === 0 ? 'New in your bag. It comes up often until you\'ve rated it a few times.' : combo.coachHint
+  const hint = fromClass && combo.masteryScore === 0 ? 'New in your bag. It comes up often until you\'ve rated it a few times.' : comboHint(combo)
   // the first strike with a technique video stands in when the combo's own is gone
   const tech = comboStrikes(combo.text).map(s => techniqueFor(s, techniques)).find(t => t?.formVideoUrl) ?? null
   return (
@@ -194,13 +194,13 @@ export function TechniquePage({ t, combos, techniques }: { t: LibraryTechnique; 
   )
 }
 
-export function RunPage({ r }: { r: LibraryRun }) {
+export function RunPage({ r, runWalk = null }: { r: LibraryRun; runWalk?: RunWalkNow | null }) {
   return (
     <>
       <Hero icon={r.runType === 'zone2' ? 'zone2' : 'run'} title={r.name} sub={`Run · ${r.sub ?? ''}`} />
       {r.what && <ItemBoard head="What it is"><p className="lib-cue2">{r.what}</p></ItemBoard>}
       <Tips tips={r.tips} />
-      <Hint hint={r.coachHint} />
+      <Hint hint={runHint(r, runWalk)} />
       <VideoBoard name={r.name} video={videoOf(r)} />
     </>
   )
