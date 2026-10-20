@@ -1,0 +1,351 @@
+// Coach brain P1 (coach-brain.md §4): what the athlete model reads and what it
+// holds. Pure types. The model is built by folding logged events in day order
+// (athleteModel.ts); the server loads the events from D1 and stores the result
+// in athlete_estimates (server/athleteModel.ts). P1 changes no decision or dose:
+// the estimates are shadow facts for P2.
+
+/** Evidence state of an estimate (§4): GUESS → LEARNING → KNOWN. */
+export type EstimateState = 'GUESS' | 'LEARNING' | 'KNOWN'
+
+export type AreaKind = 'lift' | 'run' | 'bag' | 'class' | 'recovery' | 'back' | 'adherence'
+
+/** Reasons that mean "it didn't fit the day", never "it was too hard" (Josh, 2026-10-20). */
+export const SCHEDULE_REASONS: ReadonlySet<string> = new Set(['schedule', 'time', 'no_time', 'class_time'])
+
+export function isScheduleReason(reason: string | null | undefined): boolean {
+  return reason != null && SCHEDULE_REASONS.has(reason)
+}
+
+// ─── Events (what was logged) ────────────────────────────────
+
+export interface ModelSession {
+  id: string
+  type: string
+  status: string
+  /** Local epoch day it was planned for. */
+  day: number
+  /** Planned slot. */
+  slot: 'am' | 'pm' | null
+  /** Local minute of day it was started (0-1439), from started_at and the athlete's time zone. */
+  startMin: number | null
+  durationSec: number | null
+  rpe: number | null
+  skipReason: string | null
+  /** 'template' | 'ad_hoc' | 'coach' | 'replace' | null. ad_hoc / replace = his own pick. */
+  source: string | null
+  blockType: string | null
+  notes: string | null
+}
+
+export interface ModelSet {
+  sessionId: string
+  day: number
+  exerciseId: string
+  section: string | null
+  setNumber: number
+  weightKg: number | null
+  reps: number
+  plannedWeightKg: number | null
+  plannedReps: number | null
+  /** 0-3, 3 = "3 or more". Null when not logged. */
+  rir: number | null
+  isWarmup: boolean
+  /** Logged by him (completed_at set). Pre-filled sets he never touched are not. */
+  logged: boolean
+  /** Loading kind from the library ('barbell' | 'dumbbell' | 'machine' | 'none'). */
+  equipment: 'barbell' | 'dumbbell' | 'machine' | 'none'
+}
+
+export interface ModelRun {
+  sessionId: string
+  day: number
+  type: string
+  durationSec: number | null
+  plannedDurationSec: number | null
+  distanceKm: number | null
+  avgHr: number | null
+  maxHr: number | null
+  /** Per-km splits with HR, when the run had them (Strava). */
+  splits: Array<{ durationSec: number; avgHr: number | null }>
+  isIndoor: boolean
+  completionStatus: string | null
+  shortReason: string | null
+  rpe: number | null
+  /** The run piece (seconds of running per interval): the run-walk's, or the whole run when continuous. */
+  pieceSec: number | null
+}
+
+export interface ModelBag {
+  sessionId: string
+  day: number
+  status: string
+  roundsPlanned: number
+  /** Distinct rounds he rated (null when nothing was rated: rounds done unknown). */
+  roundsRated: number | null
+  /** Combo ratings, 1-3 (3 = Sharp, 2 = Solid). */
+  ratings: number[]
+  rpe: number | null
+  skipReason: string | null
+}
+
+export interface ModelCheckIn {
+  day: number
+  sleepHours: number | null
+  sleepQuality: number | null
+  energy: number | null
+  soreness: number | null
+  stress: number | null
+  mood: number | null
+  backToday: number | null
+}
+
+export interface ModelNote {
+  day: number
+  text: string
+  source: 'check_in' | 'session' | 'journal' | 'back'
+}
+
+/** His own move of a session from one day to another (page 56 move / pull forward). */
+export interface ModelMove {
+  fromDay: number
+  toDay: number
+  type: string
+}
+
+export interface ModelEvents {
+  profile: { dob: string | null; maxHr: number | null; backSensitive: boolean }
+  sessions: ModelSession[]
+  sets: ModelSet[]
+  runs: ModelRun[]
+  talkTests: Array<{ day: number; bpm: number }>
+  bag: ModelBag[]
+  checkIns: ModelCheckIn[]
+  notes: ModelNote[]
+  moves: ModelMove[]
+  /** MT class logs: whether "What you learned" was written (page 49). */
+  classLogs: Array<{ sessionId: string; day: number; learned: boolean }>
+  /** Training maxes on file: a GUESS prior for a lift with no logged sets. */
+  trainingMaxes: Array<{ exerciseId: string; weightKg: number; day: number }>
+  /** Open raven plans by region (body_alerts not cleared). */
+  openBodyAlerts: Array<{ region: string; stage: string }>
+}
+
+// ─── The model ───────────────────────────────────────────────
+
+export interface Confidence {
+  /** Evidence state from the KNOWN criteria (§4 table), before ageing. */
+  evidence: EstimateState
+  /** State as reported: from u after ageing (a layoff turns KNOWN back into LEARNING / GUESS). */
+  state: EstimateState
+  n: number
+  /** Last local day with an observation for this area. */
+  lastDay: number | null
+  /** 0-1: 1 = GUESS, ~0.5 = LEARNING, ~0.15 = KNOWN, +0.1 per 7 days without data. */
+  u: number
+}
+
+export interface LiftExposure {
+  day: number
+  /** Heaviest working weight he used, and what was prescribed. */
+  topKg: number | null
+  plannedKg: number | null
+  /** Reported RIR on the last working set. */
+  lastRir: number | null
+  /** He lowered the weight below the prescription mid-session (Josh, §6.2). */
+  lowered: boolean
+  /** He raised it and still hit the target reps. */
+  raised: boolean
+  /** A set not finished: fewer reps than prescribed, or a prescribed set never logged. */
+  incomplete: boolean
+  /** Last-set e1RM of this exposure (null without RIR). */
+  e1rmKg: number | null
+}
+
+export interface LiftEstimate extends Confidence {
+  exerciseId: string
+  /** Smoothed e1RM (EWMA α 0.3, ≤3% a session), after the detraining prior. Null with no RIR yet. */
+  e1rmKg: number | null
+  /** Spread of the last-set e1RMs (sd, kg). */
+  e1rmSdKg: number | null
+  /** Working weight for the default target (8 reps at RIR 2), snapped; else the weight he last used. */
+  workingKg: number | null
+  workingSource: 'e1rm' | 'used' | 'training_max' | null
+  /** His RIR bias in reps (+ = more in reserve than he says), ±0.25 a session, clamped ±1.5. */
+  rirBias: number
+  equipment: ModelSet['equipment']
+  /** Exposures with RIR on the last set. */
+  rirExposures: number
+  exposures: number
+  last: LiftExposure | null
+  /** Consecutive latest exposures with an ease sign (lowered / incomplete / last RIR ≤ 1). */
+  easeStreak: number
+}
+
+export interface RunObservation {
+  day: number
+  sessionId: string
+  durationSec: number | null
+  pieceSec: number | null
+  /** Share of running time under the line (0-1), and where it came from. */
+  u: number | null
+  uSource: 'splits' | 'avg' | 'none'
+  driftBpm: number | null
+  avgHr: number | null
+  rpe: number | null
+  hasHr: boolean
+  isIndoor: boolean
+  /** Less running than planned, or an early end. */
+  cutShort: boolean
+  /** The cut-short reason was time / schedule: HOLD, never "too hard". */
+  scheduleCut: boolean
+  /** HR above the line (U under 70%). */
+  tooFast: boolean
+  /** U near 100%, HR 10+ under the line, effort ≤4. */
+  tooSlow: boolean
+  /** Handled at U ≥85% and effort ≤5 (or no effort logged and HR fine). */
+  handled: boolean
+  /** Not handled: U <70%, effort ≥7, drift ≥10, a calf/shin note, or cut short (not for time). */
+  struggled: boolean
+}
+
+export interface RunEstimate extends Confidence {
+  /** Talk-test line (bpm) and where it came from. */
+  lineBpm: number
+  lineSource: 'talk_test' | 'prior'
+  /** The age prior (0.78 × Tanaka), for comparison. */
+  linePriorBpm: number
+  talkTests: number
+  lastTalkTestDay: number | null
+  /** A talk-test recheck is due: ≥21 days since the last, or U and drift disagree with the line. */
+  recheckDue: boolean
+  recheckWhy: string | null
+  /** EWMA over the last 3 runs. */
+  uShare: number | null
+  driftBpm: number | null
+  /** Longest run piece handled (sec), after the detraining prior. */
+  rungSec: number
+  longestLast30Sec: number | null
+  /** Pace (sec/km) of runs held at the line (U ≥85%), indoor or out. */
+  easyPaceSecKm: number | null
+  runsWithHr: number
+  runs: number
+  lastRunHadHr: boolean | null
+  recent: RunObservation[]
+}
+
+export interface BagEstimate extends Confidence {
+  roundsTolerated: number | null
+  finishersAllowed: boolean
+  /** Share of combo ratings Solid or Sharp, last 2 sessions. */
+  solidShare: number | null
+  wristShinFlags: number
+  sessions: number
+  lastEffort: number | null
+  scheduleCuts: number
+}
+
+export interface BetaCell {
+  alpha: number
+  beta: number
+  /** Observations (weighted). */
+  n: number
+  /** Posterior mean. */
+  p: number
+}
+
+/**
+ * One weekday's class-night fit. Attended and his own adds count for the night;
+ * skips for time / schedule and unexplained misses count against it; skips for
+ * a recovery reason (tired, sore, sick) are kept out: they say nothing about the night.
+ */
+export interface ClassNight extends BetaCell {
+  /** Classes the coach (or template) put on this night. */
+  suggested: number
+  attended: number
+  scheduleSkips: number
+  /** Missed or skipped with no reason. */
+  unexplained: number
+  /** Skipped for a recovery reason: not counted in the fit. */
+  recoverySkips: number
+}
+
+export interface ClassEstimate extends Confidence {
+  /** Classes a week he recovers from (1 → 2 → 3). */
+  perWeekTolerated: number
+  classes: number
+  learnedNotes: number
+  /**
+   * Class-night fit per weekday (0 = Sunday): suggested vs attended vs skipped
+   * for schedule. Its own signal, never fatigue (Josh, 2026-10-20).
+   */
+  nights: Record<number, ClassNight>
+}
+
+export interface RecoveryItemBaseline {
+  mean: number
+  sd: number
+  /** 3-day recent window. */
+  recent: number | null
+  values: number
+}
+
+export interface RecoveryEstimate extends Confidence {
+  /** Live baselines (28 days; live from 4 values in any 10 days). */
+  baseline: Partial<Record<keyof Omit<ModelCheckIn, 'day'>, RecoveryItemBaseline>>
+  checkIns: number
+  /** Next-morning change vs baseline after each session kind (after ≥3 instances). */
+  response: Partial<Record<'legs' | 'run' | 'class' | 'bag', { soreness: number | null; energy: number | null; instances: number }>>
+}
+
+export interface BackEstimate extends Confidence {
+  /** EWMA of back scores (1 bad .. 5 fine). */
+  level: number | null
+  firstWeekMean: number | null
+  last21Mean: number | null
+  /** last21Mean − firstWeekMean (negative = worse). */
+  trend: number | null
+  /** Next-morning back score after hinge / squat vs other days (after ≥3 exposures). */
+  sensitivity: Partial<Record<'hinge' | 'squat', { delta: number; exposures: number }>>
+  scores: number
+  backNotes: number
+  openPlans: number
+  profileSensitive: boolean
+}
+
+export type SlotCellKey = 'am-weekday' | 'am-weekend' | 'pm-weekday' | 'pm-weekend'
+
+export interface AdherenceEstimate extends Confidence {
+  /** Beta(α, β) per slot × weekday group: the chance a planned session gets done. */
+  cells: Record<SlotCellKey, BetaCell & { state: EstimateState }>
+  /** His usual start (local minute) per session type, from the densest cluster of starts. */
+  usualStart: Record<string, { minute: number; of: number; inCluster: number }>
+  /** Share of done sessions started after noon. */
+  pmShareOfDone: number | null
+  /** Preferred rest days per weekday (0 = Sunday), learned from where he rests and where he moves things. */
+  restDays: Record<number, BetaCell>
+  preferredRestDays: number[]
+  /** Skips / replaces / cuts for time or schedule, kept apart from effort and recovery. */
+  scheduleSkips: { total: number; byType: Record<string, number>; recent: Array<{ day: number; type: string; reason: string }> }
+}
+
+export interface AthleteModel {
+  version: number
+  asOfDay: number
+  lifts: Record<string, LiftEstimate>
+  run: RunEstimate
+  bag: BagEstimate
+  klass: ClassEstimate
+  recovery: RecoveryEstimate
+  back: BackEstimate
+  adherence: AdherenceEstimate
+}
+
+/** One athlete_estimates row (§13.5). */
+export interface EstimateRow {
+  kind: AreaKind
+  key: string
+  valueJson: string
+  state: EstimateState
+  n: number
+  uncertainty: number
+}
