@@ -9,7 +9,7 @@ import { pondReaction, type LedgerRange, type LedgerRing, type LiftSeries, type 
 import type { ConsistencyView } from '@/lib/ledgerConsistency'
 import { setWorldPond } from '@/world/worldStore'
 
-import { AerobicBoard, BodyWeightBoard, ConsistencyBoard, HerbBoard, RingBoard, SleepBoard, StrengthBoard } from './LedgerBoards'
+import { AerobicBoard, ConsistencyBoard, HerbBoard, RingBoard, SleepBoard, StrengthBoard } from './LedgerBoards'
 import { PondRings } from './PondRings'
 import './ledger.css'
 
@@ -116,7 +116,6 @@ export function HistoryPage() {
             <div className="lg-page">
               {/* page 62 B: right after Sleep + soreness, at the top of the third screen */}
               {data.herb && <HerbBoard days={data.herb.days} avg7={data.herb.avg7} avg28={data.herb.avg28} line={data.herb.line} />}
-              <BodyWeightBoard points={data.weight.points} weighIns={data.weight.weighIns} />
             </div>
           </>
         )}
