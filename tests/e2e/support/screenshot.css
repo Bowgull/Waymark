@@ -1,3 +1,6 @@
 /* Applied only while toHaveScreenshot captures: the WebGL world and the timer
    grass are live canvases (shaders, time-driven), never pixel-stable. */
 canvas { visibility: hidden !important; }
+
+/* The injury weather's colour layers (page 58) sit with the world: never pixel-stable either. */
+.wm-weather { visibility: hidden !important; }

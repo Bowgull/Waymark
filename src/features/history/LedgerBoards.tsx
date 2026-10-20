@@ -1,5 +1,8 @@
-import { FlapLabel, SessionIcon } from '@/design'
-import { RING_COLOUR, linePoints, paceDelta, paceFlap, spanWeeks, weightDelta, type LedgerRing, type LiftSeries, type RingState, type SleepDay, type WeeklyPoint } from '@/lib/ledger'
+import { useRef, useState, type CSSProperties } from 'react'
+
+import { FlapLabel, SessionIcon, useOutsideClose } from '@/design'
+import type { ConsistencyView, TileState } from '@/lib/ledgerConsistency'
+import { RING_COLOUR, linePoints, paceDelta, paceFlap, spanWeeks, weightDelta, type LedgerRing, type LiftSeries, type RingState, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
 
 // The Ledger's boards, drawn as page 32 draws them ("The Ledger · together").
 
@@ -156,6 +159,58 @@ export function SleepBoard({ days, avg }: { days: SleepDay[]; avg: number | null
   )
 }
 
+/**
+ * Herb (page 62, option B, approved 2026-10-19): every one of the last 28
+ * mornings as a bar, 0 to 9. The last 7 wider and bright, with the number and
+ * day printed; the three weeks before narrow and dim. One neutral tone, no
+ * good or bad colours. The dashed brass line is his 28-day average; the flap
+ * his 7-day average. One plain line from his own check-ins.
+ */
+export function HerbBoard({ days, avg7, avg28, line }: { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null }) {
+  const W = 320, H = 112, base = 92, x0 = 4
+  const yv = (v: number) => base - v / 9 * 72
+  const oldStep = 166 / 21, newX0 = 180, newStep = (W - 2 - newX0) / 7
+  const bx = (i: number): [number, number] => (i < 21 ? [x0 + i * oldStep, oldStep - 2] : [newX0 + (i - 21) * newStep, newStep - 4])
+  return (
+    <section className="lg-glass lg-chart lg-herb">
+      <div className="lg-head"><span>Herb</span>{avg7 != null && <FlapLabel text={`${avg7.toFixed(1)} AVG`} size="xs" animate={false} />}</div>
+      <svg viewBox={`0 0 ${W} ${H}`} aria-label={days.slice(-7).map(d => `${d.letter} ${d.herb ?? 'not logged'}`).join(', ')}>
+        <line x1="0" x2={W} y1={base} y2={base} stroke="rgba(240,230,192,.12)" />
+        {days.map((d, i) => {
+          const [x, bw] = bx(i)
+          const last7 = i >= 21
+          const h = d.herb == null ? 0 : Math.max(2, base - yv(d.herb))
+          return (
+            <g key={d.epochDay}>
+              {d.herb != null && <rect x={x.toFixed(1)} y={(base - h).toFixed(1)} width={bw.toFixed(1)} height={h.toFixed(1)} rx="2" fill={last7 ? '#cfd9d2' : '#5d6863'} />}
+              {last7 && d.herb != null && <text x={(x + bw / 2).toFixed(1)} y={(base - h - 4).toFixed(1)} textAnchor="middle" className="lg-hbv">{d.herb}</text>}
+              {last7 && <text x={(x + bw / 2).toFixed(1)} y={H - 4} textAnchor="middle" className="lg-hbd">{d.letter}</text>}
+            </g>
+          )
+        })}
+        {avg28 != null && (
+          <>
+            <line x1="0" x2={W} y1={yv(avg28).toFixed(1)} y2={yv(avg28).toFixed(1)} stroke="#000" strokeWidth="4" opacity=".45" />
+            <line x1="0" x2={W} y1={yv(avg28).toFixed(1)} y2={yv(avg28).toFixed(1)} stroke="#b8984a" strokeWidth="1.6" strokeDasharray="5 3" />
+          </>
+        )}
+        <text x={x0} y={H - 4} className="lg-hbd">4 weeks ago</text>
+      </svg>
+      <div className="lg-legend is-wrap">
+        <span><i style={{ background: '#cfd9d2' }} />last 7 days</span>
+        <span><i style={{ background: '#5d6863' }} />the 3 weeks before</span>
+        {avg28 != null && <span><i className="dash" />28-day average {avg28.toFixed(1)}</span>}
+      </div>
+      {line && (
+        <p className="lg-hline">
+          On the {line.above} mornings above your 28-day average ({line.avg.toFixed(1)}), you slept {line.aboveSleep.toFixed(1)} h. On the other {line.rest}, {line.restSleep.toFixed(1)} h.
+          <small>From your last {line.checkIns} check-ins.</small>
+        </p>
+      )}
+    </section>
+  )
+}
+
 export function BodyWeightBoard({ points, weighIns }: { points: WeeklyPoint[]; weighIns: number }) {
   const drawn = points.length >= 2
   const last = points[points.length - 1]
@@ -172,20 +227,128 @@ export function BodyWeightBoard({ points, weighIns }: { points: WeeklyPoint[]; w
   )
 }
 
-/** Consistency (page 46): the streak flap, then one bar per week (oldest first), lit when the week counted. */
-export function ConsistencyBoard({ streak, weeks }: { streak: number; weeks: boolean[] }) {
-  const lit = weeks.filter(Boolean).length
+/** A flap-segment tile (page 32's ring segments laid flat): done in its colour, to come dark, missed in clay with a strike. */
+function Tile({ st, col = '#c9a656' }: { st: TileState; col?: string }) {
+  return <span className={`lg-tl${st === 'done' ? '' : st === 'todo' ? ' todo' : ' miss'}`} style={st === 'done' ? ({ '--c': col } as CSSProperties) : undefined} />
+}
+
+const TYPE_COL: Record<string, string> = { strength: '#c9a656', runwalk: '#c8844e', run: '#c8844e', bag: '#c8844e', mt: '#c8844e', foundation: '#5fa08c' }
+
+const SUN_MARK = (
+  <svg viewBox="0 0 16 16" fill="#c9a656" aria-hidden className="lg-ampm">
+    <circle cx="8" cy="8" r="3.3" />
+    <g stroke="#c9a656" strokeWidth="1.5" strokeLinecap="round"><path d="M8 1.2v1.8M8 13v1.8M1.2 8h1.8M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M3.2 12.8l1.3-1.3M11.5 4.5l1.3-1.3" /></g>
+  </svg>
+)
+const MOON_MARK = (
+  <svg viewBox="0 0 16 16" fill="#c9a656" aria-hidden className="lg-ampm"><path d="M10.6 1.6A6.6 6.6 0 1 0 14.4 12 5.5 5.5 0 0 1 10.6 1.6z" /></svg>
+)
+
+/**
+ * Consistency (page 63 final, approved 2026-10-19). On the first screen,
+ * between the week rings and Aerobic base. Closed: the flap and one bar of
+ * the block's counted sessions (done | to come | missed) with a brass NEXT
+ * BLOCK line. A tap opens it in place (it grows, then the detail fades in):
+ * next block, when you train, what gets done, why missed. It closes the
+ * page 61 ways: tap it again, tap outside, pull it down, or CLOSE.
+ */
+export function ConsistencyBoard({ view }: { view: ConsistencyView }) {
+  const [open, setOpen] = useState(false)
+  const [press, setPress] = useState(false)
+  const [pull, setPull] = useState(0)
+  const ref = useRef<HTMLElement>(null)
+  const drag = useRef<{ y: number; moved: boolean } | null>(null)
+  const dragged = useRef(false)
+  const toggle = (on: boolean) => {
+    setOpen(on)
+    const el = ref.current
+    const scroller = el?.closest('.lg-body') as HTMLElement | null
+    if (!el || !scroller) return
+    if (on) window.setTimeout(() => scroller.scrollTo({ top: el.offsetTop - 6, behavior: 'smooth' }), 90)
+    else scroller.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  useOutsideClose(ref, open, () => toggle(false))
+
+  const total = view.done + view.toCome + view.missed
+  const x = view.nextAt != null && total > 0 ? (view.nextAt / total) * 100 : null
   return (
-    <section className="lg-glass">
-      <div className="lg-rows"><div className="r"><span className="lg-label grow">Consistency</span><FlapLabel text={`${streak}D STREAK`} size="xs" tone="gold" animate={false} /></div></div>
-      {weeks.length > 0 && (
-        <>
-          <div className={`lg-wbar${weeks.length > 26 ? ' is-fine' : weeks.length > 13 ? ' is-mid' : ''}`} role="img" aria-label={`${lit} of the last ${weeks.length} weeks counted`}>
-            {weeks.map((on, i) => <i key={i} className={on ? undefined : 'off'} />)}
+    <section
+      ref={ref}
+      className={`lg-glass lg-cb${open ? ' is-open' : ''}${press ? ' is-press' : ''}${pull ? ' is-drag' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      aria-label={`Consistency, ${view.flap.toLowerCase()}. ${view.done} done, ${view.toCome} to come, ${view.missed} missed.`}
+      style={pull ? { transform: `translateY(${Math.min(pull, 120) * 0.6}px)` } : undefined}
+      onPointerDown={e => { drag.current = { y: e.clientY, moved: false }; setPress(true) }}
+      onPointerMove={e => {
+        const d = drag.current
+        if (!d || !open) return
+        const dy = Math.max(0, e.clientY - d.y)
+        if (dy > 6) { d.moved = true; setPress(false); setPull(dy) }
+      }}
+      onPointerUp={() => {
+        const d = drag.current
+        drag.current = null
+        dragged.current = Boolean(d?.moved)
+        setPress(false)
+        if (d?.moved) { const dy = pull; setPull(0); if (dy > 50) toggle(false) }
+      }}
+      onPointerLeave={() => { setPress(false) }}
+      onPointerCancel={() => { drag.current = null; setPress(false); setPull(0) }}
+      onClick={e => {
+        if (dragged.current) { dragged.current = false; return }
+        if (open && (e.target as HTMLElement).closest('.lg-cdet')) return
+        toggle(!open)
+      }}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(!open) } }}
+    >
+      <div className="lg-head">
+        <span>Consistency</span>
+        <span className="rt">
+          <FlapLabel text={view.flap} size="xs" tone={view.tone} animate={false} />
+          {open
+            ? <button type="button" className="lg-closeb" onClick={e => { e.stopPropagation(); toggle(false) }}>Close</button>
+            : <span className="lg-chev" aria-hidden><svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="#c9b27a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg></span>}
+        </span>
+      </div>
+      <div className="lg-bar">
+        <div className="track">
+          {Array.from({ length: view.done }, (_, i) => <Tile key={`d${i}`} st="done" />)}
+          {Array.from({ length: view.toCome }, (_, i) => <Tile key={`t${i}`} st="todo" />)}
+          {Array.from({ length: view.missed }, (_, i) => <Tile key={`m${i}`} st="miss" />)}
+        </div>
+        {x != null && <div className={`mk${x > 74 ? ' lft' : ''}`} style={{ left: `calc(${x}% - 1px)` }}><span>NEXT BLOCK</span></div>}
+      </div>
+      <div className="lg-bark">
+        {view.mode === 'weeks'
+          ? <><span><b>{view.done}</b> done</span><span>last {view.weeks} weeks</span><span><b>{view.missed}</b> missed</span></>
+          : <><span><b>{view.done}</b> done</span><span><b>{view.toCome}</b> to come</span><span><b>{view.missed}</b> missed</span></>}
+      </div>
+      <div className="lg-cdet" aria-hidden={!open}>
+        <div className="in">
+          <div className="lg-grp"><div className="gh">{view.mode === 'weeks' ? 'Last weeks' : 'Next block'}</div><div className="nb">{view.nextLine}{view.nextSmall && <small>{view.nextSmall}</small>}</div></div>
+          <div className="lg-grp"><div className="gh">When you train</div><div className="lg-when">
+            <div>{SUN_MARK}<span className="grow">Mornings</span><FlapLabel text={`${view.am.done}/${view.am.of}`} size="xs" animate={false} /></div>
+            <div>{MOON_MARK}<span className="grow">Evenings</span><FlapLabel text={`${view.pm.done}/${view.pm.of}`} size="xs" animate={false} /></div>
+          </div></div>
+          <div className="lg-grp"><div className="gh">What gets done</div>
+            {view.types.map(t => (
+              <div key={t.key} className="lg-tr">
+                <span className="lbl">{t.label}<small>{t.sub}</small></span>
+                <span className="tb">{t.tiles.map((st, i) => <Tile key={i} st={st} col={TYPE_COL[t.key]} />)}</span>
+                <FlapLabel text={`${t.done}/${t.of}`} size="xs" animate={false} />
+              </div>
+            ))}
           </div>
-          <div className="lg-wbar-k"><span>{weeks.length} weeks ago</span><span>this week</span></div>
-        </>
-      )}
+          {(view.why.length > 0 || view.after) && (
+            <div className="lg-grp"><div className="gh">Why missed</div>
+              <div className="lg-chips">{view.why.map(w => <span key={w.label} className="lg-chip"><FlapLabel text={String(w.n)} size="xs" animate={false} />{w.label}</span>)}</div>
+              {view.after && <div className="lg-aft">After a miss, back at the next session {view.after.back} of {view.after.of} times.</div>}
+            </div>
+          )}
+        </div>
+      </div>
     </section>
   )
 }

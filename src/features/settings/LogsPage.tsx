@@ -6,6 +6,7 @@ import { apiFetch } from '@/lib/api'
 import { logger, type LogEntry, type LogLevel } from '@/lib/logger'
 import { useToast } from '@/components/ui/Toast'
 import { SettingsScreen } from './settingsParts'
+import { goBack } from '@/lib/goBack'
 import { agoText, clockText, countLevels, filterFlaps, type LogFilter } from './settingsModel'
 
 interface ServerLogRow {
@@ -111,7 +112,7 @@ export function LogsPage() {
   const now = Date.now()
 
   return (
-    <SettingsScreen title="LOGS" onBack={() => navigate(-1)} onHold={() => navigate('/dev/recorder')} holdLabel="the recorder test">
+    <SettingsScreen title="LOGS" onBack={() => goBack(navigate, '/settings')} onHold={() => navigate('/dev/recorder')} holdLabel="the recorder test">
       <Board solid className="st-board">
         <div className="st-pills" role="radiogroup" aria-label="Filter">
           {filterFlaps(entries.length, counts).map(f => {

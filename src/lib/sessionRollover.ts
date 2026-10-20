@@ -71,6 +71,9 @@ export async function rolloverStaleSessionIds(
   return ids
 }
 
+/** A session started (or with a set logged) this recently is still being trained, whatever its day. */
+export const LIVE_GRACE_SEC = 6 * 3600
+
 /** context_json stamp on a session closed by the rollover with what was logged. */
 export const PARTIAL_CONTEXT_KEY = 'partial'
 
@@ -80,9 +83,10 @@ export const PARTIAL_CONTEXT_KEY = 'partial'
  * its logged sets count as real work. The finish time is the last logged set,
  * else the start. Returns the ids closed.
  */
-export async function closeStaleInProgress(db: DB, todayEpochDay: number): Promise<string[]> {
+export async function closeStaleInProgress(db: DB, todayEpochDay: number, nowSec = Math.floor(Date.now() / 1000)): Promise<string[]> {
   const stale = await db.select().from(sessions)
     .where(and(eq(sessions.status, 'in_progress'), lt(sessions.scheduledDate, todayEpochDay)))
+  const closed: string[] = []
   for (const s of stale) {
     const sets = s.type === 'strength'
       ? await db.select({ at: strengthSets.completedAt }).from(strengthSets)
@@ -90,6 +94,11 @@ export async function closeStaleInProgress(db: DB, todayEpochDay: number): Promi
         .where(eq(strengthSessionExercises.sessionId, s.id))
       : []
     const lastSet = sets.reduce<number | null>((m, r) => (r.at != null && (m == null || r.at > m) ? r.at : m), null)
+    // M7 (page 61): a session still going past midnight stays open. Only one quiet for
+    // LIVE_GRACE_SEC (its last set, else its start) is closed.
+    const lastActive = Math.max(lastSet ?? 0, s.startedAt ?? 0)
+    if (lastActive > 0 && lastActive <= nowSec && nowSec - lastActive < LIVE_GRACE_SEC) continue
+    closed.push(s.id)
     const completedAt = lastSet ?? s.startedAt ?? ((s.scheduledDate as number) + 1) * 86400 - 1
     let ctx: Record<string, unknown> = {}
     try { ctx = s.contextJson ? JSON.parse(s.contextJson) as Record<string, unknown> : {} } catch { ctx = {} }
@@ -101,5 +110,5 @@ export async function closeStaleInProgress(db: DB, todayEpochDay: number): Promi
       contextJson: JSON.stringify(ctx),
     }).where(and(eq(sessions.id, s.id), eq(sessions.status, 'in_progress')))
   }
-  return stale.map(s => s.id)
+  return closed
 }

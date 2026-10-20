@@ -11,6 +11,20 @@ export interface LibraryExercise {
   equipment: string | null
   formCues: string | null
   formVideoUrl: string | null
+  tips?: string | null
+  // 0038 (page 60): the video's details and the weekly link check
+  videoStartSec?: number | null
+  videoSource?: string | null
+  videoTitle?: string | null
+  videoLength?: string | null
+  videoStatus?: string | null
+  altVideoUrl?: string | null
+  altVideoSource?: string | null
+  altVideoStatus?: string | null
+  tiktokUrl?: string | null
+  coachHint?: string | null
+  /** Folded into another item: not listed. */
+  mergedInto?: string | null
 }
 
 export interface LibraryCombo {
@@ -24,6 +38,69 @@ export interface LibraryCombo {
   formTips: string | null
   isFavourite: number
   timesSharp: number
+  /** 'class': added or unlocked from an MT class (the glove, page 49 section 3). */
+  source?: string | null
+  /** The class's local epoch day ("From your class, Tue 20 Oct"). */
+  classDate?: number | null
+  /** The cue flap (4 words, 20 characters at most). */
+  cue?: string | null
+  formVideoUrl?: string | null
+  // 0038 (page 60): the video's details and the weekly link check
+  videoStartSec?: number | null
+  videoSource?: string | null
+  videoTitle?: string | null
+  videoLength?: string | null
+  videoStatus?: string | null
+  altVideoUrl?: string | null
+  altVideoSource?: string | null
+  altVideoStatus?: string | null
+  tiktokUrl?: string | null
+  coachHint?: string | null
+}
+
+/** Techniques (page 52 / 60, new kind): one real strike behind the combos' names. */
+export interface LibraryTechnique {
+  id: string
+  name: string
+  kind: string
+  /** JSON array: the combo names that mean this one ("Left Kick" is the switch kick). */
+  aliases: string
+  cue: string | null
+  tips: string | null
+  formVideoUrl: string | null
+  // 0038 (page 60): the video's details and the weekly link check
+  videoStartSec?: number | null
+  videoSource?: string | null
+  videoTitle?: string | null
+  videoLength?: string | null
+  videoStatus?: string | null
+  altVideoUrl?: string | null
+  altVideoSource?: string | null
+  altVideoStatus?: string | null
+  tiktokUrl?: string | null
+  coachHint?: string | null
+}
+
+/** Runs (page 52 / 60, new kind): a run type. */
+export interface LibraryRun {
+  id: string
+  name: string
+  runType: string
+  sub: string | null
+  what: string | null
+  tips: string | null
+  formVideoUrl: string | null
+  // 0038 (page 60): the video's details and the weekly link check
+  videoStartSec?: number | null
+  videoSource?: string | null
+  videoTitle?: string | null
+  videoLength?: string | null
+  videoStatus?: string | null
+  altVideoUrl?: string | null
+  altVideoSource?: string | null
+  altVideoStatus?: string | null
+  tiktokUrl?: string | null
+  coachHint?: string | null
 }
 
 export interface LibraryJournalEntry {
@@ -34,16 +111,19 @@ export interface LibraryJournalEntry {
   createdAt: number
 }
 
-/** The six groups, in the app's order (page 39): icon, flap name. */
-export type GroupKey = 'strength' | 'core' | 'posture' | 'mobility' | 'bag' | 'waybook'
+/** Every kind, in the app's order (page 39, and page 52's two new kinds): icon, flap name. */
+export type GroupKey = 'strength' | 'core' | 'posture' | 'mobility' | 'bag' | 'techniques' | 'runs' | 'waybook'
 
-export const GROUPS: ReadonlyArray<{ key: GroupKey; name: string; icon: SessionIconKey }> = [
+export const GROUPS: ReadonlyArray<{ key: GroupKey; name: string; icon: SessionIconKey; isNew?: boolean }> = [
   { key: 'strength', name: 'STRENGTH', icon: 'strength' },
   { key: 'core', name: 'CORE', icon: 'core' },
   // the daily posture track is Foundation everywhere (its category stays `posture`)
   { key: 'posture', name: 'FOUNDATION', icon: 'foundation' },
   { key: 'mobility', name: 'MOBILITY', icon: 'mobility' },
   { key: 'bag', name: 'BAGWORK', icon: 'bag' },
+  // page 52: the single strikes (the MT Class glove) and the run types (the shoe)
+  { key: 'techniques', name: 'TECHNIQUES', icon: 'mt', isNew: true },
+  { key: 'runs', name: 'RUNS', icon: 'run', isNew: true },
   { key: 'waybook', name: 'WAYBOOK', icon: 'waybook' },
 ]
 
@@ -252,4 +332,85 @@ export function matchCombo(c: LibraryCombo, q: string): boolean {
 export function matchEntry(e: LibraryJournalEntry, q: string): boolean {
   const s = q.trim().toLowerCase()
   return !!s && e.content.toLowerCase().includes(s)
+}
+
+// ─── Techniques, runs, items (page 52 / 60) ───────────────────
+
+/** Not listed: an exercise folded into another (Spiderman + T-Spine into the World's Greatest Stretch). */
+export function listed(ex: Pick<LibraryExercise, 'mergedInto'>): boolean {
+  return !ex.mergedInto
+}
+
+const strikeKey = (s: string) => s.trim().toLowerCase().replace(/\s*[×x]\s*\d+$/, '').replace(/\s+/g, ' ')
+
+export function aliasesOf(t: Pick<LibraryTechnique, 'aliases'>): string[] {
+  try {
+    const v = JSON.parse(t.aliases) as unknown
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** The technique a combo's strike name means ("Left Kick" → Switch Kick; "Jab × 3" → Jab). */
+export function techniqueFor(strike: string, techniques: ReadonlyArray<LibraryTechnique>): LibraryTechnique | null {
+  const k = strikeKey(strike)
+  return techniques.find(t => strikeKey(t.name) === k || aliasesOf(t).some(a => strikeKey(a) === k)) ?? null
+}
+
+/** The combos that use a technique (each combo once). */
+export function combosUsing<C extends Pick<LibraryCombo, 'text'>>(t: LibraryTechnique, combos: ReadonlyArray<C>, techniques: ReadonlyArray<LibraryTechnique>): C[] {
+  return combos.filter(c => comboStrikes(c.text).some(s => techniqueFor(s, techniques)?.id === t.id))
+}
+
+/** "Kick · also Right Kick, Body Kick": the kind and the other combo names that mean it. */
+export function techniqueSub(t: LibraryTechnique): string {
+  const others = aliasesOf(t).filter(a => strikeKey(a) !== strikeKey(t.name))
+  return others.length ? `${t.kind} · also ${others.join(', ')}` : t.kind
+}
+
+/** Tips are stored joined by " | "; at most three are shown. */
+export function tipList(tips: string | null | undefined): string[] {
+  return (tips ?? '').split('|').map(s => s.trim()).filter(Boolean).slice(0, 3)
+}
+
+/** The coach hint's first sentence goes bold (page 52): [lead, rest]. */
+export function hintParts(hint: string): [string, string] {
+  const m = /^(.+?[.!?])(\s+|$)([\s\S]*)$/.exec(hint.trim())
+  return m ? [m[1], m[3]] : [hint.trim(), '']
+}
+
+const DOW3 = ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed']
+/** "Tue 20 Oct" for a local epoch day. */
+export function classDayLabel(epochDay: number): string {
+  const d = new Date(epochDay * 86400000)
+  const mon = MON3[d.getUTCMonth()]
+  return `${DOW3[((epochDay % 7) + 7) % 7]} ${d.getUTCDate()} ${mon.charAt(0)}${mon.slice(1).toLowerCase()}`
+}
+
+export function matchTechnique(t: LibraryTechnique, q: string): boolean {
+  const s = q.trim().toLowerCase()
+  return !!s && (t.name.toLowerCase().includes(s) || t.kind.toLowerCase().includes(s) || aliasesOf(t).some(a => a.toLowerCase().includes(s)))
+}
+
+export function matchRun(r: LibraryRun, q: string): boolean {
+  const s = q.trim().toLowerCase()
+  return !!s && (r.name.toLowerCase().includes(s) || (r.sub ?? '').toLowerCase().includes(s))
+}
+
+/** What a technique search lists: each matching name once, the technique's own or a combo name for it ("teep": Teep, Lead Teep...). */
+export function techniqueHits(techniques: ReadonlyArray<LibraryTechnique>, q: string): Array<{ technique: LibraryTechnique; label: string }> {
+  const s = q.trim().toLowerCase()
+  if (!s) return []
+  const out: Array<{ technique: LibraryTechnique; label: string }> = []
+  const seen = new Set<string>()
+  for (const t of techniques) {
+    for (const label of [t.name, ...aliasesOf(t)]) {
+      const k = strikeKey(label)
+      if (!label.toLowerCase().includes(s) || seen.has(k)) continue
+      seen.add(k)
+      out.push({ technique: t, label })
+    }
+  }
+  return out
 }

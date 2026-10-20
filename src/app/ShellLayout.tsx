@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 
-import { FlapLabel } from '@/design'
+import { FlapLabel, closeAll } from '@/design'
 import { TAB_ICON_SRC, type TabKey } from '@/design/tabIcons'
 import { useNetworkStatus } from '@/lib/network'
 import { onOutboxChange, pendingWrites } from '@/lib/outboxSync'
+
+import { LiveStrip } from './LiveStrip'
 
 // The tab bar (page 42, A, approved): the world's places as painted icons.
 // Active: full colour, lifted, a soft glow, a small brass light above, a gold
@@ -20,7 +22,18 @@ const TABS: ReadonlyArray<{ to: string; key: TabKey; label: string; end?: boolea
 
 function NavTab({ to, tab, label, end }: { to: string; tab: TabKey; label: string; end?: boolean }) {
   return (
-    <NavLink to={to} end={end} className={({ isActive }) => `wm-tab${isActive ? ' is-on' : ''}`} aria-label={label.toLowerCase()}>
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) => `wm-tab${isActive ? ' is-on' : ''}`}
+      aria-label={label.toLowerCase()}
+      onClick={e => {
+        // Tapping the tab you're on (page 61 rule 7): close any open board, back to the top.
+        if (!e.currentTarget.classList.contains('is-on')) return
+        closeAll()
+        document.querySelector('main.waymark-scroll')?.scrollTo({ top: 0, behavior: 'smooth' })
+      }}
+    >
       {({ isActive }) => (
         <>
           <img src={TAB_ICON_SRC[tab]} width={40} height={40} alt="" draggable={false} decoding="async" />
@@ -55,6 +68,7 @@ export function ShellLayout() {
         <main className="waymark-scroll min-h-0 flex-1 overflow-auto px-4 pb-4">
           <Outlet />
         </main>
+        <LiveStrip />
         <nav className="wm-tabs" aria-label="Main">
           {TABS.map(t => <NavTab key={t.key} to={t.to} tab={t.key} label={t.label} end={t.end} />)}
         </nav>

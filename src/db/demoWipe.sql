@@ -26,6 +26,7 @@ DELETE FROM daily_logs;
 DELETE FROM weekly_journals;
 DELETE FROM journal_entries;
 DELETE FROM body_metrics;
+DELETE FROM body_alerts;
 
 -- Reset combo state (keep library rows but clear favourites + mastery)
 UPDATE combos SET is_favourite = 0, mastery_score = 0, times_sharp = 0;

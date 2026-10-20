@@ -40,8 +40,14 @@ function sentence(c: LineChange, refDay: number): string {
   return c.day === refDay ? `${own.charAt(0).toUpperCase()}${own.slice(1)} is ${after} today.` : `${nameOnDay(c.name, c.day, refDay)}: ${after}.`
 }
 
-/** The alarm's line on `alarmDay`: the first unseen coach change from that day on. Null when none. */
-export function morningLine(changes: ReadonlyArray<LineChange>, alarmDay: number): string | null {
+/**
+ * The alarm's line on `alarmDay`: the raven's when it has one (page 58 item
+ * 14: "The raven's back: how's the knee?" on a return morning, or its unread
+ * note once; it matters more than a change), else the first unseen coach
+ * change from that day on. Null when none.
+ */
+export function morningLine(changes: ReadonlyArray<LineChange>, alarmDay: number, raven: string | null = null): string | null {
+  if (raven) return raven
   const first = pending(changes, alarmDay)[0]
   return first ? `${sentence(first, alarmDay)} Tap to see.` : null
 }

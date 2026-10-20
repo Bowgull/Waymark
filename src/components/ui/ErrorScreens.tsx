@@ -41,7 +41,7 @@ function ErrorFrame({ title, line, saved, children }: { title: string; line: str
 }
 
 /** "Session interrupted": the sets saved (on the server or still on this phone), then RESUME / BACK TO TODAY. */
-export function SessionInterruptedScreen({ sessionId, onResume, onBack, preview }: { sessionId: string | null; onResume: () => void; onBack: () => void; /** Design gallery only: fixed lines. */ preview?: SavedLine[] }) {
+export function SessionInterruptedScreen({ sessionId, onResume, onBack, onEnd, preview }: { sessionId: string | null; onResume: () => void; /** Keeps the session in progress (page 61). */ onBack: () => void; /** END AND LOG IT: to the close. */ onEnd?: () => void; /** Design gallery only: fixed lines. */ preview?: SavedLine[] }) {
   const [lines, setLines] = useState<SavedLine[] | null>(preview ?? null)
   const pending = sessionId ? pendingFor(outboxNow(), sessionId) : []
 
@@ -68,6 +68,21 @@ export function SessionInterruptedScreen({ sessionId, onResume, onBack, preview 
     >
       <FlapButton label="RESUME" primary onClick={onResume} />
       <FlapButton label="BACK TO TODAY" onClick={onBack} />
+      {onEnd && <FlapButton label="END AND LOG IT" onClick={onEnd} />}
+    </ErrorFrame>
+  )
+}
+
+/**
+ * Page 61, 3E: after iOS closed Waymark (or the phone restarted, or a
+ * reload) the session comes back paused where it was. What is saved on the
+ * phone, then RESUME, or END AND LOG IT. Nothing is ever abandoned here.
+ */
+export function BackInSessionScreen({ line, lines, onResume, onEnd }: { line: string; lines: SavedLine[]; onResume: () => void; onEnd: () => void }) {
+  return (
+    <ErrorFrame title="BACK IN YOUR SESSION" line={line} saved={{ head: 'SAVED ON THE PHONE', lines }}>
+      <FlapButton label="RESUME" primary onClick={onResume} />
+      <FlapButton label="END AND LOG IT" onClick={onEnd} />
     </ErrorFrame>
   )
 }

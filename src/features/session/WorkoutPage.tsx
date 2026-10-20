@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { getItem as storageGetItem, removeItem as storageRemoveItem, setItem as storageSetItem } from '@/lib/safeStorage'
 import { entranceLine, parseRoundSecs, roundSecsKey, withRoundSec } from '@/lib/plannedLength'
@@ -40,8 +40,10 @@ import {
   type StorageLike,
   type TimerSnap,
 } from '@/lib/sessionResume'
+import { clearLiveSession, pauseAt, savedSummary, takeLaunch, writeLiveSession } from '@/lib/liveSession'
+import { BackInSessionScreen } from '@/components/ui/ErrorScreens'
+import { setSessionNav } from '@/components/timers/endedContext'
 import { logger } from '@/lib/logger'
-import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/Toast'
 import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
@@ -56,6 +58,7 @@ import { BreatheScreen } from './BreatheScreen'
 import { ComboRatingScreen } from './ComboRatingScreen'
 import { ComboUnlockSuggestion } from './ComboUnlockSuggestion'
 import { MtClassLogView } from './MtClassLogView'
+import { ClassLearnedFlow } from './ClassLearnedFlow'
 import { MobilityExerciseView } from './MobilityExerciseView'
 import { RitualEntrance } from './RitualEntrance'
 import { RunSessionView } from './RunSessionView'
@@ -66,7 +69,7 @@ import { StrengthExerciseView } from './StrengthExerciseView'
 import type { StrengthSection } from './strengthMicrocopy'
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
-import { endLiveActivity, endAllLiveActivities } from '@/lib/liveActivity'
+import { endLiveActivity } from '@/lib/liveActivity'
 import { coachLine } from '@/lib/coachLine'
 
 // ─── Shared types ──────────────────────────────────────────────
@@ -80,6 +83,7 @@ interface SessionData {
   scheduledDate?: number | null
   label?: string | null
   notes?: string | null
+  startedAt?: number | null
 }
 
 // ─── Strength types ────────────────────────────────────────────
@@ -154,7 +158,7 @@ interface MobilityWorkoutData {
 interface BagComboData {
   id: string
   orderIndex: number
-  combo: { id: string; text: string; tier: string; level: string; masteryScore?: number; isFavourite?: number; techniques?: string } | null
+  combo: { id: string; text: string; tier: string; level: string; masteryScore?: number; isFavourite?: number; techniques?: string; source?: string | null } | null
 }
 
 interface UnlockSuggestion {
@@ -391,7 +395,13 @@ function locallyLoggedSetIds(sessionId: string): Set<string> {
 export function WorkoutPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-
+  const location = useLocation()
+  // Opened by a launch (iOS closed the app, a reload, the phone restarted): back paused where it was,
+  // with BACK IN YOUR SESSION first (page 61, 3E). Stepping back in from the strip resumes in true time.
+  const [relaunch] = useState(() => Boolean((location.state as { relaunch?: boolean } | null)?.relaunch) || takeLaunch())
+  // END AND LOG IT from the session-interrupted board: straight to the close.
+  const [closeOnLoad] = useState(() => new URLSearchParams(location.search).get('close') === '1')
+  const startedAtRef = useRef<number>(Date.now())
   const [sessionType, setSessionType] = useState<string | null>(null)
   // Runs keep their category in notes: the entrance shows the Zone 2 dial or the shoe.
   const [runCategory, setRunCategory] = useState<string | null>(null)
@@ -400,6 +410,8 @@ export function WorkoutPage() {
   const [entranceDetail, setEntranceDetail] = useState<string | null>(null)
   // The close (page 19 #6): after the effort is saved, the moment plays, then Today.
   const [moment, setMoment] = useState<string | null>(null)
+  // An MT class (page 49): after CLOSE SESSION, "What you learned" comes before the moment.
+  const [learnedNext, setLearnedNext] = useState<string | null>(null)
   // Block Zero week 1 / 6: the week's first easy run-walk asks the talk-test HR on its log (page 45 #3).
   const [talkTest, setTalkTest] = useState<{ blockId: string; week: number } | null>(null)
   const [strengthData, setStrengthData] = useState<StrengthWorkoutData | null>(null)
@@ -461,7 +473,18 @@ export function WorkoutPage() {
       roundIdx: pos.roundIdx,
       engineState: engineStateRef.current,
     }, Date.now())
-  }, [id, sessionType])
+    // The live strip above the tabs reads this (page 61, 3B).
+    const icon = sessionIconFor(sessionType, runCategory)
+    writeLiveSession(resumeStorage(), {
+      sessionId: id,
+      type: sessionType,
+      name: (sessionLabel ?? SESSION_ICON_NAME[icon]).toUpperCase(),
+      icon,
+      roundTotal: liveRoundsRef.current,
+      startedAtMs: startedAtRef.current,
+    })
+  }, [id, sessionType, sessionLabel, runCategory])
+  const liveRoundsRef = useRef<number | null>(null)
 
   /** Engine views call this on every change of their own state. */
   // Per-round seconds (bag work, rope) for the done summary, kept on the phone until the finish.
@@ -489,18 +512,24 @@ export function WorkoutPage() {
    * Today, then choose), never a plain tap here.
    */
   function leaveSession() {
+    // ‹ TODAY (page 61, 3A): steps out without ending. The timers keep true
+    // time (their end times are saved), the bell cues stay scheduled and the
+    // lock-screen card stays up; the live strip is the way back.
     writeResume()
-    try {
-      sessionStorage.setItem('waymark_suppress_auto_resume_until', String(Date.now() + 2 * 60 * 1000))
-    } catch {
-      // sessionStorage can be unavailable in private contexts.
-    }
-    // Cues and the lock screen belong to the open session screen; resume
-    // re-syncs both from the saved end times.
-    void cancelAllCues()
-    void endAllLiveActivities()
-    navigate('/today?resume=0', { state: { suppressAutoResume: true } })
+    navigate('/today')
   }
+
+  /** Hold × (page 61): it only ends, to the close (effort, then the moment). */
+  function endSession() {
+    writeResume()
+    setPhase('complete')
+  }
+  const navRef = useRef({ leave: leaveSession, end: endSession })
+  navRef.current = { leave: leaveSession, end: endSession }
+  useEffect(() => {
+    setSessionNav({ leave: () => navRef.current.leave(), end: () => navRef.current.end() })
+    return () => setSessionNav(null)
+  }, [])
 
   // Live Activity for strength — persists across both rest and exercise
   // phases so the lock screen always shows where the user is.
@@ -650,6 +679,7 @@ export function WorkoutPage() {
 
         setSessionType(session.type)
         setSessionLabel(session.label ?? null)
+        if (session.startedAt) startedAtRef.current = session.startedAt * 1000
         // Runs carry no block week (the server only stamps strength), so the block's training week decides.
         if ((session.type === 'running' || session.type === 'foundation_run') && session.blockType === 'block_zero') {
           void (async () => {
@@ -776,10 +806,13 @@ export function WorkoutPage() {
           return
         }
 
+        liveRoundsRef.current = rounds?.length ?? null
+        if (closeOnLoad) { setPhase('complete'); return }
         const saved = loadResume(resumeStorage(), id!)
         if (saved && saved.engine === engineForType(session.type)) {
-          const restore = () => applyResume(session.type, saved, { rounds, restAutoEnds, setCounts })
-          if (resumeDecision(saved, Date.now()) === 'ask') {
+          // After a launch it comes back paused where it was last saved; RESUME carries on from there.
+          const restore = () => applyResume(session.type, relaunch ? pauseAt(saved, saved.savedAt) : saved, { rounds, restAutoEnds, setCounts })
+          if (relaunch || resumeDecision(saved, Date.now()) === 'ask') {
             setStaleResume(saved)
             pendingRestoreRef.current = restore
           } else {
@@ -846,7 +879,7 @@ export function WorkoutPage() {
     }
 
     load()
-  }, [id, showToast, restoreRest])
+  }, [id, showToast, restoreRest]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save workout progress on every step (position; engine views add theirs).
   const restSnapshot = restTimer.snapshot
@@ -923,6 +956,8 @@ export function WorkoutPage() {
       logger.sessionEvent('session finish ok', { sessionId: id, queued: result === 'queued' })
       armedRef.current = false
       clearResume(resumeStorage(), id)
+      clearLiveSession(resumeStorage(), id)
+      storageRemoveItem(`waymark_close_note:${id}`)
       storageRemoveItem(roundSecsKey(id))
       storageRemoveItem(carryKey(id))
       void cancelAllCues()
@@ -944,7 +979,9 @@ export function WorkoutPage() {
           4000,
         )
       })
-      setMoment(momentLine(sessionLabel ?? SESSION_ICON_NAME[sessionIconFor(sessionType ?? 'strength', runCategory)], rpe))
+      const line = momentLine(sessionLabel ?? SESSION_ICON_NAME[sessionIconFor(sessionType ?? 'strength', runCategory)], rpe)
+      if (sessionType === 'mt_class' && mtData?.mtLog) setLearnedNext(line)
+      else setMoment(line)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       console.error('Failed to complete session:', e)
@@ -967,45 +1004,42 @@ export function WorkoutPage() {
   // ─── Old save: resume or end (never silently dropped) ─────
 
   if (staleResume) {
-    const savedAt = new Date(staleResume.savedAt)
-    const when = savedAt.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    // Page 61, 3E: back in, paused where it was, with what is saved. RESUME, or END AND LOG IT. Never abandoned.
+    const summary = savedSummary(staleResume)
     return (
-      <div className="relative flex min-h-screen flex-col items-center justify-center gap-4 bg-near-black px-6 text-center">
-        <SessionBackground />
-        <p className="relative z-10 font-cinzel text-xl tracking-wider text-foreground">Session in progress</p>
-        <p className="relative z-10 max-w-xs text-sm text-muted-foreground">
-          Last saved {when}. Pick up where you left off, or end it and log what you did.
-        </p>
-        <div className="relative z-10 flex w-full max-w-xs flex-col gap-2">
-          <Button
-            size="lg"
-            onClick={() => {
-              const restore = pendingRestoreRef.current
-              pendingRestoreRef.current = null
-              setStaleResume(null)
-              restore?.()
-            }}
-          >
-            Resume
-          </Button>
-          <Button
-            size="lg"
-            variant="secondary"
-            onClick={() => {
-              pendingRestoreRef.current = null
-              setStaleResume(null)
-              setPhase('complete')
-            }}
-          >
-            End and Log
-          </Button>
-        </div>
+      <>
+        <BackInSessionScreen
+          line={`Waymark closed ${summary.where}. It's paused where you were. Nothing is lost.`}
+          lines={summary.lines}
+          onResume={() => {
+            const restore = pendingRestoreRef.current
+            pendingRestoreRef.current = null
+            setStaleResume(null)
+            restore?.()
+          }}
+          onEnd={() => {
+            pendingRestoreRef.current = null
+            setStaleResume(null)
+            setPhase('complete')
+          }}
+        />
         <ToastContainer />
-      </div>
+      </>
     )
   }
 
   // ─── The moment (page 19 #6): after the close is saved ────
+
+  // ─── What you learned (page 49): the next step of finishing a class ───
+
+  if (learnedNext && id && mtData?.mtLog) {
+    return (
+      <>
+        <ClassLearnedFlow sessionId={id} mtLogId={mtData.mtLog.id} onDone={() => { setMoment(learnedNext); setLearnedNext(null) }} />
+        <ToastContainer />
+      </>
+    )
+  }
 
   if (moment) {
     return <SessionMoment line={moment} onDone={() => navigate('/today', { replace: true })} />
@@ -1033,7 +1067,7 @@ export function WorkoutPage() {
   const closing = phase === 'complete' || phase === 'mark-earned'
   const closeScreen = (
     <>
-      <SessionComplete sessionType={sessionType ?? 'strength'} startRpe={typicalRpe({ type: sessionType ?? 'strength', label: sessionLabel, notes: runCategory })} onFinish={handleFinish} submitting={submitting} />
+      <SessionComplete sessionId={id} sessionType={sessionType ?? 'strength'} startRpe={typicalRpe({ type: sessionType ?? 'strength', label: sessionLabel, notes: runCategory })} onFinish={handleFinish} submitting={submitting} />
       <ToastContainer />
     </>
   )
@@ -1266,6 +1300,7 @@ export function WorkoutPage() {
         comboId: rc.combo!.id,
         roundId: r.id,
         text: rc.combo!.text,
+        source: rc.combo!.source ?? null,
       }))
     )
 

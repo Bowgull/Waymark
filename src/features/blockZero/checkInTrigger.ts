@@ -6,7 +6,7 @@
 import { getTodayISO } from '@/lib/dates'
 import { getItem, removeItem, setItem } from '@/lib/safeStorage'
 
-import { CHECK_IN_REQUEST_KEY, CHECK_IN_SKIP_KEY } from './checkInFlow'
+import { CHECK_IN_DRAFT_KEY, CHECK_IN_REQUEST_KEY, parseCheckInDraft, type CheckInAnswers } from './checkInFlow'
 
 export const CHECK_IN_EVENT = 'waymark:open-checkin'
 
@@ -23,10 +23,15 @@ export function takeCheckInRequest(): boolean {
   return day === getTodayISO()
 }
 
-export function markCheckInSkipped(): void {
-  setItem(CHECK_IN_SKIP_KEY, getTodayISO())
+/** Today's answers on this phone, saved as each card is answered (survives a closed deck or a lost connection). */
+export function saveCheckInDraft(date: string, answers: CheckInAnswers, backNotes: string): void {
+  setItem(CHECK_IN_DRAFT_KEY, JSON.stringify({ date, answers, backNotes }))
 }
 
-export function checkInSkippedOn(): string | null {
-  return getItem(CHECK_IN_SKIP_KEY)
+export function loadCheckInDraft(date: string): { answers: CheckInAnswers; backNotes: string } | null {
+  return parseCheckInDraft(getItem(CHECK_IN_DRAFT_KEY), date)
+}
+
+export function clearCheckInDraft(): void {
+  removeItem(CHECK_IN_DRAFT_KEY)
 }

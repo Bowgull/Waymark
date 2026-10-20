@@ -167,14 +167,51 @@
 /* the search's Waybook matches: the same page, inside the board */
 .lib-book.is-inline { flex: none; min-height: 0; margin: 10px 0 0; overflow: visible; }
 
-/* ── locked (page 21 "Locked"): ⚿, one line, UNLOCK WAYBOOK ── */
-.lib-locked { align-items: center; text-align: center; padding: 24px 14px !important; position: relative; top: -9px; }
-/* page 21: the card is centred on the whole phone (the scrim's safe-area padding is uneven) */
-.lib-locked-key { font: 800 30px var(--font-mono); color: #c9b27a; }
-
 .lib-none { margin: 4px 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .lib-book.is-turn { animation: none; }
   .lib-anvil path { transition: none; }
 }
+.lib-strikes .lib-glove { width: 20px; height: 20px; flex: none; margin-left: 4px; }
+
+/* ── page 52 / 60: every kind browsable, every item its own page ── */
+.lib-grp2-n { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.lib-newk { font: 800 10.5px var(--font-body); letter-spacing: 0.14em; color: #8fc4b0; }
+.lib-lock2 { margin-left: auto; font: 800 14px var(--font-mono); color: rgba(240, 230, 192, 0.6); }
+.lib-ex.is-row { display: flex; align-items: center; gap: 10px; }
+.lib-ex.is-row .t { flex: 1; min-width: 0; }
+.lib-ex.is-row .lib-ex-top { justify-content: flex-start; flex-direction: column; gap: 2px; }
+.lib-ex.is-row .lib-ex-eq { text-align: left; font-size: 13.5px; }
+.lib-ex-sub { font: 600 13.5px var(--font-body); color: rgba(240, 230, 192, 0.7); margin-top: 2px; }
+.lib-play { font: 800 11px var(--font-mono); color: #e8c878; flex: none; }
+.lib-chev2 { font: 800 15px var(--font-mono); color: #c9b27a; flex: none; }
+.lib-rh { display: block; width: 100%; padding: 10px 0 2px; border: 0; background: none; text-align: left; font: 800 11.5px var(--font-body); letter-spacing: 0.2em; color: #c9b27a; text-transform: uppercase; cursor: pointer; }
+.lib-rh:disabled { cursor: default; opacity: 1; }
+.lib-rh.is-zero { color: #9fb2a8; }
+.lib-classkey { margin: 0; text-align: center; font: 600 14px var(--font-body); color: #9fb2a8; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* an item's page: the hero, Cue / Tips / Coach hint boards, then the video */
+.lib-item { display: flex; flex-direction: column; gap: 10px; }
+.lib-hero { display: flex; align-items: center; gap: 12px; }
+.lib-hero .t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.lib-sub { font: 600 15px var(--font-body); color: #9fb2a8; }
+.lib-cue2 { font: 500 16px/1.5 var(--font-body); color: #efe6c8; margin: 0; }
+.lib-tips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.lib-tips li { position: relative; padding-left: 16px; font: 500 16px/1.45 var(--font-body); color: #efe6c8; }
+.lib-tips li::before { content: ''; position: absolute; left: 2px; top: 0.62em; width: 6px; height: 6px; border-radius: 50%; background: #b8984a; }
+.lib-hint { padding: 10px 12px; border-radius: 9px; background: rgba(184, 152, 74, 0.1); box-shadow: inset 3px 0 0 #b8984a; font: 600 15px/1.45 var(--font-body); color: #efe2bc; margin: 0; }
+.lib-hint b { color: #ffe3a0; }
+.lib-vid { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; text-decoration: none; }
+.lib-vid svg { width: 18px; height: 18px; flex: none; }
+.lib-vsrc { display: flex; flex-direction: column; gap: 3px; align-items: center; text-align: center; margin-top: 8px; }
+.lib-vsrc .who { font: 700 15px var(--font-body); color: #e9dfc0; }
+.lib-vsrc .what { font: 600 15px/1.35 var(--font-body); color: rgba(240, 230, 192, 0.72); }
+.lib-also { display: flex; align-items: center; justify-content: center; gap: 8px; font: 700 15px var(--font-body); color: #c9b27a; padding: 8px 0 2px; border-top: 1px solid rgba(0, 0, 0, 0.5); margin-top: 8px; text-decoration: none; }
+.lib-also svg { width: 13px; height: 13px; flex: none; }
+.lib-gone { padding: 10px 12px; border-radius: 9px; background: rgba(0, 0, 0, 0.25); box-shadow: inset 0 0 0 1px rgba(240, 230, 192, 0.12); font: 600 15px/1.45 var(--font-body); color: rgba(240, 230, 192, 0.75); margin: 0 0 10px; text-align: center; }
+.lib-ctop { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.lib-from { display: flex; align-items: center; gap: 8px; margin-top: 10px; font: 600 14.5px var(--font-body); color: #c9d6cf; }
+.lib-cueflap { display: flex; align-items: center; gap: 10px; }
+.lib-uses { display: flex; flex-direction: column; gap: 7px; }
+.lib-uses .lib-strikes { flex: none; }

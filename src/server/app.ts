@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
 import { applyStoredBlockZeroTransition, getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
 import { rebalanceForClassTonight } from './classTonight'
@@ -7,7 +7,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
-import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
+import { CONSISTENCY_SPAN, blockConsistency, weeksConsistency } from '../lib/ledgerConsistency'
+import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, runTypes, techniques, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay, mondayOf } from '../lib/dates'
 import { loggedAtSec } from '../lib/units'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
@@ -23,10 +24,11 @@ import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { BLOCK_ZERO_BASE_WEEKS, allowedClassTypes, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
+import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, gotBodyNote, lowerLegOnWatch, markAgainstFlag, ravenLineFor, seenBodyNote } from './bodyWatch'
 import { KEY_TYPES, KNOWN_SESSION_TYPES, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, estimatedMinutes, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
-import { CHART_WEEKS, CONSISTENCY_WEEKS, aerobicWeekly, buildRings, consistencyWeeks, currentStreak as ledgerStreak, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
+import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
 import { allBoardRows, boardSuggestions, computeSuggestions } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, weekLineFor } from './weeklyPass'
 import { applyFeltHard, applyTmUpdate, coachPushFrom, maybeRampUp } from './coachAsks'
@@ -46,8 +48,12 @@ import { strava } from './routes/strava'
 import { clearCollectedTrainingData } from './trainingReset'
 import { checkMtClassForBlockZero, easeForReadiness, getActiveBlock, loadMtRamp, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, todayEpochDayUtc, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
 import { logs } from './routes/logs'
+import { classCombos } from './routes/classCombos'
+import { pendingReviews } from './linkHealth'
 import {
   blockDayPlan,
+  blockStartDay,
+  bodyPlanMark,
   currentBlockWeek,
   loadInjuryFlag,
   loadPlacementContext,
@@ -128,9 +134,26 @@ for (const path of [
   '/api/body-metrics',
   '/api/daily-logs',
   '/api/journal',
+  '/api/class-combos/add',
+  '/api/class-combos/decline',
 ]) {
   app.use(path, idempotent())
 }
+
+app.route('/api/class-combos', classCombos)
+
+// H1 (page 61): ENTER after a RESET (or any start that finds the session
+// already set up) went back to the workout without putting the session in
+// progress again, so it ran untracked. Every start route: a session still
+// planned afterwards is in progress from now.
+app.use('/api/sessions/:id/*', async (c, next) => {
+  await next()
+  if (c.req.method !== 'POST' || !/\/start-[a-z-]+$/.test(new URL(c.req.url).pathname) || c.res.status !== 200) return
+  const id = c.req.param('id')
+  if (!id) return
+  await createDB(c.env).update(sessions).set({ status: 'in_progress', startedAt: Math.floor(Date.now() / 1000) })
+    .where(and(eq(sessions.id, id), eq(sessions.status, 'planned')))
+})
 
 app.onError((err, c) => {
   console.error('[Waymark API Error]', err.message, err.stack)
@@ -480,15 +503,18 @@ async function getBlockZeroRunPrescription(db: DrizzleDB, session: RunSessionInp
   const ceiling = await loadEasyHrCeiling(db, epochDay)
   // F12/F13: the return ramp trims run time like the caps do.
   const ramp = state.returnCtx.active ? state.returnCtx : null
-  const plannedSec = runWalkTotalSec(getRunWalkWeek(weekNumber))
+  // A raven's plan: the run comes back at an earlier week's shape (2:00 / 1:00 × 7, then 3:30 × 5).
+  const shapeWeek = bodyPlanMark(session.contextJson ?? null)?.shapeWeek
+  const runWeek = shapeWeek != null && shapeWeek < weekNumber ? shapeWeek : weekNumber
+  const plannedSec = runWalkTotalSec(getRunWalkWeek(runWeek))
   // A coach ease: about 80% of the time, or the rebalance's rounds or minutes (page 56).
   const ease = state.coachEase
   const easeCap = ease?.kind === 'rounds' && ease.rounds != null
-    ? { capSec: runWalkTotalSec({ ...getRunWalkWeek(weekNumber), rounds: ease.rounds }), reason: ease.reason }
+    ? { capSec: runWalkTotalSec({ ...getRunWalkWeek(runWeek), rounds: ease.rounds }), reason: ease.reason }
     : ease?.kind === 'reduce' ? { capSec: ease.capMin != null ? ease.capMin * 60 : Math.round(plannedSec * EASED_RUN_FACTOR), reason: ease.reason } : null
   const rampCap = ramp ? { capSec: Math.round(plannedSec * ramp.volumeFactor), reason: ramp.reason ?? 'Back from a break. Shorter today.' } : null
   const extraCap = rampCap && easeCap ? (easeCap.capSec < rampCap.capSec ? easeCap : rampCap) : rampCap ?? easeCap
-  const p = prescribeRunWalk({ week: weekNumber, ...guards, hrCeilingBpm: ceiling.bpm, extraCap })
+  const p = prescribeRunWalk({ week: runWeek, ...guards, hrCeilingBpm: ceiling.bpm, extraCap })
   const base = {
     weekNumber: blockZeroTrainingWeek(weekNumber),
     runType: 'zone2',
@@ -703,6 +729,7 @@ app.post('/api/sessions/generate-today', async (c) => {
   // source 'template', in the week plan for this calendar week.
   const created = await generateDaySessions(db, epochDay, epochDay, nowSec)
   await applyPendingMerges(db, created.map(r => r.id))
+  await applyPendingBodyPlans(db, created.map(r => r.id))
   const fresh = created.length > 0 ? await db.select().from(sessions).where(inArray(sessions.id, created.map(r => r.id))) : []
   return c.json(sortDay([...existing, ...fresh]))
 })
@@ -785,7 +812,8 @@ app.get('/api/sessions/suggestions', async (c) => {
   const dayTypes = existingOnDate.map(s => s.type)
   if (forReplace) {
     const replacing = c.req.query('replacing') ?? null
-    const kneeSafe = kneeSafeOnly(await loadInjuryFlag(db, targetEpochDay))
+    // A knee, ankle or shin flag, or one on watch (page 58): the knee-safe pick, not rope.
+    const kneeSafe = kneeSafeOnly(await loadInjuryFlag(db, targetEpochDay)) || await lowerLegOnWatch(db)
     return c.json({ ...result, suggestions: boardSuggestions(allBoardRows(), { mode: 'replace', replacing, dayTypes, kneeSafe }) })
   }
   const board = boardSuggestions(allBoardRows(), { mode: 'add', dayTypes })
@@ -872,13 +900,15 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
 
   const setId = crypto.randomUUID()
   const showName = (label ?? body.label ?? TYPE_WORDS[body.type] ?? body.type).toUpperCase()
-  await recordChanges(db, [{
+  const addIds = await recordChanges(db, [{
     setId, actor: 'you', kind: 'add', targetSessionId: id, sessionType: body.type, weekPlanId,
     before: emptyState(epochDay),
     after: { ...emptyState(epochDay, `+ ${showName}`), created: [id] },
     why: addedWhy(epochDay, timeSlot, todayDay),
     undoUntil: slotStart(epochDay, timeSlot, await pmStart(db)),
   }], nowSec)
+  // Page 58 / 57 T4: a pick of what the coach leaves out for a place on watch is noted quietly. Never refused.
+  await markAgainstFlag(db, addIds, body.type, runTag, epochDay)
   if (body.type === 'mt_class' && epochDay === todayDay) await rebalanceForClassTonight(db, id, setId, todayDay, nowSec)
   else await rebalanceAfter(db, { kind: 'add', sessionId: id, reason: null }, setId, todayDay, nowSec)
 
@@ -993,7 +1023,7 @@ app.post('/api/sessions/:id/replace', async (c) => {
 
   const setId = crypto.randomUUID()
   const nameOf = (s: { type: string; label: string | null; notes: string | null }) => (s.label ?? TYPE_WORDS[s.type] ?? s.type).toUpperCase()
-  await recordChanges(db, [{
+  const swapIds = await recordChanges(db, [{
     setId, actor: 'you', kind: 'swap', targetSessionId: id, sessionType: body.type, weekPlanId,
     before: { show: nameOf(original), day: scheduledDate, sessions: [snap(original, ['status', 'notes', 'skipReason'])] },
     after: { show: nameOf({ type: body.type, label, notes: runTag }), day: scheduledDate, sessions: [{ id, f: { status: 'skipped', notes: updatedNotes, skipReason: reasonCode } }], created: [newId] },
@@ -1001,6 +1031,7 @@ app.post('/api/sessions/:id/replace', async (c) => {
     undoUntil: slotStart(scheduledDate, body.timeSlot, await pmStart(db)),
     extraSource: { reason: reasonCode },
   }], nowSec)
+  await markAgainstFlag(db, swapIds, body.type, runTag, scheduledDate)
   await rebalanceAfter(db, { kind: 'swap', sessionId: newId, replacedId: id, reason: reasonCode }, setId, todayDay, nowSec)
 
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
@@ -1154,8 +1185,52 @@ app.get('/api/coach/line', async (c) => {
   const dayQ = c.req.query('day')
   const day = dayQ && /^\d{4}-\d{2}-\d{2}$/.test(dayQ) ? isoToEpochDay(dayQ) : today
   const changes = await lineChanges(db, day, today)
-  const line = c.req.query('for') === 'finish' ? finishLine(changes, day) : morningLine(changes, day)
+  // The morning alarm carries the raven (page 58 item 14): once if its note is unread, and on each return morning.
+  const raven = c.req.query('for') === 'finish' ? null : await ravenLineFor(db, day, today, Math.floor(Date.now() / 1000)).catch(() => null)
+  const line = c.req.query('for') === 'finish' ? finishLine(changes, day) : morningLine(changes, day, raven)
   return c.json({ line })
+})
+
+// ─── Injury weather and the raven (page 58) ──────────────────
+
+// The morning pass, then the raven, its boards and the weather for Today,
+// Program, the Ledger and the Library (and the check-in's "<Place> today").
+app.get('/api/body/watch', async (c) => {
+  const db = createDB(c.env)
+  const today = localToday(c.req.query('today'))
+  return c.json(await bodyWatchPayload(db, today, Math.floor(Date.now() / 1000)))
+})
+
+// DO IT: the plan goes on the week as coach changes (Dagaz, UNDO).
+app.post('/api/body/watch/:id/apply', async (c) => {
+  const db = createDB(c.env)
+  const body = await c.req.json<{ today?: string }>().catch(() => ({} as { today?: string }))
+  const out = await applyBodyPlan(db, c.req.param('id'), localToday(body.today), Math.floor(Date.now() / 1000))
+  return out.ok ? c.json(out) : c.json({ error: out.error }, out.status)
+})
+
+// GOT IT: read; nothing changes on the week.
+app.post('/api/body/watch/:id/got', async (c) => {
+  const db = createDB(c.env)
+  const out = await gotBodyNote(db, c.req.param('id'), Math.floor(Date.now() / 1000))
+  return out.ok ? c.json(out) : c.json({ error: out.error }, out.status)
+})
+
+// The raven's note was opened: it stops looking round.
+app.post('/api/body/watch/:id/seen', async (c) => {
+  const db = createDB(c.env)
+  const out = await seenBodyNote(db, c.req.param('id'), Math.floor(Date.now() / 1000))
+  return out.ok ? c.json(out) : c.json({ error: out.error }, out.status)
+})
+
+// The raven's question: better | sore | not_now (Not now waits a day).
+app.post('/api/body/watch/:id/answer', async (c) => {
+  const db = createDB(c.env)
+  const body = await c.req.json<{ answer?: string; today?: string }>().catch(() => ({} as { answer?: string; today?: string }))
+  const answer = body.answer === 'better' || body.answer === 'sore' || body.answer === 'not_now' ? body.answer : null
+  if (!answer) return c.json({ error: 'answer must be better, sore or not_now' }, 400)
+  const out = await answerBody(db, c.req.param('id'), answer, localToday(body.today), Math.floor(Date.now() / 1000))
+  return out.ok ? c.json(out) : c.json({ error: out.error }, out.status)
 })
 
 // ─── Strength Workout ──────────────────────────────────────────
@@ -1608,9 +1683,12 @@ app.post('/api/sessions/:id/start-mobility', async (c) => {
     const strengthDay = strength ? (blockZero ? strengthDayFor(dayOfWeek, strength.label) : strengthKindFromLabel(strength.label)) : null
     const ramp = await loadMtRamp(db, day)
     const clinchAllowed = ramp.weeksSinceFirstClass != null && allowedClassTypes(mtRampWeek(ramp.weeksSinceFirstClass)).includes('clinch')
+    // A raven's back plan: Foundation's bad-back day (page 58 §3.5).
+    const bodyPlan = bodyPlanMark(session.contextJson)
+    const badBackPlan = bodyPlan?.op === 'badday' && bodyPlan.which === 'back'
     foundation = {
       week,
-      backToday: log?.backToday ?? null,
+      backToday: badBackPlan ? Math.min(log?.backToday ?? 2, 2) : log?.backToday ?? null,
       neckFlag: state.injury?.region === 'neck',
       strengthDay,
       dayOfWeek,
@@ -2201,6 +2279,8 @@ app.patch('/api/mt-class-logs/:id', async (c) => {
   if (body.weakness !== undefined) updates.weakness = body.weakness
   if (body.concept !== undefined) updates.concept = body.concept
   if (body.actionItems !== undefined) updates.actionItems = body.actionItems
+  // "What you learned" sent from the phone's queue (written offline after class, page 49).
+  if (body.learnedNote !== undefined) { updates.learnedNote = body.learnedNote; updates.learnedAt = Math.floor(Date.now() / 1000) }
   if (Object.keys(updates).length > 0) await db.update(mtClassLogs).set(updates).where(eq(mtClassLogs.id, logId))
   const [row] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
   return c.json(blockZeroNote ? { ...row, blockZero: blockZeroNote } : row)
@@ -2217,6 +2297,18 @@ app.get('/api/daily-logs/today', async (c) => {
   const rows = await db.select().from(dailyLogs).where(eq(dailyLogs.logDate, epochDay))
   return c.json(rows[0] ?? null)
 })
+
+/** "<Place> today" ratings merged into a day's log (null clears a place). */
+function mergeRegionRatings(prev: string | null, next: Record<string, number | null> | null): string | null {
+  let base: Record<string, number> = {}
+  try { base = prev ? JSON.parse(prev) as Record<string, number> : {} } catch { base = {} }
+  if (next == null) return prev
+  for (const [k, v] of Object.entries(next)) {
+    if (v == null) delete base[k]
+    else base[k] = v
+  }
+  return Object.keys(base).length > 0 ? JSON.stringify(base) : null
+}
 
 app.post('/api/daily-logs', async (c) => {
   const raw = await c.req.json()
@@ -2250,9 +2342,19 @@ app.post('/api/daily-logs', async (c) => {
       backToday: hasKey('backToday') ? body.backToday ?? null : prev.backToday,
       backNotes: hasKey('backNotes') ? body.backNotes ?? null : prev.backNotes,
       notes: hasKey('notes') ? body.notes ?? null : prev.notes,
+      regionRatingsJson: hasKey('regionRatings') ? mergeRegionRatings(prev.regionRatingsJson, body.regionRatings ?? null) : prev.regionRatingsJson,
     }).where(eq(dailyLogs.id, prev.id))
     const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, prev.id))
-    c.executionCtx.waitUntil(checkInCoachRules(createDB(c.env), epochDay, nowSec))
+    if (!body.partial) {
+      // The check-in built up card by card (partial saves) is complete now: the replan a fresh log gets.
+      if (!checkInComplete(prev)) {
+        c.executionCtx.waitUntil(
+          runReactiveReplan(createDB(c.env), c.env.ANTHROPIC_API_KEY, { trigger: 'wellness_logged', todayEpochDay: Math.floor(Date.now() / 86400000) })
+            .catch(err => console.warn('[reactive] wellness_logged failed', err))
+        )
+      }
+      c.executionCtx.waitUntil(checkInCoachRules(createDB(c.env), epochDay, nowSec))
+    }
     return c.json(row)
   }
 
@@ -2272,10 +2374,12 @@ app.post('/api/daily-logs', async (c) => {
     backToday: body.backToday ?? null,
     backNotes: body.backNotes ?? null,
     notes: body.notes ?? null,
+    regionRatingsJson: mergeRegionRatings(null, body.regionRatings ?? null),
     createdAt: nowSec,
   })
 
   const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, id))
+  if (body.partial) return c.json(row)
 
   const todayEpochDay = Math.floor(Date.now() / 86400000)
   c.executionCtx.waitUntil(
@@ -2288,6 +2392,11 @@ app.post('/api/daily-logs', async (c) => {
 
   return c.json(row)
 })
+
+/** All nine check-in items answered on a saved log. */
+function checkInComplete(row: Pick<typeof dailyLogs.$inferSelect, 'sleepHours' | 'sleepQuality' | 'energy' | 'soreness' | 'stress' | 'mood' | 'backToday' | 'alcoholScale' | 'herbScale'>): boolean {
+  return [row.sleepHours, row.sleepQuality, row.energy, row.soreness, row.stress, row.mood, row.backToday, row.alcoholScale, row.herbScale].every(v => v != null)
+}
 
 // The check-in is the morning after: soreness 4+ eases the next similar
 // session; a fresh streak with easy sessions gets one push (once a week).
@@ -2552,6 +2661,8 @@ app.post('/api/weeks/generate', async (c) => {
     }
   }
 
+  // A raven's plan that waited for this week lands on its days (page 58).
+  await applyPendingBodyPlans(db, createdSessions.map(r => (r as { id: string }).id))
   const [week] = await db.select().from(weekPlans).where(eq(weekPlans.id, weekId))
   return c.json({ week: weekForClient(week), sessions: createdSessions })
 })
@@ -3065,6 +3176,20 @@ app.get('/api/exercises', async (c) => {
   return c.json(rows)
 })
 
+// The Library's new kinds (page 52 / 60): techniques and run types, in their order.
+app.get('/api/library/techniques', async (c) => {
+  const db = createDB(c.env)
+  return c.json(await db.select().from(techniques).orderBy(asc(techniques.sort)))
+})
+
+app.get('/api/library/runs', async (c) => {
+  const db = createDB(c.env)
+  return c.json(await db.select().from(runTypes).orderBy(asc(runTypes.sort)))
+})
+
+// Dead links found by the weekly check and the replacement proposed for each: they wait for Josh's OK.
+app.get('/api/library/video-reviews', async (c) => c.json(await pendingReviews(createDB(c.env))))
+
 app.get('/api/combos', async (c) => {
   const db = createDB(c.env)
   const rows = await db.select().from(combos)
@@ -3550,18 +3675,30 @@ app.get('/api/history/ledger', async (c) => {
     .filter(m => m.weightKg != null)
     .map(m => ({ epochDay: Math.floor(loggedAtSec(m.loggedAt) / 86400), weightLbs: Math.round(m.weightKg! * 2.20462 * 10) / 10 }))
 
+  // Page 63: Consistency on the first screen. In Block Zero, the block; after it, the last 4 / 8 / 13 weeks.
+  const tzRaw = Number(c.req.query('tz'))
+  const tzOffsetMin = Number.isFinite(tzRaw) && Math.abs(tzRaw) <= 900 ? tzRaw : 0
+  const activeBlock = await getActiveBlock(db)
+  const consistencyRows = allSessions.map(s => ({ type: s.type, status: s.status, scheduledDate: s.scheduledDate, timeSlot: s.timeSlot, startedAt: s.startedAt, skipReason: s.skipReason }))
+  const foundationFrom = activeBlock?.blockType === 'block_zero' ? blockStartDay(activeBlock) : mondayOf(today) - (CONSISTENCY_SPAN[range] - 1) * 7
+  const foundationDays = new Set(allSessions.filter(s => s.type === 'mobility' && s.status === 'completed' && s.scheduledDate != null && s.scheduledDate >= foundationFrom && s.scheduledDate <= today).map(s => s.scheduledDate))
+  const foundation = { done: foundationDays.size, of: Math.max(foundationDays.size, today - foundationFrom + (foundationDays.has(today) ? 1 : 0)) }
+  const consistencyBoard = activeBlock?.blockType === 'block_zero'
+    ? blockConsistency(consistencyRows, { blockType: 'block_zero', startDay: blockStartDay(activeBlock), totalWeeks: activeBlock.totalWeeks }, today, { tzOffsetMin, foundation })
+    : weeksConsistency(consistencyRows, CONSISTENCY_SPAN[range], today, mondayOf, { tzOffsetMin, foundation })
+
   return c.json({
     range,
     today,
     weeks,
+    consistencyBoard,
     rings: buildRings(allSessions, range, today),
     aerobic: aerobicWeekly(runs, weeks, today),
     strength: strengthWeekly(setRows, weeks, today),
     sleep: sleepWeek(logs, today),
+    // page 62 B: the last 28 mornings' herb, its averages and the sleep line
+    herb: herbMonth(logs, today),
     weight: weightWeekly(weights, weeks, today),
-    streak: ledgerStreak(allSessions, today),
-    // page 46: a bar per week, lit when the week counted (13 on WEEK, the chart span otherwise)
-    consistency: consistencyWeeks(allSessions, CONSISTENCY_WEEKS[range], today),
     // the pond reads the range's sessions (SEASON's rings are per week)
     pond: pondReaction(sessionRings(allSessions, range, today)),
   })

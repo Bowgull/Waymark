@@ -117,7 +117,7 @@ function Gallery({ screen }: { screen: string }) {
     case 'foundation':
       return <Foundation />
     case 'checkin':
-      return <Phone><CheckInDeck date="2026-10-18" onSubmit={async () => null} onClose={noop} onSkipToday={noop} /></Phone>
+      return <Phone><CheckInDeck date="2026-10-18" onSubmit={async () => null} onClose={noop} /></Phone>
     case 'checkin-back':
       return <Phone><CheckInDeck date="2026-10-18" startAt={6} existing={{ sleepHours: 7, sleepQuality: 4, energy: 3, soreness: 3, stress: 2, mood: 4 }} onSubmit={async () => null} onClose={noop} /></Phone>
     case 'checkin-done':

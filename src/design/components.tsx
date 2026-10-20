@@ -1,4 +1,8 @@
-import { useEffect, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+
+import { useDismissLayer } from './dismiss'
+import { usePullDown } from './pull'
 
 import crestBig from './assets/crest-big.webp'
 import crestSmall from './assets/crest-small.png'
@@ -86,29 +90,84 @@ export function Board({ head, headRight, edge = 'none', solid = false, className
 }
 
 export interface CentredCardProps extends Omit<BoardProps, 'onClick' | 'solid'> {
-  /** Tap on the scrim (outside the card). Omit to make the card modal. */
+  /**
+   * Closing it: CLOSE in the head, a tap outside, pulling it down, Escape, the
+   * edge swipe, a re-tap on the tab (page 61). Omit to make the card modal.
+   */
   onDismiss?: () => void
+  /**
+   * A tap outside closes it (default). False on a running session's cards
+   * (bag preview, run ready, MT log, effort, Naruto): a stray tap does nothing;
+   * CLOSE and the pull still work.
+   */
+  closeOnOutside?: boolean
   /** One line under the heading. */
   sub?: ReactNode
   /** Accessible name for the dialog. */
   label: string
 }
 
-/** Every selection sits in the centre of the screen (no bottom sheets). */
-export function CentredCard({ onDismiss, sub, label, head, headRight, edge, className = '', children }: CentredCardProps) {
-  useEffect(() => {
-    if (!onDismiss) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onDismiss() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onDismiss])
+/** The board's plain CLOSE, top right, in gold (page 61 rule 3). */
+export function CloseWord({ onClose, className = '' }: { onClose: () => void; className?: string }) {
   return (
-    <div className="wm-scrim" onClick={e => { if (e.target === e.currentTarget) onDismiss?.() }}>
-      <div role="dialog" aria-modal="true" aria-label={label} className={`wm-board is-solid wm-card ${edge && edge !== 'none' ? `is-${edge}` : ''} ${className}`}>
-        {(head || headRight) && (
-          <div className="wm-board-head">
+    <button type="button" className={`wm-close ${className}`} onClick={e => { e.stopPropagation(); onClose() }}>
+      Close
+    </button>
+  )
+}
+
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Every selection sits in the centre of the screen (no bottom sheets). One
+ * way out for all of them (page 61): CLOSE in the head, a tap on the dim
+ * forest, pulling the board down by its brass line, Escape, the edge swipe.
+ * Drawn on <body>, so no board around it can clip the dim area.
+ */
+export function CentredCard({ onDismiss, closeOnOutside = true, sub, label, head, headRight, edge, className = '', children }: CentredCardProps) {
+  useDismissLayer(onDismiss != null, onDismiss)
+  const pull = usePullDown(onDismiss)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  // Focus moves into the board and comes back after; Tab stays inside (page 61 rule 5).
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null
+    const card = cardRef.current
+    if (card && !card.contains(document.activeElement)) card.focus({ preventScroll: true })
+    return () => { if (before && document.contains(before)) before.focus?.({ preventScroll: true }) }
+  }, [])
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'Tab' || !cardRef.current) return
+    const items = Array.from(cardRef.current.querySelectorAll<HTMLElement>(FOCUSABLE))
+    if (items.length === 0) { e.preventDefault(); return }
+    const first = items[0]
+    const last = items[items.length - 1]
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+  }
+
+  const card = (
+    <div className="wm-scrim" onClick={e => { if (e.target === e.currentTarget && closeOnOutside) onDismiss?.() }}>
+      <div
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className={`wm-board is-solid wm-card${onDismiss ? ' has-grab' : ''} ${edge && edge !== 'none' ? `is-${edge}` : ''} ${className}`}
+        style={pull.dy ? { transform: `translateY(${pull.dy}px)`, opacity: Math.max(0.6, 1 - pull.dy / 300), transition: 'none' } : undefined}
+      >
+        {onDismiss && <span className="wm-grab" aria-hidden {...pull.handlers} />}
+        {(head || headRight || onDismiss) && (
+          <div className={`wm-board-head${!head && !headRight ? ' is-close-only' : ''}`} {...pull.handlers}>
             <span>{head}</span>
-            {headRight}
+            {(headRight || onDismiss) && (
+              <span className="wm-head-right">
+                {headRight}
+                {onDismiss && <CloseWord onClose={onDismiss} />}
+              </span>
+            )}
           </div>
         )}
         {sub && <p className="wm-card-sub">{sub}</p>}
@@ -116,6 +175,7 @@ export function CentredCard({ onDismiss, sub, label, head, headRight, edge, clas
       </div>
     </div>
   )
+  return typeof document === 'undefined' ? card : createPortal(card, document.body)
 }
 
 // ─── Buttons, chips, tiles ────────────────────────────────────

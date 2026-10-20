@@ -39,6 +39,11 @@ export const dailyLogSchema = z.object({
   backToday: z.number().int().min(1).max(5).optional().nullable(),
   backNotes: z.string().max(500).optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
+  // "<Place> today" while a place is on watch (page 58 / 57): { knee: 2 }, 1 bad .. 5 fine; null clears one.
+  regionRatings: z.record(z.string().max(20), z.number().int().min(1).max(5).nullable()).optional().nullable(),
+  // A check-in card answered on the way (the deck saves as it goes): written, but the coach's
+  // check-in rules and the replan wait for the full save.
+  partial: z.boolean().optional(),
 })
 
 // PATCH /api/strength-sets/:id. reps also carries seconds for timed holds.
@@ -62,6 +67,7 @@ export const mtClassLogPatchSchema = z.object({
   weakness: z.string().max(1000).optional(),
   concept: z.string().max(1000).optional(),
   actionItems: z.string().max(2000).optional(),
+  learnedNote: z.string().max(4000).optional(),
 })
 
 // POST /api/blocks/:id/tests: one result, an array, or { results: [...] }.

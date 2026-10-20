@@ -49,6 +49,11 @@ export interface SessionSummaryProps {
   variant?: 'program' | 'today'
   /** Today's buttons (ENTER / REPLACE / SKIP), full width under the lines. */
   actions?: ReactNode
+  /**
+   * A class finished today with "What you learned" skipped (page 49, if
+   * skipped): the opened row's one small line, + What you learned, opens the box.
+   */
+  onLearned?: (mtLogId: string) => void
 }
 
 interface RunPrescription extends RunPlan {
@@ -63,7 +68,7 @@ type SummaryData =
   | { kind: 'mobility'; moves: Array<{ name: string; completed: boolean }>; plannedMin: number | null }
   | { kind: 'bag'; rounds: number; plannedMin: number | null; plannedSecs: number[]; roundSecs: number[] | null }
   | { kind: 'rope'; rounds: number | null; roundSec: number | null; plannedMin: number | null; roundSecs: number[] | null }
-  | { kind: 'mt'; plannedMin: number | null; durationMin: number | null; classType: string | null; focus: string | null }
+  | { kind: 'mt'; plannedMin: number | null; durationMin: number | null; classType: string | null; focus: string | null; mtLogId: string | null; learned: boolean }
   | { kind: 'recovery'; hip: boolean | null; foam: boolean | null }
   | { kind: 'none' }
 
@@ -118,8 +123,8 @@ async function loadSummary(s: DayBoardSession): Promise<SummaryData> {
       return { kind: 'rope', rounds: res.skipSession?.roundCount ?? null, roundSec: res.skipSession?.roundDurSec ?? null, plannedMin: res.plannedMin ?? null, roundSecs: res.roundSecs ?? null }
     }
     case 'mt_class': {
-      const res = await apiFetch<{ mtLog: { classType: string | null; focusSkill: string | null; durationMin: number | null } | null; plannedMin?: number | null }>(`/api/sessions/${s.id}/mt-class-workout`)
-      return { kind: 'mt', plannedMin: res.plannedMin ?? null, durationMin: res.mtLog?.durationMin ?? null, classType: res.mtLog?.classType ?? null, focus: res.mtLog?.focusSkill ?? null }
+      const res = await apiFetch<{ mtLog: { id: string; classType: string | null; focusSkill: string | null; durationMin: number | null; learnedNote?: string | null } | null; plannedMin?: number | null }>(`/api/sessions/${s.id}/mt-class-workout`)
+      return { kind: 'mt', plannedMin: res.plannedMin ?? null, durationMin: res.mtLog?.durationMin ?? null, classType: res.mtLog?.classType ?? null, focus: res.mtLog?.focusSkill ?? null, mtLogId: res.mtLog?.id ?? null, learned: Boolean(res.mtLog?.learnedNote) }
     }
     case 'active_recovery': {
       const res = await apiFetch<{ recoverySession: { hipMobility: number; foamRolling: number } | null }>(`/api/sessions/${s.id}/recovery-workout`)
@@ -301,7 +306,7 @@ function Line({ line }: { line: DiffLine }) {
   )
 }
 
-export function SessionSummary({ session, weekNumber, onReplace, onSkip, variant = 'program', actions }: SessionSummaryProps) {
+export function SessionSummary({ session, weekNumber, onReplace, onSkip, variant = 'program', actions, onLearned }: SessionSummaryProps) {
   const key = `${session.id}:${session.status}`
   const [loaded, setLoaded] = useState<{ key: string; data: SummaryData | null } | null>(null)
 
@@ -350,6 +355,11 @@ export function SessionSummary({ session, weekNumber, onReplace, onSkip, variant
               {v.lines.length > 0 && <div className="db-lifts">{v.lines.map((l, i) => <Line key={`${l.label}-${i}`} line={l} />)}</div>}
               {v.note && <p className="db-sum-p is-dim">{v.note}</p>}
               {note && <p className="db-dimnote">{note}</p>}
+              {today && onLearned && data?.kind === 'mt' && data.mtLogId && !data.learned && (
+                <p className="db-sum-p db-learned">
+                  <button type="button" className="db-learned-lnk" onClick={e => { e.stopPropagation(); onLearned(data.mtLogId!) }}>+ What you learned</button>
+                </p>
+              )}
             </>
           )
         })()

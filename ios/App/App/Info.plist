@@ -38,6 +38,17 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.waymark.session</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>waymark</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Waymark reads your heart-rate strap during runs.</string>
 	<key>NSFaceIDUsageDescription</key>

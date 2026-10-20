@@ -11,6 +11,7 @@ import { isoToEpochDay } from '../lib/dates'
 import { createTrainingBlock } from './blocks'
 import { rolloverAndFix } from './changes'
 import { testDb } from './testDb'
+import { LIVE_GRACE_SEC, closeStaleInProgress } from '../lib/sessionRollover'
 
 const FRI = isoToEpochDay('2026-10-23')
 const db = testDb()
@@ -42,4 +43,15 @@ assert.equal((await get('run')).status, 'missed', 'a planned session that never 
 assert.equal((await get('today')).status, 'in_progress', 'today\'s session stays open')
 const missedRows = await db.select().from(weekAdjustments).where(eq(weekAdjustments.kind, 'missed'))
 assert.ok(!missedRows.some(r => r.targetSessionId === 'str' || r.targetSessionId === 'fnd'), 'decision a: no missed record (no Algiz) for a partial session')
+// M7 (page 61): a session still going past midnight is not closed under him.
+{
+  const late = FRI * 86400 + 23 * 3600 + 40 * 60
+  await db.insert(sessions).values({ id: 'late', type: 'bag_work', scheduledDate: FRI + 1, timeSlot: 'pm', status: 'in_progress', startedAt: late, blockType: 'block_zero', createdAt: late })
+  const afterMidnight = (FRI + 2) * 86400 + 20 * 60
+  assert.ok(!(await closeStaleInProgress(db, FRI + 2, late + 50 * 60)).includes('late'), 'started 50 min ago, past midnight: stays open')
+  assert.equal((await get('late')).status, 'in_progress')
+  const closed = await closeStaleInProgress(db, FRI + 2, afterMidnight + LIVE_GRACE_SEC)
+  assert.ok(closed.includes('late'), 'quiet for 6 h: done (partial) as before')
+  assert.equal((await get('late')).status, 'completed')
+}
 console.log('rollover tests passed')

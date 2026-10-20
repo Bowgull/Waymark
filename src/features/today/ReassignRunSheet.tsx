@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { AmPmFlap, CentredCard, FlapButton, FlapLabel, SessionIcon } from '@/design'
+import { AmPmFlap, CentredCard, FlapLabel, SessionIcon } from '@/design'
 import { iconFor, sessionDisplayName } from '@/features/dayboard/rowState'
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
@@ -89,7 +89,6 @@ export function ReassignRunSheet({ open, onClose, onSelect, excludeSessionId }: 
           </button>
         )
       })}
-      <FlapButton label="CANCEL" onClick={onClose} />
     </CentredCard>
   )
 }

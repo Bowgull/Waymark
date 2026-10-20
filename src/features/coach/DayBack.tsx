@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 
-import { FlapButton, FlapLabel, SessionIcon } from '@/design'
+import { CloseWord, FlapButton, FlapLabel, SessionIcon, useDismissLayer } from '@/design'
 import { sessionDisplayName, iconFor } from '@/features/dayboard/rowState'
 import { mediumHaptic } from '@/lib/haptics'
 
@@ -39,12 +39,15 @@ export function DayBack({ day, changes, todayDay, onUndo, onClose }: {
     setNotch(t.left + t.width / 2 - b.left - 7)
   }, [day])
 
+  // page 61: CLOSE, a tap outside, tapping the day again, Escape, the edge swipe
+  useDismissLayer(true, onClose)
   const ember = changes.some(c => c.kind === 'missed')
   return (
     <>
       <div className="wm-veil3 is-lite" onClick={onClose} aria-hidden />
       <div ref={ref} className={`wm-board wm-tback${ember ? ' is-ember' : ''}`} role="dialog" aria-label="What changed this day">
         <span className="notch" style={notch != null ? { left: notch } : { visibility: 'hidden' }} />
+        <CloseWord onClose={onClose} className="tback-close" />
         {changes.map((c, i) => {
           const name = sessionDisplayName(c.session)
           const who = backWho(c, name)

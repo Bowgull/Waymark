@@ -5,10 +5,11 @@ import { Crest, FlapLabel } from '@/design'
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 import { logger } from '@/lib/logger'
-import { pondReaction, type LedgerRange, type LedgerRing, type LiftSeries, type SleepDay, type WeeklyPoint } from '@/lib/ledger'
+import { pondReaction, type LedgerRange, type LedgerRing, type LiftSeries, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
+import type { ConsistencyView } from '@/lib/ledgerConsistency'
 import { setWorldPond } from '@/world/worldStore'
 
-import { AerobicBoard, BodyWeightBoard, ConsistencyBoard, RingBoard, SleepBoard, StrengthBoard } from './LedgerBoards'
+import { AerobicBoard, BodyWeightBoard, ConsistencyBoard, HerbBoard, RingBoard, SleepBoard, StrengthBoard } from './LedgerBoards'
 import { PondRings } from './PondRings'
 import './ledger.css'
 
@@ -25,10 +26,11 @@ export interface LedgerData {
   aerobic: { points: WeeklyPoint[]; runs: number }
   strength: { lifts: LiftSeries[]; sets: number }
   sleep: { days: SleepDay[]; avg: number | null }
+  /** Page 62 B: the last 28 mornings' herb; older servers leave it out. */
+  herb?: { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null }
   weight: { points: WeeklyPoint[]; weighIns: number }
-  streak: number
-  /** One per week, oldest first, ending this week: lit when the week counted (page 46). */
-  consistency?: boolean[]
+  /** Page 63: the Consistency board (the block bar, or the last weeks after Block Zero). */
+  consistencyBoard?: ConsistencyView
   /** The pond's reaction (the range's sessions); older servers leave it out. */
   pond?: number | null
 }
@@ -58,7 +60,7 @@ export function HistoryPage() {
 
   useEffect(() => {
     let cancelled = false
-    apiFetch<LedgerData>(`/api/history/ledger?range=${range}&today=${getTodayISO()}`)
+    apiFetch<LedgerData>(`/api/history/ledger?range=${range}&today=${getTodayISO()}&tz=${new Date().getTimezoneOffset()}`)
       .then(d => { if (!cancelled) setData(d) })
       .catch(e => logger.error('api', 'Ledger failed to load', { error: String(e) }))
     return () => { cancelled = true }
@@ -99,6 +101,8 @@ export function HistoryPage() {
             <>
               <RingBoard rings={data.rings} title={title} sub={range === 'week' ? undefined : 'done / planned'} />
               {spanLine && <p className="lg-span">{spanLine}</p>}
+              {/* page 63: between the week rings and Aerobic base */}
+              {data.consistencyBoard && <ConsistencyBoard view={data.consistencyBoard} />}
               <AerobicBoard points={data.aerobic.points} runs={data.aerobic.runs} />
             </>
           )}
@@ -110,8 +114,9 @@ export function HistoryPage() {
               <SleepBoard days={data.sleep.days} avg={data.sleep.avg} />
             </div>
             <div className="lg-page">
+              {/* page 62 B: right after Sleep + soreness, at the top of the third screen */}
+              {data.herb && <HerbBoard days={data.herb.days} avg7={data.herb.avg7} avg28={data.herb.avg28} line={data.herb.line} />}
               <BodyWeightBoard points={data.weight.points} weighIns={data.weight.weighIns} />
-              <ConsistencyBoard streak={data.streak} weeks={data.consistency ?? []} />
             </div>
           </>
         )}

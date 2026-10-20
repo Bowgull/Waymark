@@ -53,6 +53,21 @@
 }
 .wm-world.is-bare .wm-world-scrim { opacity: 0; }
 
+/* The injury weather (page 58): the forest's colour shifts green, the sky darkens. Over the canvas, under
+   the scrim and the boards; it eases in and out with the rain. */
+.wm-weather { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 3s ease-in-out; }
+.wm-weather-grade { mix-blend-mode: color; background: linear-gradient(#8ccf5c, #5c9a3e 60%, #3e7030); }
+.wm-weather-dark { mix-blend-mode: multiply; background: linear-gradient(#1c2c1a, #2a3a24 50%, #121a10); }
+.wm-world[data-place='clearing'] .wm-weather-grade, .wm-world[data-place='clearing'] .wm-weather-dark { filter: brightness(0.8); }
+.wm-weather-shafts { width: 100%; height: 100%; mix-blend-mode: screen; z-index: 1; }
+.wm-weather-shafts polygon { animation: wm-shaft 25s ease-in-out infinite; transform-box: fill-box; }
+.wm-weather-shafts .s1 { animation-delay: -8s; }
+.wm-weather-shafts .s2 { animation-delay: -16s; }
+@keyframes wm-shaft { 0%, 100% { transform: translateX(-6px); } 50% { transform: translateX(6px); } }
+.wm-world.is-bare .wm-weather { opacity: 0 !important; }
+
 @media (prefers-reduced-motion: reduce) {
   .wm-world-canvas { transition: opacity 160ms linear; }
+  .wm-weather { transition: none; }
+  .wm-weather-shafts polygon { animation: none; }
 }

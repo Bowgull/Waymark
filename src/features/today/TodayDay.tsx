@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon } from '@/design'
+import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon, useOutsideClose } from '@/design'
 import { SKIP_PLACES, SKIP_REASONS } from '@/components/ui/departures'
 import { ReasonTiles } from '@/features/coach/ReasonTiles'
 import { Rune } from '@/features/coach/Rune'
@@ -10,6 +10,7 @@ import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } 
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
 import { overCapBpm, stravaReadouts } from '@/lib/stravaMatch'
 import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
+import { readLiveSession } from '@/lib/liveSession'
 
 /** A run's Strava / manual row, attached by GET /api/sessions/today. */
 export interface RunSessionSummary {
@@ -61,6 +62,10 @@ export interface TodayDayProps {
   onOpenChange?: (id: string | null) => void
   /** The block's training week (a run-walk's rounds and minutes come from it). */
   weekNumber?: number | null
+  /** + What you learned on a class row finished today without it (page 49). */
+  onLearned?: (sessionId: string, mtLogId: string) => void
+  /** Classes whose note was written here since Today loaded (the line goes). */
+  learnedSaved?: ReadonlySet<string>
 }
 
 /** Strava's run matched this planned run and waits for CONFIRM (page 40, phone 1). */
@@ -107,7 +112,7 @@ export function TodayDay(props: TodayDayProps) {
   )
 }
 
-function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason, weekNumber }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
+function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason, weekNumber, onLearned, learnedSaved }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
   const rowRef = useRef<HTMLDivElement>(null)
   const [endOpen, setEndOpen] = useState(false)
   const actionable = isActionableTodaySession(s.status, false)
@@ -121,16 +126,21 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
   const rune = !skipped ? runes?.[s.id] ?? null : null
   const skip = skipped ? skipReasons?.[s.id] ?? null : null
   const tiles = open && skip != null && onSkipReason != null
+  useOutsideClose(rowRef, open, onToggle)
+  // Page 61, 3B: the open session's row is lit and reads LIVE; a tap goes straight back in.
+  const live = s.status === 'in_progress' && liveSessionId() === s.id
+  const tap = live ? () => onStart(s.id) : onToggle
 
   return (
-    <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${tiles ? ' is-openx' : ''}`}>
-      <div role="button" tabIndex={0} aria-expanded={open} className="td-rowhit" onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}>
+    <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${tiles ? ' is-openx' : ''}${live ? ' is-live' : ''}`}>
+      <div role="button" tabIndex={0} aria-expanded={open} aria-label={live ? `${name}, live. Back into the session.` : undefined} className="td-rowhit" onClick={tap} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tap() } }}>
         <SessionIcon kind={iconFor(s)} size={40} />
         <span className="td-nm"><FlapLabel text={name} size="md" len={11} fit /></span>
         {stravaMin != null ? (
           <><span className="td-mins">{stravaMin}min</span><span className="td-stick" aria-label="done">✓</span></>
         ) : done ? <>{rune && <Rune state={rune} size="row" />}<span className={open ? 'td-tick' : 'td-mins'} aria-label="done">✓</span></>
           : tiles ? <span className="td-skd">SKIPPED</span>
+          : live ? <FlapLabel text="LIVE" size="xs" tone="gold" animate={false} />
           : <>{rune && <Rune state={rune} size="row" />}<span className="td-mins">{mins}</span></>}
       </div>
       {tiles && skip && (
@@ -147,6 +157,7 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
             session={s}
             weekNumber={weekNumber}
             variant="today"
+            onLearned={onLearned && done && s.type === 'mt_class' && !learnedSaved?.has(s.id) ? mtLogId => onLearned(s.id, mtLogId) : undefined}
             actions={actionable ? (
               <>
                 <FlapButton label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'} primary onClick={() => onStart(s.id)} />
@@ -163,7 +174,6 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
           <p className="wm-prose">Mark this session done or wipe the start and put it back to planned.</p>
           <FlapButton label="MARK COMPLETED" primary onClick={() => { setEndOpen(false); onEndEarly(s.id, 'completed') }} />
           <FlapButton label="RESET" onClick={() => { setEndOpen(false); onEndEarly(s.id, 'reset') }} />
-          <FlapButton label="CANCEL" quiet onClick={() => setEndOpen(false)} />
         </CentredCard>
       )}
     </div>
@@ -247,4 +257,8 @@ function EndHold({ onHeld }: { onHeld: () => void }) {
       <button type="button" aria-label="Hold to end early" className={`td-xbtn${holding ? ' is-hold' : ''}`} onPointerDown={start} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onContextMenu={e => e.preventDefault()}>×</button>
     </span>
   )
+}
+
+function liveSessionId(): string | null {
+  try { return readLiveSession(window.localStorage)?.sessionId ?? null } catch { return null }
 }

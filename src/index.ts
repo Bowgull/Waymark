@@ -11,6 +11,7 @@ import { fixMissed } from './server/changes'
 import { pruneIdempotencyKeys } from './server/idempotency'
 import { applyFeltHard, maybeRampUp } from './server/coachAsks'
 import { runWeeklyPass } from './server/weeklyPass'
+import { runLinkCheck } from './server/linkHealth'
 import { isoToEpochDay } from './lib/dates'
 import { installDemoFetchGuard } from './lib/demoFetch'
 import { generateDemoSql, DEMO_WIPE_STATEMENTS } from './db/demoSeed'
@@ -44,6 +45,9 @@ export default {
     // /cdn-cgi/handler/scheduled?time=<ms> sets it. /__scheduled?time= ignores the time
     // (wrangler's middleware), so that path runs with the real clock (e2e tooling 27).
     ctx.waitUntil(runNightlyReplan(env, event.scheduledTime || Date.now()))
+    // The Library's videos (page 60): the links not checked this week, about one a second.
+    ctx.waitUntil(runLinkCheck(createDB(env), (url, init) => fetch(url, init), Math.floor((event.scheduledTime || Date.now()) / 1000))
+      .catch(err => console.warn('[links] check failed', err)))
   },
 }
 

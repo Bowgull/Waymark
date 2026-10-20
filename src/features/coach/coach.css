@@ -99,3 +99,6 @@
 .td-addq { border: 0; background: none; padding: 4px 8px; font: 600 15px var(--font-body); color: rgba(201, 178, 122, 0.8); cursor: pointer; }
 .pg-weekl { margin: 9px 2px 0; font: 600 15px/1.4 var(--font-body); color: #c9d6cf; text-align: left; }
 .pg-loglink { display: block; width: 100%; margin-top: 7px; border: 0; background: none; text-align: right; font: 600 15px var(--font-body); color: rgba(201, 178, 122, 0.85); cursor: pointer; padding: 2px 2px 0; }
+.wm-tback .tback-close { position: absolute; top: 6px; right: 8px; z-index: 1; }
+.wm-tback > .wm-tchange:first-of-type .who { padding-right: 64px; }
+.td-mr .rd.is-kept { font-size: 15px; font-weight: 500; color: #a9bdb3; }

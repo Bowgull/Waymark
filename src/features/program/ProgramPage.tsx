@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Board, Crest, FlapButton, FlapLabel } from '@/design'
+import { Board, CloseWord, Crest, FlapButton, FlapLabel } from '@/design'
 import type { DayBoardSession } from '@/features/dayboard/rowState'
 import { apiFetch } from '@/lib/api'
 import { lbText } from '@/lib/units'
@@ -16,7 +16,9 @@ import { cycleWeeks, readWeekAnalysis, weekDays, weekForDay, weekState, worldWee
 import { WeekLog } from '@/features/coach/WeekLog'
 import { weekChangesLine } from '@/features/coach/changeView'
 import { useWeekChanges } from '@/features/coach/useWeekChanges'
+import { useBodyWatch } from '@/features/raven/bodyWatch'
 import './program.css'
+import '@/features/raven/raven.css'
 import '@/features/dayboard/dayboard.css'
 import '@/features/coach/coach.css'
 
@@ -140,6 +142,8 @@ export function ProgramPage() {
   const [searchParams] = useSearchParams()
   const dayParam = parseDayParam(searchParams.get('day'))
   const [block, setBlock] = useState<Block | null | undefined>(undefined)
+  // The raven's plan (page 58): its line leads the weeks it covers.
+  const bodyWatch = useBodyWatch()
   const [weekData, setWeekData] = useState<WeekData | null>(null)
   const [weekNumber, setWeekNumber] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -382,9 +386,11 @@ export function ProgramPage() {
   }
 
   if (assessment) {
+    // page 61: CLOSE back to the week (the plan is prepared as any open does)
+    const closeAssessment = () => { setAssessment(null); if (block) void loadWeek(block, currentWeekOf(block)).catch(() => {}) }
     return (
       <Frame road={false}>
-        <Board head="Block Zero" solid>
+        <Board head="Block Zero" solid headRight={<CloseWord onClose={closeAssessment} />}>
           <p className="wm-prose">{assessment.narrative}</p>
           {assessment.coachNote && <p className="pg-why" style={{ marginTop: 10 }}>{assessment.coachNote}</p>}
           <div className="pg-themes">
@@ -474,6 +480,8 @@ export function ProgramPage() {
   // Monday to Sunday of the viewed week: from its sessions, else the calendar.
   const firstDay = viewedSessions.reduce<number | null>((m, s) => (s.scheduledDate != null && (m == null || s.scheduledDate < m) ? s.scheduledDate : m), null)
   const monday = firstDay != null ? mondayOf(firstDay) : mondayOf(todayEpochDay) + (weekNumber - currentWeek) * 7
+  const plan = bodyWatch?.alert?.planDays ?? null
+  const ravenLine = plan && bodyWatch?.alert?.programLine && monday <= plan[1] && monday + 6 >= plan[0] ? bodyWatch.alert.programLine : null
   const days = weekDays(monday)
   const shownDay = openDay != null && days.includes(openDay)
     ? openDay
@@ -507,7 +515,8 @@ export function ProgramPage() {
           })}
         </div>
         {/* page 56 item 16: the week line, plain text, no frame; then one quiet line that opens the week log */}
-        {read.why && <p className="pg-weekl">{read.why}</p>}
+        {/* page 58 4B: while the raven's plan is on, its line (brass) is the week's line */}
+        {ravenLine ? <p className="pg-weekl is-w">{ravenLine}</p> : read.why && <p className="pg-weekl">{read.why}</p>}
         {changesLine && <button type="button" className="pg-loglink" onClick={() => setLogOpen(true)}>{changesLine}</button>}
       </div>
 

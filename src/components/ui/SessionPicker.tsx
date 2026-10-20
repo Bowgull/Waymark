@@ -52,11 +52,6 @@ export function SessionPicker({ onSelect, onClose, filter, suggestions, title, r
       label={heading}
       onDismiss={onClose}
       head={heading}
-      headRight={
-        <button type="button" className="wm-pk-cancel" onClick={onClose} aria-label="Cancel">
-          Cancel
-        </button>
-      }
       className={reasons ? 'wm-repb' : ''}
     >
       {reasons && <ReasonTiles tiles={reasons.tiles} value={reasons.value} onChange={reasons.onChange} />}

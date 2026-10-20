@@ -248,6 +248,9 @@ export const mtClassLogs = sqliteTable('mt_class_logs', {
   concept: text('concept'),
   actionItems: text('action_items'),
   durationMin: integer('duration_min'),
+  // 0037: "What you learned" after class (page 49), and when it was written (unix seconds).
+  learnedNote: text('learned_note'),
+  learnedAt: integer('learned_at'),
 }, (t) => [
   uniqueIndex('idx_mt_session').on(t.sessionId),
 ])
@@ -263,6 +266,21 @@ export const exercises = sqliteTable('exercises', {
   formCues: text('form_cues'),
   formVideoUrl: text('form_video_url'),
   createdAt: integer('created_at').notNull(),
+  // 0038 (page 60): tips (" | "), the coach hint, the video's details and the link check.
+  tips: text('tips'),
+  coachHint: text('coach_hint'),
+  videoStartSec: integer('video_start_sec'),
+  videoSource: text('video_source'),
+  videoTitle: text('video_title'),
+  videoLength: text('video_length'),
+  videoStatus: text('video_status'),
+  videoCheckedAt: integer('video_checked_at'),
+  altVideoUrl: text('alt_video_url'),
+  altVideoSource: text('alt_video_source'),
+  altVideoStatus: text('alt_video_status'),
+  tiktokUrl: text('tiktok_url'),
+  // Folded into another item (hidden from the Library).
+  mergedInto: text('merged_into'),
 }, (t) => [
   index('idx_exercises_category').on(t.category),
 ])
@@ -281,8 +299,100 @@ export const combos = sqliteTable('combos', {
   isFavourite: integer('is_favourite').notNull().default(0),
   timesSharp: integer('times_sharp').notNull().default(0),
   createdAt: integer('created_at').notNull(),
+  // 0037: 'class' when added or unlocked from an MT class (the glove); NULL = the library's own.
+  source: text('source'),
+  // 0037: the class's local epoch day.
+  classDate: integer('class_date'),
+  // 0038 (page 60): the cue flap, the coach hint and a video.
+  cue: text('cue'),
+  coachHint: text('coach_hint'),
+  formVideoUrl: text('form_video_url'),
+  videoStartSec: integer('video_start_sec'),
+  videoSource: text('video_source'),
+  videoTitle: text('video_title'),
+  videoLength: text('video_length'),
+  videoStatus: text('video_status'),
+  videoCheckedAt: integer('video_checked_at'),
+  altVideoUrl: text('alt_video_url'),
+  altVideoSource: text('alt_video_source'),
+  altVideoStatus: text('alt_video_status'),
+  tiktokUrl: text('tiktok_url'),
 }, (t) => [
   index('idx_combos_tier').on(t.tier, t.level),
+])
+
+// 0038: Techniques (page 52/60, new kind): the 23 strikes behind the combos' names.
+export const techniques = sqliteTable('techniques', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  kind: text('kind').notNull(),
+  /** The combo names that mean this one, JSON array. */
+  aliases: text('aliases').notNull().default('[]'),
+  cue: text('cue'),
+  tips: text('tips'),
+  coachHint: text('coach_hint'),
+  formVideoUrl: text('form_video_url'),
+  videoStartSec: integer('video_start_sec'),
+  videoSource: text('video_source'),
+  videoTitle: text('video_title'),
+  videoLength: text('video_length'),
+  videoStatus: text('video_status'),
+  videoCheckedAt: integer('video_checked_at'),
+  altVideoUrl: text('alt_video_url'),
+  altVideoSource: text('alt_video_source'),
+  altVideoStatus: text('alt_video_status'),
+  tiktokUrl: text('tiktok_url'),
+  sort: integer('sort').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+})
+
+// 0038: Runs (page 52/60, new kind): the 7 run types, keyed by the plan's runType.
+export const runTypes = sqliteTable('run_types', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  runType: text('run_type').notNull(),
+  sub: text('sub'),
+  what: text('what'),
+  tips: text('tips'),
+  coachHint: text('coach_hint'),
+  formVideoUrl: text('form_video_url'),
+  videoStartSec: integer('video_start_sec'),
+  videoSource: text('video_source'),
+  videoTitle: text('video_title'),
+  videoLength: text('video_length'),
+  videoStatus: text('video_status'),
+  videoCheckedAt: integer('video_checked_at'),
+  altVideoUrl: text('alt_video_url'),
+  altVideoSource: text('alt_video_source'),
+  altVideoStatus: text('alt_video_status'),
+  tiktokUrl: text('tiktok_url'),
+  sort: integer('sort').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+})
+
+// 0038: the weekly link check's dead links and proposed replacements, waiting for Josh's OK.
+export const videoReviews = sqliteTable('video_reviews', {
+  id: text('id').primaryKey(),
+  itemKind: text('item_kind').notNull(),
+  itemId: text('item_id').notNull(),
+  url: text('url').notNull(),
+  foundDeadAt: integer('found_dead_at').notNull(),
+  proposal: text('proposal'),
+  status: text('status').notNull().default('proposed'),
+  createdAt: integer('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_video_reviews_item_url').on(t.itemKind, t.itemId, t.url),
+])
+
+// 0037: NOT NOW on a combo found in a class note, so it isn't offered again.
+export const comboDeclines = sqliteTable('combo_declines', {
+  id: text('id').primaryKey(),
+  strikesKey: text('strikes_key').notNull(),
+  strikesJson: text('strikes_json').notNull(),
+  sessionId: text('session_id'),
+  createdAt: integer('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_combo_declines_key').on(t.strikesKey),
 ])
 
 export const comboPerformance = sqliteTable('combo_performance', {
@@ -317,6 +427,8 @@ export const dailyLogs = sqliteTable('daily_logs', {
   backToday: integer('back_today'),
   backNotes: text('back_notes'),
   notes: text('notes'),
+  // 0036: "<Place> today" while a place is on watch: { "knee": 2 }, 1 bad .. 5 fine.
+  regionRatingsJson: text('region_ratings_json'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_daily_log_date').on(t.logDate),
@@ -381,6 +493,8 @@ export const weekAdjustments = sqliteTable('week_adjustments', {
   seenAt: integer('seen_at'),
   // 1 = he undid this coach change: the coach leaves the session alone that week.
   held: integer('held').notNull().default(0),
+  // 0036: his pick of what the coach left out for a place on watch (the region).
+  againstFlag: text('against_flag'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_wa_week').on(t.weekPlanId),
@@ -527,3 +641,39 @@ export const stravaDismissed = sqliteTable('strava_dismissed', {
   activityId: integer('activity_id').primaryKey(),
   dismissedAt: integer('dismissed_at').notNull(),
 })
+
+// ─── Injury weather and the raven (0036, page 58) ──────────────
+
+// One row per episode per body place (lib/coach/bodyWatch.ts). Days are local
+// epoch days; seen_at is unix seconds.
+export const bodyAlerts = sqliteTable('body_alerts', {
+  id: text('id').primaryKey(),
+  region: text('region').notNull(),
+  trigger: text('trigger').notNull(),
+  triggersJson: text('triggers_json'),
+  openedAt: integer('opened_at').notNull(),
+  seenAt: integer('seen_at'),
+  clearedAt: integer('cleared_at'),
+  clearReason: text('clear_reason'),
+  evidenceJson: text('evidence_json'),
+  contextLine: text('context_line'),
+  level: integer('level').notNull().default(1),
+  ackedLevel: integer('acked_level').notNull().default(0),
+  levelAt: integer('level_at'),
+  stage: text('stage').notNull().default('watch'),
+  planRound: integer('plan_round').notNull().default(0),
+  plan1Start: integer('plan1_start'),
+  planStartedAt: integer('plan_started_at'),
+  planEndsAt: integer('plan_ends_at'),
+  appliedOn: integer('applied_on'),
+  askOn: integer('ask_on'),
+  answersJson: text('answers_json'),
+  planChangeIds: text('plan_change_ids'),
+  pendingJson: text('pending_json'),
+  planJson: text('plan_json'),
+  stepJson: text('step_json'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [
+  index('idx_body_alerts_region').on(t.region, t.clearedAt),
+])

@@ -41,7 +41,7 @@ export function MtClassLogCard({
   const chipsRef = useRef<HTMLDivElement>(null)
   const saveRef = useRef<HTMLDivElement>(null)
   return (
-    <CentredCard label="MT Class Log" head="MT Class Log" headRight={<SessionIcon kind="mt" size={34} />} onDismiss={saving ? undefined : onClose} className="wm-mtlog">
+    <CentredCard label="MT Class Log" head="MT Class Log" headRight={<SessionIcon kind="mt" size={34} />} onDismiss={saving ? undefined : onClose} closeOnOutside={false} className="wm-mtlog">
       <div className="wm-mlabel">CLASS TYPE</div>
       <div ref={chipsRef} className="wm-types" role="radiogroup" aria-label="Class type">
         {CLASS_TYPES.map(t => {

@@ -23,7 +23,6 @@ export function WeekLog({ week, weekNumber, onUndo, onClose }: { week: WeekChang
       label={`Week ${weekNumber} changes`}
       onDismiss={onClose}
       head={`Week ${weekNumber} · changes`}
-      headRight={<button type="button" className="wm-pk-cancel" onClick={onClose} aria-label="Close">Close</button>}
       className="wm-logb"
     >
       {days.length === 0 && <p className="wm-prose is-dim">No changes this week.</p>}

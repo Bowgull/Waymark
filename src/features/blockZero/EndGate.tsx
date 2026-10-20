@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { Board, Crest, FlapButton, FlapLabel, showPop, useReducedMotion } from '@/design'
+import { Board, CloseWord, Crest, FlapButton, FlapLabel, showPop, useReducedMotion } from '@/design'
 import { apiFetch } from '@/lib/api'
 import { getTodayISO } from '@/lib/dates'
 
@@ -59,7 +59,8 @@ export function EndGateView({
   const enter = (delayMs: number) => (reduced ? undefined : { animation: `wm-settle 700ms var(--ease-out) ${delayMs}ms both` })
   return (
     <div className="bz-gate">
-      <div className="bz-title"><FlapLabel text="BLOCK ZERO · THE GATE" size="xs" tone="gold" animate={false} /></div>
+      {/* page 61: CLOSE back to Program at every step; the verdict waits */}
+      <div className="bz-title"><FlapLabel text="BLOCK ZERO · THE GATE" size="xs" tone="gold" animate={false} /><CloseWord onClose={onBack} className="bz-gate-close" /></div>
       <div style={{ alignSelf: 'center', ...(reduced ? {} : { animation: 'wm-card-in 900ms var(--ease-out) both' }) }}>
         <Crest big width={120} still={!checking && reduced} />
       </div>

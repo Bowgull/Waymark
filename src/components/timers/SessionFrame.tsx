@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
-import { FlapLabel, SessionIcon, type FlapTone, type SessionIconKey } from '@/design'
+import { FlapLabel, SessionIcon, useEdgeBack, type FlapTone, type SessionIconKey } from '@/design'
 import { comboStrikes, END_HOLD_MS, ENDED_SHOW_MS } from '@/lib/timers/timerLook'
 import { setWorldBackdrop } from '@/world/worldStore'
 
-import { SessionEndedContext } from './endedContext'
+import { SessionEndedContext, getSessionNav } from './endedContext'
 
 import './timers.css'
 
@@ -76,7 +76,11 @@ export function SessionFrame({ title, count, icon, right, onEnd, grass, forest =
   const endRef = useRef(onEnd)
   useLayoutEffect(() => { endRef.current = onEnd })
   const pending = useRef<number | null>(null)
-  const leave = () => { if (pending.current == null) return; window.clearTimeout(pending.current); pending.current = null; endRef.current?.() }
+  // Held through: the session ends (WorkoutPage's end: the close); a gallery screen just calls onEnd.
+  const leave = () => { if (pending.current == null) return; window.clearTimeout(pending.current); pending.current = null; const nav = getSessionNav(); if (nav) nav.end(); else endRef.current?.() }
+  // ‹ TODAY and the left-edge swipe (page 61, 3A): out to Today without ending anything.
+  const stepOut = () => { const nav = getSessionNav(); if (nav) nav.leave(); else endRef.current?.() }
+  useEdgeBack(onEnd ? stepOut : null)
   const startEnd = () => {
     if (ended || pending.current != null) return
     setEnded(true)
@@ -98,9 +102,12 @@ export function SessionFrame({ title, count, icon, right, onEnd, grass, forest =
       {grass}
       <div className="tm-ui">
         <div className="tm-stop">
-          <EndButton onEnd={onEnd ? startEnd : undefined} />
+          {onEnd ? <button type="button" className="tm-back" onClick={stepOut}>‹ TODAY</button> : <span />}
           <FlapLabel text={ended && !grass ? 'ENDED' : title} size="sm" tone={ended && !grass ? 'clay' : 'ink'} />
-          {right ?? (icon ? <SessionIcon kind={icon} size={40} /> : count ? <FlapLabel text={count} size="sm" /> : <span style={{ width: 44 }} />)}
+          <span className="tm-stop-r">
+            {right ?? (icon ? <SessionIcon kind={icon} size={40} /> : count ? <FlapLabel text={count} size="sm" /> : null)}
+            <EndButton onEnd={onEnd ? startEnd : undefined} />
+          </span>
         </div>
         {children}
       </div>
@@ -126,16 +133,18 @@ export function Pips({ total, now, small = false }: { total: number; now: number
  * A combo (design-decisions "Combos"): separate strike tiles joined by ›, on
  * page 31's board tiles. No combo letters (page 55, 2026-10-19).
  */
-export function ComboStrikes({ text, size = 'xs', className = '' }: { text: string; size?: 'xs' | 'sm' | 'md'; className?: string }) {
+export function ComboStrikes({ text, size = 'xs', className = '', glove = false }: { text: string; size?: 'xs' | 'sm' | 'md'; className?: string; glove?: boolean }) {
   const strikes = comboStrikes(text)
   return (
-    <span className={`tm-combo ${className}`} role="img" aria-label={strikes.join(', ')}>
+    <span className={`tm-combo ${className}`} role="img" aria-label={`${strikes.join(', ')}${glove ? ', from class' : ''}`}>
       {strikes.map((s, i) => (
         <span key={i} style={{ display: 'contents' }}>
           {i > 0 && <span className="arr" aria-hidden>›</span>}
           <span className="stk"><FlapLabel text={s} size={size} /></span>
         </span>
       ))}
+      {/* page 49 section 3: a combo from class carries the MT Class glove, small, after its strikes */}
+      {glove && <SessionIcon kind="mt" size={20} className="tm-glove" label="" />}
     </span>
   )
 }

@@ -9,7 +9,7 @@
  * Alternatively, this exports the raw data arrays for use in API seed endpoints.
  */
 
-import { writeFileSync } from 'fs'
+import { readFileSync, writeFileSync } from 'fs'
 
 const now = Math.floor(Date.now() / 1000)
 
@@ -714,6 +714,9 @@ for (const tm of trainingMaxes) {
 lines.push(
   `INSERT OR IGNORE INTO settings (id, mt_class_days, am_reminder, pm_lead_min, created_at, updated_at) VALUES ('default', '1,3,5', '06:30', 60, ${now}, ${now});`
 )
+
+// The Library's approved content (page 60): the INSERT OR REPLACE above would drop it, so it goes back on.
+lines.push(...readFileSync('src/db/libraryContent.sql', 'utf8').split('\n').filter(l => l.trim()))
 
 const sql = lines.join('\n')
 writeFileSync('src/db/seed.sql', sql)

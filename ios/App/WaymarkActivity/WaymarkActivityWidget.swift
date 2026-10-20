@@ -1085,6 +1085,8 @@ struct WaymarkActivityWidget: Widget {
             LockScreenView(context: context)
                 .activityBackgroundTint(Color.wmCard.opacity(0.94))
                 .activitySystemActionForegroundColor(Color.wmBody)
+                // Page 61 (M6): a tap opens the running session, not wherever the app last was.
+                .widgetURL(WaymarkLiveURL.session)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -1111,6 +1113,12 @@ struct WaymarkActivityWidget: Widget {
                 SessionIcon(context: context)
                     .frame(width: 22, height: 22)
             }
+            .widgetURL(WaymarkLiveURL.session)
         }
     }
+}
+
+/// The running session (the app reads which one from the phone's live record).
+enum WaymarkLiveURL {
+    static let session = URL(string: "waymark://session/live")
 }

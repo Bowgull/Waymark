@@ -106,3 +106,4 @@ body:has(.bz-deck) .wm-tabs { visibility: hidden; }
   .bz-overlay { animation: none; }
   .bz-tl { transition: none; }
 }
+.bz-gate .bz-title { position: relative; } .bz-gate .bz-gate-close { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }

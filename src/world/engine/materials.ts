@@ -94,7 +94,7 @@ export function surfaceMaterial(shared: SharedUniforms, o: SurfaceOpts): THREE.S
     uPat: { value: o.pattern ?? BLANK }, uPatOn: { value: o.pattern ? 1 : 0 }, uPatR: { value: o.patR ?? 1 }, uPatC: { value: new THREE.Vector2(...(o.patC ?? [0, 0])) }, uPatCol: { value: new THREE.Color(o.patCol ?? '#1c1a17') },
     uMin: { value: o.min ?? 0 }, uShow: { value: o.show ?? 1 }, uArc: { value: 2 }, uArcCenter: { value: new THREE.Vector2(o.arcCx ?? 0, o.arcCy ?? 0) }, uBoost: { value: o.boost ?? 1 },
   }
-  return new THREE.ShaderMaterial({
+  const mat = new THREE.ShaderMaterial({
     uniforms, side: THREE.DoubleSide,
     vertexShader: `
       varying vec3 vObj; varying vec3 vObjN; varying vec3 vWorld; varying vec3 vWorldN; varying float vDepth;
@@ -148,6 +148,9 @@ export function surfaceMaterial(shared: SharedUniforms, o: SurfaceOpts): THREE.S
         gl_FragColor = vec4(col, 1.0);
       }`,
   })
+  // The weather (page 58) finds the moss by its glyph set: it glows a little in the green rain.
+  mat.userData.set = o.set ?? 'stone'
+  return mat
 }
 
 export interface CardOpts {
@@ -161,55 +164,85 @@ export interface CardOpts {
   smoke?: number
   glint?: number
   spill?: number
+  /** The weather's cards (page 58): 1 = a splash where a drop lands, 2 = a ring on the pond. */
+  splash?: number
+  /** Sprouts: grow by this (0..1) after each card's own delay; -1 = not a sprout. */
+  grow?: number
+  /** Torn leaves drifting across on the storm's wind (speed). */
+  drift?: number
 }
 
 // Grass, moss, mist, motes, smoke, rain: camera-facing glyph cards, rooted, swaying.
 export function cardMaterial(shared: SharedUniforms, o: CardOpts): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { ...shared, uK: { value: 1 }, uW: { value: o.w }, uH: { value: o.h }, uSway: { value: o.sway ?? 0.18 }, uGlow: { value: o.glow ?? 0 }, uFly: { value: o.fly ?? 0 }, uRise: { value: o.rise ?? 0 }, uFall: { value: o.fall ?? 0 }, uSmoke: { value: o.smoke ?? 0 }, uGlint: { value: o.glint ?? 0 }, uSpill: { value: o.spill ?? 0 }, uThin: { value: 1 }, uExposure: { value: 1 } },
+    uniforms: {
+      ...shared, uK: { value: 1 }, uW: { value: o.w }, uH: { value: o.h }, uSway: { value: o.sway ?? 0.18 }, uGlow: { value: o.glow ?? 0 }, uFly: { value: o.fly ?? 0 }, uRise: { value: o.rise ?? 0 }, uFall: { value: o.fall ?? 0 }, uSmoke: { value: o.smoke ?? 0 }, uGlint: { value: o.glint ?? 0 }, uSpill: { value: o.spill ?? 0 }, uThin: { value: 1 }, uExposure: { value: 1 },
+      // the weather (page 58): a whole set's opacity, a tint it turns to, the rain's slant in the wind, brightness
+      uAlpha: { value: 1 }, uTintTo: { value: new THREE.Color(0, 0, 0) }, uTintK: { value: 0 }, uSlant: { value: 0 }, uBright: { value: 1 }, uUnlit: { value: 0 },
+      uSplash: { value: o.splash ?? 0 }, uGrow: { value: o.grow ?? -1 }, uDrift: { value: o.drift ?? 0 },
+    },
     transparent: true, depthWrite: false,
     vertexShader: `
       attribute float aGlyph; attribute float aPhase; attribute vec3 aTint; attribute vec2 aOff;
       uniform float uK; uniform float uW; uniform float uH; uniform float uTime; uniform float uSway; uniform float uFly; uniform float uRise; uniform float uFall; uniform float uSmoke; uniform float uWind; varying float vFade;
+      uniform float uSlant; uniform float uSplash; uniform float uGrow; uniform float uDrift;
       varying vec2 vUv; varying float vGlyph; varying vec3 vTint; varying vec3 vRoot; varying float vDepth; varying float vPhase;
       void main(){
         vec4 root = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         if (uFly > 0.0) root.xyz += vec3(sin(uTime * 0.5 + aPhase) * 0.6, sin(uTime * 0.9 + aPhase * 2.0) * 0.25, cos(uTime * 0.4 + aPhase) * 0.6) * min(uFly, 1.0);
         vFade = 1.0;
         float sz = 1.0; vGlyph = aGlyph;
-        if (uFall > 0.0) { float k = fract(uTime * 0.55 + aPhase); root.y -= k * uFall; root.x += sin(aPhase * 40.0) * 0.02 * k;
-          vFade = smoothstep(0.0, 0.08, k) * (1.0 - smoothstep(0.85, 1.0, k)); float c = mod(floor(uTime * 6.0 + aPhase * 17.0), 3.0); vGlyph = c < 1.0 ? 92.0 : (c < 2.0 ? 26.0 : 1.0); }
+        if (uFall > 0.0) { float k = fract(uTime * 0.55 + aPhase); root.y -= k * uFall; root.x += sin(aPhase * 40.0) * 0.02 * k - k * uFall * uSlant;
+          vFade = smoothstep(0.0, 0.08, k) * (1.0 - smoothstep(0.85, 1.0, k)); float c = mod(floor(uTime * 6.0 + aPhase * 17.0), 3.0); vGlyph = c < 1.0 ? 92.0 : (c < 2.0 ? 26.0 : 1.0); if (uSlant > 0.2) vGlyph = 15.0; }
         if (uRise != 0.0) { float k = fract(uTime * (uSmoke > 0.0 ? 0.11 : 0.07) + aPhase);
           root.xyz += vec3(sin(k * 5.0 + aPhase * 6.0) * 0.22 * k + k * k * (0.4 + uWind * 1.1) * (uSmoke > 0.0 ? 1.0 : 1.6), k * uRise, sin(k * 3.0 + aPhase * 9.0) * 0.15);
           vFade = smoothstep(0.0, 0.1, k) * (1.0 - k);
           if (uSmoke > 0.0) { sz = 0.8 + k * 1.8; vGlyph = k < 0.12 ? 14.0 : (k < 0.35 ? 79.0 : (k < 0.65 ? 47.0 : (k < 0.85 ? 8.0 : 94.0))); }
           else { vGlyph = mod(floor(uTime * 2.0 + aPhase * 10.0), 2.0) < 1.0 ? aGlyph : 7.0; } }
+        vec2 off = aOff * sz;
+        // the weather (page 58): a splash where a drop lands ('.', 'o', '.'), a ring spreading on the pond
+        if (uSplash > 1.5) { float k = fract(uTime * 0.9 + aPhase); off = aOff * (0.04 + k * 0.55); vFade = smoothstep(0.0, 0.05, k) * (1.0 - k); vGlyph = 14.0; }
+        else if (uSplash > 0.0) { float k = fract(uTime * 1.7 + aPhase); vFade = k < 0.24 ? 1.0 - k / 0.24 : 0.0; vGlyph = k < 0.07 ? 14.0 : (k < 0.15 ? 79.0 : 14.0); }
+        // torn leaves on the storm's wind, right to left
+        if (uDrift > 0.0) { float k = fract(uTime * uDrift + aPhase); root.x += (0.5 - k) * 9.0; root.y += sin(uTime * 3.0 + aPhase * 9.0) * 0.15; vFade = smoothstep(0.0, 0.08, k) * (1.0 - smoothstep(0.92, 1.0, k)); }
+        // fresh shoots by the path: '.', ',', 'v', 'Y', then the stem, the leaves and the bud (part = floor(phase / 10))
+        if (uGrow >= 0.0) { float part = floor(aPhase / 10.0); float k = clamp((uGrow - (aPhase - part * 10.0)) * 2.2, 0.0, 1.0);
+          if (part < 0.5) { vGlyph = k < 0.25 ? 14.0 : (k < 0.5 ? 12.0 : (k < 0.75 ? 86.0 : 57.0)); vFade = k > 0.0 ? 1.0 : 0.0; sz = 0.7 + 0.3 * k; off = aOff * sz; }
+          else { vFade = k >= 1.0 ? 1.0 : 0.0; } }
         vRoot = root.xyz; vec4 mv = viewMatrix * root; vDepth = -mv.z;
         float top = position.y + 0.5;
         float sway = (sin(uTime * 1.7 + aPhase + root.x * 0.6) + 0.4 * sin(uTime * 3.1 + aPhase) + uWind * 1.2) * top * uSway * (0.6 + uWind);
         // uK: the glyph cards keep printing at the scene's glyph size whatever the camera zoom (page 14b's close-up)
-        mv.xy += (vec2(position.x * uW * sz + sway * uW, top * uH * sz) + aOff * sz) * uK;
+        // the storm's rain leans with the wind: the streak's top trails up-wind ('/')
+        float shear = uFall > 0.0 ? uSlant * top * uH * sz : 0.0;
+        mv.xy += (vec2(position.x * uW * sz + sway * uW + shear, top * uH * sz) + off) * uK;
         gl_Position = projectionMatrix * mv;
         vUv = uv; vTint = aTint; vPhase = aPhase;
       }`,
     fragmentShader: `
       uniform sampler2D uAtlas; uniform vec3 uLampPos; uniform vec3 uLampCol; uniform float uLamp; uniform float uExposure; uniform float uAscii;
       uniform vec3 uFogCol; uniform float uFogNear; uniform float uFogFar; uniform float uGlow; uniform float uTime; uniform float uGlint; uniform float uSpill; uniform float uThin; uniform float uSmoke;
+      uniform float uAlpha; uniform vec3 uTintTo; uniform float uTintK; uniform float uBright; uniform float uUnlit; uniform float uSplash;
       varying vec2 vUv; varying float vGlyph; varying vec3 vTint; varying vec3 vRoot; varying float vDepth; varying float vPhase; varying float vFade;
       void main(){
+        if (uAlpha < 0.01) discard;
+        vec3 tint = mix(vTint, uTintTo, uTintK);
         vec2 auv = vec2((mod(vGlyph, 16.0) + vUv.x) / 16.0, 1.0 - (floor(vGlyph / 16.0) + 1.0 - vUv.y) / 6.0);
         float ink = uAscii > 0.5 ? texture2D(uAtlas, auv).a : smoothstep(0.5, 0.2, abs(vUv.x - 0.5));
         if (ink < 0.3) discard;
         float d = length(uLampPos - vRoot);
         vec3 light = vec3(0.3, 0.4, 0.36) + uLampCol * uLamp * 1.2 / (1.0 + d * d * 0.3);
-        vec3 col = vTint * light * (0.55 + vUv.y * 0.8);
-        if (uGlow > 0.0) col = vTint * (0.6 + 0.6 * sin(uTime * 3.0 + vPhase * 7.0)) * 2.0;
-        if (uGlint > 0.0) { float gl = pow(max(0.0, sin(uTime * 0.45 + vPhase * 6.2832)), 60.0); if (gl < 0.08) discard; col = vTint * 2.4 * gl; }
-        if (uSpill > 0.0) col = vTint * (0.72 + 0.28 * (0.5 + 0.5 * sin(uTime * 0.8 + vPhase)));
+        vec3 col = tint * light * (0.55 + vUv.y * 0.8);
+        if (uGlow > 0.0) col = tint * (0.6 + 0.6 * sin(uTime * 3.0 + vPhase * 7.0)) * 2.0;
+        if (uGlint > 0.0) { float gl = pow(max(0.0, sin(uTime * 0.45 + vPhase * 6.2832)), 60.0); if (gl < 0.08) discard; col = tint * 2.4 * gl; }
+        if (uSpill > 0.0) col = tint * (0.72 + 0.28 * (0.5 + 0.5 * sin(uTime * 0.8 + vPhase)));
         if (uSmoke > 0.0 && fract(vPhase * 37.13) > uThin) discard;
-        col = mix(col, uFogCol, smoothstep(uFogNear, uFogFar, vDepth)) * uExposure;
-        if (ink * vFade < 0.3) discard;
-        gl_FragColor = vec4(col, ink);
+        // the weather's glyphs (page 58) glow in their own colour, like the mockup's: lit only by themselves, half the fog
+        if (uUnlit > 0.0) col = mix(col, tint * (0.75 + 0.25 * vUv.y), uUnlit);
+        col = mix(col * uBright, uFogCol, smoothstep(uFogNear, uFogFar, vDepth) * (1.0 - 0.5 * uUnlit)) * uExposure;
+        // a splash or a ring fades by its alpha (its dot is too small to cut by)
+        if (ink * (uSplash > 0.0 ? 1.0 : vFade) < 0.3) discard;
+        gl_FragColor = vec4(col, ink * uAlpha * (uSplash > 0.0 ? vFade : 1.0));
       }`,
   })
 }
@@ -218,11 +251,13 @@ export function cardMaterial(shared: SharedUniforms, o: CardOpts): THREE.ShaderM
 // 2 = night (twinkling stars, a crescent moon), 3 = misty (pale drifting haze).
 export function skyMaterial(shared: SharedUniforms, gp: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { ...shared, uSky: { value: 3 }, uRes: { value: new THREE.Vector2(1, 1) }, uGp: { value: gp } },
+    // uBolt (page 58's storm): x across the screen (0..1), its age in s, on (0/1), a seed. uFlash: the soft flash, 0..1.
+    uniforms: { ...shared, uSky: { value: 3 }, uRes: { value: new THREE.Vector2(1, 1) }, uGp: { value: gp }, uBolt: { value: new THREE.Vector4(0.5, 1, 0, 0) }, uFlash: { value: 0 } },
     depthTest: false, depthWrite: false,
     vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.9999, 1.0); }',
     fragmentShader: `
       uniform sampler2D uAtlas; uniform float uSky; uniform vec2 uRes; uniform float uGp; uniform float uTime; uniform float uExposure;
+      uniform vec4 uBolt; uniform float uFlash;
       ${HASH}
       float ramp(float i){
         if (i < 1.0) return 0.0; if (i < 2.0) return 14.0; if (i < 3.0) return 12.0; if (i < 4.0) return 26.0; if (i < 5.0) return 27.0;
@@ -257,9 +292,17 @@ export function skyMaterial(shared: SharedUniforms, gp: number): THREE.ShaderMat
             ic = lit > 0.5 ? vec3(0.92, 0.96, 0.86) * 1.5 : vec3(0.25, 0.32, 0.38);
           } else if (uv.y > 0.18 && uv.y < 0.42 && h > 0.9) { g = 94.0; ic = vec3(0.3, 0.5, 0.52) * 0.8; }
         }
+        // the storm's lightning (page 58): a bolt of glyphs down the sky, soft, gone in 0.35 s
+        if (uBolt.z > 0.5 && uBolt.y < 0.35 && uv.y > 0.6 && uv.y < 0.95) {
+          float row = floor(uv.y * uRes.y / cs.y);
+          float jag = (hash(vec2(row, uBolt.w)) - 0.5) * 0.05 + sin(row * 0.7 + uBolt.w * 9.0) * 0.02;
+          float dx = (uv.x - (uBolt.x + jag)) * uRes.x / cs.x;
+          if (abs(dx) < 0.6) { float sl = hash(vec2(row, uBolt.w + 3.0)) - 0.5; g = sl > 0.2 ? 60.0 : (sl < -0.2 ? 15.0 : 92.0); ic = vec3(0.88, 1.0, 0.8) * 2.2 * (1.0 - uBolt.y / 0.35); }
+        }
         float ink = 0.0;
         if (g > 0.5) { vec2 auv = vec2((mod(g, 16.0) + f.x) / 16.0, 1.0 - (floor(g / 16.0) + 1.0 - f.y) / 6.0); ink = texture2D(uAtlas, auv).a; }
-        gl_FragColor = vec4(mix(bg * 0.6, ic, ink) * uExposure, 1.0);
+        vec3 skyCol = mix(bg * 0.6, ic, ink) + vec3(0.84, 1.0, 0.76) * 0.14 * uFlash;
+        gl_FragColor = vec4(skyCol * uExposure, 1.0);
       }`,
   })
 }

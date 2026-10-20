@@ -13,6 +13,8 @@ import { cardMaterial, gi, glyphAtlas, makeShared, skyMaterial, surfaceMaterial,
 import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, frustumFor, glideEase, lampK, mixView, sceneLamp, sceneOf, scenesInView, sceneGlyphWorld, viewGlyphWorld, type PlaceView, type SceneKey } from '../places'
 import { pondLook, weeksOrDefault, type WeekPost, type WorldPlace } from '../worldStore'
 import type { WorldMode } from '../timeOfDay'
+import { NO_WEATHER, weatherParams, type WorldWeather } from '../weather'
+import { createWeather, type ModeBase } from './weather'
 
 const GLYPH_PX = 9
 
@@ -23,6 +25,8 @@ export interface WorldInit {
   lantern: number
   offline: boolean
   reducedMotion: boolean
+  /** The injury weather (page 58). */
+  weather?: WorldWeather
 }
 
 export interface WorldStats {
@@ -36,6 +40,8 @@ export interface WorldStats {
   drawCalls: number
   built: SceneKey[]
   firstFrameMs: number
+  /** The injury weather's knobs now (page 58) and the shoots' growth. */
+  weather: { p: Record<string, number>; grow: number }
 }
 
 export interface WorldHandle {
@@ -46,6 +52,8 @@ export interface WorldHandle {
   /** The Ledger: how the week has gone (0..1, 0.5 neutral): brighter water and more fireflies. */
   setPond(k: number): void
   setOffline(offline: boolean): void
+  /** The injury weather over the whole world (page 58): green rain, downpour, storm, the quieter fall, the clearing. */
+  setWeather(weather: WorldWeather): void
   setReducedMotion(reduced: boolean): void
   pause(): void
   resume(): void
@@ -102,7 +110,8 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   const rainGw = sceneGlyphWorld('clearing')
   const rainMat = cardMaterial(shared, { w: rainGw * 0.62, h: rainGw * 1.4, fall: 7.5, sway: 0 })
   const rain = (() => {
-    const N = 520, g = new THREE.PlaneGeometry(1, 1)
+    // 520 for the offline rain; the green rain's downpour and storm use up to 1000 (page 58)
+    const N = 1000, g = new THREE.PlaneGeometry(1, 1)
     const mesh = new THREE.InstancedMesh(g, rainMat, N)
     const aG = new Float32Array(N), aP = new Float32Array(N), aT = new Float32Array(N * 3), m4 = new THREE.Matrix4()
     const r = (i: number, k: number) => { const s = Math.sin(i * 91.7 + k * 47.3) * 43758.5453; return s - Math.floor(s) }
@@ -111,6 +120,12 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
     mesh.frustumCulled = false; mesh.visible = false; scene.add(mesh)
     return mesh
   })()
+
+  // the injury weather (page 58): the grade, the green rain on the offline rain's cards, puddles, moss, storm, the clearing
+  const weather = createWeather(scene, shared, rainGw, rain, rainMat, skyU)
+  let worldWeather: WorldWeather = init.weather ?? NO_WEATHER
+  let offline = init.offline
+  const modeBase: ModeBase = { moon: new THREE.Color(), fog: new THREE.Color(), near: 17, far: 38 }
 
   const scenes = new Map<SceneKey, BuiltScene>()
   let weeks = weeksOrDefault(init.weeks)
@@ -148,6 +163,14 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
     timeLamp = M.lamp
     shared.uFogNear.value = M.fogNear; shared.uFogFar.value = M.fogFar; if (M.fogCol) shared.uFogCol.value.set(M.fogCol)
     skyU.uSky.value = M.sky
+    // the weather grades over the mode's own light each frame
+    modeBase.moon.copy(shared.uMoonCol.value); modeBase.fog.copy(shared.uFogCol.value); modeBase.near = M.fogNear; modeBase.far = M.fogFar
+  }
+  /** The moss the green rain makes glow (the built scenes' moss surfaces). */
+  function mossMaterials(): THREE.ShaderMaterial[] {
+    const out: THREE.ShaderMaterial[] = []
+    for (const b of scenes.values()) for (const m of b.surfaces) if (m.userData.set === 'moss') out.push(m)
+    return out
   }
 
   const KIND: Record<SceneKey, SceneKind> = { clearing: 'clearing', road: 'road', pond: 'pond', home: 'home' }
@@ -200,8 +223,10 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
         for (const m of b.cards) m.uniforms.uK.value = k
       }
       rainMat.uniforms.uK.value = gwNow / rainGw
+      weather.scale(gwNow / rainGw)
     }
     rain.position.set(view.x, 0, view.lookZ)
+    weather.follow(view.x, view.lookZ)
   }
 
   // ── the frame ──
@@ -215,7 +240,8 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
     if (!reduced) simT += dt
     const t = reduced ? 6 : simT
     shared.uTime.value = t
-    shared.uWind.value = reduced ? 0.4 : 0.5 + 0.5 * Math.sin(t * 0.33) * Math.sin(t * 0.13 + 1.0)
+    const wx = weather.frame(t, reduced ? 0 : dt, reduced, modeBase, mossMaterials())
+    shared.uWind.value = (reduced ? 0.4 : 0.5 + 0.5 * Math.sin(t * 0.33) * Math.sin(t * 0.13 + 1.0)) + wx.wind
     if (glide) {
       const k = glideEase((now - glide.start) / GLIDE_MS)
       view = mixView(glide.from, glide.to, k)
@@ -224,7 +250,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
     }
     shared.uLampPos.value.copy(lampNow)
     // at night the lantern never burns below page 14 #c's (1.6): the clearing's path and spill must read
-    shared.uLamp.value = 1.6 * lampK(mode, lantern) * timeLamp * (reduced ? 1 : 0.94 + 0.06 * Math.sin(t * 11) * Math.sin(t * 7.3))
+    shared.uLamp.value = 1.6 * lampK(mode, lantern) * (timeLamp + wx.lamp) * (reduced ? 1 : 0.94 + 0.06 * Math.sin(t * 11) * Math.sin(t * 7.3))
     const inView = new Set(scenesInView(view, W))
     for (const [k, b] of scenes) {
       const vis = inView.has(k)
@@ -328,7 +354,15 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
     },
     setPond(k) { pond = Math.max(0, Math.min(1, k)); for (const b of scenes.values()) applyLight(b); if (reduced) requestStill() },
     setLantern(k) { lantern = Math.max(0, Math.min(1, k)); for (const b of scenes.values()) applyLight(b); if (reduced) requestStill() },
-    setOffline(off) { rain.visible = off; if (reduced) requestStill() },
+    // Offline rain stays grey; with the green rain, green wins (page 58 item 16).
+    setOffline(off) { if (off === offline) return; offline = off; weather.set(weatherParams(worldWeather, offline), reduced ? 0 : 1.5); if (reduced) requestStill() },
+    setWeather(w) {
+      if (w.level === worldWeather.level && w.quiet === worldWeather.quiet && w.clearing === worldWeather.clearing) return
+      const clearing = w.clearing && !worldWeather.clearing
+      worldWeather = w
+      weather.set(weatherParams(worldWeather, offline), reduced ? 0 : clearing ? 3.5 : 3)
+      if (reduced) requestStill()
+    },
     setReducedMotion(r) { if (r === reduced) return; reduced = r; if (r) { stop(); requestStill() } else start() },
     pause() { stop() },
     resume() { start() },
@@ -344,7 +378,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
         workMs: works.length ? Math.round((works.reduce((a, b) => a + b, 0) / works.length) * 100) / 100 : 0,
         p95FrameMs: sorted.length ? Math.round(sorted[Math.floor(sorted.length * 0.95)] * 10) / 10 : 0,
         quality: level, dpr: renderer.getPixelRatio(), drawCalls: renderer.info.render.calls,
-        built: [...scenes.keys()], firstFrameMs: Math.round(firstFrameMs),
+        built: [...scenes.keys()], firstFrameMs: Math.round(firstFrameMs), weather: weather.debug() as unknown as { p: Record<string, number>; grow: number },
       }
     },
     dispose() {
@@ -353,11 +387,12 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
       if (w.cancelIdleCallback) w.cancelIdleCallback(idleHandle); else window.clearTimeout(idleHandle)
       for (const b of scenes.values()) b.dispose()
       scenes.clear()
+      weather.dispose()
       renderer.dispose()
       renderer.forceContextLoss()
     },
   }
-  rain.visible = init.offline
+  weather.set(weatherParams(worldWeather, offline), 0)
   handle.setLantern(init.lantern)
   if (reduced) requestStill(); else start()
   return handle

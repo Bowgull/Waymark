@@ -31,7 +31,7 @@ test('Library: categories, a category list, search', async ({ page }) => {
   await gotoToday(page)
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'library' }).tap()
   await expect(page).toHaveURL(/\/library$/)
-  for (const c of ['strength', 'core', 'foundation', 'mobility', 'bagwork', 'waybook']) {
+  for (const c of ['strength', 'core', 'foundation', 'mobility', 'bagwork', 'techniques', 'runs', 'waybook']) {
     await expect(page.getByRole('button', { name: c, exact: true })).toBeVisible()
   }
   await expect(page).toHaveScreenshot('library.png')

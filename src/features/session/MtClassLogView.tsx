@@ -6,6 +6,7 @@ import type { EngineState } from '@/lib/sessionResume'
 import { setWorldBackdrop } from '@/world/worldStore'
 
 import { MtClassLogCard } from '@/features/blockZero/ClassTypeCard'
+import { refreshBagLibrary } from './classCombosClient'
 import { clampClassMinutes, classLogPatch, defaultClassType, type ClassTypeValue } from '@/features/blockZero/classType'
 
 interface MtLog {
@@ -55,6 +56,9 @@ export function MtClassLogView({ mtLog, plannedMin, blockType, onComplete, onExi
   const [refused, setRefused] = useState<{ type: ClassTypeValue; reason: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  // A copy of the bag on the phone, so "What you learned" can check combos with no connection.
+  useEffect(() => { void refreshBagLibrary() }, [])
 
   // Page 31 draws this board over the forest.
   useEffect(() => {

@@ -91,6 +91,8 @@ export function iconFor(s: Pick<DayBoardSession, 'type' | 'notes'>): SessionIcon
 export function sessionDisplayName(s: Pick<DayBoardSession, 'type' | 'label' | 'notes'>): string {
   const label = s.label?.trim() || null
   if (s.type === 'strength') return label ?? 'Strength'
+  // page 58: a raven's plan puts an easy bike (or walk) in a run's place.
+  if (s.type === 'active_recovery' && label && /^easy (bike|walk)$/i.test(label)) return label
   // page 56: Block Zero's run-walk reads RUN-WALK on its row.
   if (s.type === 'foundation_run' && label && /run-walk/i.test(label)) return label
   const key = iconFor(s)
@@ -130,6 +132,27 @@ const SKIP_WORDS: Record<string, string> = {
   other: 'other',
 }
 
+/** The raven's plan mark on a session (page 58, context_json.bodyPlan). */
+export function bodyPlanOn(contextJson: string | null | undefined): { op: string; was: string; shapeWeek?: number } | null {
+  const v = parseContext(contextJson).bodyPlan as { op?: unknown; was?: unknown; shapeWeek?: unknown } | undefined
+  if (!v || typeof v.op !== 'string') return null
+  return { op: v.op, was: typeof v.was === 'string' ? v.was : '', ...(typeof v.shapeWeek === 'number' ? { shapeWeek: v.shapeWeek } : {}) }
+}
+
+/**
+ * Program's detail line for a session the raven's plan changed (page 58 4B):
+ * "easy, 25 min · was run 4:00 × 5", "run 2:00, walk 1:00 × 7 · was 4:00 × 5".
+ */
+export function bodyPlanDetail(s: Pick<DayBoardSession, 'contextJson'>, weekNumber: number): string | null {
+  const plan = bodyPlanOn(s.contextJson)
+  if (!plan) return null
+  const was = plan.was ? ` · was ${plan.was}` : ''
+  if (plan.op === 'bike' || plan.op === 'reset') return `easy, 25 min${was}`
+  if (plan.op === 'shape') { const w = runWalkShapeFor(s, weekNumber); return `run ${mmss(w.runSec)}, walk ${mmss(w.walkSec)} × ${w.rounds}${was}` }
+  if (plan.op === 'technique') return 'technique only · no hard rounds'
+  return null
+}
+
 function parseContext(raw: string | null | undefined): Record<string, unknown> {
   if (!raw) return {}
   try {
@@ -155,7 +178,9 @@ export function runWalkDetail(session: Pick<DayBoardSession, 'contextJson'>, wee
 
 /** A Block Zero run-walk's shape for its week, with the coach's eased rounds. */
 export function runWalkShapeFor(session: Pick<DayBoardSession, 'contextJson'>, weekNumber: number): { runSec: number; walkSec: number; rounds: number; warmupSec: number } {
-  const w = getRunWalkWeek(weekNumber)
+  // A raven's plan brings the run back at an earlier week's shape (page 58: 2:00 / 1:00 × 7, then 3:30 × 5).
+  const shapeWeek = bodyPlanOn(session.contextJson)?.shapeWeek
+  const w = getRunWalkWeek(shapeWeek != null && shapeWeek < weekNumber ? shapeWeek : weekNumber)
   const ease = parseContext(session.contextJson).coachEase as { kind?: string; rounds?: number } | undefined
   const rounds = ease?.kind === 'rounds' && typeof ease.rounds === 'number' ? ease.rounds : w.rounds
   return { runSec: w.runSec, walkSec: w.walkSec, rounds, warmupSec: w.warmupSec }

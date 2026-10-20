@@ -6,6 +6,7 @@ import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { bodyLbs, lbsToKg } from '@/lib/units'
 import { logger } from '@/lib/logger'
 import { FlapNumber, SettingsScreen } from '../settings/settingsParts'
+import { goBack } from '@/lib/goBack'
 import { cleanNumber, histDate, todayFlap } from '../settings/settingsModel'
 import { Sparkline } from '../history/Sparkline'
 
@@ -109,7 +110,7 @@ export function BodyMetricsPage() {
   ]
 
   return (
-    <SettingsScreen title="BODY" backLabel="SETTINGS" onBack={() => navigate('/settings')}>
+    <SettingsScreen title="BODY" backLabel="SETTINGS" onBack={() => goBack(navigate, '/settings')}>
       <div ref={boardRef}>
         <Board head="Log today" headRight={<span className="wm-label">{todayFlap(new Date())}</span>} solid className="st-board">
           <div className="st-fields">

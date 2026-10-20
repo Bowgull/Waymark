@@ -213,6 +213,54 @@ export function sleepWeek(logs: LedgerDailyRow[], todayEpochDay: number): { days
   return { days, avg: hrs.length ? Math.round(hrs.reduce((s, h) => s + h, 0) / hrs.length * 10) / 10 : null }
 }
 
+// ── Herb: the last 28 mornings (page 62, option B, approved 2026-10-19) ──
+
+export interface LedgerHerbRow { logDate: number; herbScale: number | null; sleepHours: number | null }
+export interface HerbDay { epochDay: number; letter: string; herb: number | null; sleepHours: number | null }
+export interface HerbSleepLine {
+  /** The 28-day average as printed (one decimal): "above" means above this. */
+  avg: number
+  above: number
+  aboveSleep: number
+  rest: number
+  restSleep: number
+  checkIns: number
+}
+
+const r1 = (v: number) => Math.round(v * 10) / 10
+const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length
+
+/**
+ * The Herb board: each of the last 28 mornings (0 none to 9 most, from the
+ * check-in), the 7-day and 28-day averages, and one plain line from his own
+ * check-ins: how he slept on the mornings above his 28-day average and on
+ * the others. No good or bad: numbers only.
+ */
+export function herbMonth(logs: LedgerHerbRow[], todayEpochDay: number): { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null } {
+  const byDay = new Map(logs.map(l => [l.logDate, l]))
+  const days: HerbDay[] = []
+  for (let d = todayEpochDay - 27; d <= todayEpochDay; d++) {
+    const l = byDay.get(d)
+    const herb = l?.herbScale != null && l.herbScale >= 0 && l.herbScale <= 9 ? Math.round(l.herbScale) : null
+    days.push({ epochDay: d, letter: dayLetter(d), herb, sleepHours: l?.sleepHours ?? null })
+  }
+  const logged = days.filter(d => d.herb != null)
+  const last7 = days.slice(-7).filter(d => d.herb != null)
+  const avg28 = logged.length ? r1(mean(logged.map(d => d.herb!))) : null
+  const avg7 = last7.length ? r1(mean(last7.map(d => d.herb!))) : null
+  let line: HerbSleepLine | null = null
+  if (avg28 != null) {
+    // compare against the average as printed, so "above 6.0" means 7 and up
+    const withSleep = logged.filter(d => d.sleepHours != null)
+    const above = withSleep.filter(d => d.herb! > avg28)
+    const rest = withSleep.filter(d => d.herb! <= avg28)
+    if (above.length > 0 && rest.length > 0) {
+      line = { avg: avg28, above: above.length, aboveSleep: r1(mean(above.map(d => d.sleepHours!))), rest: rest.length, restSleep: r1(mean(rest.map(d => d.sleepHours!))), checkIns: withSleep.length }
+    }
+  }
+  return { days, avg7, avg28, line }
+}
+
 // ── Body weight: the last weigh-in of each week ──
 
 export interface LedgerWeightRow { epochDay: number; weightLbs: number }
@@ -236,39 +284,7 @@ export function weightWeekly(rows: LedgerWeightRow[], weeks: number, todayEpochD
   }
 }
 
-// ── Consistency: days in a row with a completed session ──
-
-export function currentStreak(rows: LedgerSessionRow[], todayEpochDay: number): number {
-  const done = new Set(rows.filter(r => r.status === 'completed' && r.scheduledDate != null).map(r => r.scheduledDate!))
-  // today still counts as open: the streak runs up to yesterday when nothing is done yet today
-  let d = done.has(todayEpochDay) ? todayEpochDay : todayEpochDay - 1
-  let n = 0
-  while (done.has(d)) { n++; d-- }
-  return n
-}
-
-/** Key sessions: the ones that make a week count (Foundation is a habit, not a training dose; endGate's list). */
-const KEY_TYPES = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
-
-/** Consistency bars per toggle (page 46: 13 on WEEK; the chart spans on MONTH and SEASON). */
-export const CONSISTENCY_WEEKS: Record<LedgerRange, number> = { week: 13, month: 26, season: 52 }
-
-/**
- * Consistency (page 46): one bar per week, oldest first, ending this week; lit when the week counted,
- * i.e. a key session was done in it (the training-week counter's rule: a week with none is paused).
- */
-export function consistencyWeeks(rows: LedgerSessionRow[], weeks: number, todayEpochDay: number): boolean[] {
-  const lastMon = mondayOf(todayEpochDay)
-  const firstMon = lastMon - (weeks - 1) * 7
-  const counted = new Set<number>()
-  for (const r of rows) {
-    if (r.status !== 'completed' || r.scheduledDate == null || !KEY_TYPES.has(r.type)) continue
-    if (r.scheduledDate > todayEpochDay) continue
-    const mon = mondayOf(r.scheduledDate)
-    if (mon >= firstMon && mon <= lastMon) counted.add(mon)
-  }
-  return Array.from({ length: weeks }, (_, i) => counted.has(firstMon + i * 7))
-}
+// ── Consistency: retired here (page 63: the block bar, lib/ledgerConsistency.ts) ──
 
 // ── formatting for the flaps and legends ──
 
