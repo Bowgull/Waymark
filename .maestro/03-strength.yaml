@@ -12,10 +12,10 @@ name: Strength - a dumbbell main lift's weight input
 - tapOn: "Strength STRENGTH.*"
 - takeScreenshot: 03-strength-row
 - runFlow: shared/today-bottom.yaml
-- tapOn: "ENTER"
-- extendedWaitUntil:
-    visible: "LOG SET"
-    timeout: 20000
+- runFlow:
+    file: shared/enter-session.yaml
+    env:
+      READY: "LOG SET"
 - takeScreenshot: 03-strength-warmup
 # Through the warm-up sets to the first main lift with a weight.
 - repeat:

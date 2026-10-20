@@ -10,10 +10,10 @@ name: Run-walk - the warm-up, then run and walk intervals
 - runFlow: shared/today-bottom.yaml
 - tapOn: ".*RUN-WALK.*"
 - runFlow: shared/today-bottom.yaml
-- tapOn: "ENTER"
-- extendedWaitUntil:
-    visible: "1 OF 6"
-    timeout: 20000
+- runFlow:
+    file: shared/enter-session.yaml
+    env:
+      READY: "1 OF 6"
 - takeScreenshot: 05-run-walk-warmup
 # Six warm-up moves: START a timed one then swipe the grass up to skip it; DONE a rep one.
 - repeat:
@@ -46,11 +46,23 @@ name: Run-walk - the warm-up, then run and walk intervals
 - launchApp:
     stopApp: false
 - takeScreenshot: 05-run-walk-start
-- extendedWaitUntil:
-    visible: "RUN 1/.*"
-    timeout: 200000
+# Poll (a plain long wait gave up early on the runner: REST after 1.5 s of
+# 30, WALK after 103 s of 300); about 200 s at most, as before.
+- repeat:
+    while:
+      notVisible: "RUN 1/.*"
+    times: 100
+    commands:
+      - waitForAnimationToEnd:
+          timeout: 2000
+- assertVisible: "RUN 1/.*"
 - takeScreenshot: 05-run-walk-run
-- extendedWaitUntil:
-    visible: "WALK 1/.*"
-    timeout: 300000
+- repeat:
+    while:
+      notVisible: "WALK 1/.*"
+    times: 150
+    commands:
+      - waitForAnimationToEnd:
+          timeout: 2000
+- assertVisible: "WALK 1/.*"
 - takeScreenshot: 05-run-walk-walk

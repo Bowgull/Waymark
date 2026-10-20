@@ -9,16 +9,50 @@ name: Bag round - work, last 10 s, rest (and the Live Activity)
 - runFlow: shared/today-bottom.yaml
 - tapOn: "Bag Work BAG WORK.*"
 - runFlow: shared/today-bottom.yaml
-- tapOn: "ENTER"
-- extendedWaitUntil:
-    visible: "START ROUND"
-    timeout: 20000
+- runFlow:
+    file: shared/enter-session.yaml
+    env:
+      READY: "START ROUND"
 - takeScreenshot: 04-bag-ready
 - tapOn: "START ROUND"
 - assertVisible: "FIGHT"
 - takeScreenshot: 04-bag-work
-# The Live Activity: the app backgrounded (Dynamic Island), then the lock screen.
-# Both are best effort: the workflow also tries Simulator's Device > Lock.
+# The round on screen: its last 10 s (FINISH), then the rest (REST).
+# Poll (a plain long wait gave up early on the runner: REST after 1.5 s of
+# 30, WALK after 103 s of 300); about 240 s at most, as before.
+- repeat:
+    while:
+      notVisible: "FINISH"
+    times: 120
+    commands:
+      - waitForAnimationToEnd:
+          timeout: 2000
+- assertVisible: "FINISH"
+- takeScreenshot: 04-bag-last-10s
+- repeat:
+    while:
+      notVisible: "REST"
+    times: 30
+    commands:
+      - waitForAnimationToEnd:
+          timeout: 2000
+- assertVisible: "REST"
+- takeScreenshot: 04-bag-rest
+# The rest runs out, round 2 waits for START ROUND.
+- repeat:
+    while:
+      notVisible: "START ROUND"
+    times: 60
+    commands:
+      - waitForAnimationToEnd:
+          timeout: 2000
+- assertVisible: "START ROUND"
+- tapOn: "START ROUND"
+- assertVisible: "FIGHT"
+# The Live Activity while round 2 runs: the app backgrounded (Dynamic Island),
+# then the lock screen. (Done after the rest: on a slow runner these steps
+# took 3 min, and round 1 ran out in the background.) The workflow tries the
+# Simulator's lock again after this flow.
 - pressKey:
     key: Home
     optional: true
@@ -44,18 +78,8 @@ name: Bag round - work, last 10 s, rest (and the Live Activity)
     optional: true
 - launchApp:
     stopApp: false
-# The round runs on: its last 10 s, then the rest.
+# Back in the round (whichever phase it has reached by now).
 - extendedWaitUntil:
-    visible: "FINISH"
-    timeout: 240000
-- takeScreenshot: 04-bag-last-10s
-# (A plain wait for REST gave up after 1.5 s in run 39334853303: poll instead.)
-- repeat:
-    while:
-      notVisible: "REST"
-    times: 30
-    commands:
-      - waitForAnimationToEnd:
-          timeout: 2000
-- assertVisible: "REST"
-- takeScreenshot: 04-bag-rest
+    visible: "FIGHT|FINISH|REST|START ROUND"
+    timeout: 60000
+- takeScreenshot: 04-bag-back
