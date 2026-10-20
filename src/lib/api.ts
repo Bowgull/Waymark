@@ -1,6 +1,7 @@
 import { getApiBaseUrl } from './apiBase'
 import { logger } from './logger'
 import { maxAttemptsFor } from './retryPolicy'
+import { dropPrefetched, putPrefetch, takePrefetched } from './prefetchCache'
 
 const API_KEY = import.meta.env.VITE_API_KEY as string | undefined
 
@@ -36,12 +37,32 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
 export interface ApiFetchOptions extends RequestInit {
   /** Per-call timeout. Defaults to 10 s; the AI calls that think need longer. */
   timeoutMs?: number
+  /**
+   * A background read for a tab not open yet (page 59 §6 item 4): kept, and
+   * handed to that tab's own read of the same path (prefetchCache.ts).
+   */
+  prefetch?: boolean
 }
 
 export async function apiFetch<T>(path: string, options?: ApiFetchOptions): Promise<T> {
+  const method = (options?.method ?? 'GET').toUpperCase()
+  if (method !== 'GET') dropPrefetched()
+  else if (options?.prefetch) {
+    const answer = requestApi<T>(path, options)
+    putPrefetch(path, answer)
+    return answer
+  } else {
+    const ready = takePrefetched<T>(path)
+    if (ready) return ready.catch(() => requestApi<T>(path, options))
+  }
+  return requestApi<T>(path, options)
+}
+
+async function requestApi<T>(path: string, options?: ApiFetchOptions): Promise<T> {
   const url = `${getApiBaseUrl()}${path}`
   const method = (options?.method ?? 'GET').toUpperCase()
-  const { timeoutMs = TIMEOUT_MS, ...requestOptions } = options ?? {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { timeoutMs = TIMEOUT_MS, prefetch: _prefetch, ...requestOptions } = options ?? {}
   const init: RequestInit = {
     ...requestOptions,
     headers: {

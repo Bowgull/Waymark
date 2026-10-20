@@ -12,6 +12,7 @@ import { setWorldWeeks } from '@/world/worldStore'
 
 import { BlockZeroExtras } from './BlockZeroExtras'
 import { WeekView } from './WeekView'
+import { programPath } from '@/lib/programWeeks'
 import { cycleWeeks, readWeekAnalysis, weekDays, weekForDay, weekState, worldWeekPosts } from './weekModel'
 import { WeekLog } from '@/features/coach/WeekLog'
 import { weekChangesLine } from '@/features/coach/changeView'
@@ -105,6 +106,23 @@ function currentWeekOf(b: Block): number {
   return Math.min(Math.max(weeksSinceStart + 1, 1), b.totalWeeks)
 }
 
+/** /api/program's answer: everything Program opens on, in one request. */
+interface ProgramPayload {
+  block: Block | null
+  /** The week it opens on (today's training week; 0 = the lead-in). */
+  weekNumber: number | null
+  week: WeekData | null
+  /** A Block Zero has its week 1 prepared. */
+  week1: boolean
+  /** Sessions done per past week of the road's window. */
+  pastDone: Record<string, number>
+}
+
+/** The road's window, named by the block, the current week and the six weeks it shows. */
+function pastKeyFor(b: Block, currentWeek: number, viewWeek: number): string {
+  return `${b.id}:${currentWeek}:${cycleWeeks(Math.max(1, viewWeek), b.totalWeeks, b.blockType).join(',')}`
+}
+
 function parseDayParam(v: string | null): number | null {
   return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? isoToEpochDay(v) : null
 }
@@ -164,8 +182,8 @@ export function ProgramPage() {
   const changesMonday = block && weekData ? (weekFirstDay != null ? mondayOf(weekFirstDay) : mondayOf(todayEpochDay) + (weekNumber - currentWeekOf(block)) * 7) : null
   const { week: changes, markSeen, undo, refresh: refreshChanges } = useWeekChanges(changesMonday, changesVersion)
 
-  const loadWeek = useCallback(async (b: Block, wn: number) => {
-    let wd = await apiFetch<WeekData | null>(wn === LEAD_IN_WEEK
+  const loadWeek = useCallback(async (b: Block, wn: number, given?: WeekData | null) => {
+    let wd = given !== undefined ? given : await apiFetch<WeekData | null>(wn === LEAD_IN_WEEK
       ? `/api/weeks/current?blockId=${b.id}&weekNumber=1&leadIn=1`
       : `/api/weeks/current?blockId=${b.id}&weekNumber=${wn}`)
     // The current week is prepared on open if it has no plan (the same path
@@ -183,7 +201,9 @@ export function ProgramPage() {
   useEffect(() => {
     async function load() {
       try {
-        const existingBlock = await apiFetch<Block | null>(`/api/blocks/current?date=${getTodayISO()}`)
+        // One request (page 59 §6 item 5): the block, the week it opens on, and the past weeks' done counts.
+        const program = await apiFetch<ProgramPayload>(programPath(getTodayISO()))
+        const existingBlock = program.block
 
         if (!existingBlock) {
           // First launch: no block has ever been created. Recommend Block Zero.
@@ -195,8 +215,7 @@ export function ProgramPage() {
 
         // Resume-after-crash: block_zero exists but week 1 was never generated.
         if (existingBlock.blockType === 'block_zero') {
-          const week1 = await apiFetch<WeekData | null>(`/api/weeks/current?blockId=${existingBlock.id}&weekNumber=1`)
-          if (!week1) {
+          if (!program.week1) {
             setBlock(existingBlock)
             const stored = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment')
             if (stored) {
@@ -224,7 +243,10 @@ export function ProgramPage() {
         // A deep link (/program?day=YYYY-MM-DD) opens the week holding that day.
         const day = parseDayParam(new URLSearchParams(window.location.search).get('day'))
         const wn = day != null ? weekForDay(day, isoToEpochDay(getTodayISO()), cw, existingBlock.totalWeeks, firstWeekOf(existingBlock)) : cw
-        await loadWeek(existingBlock, wn)
+        if (wn === cw && program.weekNumber === cw) {
+          setPastDone({ key: pastKeyFor(existingBlock, cw, cw), counts: new Map(Object.entries(program.pastDone).map(([w, n]) => [Number(w), n])) })
+          await loadWeek(existingBlock, wn, program.week)
+        } else await loadWeek(existingBlock, wn)
       } catch (e) {
         console.error('Failed to load program:', e)
         setBlock(null)
@@ -252,9 +274,9 @@ export function ProgramPage() {
   // The road's wayposts: sessions done in past weeks (fetched once per block window).
   const currentWeek = block ? currentWeekOf(block) : 1
   const windowWeeks = block ? cycleWeeks(Math.max(1, weekNumber), block.totalWeeks, block.blockType) : []
-  const pastKey = block ? `${block.id}:${currentWeek}:${windowWeeks.join(',')}` : ''
+  const pastKey = block ? pastKeyFor(block, currentWeek, weekNumber) : ''
   useEffect(() => {
-    if (!block || !pastKey) return
+    if (!block || !pastKey || pastDone?.key === pastKey) return
     const past = windowWeeks.filter(w => w < currentWeek)
     let cancelled = false
     void Promise.all(past.map(w =>

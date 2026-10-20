@@ -9,6 +9,7 @@ import { cors } from 'hono/cors'
 import { createDB } from '../db/client'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay, mondayOf } from '../lib/dates'
+import { cycleWeeks } from '../lib/programWeeks'
 import { loggedAtSec } from '../lib/units'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
@@ -2463,14 +2464,13 @@ app.post('/api/blocks/:id/tests', async (c) => {
 // The active block plus its training week (paused through gaps) and the
 // return plan after a gap. ?date=YYYY-MM-DD is the athlete's local today.
 // offerBlockZero: a Fighter block after 4+ weeks off (F13: mini Block Zero).
-app.get('/api/blocks/current', async (c) => {
-  const db = createDB(c.env)
-  const date = c.req.query('date')
+/** GET /api/blocks/current's answer: the running block, its training week and any return plan (null: none). */
+async function currentBlockJson(db: ReturnType<typeof createDB>, date: string | undefined) {
   const todayDay = localToday(date)
   const current = await currentBlockWeek(db, todayDay)
-  if (!current) return c.json(null)
+  if (!current) return null
   const ret = await returnContextFor(db, todayDay)
-  return c.json({
+  return {
     ...current.block,
     currentWeek: current.tw.week,
     trainingWeek: { week: current.tw.week, rawWeek: current.tw.rawWeek, pausedWeeks: current.tw.pausedWeeks, restarted: current.tw.restarted, monday: current.tw.monday, leadIn: current.tw.leadIn },
@@ -2485,7 +2485,11 @@ app.get('/api/blocks/current', async (c) => {
           offerBlockZero: current.block.blockType === 'fighter' && ret.plan.restart && ret.daysSinceReturn < 7,
         }
       : null,
-  })
+  }
+}
+
+app.get('/api/blocks/current', async (c) => {
+  return c.json(await currentBlockJson(createDB(c.env), c.req.query('date')))
 })
 
 app.post('/api/blocks', async (c) => {
@@ -2539,17 +2543,12 @@ app.get('/api/sessions/last-completed', async (c) => {
   return c.json(completed[0] ?? null)
 })
 
-app.get('/api/weeks/current', async (c) => {
-  const blockId = c.req.query('blockId')
-  const weekNumber = c.req.query('weekNumber')
-  if (!blockId || !weekNumber) return c.json({ error: 'blockId and weekNumber required' }, 400)
-
-  const db = createDB(c.env)
+/** GET /api/weeks/current's answer: a week's plan (the latest for its number) and its sessions in day order (null: none). */
+async function weekJson(db: ReturnType<typeof createDB>, blockId: string, weekNumber: number, leadIn: boolean) {
   // A paused block can repeat a week number: the latest plan for it is current.
-  // ?leadIn=1 asks for a mid-week start's lead-in, which is also numbered week 1.
-  const leadIn = c.req.query('leadIn') === '1'
-  const week = await latestWeekPlan(db, blockId, parseInt(weekNumber), { leadIn })
-  if (!week) return c.json(null)
+  // leadIn asks for a mid-week start's lead-in, which is also numbered week 1.
+  const week = await latestWeekPlan(db, blockId, weekNumber, { leadIn })
+  if (!week) return null
 
   // Get sessions for this week
   const weekSessions = await db.select().from(sessions).where(eq(sessions.weekPlanId, week.id))
@@ -2562,7 +2561,41 @@ app.get('/api/weeks/current', async (c) => {
   // The week line in plain words, what's new and what's next (page 56 item 16).
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, week.blockId))
   const whyLine = block ? weekLineFor(week, block, weekSessions) : week.whyLine
-  return c.json({ week: { ...weekForClient(week), whyLine }, sessions: weekSessions })
+  return { week: { ...weekForClient(week), whyLine }, sessions: weekSessions }
+}
+
+app.get('/api/weeks/current', async (c) => {
+  const blockId = c.req.query('blockId')
+  const weekNumber = c.req.query('weekNumber')
+  if (!blockId || !weekNumber) return c.json({ error: 'blockId and weekNumber required' }, 400)
+  return c.json(await weekJson(createDB(c.env), blockId, parseInt(weekNumber), c.req.query('leadIn') === '1'))
+})
+
+/**
+ * Program in one request (page 59 §6 item 5): the running block, the week it
+ * opens on (today's training week, the lead-in on a mid-week start), whether a
+ * Block Zero has its week 1, and the sessions done in each past week of the
+ * road's window. Replaces /blocks/current, then /weeks/current, then one
+ * /weeks/current per past week.
+ */
+app.get('/api/program', async (c) => {
+  const db = createDB(c.env)
+  const block = await currentBlockJson(db, c.req.query('date'))
+  if (!block) return c.json({ block: null, weekNumber: null, week: null, week1: false, pastDone: {} })
+  const leadIn = block.trainingWeek.leadIn === true
+  const weekNumber = leadIn ? 0 : block.currentWeek
+  const [week, week1] = await Promise.all([
+    weekJson(db, block.id, leadIn ? 1 : weekNumber, leadIn),
+    block.blockType === 'block_zero' ? latestWeekPlan(db, block.id, 1).then(w => w != null) : Promise.resolve(true),
+  ])
+  const past = cycleWeeks(Math.max(1, weekNumber), block.totalWeeks, block.blockType).filter(w => w < weekNumber)
+  const counts = await Promise.all(past.map(async w => {
+    const plan = await latestWeekPlan(db, block.id, w)
+    if (!plan) return [w, 0] as const
+    const done = await db.select({ id: sessions.id }).from(sessions).where(and(eq(sessions.weekPlanId, plan.id), eq(sessions.status, 'completed')))
+    return [w, done.length] as const
+  }))
+  return c.json({ block, weekNumber, week, week1, pastDone: Object.fromEntries(counts) })
 })
 
 app.post('/api/weeks/generate', async (c) => {
