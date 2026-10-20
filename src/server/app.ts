@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
 import { applyStoredBlockZeroTransition, getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
 import { rebalanceForClassTonight } from './classTonight'
@@ -18,6 +18,7 @@ import { FOUNDATION_LABEL, LEGACY_FOUNDATION_LABELS, estimateRoutineSec, foundat
 import { SKIP_ROPE_REST_SEC } from '../lib/sessionResume'
 import { validateNarutoPatch } from '../lib/naruto'
 import { isLoggedWorkSet } from '../lib/loggedSets'
+import { lastWorkingSets, type LibraryHintData } from '../lib/libraryHints'
 import { notesOnComplete } from '../lib/sessionNotes'
 import { parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes } from '../lib/plannedLength'
 import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
@@ -3218,6 +3219,38 @@ app.get('/api/library/techniques', async (c) => {
 app.get('/api/library/runs', async (c) => {
   const db = createDB(c.env)
   return c.json(await db.select().from(runTypes).orderBy(asc(runTypes.sort)))
+})
+
+// Live coach hints (page 60, approved 2026-10-20): the numbers from his own logs
+// the item pages put in the hint. Each lift's last logged working set, and this
+// Block Zero week's run-walk. Read-only; the hint text is built in lib/libraryHints.
+app.get('/api/library/hints', async (c) => {
+  const db = createDB(c.env)
+  const rows = await db
+    .select({
+      exerciseId: strengthSessionExercises.exerciseId,
+      weightKg: strengthSets.weightKg,
+      reps: strengthSets.reps,
+      bandColor: strengthSets.bandColor,
+      isWarmup: strengthSets.isWarmup,
+      setNumber: strengthSets.setNumber,
+      completedAt: strengthSets.completedAt,
+      day: sessions.scheduledDate,
+    })
+    .from(strengthSets)
+    .innerJoin(strengthSessionExercises, eq(strengthSets.sessionExerciseId, strengthSessionExercises.id))
+    .innerJoin(sessions, eq(strengthSessionExercises.sessionId, sessions.id))
+    .where(and(isNotNull(strengthSets.completedAt), eq(strengthSets.isWarmup, 0), gt(strengthSets.reps, 0)))
+  let runWalk: LibraryHintData['runWalk'] = null
+  const block = await getActiveBlock(db)
+  if (block?.blockType === 'block_zero') {
+    const today = Math.floor(Date.now() / 86400000)
+    const week = (await trainingWeekFor(db, block, today, today)).week
+    const shape = getRunWalkWeek(week)
+    runWalk = { week, runSec: shape.runSec, walkSec: shape.walkSec, rounds: shape.rounds, warmupSec: shape.warmupSec }
+  }
+  const body: LibraryHintData = { lastSets: lastWorkingSets(rows), runWalk }
+  return c.json(body)
 })
 
 // Dead links found by the weekly check and the replacement proposed for each: they wait for Josh's OK.

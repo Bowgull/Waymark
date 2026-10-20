@@ -2,7 +2,7 @@
 // Page 60: the video button and its fallbacks, and the link check (a stand-in fetcher: no network).
 import assert from 'node:assert/strict'
 
-import { checkLink, hostOf, parseStart, searchUrl, videoButton, withStart, youtubeId, type Fetcher } from './videoLinks'
+import { checkLink, hostOf, parseStart, searchUrl, secondLink, videoButton, withStart, youtubeId, type Fetcher } from './videoLinks'
 
 assert.equal(hostOf('https://www.youtube.com/shorts/4n9HM7VabC0'), 'youtube')
 assert.equal(hostOf('https://youtu.be/abc123'), 'youtube')
@@ -30,6 +30,33 @@ const row = videoButton('Band Row', { url: 'https://www.youtube.com/watch?v=dead
 assert.deepEqual(row, { label: 'SEARCH ON YOUTUBE', href: searchUrl('band row', 'E3 Rehab'), source: null, detail: 'band row · E3 Rehab', note: 'Video gone. Showing a search.', kind: 'search' })
 // no video at all (brisk walk): no button
 assert.equal(videoButton('Brisk Walk', { url: null }), null)
+
+// 0039 (2026-10-20): the start time opens YouTube where the move starts
+assert.equal(videoButton('Bent Over Row', { url: 'https://www.youtube.com/watch?v=RQU8wZPbioA', startSec: 105, status: 'live' })?.href, 'https://www.youtube.com/watch?v=RQU8wZPbioA&t=105')
+assert.equal(hostOf('https://vm.tiktok.com/ZMabc/'), 'tiktok')
+assert.equal(hostOf('https://m.tiktok.com/@a/video/1'), 'tiktok')
+
+// the second link: a TikTok under YouTube...
+const d03 = { url: 'https://www.youtube.com/watch?v=u6p4YKrvTwg', startSec: 14, status: 'live', source: 'Tiger Muay Thai (Brad Riddell, with Dan Hooker)', tiktokUrl: 'https://www.tiktok.com/@trainor103/video/7468272181814873376' }
+const d03b = videoButton('jab cross', d03)
+assert.equal(d03b?.href, 'https://www.youtube.com/watch?v=u6p4YKrvTwg&t=14')
+assert.deepEqual(secondLink(d03, d03b), { label: 'Also on TikTok', href: d03.tiktokUrl, who: 'trainor103' })
+// ...not under a search, and not when it is the video the button opens
+assert.equal(secondLink(d03, videoButton('jab cross', { ...d03, status: 'dead' })), null)
+assert.equal(secondLink({ tiktokUrl: d03.url }, d03b), null, 'the same video (with its t=) is not shown twice')
+// a TikTok as the MAIN video (main_source tiktok): WATCH ON TIKTOK, no t=, and YouTube as the quiet second
+const tkMain = { url: 'https://www.tiktok.com/@trainor103/video/7211476819998969093', startSec: 4, status: 'live', source: 'Warrior Collective', tiktokUrl: 'https://www.youtube.com/watch?v=u6p4YKrvTwg' }
+const tkb = videoButton('fake low kick', tkMain)
+assert.equal(tkb?.label, 'WATCH ON TIKTOK')
+assert.equal(tkb?.href, tkMain.url, 'TikTok links have no start time')
+assert.deepEqual(secondLink(tkMain, tkb), { label: 'Also on YouTube', href: tkMain.tiktokUrl, who: null })
+// a dead TikTok main video falls back like any other: the backup, the technique, then a YouTube search
+assert.equal(videoButton('fake low kick', { ...tkMain, status: 'dead', altUrl: 'https://www.youtube.com/watch?v=bk' })?.href, 'https://www.youtube.com/watch?v=bk')
+assert.equal(videoButton('fake low kick', { ...tkMain, status: 'dead' }, tech)?.href, tech.url)
+const tkGone = videoButton('Fake Low Kick', { ...tkMain, status: 'dead' })
+assert.equal(tkGone?.kind, 'search')
+assert.equal(tkGone?.label, 'SEARCH ON YOUTUBE', 'never a broken WATCH ON TIKTOK')
+assert.equal(secondLink(tkMain, tkGone), null)
 
 async function main() {
   const answer = (status: number, body = ''): Fetcher => async () => ({ status, ok: status >= 200 && status < 300, text: async () => body })

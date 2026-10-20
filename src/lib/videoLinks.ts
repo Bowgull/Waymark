@@ -1,6 +1,8 @@
 // Library videos (page 60, approved 2026-10-19). YouTube first (Shorts are the
-// main video), TikTok only as an optional second link. Videos open outside
-// the app. A link that dies never leaves a broken button: the item's backup
+// main video), TikTok as an optional second link. Since 2026-10-20 a TikTok
+// may be the main video too (the replacements' main_source); the host is read
+// from the link, and the second link is then whichever host it is on. Videos
+// open outside the app. A link that dies never leaves a broken button: the item's backup
 // video, then (for a combo) its technique's video, then a YouTube search for
 // the move from a trusted coach, labelled SEARCH, not WATCH.
 //
@@ -25,7 +27,7 @@ export type VideoHost = 'youtube' | 'tiktok' | 'other'
 
 export function hostOf(url: string): VideoHost {
   if (/^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(url)) return 'youtube'
-  if (/^https?:\/\/(www\.)?tiktok\.com\//i.test(url)) return 'tiktok'
+  if (/^https?:\/\/(www\.|m\.|vm\.)?tiktok\.com\//i.test(url)) return 'tiktok'
   return 'other'
 }
 
@@ -84,6 +86,24 @@ export function videoButton(name: string, v: VideoFields, technique?: VideoField
   }
   const channel = v.source ?? null
   return { label: 'SEARCH ON YOUTUBE', href: searchUrl(name.toLowerCase(), channel), source: null, detail: [name.toLowerCase(), channel].filter(Boolean).join(' · '), note: 'Video gone. Showing a search.', kind: 'search' }
+}
+
+export interface SecondLink { label: string; href: string; who: string | null }
+
+const sameVideo = (a: string, b: string) => a.replace(/[?&]t=\d+$/, '') === b.replace(/[?&]t=\d+$/, '')
+
+/**
+ * The quiet second link under the button (tiktok_url, whichever host): "Also
+ * on TikTok" under a YouTube video, "Also on YouTube" under a TikTok one. Not
+ * shown under a search, or when it is the video the button already opens.
+ */
+export function secondLink(v: Pick<VideoFields, 'tiktokUrl'>, button: VideoButton | null): SecondLink | null {
+  const url = v.tiktokUrl
+  if (!url || !button || button.kind !== 'watch' || sameVideo(url, button.href)) return null
+  const host = hostOf(url)
+  if (host === 'other') return null
+  if (host === 'tiktok') return { label: 'Also on TikTok', href: url, who: /tiktok\.com\/@([^/?]+)/.exec(url)?.[1] ?? null }
+  return { label: 'Also on YouTube', href: url, who: null }
 }
 
 // ─── the link check ───────────────────────────────────────────

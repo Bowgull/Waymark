@@ -85,3 +85,38 @@ test('One search across every kind, grouped, with counts', async ({ page }) => {
   await page.getByRole('searchbox', { name: 'Search everything' }).fill('hip')
   await expect(page.getByRole('button', { name: /^FOUNDATION · / })).toBeVisible()
 })
+
+test('0039: start times, the swapped videos with their TikTok, and the corrected credit (approved 2026-10-20)', async ({ page, api }) => {
+  // a long video's start time is in the Library's data (the item pages add it as t=, below)
+  const ex = await api.get<Array<{ id: string; formVideoUrl: string | null; videoStartSec: number | null }>>('/api/exercises')
+  expect(ex.find(e => e.id === 'ex-bent-over-row')).toMatchObject({ formVideoUrl: 'https://www.youtube.com/watch?v=RQU8wZPbioA', videoStartSec: 105 })
+  // a swap: the taught lesson at its start, Tiger Muay Thai's credit, the TikTok as the quiet second link
+  await page.goto('/library?open=bag&item=combo-d03')
+  await expect(page.getByRole('link', { name: 'WATCH ON YOUTUBE' })).toHaveAttribute('href', 'https://www.youtube.com/watch?v=u6p4YKrvTwg&t=14')
+  await expect(page.getByText('Tiger Muay Thai (Brad Riddell, with Dan Hooker)', { exact: true })).toBeVisible()
+  await expect(page.getByText(/Fagan/)).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /^Also on TikTok · trainor103/ })).toHaveAttribute('href', 'https://www.tiktok.com/@trainor103/video/7468272181814873376')
+  // combo-w12 keeps its video
+  await page.goto('/library?open=bag&item=combo-w12')
+  await expect(page.getByRole('link', { name: 'WATCH ON YOUTUBE' })).toHaveAttribute('href', 'https://www.youtube.com/watch?v=rTTEn0RQQsw&t=57')
+})
+
+test('Live coach hints: his last set, a combo from its ratings, this week\'s run-walk (page 60)', async ({ page, api }) => {
+  // the real endpoint answers the shape the pages read
+  const real = await api.get<{ lastSets: Record<string, unknown>; runWalk: unknown }>('/api/library/hints')
+  expect(typeof real.lastSets).toBe('object')
+  // known numbers, so the lines match the mockup exactly
+  await page.route('**/api/library/hints', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ lastSets: { 'ex-front-squat': { weightKg: 47.6, reps: 8, bandColor: null, day: 20_744 } }, runWalk: { week: 3, runSec: 120, walkSec: 60, rounds: 7, warmupSec: 300 } }),
+  }))
+  await page.goto('/library?open=strength&item=ex-front-squat')
+  await expect(page.locator('.lib-hint')).toHaveText(/^Your main squat\. .+ Last time 105 lb × 8\.$/)
+  await expect(page.locator('.lib-hint b')).toHaveText('Your main squat.')
+  await page.goto('/library?open=runs&item=run-walk')
+  await expect(page.locator('.lib-hint')).toHaveText('Every Block Zero run: Tue, Thu, Sat. Week 3: 7 rounds of 2 min run, 1 min walk. 26 min in all.')
+  await expect(page.locator('.lib-hint b')).toHaveText('Every Block Zero run: Tue, Thu, Sat.')
+  // no history: the static hint
+  await page.goto('/library?open=strength&item=ex-bench-press')
+  await expect(page.locator('.lib-hint')).toHaveText('Main press. 2-3 hard sets, RPE 6-7 early in Block Zero, never to failure.')
+})
