@@ -202,7 +202,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
                     onOpenDay(t.epochDay)
                     setOpenRow(null)
                     if (rune) {
-                      setBackDay(t.epochDay)
+                      setBackDay(b => (b === t.epochDay ? null : t.epochDay))
                       markSeen(backChanges(changes, t.epochDay).map(c => c.id))
                     }
                   }}

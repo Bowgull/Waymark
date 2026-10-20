@@ -2,6 +2,7 @@ import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
 import { addDaysISO, gotoToday, todayISO } from './support/helpers'
 import type { Api } from './fixtures'
+import { GOOD_MORNING } from './support/data'
 
 /**
  * Injury weather and the raven (page 58, approved 2026-10-19): the knee
@@ -29,6 +30,8 @@ async function skipKnee(api: Api, date: string) {
 
 interface Watch { alert: { id: string; stage: string; askDue: boolean; line: { text: string } | null } | null; weather: { level: number; quiet: boolean; clearing: boolean } }
 const watch = (api: Api, iso: string) => api.get<Watch>(`/api/body/watch?today=${iso}`)
+/** A morning already checked in: the raven's question never opens over another board (page 61), the cards included. */
+const checkedIn = (api: Api, iso: string) => api.post('/api/daily-logs', { date: iso, ...GOOD_MORNING })
 const raven = (page: Page) => page.getByRole('button', { name: 'The raven, about the knee. Tap to read.', exact: true })
 
 test.beforeAll(async ({ request }) => {
@@ -88,6 +91,7 @@ test('the morning alarm carries the raven on its return morning', async ({ api }
 
 test('the return: one question on top; "Not now" waits a day', async ({ page, api }) => {
   const d6 = addDaysISO(T, 6)
+  await checkedIn(api, d6)
   await page.clock.setSystemTime(at(d6))
   await page.goto('/today?resume=0')
   const ask = page.getByRole('dialog', { name: 'The raven: HOW\'S THE KNEE?' })
@@ -108,6 +112,7 @@ test('the return: one question on top; "Not now" waits a day', async ({ page, ap
 
 test('still sore: one more plan, the last; then the physio board, no third plan', async ({ page, api }) => {
   const d7 = addDaysISO(T, 7)
+  await checkedIn(api, d7)
   await page.clock.setSystemTime(at(d7))
   await page.goto('/today?resume=0')
   const ask = page.getByRole('dialog', { name: 'The raven: HOW\'S THE KNEE?' })
@@ -128,6 +133,7 @@ test('still sore: one more plan, the last; then the physio board, no third plan'
 
   // Seven more days: the raven again, and still sore.
   const d14 = addDaysISO(d7, 7)
+  await checkedIn(api, d14)
   await page.clock.setSystemTime(at(d14))
   await page.goto('/today?resume=0')
   const ask2 = page.getByRole('dialog', { name: 'The raven: HOW\'S THE KNEE?' })

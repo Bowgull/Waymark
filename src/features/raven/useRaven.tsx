@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
-import { showPop } from '@/design'
+import { layerCount, showPop } from '@/design'
+import { getTodayISO } from '@/lib/dates'
 import { useReducedMotion } from '@/design/motion'
 import { getItem, setItem } from '@/lib/safeStorage'
 import type { MorningRaven } from '@/features/blockZero/TodayPieces'
@@ -11,6 +12,8 @@ import { RavenAsk, RavenNote } from './RavenBoards'
 
 const LANDED_KEY = 'waymark_raven_landed'
 const LEFT_KEY = 'waymark_raven_left'
+/** The question asks once a day on its own (page 61), not on every visit to Today. */
+const ASKED_KEY = 'waymark_raven_asked'
 const FLY_MS = 1950
 const ASK_AFTER_MS = 2300
 
@@ -49,12 +52,24 @@ export function useRavenOnToday(onChanged: () => void): { raven: MorningRaven | 
     return () => timers.forEach(t => window.clearTimeout(t))
   }, [a?.id, a?.raven, key, reduced]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The return morning: the question opens on top, after the raven lands.
+  // The return morning: the question opens on top, after the raven lands. Once a day by
+  // itself (page 61), and never over another board: it waits until that one is closed.
   useEffect(() => {
     if (!a?.askDue || !key || askedFor.current === key) return
+    const askedToday = `${key}:${getTodayISO()}`
+    if (getItem(ASKED_KEY) === askedToday) return
     askedFor.current = key
-    const t = window.setTimeout(() => setOpen('ask'), reduced || getItem(LANDED_KEY) === key ? 300 : ASK_AFTER_MS)
-    return () => window.clearTimeout(t)
+    let poll: number | null = null
+    const tryOpen = () => {
+      if (layerCount() > 0) return false
+      setItem(ASKED_KEY, askedToday)
+      setOpen('ask')
+      return true
+    }
+    const t = window.setTimeout(() => {
+      if (!tryOpen()) poll = window.setInterval(() => { if (tryOpen() && poll != null) window.clearInterval(poll) }, 500)
+    }, reduced || getItem(LANDED_KEY) === key ? 300 : ASK_AFTER_MS)
+    return () => { window.clearTimeout(t); if (poll != null) window.clearInterval(poll) }
   }, [a?.askDue, key, reduced])
 
   let pose: RavenState | null = null

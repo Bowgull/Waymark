@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Board, Crest, FlapButton, FlapLabel } from '@/design'
+import { Board, CloseWord, Crest, FlapButton, FlapLabel } from '@/design'
 import type { DayBoardSession } from '@/features/dayboard/rowState'
 import { apiFetch } from '@/lib/api'
 import { lbText } from '@/lib/units'
@@ -386,9 +386,11 @@ export function ProgramPage() {
   }
 
   if (assessment) {
+    // page 61: CLOSE back to the week (the plan is prepared as any open does)
+    const closeAssessment = () => { setAssessment(null); if (block) void loadWeek(block, currentWeekOf(block)).catch(() => {}) }
     return (
       <Frame road={false}>
-        <Board head="Block Zero" solid>
+        <Board head="Block Zero" solid headRight={<CloseWord onClose={closeAssessment} />}>
           <p className="wm-prose">{assessment.narrative}</p>
           {assessment.coachNote && <p className="pg-why" style={{ marginTop: 10 }}>{assessment.coachNote}</p>}
           <div className="pg-themes">

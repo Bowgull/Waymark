@@ -19,6 +19,7 @@ import { WorldTimeBoard } from './WorldTimeBoard'
 import { BodyProfileBoard } from './BodyProfileBoard'
 import { ArcCard, NumberCard, TimeCard } from './SettingsCards'
 import { ChevValue, SBlock, SRow, SettingsScreen, TimeValue } from './settingsParts'
+import { goBack } from '@/lib/goBack'
 import { daysUntilRedeploy, leadFlap, splitTime, timeFlap } from './settingsModel'
 
 interface Settings {
@@ -225,10 +226,16 @@ export function SettingsPage() {
     }
   }
 
+  // Saved 0.8 s after the last change, and on leave (page 61: ‹ TODAY right after DONE keeps it).
+  const flushSettings = useRef<(() => void) | null>(null)
+  const lastSave = useRef<AbortController | null>(null)
   useEffect(() => {
     if (!hydratedRef.current) return
-    const controller = new AbortController()
-    const t = setTimeout(async () => {
+    const run = async () => {
+      flushSettings.current = null
+      lastSave.current?.abort()
+      const controller = new AbortController()
+      lastSave.current = controller
       try {
         const updated = await apiFetch<Settings>('/api/settings', {
           method: 'PATCH',
@@ -264,13 +271,14 @@ export function SettingsPage() {
         console.error('Failed to save settings:', e)
         showToast('Save didn\'t land. Try again.', 'warning')
       }
-    }, 800)
-    return () => {
-      controller.abort()
-      clearTimeout(t)
     }
+    flushSettings.current = () => { void run() }
+    const t = setTimeout(() => { void run() }, 800)
+    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mtDays, amReminder, amEnabled, pmLeadMin, pmSessionTime, pmEnabled, onePaceArc, onePaceEp, narutoArc, narutoEp, enabledTechniques])
+  // Leaving with a change still waiting: send it now.
+  useEffect(() => () => { flushSettings.current?.() }, [])
 
   function toggleDay(day: string) {
     const next = new Set(mtDays)
@@ -286,7 +294,7 @@ export function SettingsPage() {
     setEnabledTechniques(next)
   }
 
-  const back = () => navigate('/today')
+  const back = () => goBack(navigate, '/today')
   const hold = () => navigate('/settings/logs')
 
   if (loading) {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { CentredCard, FlapButton, FlapLabel, SessionIcon, showPop } from '@/design'
 import { comboLine, unknownLine, type FoundLine } from '@/lib/classCombos'
+import { getItem, removeItem, setItem } from '@/lib/safeStorage'
 import { setWorldBackdrop } from '@/world/worldStore'
 
 import { addComboToBag, declineCombo, findCombos, refreshBagLibrary, type FoundResult } from './classCombosClient'
@@ -27,7 +28,12 @@ interface ClassLearnedFlowProps {
  * found: NO COMBOS FOUND with EDIT and DONE.
  */
 export function ClassLearnedFlow({ sessionId, mtLogId, onDone, backdrop = true }: ClassLearnedFlowProps) {
-  const [note, setNote] = useState('')
+  // the words are kept on the phone until FIND COMBOS saves them (page 61: typed words are never lost)
+  const draftKey = `waymark_class_note_draft:${mtLogId}`
+  const [note, setNoteState] = useState(() => getItem(draftKey) ?? '')
+  const setNote = (t: string) => { setNoteState(t); if (t.trim()) setItem(draftKey, t); else removeItem(draftKey) }
+  // CLOSE: in the session it goes on (as Skip ›); on Today it just closes. A stray tap outside does nothing in the session.
+  const close = () => onDone('skipped')
   const [phase, setPhase] = useState<'write' | 'finding' | 'found'>('write')
   const [result, setResult] = useState<FoundResult | null>(null)
   const [lines, setLines] = useState<LineState[]>([])
@@ -47,6 +53,7 @@ export function ClassLearnedFlow({ sessionId, mtLogId, onDone, backdrop = true }
     setPhase('finding')
     try {
       const r = await findCombos(sessionId, mtLogId, text)
+      removeItem(draftKey)
       setResult(r)
       setLines(r.lines)
       setPhase('found')
@@ -74,7 +81,7 @@ export function ClassLearnedFlow({ sessionId, mtLogId, onDone, backdrop = true }
 
   if (phase !== 'found' || !result) {
     return (
-      <CentredCard label="What you learned" head="What you learned" headRight={<SessionIcon kind="mt" size={30} />} className="cl-card">
+      <CentredCard label="What you learned" head="What you learned" headRight={<SessionIcon kind="mt" size={30} />} onDismiss={close} closeOnOutside={!backdrop} className="cl-card">
         <p className="cl-dim">A note, a combo, or both. The coach pulls out the combos.</p>
         <textarea
           className="cl-note"
@@ -98,7 +105,7 @@ export function ClassLearnedFlow({ sessionId, mtLogId, onDone, backdrop = true }
   if (lines.length === 0) {
     const unknown = [...result.unknown, ...result.off]
     return (
-      <CentredCard label="No combos found" className="cl-card cl-none">
+      <CentredCard label="No combos found" onDismiss={() => onDone('saved')} closeOnOutside={!backdrop} className="cl-card cl-none">
         <FlapLabel text="NO COMBOS FOUND" size="md" />
         <p className="cl-q">{unknown.length > 0 ? "These strikes aren't in the app, so there's no combo to add." : "No combo in that note. It's saved with tonight's class."}</p>
         {unknown.length > 0 && <p className="cl-dim cl-out">{unknownLine(unknown)}</p>}
@@ -112,7 +119,7 @@ export function ClassLearnedFlow({ sessionId, mtLogId, onDone, backdrop = true }
 
   // ── every combo it found, one line each ──
   return (
-    <CentredCard label="From tonight's class" head="From tonight's class" headRight={<FlapLabel text={`${lines.length} FOUND`} size="xs" tone="teal" />} className="cl-card">
+    <CentredCard label="From tonight's class" head="From tonight's class" headRight={<FlapLabel text={`${lines.length} FOUND`} size="xs" tone="teal" />} onDismiss={() => onDone('saved')} closeOnOutside={!backdrop} className="cl-card">
       {lines.map((l, i) => (
         <div key={l.strikes.join('|')} className="cl-fl">
           <div className="cl-ln"><b>Combo:</b> {comboLine(l.strikes)}</div>

@@ -67,15 +67,20 @@ export function BodyProfileBoard() {
     }
   }
 
-  // Back and pain: saved as you type (a pause of 0.8 s).
+  // Back and pain: saved as you type (a pause of 0.8 s), and on leave (page 61: a quick leave never loses it).
+  const flushInjuries = useRef<(() => void) | null>(null)
   useEffect(() => {
-    if (savedInjuries.current == null || injuries === savedInjuries.current) return
-    const t = window.setTimeout(() => {
+    if (savedInjuries.current == null || injuries === savedInjuries.current) { flushInjuries.current = null; return }
+    const run = () => {
+      flushInjuries.current = null
       const text = injuries.trim()
       void save('injuries', { injuries: text || null }).then(ok => { if (ok) savedInjuries.current = injuries })
-    }, 800)
+    }
+    flushInjuries.current = run
+    const t = window.setTimeout(run, 800)
     return () => window.clearTimeout(t)
   }, [injuries])
+  useEffect(() => () => { flushInjuries.current?.() }, [])
 
   const dob = parseDob(profile?.dob)
   const estimate = tanakaMaxHr(dob, new Date())

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { FlapLabel } from '@/design'
+import { FlapLabel, useDismissLayer } from '@/design'
 
 import './blockZero.css'
 
@@ -47,10 +47,11 @@ export function BzTiles<T extends string | number>({ options, selected, onPick, 
   )
 }
 
-/** The centred column over the veil. */
-export function BzOverlay({ className = '', label, children }: { className?: string; label: string; children: ReactNode }) {
+/** The centred column over the veil. A tap on the veil around it closes it (page 61), when it can close. */
+export function BzOverlay({ className = '', label, children, onDismiss }: { className?: string; label: string; children: ReactNode; onDismiss?: () => void }) {
+  useDismissLayer(onDismiss != null, onDismiss)
   return (
-    <div className={`bz-overlay ${className}`} role="dialog" aria-modal="true" aria-label={label}>
+    <div className={`bz-overlay ${className}`} role="dialog" aria-modal="true" aria-label={label} onClick={e => { if (onDismiss && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('bz-col'))) onDismiss() }}>
       <div className="bz-col">{children}</div>
     </div>
   )

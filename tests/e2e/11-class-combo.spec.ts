@@ -1,6 +1,8 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
 import { enterFromToday, gotoToday, insertSession, todayRow } from './support/helpers'
+import { setMorning } from './support/data'
+import { makeApiFor } from './support/api'
 
 /**
  * Class to combo (page 49 sections 1-3, approved 2026-10-19). After CLOSE
@@ -9,6 +11,11 @@ import { enterFromToday, gotoToday, insertSession, todayRow } from './support/he
  * bag (IN YOUR BAG / NEW / LOCKED). The scratch backend has no AI key, so the
  * deterministic parser runs alone here: no AI call is made.
  */
+
+// A morning already checked in: otherwise the check-in cards open first (they come back until all nine are in).
+test.beforeAll(async ({ request }) => {
+  await setMorning(makeApiFor(request))
+})
 test.describe.configure({ mode: 'serial' })
 
 const NOTE = 'Teeps to the body to start. Then jab, cross, lead hook on the pads. Coach had us double jab, cross, low kick. Last drill: jab, jab, teep. Partner work catching the kick.'

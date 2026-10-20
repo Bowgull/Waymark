@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { Board, Crest, FlapButton, FlapLabel, SessionIcon, showPop, type SessionIconKey } from '@/design'
+import { Board, CloseWord, Crest, FlapButton, FlapLabel, SessionIcon, showPop, useOutsideClose, type SessionIconKey } from '@/design'
+import { getItem as storageGet, removeItem as storageRemove, setItem as storageSet } from '@/lib/safeStorage'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { logger } from '@/lib/logger'
 import { markWaybookOpen, requireUnlock } from '@/lib/waybookGate'
@@ -78,6 +79,10 @@ interface JournalEntryData { id: string; content: string }
  * The Waybook (page 35, C, approved): one line with the leather journal; tap
  * it to open the box and SAVE, then "Saved to the Waybook." with + ADD MORE.
  * Same API as before (GET/POST /api/journal, PATCH to append).
+ *
+ * Page 61: tapping the line asks Face ID first; the box has CLOSE and folds
+ * on a tap outside. Words not saved yet are kept on the phone as a draft
+ * (choice A): the line then shows DRAFT, never the words.
  */
 export function WaybookLine({ today, variant = 'day' }: { today: string; variant?: 'day' | 'home' }) {
   const isSunday = new Date(`${today}T12:00:00`).getDay() === 0
@@ -85,8 +90,17 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
   const [open, setOpen] = useState(false)
   const [saved, setSaved] = useState(false)
   const [entryId, setEntryId] = useState<string | null>(null)
-  const [draft, setDraft] = useState('')
+  const draftKey = `waymark_waybook_draft:${today}:${entryType}`
+  const [draft, setDraftState] = useState(() => storageGet(draftKey) ?? '')
   const [saving, setSaving] = useState(false)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const setDraft = (text: string) => {
+    setDraftState(text)
+    if (text.trim()) storageSet(draftKey, text)
+    else storageRemove(draftKey)
+  }
+  const fold = () => { setOpen(false); setSaved(false) }
+  useOutsideClose(boxRef, open, fold)
 
   // The 3 minutes without Face ID count from the last time the box was open.
   useEffect(() => {
@@ -126,15 +140,17 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
 
   if (!open) {
     return (
-      <button type="button" className={`td-wline is-${variant}`} onClick={() => { void requireUnlock('Open the Waybook').then(ok => { if (ok) setOpen(true) }) }} aria-expanded={false}>
+      <button type="button" className={`td-wline is-${variant}${draft.trim() ? ' is-draft' : ''}`} onClick={() => { void requireUnlock('Open the Waybook').then(ok => { if (ok) setOpen(true) }) }} aria-expanded={false}>
         <SessionIcon kind="waybook" size={variant === 'home' ? 34 : 44} />
         <span className="t">Waybook</span>
+        {draft.trim() && <FlapLabel text="DRAFT" size="xs" tone="gold" animate={false} />}
         <span className="chev" aria-hidden>›</span>
       </button>
     )
   }
   return (
-    <Board className="td-wb" head="Waybook">
+    <div ref={boxRef}>
+    <Board className="td-wb" head="Waybook" headRight={<CloseWord onClose={fold} />}>
       {saved ? (
         <div className="td-saved">
           <p>Saved to the Waybook.</p>
@@ -157,6 +173,7 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
         </>
       )}
     </Board>
+    </div>
   )
 }
 

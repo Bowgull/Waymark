@@ -681,7 +681,7 @@ export function RunSessionView({
     const onePaceWhy = [onePaceArc, onePaceEp ? `Ep ${onePaceEp}` : ''].filter(Boolean).join(' · ') || 'onepace.net'
     return (
       <>
-        <CentredCard label={`${runTypeLabel}, ready`} head={eyebrow} headRight={<SessionIcon kind={icon} size={34} />} onDismiss={onExit} className="ss-card">
+        <CentredCard label={`${runTypeLabel}, ready`} head={eyebrow} headRight={<SessionIcon kind={icon} size={34} />} onDismiss={onExit} closeOnOutside={false} className="ss-card">
           <div style={{ margin: '4px 0 10px' }}><FlapLabel text={runTypeLabel} size="lg" fit /></div>
           <div className="ss-rows">
             {targetMin != null && <TargetRow k="Time" v={`${targetMin} MIN`} />}
@@ -743,7 +743,8 @@ export function RunSessionView({
   const linkable = !isIndoor && !!runSession.sessionId && !fromStrava
   return (
     <>
-      <CentredCard label="Log your run" head="Log your run" headRight={fromStrava ? <FlapLabel text="FROM STRAVA" size="xs" tone="teal" /> : undefined} className="ss-card">
+      {/* CLOSE (page 61): back to the paused run, the fields kept; a stray tap outside does nothing */}
+      <CentredCard label="Log your run" head="Log your run" headRight={fromStrava ? <FlapLabel text="FROM STRAVA" size="xs" tone="teal" /> : undefined} onDismiss={saving ? undefined : () => setPhase('running')} closeOnOutside={false} className="ss-card">
         {linkable && (
           <SessionButton label={checkingStrava ? 'CHECKING STRAVA' : 'PULL RUN FROM STRAVA'} disabled={checkingStrava} onClick={() => void checkForStravaActivity()} />
         )}

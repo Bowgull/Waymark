@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type TouchEvent } from 'react'
 
-import { useSearchParams } from 'react-router-dom'
-import { Board, Crest, FlapLabel, SessionIcon, showPop } from '@/design'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Board, Crest, FlapLabel, SessionIcon, showPop, useEdgeBack } from '@/design'
 import { apiFetch } from '@/lib/api'
 import { markWaybookOpen, requireUnlock } from '@/lib/waybookGate'
 
@@ -252,6 +252,7 @@ function WaybookBook({ entries, loaded }: { entries: LibraryJournalEntry[]; load
 
 export function LibraryPage() {
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
   const openParam = params.get('open')
   const open: GroupKey | null = isGroupKey(openParam) ? openParam : null
 
@@ -299,7 +300,10 @@ export function LibraryPage() {
     setOpenCombo(null)
     setSearch('')
     setOpenTier(undefined)
-    setParams(key ? { open: key } : {}, { replace: true })
+    // page 61: a group or the Waybook pages are a step in history, so web back and the edge swipe close them
+    if (key) setParams({ open: key })
+    else if (((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0 && open) navigate(-1)
+    else setParams({}, { replace: true })
   }
 
 
@@ -317,6 +321,7 @@ export function LibraryPage() {
   }
 
   const back = () => go(null)
+  useEdgeBack(open ? back : null)
 
   // Tapping Waybook asks Face ID (iOS's own prompt) before the pages open; cancel stays on the list.
   async function openWaybook() {

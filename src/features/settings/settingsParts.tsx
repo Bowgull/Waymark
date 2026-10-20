@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 
-import { Crest, FlapLabel, type FlapSize, type FlapTone } from '@/design'
+import { Crest, FlapLabel, useEdgeBack, type FlapSize, type FlapTone } from '@/design'
 import './settings.css'
 
 // The pieces page 37 builds Settings, Body metrics and Logs from: the solid
@@ -24,6 +24,8 @@ export function SettingsScreen({ title, onBack, onHold, holdLabel = 'logs', back
     timer.current = window.setTimeout(() => { held.current = true; onHold() }, HOLD_MS)
   }
   useEffect(() => stop, [])
+  // page 61 rule 4: the swipe in from the left edge does what the ‹ back does
+  useEdgeBack(onBack)
   return (
     <div className="st-screen">
       <div className="st-solid" aria-hidden />
@@ -151,3 +153,4 @@ export function FlapNumber({ value, onChange, label, size = 'lg', tone = 'ink', 
     </span>
   )
 }
+

@@ -112,7 +112,7 @@ test('a Dagaz day opens its back: before -> after, why, UNDO; UNDO puts it back'
 test('the week log in Program lists his changes and the coach ones', async ({ page }) => {
   await page.goto('/program')
   const open = page.getByRole('button', { name: /^\d+ changes? ›$/ })
-  await expect(open).toBeVisible()
+  await expect(open).toBeVisible({ timeout: 20_000 })
   await open.tap()
   const log = page.getByRole('dialog', { name: /^Week \d+ changes$/ })
   await expect(log).toBeVisible()

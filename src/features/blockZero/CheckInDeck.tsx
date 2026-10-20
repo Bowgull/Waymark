@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 
-import { Board, FlapButton, FlapLabel, showPop } from '@/design'
+import { Board, CloseWord, FlapButton, FlapLabel, showPop } from '@/design'
+import { getItem as storageGet, removeItem as storageRemove, setItem as storageSet } from '@/lib/safeStorage'
 import { SORENESS_COLOURS } from '@/design/tokens'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 
@@ -57,7 +58,10 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
   const [phase, setPhase] = useState<'cards' | 'saving' | 'settled' | 'error'>(previewSettled !== undefined ? 'settled' : 'cards')
   const [line, setLine] = useState<ReturnType<typeof readinessLine>>(() => (previewSettled ? readinessLine(previewSettled) : null))
   const [noteOpen, setNoteOpen] = useState(false)
-  const [noteText, setNoteText] = useState(note ?? '')
+  // + ADD NOTE's words are kept as a draft until saved (page 61: CLOSE never throws them away)
+  const noteDraftKey = `waymark_morning_note_draft:${date}`
+  const [noteText, setNoteTextState] = useState(() => storageGet(noteDraftKey) ?? note ?? '')
+  const setNoteText = (t: string) => { setNoteTextState(t); storageSet(noteDraftKey, t) }
   const [noteSaving, setNoteSaving] = useState(false)
   const touch = useRef<{ x: number; y: number } | null>(null)
   const submitted = useRef(false)
@@ -117,6 +121,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
     try {
       const log = await apiFetch('/api/daily-logs', { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify({ date, notes: noteText.trim() || null }) })
       onNoteSaved?.(log)
+      storageRemove(noteDraftKey)
       setNoteOpen(false)
       showPop('Saved.', 'good')
     } catch {
@@ -133,8 +138,8 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
   if (phase === 'settled' && noteOpen) {
     return (
       <div className="bz-deck">
-        <BzOverlay label="Morning note">
-          <Board className="bz-bd" head="Morning note" headRight={<span className="wm-label">{noteDayLabel(date)}</span>}>
+        <BzOverlay label="Morning note" onDismiss={() => setNoteOpen(false)}>
+          <Board className="bz-bd" head="Morning note" headRight={<span className="wm-head-right"><span className="wm-label">{noteDayLabel(date)}</span><CloseWord onClose={() => setNoteOpen(false)} /></span>}>
             <textarea
               className="bz-note is-morning"
               rows={3}
@@ -146,7 +151,6 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
               autoFocus
             />
             <div className="wm-btns" style={{ marginTop: 10 }}>
-              <FlapButton label="CANCEL" size="xs" onClick={() => { setNoteText(note ?? ''); setNoteOpen(false) }} disabled={noteSaving} />
               <FlapButton label={noteSaving ? 'SAVING' : 'SAVE'} primary size="sm" onClick={() => void saveNote()} disabled={noteSaving} />
             </div>
           </Board>
@@ -157,14 +161,11 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
 
   return (
     <div className="bz-deck" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
-      <BzOverlay label="Morning check-in">
+      {/* page 61: CLOSE (the answers given are kept), a tap on the veil, Escape, the edge swipe; it closes while saving too (the save carries on) */}
+      <BzOverlay label="Morning check-in" onDismiss={() => onClose(phase === 'settled')}>
         <div className="bz-toprow">
           <FlapLabel text="MORNING CHECK-IN" size="xs" tone="gold" animate={false} />
-          {(phase === 'cards' || phase === 'settled') && (
-            <button type="button" className="bz-lnk" onClick={() => onClose(phase === 'settled')}>
-              Close ›
-            </button>
-          )}
+          <CloseWord onClose={() => onClose(phase === 'settled')} />
         </div>
 
         {phase === 'cards' && (

@@ -1,6 +1,6 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 
-import { FlapButton, FlapLabel, SessionIcon } from '@/design'
+import { CloseWord, FlapButton, FlapLabel, SessionIcon, useDismissLayer, usePullDown } from '@/design'
 import { iconFor } from '@/features/dayboard/rowState'
 import { mediumHaptic } from '@/lib/haptics'
 import type { AskView, BoardView } from '@/lib/coach/bodyWatch'
@@ -33,19 +33,21 @@ export function RavenNote({ view, onClose, onGot, onDoIt, onBetter }: {
     setBusy(true)
     try { await fn() } finally { setBusy(false) }
   }
-  useEscape(onClose)
+  useDismissLayer(true, onClose)
+  const pull = usePullDown(onClose)
   let row = 0
   return (
     <>
       <div className="rv-veil" onClick={onClose} aria-hidden />
-      <div className={`wm-board rv-adv${centred ? ' is-ask' : ''}`} role="dialog" aria-modal="true" aria-label={`From the raven: ${view.head}`} data-board={view.key}>
-        <div className="rv-advt" style={flip(row++)}>
+      <div className={`wm-board rv-adv${centred ? ' is-ask' : ''}`} role="dialog" aria-modal="true" aria-label={`From the raven: ${view.head}`} data-board={view.key} style={pull.dy ? { translate: `0 ${pull.dy}px` } : undefined}>
+        <span className="wm-grab" aria-hidden {...pull.handlers} />
+        <div className="rv-advt" style={flip(row++)} {...pull.handlers}>
           <RavenMark settled={view.settled} />
           <div className="tt">
             <span className="from">{view.from}</span>
             <FlapLabel text={view.head} size="sm" animate={false} />
           </div>
-          <button type="button" className="wm-label rv-x" onClick={onClose}>Close</button>
+          <CloseWord onClose={onClose} className="rv-x" />
         </div>
         <div className="rv-scr">
           <div className="rv-sl" style={flip(row++)}>{view.sl1}</div>
@@ -120,17 +122,20 @@ export function RavenAsk({ ask, onBetter, onSore, onNotNow, onClose }: {
     setBusy(true)
     try { await fn() } finally { setBusy(false) }
   }
-  useEscape(onClose)
+  useDismissLayer(true, onClose)
+  const pull = usePullDown(onClose)
   return (
     <>
       <div className="rv-veil" onClick={onClose} aria-hidden />
-      <div className="wm-board rv-adv is-ask" role="dialog" aria-modal="true" aria-label={`The raven: ${ask.head}`} data-board="ask">
-        <div className="rv-advt" style={flip(0)}>
+      <div className="wm-board rv-adv is-ask" role="dialog" aria-modal="true" aria-label={`The raven: ${ask.head}`} data-board="ask" style={pull.dy ? { translate: `0 ${pull.dy}px` } : undefined}>
+        <span className="wm-grab" aria-hidden {...pull.handlers} />
+        <div className="rv-advt" style={flip(0)} {...pull.handlers}>
           <RavenMark />
           <div className="tt">
             <span className="from">The raven · {ask.when}</span>
             <FlapLabel text={ask.head} size="sm" animate={false} />
           </div>
+          <CloseWord onClose={onClose} className="rv-x" />
         </div>
         <p className="rv-voice" style={flip(1)}>{ask.line}</p>
         <div className="rv-atiles" style={flip(2)}>
@@ -141,12 +146,4 @@ export function RavenAsk({ ask, onBetter, onSore, onNotNow, onClose }: {
       </div>
     </>
   )
-}
-
-function useEscape(fn: () => void) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') fn() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [fn])
 }

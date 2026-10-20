@@ -111,7 +111,7 @@ test('Morning check-in: comes back until all nine are in, at the first unanswere
   await expect(deck).toBeVisible({ timeout: 20_000 })
   await expect(deck.getByText('1 of 9')).toBeVisible()
   await expect(page.getByText(/skip today/i)).toHaveCount(0)
-  await expect(deck.getByRole('button', { name: 'Close ›' })).toBeVisible()
+  await expect(deck.getByRole('button', { name: 'Close', exact: true })).toBeVisible()
 
   // Three answers, each saved as it is given.
   for (const [title, tile] of GOOD.slice(0, 3)) {
@@ -123,18 +123,19 @@ test('Morning check-in: comes back until all nine are in, at the first unanswere
   const partial = await api.get<{ sleepHours: number; sleepQuality: number; soreness: number | null }>(`/api/daily-logs/today?date=${todayISO()}`)
   expect(partial).toMatchObject({ sleepHours: 8, sleepQuality: 4, soreness: null })
 
-  // Closed: the Morning Report row still reads CHECK IN.
-  await deck.getByRole('button', { name: 'Close ›' }).tap()
+  // Closed (page 61): the answers are kept and the Morning Report row reads CHECK IN · 3 OF 9.
+  await deck.getByRole('button', { name: 'Close', exact: true }).tap()
   await expect(deck).toBeHidden()
-  await expect(page.getByRole('button', { name: /^Morning Report, not logged yet\./ })).toBeVisible()
-  await expect(page.getByRole('img', { name: 'CHECK IN' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Morning Report, not logged yet, 3 of 9\./ })).toBeVisible()
+  await expect(page.getByText('Your answers so far are kept. Tap to carry on.')).toBeVisible()
+  await expect(page.getByRole('img', { name: 'CHECK IN · 3 OF 9' })).toBeVisible()
 
   // The next app open: back, on the first unanswered card (soreness).
   await page.reload()
   await expect(deck).toBeVisible({ timeout: 20_000 })
   await expect(deck.getByText('4 of 9')).toBeVisible()
   await expect(deck.getByRole('img', { name: 'SORENESS', exact: true })).toBeVisible()
-  await deck.getByRole('button', { name: 'Close ›' }).tap()
+  await deck.getByRole('button', { name: 'Close', exact: true }).tap()
   await expect(deck).toBeHidden()
 
   // Today back in the foreground (from another app): back again.
