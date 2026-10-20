@@ -3,13 +3,14 @@
  * today's coach, each on its own in-memory database (made-up athlete, no real
  * data), with the doc's pass lines.
  *
- *   npx tsx scripts/replay-sim.mts [--out <dir>] [--only <id>] [--update]
+ *   npx tsx scripts/replay-sim.mts [--out <dir>] [--only <id>] [--update] [--model]
  *
  * Prints PASS / FAIL / N/A per line and compares with the committed baseline
  * (src/lib/coach/replay/baseline.json): a line that passed there must still
  * pass (exit 1 otherwise); a line that now passes and did not is reported as
  * an improvement. --update rewrites the baseline. --out writes each run's
- * full record as JSON.
+ * full record as JSON. --model prints each athlete's model (coach brain P1,
+ * shadow) as it stood after the last day.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -48,6 +49,7 @@ for (const s of SCENARIOS.filter(x => !only || x.id === only)) {
   console.log(`\n${s.id}: ${s.title} (${Math.round((Date.now() - t0) / 1000)} s, ${r.doses.length} sessions, ${r.changes.length} changes, ${r.aiCalls.length} AI calls tried, ${r.errors.length} errors)`)
   for (const l of lines) console.log(`  ${!l.measured ? 'N/A ' : l.pass ? 'PASS' : 'FAIL'} ${l.id} ${l.title}: ${l.evidence}`)
   for (const e of r.errors.slice(0, 5)) console.log(`  error: ${e}`)
+  if (process.argv.includes('--model')) for (const m of r.model?.summary ?? []) console.log(`  model ${m}`)
   if (out) writeFileSync(join(out, `sim-${s.id}.json`), JSON.stringify({ result: r, lines }, null, 2))
 }
 

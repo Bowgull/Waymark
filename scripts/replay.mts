@@ -19,7 +19,7 @@
  * (the script refuses a path inside it). AI calls are counted and answered
  * offline; no network request leaves the process.
  */
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join, resolve, relative, isAbsolute } from 'node:path'
 import Database from 'better-sqlite3'
 import { reorderDump } from './d1-dump-reorder'
@@ -105,6 +105,12 @@ if (mode === 'may-june') {
   replayDb.exec(readFileSync(join(repo, 'src', 'db', 'seed.sql'), 'utf8').replace(/INSERT OR REPLACE INTO/g, 'INSERT OR IGNORE INTO'))
   const added = (replayDb.prepare('SELECT count(*) AS n FROM exercises').get() as { n: number }).n - before
   console.log(`library rows missing from the backup and filled in the copy: ${added} exercises`)
+  // Migrations newer than the backup (e.g. 0043 athlete_estimates), applied to the copy as wrangler would.
+  const applied = new Set((replayDb.prepare('SELECT name FROM d1_migrations').all() as Array<{ name: string }>).map(r => r.name))
+  for (const f of readdirSync(join(repo, 'drizzle')).filter(n => n.endsWith('.sql') && !applied.has(n)).sort()) {
+    replayDb.exec(readFileSync(join(repo, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, ''))
+    console.log(`migration applied to the copy: ${f}`)
+  }
   const from = isoToEpochDay('2026-10-20')
   const to = isoToEpochDay('2026-11-22')
   const days = []
@@ -127,4 +133,6 @@ const stack = easeStack(result.doses)
 writeFileSync(join(outDir, `replay-${mode}.json`), JSON.stringify({ result, lines, stack }, null, 2))
 console.log(`replay ${result.name}: ${result.days.length} days, ${result.doses.length} sessions started, ${result.changes.length} change rows, ${result.aiCalls.length} AI calls tried, ${result.errors.length} errors`)
 for (const l of lines) console.log(`${!l.measured ? 'N/A ' : l.pass ? 'PASS' : 'FAIL'} ${l.id} ${l.title}: ${l.evidence}`)
+console.log('athlete model (coach brain P1, shadow) after the last day:')
+for (const m of result.model?.summary ?? []) console.log(`  ${m}`)
 console.log(`written: ${join(outDir, `replay-${mode}.json`)}`)

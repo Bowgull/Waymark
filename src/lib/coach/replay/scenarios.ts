@@ -102,6 +102,16 @@ function line(id: string, title: string, pass: boolean, evidence: string, measur
   return { id, title, measured, pass: measured && pass, evidence }
 }
 
+/** S3 from the athlete model (P1): every main lift lifted 3+ times carries a negative RIR bias. */
+function biasLine(r: ReplayResult): PassLine {
+  const lifts = (r.model?.final ?? []).filter(x => x.kind === 'lift').map(x => x.value as { exerciseId: string; rirBias: number; rirExposures: number })
+    .filter(l => l.rirExposures >= 3)
+  if (!r.model || lifts.length === 0) return line('S3', 'The bias estimate catches the rep drops', false, 'No athlete model in this run.', false)
+  const caught = lifts.filter(l => l.rirBias <= -0.5)
+  return line('S3', 'The bias estimate catches the rep drops', caught.length === lifts.length,
+    `${caught.length} of ${lifts.length} lifts with a bias of -0.5 or lower (${lifts.map(l => `${l.exerciseId} ${l.rirBias}`).join(', ')}). Shadow only: no load uses it until P2.`)
+}
+
 const pushDays = (r: ReplayResult) => r.doses.filter(d => d.layers.push)
 const readinessOn = (r: ReplayResult, day: number) => r.days.find(d => d.day === day)?.readiness ?? null
 
@@ -282,7 +292,7 @@ const sandbag: Scenario = {
     return [
       line('S1', 'Weights still rise', steps.length > 0, `${steps.length} lift-weeks with a load step over 5 weeks.`),
       line('S2', 'Never past +1 step a week per lift', over.length === 0, `${over.length} lift-weeks with 2+ steps.`),
-      line('S3', 'The bias estimate catches the rep drops', false, 'No RIR-bias model exists yet (P1): reported RIR is taken at face value.', false),
+      biasLine(r),
     ]
   },
 }

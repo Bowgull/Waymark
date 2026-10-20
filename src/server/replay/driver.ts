@@ -15,6 +15,7 @@ import * as schema from '../../db/schema'
 import { d1Shim } from './d1Shim'
 import { clockMs, installClock, setClock, uninstallClock } from './clock'
 import { runNightlyReplan } from '../nightly'
+import { modelSummary, readAthleteEstimates, refreshAthleteModel } from '../athleteModel'
 import { loadSessionCoachState } from '../coachData'
 import { loadRunHistory, readinessFor } from '../blockZeroData'
 import { getStrengthTemplate, getWeekPercentage } from '../../lib/strengthTemplates'
@@ -68,6 +69,8 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
   const doses: DoseRecord[] = []
   const days: DayRecord[] = []
   let phase: Phase = { when: 'day', day: script.fromDay }
+  const modelByDay: NonNullable<ReplayResult['model']>['byDay'] = []
+  let modelFinal: NonNullable<ReplayResult['model']> | undefined
 
   const realFetch = globalThis.fetch
   const realConsole = { log: console.log, info: console.info, warn: console.warn, error: console.error }
@@ -385,6 +388,7 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
       await runNightlyReplan(env, clockMs())
       while (waits.length > 0) await waits.shift()
       collectChanges('nightly', day)
+      modelByDay.push({ day, rows: (await readAthleteEstimates(db)).map(r => ({ kind: r.kind, key: r.key, state: r.state, n: r.n, u: r.uncertainty })) })
 
       phase = { when: 'day', day }
       const plan = byDay.get(day)
@@ -403,6 +407,11 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
       // Readiness as the day stood (after his check-in).
       days.push({ day, active, planned, did, readiness: await readinessSnapshot(day) })
     }
+    // The model after the last day's sessions (what the next night would store).
+    setClock(utcMs(script.toDay, 23 * 60))
+    const m = await refreshAthleteModel(db, script.toDay, Math.floor(clockMs() / 1000))
+    const final = (await readAthleteEstimates(db)).map(r => ({ kind: r.kind, key: r.key, state: r.state, n: r.n, u: r.uncertainty, value: JSON.parse(r.valueJson) as unknown }))
+    modelFinal = { byDay: modelByDay, final, summary: modelSummary(m) }
   } finally {
     globalThis.fetch = realFetch
     Object.assign(console, realConsole)
@@ -420,6 +429,7 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     aiCalls,
     sessions: finalRows.map(r => ({ id: r.id, day: r.scheduledDate, type: r.type, label: r.label, slot: r.timeSlot, status: r.status, source: r.source, contextJson: r.contextJson, rpe: r.rpe, durationSec: r.durationSec })),
     errors,
+    model: modelFinal,
   }
 }
 

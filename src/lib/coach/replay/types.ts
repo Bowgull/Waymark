@@ -209,4 +209,13 @@ export interface ReplayResult {
   /** Every session at the end, for checks over the plan. */
   sessions: Array<{ id: string; day: number | null; type: string; label: string | null; slot: string | null; status: string; source: string | null; contextJson: string | null; rpe: number | null; durationSec: number | null }>
   errors: string[]
+  /**
+   * The athlete model (coach brain P1) as the nightly job stored it each morning
+   * (compact: state and u per row), and as it stood after the last day.
+   */
+  model?: {
+    byDay: Array<{ day: number; rows: Array<{ kind: string; key: string; state: string; n: number; u: number }> }>
+    final: Array<{ kind: string; key: string; state: string; n: number; u: number; value: unknown }>
+    summary: string[]
+  }
 }

@@ -133,7 +133,7 @@ export function replayLines(r: ReplayResult): PassLine[] {
   const ups = noRir.flatMap(d => d.loads.filter(l => l.change === 'increase').map(l => ({ day: d.day, ...l })))
   lines.push({
     id: 'L6', title: 'Strength with no RIR logged: HOLD, never PROGRESS', measured: noRir.length > 0, pass: noRir.length > 0 && ups.length === 0,
-    evidence: `${noRir.length} strength sessions started with no RIR on file; ${ups.length} load increases among them. (No confidence state exists to say GUESS: not measurable.)`,
+    evidence: `${noRir.length} strength sessions started with no RIR on file; ${ups.length} load increases among them. Athlete model (shadow): ${modelLiftStates(r)}.`,
   })
 
   // 7. The lapse: after the 3rd quiet day, one re-entry offer, then silence.
@@ -158,4 +158,12 @@ export function summarizeCallers(calls: Array<{ caller: string }>): string {
   const by = new Map<string, number>()
   for (const c of calls) by.set(c.caller, (by.get(c.caller) ?? 0) + 1)
   return [...by.entries()].map(([k, n]) => `${k} ${n}`).join(', ') || 'none'
+}
+
+/** The athlete model's lift states at the end (P1, shadow): "ex-db-rdl GUESS u=1, ...". */
+function modelLiftStates(r: ReplayResult): string {
+  const lifts = (r.model?.final ?? []).filter(x => x.kind === 'lift')
+  if (!r.model) return 'not run'
+  if (lifts.length === 0) return 'no lifts logged'
+  return lifts.map(l => `${l.key} ${l.state} u=${l.u}`).join(', ')
 }
