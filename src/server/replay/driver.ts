@@ -230,10 +230,12 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     const base: DoseRecord = {
       day, sessionId: s.id, type: s.type, label: s.label, slot: s.timeSlot, source: s.source, weekNumber, layers,
       baselineMainSets: null, prescribedMainSets: null, loads: [], baselineRunSec: null, prescribedRunSec: null, walkOnly: false,
-      prescribedTotalSec: null, longestLast30Sec: null, hrCeilingBpm: null, loggedAvgHr: null, volumeRatio: null, loadRatio: null, why: [],
+      prescribedTotalSec: null, longestLast30Sec: null, hrCeilingBpm: null, loggedAvgHr: null, volumeRatio: null, loadRatio: null, rirOnFile: false, why: [],
     }
 
     if (s.type === 'strength') {
+      base.rirOnFile = (sqlite.prepare(`SELECT count(*) AS n FROM strength_sets st JOIN strength_session_exercises e ON e.id = st.session_exercise_id
+        WHERE e.section = 'main' AND st.rir IS NOT NULL AND st.completed_at IS NOT NULL`).get() as { n: number }).n > 0
       const r = await call<{ blockZero?: { autoEase?: { eased: boolean; reason: string | null }; loads?: Array<{ exerciseId: string; weightKg: number; change: string; reason: string | null }> }; coach?: { loadReasons?: string[]; notes?: string[] } }>('POST', `/api/sessions/${s.id}/start-strength`)
       const dow = new Date(day * DAY_MS).getUTCDay()
       const kind = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'

@@ -163,6 +163,8 @@ export interface DoseRecord {
   volumeRatio: number | null
   /** Fighter strength: prescribed main-lift weight / (TM x the wave's %), averaged. */
   loadRatio: number | null
+  /** Strength: any main-lift set with RIR was on file before this session. */
+  rirOnFile: boolean
   why: string[]
 }
 

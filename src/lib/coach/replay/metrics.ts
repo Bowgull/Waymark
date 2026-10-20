@@ -68,6 +68,8 @@ export function replayLines(r: ReplayResult): PassLine[] {
   const lines: PassLine[] = []
   const inactive = new Set(r.days.filter(d => !d.active).map(d => d.day))
   const coachChanges = r.changes.filter(c => c.actor !== 'you')
+  // Only the replay's own days (a copied backup also holds older history).
+  const inRange = r.sessions.filter(s => s.day != null && s.day >= r.fromDay && s.day <= r.toDay)
 
   // 1. Invariants.
   const capBreaches = r.doses.filter(d => d.prescribedTotalSec != null && !d.walkOnly
@@ -76,12 +78,12 @@ export function replayLines(r: ReplayResult): PassLine[] {
   for (const c of coachChanges.filter(c => c.when === 'nightly')) perNight.set(c.day, (perNight.get(c.day) ?? 0) + 1)
   const busyNights = [...perNight.entries()].filter(([, n]) => n > 2)
   const banned = [...coachChanges.map(c => c.why ?? ''), ...r.doses.flatMap(d => d.why)].filter(w => BANNED.test(w))
-  const done = r.sessions.filter(s => s.status === 'completed' || s.status === 'planned' || s.status === 'in_progress')
+  const done = inRange.filter(s => s.status === 'completed' || s.status === 'planned' || s.status === 'in_progress')
   const classes = done.filter(s => s.type === 'mt_class' && s.day != null)
   const legsBeforeClass = classes.filter(c => done.some(s => s.type === 'strength' && s.day != null && isHeavyLegs({ type: s.type, label: s.label }, 'block_zero')
     && (s.day === c.day || (s.day === c.day! - 1 && s.slot === 'pm'))))
   const keyByDay = new Map<number, number>()
-  for (const s of r.sessions.filter(s => s.day != null && KEY_TYPES.has(s.type) && s.source !== 'ad_hoc' && s.status !== 'missed' && s.status !== 'skipped')) keyByDay.set(s.day!, (keyByDay.get(s.day!) ?? 0) + 1)
+  for (const s of inRange.filter(s => KEY_TYPES.has(s.type) && s.source !== 'ad_hoc' && s.status !== 'missed' && s.status !== 'skipped')) keyByDay.set(s.day!, (keyByDay.get(s.day!) ?? 0) + 1)
   const crammed = [...keyByDay.entries()].filter(([, n]) => n > 1)
   const bad = capBreaches.length + busyNights.length + banned.length + legsBeforeClass.length + crammed.length
   lines.push({
@@ -106,9 +108,9 @@ export function replayLines(r: ReplayResult): PassLine[] {
   })
 
   // 4. Evenings.
-  const pmMissed = r.sessions.filter(s => s.slot === 'pm' && s.status === 'missed' && s.type !== 'mt_class' && s.day != null).sort((a, b) => a.day! - b.day!)
+  const pmMissed = inRange.filter(s => s.slot === 'pm' && s.status === 'missed' && s.type !== 'mt_class').sort((a, b) => a.day! - b.day!)
   const second = pmMissed[1]?.day
-  const pmAfter = second == null ? [] : r.sessions.filter(s => s.slot === 'pm' && s.type !== 'mt_class' && s.source !== 'ad_hoc' && s.day != null && s.day > second)
+  const pmAfter = second == null ? [] : inRange.filter(s => s.slot === 'pm' && s.type !== 'mt_class' && s.source !== 'ad_hoc' && s.day != null && s.day > second)
   lines.push({
     id: 'L4', title: 'After 2 missed PM sessions, no non-class sessions placed in PM', measured: second != null, pass: second == null || pmAfter.length === 0,
     evidence: second == null ? `${pmMissed.length} PM sessions missed: nothing to measure.` : `${pmAfter.length} non-class PM sessions planned after the 2nd PM miss.`,
@@ -127,11 +129,11 @@ export function replayLines(r: ReplayResult): PassLine[] {
   })
 
   // 6. Strength without RIR holds.
-  const rirLogged = false // the driver logs his sets as he logged them: May-June has none
-  const ups = r.doses.filter(d => d.type === 'strength').flatMap(d => d.loads.filter(l => l.change === 'increase').map(l => ({ day: d.day, ...l })))
+  const noRir = r.doses.filter(d => d.type === 'strength' && !d.rirOnFile)
+  const ups = noRir.flatMap(d => d.loads.filter(l => l.change === 'increase').map(l => ({ day: d.day, ...l })))
   lines.push({
-    id: 'L6', title: 'Strength with no RIR logged: HOLD, never PROGRESS', measured: r.doses.some(d => d.type === 'strength'), pass: !rirLogged && ups.length === 0,
-    evidence: `${ups.length} load increases prescribed with no RIR on file. (No confidence state exists to say GUESS: not measurable.)`,
+    id: 'L6', title: 'Strength with no RIR logged: HOLD, never PROGRESS', measured: noRir.length > 0, pass: noRir.length > 0 && ups.length === 0,
+    evidence: `${noRir.length} strength sessions started with no RIR on file; ${ups.length} load increases among them. (No confidence state exists to say GUESS: not measurable.)`,
   })
 
   // 7. The lapse: after the 3rd quiet day, one re-entry offer, then silence.

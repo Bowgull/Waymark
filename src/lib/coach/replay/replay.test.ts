@@ -83,7 +83,7 @@ function dose(over: Partial<DoseRecord> & Pick<DoseRecord, 'day' | 'type'>): Dos
     sessionId: `s${over.day}`, label: null, slot: 'am', source: 'template', weekNumber: 2,
     layers: { leadIn: false, returnRamp: null, coachEase: null, readinessEase: false, loadFlag: false, loadReason: null, autoEased: false, autoEaseReason: null, injury: null, push: false },
     baselineMainSets: null, prescribedMainSets: null, loads: [], baselineRunSec: null, prescribedRunSec: null, walkOnly: false,
-    prescribedTotalSec: null, longestLast30Sec: null, hrCeilingBpm: null, loggedAvgHr: null, volumeRatio: null, loadRatio: null, why: [],
+    prescribedTotalSec: null, longestLast30Sec: null, hrCeilingBpm: null, loggedAvgHr: null, volumeRatio: null, loadRatio: null, rirOnFile: false, why: [],
     ...over,
   }
 }
