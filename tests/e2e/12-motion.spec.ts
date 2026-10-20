@@ -92,21 +92,38 @@ test('tabs stay alive: Program opens in one request, comes back at once, the pro
   expect(reads.filter(p => p === '/api/user-profile')).toEqual([])
 })
 
-test('the splash: one tap skips to the title screen, then into the app', async ({ page }) => {
+test.describe('the splash, moving (no Reduce Motion)', () => {
+  test.use({ reducedMotion: 'no-preference' })
+
+  test('the splash: tap 1 skips to the title screen, tap 2 lifts it into the app (Josh, 2026-10-20)', async ({ page }) => {
+    await page.goto('/today?resume=0')
+    const splash = page.locator('.wm-splash')
+    await expect(splash).toBeVisible()
+    await page.waitForTimeout(400)
+    // Raw taps, as the hold test does: a locator click waits for two still
+    // frames first, and on the Linux runner the world's first software-WebGL
+    // compile can hold the page long enough for the splash to end on its own.
+    const box = await splash.boundingBox()
+    const tap = () => page.mouse.click((box?.width ?? 390) / 2, 300)
+    await tap()
+    // tap 1: the title screen (WAYMARK under the whole crest), the splash still up
+    const word = page.locator('.wm-splash-word.is-on')
+    await expect(word).toBeVisible({ timeout: 6000 })
+    await expect(splash).toHaveCount(1)
+    // tap 2: the title lifts at once, straight into the app (not the title's own 1.6 s wait)
+    await tap()
+    await expect(splash).toHaveCount(0, { timeout: 4000 })
+    await expect(page.getByRole('button', { name: '+ add session' })).toBeVisible()
+  })
+})
+
+test('the splash under Reduce Motion: the title is up at once, so one tap lifts it', async ({ page }) => {
   await page.goto('/today?resume=0')
   const splash = page.locator('.wm-splash')
   await expect(splash).toBeVisible()
-  await page.waitForTimeout(400)
-  // A raw tap, as the hold test does: a locator click waits for two still
-  // frames first, and on the Linux runner the world's first software-WebGL
-  // compile can hold the page long enough for the splash to end on its own.
+  await expect(splash.locator('.wm-splash-word.is-on')).toBeVisible()
   const box = await splash.boundingBox()
   await page.mouse.click((box?.width ?? 390) / 2, 300)
-  // the title screen at once: WAYMARK under the whole crest
-  await expect(splash.getByRole('img', { name: 'WAYMARK' })).toBeVisible({ timeout: 1500 })
-  // then it lifts as usual, in under 3 s instead of 10 (the untouched splash
-  // would still run about 8 s more; 6 s leaves room for the runner's slow
-  // first WebGL frames and still tells the two apart)
   await expect(splash).toHaveCount(0, { timeout: 6000 })
   await expect(page.getByRole('button', { name: '+ add session' })).toBeVisible()
 })

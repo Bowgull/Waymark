@@ -16,6 +16,9 @@ import { SPLASH_HOLD_MS, SPLASH_LEAVING_EVENT, SPLASH_TIMELINE, SPLASH_TITLE_AT,
 // usual; HOLD skips the whole splash into the app.
 // Reduce Motion: the finished crest and the word, then a crossfade; a hold still skips it.
 
+/** The splash ends this long after its word goes (the timeline's end - gone, 10.0 - 9.7 s). */
+const SPLASH_END_AFTER_GONE_MS = 300
+
 export function Splash({ onDone }: { onDone: () => void }) {
   const reduced = useReducedMotion()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -30,6 +33,13 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const [gone, setGone] = useState(false)
   const done = useRef(onDone)
   useEffect(() => { done.current = onDone }, [onDone])
+  // Once the word has gone the splash always ends 0.3 s later, whatever cleared the timeline's
+  // own end (a skip replans the timers; a gone splash never stays over the app, e2e 2026-10-20).
+  useEffect(() => {
+    if (!gone) return
+    const t = window.setTimeout(() => done.current(), SPLASH_END_AFTER_GONE_MS)
+    return () => window.clearTimeout(t)
+  }, [gone])
   const timers = useRef<number[]>([])
   /** The title screen is up (WAYMARK showing): a tap now lifts it. */
   const titleUp = useRef(false)
