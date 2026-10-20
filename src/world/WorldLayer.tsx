@@ -5,7 +5,7 @@ import { Capacitor } from '@capacitor/core'
 
 import { useReducedMotion } from '@/design/motion'
 import { useNetworkStatus } from '@/lib/network'
-import { placeForPath } from './places'
+import { GLIDE_MS, placeForPath } from './places'
 import { useWorldMode } from './useWorldTime'
 import { getWorldState, setWorldOffline, subscribeWorld, type WorldPlace } from './worldStore'
 import { weatherMode, weatherParams } from './weather'
@@ -93,6 +93,8 @@ export function WorldLayer() {
 
   // Place: glide (or, under Reduce Motion, a quick dip to dark and a still of the new place).
   const [dip, setDip] = useState(false)
+  // page 59 §5.1: the scrim lifts a little through the glide so the place reads
+  const [gliding, setGliding] = useState(false)
   useEffect(() => {
     const h = handleRef.current
     if (!h || !place || place === shown) return
@@ -102,10 +104,15 @@ export function WorldLayer() {
       return () => { window.clearTimeout(t0); window.clearTimeout(t1) }
     }
     h.setPlace(place)
-    const t = window.setTimeout(() => setShown(place), 0)
+    const t = window.setTimeout(() => { setShown(place); setGliding(true) }, 0)
     return () => window.clearTimeout(t)
   }, [place, shown, reduced, ready])
 
+  useEffect(() => {
+    if (!gliding) return
+    const t = window.setTimeout(() => setGliding(false), GLIDE_MS)
+    return () => window.clearTimeout(t)
+  }, [gliding, shown])
   useEffect(() => { handleRef.current?.setMode(mode) }, [mode, ready])
   useEffect(() => { handleRef.current?.setWeeks(ws.weeks) }, [ws.weeks, ready])
   useEffect(() => { handleRef.current?.setLantern(ws.lantern) }, [ws.lantern, ready])
@@ -127,7 +134,7 @@ export function WorldLayer() {
     return () => ro.disconnect()
   }, [])
 
-  const cls = ['wm-world', ready && visible && !failed ? 'is-ready' : '', dip ? 'is-dip' : '', ws.bare ? 'is-bare' : ''].filter(Boolean).join(' ')
+  const cls = ['wm-world', ready && visible && !failed ? 'is-ready' : '', dip ? 'is-dip' : '', gliding ? 'is-gliding' : '', ws.bare ? 'is-bare' : ''].filter(Boolean).join(' ')
   // Page 58's colour shift over the forest: a green grade (colour blend) and a darker sky (multiply).
   const wx = weatherParams(ws.weather, ws.offline)
   return (

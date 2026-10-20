@@ -1,6 +1,7 @@
 // The world's pure parts: tabs to places, the camera's views and glide, time of day, the store.
 import assert from 'node:assert/strict'
 
+import { SPLASH_HOLD_MS, SPLASH_TIMELINE, SPLASH_TITLE_AT, splashGesture, splashSkip } from './splashSkip'
 import { GLIDE_MS, PLACE_ORIGIN, PLACE_VIEWS, TODAY_ZOOM, frustumFor, glideEase, lampK, mixView, placeForPath, sceneGlyphWorld, sceneLamp, sceneOf, scenesInView, viewGlyphWorld } from './places'
 import { modeForClock, msUntilNextChange, parseOverride, resolveMode, TIME_OVERRIDES } from './timeOfDay'
 import { getWorldState, pondLook, sameWeeks, setWorldPond, setWorldBackdrop, setWorldBare, setWorldLantern, setWorldPlace, setWorldWeather, setWorldWeeks, subscribeWorld, weeksOrDefault } from './worldStore'
@@ -45,7 +46,7 @@ test('the glide eases in and out, zoom in log space, ends exactly on the target'
   assert.equal(glideEase(1), 1)
   assert.equal(glideEase(0.5), 0.5)
   assert.ok(glideEase(0.1) < 0.1 && glideEase(0.9) > 0.9)
-  assert.equal(GLIDE_MS, 1100)
+  assert.equal(GLIDE_MS, 900, 'page 59: the glide is 900 ms (was 1100)')
   const a = PLACE_VIEWS.clearing, b = PLACE_VIEWS.home
   assert.deepEqual(mixView(a, b, 1), { ...b, pxPerUnit: mixView(a, b, 1).pxPerUnit, glyph: mixView(a, b, 1).glyph })
   assert.ok(Math.abs(mixView(a, b, 1).glyph - b.glyph) < 1e-9)
@@ -154,6 +155,30 @@ test('the weather follows the pattern; quieter after GOT IT / DO IT; offline sta
   setWorldWeather(null)
   assert.deepEqual(getWorldState().weather, NO_WEATHER)
   off()
+})
+
+test('the splash: one tap skips to the title screen, a hold skips it all (page 38 A, changed by Josh)', () => {
+  assert.equal(splashGesture(0), 'tap')
+  assert.equal(splashGesture(SPLASH_HOLD_MS - 1), 'tap')
+  assert.equal(splashGesture(SPLASH_HOLD_MS), 'hold')
+  assert.ok(SPLASH_TITLE_AT > SPLASH_TIMELINE.flareOff - 0.01 && SPLASH_TITLE_AT >= SPLASH_TIMELINE.word, 'the title: the crest whole, the flare done, WAYMARK showing')
+  assert.ok(SPLASH_TITLE_AT < SPLASH_TIMELINE.leave, 'and before the lift')
+  // a tap 1 s in: the crest jumps to the title, and the rest plays from there
+  const t = splashSkip('tap', 1, SPLASH_TIMELINE)
+  assert.equal(t.crestAt, SPLASH_TITLE_AT)
+  assert.equal(t.word, 0, 'WAYMARK at once')
+  assert.ok(Math.abs(t.leave - (SPLASH_TIMELINE.leave - SPLASH_TITLE_AT)) < 1e-9)
+  assert.ok(Math.abs(t.end - (SPLASH_TIMELINE.end - SPLASH_TITLE_AT)) < 1e-9)
+  assert.ok(t.end < 3, 'a tap reaches the app in under 3 s, not 10')
+  // a tap once the title is up changes nothing
+  const late = splashSkip('tap', 8, SPLASH_TIMELINE)
+  assert.equal(late.crestAt, null)
+  assert.ok(Math.abs(late.leave - (SPLASH_TIMELINE.leave - 8)) < 1e-9)
+  // a hold: straight into the app
+  const h = splashSkip('hold', 2, SPLASH_TIMELINE)
+  assert.equal(h.leave, 0)
+  assert.ok(h.end <= 0.3, 'the app at once (a 0.3 s fade)')
+  assert.ok(h.gone <= h.end)
 })
 
 console.log(`world.test: ${passed} passed`)

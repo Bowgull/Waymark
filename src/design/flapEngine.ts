@@ -147,6 +147,11 @@ export function landAllFlips(): void {
   for (const [root, run] of runs) landRun(root, run)
 }
 
+/** What a label shows once landed (null: never rendered by FlapLabel). */
+export function landedOf(root: HTMLElement): string | null {
+  return landed.get(root) ?? null
+}
+
 /** What a label shows once landed, for replaying its flip-in when its tab comes back. */
 export function setLanded(root: HTMLElement, target: string): void {
   landed.set(root, target)

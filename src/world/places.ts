@@ -102,7 +102,8 @@ export function glideEase(t: number): number {
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2
 }
 
-export const GLIDE_MS = 1100
+/** The camera's glide between places (page 59 §5.1: was 1100 ms). */
+export const GLIDE_MS = 900
 
 /** The view part-way from a to b (k = eased 0..1). Zoom glides in log space so it feels even. */
 export function mixView(a: PlaceView, b: PlaceView, k: number): PlaceView {

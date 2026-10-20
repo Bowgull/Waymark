@@ -20,6 +20,8 @@ export interface CrestStage {
   elapsed(): number
   /** Loading only: snap the crest together (0.5 s). */
   finish(): void
+  /** Jump the stage's clock to `s` seconds in (the splash's tap skips to its title). */
+  jumpTo(s: number): void
   dispose(): void
 }
 
@@ -54,7 +56,7 @@ export async function createCrestStage(canvas: HTMLCanvasElement, kind: CrestKin
     const li = Math.max(0, ORDER.indexOf(p.userData.layer)); p.userData.arrive = 2.4 + li * 0.42 + hsh(i, 5) * 0.18
   })
 
-  const t0 = performance.now()
+  let t0 = performance.now()
   let finishAt = -1, raf = 0, alive = true
   const S = () => (performance.now() - t0) / 1000
 
@@ -106,6 +108,7 @@ export async function createCrestStage(canvas: HTMLCanvasElement, kind: CrestKin
   return {
     elapsed: S,
     finish() { if (finishAt < 0) finishAt = S(); if (opts.still) draw() },
+    jumpTo(s) { if (S() < s) t0 = performance.now() - s * 1000; if (opts.still) draw() },
     dispose() {
       alive = false; cancelAnimationFrame(raf)
       for (const p of pieces) { p.geometry.dispose(); p.material.dispose() }

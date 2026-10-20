@@ -16,7 +16,7 @@
   height: 100%;
   display: block;
   opacity: 0;
-  transition: opacity 700ms ease-out, filter 400ms ease-out;
+  transition: opacity var(--t-moment, 700ms) ease-out, filter 400ms ease-out;
 }
 .wm-world.is-ready .wm-world-canvas { opacity: 1; }
 /* Today's mockups draw the forest still at brightness .8 under their scrim (flap.css .stillbg) */
@@ -52,6 +52,8 @@
   background: linear-gradient(rgba(2, 10, 8, 0.4), rgba(2, 10, 8, 0) 16%, rgba(2, 10, 8, 0) 72%, rgba(2, 10, 8, 0.6));
 }
 .wm-world.is-bare .wm-world-scrim { opacity: 0; }
+/* page 59 §5.1: through the glide the scrim lifts a little so the new place reads, then settles back */
+.wm-world.is-gliding .wm-world-scrim { opacity: 0.6; transition-duration: 300ms; }
 
 /* The injury weather (page 58): the forest's colour shifts green, the sky darkens. Over the canvas, under
    the scrim and the boards; it eases in and out with the rain. */
