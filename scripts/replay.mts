@@ -99,7 +99,7 @@ if (mode === 'may-june') {
 } else {
   // His real database as it stands (Block Zero waiting in its lead-in), copied whole.
   replayDb = loadBackup(join(outDir, 'replay-october.sqlite'))
-  // The backup's exercise library lacks rows the code needs (ex-a-skips, the run-walk
+  // Backups before 0042 lack library rows the code needs (ex-a-skips, the run-walk
   // warm-up: start-foundation-run answers 409 without it). Fill only missing library rows.
   const before = (replayDb.prepare('SELECT count(*) AS n FROM exercises').get() as { n: number }).n
   replayDb.exec(readFileSync(join(repo, 'src', 'db', 'seed.sql'), 'utf8').replace(/INSERT OR REPLACE INTO/g, 'INSERT OR IGNORE INTO'))
