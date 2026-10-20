@@ -47,11 +47,11 @@ test('Herb: 28 mornings, the averages, and the sleep line (page 62 B)', async ({
   await expect(herb.getByText('From your last 28 check-ins.')).toBeVisible()
   await expect(herb).toHaveScreenshot('ledger-herb.png', { mask: [herb.locator('text.lg-hbd')] })
 
-  // right after Sleep + soreness, above Body weight
+  // right after Sleep + soreness; no Body weight board (Josh, 2026-10-20)
   const order = await page.locator('section.lg-glass .lg-head > span:first-child').allTextContents()
   const at = (t: string) => order.findIndex(x => x.trim().toLowerCase() === t)
   expect(at('herb')).toBe(at('sleep + soreness') + 1)
-  expect(at('body weight')).toBe(at('herb') + 1)
+  expect(at('body weight')).toBe(-1)
 })
 
 test('Consistency: on the first screen; closed a flap and the bar; open in place; closes the page 61 ways (page 63)', async ({ page }) => {
