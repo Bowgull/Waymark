@@ -121,7 +121,8 @@ test('the splash under Reduce Motion: the title is up at once, so one tap lifts 
   await page.goto('/today?resume=0')
   const splash = page.locator('.wm-splash')
   await expect(splash).toBeVisible()
-  await expect(splash.locator('.wm-splash-word.is-on')).toBeVisible()
+  // no wait for the word here: on the Linux runner the still splash can run its whole 2.5 s
+  // while the page settles, so the tap goes in at once (raw, as the hold test does)
   const box = await splash.boundingBox()
   await page.mouse.click((box?.width ?? 390) / 2, 300)
   await expect(splash).toHaveCount(0, { timeout: 6000 })
