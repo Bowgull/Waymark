@@ -7,6 +7,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
+import { CONSISTENCY_SPAN, blockConsistency, weeksConsistency } from '../lib/ledgerConsistency'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { isoToEpochDay, mondayOf } from '../lib/dates'
 import { loggedAtSec } from '../lib/units'
@@ -27,7 +28,7 @@ import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, got
 import { KEY_TYPES, KNOWN_SESSION_TYPES, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, estimatedMinutes, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
-import { CHART_WEEKS, CONSISTENCY_WEEKS, aerobicWeekly, buildRings, consistencyWeeks, currentStreak as ledgerStreak, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
+import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
 import { allBoardRows, boardSuggestions, computeSuggestions } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, weekLineFor } from './weeklyPass'
 import { applyFeltHard, applyTmUpdate, coachPushFrom, maybeRampUp } from './coachAsks'
@@ -50,6 +51,7 @@ import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
 import {
   blockDayPlan,
+  blockStartDay,
   bodyPlanMark,
   currentBlockWeek,
   loadInjuryFlag,
@@ -3658,18 +3660,30 @@ app.get('/api/history/ledger', async (c) => {
     .filter(m => m.weightKg != null)
     .map(m => ({ epochDay: Math.floor(loggedAtSec(m.loggedAt) / 86400), weightLbs: Math.round(m.weightKg! * 2.20462 * 10) / 10 }))
 
+  // Page 63: Consistency on the first screen. In Block Zero, the block; after it, the last 4 / 8 / 13 weeks.
+  const tzRaw = Number(c.req.query('tz'))
+  const tzOffsetMin = Number.isFinite(tzRaw) && Math.abs(tzRaw) <= 900 ? tzRaw : 0
+  const activeBlock = await getActiveBlock(db)
+  const consistencyRows = allSessions.map(s => ({ type: s.type, status: s.status, scheduledDate: s.scheduledDate, timeSlot: s.timeSlot, startedAt: s.startedAt, skipReason: s.skipReason }))
+  const foundationFrom = activeBlock?.blockType === 'block_zero' ? blockStartDay(activeBlock) : mondayOf(today) - (CONSISTENCY_SPAN[range] - 1) * 7
+  const foundationDays = new Set(allSessions.filter(s => s.type === 'mobility' && s.status === 'completed' && s.scheduledDate != null && s.scheduledDate >= foundationFrom && s.scheduledDate <= today).map(s => s.scheduledDate))
+  const foundation = { done: foundationDays.size, of: Math.max(foundationDays.size, today - foundationFrom + (foundationDays.has(today) ? 1 : 0)) }
+  const consistencyBoard = activeBlock?.blockType === 'block_zero'
+    ? blockConsistency(consistencyRows, { blockType: 'block_zero', startDay: blockStartDay(activeBlock), totalWeeks: activeBlock.totalWeeks }, today, { tzOffsetMin, foundation })
+    : weeksConsistency(consistencyRows, CONSISTENCY_SPAN[range], today, mondayOf, { tzOffsetMin, foundation })
+
   return c.json({
     range,
     today,
     weeks,
+    consistencyBoard,
     rings: buildRings(allSessions, range, today),
     aerobic: aerobicWeekly(runs, weeks, today),
     strength: strengthWeekly(setRows, weeks, today),
     sleep: sleepWeek(logs, today),
+    // page 62 B: the last 28 mornings' herb, its averages and the sleep line
+    herb: herbMonth(logs, today),
     weight: weightWeekly(weights, weeks, today),
-    streak: ledgerStreak(allSessions, today),
-    // page 46: a bar per week, lit when the week counted (13 on WEEK, the chart span otherwise)
-    consistency: consistencyWeeks(allSessions, CONSISTENCY_WEEKS[range], today),
     // the pond reads the range's sessions (SEASON's rings are per week)
     pond: pondReaction(sessionRings(allSessions, range, today)),
   })

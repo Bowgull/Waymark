@@ -3,8 +3,8 @@
 // the last seven mornings, weekly body weight, the streak.
 import assert from 'node:assert/strict'
 import {
-  aerobicWeekly, buildRings, pondReaction, currentStreak, dayLetter, linePoints, mondayOf, paceAt140, paceDelta, paceFlap,
-  ringState, ringWindow, sleepWeek, seasonRings, sessionRings, consistencyWeeks, CONSISTENCY_WEEKS, SEASON_WEEKS, spanWeeks, strengthWeekly, weightDelta, weightWeekly,
+  aerobicWeekly, buildRings, pondReaction, dayLetter, linePoints, mondayOf, paceAt140, paceDelta, paceFlap,
+  herbMonth, ringState, ringWindow, sleepWeek, seasonRings, sessionRings, SEASON_WEEKS, spanWeeks, strengthWeekly, weightDelta, weightWeekly,
 } from './ledger'
 import { isoToEpochDay } from './dates'
 
@@ -125,13 +125,6 @@ test('body weight: the last weigh-in of each week', () => {
   assert.equal(spanWeeks([]), 0)
 })
 
-test('streak: days in a row with a completed session; today is still open', () => {
-  const rows = [SUN - 1, SUN - 2, SUN - 3, SUN - 5].map((d, i) => ({ id: String(i), type: 'mobility', status: 'completed', scheduledDate: d }))
-  assert.equal(currentStreak(rows, SUN), 3)
-  assert.equal(currentStreak([...rows, { id: 'x', type: 'strength', status: 'completed', scheduledDate: SUN }], SUN), 4)
-  assert.equal(currentStreak([], SUN), 0)
-})
-
 test('chart points: page 32\'s LINE (pad, min..max; inverted puts lower values higher)', () => {
   const pts = linePoints([412, 365], 320, 120, 10, true)
   assert.deepEqual(pts, [{ x: 10, y: 110 }, { x: 310, y: 10 }])
@@ -186,24 +179,24 @@ test('SEASON: one segment per week of the last 13, lit when that week’s sessio
   assert.deepEqual(sessionRings(rows, 'season', SUN)[0].list, ['skip', 'done', 'done'])
 })
 
-test('consistency: one bar per week ending this week, lit when a key session was done', () => {
-  const rows = [
-    { id: 'a', type: 'strength', status: 'completed', scheduledDate: MON + 2 },
-    { id: 'b', type: 'mobility', status: 'completed', scheduledDate: MON - 7 },
-    { id: 'c', type: 'foundation_run', status: 'skipped', scheduledDate: MON - 14 },
-    { id: 'd', type: 'bag_work', status: 'completed', scheduledDate: MON - 21 },
-    { id: 'e', type: 'strength', status: 'completed', scheduledDate: MON - 13 * 7 },
-  ]
-  const bars = consistencyWeeks(rows, CONSISTENCY_WEEKS.week, SUN)
-  assert.equal(bars.length, 13)
-  assert.equal(bars[12], true)
-  assert.equal(bars[11], false, 'mobility alone does not count the week')
-  assert.equal(bars[10], false, 'a skipped run does not count')
-  assert.equal(bars[9], true)
-  assert.equal(bars.filter(Boolean).length, 2, 'the 14th week back is outside')
-  assert.equal(consistencyWeeks(rows, CONSISTENCY_WEEKS.season, SUN).length, 52)
-  assert.equal(consistencyWeeks(rows, CONSISTENCY_WEEKS.season, SUN).filter(Boolean).length, 3)
-  assert.deepEqual(consistencyWeeks([], 3, SUN), [false, false, false])
+test('herb (page 62 B): 28 mornings, the 7- and 28-day averages, the sleep line from his own check-ins', () => {
+  // the mockup's numbers, oldest first, ending today
+  const HERB = [4, 5, 3, 6, 7, 5, 4, 5, 6, 4, 7, 8, 6, 5, 6, 5, 7, 8, 6, 7, 5, 6, 7, 5, 8, 9, 7, 6]
+  const SLEEP = [7.6, 7.1, 7.8, 6.9, 6.5, 7.4, 7.7, 7.3, 6.9, 7.6, 6.4, 6.2, 7.0, 7.5, 6.8, 7.2, 6.5, 6.3, 7.0, 6.6, 7.4, 7.2, 6.8, 7.5, 6.1, 7.9, 7.4, 6.6]
+  const logs = HERB.map((h, i) => ({ logDate: SUN - 27 + i, herbScale: h, sleepHours: SLEEP[i] }))
+  const x = herbMonth(logs, SUN)
+  assert.equal(x.days.length, 28)
+  assert.equal(x.days[27].herb, 6)
+  assert.equal(x.days[27].letter, 'S')
+  assert.equal(x.avg7, 6.9)
+  assert.equal(x.avg28, 6.0)
+  assert.deepEqual(x.line, { avg: 6, above: 10, aboveSleep: 6.7, rest: 18, restSleep: 7.3, checkIns: 28 })
+  // gaps stay gaps; off-scale is not drawn; no herb logged: no averages, no line
+  const gap = herbMonth([{ logDate: SUN, herbScale: 12, sleepHours: 7 }, { logDate: SUN - 1, herbScale: 3, sleepHours: null }], SUN)
+  assert.equal(gap.days[27].herb, null)
+  assert.equal(gap.avg28, 3)
+  assert.equal(gap.line, null, 'no mornings with sleep on both sides: no line')
+  assert.deepEqual([herbMonth([], SUN).avg7, herbMonth([], SUN).avg28, herbMonth([], SUN).line], [null, null, null])
 })
 
 console.log(`ledger: ${passed} passed`)
