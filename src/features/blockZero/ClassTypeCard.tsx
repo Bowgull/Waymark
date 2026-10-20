@@ -7,15 +7,14 @@ import { CLASS_MIN, CLASS_TYPES, clampClassMinutes, type ClassTypeValue } from '
 /**
  * The MT Class Log (page 31, "MT Class Log"): one centred board over the
  * forest. CLASS TYPE flap chips (the lit one gold), CLASS LENGTH (MIN) on a
- * − / + stepper, WHAT TO WORK ON, then SAVE CLASS LOG. A type the coach
- * refuses (Block Zero: sparring, clinch too early, the weekly cap) turns clay
- * with its line under the chips. Controlled: MtClassLogView owns the state.
+ * − / + stepper, WHAT TO WORK ON, then SAVE CLASS LOG. The type is what he
+ * logs about the class: the coach never refuses or judges it (what is taught
+ * is the gym's call). Controlled: MtClassLogView owns the state.
  */
 export function MtClassLogCard({
   classType,
   minutes,
   note,
-  refused,
   error,
   saving,
   onType,
@@ -27,8 +26,6 @@ export function MtClassLogCard({
   classType: ClassTypeValue
   minutes: number
   note: string
-  /** A type the server refused, with its one-line reason. */
-  refused: { type: ClassTypeValue; reason: string } | null
   /** A save that failed for another reason (connection). */
   error: string | null
   saving: boolean
@@ -46,22 +43,20 @@ export function MtClassLogCard({
       <div ref={chipsRef} className="wm-types" role="radiogroup" aria-label="Class type">
         {CLASS_TYPES.map(t => {
           const on = classType === t.value
-          const isRefused = refused?.type === t.value
           return (
             <button
               key={t.value}
               type="button"
               role="radio"
               aria-checked={on}
-              className={`wm-ty${on ? ' is-on' : ''}${isRefused ? ' is-refused' : ''}`}
+              className={`wm-ty${on ? ' is-on' : ''}`}
               disabled={saving}
               onClick={() => onType(t.value, chipsRef.current)}
             >
-              <FlapLabel text={t.label} size="xs" tone={isRefused ? 'clay' : on ? 'gold' : 'ink'} />
+              <FlapLabel text={t.label} size="xs" tone={on ? 'gold' : 'ink'} />
             </button>
           )
         })}
-        {refused && <p className="wm-row-note" role="alert">{refused.reason}</p>}
       </div>
 
       <div className="wm-mlabel" style={{ marginTop: 10 }}>CLASS LENGTH (MIN)</div>

@@ -25,9 +25,9 @@ import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, sn
 import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
-import { BLOCK_ZERO_BASE_WEEKS, allowedClassTypes, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
+import { BLOCK_ZERO_BASE_WEEKS, CLASS_EASE_LINE, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
 import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, gotBodyNote, lowerLegOnWatch, markAgainstFlag, ravenLineFor, seenBodyNote } from './bodyWatch'
-import { KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, estimatedMinutes, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
+import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
@@ -48,7 +48,7 @@ import { waybookEntries } from '../lib/waybook'
 import { runReactiveReplan } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { clearCollectedTrainingData } from './trainingReset'
-import { checkMtClassForBlockZero, easeForReadiness, getActiveBlock, loadMtRamp, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
+import { easeForReadiness, getActiveBlock, loadMtRamp, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
 import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
 import { pendingReviews } from './linkHealth'
@@ -863,7 +863,7 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   // Block Zero strength carries its letter (D8, R10): C after a heavy-leg day, else the one not yet in the week.
   const label = body.type === 'strength' && ctx.blockType === 'block_zero' && !/Strength [ABC]\b/.test(body.label ?? '')
     ? `Strength ${strengthLetterFor(epochDay, ctx.sessions.filter(s => s.epochDay >= mondayOf(epochDay) && s.epochDay <= mondayOf(epochDay) + 6), ctx.leadIn === true)}`
-    : body.type === 'mt_class' && ctx.blockType === 'block_zero' ? 'MT Technique' : body.label ?? null
+    : body.label ?? null
   const check = checkSessionChange({ kind: 'add', type: body.type, label, notes: runTag, epochDay, timeSlot: body.timeSlot }, ctx, { alternatives: false })
   const timeSlot = check.ok ? check.change.timeSlot : body.timeSlot
 
@@ -1684,7 +1684,8 @@ app.post('/api/sessions/:id/start-mobility', async (c) => {
       .where(and(eq(sessions.scheduledDate, day), eq(sessions.type, 'strength'), inArray(sessions.status, ['planned', 'in_progress', 'completed'])))
     const strengthDay = strength ? (blockZero ? strengthDayFor(dayOfWeek, strength.label) : strengthKindFromLabel(strength.label)) : null
     const ramp = await loadMtRamp(db, day)
-    const clinchAllowed = ramp.weeksSinceFirstClass != null && allowedClassTypes(mtRampWeek(ramp.weeksSinceFirstClass)).includes('clinch')
+    // Foundation's clinch neck prep joins from the third week of classes (his own warm-up, not class content).
+    const clinchAllowed = ramp.weeksSinceFirstClass != null && mtRampWeek(ramp.weeksSinceFirstClass) >= 3
     // A raven's back plan: Foundation's bad-back day (page 58 §3.5).
     const bodyPlan = bodyPlanMark(session.contextJson)
     const badBackPlan = bodyPlan?.op === 'badday' && bodyPlan.which === 'back'
@@ -2200,12 +2201,10 @@ app.patch('/api/recovery-sessions/:id', async (c) => {
 
 // ─── MT Class Logging ──────────────────────────────────────────
 
-/** Planned class length: what placement stored on the session, else the usual class (90 min). */
-function plannedClassMin(session: { contextJson: string | null; blockType: string | null }): number {
-  const ctx = parseJson<{ placement?: { estimatedMin?: number | null } }>(session.contextJson, {})
-  const stored = ctx.placement?.estimatedMin
-  if (stored != null && stored > 0) return stored
-  return estimatedMinutes({ type: 'mt_class', notes: null }, session.blockType === 'block_zero' ? 'block_zero' : 'fighter', 1)
+/** Planned class length: a class is a fixed hour (coach-brain §14). The log card starts its stepper here. */
+function plannedClassMin(_session: { contextJson: string | null; blockType: string | null }): number {
+  void _session
+  return CLASS_MINUTES
 }
 
 app.post('/api/sessions/:id/start-mt-class', async (c) => {
@@ -2221,28 +2220,29 @@ app.post('/api/sessions/:id/start-mt-class', async (c) => {
     return c.json({ session, mtLog: existing[0], plannedMin: plannedClassMin(session) })
   }
 
-  // Ease day, applied coach ease, injury flag or the return ramp: keep it technical (R10, F16).
+  // A class is a fixed hour and what is taught is the gym's call: the coach never
+  // says what to do in it. On an ease day, an applied coach ease or an injury
+  // flag, its one line is his call to skip the class or move it (R10, F16).
   const day = session.scheduledDate ?? athleteDay(c)
   const state = await loadSessionCoachState(db, session, day)
   const report = await readinessFor(db, day)
-  const eased = easeForReadiness(report, { type: 'mt_class', label: session.label ?? 'MT Class', timeSlot: session.timeSlot === 'am' ? 'am' : 'pm', estimatedMin: 90 })
-  const mtNote = state.injuryAction.action === 'technical'
+  const eased = easeForReadiness(report, { type: 'mt_class', label: session.label ?? 'MT Class', timeSlot: session.timeSlot === 'am' ? 'am' : 'pm', estimatedMin: CLASS_MINUTES })
+  const mtNote = state.injuryAction.action === 'skip_or_move'
     ? state.injuryAction.note
     : eased.eased ? eased.reason
-      : state.coachEase ? `${state.coachEase.reason} Technique only tonight. Sit out the hard rounds.`
-        : state.returnCtx.active ? `${state.returnCtx.reason} Keep it technical. No hard rounds or sparring.` : null
+      : state.coachEase ? `${state.coachEase.reason} ${CLASS_EASE_LINE}` : null
 
   const logId = crypto.randomUUID()
   await db.insert(mtClassLogs).values({ id: logId, sessionId })
   await db.update(sessions).set({
     status: 'in_progress',
     startedAt: nowSec,
-    ...(mtNote ? { contextJson: mergeContext(session.contextJson, { coach: { note: mtNote, classType: 'technical' } }) } : {}),
+    ...(mtNote ? { contextJson: mergeContext(session.contextJson, { coach: { note: mtNote } }) } : {}),
   }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const [mt] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
-  return c.json({ session: updated, mtLog: mt, plannedMin: plannedClassMin(updated ?? session), ...(mtNote ? { coach: { note: mtNote, classType: 'technical' } } : {}) })
+  return c.json({ session: updated, mtLog: mt, plannedMin: plannedClassMin(updated ?? session), ...(mtNote ? { coach: { note: mtNote } } : {}) })
 })
 
 app.get('/api/sessions/:id/mt-class-workout', async (c) => {
@@ -2263,17 +2263,8 @@ app.patch('/api/mt-class-logs/:id', async (c) => {
   const [current] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
   if (!current) return c.json({ error: 'class log not found' }, 404)
 
-  // Block Zero ramp (R12): no hard sparring, technique/pads/bag in ramp weeks
-  // 1-2, light clinch from week 3, weekly class cap. Checked when the type changes.
-  let blockZeroNote: { rampWeek: number; reason: string } | null = null
-  if (body.classType !== undefined && body.classType !== current.classType) {
-    const decision = await checkMtClassForBlockZero(db, current.sessionId, body.classType)
-    if (decision && !decision.allowed) {
-      return c.json({ error: decision.reason, reason: decision.reason, suggestedType: decision.suggestedType, rampWeek: decision.rampWeek }, 400)
-    }
-    if (decision) blockZeroNote = { rampWeek: decision.rampWeek, reason: decision.reason }
-  }
-
+  // The class type is what he logs about a class he went to: never refused or judged
+  // (what is taught is the gym's call, coach-brain §14).
   const updates: Record<string, unknown> = {}
   if (body.classType !== undefined) updates.classType = body.classType
   if (body.durationMin !== undefined) updates.durationMin = body.durationMin
@@ -2285,7 +2276,7 @@ app.patch('/api/mt-class-logs/:id', async (c) => {
   if (body.learnedNote !== undefined) { updates.learnedNote = body.learnedNote; updates.learnedAt = Math.floor(Date.now() / 1000) }
   if (Object.keys(updates).length > 0) await db.update(mtClassLogs).set(updates).where(eq(mtClassLogs.id, logId))
   const [row] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
-  return c.json(blockZeroNote ? { ...row, blockZero: blockZeroNote } : row)
+  return c.json(row)
 })
 
 // ─── Daily Logs ────────────────────────────────────────────────

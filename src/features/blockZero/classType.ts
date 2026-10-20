@@ -20,13 +20,12 @@ const ALIASES: Record<string, ClassTypeValue> = {
 }
 
 /**
- * The type lit when the card opens: the class's own type when it has one;
- * a quick add ("class tonight") leaves it open, so Block Zero starts on
- * TECHNICAL (its ramp weeks refuse GENERAL) and any other block on GENERAL.
+ * The type lit when the card opens: the class's own type when it has one,
+ * else GENERAL. Nothing is refused by type in any block (coach-brain §14).
  */
-export function defaultClassType(saved: string | null | undefined, blockZero: boolean): ClassTypeValue {
+export function defaultClassType(saved: string | null | undefined): ClassTypeValue {
   const known = saved ? ALIASES[saved.toLowerCase().replace(/[^a-z]/g, '')] : undefined
-  return known ?? (blockZero ? 'technical' : 'general')
+  return known ?? 'general'
 }
 
 export const CLASS_MIN = { min: 5, max: 300, step: 5 } as const

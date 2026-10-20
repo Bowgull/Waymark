@@ -92,23 +92,20 @@ export function isLongRun(s: Pick<SessionLike, 'type' | 'notes' | 'estimatedMin'
   return s.notes === 'progression' || (s.estimatedMin ?? 0) >= 45
 }
 
-/** A class labelled technique or drills is skill work; anything else is hard interval work (F1). */
-export function isTechnicalClass(label: string | null | undefined): boolean {
-  return /techni|drill|fundament/i.test(label ?? '')
-}
-
-export function isSparring(label: string | null | undefined): boolean {
-  return /spar/i.test(label ?? '')
-}
+/**
+ * A muay thai class: a fixed 60-minute session, always hard interval work (F1).
+ * What is taught is the gym's call, so its label or type never changes how
+ * hard it counts (Josh, 2026-10-20; coach-brain §14).
+ */
+export const CLASS_MINUTES = 60
 
 /**
  * Hard sessions for the "no two hard sessions on one day" rule (F6, F14):
- * strength, muay thai (classes are hard interval work, F1; a technique class
- * is not), bag work and long runs. Easy runs, rope, Foundation and recovery are not.
+ * strength, every muay thai class (F1), bag work and long runs. Easy runs,
+ * rope, Foundation and recovery are not.
  */
 export function isHard(s: Pick<SessionLike, 'type' | 'label' | 'notes' | 'estimatedMin'>): boolean {
-  if (s.type === 'strength' || s.type === 'bag_work') return true
-  if (s.type === 'mt_class') return !isTechnicalClass(s.label)
+  if (s.type === 'strength' || s.type === 'bag_work' || s.type === 'mt_class') return true
   return isLongRun(s)
 }
 
@@ -123,9 +120,9 @@ export function isHeavyLegs(s: Pick<SessionLike, 'type' | 'label'>, blockType: B
   return m ? m[1] !== 'C' : true
 }
 
-/** Sessions heavy legs keep 24 h away from (F6): sparring or hard muay thai, and long runs. */
+/** Sessions heavy legs keep 24 h away from (F6; Josh: no heavy legs before a class): every class, and long runs. */
 export function isLegInterference(s: Pick<SessionLike, 'type' | 'label' | 'notes' | 'estimatedMin'>): boolean {
-  if (s.type === 'mt_class') return !isTechnicalClass(s.label)
+  if (s.type === 'mt_class') return true
   return isLongRun(s)
 }
 
@@ -153,7 +150,7 @@ export function estimatedMinutes(s: Pick<SessionLike, 'type' | 'notes' | 'estima
       return Math.round((plan?.targetDurSec ?? 1800) / 60)
     }
     case 'strength': return blockType === 'block_zero' ? 60 : 75
-    case 'mt_class': return 90
+    case 'mt_class': return CLASS_MINUTES
     case 'bag_work': return 30
     case 'skip_rope': return 15
     case 'active_recovery': return 25
@@ -176,7 +173,6 @@ const TYPICAL_RPE: Record<string, number> = {
 
 export function typicalRpe(s: Pick<SessionLike, 'type' | 'label' | 'notes'>): number {
   if (s.type === 'running' && s.notes === 'progression') return 6
-  if (s.type === 'mt_class' && isTechnicalClass(s.label)) return 5
   return TYPICAL_RPE[s.type] ?? 4
 }
 

@@ -395,7 +395,7 @@ export async function loadSessionCoachState(db: DB, session: Pick<SessionRow, 't
     injury,
     injuryAction: injuryActionFor(session.type, injury),
   }
-  // A raven's plan on this session (page 58, server/bodyWatch.ts): bag work and MT technique only,
+  // A raven's plan on this session (page 58, server/bodyWatch.ts): bag work technique only (a class comes off instead),
   // back-friendly lifts, or the bad-neck Foundation, through the same eases an injury flag uses.
   const plan = bodyPlanMark(session.contextJson)
   if (plan && state.injuryAction.action === 'none') {

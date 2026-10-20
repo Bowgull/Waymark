@@ -35,13 +35,12 @@ import { readinessLine } from './readinessLine'
   assert.deepEqual(CLASS_TYPES.map(t => t.label), ['TECHNICAL', 'SPARRING', 'PADWORK', 'CLINCH', 'GENERAL'], "page 31's chips, in order")
   for (const t of CLASS_TYPES) {
     assert.ok(mtClassLogPatchSchema.safeParse({ classType: t.value }).success, `${t.value} passes the PATCH schema`)
-    assert.ok(normaliseClassType(t.value), `${t.value} normalises for the Block Zero ramp`)
+    assert.ok(normaliseClassType(t.value), `${t.value} normalises (a log field)`)
   }
-  assert.equal(defaultClassType(null, true), 'technical', 'quick add in Block Zero starts on TECHNICAL')
-  assert.equal(defaultClassType(null, false), 'general')
-  assert.equal(defaultClassType('technique', false), 'technical', 'older Block Zero names still map')
-  assert.equal(defaultClassType('pads', true), 'padwork')
-  assert.equal(defaultClassType('Sparring', true), 'sparring')
+  assert.equal(defaultClassType(null), 'general', 'a quick add starts on GENERAL in every block (nothing is refused by type)')
+  assert.equal(defaultClassType('technique'), 'technical', 'older Block Zero names still map')
+  assert.equal(defaultClassType('pads'), 'padwork')
+  assert.equal(defaultClassType('Sparring'), 'sparring')
   assert.equal(clampClassMinutes(62), 60)
   assert.equal(clampClassMinutes(0), 5)
   assert.equal(clampClassMinutes(999), 300)

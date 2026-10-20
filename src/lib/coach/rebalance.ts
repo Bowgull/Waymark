@@ -236,11 +236,13 @@ export function easeFor(s: RebalanceSession, ctx: Pick<PlacementContext, 'blockT
     }
   }
   if (RECOVERY_TYPES.has(s.type)) return null
+  // A class can't be made easier: what happens in it is the gym's call. It stays or moves.
+  if (s.type === 'mt_class') return null
   return {
     ease: { kind: 'reduce', minutes: null, fromMinutes: null },
     show: { before: 'AS PLANNED', after: 'EASIER' },
     put: { line: `${nameToken(name, s.epochDay)} is back as planned.`, dim: HOLD_LINE },
-    detail: s.type === 'mt_class' ? 'Technique only, sit out the hard rounds.' : null,
+    detail: null,
   }
 }
 

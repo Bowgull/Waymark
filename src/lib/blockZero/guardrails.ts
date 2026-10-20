@@ -14,7 +14,7 @@ import type {
   WeekPlanOutput,
 } from '../prompts/tools'
 import { easeSession } from './autoEase'
-import { evaluateClassRequest, normaliseClassType, type MtClassType } from './muayThai'
+import { evaluateClassRequest } from './muayThai'
 import { allowanceFromLastWeek, getRunWalkWeek, runWalkTotalSec, singleRunCap, weeklyRunAllowanceSec } from './running'
 import type { NextLoad, WorkingLoad } from './strength'
 import { getBlockZeroWeekTemplate, type BlockZeroTemplateSession } from './weekPlan'
@@ -27,7 +27,7 @@ export const GUARDRAIL_TAG = '[bz-guardrail]'
 
 export type ClampCode =
   | 'mt_class_dropped'
-  | 'mt_class_type'
+  | 'mt_class_content'
   | 'mt_class_cap'
   | 'off_template'
   | 'rest_day'
@@ -330,23 +330,8 @@ function mondayOf(epochDay: number): number {
   return epochDay - ((dowOf(epochDay) + 6) % 7)
 }
 
-/** Class type a free-text label implies. Unknown reads as a general class. */
-export function classTypeFromLabel(label: string | null | undefined): MtClassType {
-  const words = (label ?? '').toLowerCase()
-  if (/spar/.test(words)) return 'sparring'
-  if (/clinch/.test(words)) return 'clinch'
-  if (/pad|bag/.test(words)) return 'padwork'
-  if (/techni|drill|fundament/.test(words)) return 'technical'
-  return normaliseClassType(words) ?? 'general'
-}
-
-const CLASS_LABEL: Record<MtClassType, string> = {
-  technical: 'MT Technique',
-  padwork: 'MT Pads',
-  clinch: 'MT Clinch (light)',
-  general: 'MT Class',
-  sparring: 'MT Sparring',
-}
+/** A class the coach places is just a class: never a kind (coach-brain §14). */
+export const PLAIN_CLASS_LABEL = 'MT Class'
 
 export interface Placement {
   type: string
@@ -404,20 +389,13 @@ export function checkPlacement(p: Placement, ctx: BlockZeroGuardContext): Placem
   }
 
   if (p.type === 'mt_class') {
-    const wanted = classTypeFromLabel(p.label)
+    // How many a week, never what kind: the class's label is left as it is.
     const decision = evaluateClassRequest({
-      classType: wanted,
       weeksSinceFirstClass: ctx.mt.weeksSinceFirstClass,
       classesThisWeek: p.adds ? ctx.mt.classesThisWeek : Math.max(0, ctx.mt.classesThisWeek - 1),
       profileCap: ctx.mt.profileCap,
     })
-    if (!decision.allowed && decision.suggestedType) {
-      const label = CLASS_LABEL[decision.suggestedType]
-      clamps.push({ code: 'mt_class_type', detail: `${where} class=${wanted} -> ${decision.suggestedType}`, reason: decision.reason })
-      next = { ...next, label }
-    } else if (!decision.allowed) {
-      return refuse('mt_class_cap', decision.reason)
-    }
+    if (!decision.allowed) return refuse('mt_class_cap', decision.reason)
     if (sameDay.some(s => s.type === 'strength') && next.timeSlot !== 'pm') {
       clamps.push({ code: 'strength_order', detail: `${where} slot=${next.timeSlot} -> pm`, reason: 'Strength comes first. The class goes in the evening.' })
       next = { ...next, timeSlot: 'pm' }
@@ -572,15 +550,20 @@ export function guardReactiveReplan(output: ReactiveReplanOutput, ctx: BlockZero
   if (action === 'hold') return { output: out, clamps }
 
   if (action === 'reduce_intensity') {
+    // "Go light in class" is not the coach's to say: a class is a fixed hour and
+    // what is taught is the gym's call. An ease on a class holds instead.
     if (out.targetSessionType === 'mt_class') {
-      const wanted = classTypeFromLabel(out.targetLabel)
-      const decision = evaluateClassRequest({ classType: wanted, weeksSinceFirstClass: ctx.mt.weeksSinceFirstClass, classesThisWeek: 0, profileCap: null })
-      if (!decision.allowed && decision.suggestedType) {
-        clamps.push({ code: 'mt_class_type', detail: `class=${wanted} -> ${decision.suggestedType}`, reason: decision.reason })
-        out.targetLabel = CLASS_LABEL[decision.suggestedType]
-      }
+      const clamp: Clamp = { code: 'mt_class_content', detail: `reduce_intensity on mt_class -> hold`, reason: 'What happens in a class is up to the gym. The coach never changes it.' }
+      clamps.push(clamp)
+      return { output: { ...out, shiftAction: 'hold' }, clamps }
     }
     return { output: out, clamps }
+  }
+
+  // The coach may put a class on a night, never name what kind: its label is plain.
+  if (out.targetSessionType === 'mt_class' && action !== 'move' && out.targetLabel !== PLAIN_CLASS_LABEL) {
+    clamps.push({ code: 'mt_class_content', detail: `label "${out.targetLabel ?? ''}" -> "${PLAIN_CLASS_LABEL}"`, reason: 'What happens in a class is up to the gym. The coach never picks the kind of class.' })
+    out.targetLabel = PLAIN_CLASS_LABEL
   }
 
   const todayDow = dowOf(ctx.todayEpochDay)

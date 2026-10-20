@@ -93,7 +93,8 @@ assert(injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Knee', notes:
 assert(injuryFlag([{ epochDay: MON, skipReason: 'tired', detail: null, notes: null }], MON + 1) == null, 'a tired skip is not an injury')
 const back = injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Lower back', notes: null }], MON + 1)
 assert(injuryActionFor('strength', back).action === 'back_swap' && injuryActionFor('foundation_run', back).action === 'walk_or_bike', 'back flag: back-friendly lifts, walk instead of the run')
-assert(injuryActionFor('strength', kneeFlag).action === 'ease' && injuryActionFor('running', kneeFlag).action === 'walk_or_bike' && injuryActionFor('mt_class', kneeFlag).action === 'technical', 'knee flag: conservative ease')
+assert(injuryActionFor('strength', kneeFlag).action === 'ease' && injuryActionFor('running', kneeFlag).action === 'walk_or_bike' && injuryActionFor('mt_class', kneeFlag).action === 'skip_or_move', 'knee flag: conservative ease')
+assert(injuryActionFor('bag_work', kneeFlag).action === 'technical' && /skip the class or move it/.test(injuryActionFor('mt_class', kneeFlag).note ?? '') && !/techni|hard rounds/i.test(injuryActionFor('mt_class', kneeFlag).note ?? ''), 'his bag work goes technique-only; a class is only ever skip or move')
 const shoulder = injuryFlag([{ epochDay: MON, skipReason: 'injury', detail: 'Shoulder', notes: null }], MON + 1)
 assert(injuryActionFor('running', shoulder).action === 'none', 'shoulder flag leaves runs alone')
 

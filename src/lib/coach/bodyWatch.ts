@@ -636,7 +636,9 @@ export function planFor(region: BodyRegion, round: 1 | 2, today: number, session
     switch (group) {
       case 'lower':
         if (RUN_LIKE(s.type)) add(s, { kind: 'bike', label: 'Easy Bike' })
-        else if (round === 2 && (s.type === 'bag_work' || s.type === 'mt_class')) add(s, { kind: 'technique' })
+        // His bag work goes technique-only; a class comes off (Reset), never "go light in class".
+        else if (round === 2 && s.type === 'bag_work') add(s, { kind: 'technique' })
+        else if (round === 2 && s.type === 'mt_class') add(s, { kind: 'reset' })
         else if (round === 2 && s.type === 'strength' && canLighten(s)) add(s, { kind: 'one_set' })
         break
       case 'back':

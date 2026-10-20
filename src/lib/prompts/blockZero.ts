@@ -183,7 +183,7 @@ export function buildAssessmentPrompt(
     '  Weeks 2-5: build. 2-3 sets of 8, RPE 6-7 then 7-8, never to failure. Week 3 adds a 3-5 rep check set.',
     '  Week 6: consolidate. Volume down 30-50%, intensity held. The check sets give the front squat estimate; the first easy run-walk logs the talk-test HR again.',
     '  Weekly: Strength A/B/C, 3 run-walks, daily Foundation (type mobility: back and neck, ~12 min), durability twice a week, 1 rest day.',
-    '  No MT classes are scheduled. The athlete adds them: technique and pads only for the first 2 weeks back, light clinch from week 3, no hard sparring.',
+    '  No MT classes are scheduled. The athlete adds them. A class is a fixed 60-minute session of hard work; what is taught is up to the gym. Never say what to do in class or which class to take.',
     '',
     'User profile is in the system prompt.',
     '',

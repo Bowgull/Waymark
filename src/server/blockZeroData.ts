@@ -22,7 +22,6 @@ import {
   checkSetE1rm,
   e1rmTestKey,
   easeSession,
-  evaluateClassRequest,
   getStrengthWeekTarget,
   introStartLoad,
   LEAD_IN_TARGET,
@@ -32,7 +31,6 @@ import {
   type AiContextLift,
   type BlockZeroAiContextInput,
   type BlockZeroGuardContext,
-  type ClassDecision,
   type EasedSession,
   type GuardSession,
   type LiftBaseline,
@@ -392,38 +390,6 @@ export async function talkTestBpm(db: DB): Promise<number | null> {
 }
 
 // ─── Muay thai class checks (R12) ──────────────────────────────
-
-/**
- * Rules check for logging a class type while Block Zero is active. Ramp week
- * counts from the first class after the last 14+ day class gap; the cap counts the other classes
- * started or done in the same Monday-Sunday week. Null when not Block Zero.
- */
-export async function checkMtClassForBlockZero(db: DB, sessionId: string, classType: string): Promise<ClassDecision | null> {
-  const block = await getActiveBlockZero(db)
-  if (!block) return null
-  const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-  if (!session) return null
-  const day = session.scheduledDate ?? todayEpochDayUtc()
-  const dow = new Date(day * DAY_SEC * 1000).getUTCDay()
-  const monday = day - ((dow + 6) % 7)
-
-  // The ramp counts from the first class after the last 14+ day class gap, not the first class ever.
-  const classes = await db.select({ id: sessions.id, scheduledDate: sessions.scheduledDate, status: sessions.status })
-    .from(sessions)
-    .where(and(eq(sessions.type, 'mt_class'), gte(sessions.scheduledDate, day - 180), lte(sessions.scheduledDate, monday + 6)))
-  const others = classes.filter(c => c.id !== sessionId && c.scheduledDate != null && (c.status === 'completed' || c.status === 'in_progress'))
-  const before = others.filter(c => (c.scheduledDate as number) <= day).map(c => c.scheduledDate as number)
-  const firstDay = mtRampStartDay(before, day)
-  const classesThisWeek = others.filter(c => (c.scheduledDate as number) >= monday && (c.scheduledDate as number) <= monday + 6).length
-
-  const [profile] = await db.select({ cap: userProfile.mtCapPerWeek }).from(userProfile).where(eq(userProfile.id, 'default'))
-  return evaluateClassRequest({
-    classType,
-    weeksSinceFirstClass: firstDay == null ? null : Math.floor((day - firstDay) / 7),
-    classesThisWeek,
-    profileCap: profile?.cap ?? null,
-  })
-}
 
 // ─── End gate inputs ───────────────────────────────────────────
 

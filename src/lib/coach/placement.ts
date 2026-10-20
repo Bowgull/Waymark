@@ -12,15 +12,14 @@
 // - One strength session a day; Block Zero never has strength days back to back.
 // - One run a day. Single run <= 110% of the 30-day longest; weekly run time
 //   <= 130% of last week (F11). A run over a cap is shortened when there is room.
-// - Muay thai ramp and weekly cap. The ramp counts from the first class after
-//   the last 14+ day class gap (R12).
+// - Muay thai weekly cap (how many, never what kind). The ramp counts from the
+//   first class after the last 14+ day class gap (R12).
 // - Weekly planned load can't pass the plan's load: missed work is not crammed (F14).
 // Refusals carry a code, one line in the house voice, and safe alternatives:
 // other days this week that pass, and easier swaps that pass.
 
 import {
   allowanceFromLastWeek,
-  classTypeFromLabel,
   evaluateClassRequest,
   isBlockZeroRestDay,
   mtRampWeek,
@@ -114,7 +113,6 @@ export type PlacementCode =
   | 'run_same_day'
   | 'run_single_cap'
   | 'run_weekly_cap'
-  | 'mt_ramp'
   | 'mt_cap'
   | 'over_plan'
   | 'lead_in_cap'
@@ -175,7 +173,8 @@ export function easierOptions(c: Pick<SessionChange, 'type' | 'label' | 'notes'>
   const walk = { type: 'active_recovery', label: 'Easy Walk or Bike' }
   switch (c.type) {
     case 'strength': return [walk, { type: 'mobility', label: FOUNDATION_LABEL }]
-    case 'mt_class': return classTypeFromLabel(c.label) === 'technical' ? [walk] : [{ type: 'mt_class', label: 'MT Technique' }, walk]
+    // Never another kind of class instead: which class he takes is not the coach's call.
+    case 'mt_class': return [walk]
     // Rope pounds a knee, ankle or shin: with one flagged, the bike only (earlier bug 22).
     case 'bag_work': return kneeSafeOnly(injury) ? [walk] : [{ type: 'skip_rope', label: 'Easy Rope' }, walk]
     case 'running':
@@ -314,20 +313,19 @@ function evaluate(change: SessionChange, ctx: PlacementContext): { refusal: Refu
   }
 
   if (change.type === 'mt_class') {
-    const wanted = classTypeFromLabel(change.label)
     const classesThisWeek = inWeek.filter(s => s.type === 'mt_class').length
     const rampWeek = mtRampWeek(ctx.mt.weeksSinceRampStart)
     const ramping = ctx.blockType === 'block_zero' || rampWeek <= 2
     if (ramping) {
       const decision = evaluateClassRequest({
-        classType: wanted,
         weeksSinceFirstClass: ctx.mt.weeksSinceRampStart,
         classesThisWeek: change.kind === 'move' ? Math.max(0, classesThisWeek) : classesThisWeek,
         profileCap: ctx.mt.profileCap,
       })
       if (!decision.allowed) {
-        const reason = ctx.blockType === 'block_zero' ? decision.reason : decision.reason.replace('in Block Zero', 'in the first 2 weeks back').replace('No hard sparring in Block Zero.', 'No sparring in the first 2 weeks back.')
-        return { refusal: refuse(decision.suggestedType ? 'mt_ramp' : 'mt_cap', reason) }
+        // How many a week, never what kind of class.
+        const reason = ctx.blockType === 'block_zero' ? decision.reason : decision.reason.replace('in Block Zero', 'in the first 2 weeks back')
+        return { refusal: refuse('mt_cap', reason) }
       }
     } else {
       const cap = ctx.mt.profileCap != null && ctx.mt.profileCap >= 0 ? ctx.mt.profileCap : 3
