@@ -50,24 +50,6 @@
 .lib-bd { margin-top: 4px; }
 .lib-bd.is-open { margin-top: 6px; }
 
-/* ── the six groups (page 39 .grp2) ── */
-.lib-grp2 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 2px;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.lib-grp2 + .lib-grp2 { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.03); }
-.lib-grp2 .lib-chev { font: 800 14px var(--font-mono); color: #c9b27a; width: 12px; flex: none; }
-.lib-grp2 .lib-cnt2 { margin-left: auto; font: 700 14px var(--font-mono); color: #9fb2a8; }
-.lib-grp2 .wm-sicon { flex: none; }
-
 /* ── a group opened (page 21 .grp, .cnt, .chev) ── */
 .lib-grp {
   display: flex;
@@ -96,13 +78,6 @@
 .lib-badges { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
 .lib-badge { font: 700 11.5px/1 var(--font-body); padding: 5px 7px; border-radius: 5px; background: rgba(45, 121, 106, 0.22); color: #a9d4c2; }
 
-/* the open panel (.panel): brass edge on the left */
-.lib-panel { margin-top: 10px; padding: 10px 12px; border-left: 2px solid #b8984a; background: rgba(0, 0, 0, 0.25); border-radius: 0 8px 8px 0; text-align: left; }
-.lib-panel .wm-mlabel { margin-bottom: 6px; }
-.lib-cue { margin: 0; font: 500 15px/1.45 var(--font-body); color: #efe6c8; }
-.lib-watch { display: inline-flex; margin-top: 10px; text-decoration: none; -webkit-tap-highlight-color: transparent; }
-.lib-tip { margin: 0; font: 600 15px/1.4 var(--font-body); color: #8fc4b0; }
-
 /* ── a combo (page 21 .combo, mastery A) ── */
 .lib-combo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid rgba(0, 0, 0, 0.5); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .lib-combo.is-locked { opacity: 0.55; cursor: default; }
@@ -127,13 +102,6 @@
 .lib-anvil.is-fav path { fill: #b8984a; stroke: #b8984a; }
 .lib-anvil.is-mastered svg { filter: drop-shadow(0 0 6px rgba(232, 200, 120, 0.85)); }
 .lib-anvil.is-mastered path { stroke: #e8c878; }
-
-/* the open combo's rows (.rows .r) */
-.lib-rows { display: flex; flex-direction: column; margin-top: 8px; }
-.lib-r { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
-.lib-r + .lib-r { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
-.lib-r .wm-label { flex: 1; }
-.lib-mastered { margin-top: 8px; }
 
 /* ── the Waybook: an old book page (page 21 B) ── */
 .lib-book {
@@ -176,9 +144,6 @@
 .lib-strikes .lib-glove { width: 20px; height: 20px; flex: none; margin-left: 4px; }
 
 /* ── page 52 / 60: every kind browsable, every item its own page ── */
-.lib-grp2-n { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-.lib-newk { font: 800 10.5px var(--font-body); letter-spacing: 0.14em; color: #8fc4b0; }
-.lib-lock2 { margin-left: auto; font: 800 14px var(--font-mono); color: rgba(240, 230, 192, 0.6); }
 .lib-ex.is-row { display: flex; align-items: center; gap: 10px; }
 .lib-ex.is-row .t { flex: 1; min-width: 0; }
 .lib-ex.is-row .lib-ex-top { justify-content: flex-start; flex-direction: column; gap: 2px; }
@@ -191,27 +156,94 @@
 .lib-rh.is-zero { color: #9fb2a8; }
 .lib-classkey { margin: 0; text-align: center; font: 600 14px var(--font-body); color: #9fb2a8; display: flex; align-items: center; justify-content: center; gap: 6px; }
 
-/* an item's page: the hero, Cue / Tips / Coach hint boards, then the video */
+/* ── page 65: the list, compact, the board low so the rune arch shows ── */
+/* the list fills the page so its board can sit low (margin-top: auto) */
+.lib-root:not(.is-deep) > .lib-body { min-height: calc(100dvh - 60px - 96px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+.lib-bd.lib-list { margin-top: auto; padding: 4px 12px !important; background-color: rgba(8, 13, 11, 0.5) !important; }
+.lib-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 6px 2px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.lib-row + .lib-row { border-top: 1px solid rgba(0, 0, 0, 0.55); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.03); }
+.lib-row .wm-sicon { flex: none; }
+.lib-row-n { flex: 1; min-width: 0; display: flex; }
+.lib-row-cnt { font: 700 15px var(--font-mono); color: #c9d6cf; white-space: nowrap; }
+.lib-row-cnt small { font: 600 14px var(--font-body); color: #a9bdb3; margin-left: 4px; }
+.lib-row-lock { font: 800 15px var(--font-mono); color: rgba(240, 230, 192, 0.65); }
+.lib-row-chev { font: 800 16px var(--font-mono); color: #c9b27a; width: 10px; text-align: right; flex: none; }
+
+/* inside the Library (a group, an item, the Waybook): the darker scrim of page 65's item pages
+   (rgba(2,10,8) .6 to .86), laid over the arch's own scrim so the two make it exactly */
+.lib-root.is-deep::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(rgba(2, 10, 8, 0.111), rgba(2, 10, 8, 0.512) 22%, rgba(2, 10, 8, 0.497) 30%, rgba(2, 10, 8, 0.541) 45%, rgba(2, 10, 8, 0.3));
+}
+.lib-root.is-deep { isolation: auto; }
+
+/* ── page 65: an item's page ── */
 .lib-item { display: flex; flex-direction: column; gap: 10px; }
-.lib-hero { display: flex; align-items: center; gap: 12px; }
-.lib-hero .t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.lib-sub { font: 600 15px var(--font-body); color: #9fb2a8; }
-.lib-cue2 { font: 500 16px/1.5 var(--font-body); color: #efe6c8; margin: 0; }
-.lib-tips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-.lib-tips li { position: relative; padding-left: 16px; font: 500 16px/1.45 var(--font-body); color: #efe6c8; }
-.lib-tips li::before { content: ''; position: absolute; left: 2px; top: 0.62em; width: 6px; height: 6px; border-radius: 50%; background: #b8984a; }
-.lib-hint { padding: 10px 12px; border-radius: 9px; background: rgba(184, 152, 74, 0.1); box-shadow: inset 3px 0 0 #b8984a; font: 600 15px/1.45 var(--font-body); color: #efe2bc; margin: 0; }
-.lib-hint b { color: #ffe3a0; }
-.lib-vid { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; text-decoration: none; }
-.lib-vid svg { width: 18px; height: 18px; flex: none; }
-.lib-vsrc { display: flex; flex-direction: column; gap: 3px; align-items: center; text-align: center; margin-top: 8px; }
-.lib-vsrc .who { font: 700 15px var(--font-body); color: #e9dfc0; }
-.lib-vsrc .what { font: 600 15px/1.35 var(--font-body); color: rgba(240, 230, 192, 0.72); }
-.lib-also { display: flex; align-items: center; justify-content: center; gap: 8px; font: 700 15px var(--font-body); color: #c9b27a; padding: 8px 0 2px; border-top: 1px solid rgba(0, 0, 0, 0.5); margin-top: 8px; text-decoration: none; }
-.lib-also svg { width: 13px; height: 13px; flex: none; }
-.lib-gone { padding: 10px 12px; border-radius: 9px; background: rgba(0, 0, 0, 0.25); box-shadow: inset 0 0 0 1px rgba(240, 230, 192, 0.12); font: 600 15px/1.45 var(--font-body); color: rgba(240, 230, 192, 0.75); margin: 0 0 10px; text-align: center; }
-.lib-ctop { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.lib-from { display: flex; align-items: center; gap: 8px; margin-top: 10px; font: 600 14.5px var(--font-body); color: #c9d6cf; }
-.lib-cueflap { display: flex; align-items: center; gap: 10px; }
+/* the top board: the move, one useful number, WATCH */
+.lib-bd.lib-top { display: flex; flex-direction: column; gap: 12px; padding: 14px 12px 12px !important; }
+.lib-ihero { display: flex; align-items: center; gap: 12px; }
+.lib-ihero .t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.lib-imeta { font: 600 15px/1.35 var(--font-body); color: #c9d6cf; }
+/* WATCH: cream letters on charcoal tiles in a gold frame, the platform's mark, the coach, ↗ */
+.lib-watch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 60px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(4, 8, 6, 0.72);
+  box-shadow: inset 0 0 0 1.5px rgba(232, 200, 96, 0.6), 0 0 14px rgba(184, 152, 74, 0.14), 0 6px 16px rgba(0, 0, 0, 0.4);
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.lib-watch:active { transform: scale(0.98); }
+.lib-watch .who { flex: 1; min-width: 0; font: 700 16.5px/1.2 var(--font-body); color: #f6eed6; }
+.lib-watch .out { margin-left: auto; font: 800 16px var(--font-mono); color: #e8c878; }
+.lib-pf { width: 30px; height: 30px; flex: none; display: block; }
+.lib-vline { text-align: center; font: 600 15px var(--font-body); color: #c9d6cf; margin-top: -4px; }
+.lib-vline span { color: #8fa79c; }
+.lib-alsoq { display: block; text-align: center; font: 600 15px var(--font-body); color: #c9b27a; margin-top: -6px; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.lib-gone { padding: 10px 12px; border-radius: 9px; background: rgba(0, 0, 0, 0.25); box-shadow: inset 0 0 0 1px rgba(240, 230, 192, 0.12); font: 600 15px/1.45 var(--font-body); color: rgba(240, 230, 192, 0.75); margin: 0; text-align: center; }
+/* the one cue line, no heading */
+.lib-cueline { margin: 0; padding: 2px 4px 2px 12px; border-left: 3px solid #b8984a; font: 600 17px/1.45 var(--font-body); color: #f3ead2; text-shadow: 0 1px 6px #000; }
+.lib-cuef { display: flex; justify-content: center; }
+/* a combo: the tier and the anvil, the strikes, the dots with their words */
+.lib-ctop { display: flex; justify-content: space-between; align-items: center; }
+.lib-from { display: flex; align-items: center; gap: 8px; font: 600 14.5px var(--font-body); color: #c9d6cf; }
+.lib-mast { display: flex; align-items: center; gap: 10px; font: 600 15px var(--font-body); color: #c9d6cf; }
+.lib-mast .lib-dots { white-space: nowrap; }
+/* MORE: one row that opens in place to one board */
+.lib-more { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 0; border-radius: 12px; background: rgba(8, 13, 11, 0.6); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.22); text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.lib-more .t { flex: 1; font: 600 15px var(--font-body); color: #c9d6cf; }
+.lib-more .t b { font: 800 12.5px var(--font-body); letter-spacing: 0.18em; color: #e8c878; margin-right: 8px; }
+.lib-more .chev { font: 800 15px var(--font-mono); color: #c9b27a; }
+.lib-fold { padding: 0; border: 0; background: none; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.lib-mbd .wm-close { font: 800 12.5px var(--font-body); letter-spacing: 0.18em; color: #e8c878; padding: 6px 2px 6px 10px; }
+.lib-mlab { font: 800 12px var(--font-body); letter-spacing: 0.16em; color: rgba(240, 230, 192, 0.75); margin: 12px 0 6px; }
+.lib-mbd .wm-board-head + .lib-mlab, .lib-mbd .wm-board-head + .lib-mnote { margin-top: 0; }
+.lib-mtips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lib-mtips li { position: relative; padding-left: 16px; font: 500 16px/1.45 var(--font-body); color: #efe6c8; }
+.lib-mtips li::before { content: ''; position: absolute; left: 2px; top: 0.62em; width: 6px; height: 6px; border-radius: 50%; background: #b8984a; }
+.lib-mnote { margin: 0; font: 500 16px/1.45 var(--font-body); color: #efe2bc; }
+.lib-mnote.is-lead { margin-bottom: 10px; }
 .lib-uses { display: flex; flex-direction: column; gap: 7px; }
 .lib-uses .lib-strikes { flex: none; }
+.lib-and { align-self: flex-start; padding: 0; border: 0; background: none; font: 600 15px var(--font-body); color: #c9b27a; cursor: pointer; -webkit-tap-highlight-color: transparent; }

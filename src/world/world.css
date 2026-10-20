@@ -31,13 +31,16 @@
   pointer-events: none;
   transition: opacity 400ms ease-out;
 }
-/* Today, the rest-day home, the Ledger pond, and the Library's arch (page 14b's close-up with the UI's
-   scrim over it): the mockups' scrim (darker top and bottom, clear in the middle) */
+/* Today, the rest-day home and the Ledger pond: the mockups' scrim (darker top and bottom, clear in the middle) */
 .wm-world[data-place='clearing'] .wm-world-scrim,
 .wm-world[data-place='home'] .wm-world-scrim,
-.wm-world[data-place='arch'] .wm-world-scrim,
 .wm-world[data-place='pond'] .wm-world-scrim {
   background: linear-gradient(rgba(2, 10, 8, 0.55), rgba(2, 10, 8, 0.12) 26%, rgba(2, 10, 8, 0.35) 55%, rgba(2, 10, 8, 0.85));
+}
+/* The Library's arch (page 14b's close-up): page 65's lighter scrim at the top so the arch shows over the
+   list; inside the Library a second veil makes it page 65's darker item scrim (library.css .is-deep) */
+.wm-world[data-place='arch'] .wm-world-scrim {
+  background: linear-gradient(rgba(2, 10, 8, 0.55), rgba(2, 10, 8, 0.18) 22%, rgba(2, 10, 8, 0.25) 45%, rgba(2, 10, 8, 0.8));
 }
 /* Program: the road band up top, then dark under the boards (page 33 .roadfade) */
 .wm-world[data-place='road'] .wm-world-scrim {

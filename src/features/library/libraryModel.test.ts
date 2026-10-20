@@ -2,6 +2,14 @@ import assert from 'node:assert/strict'
 
 import {
   bagCount,
+  cueSplit,
+  exerciseMeta,
+  masteryWords,
+  moreSummary,
+  sentences,
+  sharpLine,
+  techniqueMeta,
+  tierCount,
   bookPages,
   comboStrikes,
   currentTier,
@@ -36,7 +44,8 @@ const day = (iso: string) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 8640000
 // page 39's groups in order, with page 52's two new kinds (Techniques: the MT glove; Runs: the shoe)
 assert.deepEqual(GROUPS.map(g => g.name), ['STRENGTH', 'CORE', 'FOUNDATION', 'MOBILITY', 'BAGWORK', 'TECHNIQUES', 'RUNS', 'WAYBOOK'])
 assert.deepEqual(GROUPS.map(g => g.icon), ['strength', 'core', 'foundation', 'mobility', 'bag', 'mt', 'run', 'waybook'])
-assert.deepEqual(GROUPS.filter(g => g.isNew).map(g => g.key), ['techniques', 'runs'])
+// page 65: no NEW KIND label on any kind
+assert.ok(GROUPS.every(g => !('isNew' in g)))
 assert.equal(isGroupKey('posture'), true)
 assert.equal(isGroupKey('history'), false)
 assert.equal(isGroupKey(null), false)
@@ -61,13 +70,15 @@ assert.deepEqual(comboStrikes('Teep'), ['TEEP'])
 
 const C = (id: string, tier: string, unlocked: number, masteryScore = 0): LibraryCombo => ({ id, text: 'Jab → Cross', tier, level: tier, unlocked, masteryScore, techniques: 'boxing', formTips: '', isFavourite: 0, timesSharp: 0 })
 const combos = [C('a', 'foundation', 1, 12), C('b', 'foundation', 1, 9), C('c', 'foundation', 1, 3), C('z', 'foundation', 0), C('d', 'weapons', 0), C('e', 'flow', 0)]
-assert.equal(bagCount(combos), '3/6')
+// page 65: the count in words
+assert.equal(bagCount(combos), '3 of 6')
 const tiers = tierViews(combos)
 assert.deepEqual(tiers.map(t => t.name), ['FUNDAMENTALS', 'WEAPONS', 'FLOW'])
 assert.equal(tiers[0].mastered, 2)
 assert.equal(tiers[0].unlocked, 3)
 assert.equal(tiers[0].locked, false)
 assert.equal(tiers[1].locked, true)
+assert.equal(tierCount(tiers[0]), '2 of 3 mastered')
 assert.deepEqual(tiers[0].combos.map(c => c.id), ['a', 'b', 'c', 'z'])
 assert.equal(currentTier(tiers), 'foundation')
 assert.equal(currentTier(tierViews([C('x', 'foundation', 1), C('y', 'weapons', 1)])), 'weapons')
@@ -141,3 +152,33 @@ assert.equal(classDayLabel(day('2026-10-20')), 'Tue 20 Oct')
 assert.equal(listed({ mergedInto: 'ex-worlds-greatest-stretch' }), false, "Spiderman + T-Spine folds into the World's Greatest Stretch")
 assert.equal(listed({ mergedInto: null }), true)
 console.log('libraryModel: page 52 / 60 ok')
+
+// ─── page 65: item pages ─────────────────────────────────────
+// one cue line: the first sentence, or the item's own short line; MORE keeps the rest
+const squatCue = 'Bar on the front of the shoulders, elbows high. Sit straight down between the hips, then stand up through the whole foot.'
+assert.deepEqual(sentences(squatCue), ['Bar on the front of the shoulders, elbows high.', 'Sit straight down between the hips, then stand up through the whole foot.'])
+assert.deepEqual(cueSplit(squatCue), { line: 'Bar on the front of the shoulders, elbows high.', rest: 'Sit straight down between the hips, then stand up through the whole foot.' })
+// Jab: a new short line rewrites the whole cue, nothing left for MORE
+assert.deepEqual(cueSplit('Lead hand straight out from the guard, turn the fist over at the end, and bring it straight back to the chin.', 'Lead hand straight out, turn the fist over, straight back to the chin.'), { line: 'Lead hand straight out, turn the fist over, straight back to the chin.', rest: null })
+// Run-Walk: the short line is the what's last sentence; MORE keeps the first
+assert.deepEqual(cueSplit('Short easy runs with planned walks in between, after a 5-minute brisk walk. Walk before you need to.', 'Walk before you need to.'), { line: 'Walk before you need to.', rest: 'Short easy runs with planned walks in between, after a 5-minute brisk walk.' })
+assert.deepEqual(cueSplit(null), { line: null, rest: null })
+assert.deepEqual(cueSplit('No stop at the end'), { line: 'No stop at the end', rest: null })
+// MORE's summary (the mockup's four)
+assert.equal(moreSummary({ tips: 3, coach: true, how: true }), '3 tips · from the coach')
+assert.equal(moreSummary({ tips: 2, sharp: 1 }), '2 tips · 1 sharp rating')
+assert.equal(moreSummary({ tips: 3, combos: true }), '3 tips · your combos')
+assert.equal(moreSummary({ tips: 3, how: true }), '3 tips · how it works')
+assert.equal(moreSummary({ tips: 1 }), '1 tip')
+assert.equal(sharpLine(1), 'Sharp once.')
+assert.equal(sharpLine(2), 'Sharp twice.')
+assert.equal(sharpLine(4), 'Sharp 4 times.')
+// the one useful number
+assert.equal(exerciseMeta('Barbell', '105 lb × 8'), 'Barbell · last time 105 lb × 8')
+assert.equal(exerciseMeta('Barbell', null), 'Barbell')
+assert.equal(exerciseMeta('', '8 reps'), 'Last time 8 reps')
+assert.equal(techniqueMeta({ kind: 'Punch' }, 26), 'Punch · in 26 of your combos')
+assert.equal(techniqueMeta({ kind: 'Punch' }, 0), 'Punch')
+assert.equal(masteryWords(6), '6 of 15 to mastered')
+assert.equal(masteryWords(9), 'Mastered')
+console.log('libraryModel: page 65 ok')

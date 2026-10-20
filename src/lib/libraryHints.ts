@@ -110,3 +110,13 @@ export function runHint(r: { runType: string; coachHint?: string | null }, now: 
   const total = now.warmupSec + now.rounds * (now.runSec + now.walkSec)
   return `Every Block Zero run: Tue, Thu, Sat. Week ${now.week}: ${now.rounds} rounds of ${span(now.runSec)} run, ${span(now.walkSec)} walk. ${minutes(total)} min in all.`
 }
+
+/** This week's run-walk on the item page's meta line (page 65): "6 × 1 min run, 2 min walk". */
+export function runWalkShape(now: RunWalkNow): string {
+  return `${now.rounds} × ${span(now.runSec)} run, ${span(now.walkSec)} walk`
+}
+
+/** The run-walk's whole time with its warm-up walk: "23 min in all." */
+export function runWalkTotal(now: RunWalkNow): string {
+  return `${minutes(now.warmupSec + now.rounds * (now.runSec + now.walkSec))} min in all.`
+}

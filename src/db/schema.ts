@@ -281,6 +281,9 @@ export const exercises = sqliteTable('exercises', {
   tiktokUrl: text('tiktok_url'),
   // Folded into another item (hidden from the Library).
   mergedInto: text('merged_into'),
+  // 0040 (page 65): the one cue line when it isn't the cue's first sentence; the shortened coach note.
+  cueLine: text('cue_line'),
+  coachNote: text('coach_note'),
 }, (t) => [
   index('idx_exercises_category').on(t.category),
 ])
@@ -344,6 +347,8 @@ export const techniques = sqliteTable('techniques', {
   tiktokUrl: text('tiktok_url'),
   sort: integer('sort').notNull().default(0),
   createdAt: integer('created_at').notNull(),
+  // 0040 (page 65): the one cue line when it isn't the cue's first sentence.
+  cueLine: text('cue_line'),
 })
 
 // 0038: Runs (page 52/60, new kind): the 7 run types, keyed by the plan's runType.
@@ -368,6 +373,8 @@ export const runTypes = sqliteTable('run_types', {
   tiktokUrl: text('tiktok_url'),
   sort: integer('sort').notNull().default(0),
   createdAt: integer('created_at').notNull(),
+  // 0040 (page 65): the one cue line when it isn't the cue's first sentence.
+  cueLine: text('cue_line'),
 })
 
 // 0038: the weekly link check's dead links and proposed replacements, waiting for Josh's OK.

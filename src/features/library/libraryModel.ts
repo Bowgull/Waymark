@@ -25,6 +25,9 @@ export interface LibraryExercise {
   coachHint?: string | null
   /** Folded into another item: not listed. */
   mergedInto?: string | null
+  /** 0040 (page 65): the one cue line when it isn't the cue's first sentence; the shortened coach note. */
+  cueLine?: string | null
+  coachNote?: string | null
 }
 
 export interface LibraryCombo {
@@ -65,6 +68,8 @@ export interface LibraryTechnique {
   kind: string
   /** JSON array: the combo names that mean this one ("Left Kick" is the switch kick). */
   aliases: string
+  /** 0040 (page 65): the one cue line when it isn't the cue's first sentence. */
+  cueLine?: string | null
   cue: string | null
   tips: string | null
   formVideoUrl: string | null
@@ -86,6 +91,8 @@ export interface LibraryRun {
   id: string
   name: string
   runType: string
+  /** 0040 (page 65): the one cue line when it isn't the what's first sentence. */
+  cueLine?: string | null
   sub: string | null
   what: string | null
   tips: string | null
@@ -114,7 +121,7 @@ export interface LibraryJournalEntry {
 /** Every kind, in the app's order (page 39, and page 52's two new kinds): icon, flap name. */
 export type GroupKey = 'strength' | 'core' | 'posture' | 'mobility' | 'bag' | 'techniques' | 'runs' | 'waybook'
 
-export const GROUPS: ReadonlyArray<{ key: GroupKey; name: string; icon: SessionIconKey; isNew?: boolean }> = [
+export const GROUPS: ReadonlyArray<{ key: GroupKey; name: string; icon: SessionIconKey }> = [
   { key: 'strength', name: 'STRENGTH', icon: 'strength' },
   { key: 'core', name: 'CORE', icon: 'core' },
   // the daily posture track is Foundation everywhere (its category stays `posture`)
@@ -122,8 +129,8 @@ export const GROUPS: ReadonlyArray<{ key: GroupKey; name: string; icon: SessionI
   { key: 'mobility', name: 'MOBILITY', icon: 'mobility' },
   { key: 'bag', name: 'BAGWORK', icon: 'bag' },
   // page 52: the single strikes (the MT Class glove) and the run types (the shoe)
-  { key: 'techniques', name: 'TECHNIQUES', icon: 'mt', isNew: true },
-  { key: 'runs', name: 'RUNS', icon: 'run', isNew: true },
+  { key: 'techniques', name: 'TECHNIQUES', icon: 'mt' },
+  { key: 'runs', name: 'RUNS', icon: 'run' },
   { key: 'waybook', name: 'WAYBOOK', icon: 'waybook' },
 ]
 
@@ -170,9 +177,24 @@ export function comboStrikes(text: string): string[] {
     .filter(Boolean)
 }
 
-/** Bagwork's count on the list: unlocked / total. */
+/** Bagwork's count on the list, in words (page 65): "18 of 55", then a small "unlocked". */
 export function bagCount(combos: ReadonlyArray<Pick<LibraryCombo, 'unlocked'>>): string {
-  return `${combos.filter(c => c.unlocked).length}/${combos.length}`
+  return `${combos.filter(c => c.unlocked).length} of ${combos.length}`
+}
+
+/** A tier's count, in words (page 65): "3 of 18 mastered" (mastered of unlocked). */
+export function tierCount(t: Pick<TierView, 'mastered' | 'unlocked'>): string {
+  return `${t.mastered} of ${t.unlocked} mastered`
+}
+
+/** Under a combo's five dots (page 65): "6 of 15 to mastered"; once mastered, "Mastered". */
+export function masteryWords(score: number): string {
+  return score >= MASTERED_AT ? 'Mastered' : `${Math.max(0, score)} of ${MASTERY_MAX} to mastered`
+}
+
+/** The MORE ratings line: "Sharp once.", "Sharp twice.", "Sharp 4 times.". */
+export function sharpLine(n: number): string {
+  return n === 1 ? 'Sharp once.' : n === 2 ? 'Sharp twice.' : `Sharp ${n} times.`
 }
 
 export interface TierView {
@@ -413,4 +435,51 @@ export function techniqueHits(techniques: ReadonlyArray<LibraryTechnique>, q: st
     }
   }
   return out
+}
+
+// ─── Item pages (page 65): one top board, one cue line, MORE ──
+
+/** A text's sentences, each with its stop. */
+export function sentences(text: string | null | undefined): string[] {
+  const t = (text ?? '').trim()
+  if (!t) return []
+  return (t.match(/[^.!?]+(?:[.!?]+|$)/g) ?? [t]).map(x => x.trim()).filter(Boolean)
+}
+
+/**
+ * The one cue line and what MORE keeps of the cue. The line is the item's own
+ * short line (cue_line, page 65's new copy) or the cue's first sentence. The
+ * rest is the cue without that sentence; a short line that rewrites the whole
+ * cue (Jab) leaves no rest.
+ */
+export function cueSplit(cue: string | null | undefined, cueLine?: string | null): { line: string | null; rest: string | null } {
+  const all = sentences(cue)
+  const own = cueLine?.trim() || null
+  const line = own ?? all[0] ?? null
+  if (!line) return { line: null, rest: null }
+  const i = all.indexOf(line)
+  const rest = own && i < 0 ? [] : all.filter((_, k) => k !== (i < 0 ? 0 : i))
+  return { line, rest: rest.length ? rest.join(' ') : null }
+}
+
+/** MORE's summary: "3 tips · from the coach", "2 tips · 1 sharp rating", "3 tips · your combos". */
+export function moreSummary(p: { tips: number; coach?: boolean; how?: boolean; combos?: boolean; sharp?: number }): string {
+  const out: string[] = []
+  if (p.tips > 0) out.push(`${p.tips} ${p.tips === 1 ? 'tip' : 'tips'}`)
+  if (p.sharp && p.sharp > 0) out.push(`${p.sharp} sharp ${p.sharp === 1 ? 'rating' : 'ratings'}`)
+  if (p.combos) out.push('your combos')
+  if (p.coach) out.push('from the coach')
+  else if (p.how) out.push('how it works')
+  return out.join(' · ')
+}
+
+/** A lift's meta line: "Barbell · last time 105 lb × 8" (equipment, then his last set). */
+export function exerciseMeta(equipment: string, lastSet: string | null): string {
+  if (!lastSet) return equipment
+  return equipment ? `${equipment} · last time ${lastSet}` : `Last time ${lastSet}`
+}
+
+/** A technique's meta line: "Punch · in 26 of your combos". */
+export function techniqueMeta(t: Pick<LibraryTechnique, 'kind'>, uses: number): string {
+  return uses > 0 ? `${t.kind} · in ${uses} of your combos` : t.kind
 }

@@ -58,6 +58,11 @@ export function searchUrl(name: string, channel: string | null | undefined): str
 export interface VideoButton {
   /** WATCH ON YOUTUBE, WATCH ON TIKTOK, or SEARCH ON YOUTUBE. */
   label: string
+  /** Where it opens (page 65: the platform's mark on the button). */
+  host: VideoHost
+  /** The video's length ("1:20"), and where it starts ("0:08") when it has a start time. */
+  length: string | null
+  start: string | null
   href: string
   /** The line under the button: the coach and the title with its length, or the search words. */
   source: string | null
@@ -65,6 +70,31 @@ export interface VideoButton {
   /** "Video gone. Showing a search." when it fell back to a search. */
   note: string | null
   kind: 'watch' | 'search'
+}
+
+/** "0:08": where a YouTube link opens (its t=), for the line under the button. Null without one. */
+export function startText(url: string, startSec: number | null | undefined): string | null {
+  if (!startSec || startSec <= 0 || hostOf(url) !== 'youtube') return null
+  const s = Math.round(startSec)
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/**
+ * The coach on the WATCH button (page 65): the channel's short name.
+ * 'Sean "Muay Thai Guy" Fagan' → Muay Thai Guy; 'Empower Gym Tampa (James)' →
+ * Empower Gym Tampa; 'National Academy of Sports Medicine (NASM)' → NASM;
+ * 'Sylvie von Duuglas-Ittu - Muay Thai' → Sylvie von Duuglas-Ittu;
+ * 'E3 Rehab Exercise Library' → E3 Rehab. The stored credit stays as it is.
+ */
+export function coachName(source: string | null | undefined): string | null {
+  let s = (source ?? '').replace(/™/g, '').trim()
+  if (!s) return null
+  const nick = /"([^"]+)"/.exec(s)
+  if (nick) return nick[1].trim()
+  const paren = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(s)
+  if (paren) s = /^[A-Z0-9]{2,6}$/.test(paren[2].trim()) ? paren[2].trim() : paren[1].trim()
+  s = s.split(/\s+-\s+/)[0].trim()
+  return s.replace(/\s+Exercise Library$/i, '').trim() || null
 }
 
 const watchLabel = (url: string) => (hostOf(url) === 'tiktok' ? 'WATCH ON TIKTOK' : 'WATCH ON YOUTUBE')
@@ -77,15 +107,15 @@ const dead = (s: string | null | undefined) => s === 'dead'
  */
 export function videoButton(name: string, v: VideoFields, technique?: VideoFields | null): VideoButton | null {
   if (v.url && !dead(v.status)) {
-    return { label: watchLabel(v.url), href: withStart(v.url, v.startSec), source: v.source ?? null, detail: v.title ? `${v.title}${v.length ? ` · ${v.length}` : ''}` : v.length ?? null, note: null, kind: 'watch' }
+    return { label: watchLabel(v.url), host: hostOf(v.url), length: v.length ?? null, start: startText(v.url, v.startSec), href: withStart(v.url, v.startSec), source: v.source ?? null, detail: v.title ? `${v.title}${v.length ? ` · ${v.length}` : ''}` : v.length ?? null, note: null, kind: 'watch' }
   }
   if (!v.url) return null
-  if (v.altUrl) return { label: watchLabel(v.altUrl), href: v.altUrl, source: v.altSource ?? null, detail: null, note: null, kind: 'watch' }
+  if (v.altUrl) return { label: watchLabel(v.altUrl), host: hostOf(v.altUrl), length: null, start: null, href: v.altUrl, source: v.altSource ?? null, detail: null, note: null, kind: 'watch' }
   if (technique?.url && !dead(technique.status)) {
-    return { label: watchLabel(technique.url), href: withStart(technique.url, technique.startSec), source: technique.source ?? null, detail: technique.title ?? null, note: null, kind: 'watch' }
+    return { label: watchLabel(technique.url), host: hostOf(technique.url), length: technique.length ?? null, start: startText(technique.url, technique.startSec), href: withStart(technique.url, technique.startSec), source: technique.source ?? null, detail: technique.title ?? null, note: null, kind: 'watch' }
   }
   const channel = v.source ?? null
-  return { label: 'SEARCH ON YOUTUBE', href: searchUrl(name.toLowerCase(), channel), source: null, detail: [name.toLowerCase(), channel].filter(Boolean).join(' · '), note: 'Video gone. Showing a search.', kind: 'search' }
+  return { label: 'SEARCH ON YOUTUBE', host: 'youtube', length: null, start: null, href: searchUrl(name.toLowerCase(), channel), source: null, detail: [name.toLowerCase(), channel].filter(Boolean).join(' · '), note: 'Video gone. Showing a search.', kind: 'search' }
 }
 
 export interface SecondLink { label: string; href: string; who: string | null }

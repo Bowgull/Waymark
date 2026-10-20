@@ -3,7 +3,7 @@
 // and the static hint when there is no history.
 import assert from 'node:assert/strict'
 
-import { comboHint, exerciseHint, lastWorkingSets, runHint, setText, type SetRow } from './libraryHints'
+import { comboHint, exerciseHint, lastWorkingSets, runHint, runWalkShape, runWalkTotal, setText, type SetRow } from './libraryHints'
 
 const SQUAT = 'Your main squat. Goblet squats in weeks 1-2, front squat from week 3. Sets of 8 with 2-3 reps left; your squat max is worked out from these sets.'
 
@@ -48,5 +48,10 @@ assert.equal(runHint(RUNWALK, { week: 2, runSec: 90, walkSec: 75, rounds: 7, war
 assert.equal(runHint(RUNWALK, { week: 4, runSec: 210, walkSec: 60, rounds: 5, warmupSec: 300 }), 'Every Block Zero run: Tue, Thu, Sat. Week 4: 5 rounds of 3.5 min run, 1 min walk. 27.5 min in all.')
 assert.equal(runHint(RUNWALK, null), RUNWALK.coachHint, 'no Block Zero: the static hint')
 assert.equal(runHint({ runType: 'tempo', coachHint: 'Later.' }, { week: 3, runSec: 120, walkSec: 60, rounds: 7, warmupSec: 300 }), 'Later.')
+
+// page 65: the run-walk item page's meta line and its whole time
+assert.equal(runWalkShape({ week: 1, runSec: 60, walkSec: 120, rounds: 6, warmupSec: 300 }), '6 × 1 min run, 2 min walk')
+assert.equal(runWalkTotal({ week: 1, runSec: 60, walkSec: 120, rounds: 6, warmupSec: 300 }), '23 min in all.')
+assert.equal(runWalkTotal({ week: 3, runSec: 120, walkSec: 60, rounds: 7, warmupSec: 300 }), '26 min in all.')
 
 console.log('libraryHints tests passed')

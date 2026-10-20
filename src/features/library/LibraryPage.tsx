@@ -31,6 +31,7 @@ import {
   muscleBadges,
   techniqueHits,
   techniqueFor,
+  tierCount,
   tierViews,
   type BookPage,
   type GroupKey,
@@ -310,6 +311,14 @@ export function LibraryPage() {
     setParams({ open: kind, item: id })
   }
 
+  /** "and 23 more ›" on a technique's MORE (page 65): the list, searching for it. */
+  function searchFor(q: string) {
+    setAllOf(null)
+    setOpenTier(undefined)
+    setParams({})
+    setSearch(q)
+  }
+
   function closeItem() {
     if (historyIdx() > 0) navigate(-1)
     else if (open) setParams({ open }, { replace: true })
@@ -366,13 +375,13 @@ export function LibraryPage() {
       if (c) body = <ComboPage combo={c} techniques={techniques} onFavourite={() => void toggleFavourite(c.id)} />
     } else if (open === 'techniques') {
       const t = techniques.find(x => x.id === itemId)
-      if (t) body = <TechniquePage t={t} combos={combos} techniques={techniques} />
+      if (t) body = <TechniquePage t={t} combos={combos} techniques={techniques} onSearch={searchFor} />
     } else if (open === 'runs') {
       const r = runs.find(x => x.id === itemId)
       if (r) body = <RunPage r={r} runWalk={hints?.runWalk ?? null} />
     }
     return (
-      <div className="lib-root">
+      <div className="lib-root is-deep">
         <BackHeader onBack={closeItem} label={g.name} />
         <div className="lib-body lib-item">
           {body ?? (loaded && <p className="wm-prose is-dim lib-none">Not in the Library.</p>)}
@@ -386,7 +395,7 @@ export function LibraryPage() {
     const g = GROUPS.find(x => x.key === open)!
     const items = exercises.filter(ex => ex.category === open)
     return (
-      <div className="lib-root">
+      <div className="lib-root is-deep">
         <BackHeader onBack={back} />
         <div className="lib-body">
           <Board className="lib-bd is-open">
@@ -401,7 +410,7 @@ export function LibraryPage() {
   if (open === 'bag') {
     const shownTier = openTier === undefined ? currentTier(tiers) : openTier
     return (
-      <div className="lib-root">
+      <div className="lib-root is-deep">
         <BackHeader onBack={back} />
         <div className="lib-body">
           <Board className="lib-bd is-open">
@@ -415,7 +424,7 @@ export function LibraryPage() {
                     len={12}
                     open={isOpen}
                     locked={t.locked}
-                    count={`${t.mastered}/${t.unlocked}`}
+                    count={tierCount(t)}
                     onClick={t.locked ? undefined : () => setOpenTier(isOpen ? null : t.tier)}
                   />
                   {isOpen && t.combos.map(c => (
@@ -435,7 +444,7 @@ export function LibraryPage() {
 
   if (open === 'techniques') {
     return (
-      <div className="lib-root">
+      <div className="lib-root is-deep">
         <BackHeader onBack={back} />
         <div className="lib-body">
           <Board className="lib-bd is-open">
@@ -449,7 +458,7 @@ export function LibraryPage() {
 
   if (open === 'runs') {
     return (
-      <div className="lib-root">
+      <div className="lib-root is-deep">
         <BackHeader onBack={back} />
         <div className="lib-body">
           <Board className="lib-bd is-open">
@@ -463,7 +472,7 @@ export function LibraryPage() {
 
   if (open === 'waybook') {
     return (
-      <div className="lib-root">
+      <div className="lib-root is-deep">
         <LibraryHeader onBack={back} />
         <div className="lib-body is-book">
           {unlocked && <WaybookBook entries={entries} loaded={entriesLoaded} />}
@@ -511,8 +520,9 @@ export function LibraryPage() {
           aria-label="Search everything"
           enterKeyHint="search"
         />
+        {/* page 65: compact rows (46 px, 32 px icons, 17 px flaps), the board low so the arch shows */}
         {!q && (
-          <Board className="lib-bd">
+          <Board className="lib-bd lib-list">
             {GROUPS.map(g => {
               const count = g.key === 'waybook' ? '' : !loaded ? ''
                 : g.key === 'bag' ? bagCount(combos)
@@ -520,14 +530,13 @@ export function LibraryPage() {
                 : g.key === 'runs' ? String(runs.length)
                 : String(counts[g.key] ?? 0)
               return (
-                <button key={g.key} type="button" className="lib-grp2" onClick={() => { if (g.key === 'waybook') void openWaybook(); else go(g.key) }} aria-label={g.name.toLowerCase()}>
-                  <span className="lib-chev" aria-hidden>›</span>
-                  <SessionIcon kind={g.icon} size={40} label="" />
-                  <span className="lib-grp2-n">
-                    <FlapLabel text={g.name} size="md" />
-                    {g.isNew && <span className="lib-newk">NEW KIND</span>}
-                  </span>
-                  {g.key === 'waybook' ? <span className="lib-lock2" aria-label="Locked">⚿</span> : <span className="lib-cnt2">{count}</span>}
+                <button key={g.key} type="button" className="lib-row" onClick={() => { if (g.key === 'waybook') void openWaybook(); else go(g.key) }} aria-label={g.name.toLowerCase()}>
+                  <SessionIcon kind={g.icon} size={32} label="" />
+                  <span className="lib-row-n"><FlapLabel text={g.name} size="sm" /></span>
+                  {g.key === 'waybook'
+                    ? <span className="lib-row-lock" aria-label="Locked">⚿</span>
+                    : <span className="lib-row-cnt">{count}{g.key === 'bag' && count && <small>unlocked</small>}</span>}
+                  <span className="lib-row-chev" aria-hidden>›</span>
                 </button>
               )
             })}

@@ -45,7 +45,7 @@ const seed = readFileSync(join(ROOT, 'src/db/seed.sql'), 'utf8')
 for (const s of statements) assert.ok(seed.includes(s), `seed.sql has: ${s.slice(0, 80)}`)
 // 0039 is the next migration after 0038
 const files = readdirSync(join(ROOT, 'drizzle')).filter(n => n.endsWith('.sql')).sort()
-assert.equal(files.at(-1), '0039_library_videos.sql')
+assert.equal(files[files.indexOf('0038_library_content.sql') + 1], '0039_library_videos.sql')
 
 const db = new Database(':memory:')
 for (const f of files) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))

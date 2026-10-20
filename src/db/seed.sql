@@ -357,3 +357,8 @@ UPDATE combos SET form_video_url = 'https://www.youtube.com/watch?v=u6p4YKrvTwg'
 UPDATE combos SET form_video_url = 'https://www.youtube.com/watch?v=u6p4YKrvTwg', video_start_sec = 24, video_source = 'Tiger Muay Thai (Brad Riddell, with Dan Hooker)', video_title = 'Striking Technique Of The Week: Fake Low Kick to 1-2', video_length = '2:23', video_status = 'live', video_checked_at = 1792495796, tiktok_url = 'https://www.tiktok.com/@trainor103/video/7211476819998969093' WHERE id = 'combo-m03';
 UPDATE combos SET form_video_url = 'https://www.youtube.com/watch?v=HYG6kcRYIZg', video_start_sec = 27, video_source = 'Warrior Collective (Damien Trainor, former world champion)', video_title = 'Muay Thai 5 Brutal Boxing to Elbow Drills Tutorial', video_length = '6:07', video_status = 'live', video_checked_at = 1792495796, tiktok_url = 'https://www.tiktok.com/@trainor103/video/7499869748306513174' WHERE id = 'combo-m07';
 -- combo-w12: kept as it is (no reputable clip of the combo found); its start time is above.
+-- The Library's short cue lines and the squat's coach note (page 65), the same rows as drizzle/0040_library_polish.sql.
+-- Appended to seed.sql after libraryVideos.sql.
+UPDATE techniques SET cue_line = 'Lead hand straight out, turn the fist over, straight back to the chin.' WHERE id = 'tech-jab';
+UPDATE run_types SET cue_line = 'Walk before you need to.' WHERE id = 'run-walk';
+UPDATE exercises SET coach_note = 'Your main squat from week 3. Sets of 8, 2–3 reps left.' WHERE id = 'ex-front-squat';
