@@ -156,10 +156,9 @@
 .lib-rh.is-zero { color: #9fb2a8; }
 .lib-classkey { margin: 0; text-align: center; font: 600 14px var(--font-body); color: #9fb2a8; display: flex; align-items: center; justify-content: center; gap: 6px; }
 
-/* ── page 65: the list, compact, the board low so the rune arch shows ── */
-/* the list fills the page so its board can sit low (margin-top: auto) */
-.lib-root:not(.is-deep) > .lib-body { min-height: calc(100dvh - 60px - 96px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
-.lib-bd.lib-list { margin-top: auto; padding: 4px 12px !important; background-color: rgba(8, 13, 11, 0.5) !important; }
+/* ── page 65: the list, compact; page 67: it starts under the window, so the rune arch shows ── */
+.lib-root > .wm-scene-window + .lib-body { padding-top: 0; }
+.lib-bd.lib-list { padding: 4px 12px !important; background-color: rgba(8, 13, 11, 0.5) !important; }
 .lib-row {
   display: flex;
   align-items: center;
@@ -182,14 +181,14 @@
 .lib-row-chev { font: 800 16px var(--font-mono); color: #c9b27a; width: 10px; text-align: right; flex: none; }
 
 /* inside the Library (a group, an item, the Waybook): the darker scrim of page 65's item pages
-   (rgba(2,10,8) .6 to .86), laid over the arch's own scrim so the two make it exactly */
+   (rgba(2,10,8) .6 to .86), laid over the world's top scrim (page 67: 66% to 0 over 190 px) so the two make it */
 .lib-root.is-deep::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: linear-gradient(rgba(2, 10, 8, 0.111), rgba(2, 10, 8, 0.512) 22%, rgba(2, 10, 8, 0.497) 30%, rgba(2, 10, 8, 0.541) 45%, rgba(2, 10, 8, 0.3));
+  background: linear-gradient(rgba(2, 10, 8, 0), rgba(2, 10, 8, 0.41) 12.4%, rgba(2, 10, 8, 0.6) 22.5%, rgba(2, 10, 8, 0.6) 30%, rgba(2, 10, 8, 0.656) 45%, rgba(2, 10, 8, 0.86));
 }
 .lib-root.is-deep { isolation: auto; }
 

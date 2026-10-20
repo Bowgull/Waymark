@@ -90,7 +90,9 @@ test('Consistency: on the first screen; closed a flap and the bar; open in place
   // tap outside
   await board.tap()
   await expect(board).toHaveAttribute('aria-expanded', 'true')
-  await page.locator('.lg-segl').tap({ position: { x: 4, y: 4 } })
+  // (opened, it has scrolled up under the header, page 67: the header's right side is outside it)
+  const hd = (await page.locator('.lg-hd').boundingBox())!
+  await page.touchscreen.tap(hd.x + hd.width - 8, hd.y + hd.height / 2)
   await expect(board).toHaveAttribute('aria-expanded', 'false')
   // Escape
   await board.tap()

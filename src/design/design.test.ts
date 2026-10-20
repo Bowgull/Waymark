@@ -4,6 +4,7 @@ import { FLIP, changeFrames, fitFlapSize, fitsOnFlap, flapCells, flapStaggerMs, 
 import { markBusy, motionBusy } from './busy'
 import { popParts } from './popFlap'
 import { sessionIconFor } from './sessionIconKeys'
+import { easeOut, sceneAt, SCENE, windowHeight } from './sceneScroll'
 
 // ─── flap cells: never truncate, gaps are clear, padding is tiles ──
 {
@@ -127,6 +128,33 @@ import { sessionIconFor } from './sessionIconKeys'
   markBusy(1000)
   assert.ok(motionBusy(), 'busy while the UI moves')
   assert.ok(!motionBusy(performance.now() + 5000), 'calm after')
+}
+
+// ─── scroll reveals (page 67): parallax 0.4, the veil to 60%, the backing, covered, the window ──
+{
+  assert.equal(SCENE.boardsAt, 0.46)
+  assert.equal(SCENE.boardsAtToday, 0.4)
+  assert.deepEqual(sceneAt(0, 272, false), { shift: 0, veil: 0, solid: false, covered: false }, 'at the window: the scene open')
+  const half = sceneAt(136, 272, false)
+  assert.equal(half.shift, -0.4 * 136, 'the scene follows at 40% of the scroll')
+  assert.ok(Math.abs(half.veil - 0.3) < 1e-9 && !half.solid && !half.covered)
+  assert.ok(sceneAt(233, 272, false).solid, 'the backing fades in 40 px before the boards reach the header')
+  assert.ok(!sceneAt(232, 272, false).solid)
+  const full = sceneAt(600, 272, false)
+  assert.ok(Math.abs(full.veil - 0.6) < 1e-9 && full.solid && full.covered, 'covered: 60% veil, the world idles')
+  assert.equal(sceneAt(600, 272, true).shift, 0, 'Reduce Motion: no parallax')
+  assert.ok(Math.abs(sceneAt(600, 272, true).veil - 0.6) < 1e-9, 'Reduce Motion: the darkening only')
+  assert.deepEqual(sceneAt(-60, 272, false), { shift: 0, veil: 0, solid: false, covered: false }, 'a pull down at the top only bounces')
+  assert.deepEqual(sceneAt(10, 0, false), { shift: 0, veil: 0, solid: true, covered: false }, 'no window: the header backs once anything slides under it')
+  // 390 × 844: the boards 388 px down (46%), Today 338 (40%), under a 116 px header with a 10 px gap
+  assert.equal(windowHeight({ at: 0.46, shellH: 844, viewH: 746, top: 116, gap: 10 }), 262)
+  assert.equal(windowHeight({ at: 0.4, shellH: 844, viewH: 746, top: 116, gap: 10 }), 212)
+  // a short screen: the first board's edge stays above the tab bar
+  assert.equal(windowHeight({ at: 0.46, shellH: 240, viewH: 160, top: 66, gap: 0 }), 160 - SCENE.peekPx - 66)
+  assert.equal(windowHeight({ at: 0.46, shellH: 200, viewH: 120, top: 100, gap: 0 }), 0)
+  assert.equal(easeOut(0), 0)
+  assert.ok(Math.abs(easeOut(1) - 1) < 1e-6)
+  assert.ok(easeOut(0.3) > 0.7, '--ease-out arrives early')
 }
 
 console.log('design tests passed')

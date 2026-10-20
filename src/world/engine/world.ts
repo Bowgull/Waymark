@@ -28,6 +28,8 @@ export interface WorldInit {
   reducedMotion: boolean
   /** The injury weather (page 58). */
   weather?: WorldWeather
+  /** How far the canvas runs below the screen, in css px (page 67's parallax room); the camera frames the screen above it. */
+  overscan?: number
 }
 
 export interface WorldStats {
@@ -38,6 +40,8 @@ export interface WorldStats {
   p95FrameMs: number
   quality: number
   dpr: number
+  /** The frame-rate cap while the boards cover the scene (page 67: 15), or null. */
+  cap: number | null
   drawCalls: number
   built: SceneKey[]
   firstFrameMs: number
@@ -56,12 +60,17 @@ export interface WorldHandle {
   /** The injury weather over the whole world (page 58): green rain, downpour, storm, the quieter fall, the clearing. */
   setWeather(weather: WorldWeather): void
   setReducedMotion(reduced: boolean): void
+  /** Page 67: the boards cover the scene fully; the world idles at 15 fps until they don't. */
+  setCovered(covered: boolean): void
   pause(): void
   resume(): void
   resize(): void
   stats(): WorldStats
   dispose(): void
 }
+
+/** The world's idle rate while the boards cover it (page 67 item 9; world-and-ui-plan). */
+export const COVERED_FPS = 15
 
 // Quality ladder: start crisp; step down when frames run long.
 const LEVELS = [
@@ -86,6 +95,11 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   renderer.setPixelRatio(levelDpr())
   let W = Math.max(1, canvas.clientWidth), H = Math.max(1, canvas.clientHeight)
   renderer.setSize(W, H, false)
+  const overscan = Math.max(0, init.overscan ?? 0)
+  const screenH = () => Math.max(1, H - overscan)
+  // page 67: covered by the boards, the frame budget drops to the idle rate (nobody can tell under the veil)
+  let cap: number | null = null
+  const fpsNow = () => (cap == null ? LEVELS[level].fps : Math.min(cap, LEVELS[level].fps))
 
   const shared: SharedUniforms = makeShared(await glyphAtlas(), 1.6)
   const scene = new THREE.Scene()
@@ -213,7 +227,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
     const a = view.orbit * Math.sin(t * 0.08)
     camera.position.set(view.x + Math.sin(a) * 22, view.camY, view.lookZ + Math.cos(a) * 22)
     camera.lookAt(view.x, view.lookY, view.lookZ)
-    const f = frustumFor(view, W, H)
+    const f = frustumFor(view, W, H, screenH())
     camera.left = f.left; camera.right = f.right; camera.top = f.top; camera.bottom = f.bottom
     camera.near = view.near
     camera.updateProjectionMatrix()
@@ -277,7 +291,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   function frame(now: number) {
     if (!running) return
     raf = requestAnimationFrame(frame)
-    const target = 1000 / LEVELS[level].fps
+    const target = 1000 / fpsNow()
     if (lastFrame && now - lastFrame < target - 2) return
     const delta = lastFrame ? now - lastFrame : target
     lastFrame = now
@@ -294,8 +308,8 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   // adaptive quality: if more than a fifth of recent frames ran long (or the CPU side alone eats the budget), step down;
   // after 4 calm seconds with spare CPU time, step back up one (page 59 §6 item 6: was 12)
   function adapt(now: number) {
-    // a switch is never judged: its frames are dropped, so only calm frames count
-    if (glide || now < holdUntil || motionBusy()) { deltas.length = 0; works.length = 0; return }
+    // a switch is never judged: its frames are dropped, so only calm frames count; nor is the covered idle rate
+    if (glide || now < holdUntil || motionBusy() || cap != null) { deltas.length = 0; works.length = 0; return }
     // judge after 60 frames, or after 20 when frames are that slow (a struggling phone shouldn't wait 30 s)
     if (deltas.length < 20 || (deltas.length < 60 && deltas.reduce((a, b) => a + b, 0) < 3000)) return
     const target = 1000 / LEVELS[level].fps
@@ -379,6 +393,13 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
       weather.set(weatherParams(worldWeather, offline), reduced ? 0 : clearing ? 3.5 : 3)
       if (reduced) requestStill()
     },
+    setCovered(c) {
+      const next = c ? COVERED_FPS : null
+      if (next === cap) return
+      cap = next
+      deltas.length = 0; works.length = 0
+      holdUntil = performance.now() + 1500
+    },
     setReducedMotion(r) { if (r === reduced) return; reduced = r; if (r) { stop(); requestStill() } else start() },
     pause() { stop() },
     resume() { start() },
@@ -393,7 +414,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
         fps: Math.round(fps * 10) / 10,
         workMs: works.length ? Math.round((works.reduce((a, b) => a + b, 0) / works.length) * 100) / 100 : 0,
         p95FrameMs: sorted.length ? Math.round(sorted[Math.floor(sorted.length * 0.95)] * 10) / 10 : 0,
-        quality: level, dpr: renderer.getPixelRatio(), drawCalls: renderer.info.render.calls,
+        quality: level, dpr: renderer.getPixelRatio(), cap, drawCalls: renderer.info.render.calls,
         built: [...scenes.keys()], firstFrameMs: Math.round(firstFrameMs), weather: weather.debug() as unknown as { p: Record<string, number>; grow: number },
       }
     },

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Board, CloseWord, Crest, FlapButton, FlapLabel, showPop } from '@/design'
+import { Board, CloseWord, Crest, FlapButton, FlapLabel, SceneWindow, showPop } from '@/design'
 import type { DayBoardSession } from '@/features/dayboard/rowState'
 import { apiFetch } from '@/lib/api'
 import { lbText } from '@/lib/units'
@@ -141,7 +141,7 @@ function parseDayParam(v: string | null): number | null {
 function ProgramHeader() {
   const now = new Date()
   return (
-    <header className="pg-head">
+    <header className="pg-head wm-scene-hd">
       <Link to="/today" className="pg-brand" aria-label="Today">
         <span className="pg-crest"><Crest width={52} /></span>
         <FlapLabel text="PROGRAM" size="sm" />
@@ -153,13 +153,14 @@ function ProgramHeader() {
 
 /**
  * The page frame: no background (the world and its road show through behind
- * the glass). Page 56 6A: the week board sits right under the header, with no
- * band left clear between them.
+ * the glass). Page 67 (Scroll reveals): the road in the top 46%, page 33's
+ * road band, and the boards start under it and scroll up over it.
  */
 function Frame({ children }: { children: ReactNode; road?: boolean }) {
   return (
     <div className="pg-root">
       <ProgramHeader />
+      <SceneWindow />
       <div className="pg-body">{children}</div>
     </div>
   )

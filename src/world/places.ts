@@ -42,27 +42,49 @@ export type SceneKey = keyof typeof PLACE_ORIGIN
 const pathX = (z: number) => 0.25 + Math.sin(z * 0.42) * 0.75
 
 /**
- * Today's mockups (pages 20, 35, 36, 42) put the page-14 forest behind the UI as a still
- * (flap.css .stillbg: a 920×1800 capture of the page-14 phone, its screen 780 px wide with
- * 70 px each side, drawn at 150% of the phone's width, centred, 42% down). That is the
- * page-14 view enlarged by TODAY_ZOOM, its look point 410.4 px down: glyphs print larger too.
+ * Page 67 (Scroll reveals, approved) re-frames every place into its window, the top 40–46% of
+ * the screen, where the boards no longer cover it. Each view below is page 67's phone exactly.
+ *
+ * Today: the page-14 forest still (stills/forest14b-misty.jpg, a 920×1800 capture of the page-14
+ * phone, its look point 844 px down) drawn 470 px wide and 305 px up. That is the page-14 view
+ * enlarged by TODAY_ZOOM, its look point 126 px down: the oaks and the start of the path in the
+ * window, the arch over them under the header's scrim.
  */
-export const TODAY_ZOOM = (585 / 920) * 2
-const TODAY_LOOK_Y_PX = (844 - 1800 * (585 / 920)) * 0.42 + 422 * TODAY_ZOOM
+export const TODAY_ZOOM = (470 / 920) * 2
+const TODAY_LOOK_Y_PX = -305 + 422 * TODAY_ZOOM
+
+/**
+ * Library: page 14b's close-up of the arch as page 67 draws its still (stills/arch-ruins-closeup.jpg,
+ * 1180 px wide at -16, -8; page 65 drew the same phone 1:1 at 1266 px, -18, 0): 0.932 of page 14b's
+ * zoom, the look point 385 px down and 12.5 px left of centre.
+ */
+const ARCH_ZOOM = 1180 / 1266
+const ARCH_LOOK_Y_PX = (422 / (1266 / 1140)) * (1180 / 1140) - 8
+const ARCH_LOOK_X_PX = ((195 + 18) / (1266 / 1140)) * (1180 / 1140) - 16 - 195
+
+/** Ledger: page 32's camera, its 390×844 render drawn 450 px up so the water sits in the window. */
+const POND_LIFT_PX = 450
 
 export const PLACE_VIEWS: Readonly<Record<WorldPlace, PlaceView>> = {
-  // page 14's world (frustum 11, lookY 2.2) as Today's mockups show it: enlarged by TODAY_ZOOM, look point 410 px down
+  // page 14's world (frustum 11, lookY 2.2), enlarged by TODAY_ZOOM, its look point 126 px down (page 67)
   clearing: { x: PLACE_ORIGIN.clearing, lookY: 2.2, lookZ: 0, camY: 6.5, pxPerUnit: (844 / 11) * TODAY_ZOOM, glyph: 9 * TODAY_ZOOM, anchor: TODAY_LOOK_Y_PX / 844, orbit: 0.12, near: 0.1 },
-  // page 33: frustum 8 on a 390×400 render, drawn as the road band (46% of the phone, cover: 6 px off its top)
-  road: { x: PLACE_ORIGIN.road, lookY: 0.6, lookZ: -2.5, camY: 11, pxPerUnit: 400 / 8, glyph: 9, anchor: (200 - 6) / 844, orbit: 0.12, near: 0.1 },
-  // page 14b, exactly: the close-up of the arch down the clearing's path (frustum 4.2 on the phone, lookX = the
-  // path at the arch, lookY 1.4, lookZ -7.4, camY 3.2, orbit 0.04). Glyphs keep their 9 px at this zoom (world.ts).
-  arch: { x: PLACE_ORIGIN.clearing + pathX(-7.4), lookY: 1.4, lookZ: -7.4, camY: 3.2, pxPerUnit: 844 / 4.2, glyph: 9, anchor: 0.5, orbit: 0.04, near: 0.1 },
-  // page 32: the pond filling the screen, camY 5.6, lookY 3.6, lookZ 7
-  pond: { x: PLACE_ORIGIN.pond, lookY: 3.6, lookZ: 7, camY: 5.6, pxPerUnit: 844 / 11, glyph: 9, anchor: 0.5, orbit: 0.12, near: 0.1 },
+  // page 33's road band as page 67 renders it: frustum 8 on a 390×410 render at the top of the phone
+  road: { x: PLACE_ORIGIN.road, lookY: 0.6, lookZ: -2.5, camY: 11, pxPerUnit: 410 / 8, glyph: 9, anchor: 205 / 844, orbit: 0.12, near: 0.1 },
+  // page 14b: the close-up of the arch down the clearing's path (frustum 4.2 on the phone, lookX = the
+  // path at the arch, lookY 1.4, lookZ -7.4, camY 3.2, orbit 0.04), framed as page 67's still. Glyphs keep
+  // their 9 px at this zoom (world.ts).
+  arch: { x: PLACE_ORIGIN.clearing + pathX(-7.4) - ARCH_LOOK_X_PX / ((844 / 4.2) * ARCH_ZOOM), lookY: 1.4, lookZ: -7.4, camY: 3.2, pxPerUnit: (844 / 4.2) * ARCH_ZOOM, glyph: 9, anchor: ARCH_LOOK_Y_PX / 844, orbit: 0.04, near: 0.1 },
+  // page 32: camY 5.6, lookY 3.6, lookZ 7 (frustum 11 on the phone), lifted 450 px (page 67): the look point just above the top
+  pond: { x: PLACE_ORIGIN.pond, lookY: 3.6, lookZ: 7, camY: 5.6, pxPerUnit: 844 / 11, glyph: 9, anchor: (422 - POND_LIFT_PX) / 844, orbit: 0.12, near: 0.1 },
   // page 43: the hobbit home, frustum 7.5, lookY 1.3
   home: { x: PLACE_ORIGIN.home, lookY: 1.3, lookZ: 0, camY: 6.5, pxPerUnit: 844 / 7.5, glyph: 9, anchor: 0.5, orbit: 0.12, near: 0.1 },
 }
+
+/**
+ * The world's canvas runs this far below the screen (page 67's scene: 100% + 260 px), so the
+ * scene can drift up with the scroll (parallax) without showing its bottom edge.
+ */
+export const SCENE_OVERSCAN_PX = 260
 
 /** Which scene a place's view stands in (the arch is inside the clearing). */
 export function sceneOf(place: WorldPlace): SceneKey {
@@ -115,10 +137,14 @@ export function mixView(a: PlaceView, b: PlaceView, k: number): PlaceView {
   }
 }
 
-/** The camera frustum (left, right, top, bottom in world units) for a view on a canvas of w×h css px. */
-export function frustumFor(view: PlaceView, w: number, h: number): { left: number; right: number; top: number; bottom: number } {
-  const fh = h / view.pxPerUnit, fw = w / view.pxPerUnit
-  return { left: -fw / 2, right: fw / 2, top: view.anchor * fh, bottom: -(1 - view.anchor) * fh }
+/**
+ * The camera frustum (left, right, top, bottom in world units) for a view on a canvas of w×h css px.
+ * The anchor is a share of the screen's height (`screenH`, the canvas less its overscan below).
+ */
+export function frustumFor(view: PlaceView, w: number, h: number, screenH = h): { left: number; right: number; top: number; bottom: number } {
+  const fw = w / view.pxPerUnit
+  const above = view.anchor * screenH
+  return { left: -fw / 2, right: fw / 2, top: above / view.pxPerUnit, bottom: -(h - above) / view.pxPerUnit }
 }
 
 /** Scenes the camera can see from this view (with a margin), so the rest can be skipped. */

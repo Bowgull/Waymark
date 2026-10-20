@@ -10,6 +10,8 @@
   .td-fill.is-leaving > :not(.td-hd) { transition: none; }
   .td-fill.is-arriving > :not(.td-hd) { animation: none; }
 }
+/* page 67: a plain day starts its boards under the window (40% down) and Settings follows the Waybook */
+.td-fill.is-window { min-height: 0; }
 .td-spacer { flex: 1 1 auto; min-height: 8px; }
 
 /* header: the crest and WAYMARK on a flap, the date on a flap */
