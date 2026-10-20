@@ -88,6 +88,20 @@ export function singleRunCap(plannedSec: number, longestLast30Sec: number | null
   return { capSec: cap, reason: `Capped at 110% of your longest run in 30 days (${Math.round(longestLast30Sec / 60)} min).` }
 }
 
+/**
+ * R7 for the Block Zero run-walk: the single-run cap, never below the week-1
+ * session. Week 1 is the plan's own restart level (as the weekly allowance's
+ * floor), so one short or shortened run can't pin every later run-walk to its
+ * length. The coach-brain replay found that ratchet: a run shortened to 11 min
+ * (session time, warm-up included) held run-walks at 11 min for five weeks.
+ */
+export function runWalkSingleCap(plannedSec: number, longestLast30Sec: number | null): CapResult & { restart: boolean } {
+  const cap = singleRunCap(plannedSec, longestLast30Sec)
+  if (cap.capSec >= Math.min(plannedSec, RESTART_SESSION_SEC)) return { ...cap, restart: false }
+  // History shorter than the week-1 session: the week-1 run-walk itself, its own short intervals.
+  return { capSec: Math.min(plannedSec, RESTART_SESSION_SEC), reason: 'Runs are short lately. The week-1 run-walk until they build.', restart: true }
+}
+
 export interface WeeklyRunContext {
   /** Completed run time last calendar week. 0 when nothing was run. */
   lastWeekRunSec: number
@@ -149,7 +163,7 @@ function describe(p: Omit<RunWalkPrescription, 'targetDesc'>): string {
 export function prescribeRunWalk(input: RunWalkInput): RunWalkPrescription {
   const base = getRunWalkWeek(input.week)
   const plannedSec = runWalkTotalSec(base)
-  const single = singleRunCap(plannedSec, input.longestLast30Sec)
+  const single = runWalkSingleCap(plannedSec, input.longestLast30Sec)
   const weekly = weeklyRunCap(plannedSec, input.weekly)
   const extra: CapResult = input.extraCap && input.extraCap.capSec < plannedSec ? { capSec: Math.max(0, Math.floor(input.extraCap.capSec)), reason: input.extraCap.reason } : { capSec: plannedSec, reason: null }
   const capSec = Math.min(single.capSec, weekly.capSec, extra.capSec)
@@ -160,7 +174,9 @@ export function prescribeRunWalk(input: RunWalkInput): RunWalkPrescription {
     .map(r => r.reason as string)
 
   let shape: RunWalkWeek = base
-  if (capSec < plannedSec) {
+  if (single.restart && capSec >= RESTART_SESSION_SEC) {
+    shape = { ...RUN_WALK_WEEKS[0], week: base.week }
+  } else if (capSec < plannedSec) {
     const cycle = base.runSec + base.walkSec
     const rounds = Math.floor((capSec - base.warmupSec) / cycle)
     if (rounds >= 2) {

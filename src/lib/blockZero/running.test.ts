@@ -69,7 +69,12 @@ assert(capped.runSec === 240 && capped.rounds >= 2, 'capped keeps the week-5 int
 assert(capped.reasons.some(r => r.includes('110%')), 'capped says why')
 
 const tight = prescribeRunWalk({ week: 5, longestLast30Sec: 700, weekly: { lastWeekRunSec: 3000, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 } })
-assert(tight.totalSec <= 700 * 1.1 && tight.runSec === 60, 'very short history: falls back to week-1 intervals')
+assert(tight.totalSec === RESTART_SESSION_SEC && tight.runSec === 60 && tight.rounds === 6, 'very short history: the week-1 run-walk, never shorter (no ratchet below week 1)')
+// The ratchet (coach-brain P0 replay): an 11-min session can't pin later run-walks to 11 min.
+const afterShort = prescribeRunWalk({ week: 4, longestLast30Sec: 660, weekly: { lastWeekRunSec: 3 * 660, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 } })
+assert(afterShort.totalSec === RESTART_SESSION_SEC && afterShort.rounds === 6 && afterShort.reasons.some(r => r.includes('week-1 run-walk')), 'after 11-min runs: back to the full week-1 run-walk (23 min), with why')
+const growing = prescribeRunWalk({ week: 2, longestLast30Sec: RESTART_SESSION_SEC, weekly: { lastWeekRunSec: 3 * RESTART_SESSION_SEC, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 } })
+assert(!growing.capped && growing.rounds === 7, 'after full week-1 run-walks, week 2 is not capped: the plan climbs')
 const spent = prescribeRunWalk({ week: 4, longestLast30Sec: 1500, weekly: { lastWeekRunSec: 3000, thisWeekSoFarSec: RESTART_WEEKLY_SEC, sessionsLeftThisWeek: 1 } })
 assert(spent.rounds === 0 && spent.totalSec === 0 && spent.targetDesc.startsWith('Easy walk'), 'weekly budget spent: easy walk, no running')
 const afterGap = prescribeRunWalk({ week: 5, longestLast30Sec: null, weekly: { lastWeekRunSec: 0, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 } })
