@@ -10,6 +10,8 @@ import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } 
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
 import { overCapBpm, stravaReadouts } from '@/lib/stravaMatch'
 import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
+import { Expand, Strike, SwapRow, Tick } from '@/design/MotionPrimitives'
+import { useSwapList } from '@/design/motionKit'
 
 /** A run's Strava / manual row, attached by GET /api/sessions/today. */
 export interface RunSessionSummary {
@@ -83,10 +85,12 @@ export function TodayDay(props: TodayDayProps) {
   const setOpenId = (id: string | null) => { if (props.onOpenChange) props.onOpenChange(id); else setOwnOpen(id) }
   const day = props.sessions.filter(s => !stravaOrphan(s))
   const unplanned = props.sessions.filter(stravaOrphan)
-  const groups: Array<['am' | 'pm' | null, TodaySession[]]> = [
-    ['am', day.filter(s => s.timeSlot === 'am')],
-    ['pm', day.filter(s => s.timeSlot === 'pm')],
-    [null, day.filter(s => s.timeSlot !== 'am' && s.timeSlot !== 'pm')],
+  // A REPLACE (page 59 §5.3 Swap): the old row is struck and collapses, the new one opens in.
+  const rows = useSwapList(day, s => s.id)
+  const groups: Array<['am' | 'pm' | null, typeof rows]> = [
+    ['am', rows.filter(r => r.item.timeSlot === 'am')],
+    ['pm', rows.filter(r => r.item.timeSlot === 'pm')],
+    [null, rows.filter(r => r.item.timeSlot !== 'am' && r.item.timeSlot !== 'pm')],
   ]
   return (
     <>
@@ -95,10 +99,14 @@ export function TodayDay(props: TodayDayProps) {
           <div key={slot ?? 'any'}>
             {slot && <AmPmHeader slot={slot} />}
             <div className="td-rows">
-              {list.map(s => stravaPending(s) ? (
-                <StravaCard key={s.id} s={s} kind="matched" {...props} />
-              ) : (
-                <TodayRow key={s.id} s={s} open={openId === s.id} onToggle={() => { tapHaptic(); setOpenId(openId === s.id ? null : s.id) }} {...props} />
+              {list.map(({ item: s, key, state, afterExit }) => (
+                <SwapRow key={key} state={state} afterExit={afterExit}>
+                  {stravaPending(s) ? (
+                    <StravaCard s={s} kind="matched" {...props} />
+                  ) : (
+                    <TodayRow s={s} open={openId === s.id} onToggle={() => { tapHaptic(); setOpenId(openId === s.id ? null : s.id) }} {...props} />
+                  )}
+                </SwapRow>
               ))}
             </div>
           </div>
@@ -130,22 +138,24 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
     <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${tiles ? ' is-openx' : ''}`}>
       <div role="button" tabIndex={0} aria-expanded={open} style={{ display: 'contents' }} onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}>
         <SessionIcon kind={iconFor(s)} size={40} />
-        <span className="td-nm"><FlapLabel text={name} size="md" len={11} fit /></span>
+        <span className="td-nm"><FlapLabel text={name} size="md" len={11} fit /><Strike on={skipped} /></span>
         {stravaMin != null ? (
-          <><span className="td-mins">{stravaMin}min</span><span className="td-stick" aria-label="done">✓</span></>
-        ) : done ? <>{rune && <Rune state={rune} size="row" />}<span className={open ? 'td-tick' : 'td-mins'} aria-label="done">✓</span></>
+          <><span className="td-mins">{stravaMin}min</span><Tick className="td-stick" /></>
+        ) : done ? <>{rune && <Rune state={rune} size="row" />}<Tick className={open ? 'td-tick' : 'td-mins'} /></>
           : tiles ? <span className="td-skd">SKIPPED</span>
           : <>{rune && <Rune state={rune} size="row" />}<span className="td-mins">{mins}</span></>}
       </div>
-      {tiles && skip && (
-        <div className="td-more2" onClick={e => e.stopPropagation()}>
-          <ReasonTiles tiles={SKIP_REASONS} value={skip.reason} onChange={r => onSkipReason!(s.id, r, null)} />
-          {skip.reason === 'injury' && (
-            <ReasonTiles label={false} tiles={SKIP_PLACES.map(p => ({ value: p, label: p.toUpperCase() }))} value={skip.detail} onChange={d => onSkipReason!(s.id, 'injury', d)} />
-          )}
-        </div>
-      )}
-      {open && !skipped && (
+      <Expand open={tiles}>
+        {skip && onSkipReason && (
+          <div className="td-more2" onClick={e => e.stopPropagation()}>
+            <ReasonTiles tiles={SKIP_REASONS} value={skip.reason} onChange={r => onSkipReason(s.id, r, null)} />
+            {skip.reason === 'injury' && (
+              <ReasonTiles label={false} tiles={SKIP_PLACES.map(p => ({ value: p, label: p.toUpperCase() }))} value={skip.detail} onChange={d => onSkipReason(s.id, 'injury', d)} />
+            )}
+          </div>
+        )}
+      </Expand>
+      <Expand open={open && !skipped}>
         <div className="td-sum" onClick={e => e.stopPropagation()}>
           <SessionSummary
             session={s}
@@ -162,7 +172,7 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
             ) : undefined}
           />
         </div>
-      )}
+      </Expand>
       {endOpen && (
         <CentredCard label="End early" head="End early" onDismiss={() => setEndOpen(false)}>
           <p className="wm-prose">Mark this session done or wipe the start and put it back to planned.</p>

@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { Board, FlapButton, FlapLabel, showPop } from '@/design'
 import { SORENESS_COLOURS } from '@/design/tokens'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
+import { selectHaptic } from '@/lib/haptics'
 
 import { BzDots, BzOverlay, BzTiles } from './Bz'
 import {
@@ -62,6 +63,9 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
   const touch = useRef<{ x: number; y: number } | null>(null)
   const submitted = useRef(false)
   useDeckOpenClass()
+  // which way the cards go (page 59 §5.3): the next card slides in from the right, Back from the left
+  const [step, setStep] = useState<{ index: number; dir: 'next' | 'back' | null }>({ index: state.index, dir: null })
+  if (step.index !== state.index) setStep({ index: state.index, dir: state.index > step.index ? 'next' : 'back' })
 
   // Each answer is saved as it is given (the last one goes with the full save below).
   const lastPartial = useRef<string | null>(null)
@@ -157,7 +161,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
   }
 
   return (
-    <div className="bz-deck" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+    <div className="bz-deck" data-step={step.dir ?? undefined} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
       <BzOverlay label="Morning check-in">
         <div className="bz-toprow">
           <FlapLabel text="MORNING CHECK-IN" size="xs" tone="gold" animate={false} />
@@ -172,7 +176,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
           <>
             <BzDots n={total} now={state.index} done={i => i < state.index} />
             {state.askingBackNotes ? (
-              <Board className="bz-bd" head={`${Math.min(state.index + 1, total)} of ${total} · back today`}>
+              <Board className="bz-bd is-step" head={`${Math.min(state.index + 1, total)} of ${total} · back today`}>
                 <FlapLabel text="WHAT BOTHERS IT?" size="md" animate="mount" />
                 <p className="bz-q">Which movements, where. The coach swaps in easier versions.</p>
                 <textarea
@@ -189,7 +193,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
                 </div>
               </Board>
             ) : (
-              <Board className="bz-bd" key={q.key} head={`${Math.min(state.index + 1, total)} of ${total}`}>
+              <Board className="bz-bd is-step" key={q.key} head={`${Math.min(state.index + 1, total)} of ${total}`}>
                 <FlapLabel text={q.title.toUpperCase()} size="md" animate="mount" />
                 {q.sub ? <p className="bz-q">{q.sub}</p> : <div style={{ height: 10 }} />}
                 <BzTiles
@@ -200,7 +204,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
                     ? { value: o.value, label: o.label, sub: o.sub, swatch: SORENESS_COLOURS[i] }
                     : { value: o.value, label: o.label, sub: o.sub }))}
                   selected={state.answers[q.key] ?? null}
-                  onPick={v => dispatch({ type: 'answer', key: q.key, value: v })}
+                  onPick={v => { void selectHaptic(); dispatch({ type: 'answer', key: q.key, value: v }) }}
                 />
               </Board>
             )}
