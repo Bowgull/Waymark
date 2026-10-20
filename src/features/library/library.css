@@ -167,11 +167,6 @@
 /* the search's Waybook matches: the same page, inside the board */
 .lib-book.is-inline { flex: none; min-height: 0; margin: 10px 0 0; overflow: visible; }
 
-/* ── locked (page 21 "Locked"): ⚿, one line, UNLOCK WAYBOOK ── */
-.lib-locked { align-items: center; text-align: center; padding: 24px 14px !important; position: relative; top: -9px; }
-/* page 21: the card is centred on the whole phone (the scrim's safe-area padding is uneven) */
-.lib-locked-key { font: 800 30px var(--font-mono); color: #c9b27a; }
-
 .lib-none { margin: 4px 2px; }
 
 @media (prefers-reduced-motion: reduce) {

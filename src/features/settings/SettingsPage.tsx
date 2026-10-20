@@ -106,9 +106,9 @@ export function SettingsPage() {
     if (next) void tapHaptic()
   }
 
-  function handleWaybookAuth(next: boolean) {
-    setWaybookAuth(next)
-    setGateEnabled(next)
+  // On by default; turning it off asks for Face ID first (page 61 part 1).
+  async function handleWaybookAuth(next: boolean) {
+    if (await setGateEnabled(next)) setWaybookAuth(next)
   }
 
   useEffect(() => {
@@ -366,7 +366,7 @@ export function SettingsPage() {
           <FlapSwitch on={hapticsOn} onChange={handleHaptics} label="Haptics" />
         </SRow>
         <SRow label="Face ID for the Waybook" sub="Asks for Face ID before the Waybook opens.">
-          <FlapSwitch on={waybookAuth} onChange={handleWaybookAuth} label="Face ID for the Waybook" />
+          <FlapSwitch on={waybookAuth} onChange={v => { void handleWaybookAuth(v) }} label="Face ID for the Waybook" />
         </SRow>
       </WorldTimeBoard>
 

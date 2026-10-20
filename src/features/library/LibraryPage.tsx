@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type TouchEvent } from 
 import { useSearchParams } from 'react-router-dom'
 import { Board, Crest, FlapLabel, SessionIcon, showPop } from '@/design'
 import { apiFetch } from '@/lib/api'
+import { markWaybookOpen, requireUnlock } from '@/lib/waybookGate'
 
 import {
   EXERCISE_GROUPS,
@@ -32,7 +33,6 @@ import {
   type LibraryJournalEntry,
 } from './libraryModel'
 import { useWaybookUnlocked } from './useWaybookUnlocked'
-import { WaybookLockedCard } from './WaybookGate'
 import './library.css'
 
 // The Library (page 21 + page 39, approved): over the rune arch. The list is
@@ -318,6 +318,28 @@ export function LibraryPage() {
 
   const back = () => go(null)
 
+  // Tapping Waybook asks Face ID (iOS's own prompt) before the pages open; cancel stays on the list.
+  async function openWaybook() {
+    if (await requireUnlock('Open the Waybook')) go('waybook')
+  }
+
+  // On the pages without a fresh unlock (a link straight in, or back from another app): ask, or back to the list.
+  const asking = useRef(false)
+  useEffect(() => {
+    if (open !== 'waybook' || unlocked || asking.current) return
+    asking.current = true
+    void requireUnlock('Open the Waybook').then(ok => {
+      asking.current = false
+      if (!ok) setParams({}, { replace: true })
+    })
+  }, [open, unlocked, setParams])
+
+  // The 3 minutes count from the last time the pages were open.
+  useEffect(() => {
+    if (open !== 'waybook' || !unlocked) return
+    return () => markWaybookOpen()
+  }, [open, unlocked])
+
   // ── a group opened ──
   if (open && EXERCISE_GROUPS.includes(open)) {
     const g = GROUPS.find(x => x.key === open)!
@@ -380,9 +402,7 @@ export function LibraryPage() {
       <div className="lib-root">
         <LibraryHeader onBack={back} />
         <div className="lib-body is-book">
-          {unlocked
-            ? <WaybookBook entries={entries} loaded={entriesLoaded} />
-            : <WaybookLockedCard onDismiss={back} />}
+          {unlocked && <WaybookBook entries={entries} loaded={entriesLoaded} />}
         </div>
       </div>
     )
@@ -412,7 +432,7 @@ export function LibraryPage() {
             {GROUPS.map(g => {
               const count = g.key === 'waybook' ? '' : !loaded ? '' : g.key === 'bag' ? bagCount(combos) : String(counts[g.key] ?? 0)
               return (
-                <button key={g.key} type="button" className="lib-grp2" onClick={() => go(g.key)} aria-label={g.name.toLowerCase()}>
+                <button key={g.key} type="button" className="lib-grp2" onClick={() => { if (g.key === 'waybook') void openWaybook(); else go(g.key) }} aria-label={g.name.toLowerCase()}>
                   <span className="lib-chev" aria-hidden>›</span>
                   <SessionIcon kind={g.icon} size={40} label="" />
                   <FlapLabel text={g.name} size="md" />

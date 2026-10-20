@@ -1,89 +1,72 @@
-import { BiometricAuth, BiometryErrorType } from '@aparajita/capacitor-biometric-auth'
+// Face ID on the Waybook (approved 2026-10-19; page 61 part 1). Tapping
+// Waybook anywhere asks with iOS's own prompt (Face ID, then the passcode);
+// Waymark draws nothing. Success opens it, cancel leaves it closed. The rule
+// itself is in waybookLock.ts: not again within 3 minutes of the Waybook last
+// being open, again at once after the phone locks or he leaves the app. The
+// web build has no Face ID and opens without asking.
+
+import { BiometricAuth } from '@aparajita/capacitor-biometric-auth'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 
-const TIMEOUT_MS = 3 * 60 * 1000
+import { showPop } from '@/design/popFlap'
+
+import { getItem, setItem } from './safeStorage'
+import { gateEnabledFrom, needsFaceId, outcomeForError } from './waybookLock'
+
 const TOGGLE_KEY = 'waybook.requireAuth'
+const NO_PASSCODE = 'No passcode on this iPhone. Set one to lock the Waybook.'
 
 type Listener = (unlocked: boolean) => void
 
-let unlockedAt: number | null = null
-let backgroundedAt: number | null = null
-let lifecycleWired = false
+let lastOpenAt: number | null = null
 const listeners = new Set<Listener>()
 
 function notify() {
   const u = isUnlocked()
-  listeners.forEach((l) => l(u))
+  listeners.forEach(l => l(u))
 }
 
-function wireLifecycle() {
-  if (lifecycleWired) return
-  lifecycleWired = true
-  if (!Capacitor.isNativePlatform()) {
-    const onVis = () => {
-      if (document.visibilityState === 'hidden') {
-        backgroundedAt = Date.now()
-      } else if (document.visibilityState === 'visible' && backgroundedAt) {
-        if (Date.now() - backgroundedAt > TIMEOUT_MS) lock()
-        backgroundedAt = null
-      }
-    }
-    document.addEventListener('visibilitychange', onVis)
-    return
-  }
-  CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-    if (!isActive) {
-      backgroundedAt = Date.now()
-    } else if (backgroundedAt) {
-      if (Date.now() - backgroundedAt > TIMEOUT_MS) lock()
-      backgroundedAt = null
-    }
-  })
+function native(): boolean {
+  return Capacitor.isNativePlatform()
 }
+
+// Leaving the app (or the phone locking) drops the window at once. `pause` is
+// didEnterBackground: the Face ID prompt itself only makes the app inactive,
+// so it doesn't relock in the middle of its own prompt.
+let wired = false
+function wireLifecycle() {
+  if (wired || typeof window === 'undefined') return
+  wired = true
+  if (native()) {
+    void CapacitorApp.addListener('pause', () => lock())
+  } else {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') lock() })
+  }
+}
+wireLifecycle()
 
 export function isGateEnabled(): boolean {
-  try {
-    return localStorage.getItem(TOGGLE_KEY) === '1'
-  } catch {
-    return false
-  }
+  return gateEnabledFrom(getItem(TOGGLE_KEY))
 }
 
-export function setGateEnabled(enabled: boolean) {
-  try {
-    localStorage.setItem(TOGGLE_KEY, enabled ? '1' : '0')
-  } catch {
-    // ignore
-  }
-  if (!enabled) {
-    // Disabling the gate also unlocks so downstream UI reveals content.
-    unlockedAt = Date.now()
-  } else {
-    // Enabling forces a fresh unlock next time something is touched.
-    unlockedAt = null
-  }
-  notify()
-}
-
+/** Readable now without a prompt. */
 export function isUnlocked(): boolean {
-  if (!isGateEnabled()) return true
-  if (unlockedAt === null) return false
-  return Date.now() - unlockedAt < TIMEOUT_MS
+  return !needsFaceId({ enabled: isGateEnabled(), native: native(), lastOpenAt }, Date.now())
 }
 
-export function lock() {
-  unlockedAt = null
+/** The Waybook is (still) open: the 3 minutes count from now. */
+export function markWaybookOpen(): void {
+  lastOpenAt = Date.now()
+}
+
+export function lock(): void {
+  lastOpenAt = null
   notify()
 }
 
-export async function requireUnlock(reason = 'Unlock Waybook'): Promise<boolean> {
-  wireLifecycle()
-  if (!isGateEnabled()) return true
-  if (isUnlocked()) {
-    unlockedAt = Date.now()
-    return true
-  }
+/** iOS's own prompt, Face ID then the passcode. */
+async function ask(reason: string): Promise<boolean> {
   try {
     await BiometricAuth.authenticate({
       reason,
@@ -91,31 +74,40 @@ export async function requireUnlock(reason = 'Unlock Waybook'): Promise<boolean>
       allowDeviceCredential: true,
       iosFallbackTitle: 'Use Passcode',
     })
-    unlockedAt = Date.now()
-    notify()
     return true
   } catch (e) {
-    const code = (e as { code?: BiometryErrorType })?.code
-    if (code === BiometryErrorType.userCancel || code === BiometryErrorType.appCancel || code === BiometryErrorType.systemCancel) {
-      return false
+    const code = (e as { code?: string })?.code
+    if (outcomeForError(code) === 'open-unprotected') {
+      showPop(NO_PASSCODE, 'info')
+      return true
     }
-    console.warn('Waybook auth failed:', code ?? e)
+    if (code && !/cancel/i.test(code)) console.warn('Waybook auth failed:', code)
     return false
   }
+}
+
+/** Tapping Waybook: true opens it, false leaves it closed. */
+export async function requireUnlock(reason = 'Open the Waybook'): Promise<boolean> {
+  if (!isUnlocked()) {
+    if (!(await ask(reason))) return false
+  }
+  markWaybookOpen()
+  notify()
+  return true
+}
+
+/** The Settings switch. Turning it off asks Face ID first (on the web it just turns off). */
+export async function setGateEnabled(enabled: boolean): Promise<boolean> {
+  if (!enabled && isGateEnabled() && native() && !(await ask('Turn off Face ID for the Waybook'))) return false
+  setItem(TOGGLE_KEY, enabled ? '1' : '0')
+  if (enabled) lastOpenAt = null
+  notify()
+  return true
 }
 
 export function subscribe(listener: Listener): () => void {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
-  }
-}
-
-export async function isBiometryAvailable(): Promise<boolean> {
-  try {
-    const res = await BiometricAuth.checkBiometry()
-    return res.isAvailable || res.deviceIsSecure
-  } catch {
-    return false
   }
 }

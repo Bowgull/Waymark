@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Board, Crest, FlapButton, FlapLabel, SessionIcon, showPop, type SessionIconKey } from '@/design'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { logger } from '@/lib/logger'
+import { markWaybookOpen, requireUnlock } from '@/lib/waybookGate'
 import { Rune } from '@/features/coach/Rune'
 import { dateFlap, type StripDay } from './weekStrip'
 
@@ -87,6 +88,12 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // The 3 minutes without Face ID count from the last time the box was open.
+  useEffect(() => {
+    if (!open) return
+    return () => markWaybookOpen()
+  }, [open])
+
   useEffect(() => {
     let cancelled = false
     apiFetch<JournalEntryData | null>(`/api/journal?date=${today}&type=${entryType}`)
@@ -119,9 +126,9 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
 
   if (!open) {
     return (
-      <button type="button" className={`td-wline is-${variant}`} onClick={() => setOpen(true)} aria-expanded={false}>
+      <button type="button" className={`td-wline is-${variant}`} onClick={() => { void requireUnlock('Open the Waybook').then(ok => { if (ok) setOpen(true) }) }} aria-expanded={false}>
         <SessionIcon kind="waybook" size={variant === 'home' ? 34 : 44} />
-        <span className="t">Write in the Waybook</span>
+        <span className="t">Waybook</span>
         <span className="chev" aria-hidden>›</span>
       </button>
     )

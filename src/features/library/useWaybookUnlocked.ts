@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 
-import { isGateEnabled, isUnlocked, subscribe } from '@/lib/waybookGate'
+import { isUnlocked, subscribe } from '@/lib/waybookGate'
 
-/** Is the Waybook readable now? Follows the gate (the Face ID toggle, the 3-minute relock). */
+/** Is the Waybook readable now without asking? Follows the gate (the switch, the 3-minute window, leaving the app). */
 export function useWaybookUnlocked(): boolean {
-  const [state, setState] = useState(() => !isGateEnabled() || isUnlocked())
-  useEffect(() => subscribe(u => setState(!isGateEnabled() || u)), [])
+  const [state, setState] = useState(() => isUnlocked())
+  useEffect(() => subscribe(u => setState(u)), [])
   return state
 }
