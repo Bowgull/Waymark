@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 
 import { cascadeArmed } from './cascade'
-import { CASCADE, cascadeDelayMs, cascadeFrames, cascadeSeed, fitFlapSize, flapCells, flapStaggerMs, flipFrames } from './flap'
+import { changeFrames, fitFlapSize, flapCells, openFrames } from './flap'
+import { cancelFlip, fadeLabel, flipLabel, isFlipping, openLabel, setLanded, writeAll } from './flapEngine'
 import { useReducedMotion } from './motion'
 
 export type FlapSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
@@ -30,13 +31,12 @@ export interface FlapLabelProps {
   className?: string
 }
 
-const STEP_MS = 55
-
 /**
  * A split-flap label: one tile per character. React renders the tiles; their
- * glyphs are written directly (React never owns the text nodes), so a flip
- * costs no re-render per frame in the iPhone web view. The words are the
- * accessible name; the tiles are hidden from screen readers.
+ * glyphs are written directly by the flap engine (React never owns the text
+ * nodes), so a flip costs no re-render, no layout read and one style pass per
+ * frame in the iPhone web view. The words are the accessible name; the tiles
+ * are hidden from screen readers.
  */
 export function FlapLabel({ text, size = 'sm', tone = 'ink', len = 0, animate = 'change', fit = false, className = '' }: FlapLabelProps) {
   const reduced = useReducedMotion()
@@ -52,72 +52,35 @@ export function FlapLabel({ text, size = 'sm', tone = 'ink', len = 0, animate = 
     if (!root) return
     const from = landedRef.current
     landedRef.current = target
-    const els = Array.from(root.children) as HTMLElement[]
-    const targetChars = [...target]
-    els.forEach((el, i) => {
-      el.textContent = (targetChars[i] ?? ' ') === ' ' ? '' : targetChars[i]
-      el.classList.remove('is-tick')
-    })
-    // A screen just opened (page 17): the label waits for its row, then its tiles flip in.
-    // Reduce Motion lands at once; the timer's digits and the overlays keep their own motion.
-    if (from == null && !reduced && cascadeArmed() && !root.closest('[data-no-cascade]')) {
-      const delay = cascadeDelayMs(root.getBoundingClientRect().top, window.innerHeight)
-      const seed = cascadeSeed(target)
-      const timers: ReturnType<typeof setTimeout>[] = []
-      let remaining = 0
-      root.style.opacity = '0'
-      timers.push(setTimeout(() => { root.style.opacity = '' }, delay))
-      targetChars.forEach((ch, i) => {
-        const el = els[i]
-        const seq = cascadeFrames(ch, i, seed)
-        if (!el || seq.length === 0) return
-        el.textContent = ''
-        remaining += seq.length
-        seq.forEach((glyph, k) => {
-          timers.push(setTimeout(() => {
-            el.classList.remove('is-tick')
-            void el.offsetWidth
-            el.classList.add('is-tick')
-            el.textContent = glyph
-            remaining--
-          }, delay + i * CASCADE.staggerMs + k * CASCADE.stepMs))
-        })
-      })
-      return () => {
-        timers.forEach(clearTimeout)
-        root.style.opacity = ''
-        if (remaining > 0) landedRef.current = from
-      }
-    }
-    if (animate === false || reduced) return
-    if (from == null && animate !== 'mount') return
-    if (from === target) return
-    const fromChars = [...(from ?? '').padEnd(targetChars.length, ' ')]
-    const frames = targetChars.map((ch, i) => (ch === ' ' ? [] : flipFrames(fromChars[i] ?? ' ', ch)))
-    const maxFrames = Math.max(1, ...frames.map(f => f.length))
-    const stagger = flapStaggerMs(targetChars.length, maxFrames, STEP_MS)
-    const timers: ReturnType<typeof setTimeout>[] = []
-    let remaining = frames.reduce((n, f) => n + f.length, 0)
-    frames.forEach((seq, i) => {
-      const el = els[i]
-      if (!el || seq.length === 0) return
-      el.textContent = fromChars[i] === ' ' ? '' : fromChars[i]
-      seq.forEach((glyph, k) => {
-        timers.push(setTimeout(() => {
-          el.classList.remove('is-tick')
-          void el.offsetWidth
-          el.classList.add('is-tick')
-          el.textContent = glyph
-          remaining--
-        }, i * stagger + k * STEP_MS))
-      })
-    })
+    setLanded(root, target)
     // Interrupted (new text, unmount, StrictMode re-run): stop. A flip that
     // never finished counts as not landed, so a re-run flips it again.
-    return () => {
-      timers.forEach(clearTimeout)
-      if (remaining > 0) landedRef.current = from
+    const stop = () => {
+      if (isFlipping(root)) landedRef.current = from
+      cancelFlip(root)
     }
+    // A screen just opened (page 59 §5.1): blank tiles, then two flips each with the label's board.
+    // Reduce Motion lands at once; the timer's digits and the overlays keep their own motion.
+    if (from == null && !reduced && cascadeArmed() && !root.closest('[data-no-cascade]')) {
+      openLabel(root, target)
+      return stop
+    }
+    if (animate === false || from === target || (from == null && animate !== 'mount')) {
+      writeAll(root, target)
+      return
+    }
+    if (reduced) {
+      writeAll(root, target)
+      if (from != null) fadeLabel(root)
+      return
+    }
+    // Only the tiles that change flip: a new tile flips in twice, a changed one the short way.
+    const chars = [...target]
+    const was = [...(from ?? '').padEnd(chars.length, ' ')]
+    const frames = chars.map((ch, i) => (ch === ' ' || was[i] === ch ? [] : from == null ? openFrames(ch) : changeFrames(was[i] ?? ' ', ch)))
+    writeAll(root, chars.map((ch, i) => (frames[i].length > 0 ? (was[i] ?? ' ') : ch)).join(''))
+    flipLabel(root, frames)
+    return stop
   }, [target, animate, reduced])
 
   useLayoutEffect(() => {
@@ -140,7 +103,9 @@ export function FlapLabel({ text, size = 'sm', tone = 'ink', len = 0, animate = 
   return (
     <span ref={rootRef} className={classes} role="img" aria-label={text.trim()}>
       {cells.map((cell, i) => (
-        <span key={i} aria-hidden className={`wm-cell${cell.kind === 'gap' ? ' is-gap' : ''}${cell.kind === 'pad' ? ' is-pad' : ''}`} />
+        <span key={i} aria-hidden className={`wm-cell${cell.kind === 'gap' ? ' is-gap' : ''}${cell.kind === 'pad' ? ' is-pad' : ''}`}>
+          {cell.kind === 'char' && <i className="wm-leaf" />}
+        </span>
       ))}
     </span>
   )

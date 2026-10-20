@@ -39,12 +39,15 @@
   --session-mobility: #a8906a;
   --session-waybook: #8a5634;
 
-  /* motion: four speeds, three curves */
+  /* motion (page 59 §5.3): four speeds and the camera's, four curves */
   --t-tap: 90ms;
   --t-quick: 180ms;
   --t-move: 320ms;
   --t-moment: 700ms;
+  --t-glide: 900ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-drop: cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 
@@ -59,6 +62,8 @@
     line-height: 1;
     vertical-align: middle;
     white-space: nowrap;
+    /* a glyph change stays inside its label (page 59 §5.2) */
+    contain: layout style;
   }
   .wm-flap .wm-cell {
     position: relative;
@@ -88,8 +93,8 @@
     height: 1px;
     background: rgba(0, 0, 0, 0.45);
   }
-  .wm-flap .wm-cell::before {
-    content: '';
+  /* the top leaf: it folds down (rotateX 0 -> -90deg, 80 ms) on each flip, run by the flap engine */
+  .wm-flap .wm-leaf {
     position: absolute;
     z-index: -1;
     left: 0;
@@ -100,8 +105,8 @@
     background: var(--sf-tile);
     transform-origin: 50% 100%;
     opacity: 0;
+    pointer-events: none;
   }
-  .wm-flap .wm-cell.is-tick::before { animation: wm-fold 60ms linear; }
   /* trailing padding keeps its dark tile so rows line up */
   .wm-flap .wm-cell.is-pad {
     color: transparent;
@@ -113,7 +118,6 @@
     background: none;
     box-shadow: none;
   }
-  .wm-flap .wm-cell.is-gap::before,
   .wm-flap .wm-cell.is-gap::after { display: none; }
 
   .wm-flap.is-gold .wm-cell:not(.is-gap):not(.is-pad) {
@@ -121,17 +125,17 @@
     text-shadow: 0 1px 0 rgba(255, 240, 200, 0.25);
     background: linear-gradient(180deg, var(--sf-gold) 0 50%, var(--sf-gold2) 50% 100%);
   }
-  .wm-flap.is-gold .wm-cell::before { background: var(--sf-gold); }
+  .wm-flap.is-gold .wm-leaf { background: var(--sf-gold); }
   .wm-flap.is-teal .wm-cell:not(.is-gap):not(.is-pad) {
     color: #e8e2c8;
     background: linear-gradient(180deg, var(--sf-teal) 0 50%, var(--sf-teal2) 50% 100%);
   }
-  .wm-flap.is-teal .wm-cell::before { background: var(--sf-teal); }
+  .wm-flap.is-teal .wm-leaf { background: var(--sf-teal); }
   .wm-flap.is-clay .wm-cell:not(.is-gap):not(.is-pad) {
     color: #f2e4d6;
     background: linear-gradient(180deg, var(--sf-clay) 0 50%, var(--sf-clay2) 50% 100%);
   }
-  .wm-flap.is-clay .wm-cell::before { background: var(--sf-clay); }
+  .wm-flap.is-clay .wm-leaf { background: var(--sf-clay); }
   .wm-flap.is-dim .wm-cell { color: rgba(240, 230, 192, 0.74); }
   .wm-flap.is-struck .wm-cell { color: rgba(240, 230, 192, 0.42); }
 
@@ -364,8 +368,8 @@
   .wm-pop.is-bad .wm-pop-text { color: #f2e2d4; }
 
   /* ── row glow: the row you touched answers (teal good, clay failure) ── */
-  .wm-glow-good { animation: wm-row-good 1.6s ease; }
-  .wm-glow-bad { animation: wm-row-bad 1.6s ease; }
+  .wm-glow-good { animation: wm-row-good 900ms ease; }
+  .wm-glow-bad { animation: wm-row-bad 900ms ease; }
   .wm-row-note { width: 100%; margin-top: 4px; font: 600 14px/1.35 var(--font-body); color: var(--sf-bad-ink); }
 
   /* ── AM / PM slot: brass sun / moon + teal AM or clay PM flap ── */
@@ -525,7 +529,8 @@
   .wm-entrance-icon.is-sway { animation: wm-crest-turn 9s ease-in-out infinite; }
 
   /* ── splash (page 38, A): the crest suits up, WAYMARK flaps in, Today fades up ── */
-  .wm-splash { position: fixed; inset: 0; z-index: 95; }
+  /* the splash takes a tap (skip to the title) or a hold (skip it all): no callout, no selection, no scroll */
+  .wm-splash { position: fixed; inset: 0; z-index: 95; -webkit-touch-callout: none; user-select: none; touch-action: none; }
   .wm-splash.is-leaving { pointer-events: none; }
   /* page 38 A: Today fades up over the crest (0.7 s) while WAYMARK stays on top, then the word goes */
   .wm-splash-stage { position: absolute; inset: 0; background: #020a08; transition: opacity 700ms ease; }
@@ -549,10 +554,10 @@
   .wm-crest-loading p { position: absolute; left: 24px; right: 24px; top: 71%; margin: 0; text-align: center; font: 600 17px/1.4 var(--font-body); color: rgba(240, 234, 214, 0.9); text-shadow: 0 1px 8px #000; }
 }
 
-@keyframes wm-fold { 0% { opacity: 1; transform: rotateX(0); } 100% { opacity: 1; transform: rotateX(-90deg); } }
 @keyframes wm-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes wm-fade-out { from { opacity: 1; } to { opacity: 0; } }
-@keyframes wm-card-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+/* Rise (page 59 §5.3): opacity, 14 px up, scale .96 -> 1 */
+@keyframes wm-card-in { from { opacity: 0; transform: translateY(14px) scale(0.96); } to { opacity: 1; transform: none; } }
 @keyframes wm-beat { 50% { opacity: 0.35; } }
 @keyframes wm-pop-drop { from { transform: translateY(-140%); } to { transform: none; } }
 @keyframes wm-pop-lift { from { transform: none; opacity: 1; } to { transform: translateY(-140%); opacity: 0; } }
@@ -564,7 +569,6 @@
 /* Reduce Motion: flaps land at once, no drops or turns, crossfades only. */
 @media (prefers-reduced-motion: reduce) {
   .wm-live .beat { animation: none !important; }
-  .wm-flap .wm-cell.is-tick::before,
   .wm-crest,
   .wm-glow-good,
   .wm-glow-bad { animation: none !important; }

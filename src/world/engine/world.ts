@@ -15,6 +15,7 @@ import { pondLook, weeksOrDefault, type WeekPost, type WorldPlace } from '../wor
 import type { WorldMode } from '../timeOfDay'
 import { NO_WEATHER, weatherParams, type WorldWeather } from '../weather'
 import { createWeather, type ModeBase } from './weather'
+import { motionBusy } from '../../design/busy'
 
 const GLYPH_PX = 9
 
@@ -187,11 +188,19 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   }
 
   let roadStale = false
+  let roadIdle = 0
   function rebuildRoad() {
+    roadIdle = 0
     const old = scenes.get('road')
     if (!old) return
     scene.remove(old.group); old.dispose(); scenes.delete('road'); build('road')
     if (reduced) requestStill()
+  }
+  /** Rebuild the road when the phone is idle, never on the frame the camera lands (page 59 §6 item 6). */
+  function rebuildRoadIdle() {
+    if (roadIdle) return
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }
+    roadIdle = w.requestIdleCallback ? w.requestIdleCallback(() => { if (!disposed) rebuildRoad() }, { timeout: 700 }) : window.setTimeout(() => { if (!disposed) rebuildRoad() }, 200)
   }
 
   // ── camera ──
@@ -233,6 +242,8 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   let running = false, raf = 0, lastFrame = 0, simT = 0, lastNow = 0
   const deltas: number[] = [], works: number[] = []
   let fpsCount = 0, fpsT0 = performance.now(), fps = 0, firstFrameMs = 0, calmSince = performance.now()
+  // the quality ladder doesn't judge a switch: the glide, 1.5 s after a new place, and while the UI moves
+  let holdUntil = 0
 
   function step(now: number) {
     const dt = lastNow ? Math.min(0.1, (now - lastNow) / 1000) : 0
@@ -246,7 +257,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
       const k = glideEase((now - glide.start) / GLIDE_MS)
       view = mixView(glide.from, glide.to, k)
       lampNow.lerpVectors(glide.lampFrom, glide.lampTo, k)
-      if (k >= 1) { glide = null; if (roadStale) { roadStale = false; rebuildRoad() } }
+      if (k >= 1) { glide = null; if (roadStale) { roadStale = false; rebuildRoadIdle() } }
     }
     shared.uLampPos.value.copy(lampNow)
     // at night the lantern never burns below page 14 #c's (1.6): the clearing's path and spill must read
@@ -281,16 +292,18 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
   }
 
   // adaptive quality: if more than a fifth of recent frames ran long (or the CPU side alone eats the budget), step down;
-  // after 12 calm seconds with spare CPU time, step back up one
+  // after 4 calm seconds with spare CPU time, step back up one (page 59 §6 item 6: was 12)
   function adapt(now: number) {
+    // a switch is never judged: its frames are dropped, so only calm frames count
+    if (glide || now < holdUntil || motionBusy()) { deltas.length = 0; works.length = 0; return }
     // judge after 60 frames, or after 20 when frames are that slow (a struggling phone shouldn't wait 30 s)
-    if (glide || deltas.length < 20 || (deltas.length < 60 && deltas.reduce((a, b) => a + b, 0) < 3000)) return
+    if (deltas.length < 20 || (deltas.length < 60 && deltas.reduce((a, b) => a + b, 0) < 3000)) return
     const target = 1000 / LEVELS[level].fps
     const recent = deltas.slice(-90), recentWork = works.slice(-90)
     const long = recent.filter(d => d > target * 1.45).length / recent.length
     const meanWork = recentWork.reduce((a, b) => a + b, 0) / recentWork.length
     if ((long > 0.2 || meanWork > target * 0.75) && level < LEVELS.length - 1) { setLevel(level + 1); calmSince = now; return }
-    if (long < 0.03 && meanWork < target * 0.3 && level > 0 && now - calmSince > 12000) { setLevel(level - 1); calmSince = now }
+    if (long < 0.03 && meanWork < target * 0.3 && level > 0 && now - calmSince > 4000) { setLevel(level - 1); calmSince = now }
     if (long >= 0.03) calmSince = now
   }
   function setLevel(l: number) {
@@ -340,6 +353,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
       build(sceneOf(place))
       const lampTo = new THREE.Vector3(...sceneLamp(sceneOf(place)))
       current = place
+      holdUntil = performance.now() + 1500
       if (instant || reduced) { glide = null; view = target; lampNow.copy(lampTo); if (reduced) requestStill(); return }
       glide = { from: view, to: target, start: performance.now(), lampFrom: lampNow.clone(), lampTo }
     },
@@ -348,8 +362,10 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
       const w = weeksOrDefault(next)
       if (w.length === weeks.length && w.every((p, i) => p.state === weeks[i].state && p.notches === weeks[i].notches)) return
       weeks = w
-      // rebuilding the road mid-glide would hitch the glide: wait for the camera to land
+      // rebuilding the road mid-glide would hitch the glide: wait for the camera to land, then the idle time
       if (glide) { roadStale = true; return }
+      // out of sight (Program's road prefetched from Today): build it while the phone is idle
+      if (!scenesInView(view, W).includes('road')) { rebuildRoadIdle(); return }
       rebuildRoad()
     },
     setPond(k) { pond = Math.max(0, Math.min(1, k)); for (const b of scenes.values()) applyLight(b); if (reduced) requestStill() },
@@ -385,6 +401,7 @@ export async function createWorld(canvas: HTMLCanvasElement, init: WorldInit): P
       disposed = true; stop()
       const w = window as Window & { cancelIdleCallback?: (h: number) => void }
       if (w.cancelIdleCallback) w.cancelIdleCallback(idleHandle); else window.clearTimeout(idleHandle)
+      if (roadIdle) { if (w.cancelIdleCallback) w.cancelIdleCallback(roadIdle); else window.clearTimeout(roadIdle) }
       for (const b of scenes.values()) b.dispose()
       scenes.clear()
       weather.dispose()

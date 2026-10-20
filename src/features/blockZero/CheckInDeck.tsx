@@ -1,9 +1,10 @@
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 
 import { Board, CloseWord, FlapButton, FlapLabel, showPop } from '@/design'
 import { getItem as storageGet, removeItem as storageRemove, setItem as storageSet } from '@/lib/safeStorage'
 import { SORENESS_COLOURS } from '@/design/tokens'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
+import { selectHaptic } from '@/lib/haptics'
 
 import { BzDots, BzOverlay, BzTiles } from './Bz'
 import {
@@ -65,6 +66,10 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
   const [noteSaving, setNoteSaving] = useState(false)
   const touch = useRef<{ x: number; y: number } | null>(null)
   const submitted = useRef(false)
+  useDeckOpenClass()
+  // which way the cards go (page 59 §5.3): the next card slides in from the right, Back from the left
+  const [step, setStep] = useState<{ index: number; dir: 'next' | 'back' | null }>({ index: state.index, dir: null })
+  if (step.index !== state.index) setStep({ index: state.index, dir: state.index > step.index ? 'next' : 'back' })
 
   // Each answer is saved as it is given (the last one goes with the full save below).
   const lastPartial = useRef<string | null>(null)
@@ -160,7 +165,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
   }
 
   return (
-    <div className="bz-deck" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+    <div className="bz-deck" data-step={step.dir ?? undefined} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
       {/* page 61: CLOSE (the answers given are kept), a tap on the veil, Escape, the edge swipe; it closes while saving too (the save carries on) */}
       <BzOverlay label="Morning check-in" onDismiss={() => onClose(phase === 'settled')}>
         <div className="bz-toprow">
@@ -172,7 +177,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
           <>
             <BzDots n={total} now={state.index} done={i => i < state.index} />
             {state.askingBackNotes ? (
-              <Board className="bz-bd" head={`${Math.min(state.index + 1, total)} of ${total} · back today`}>
+              <Board className="bz-bd is-step" head={`${Math.min(state.index + 1, total)} of ${total} · back today`}>
                 <FlapLabel text="WHAT BOTHERS IT?" size="md" animate="mount" />
                 <p className="bz-q">Which movements, where. The coach swaps in easier versions.</p>
                 <textarea
@@ -189,7 +194,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
                 </div>
               </Board>
             ) : (
-              <Board className="bz-bd" key={q.key} head={`${Math.min(state.index + 1, total)} of ${total}`}>
+              <Board className="bz-bd is-step" key={q.key} head={`${Math.min(state.index + 1, total)} of ${total}`}>
                 <FlapLabel text={q.title.toUpperCase()} size="md" animate="mount" />
                 {q.sub ? <p className="bz-q">{q.sub}</p> : <div style={{ height: 10 }} />}
                 <BzTiles
@@ -200,7 +205,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
                     ? { value: o.value, label: o.label, sub: o.sub, swatch: SORENESS_COLOURS[i] }
                     : { value: o.value, label: o.label, sub: o.sub }))}
                   selected={state.answers[q.key] ?? null}
-                  onPick={v => dispatch({ type: 'answer', key: q.key, value: v })}
+                  onPick={v => { void selectHaptic(); dispatch({ type: 'answer', key: q.key, value: v }) }}
                 />
               </Board>
             )}
@@ -247,4 +252,14 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
       </BzOverlay>
     </div>
   )
+}
+
+/** While the deck is open, <body> carries wm-deck-open: Today and the tab bar hide under it (blockZero.css). */
+let decksOpen = 0
+function useDeckOpenClass() {
+  useLayoutEffect(() => {
+    decksOpen++
+    document.body.classList.add('wm-deck-open')
+    return () => { if (--decksOpen <= 0) { decksOpen = 0; document.body.classList.remove('wm-deck-open') } }
+  }, [])
 }

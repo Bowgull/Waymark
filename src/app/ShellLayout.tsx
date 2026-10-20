@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 
 import { FlapLabel, closeAll } from '@/design'
 import { TAB_ICON_SRC, type TabKey } from '@/design/tabIcons'
 import { useNetworkStatus } from '@/lib/network'
 import { onOutboxChange, pendingWrites } from '@/lib/outboxSync'
-
+import { selectHaptic } from '@/lib/haptics'
 import { LiveStrip } from './LiveStrip'
+import { TabStack } from './TabStack'
 
 // The tab bar (page 42, A, approved): the world's places as painted icons.
 // Active: full colour, lifted, a soft glow, a small brass light above, a gold
@@ -61,15 +62,21 @@ export function OfflinePill({ overTabs }: { overTabs: boolean }) {
   )
 }
 
+/** A tap on another tab: the selection haptic (page 59 §5.1). Never one per flap. */
+function onTabTap(e: React.MouseEvent<HTMLElement>) {
+  const tab = (e.target as HTMLElement).closest('a.wm-tab')
+  if (tab && !tab.classList.contains('is-on')) void selectHaptic()
+}
+
 export function ShellLayout() {
   return (
     <div className="waymark-preview-root relative z-[1] min-h-dvh text-foreground">
       <div className="waymark-mobile-shell mx-auto flex h-dvh w-full max-w-[430px] flex-col">
         <main className="waymark-scroll min-h-0 flex-1 overflow-auto px-4 pb-4">
-          <Outlet />
+          <TabStack />
         </main>
         <LiveStrip />
-        <nav className="wm-tabs" aria-label="Main">
+        <nav className="wm-tabs" aria-label="Main" onClickCapture={onTabTap}>
           {TABS.map(t => <NavTab key={t.key} to={t.to} tab={t.key} label={t.label} end={t.end} />)}
         </nav>
       </div>

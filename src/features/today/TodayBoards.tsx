@@ -8,6 +8,7 @@ import { logger } from '@/lib/logger'
 import { markWaybookOpen, requireUnlock, setWaybookShown } from '@/lib/waybookGate'
 import { Rune } from '@/features/coach/Rune'
 import { dateFlap, type StripDay } from './weekStrip'
+import { useFlipOnChange } from '@/design/motionKit'
 
 // The pieces of Today (pages 35, 36, 43), on the split-flap boards over the forest.
 
@@ -47,9 +48,12 @@ export function TodayHeader({ date }: { date: Date }) {
  */
 export function WeekStrip({ days, home = false, openDay = null, onRune }: { days: StripDay[]; home?: boolean; openDay?: number | null; onRune?: (epochDay: number) => void }) {
   const navigate = useNavigate()
+  // a new week: the seven tiles turn over (page 59 §5.3 Flip)
+  const tilesRef = useRef<HTMLDivElement>(null)
+  useFlipOnChange(tilesRef, days[0]?.iso ?? '')
   return (
     <Board className={`td-strip${home ? ' is-home' : ''}`}>
-      <div className="td-tiles7" role="list" aria-label="This week">
+      <div ref={tilesRef} className="td-tiles7" role="list" aria-label="This week">
         {days.map(d => (
           <button
             key={d.epochDay}

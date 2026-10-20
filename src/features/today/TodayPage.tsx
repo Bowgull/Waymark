@@ -13,7 +13,7 @@ import { endAllLiveActivities } from '@/lib/liveActivity'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 
-import { FlapLabel, glowRow, showPop } from '@/design'
+import { AutoHeight, FlapLabel, glowRow, showPop } from '@/design'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { REPLACE_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
 import { useToast } from '@/components/ui/Toast'
@@ -720,7 +720,8 @@ export function TodayPage() {
             openId={openRow}
             onOpenChange={setOpenRow}
           />
-          <WaybookLine today={today} />
+          {/* the line grows into its box (page 59 §5.3 Expand) */}
+          <AutoHeight><WaybookLine today={today} /></AutoHeight>
         </>
       )}
 
@@ -733,7 +734,7 @@ export function TodayPage() {
             ? <NoBlockBoard onStart={() => navigate('/program')} />
             : <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} />)}
           {mode === 'allDone' && <AllDoneBoard icons={doneIcons} onShowDay={() => setShowDayAnyway(true)} />}
-          <WaybookLine today={today} variant="home" />
+          <AutoHeight><WaybookLine today={today} variant="home" /></AutoHeight>
         </>
       )}
       </div>

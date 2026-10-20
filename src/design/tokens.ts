@@ -49,12 +49,29 @@ export const SESSION_COLOURS = {
 /** Soreness tile colours (Ledger key): fresh blue, loose green, normal sand, sore orange, cooked red. */
 export const SORENESS_COLOURS = ['#6a96b4', '#6e9858', '#c9b27a', '#c8844e', '#b0503a'] as const
 
-/** Four speeds only (motion rules): tap 90, small change 180, move 320, moment 700 ms. */
+/**
+ * Four speeds (motion rules): tap 90, small change 180, move 320, moment 700 ms; plus the camera's
+ * glide (page 59 §5.3). The CSS twins are design.css's --t-* and --ease-*.
+ */
 export const MOTION = {
   tapMs: 90,
   quickMs: 180,
   moveMs: 320,
   momentMs: 700,
+  /** The camera between places. */
+  glideMs: 900,
+  /** Arriving. */
+  easeOut: 'cubic-bezier(0.16, 1, 0.3, 1)',
+  /** Leaving: shorter and quieter. */
+  easeIn: 'cubic-bezier(0.4, 0, 1, 1)',
+  /** The camera, a height closing. */
+  easeInOut: 'cubic-bezier(0.65, 0, 0.35, 1)',
+  /** Pop-ups only. */
+  easeDrop: 'cubic-bezier(0.2, 0.9, 0.3, 1.2)',
+  /** Staggers: boards 60, rows 30, flap columns 14 ms; at most 4 boards or 8 rows, the rest with the last. */
+  boardStaggerMs: 60,
+  rowStaggerMs: 30,
+  columnStaggerMs: 14,
   /** A split flap always lands within this. */
   flapMaxMs: 900,
   /** Pop-up flap board stays this long before it lifts away. */

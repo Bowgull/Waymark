@@ -43,13 +43,14 @@
    (VoiceOver's focus and the iOS Simulator test's taps landed above the row). */
 .td-rowhit { display: flex; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
 .td-rows { display: flex; flex-direction: column; }
-.td-rows > .td-row + .td-row { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
+.td-rows > .td-row + .td-row,
+.td-rows > .wm-swap + .wm-swap > .td-row { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
 .td-row.is-done { box-shadow: inset 3px 0 0 var(--sf-good-edge); padding-left: 8px; }
 .td-rows > .td-row.is-done + .td-row { box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
 .td-row.is-skip .wm-flap .wm-cell { color: rgba(240, 230, 192, 0.4); }
-.td-row.is-skip .td-nm { position: relative; }
-.td-row.is-skip .td-nm::after { content: ''; position: absolute; left: 0; right: 70px; top: 50%; height: 2px; background: rgba(240, 230, 192, 0.45); }
-.td-row .td-nm { flex: 1; min-width: 0; display: flex; }
+/* the skip's strike is a real line (motion: Strike), drawn left to right, then the name dims */
+.td-row .td-nm { position: relative; flex: 1; min-width: 0; display: flex; }
+.td-row .td-nm > .wm-strike { right: 70px; }
 .td-mins { font: 700 15px/1 var(--font-mono); color: rgba(240, 230, 192, 0.8); flex: none; }
 .td-tick { font: 900 13px/1 var(--font-mono); color: var(--sf-good-ink); flex: none; }
 .td-sum { width: 100%; }

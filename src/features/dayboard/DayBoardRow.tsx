@@ -7,6 +7,7 @@ import { readLiveSession } from '@/lib/liveSession'
 import { Rune } from '@/features/coach/Rune'
 
 import { dayRowState, type DayBoardSession, type RowContext } from './rowState'
+import { Expand } from '@/design/MotionPrimitives'
 import { SessionSummary } from './SessionSummary'
 import './dayboard.css'
 
@@ -154,16 +155,18 @@ export function DayBoardRow({ session, context, open, onToggle, onReplace, onSki
         {base.status === 'done' && <span className="db-tick" aria-hidden>✓</span>}
         <span className="db-slot"><AmPmFlap slot={base.slot} size="xs" /></span>
       </div>
-      {open && !tucked && openContent}
-      {open && !tucked && !openContent && (
-        <SessionSummary
-          session={session}
-          weekNumber={weekNumber}
-          onReplace={onReplace ? () => onReplace(session) : undefined}
-          onSkip={onSkip ? () => onSkip(session) : undefined}
-          actions={summaryActions}
-        />
-      )}
+      {/* the day board's row opens (page 59 §5.3 Expand) */}
+      <Expand open={open && !tucked}>
+        {openContent || (
+          <SessionSummary
+            session={session}
+            weekNumber={weekNumber}
+            onReplace={onReplace ? () => onReplace(session) : undefined}
+            onSkip={onSkip ? () => onSkip(session) : undefined}
+            actions={summaryActions}
+          />
+        )}
+      </Expand>
     </div>
   )
 }

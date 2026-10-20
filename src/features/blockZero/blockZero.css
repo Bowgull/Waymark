@@ -22,10 +22,12 @@
 .wm-board.bz-bd { background-color: rgba(10, 16, 13, 0.92); }
 .wm-board.bz-bd .wm-board-head { line-height: 1; }
 
-/* the check-in cards hide Today under them (only the header shows through the veil) */
-.td-page:has(.bz-deck) .td-fill > :not(.td-hd),
-.td-page:has(.bz-deck) .td-settings,
-body:has(.bz-deck) .wm-tabs { visibility: hidden; }
+/* the check-in cards hide Today under them (only the header shows through the veil). A class on <body>
+   while the deck is open (CheckInDeck), never :has() on body: that made every flap glyph restyle the
+   whole page (page 59 §3 cause 1). */
+body.wm-deck-open .td-page .td-fill > :not(.td-hd),
+body.wm-deck-open .td-page .td-settings,
+body.wm-deck-open .wm-tabs { visibility: hidden; }
 
 /* ── top row: a flap, a link or a compact button, the count ── */
 .bz-toprow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

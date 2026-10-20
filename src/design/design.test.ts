@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
-import { CASCADE, cascadeDelayMs, cascadeFrames, cascadeSeed, fitFlapSize, fitsOnFlap, flapCells, flapStaggerMs, flapWidth, flipFrames } from './flap'
+import { FLIP, changeFrames, fitFlapSize, fitsOnFlap, flapCells, flapStaggerMs, flapWidth, flipFrames, frameAt, openFrames, openStartMs, planFlip } from './flap'
+import { markBusy, motionBusy } from './busy'
 import { popParts } from './popFlap'
 import { sessionIconFor } from './sessionIconKeys'
 
@@ -73,26 +74,59 @@ import { sessionIconFor } from './sessionIconKeys'
   assert.equal(sessionIconFor('skip_rope'), 'rope')
 }
 
-// ─── the screen-open cascade (page 17): row by row from the top ──
+// ─── the flap engine's plan (page 59 §5.2): one pass, only what changes, inside 0.9 s ──
 {
-  assert.equal(cascadeDelayMs(0, 844), 120, 'the top row starts 120 ms in')
-  assert.equal(cascadeDelayMs(100, 844), 320, '2 ms per px further down')
-  assert.ok(cascadeDelayMs(400, 844) > cascadeDelayMs(200, 844), 'lower rows wait longer')
-  assert.equal(cascadeDelayMs(5000, 844), 120 + 844 * 2, 'clamped to the screen')
-  assert.equal(cascadeDelayMs(-50, 844), 120)
-  assert.deepEqual([CASCADE.staggerMs, CASCADE.stepMs], [22, 45], 'page 17 flip(): stagger 22, speed 45')
-  for (let i = 0; i < 12; i++) {
-    const f = cascadeFrames('W', i, cascadeSeed('WAYMARK'))
-    assert.ok(f.length >= 5 && f.length <= 8, '4 to 7 flips, then it lands')
-    assert.equal(f[f.length - 1], 'W')
-    for (const g of f) assert.match(g, /^[A-Z]$/)
-    const d = cascadeFrames('7', i, 3)
-    assert.equal(d[d.length - 1], '7')
-    for (const g of d) assert.match(g, /^[0-9]$/, 'digits only through digits')
+  // a screen opening: blank -> a nearby glyph -> the glyph, two flips a tile
+  assert.deepEqual(openFrames('P'), ['O', 'P'])
+  assert.deepEqual(openFrames('A'), ['Z', 'A'], 'wraps round the alphabet')
+  assert.deepEqual(openFrames('7'), ['6', '7'], 'a digit through digits')
+  assert.deepEqual(openFrames('0'), ['9', '0'])
+  assert.deepEqual(openFrames(' '), [], 'a gap stays clear')
+  assert.deepEqual(openFrames('·'), ['·'], 'other glyphs land in one')
+  for (const ch of 'WAYMARK0123456789') assert.ok(openFrames(ch).length <= 2, 'never more than two flips on open')
+
+  // a change: at most three flips for a letter, digits the short way
+  for (const [a, b] of [['A', 'Z'], ['B', 'Q'], [' ', 'M'], ['Z', 'A']]) {
+    const f = changeFrames(a, b)
+    assert.ok(f.length >= 1 && f.length <= FLIP.changeFlips, `${a} -> ${b} in at most three`)
+    assert.equal(f[f.length - 1], b)
   }
-  assert.deepEqual(cascadeFrames(' ', 0), [], 'a gap stays clear')
-  assert.deepEqual(cascadeFrames('·', 0), ['·'], 'other glyphs just land')
-  assert.equal(cascadeSeed('TODAY'), cascadeSeed('TODAY'), 'the same on every open')
+  assert.deepEqual(changeFrames('9', '8'), ['8'], 'the clock ticks one flip')
+  assert.deepEqual(changeFrames('2', '5'), ['3', '4', '5'])
+
+  // the plan: 55 ms a flip, 14 ms a column, left to right; tiles with no frames are left alone
+  const plan = planFlip([['O', 'P'], [], ['Q', 'R']], 1000)
+  assert.deepEqual(plan.map(s => [s.cell, s.at, s.glyph]), [[0, 1000, 'O'], [0, 1055, 'P'], [2, 1028, 'Q'], [2, 1083, 'R']])
+  // a long label still lands inside its budget
+  const long = planFlip(Array.from({ length: 30 }, () => openFrames('W')), 0, FLIP.openMaxMs)
+  assert.ok(Math.max(...long.map(s => s.at)) + FLIP.stepMs <= FLIP.openMaxMs, 'an opening label lands within 400 ms')
+  const change = planFlip(Array.from({ length: 24 }, () => changeFrames('A', 'Z')), 0)
+  assert.ok(Math.max(...change.map(s => s.at)) + FLIP.stepMs <= FLIP.maxMs, 'a change lands within 0.9 s')
+  assert.equal(new Set(long.map(s => s.cell)).size, 30, 'every tile flips')
+  assert.ok(long.filter(s => s.cell === 0).length === 2, 'each tile writes twice on open, no more')
+
+  // time-based: a phone that falls behind skips frames, it never stretches the flip
+  assert.equal(frameAt(100, 55, 2, 99), -1, 'not started')
+  assert.equal(frameAt(100, 55, 2, 100), 0)
+  assert.equal(frameAt(100, 55, 2, 154), 0)
+  assert.equal(frameAt(100, 55, 2, 155), 1)
+  assert.equal(frameAt(100, 55, 2, 5000), 1, 'a frame 5 s late lands on the last glyph')
+  assert.equal(frameAt(0, 55, 0, 10), -1)
+
+  // the screen's stagger (page 59 §5.1): boards 60 ms apart, at most four, labels 120 ms after their board
+  assert.equal(openStartMs(560, 0, 0), 680, 'the header flips 120 ms after it rises at 560 ms')
+  assert.equal(openStartMs(560, 1, 0), 740)
+  assert.equal(openStartMs(560, 3, 0), 860)
+  assert.equal(openStartMs(560, 9, 0), 860, 'the 4th board and everything after it together')
+  assert.equal(openStartMs(560, 0, 2000), 2000, 'a late label starts now, never in the past')
+  // the whole switch: the last board's labels flip from 860 ms and land by about 1.3 s
+  const lastBoard = planFlip(Array.from({ length: 16 }, () => openFrames('M')), openStartMs(560, 3, 0), FLIP.openMaxMs)
+  assert.ok(Math.max(...lastBoard.map(s => s.at)) + FLIP.stepMs <= 1300, 'all landed by about 1.3 s')
+
+  // the busy flag the world's quality ladder reads
+  markBusy(1000)
+  assert.ok(motionBusy(), 'busy while the UI moves')
+  assert.ok(!motionBusy(performance.now() + 5000), 'calm after')
 }
 
 console.log('design tests passed')

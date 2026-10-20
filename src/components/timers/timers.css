@@ -37,11 +37,11 @@
 
 /* last 10 s of a work timer: yellow (10-7), orange (6-4), red (3-0) */
 .wm-flap.is-hy .wm-cell:not(.is-gap):not(.is-pad) { color: #1c1608; text-shadow: none; background: linear-gradient(180deg, #e2c04c 0 50%, #c9a63a 50% 100%); }
-.wm-flap.is-hy .wm-cell::before { background: #e2c04c; }
+.wm-flap.is-hy .wm-leaf { background: #e2c04c; }
 .wm-flap.is-ho .wm-cell:not(.is-gap):not(.is-pad) { color: #1c0e04; text-shadow: none; background: linear-gradient(180deg, #e08a3c 0 50%, #c4702a 50% 100%); }
-.wm-flap.is-ho .wm-cell::before { background: #e08a3c; }
+.wm-flap.is-ho .wm-leaf { background: #e08a3c; }
 .wm-flap.is-hr .wm-cell:not(.is-gap):not(.is-pad) { color: #fff0ea; background: linear-gradient(180deg, #d0483a 0 50%, #ad3428 50% 100%); }
-.wm-flap.is-hr .wm-cell::before { background: #d0483a; }
+.wm-flap.is-hr .wm-leaf { background: #d0483a; }
 
 /* the grass: the bottom 47%, faded in at its top edge; the giant tap zone */
 .tm-grass { position: absolute; left: 0; right: 0; bottom: 0; height: 47%; z-index: 1; cursor: pointer; touch-action: none; outline: none; -webkit-tap-highlight-color: transparent; -webkit-mask-image: linear-gradient(transparent, #000 12%); mask-image: linear-gradient(transparent, #000 12%); }

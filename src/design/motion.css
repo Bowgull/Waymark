@@ -1,0 +1,96 @@
+/* The shared motion system (page 59 §5.3, approved 2026-10-19). Tokens live in design.css :root
+   (--t-tap 90, --t-quick 180, --t-move 320, --t-moment 700, --t-glide 900; --ease-out, --ease-in,
+   --ease-inout, --ease-drop) and tokens.ts MOTION. Transform and opacity, and a container's height for
+   Expand; no CSS linear() springs (they leave the compositor in Safari 26); will-change only while
+   something moves (WAAPI does that for its own runs). Primitives: MotionPrimitives.tsx, motionKit.ts. */
+
+@layer components {
+  /* ── the tab panes (app/TabStack): kept alive, one shown; it waits unseen while the camera glides ── */
+  .wm-pane { display: block; }
+  .wm-pane.is-waiting { visibility: hidden; }
+
+  /* ── Expand / Collapse: height 0fr -> 1fr (320 ms out), content fades in and drops 4 px 60 ms late;
+     closing, the content fades first (120 ms), then the height (240 ms in-out) ── */
+  .wm-expand {
+    display: grid;
+    width: 100%;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 240ms var(--ease-inout) 120ms;
+  }
+  .wm-expand[data-state='open'] { grid-template-rows: 1fr; transition: grid-template-rows var(--t-move) var(--ease-out); }
+  .wm-expand > .wm-expand-in {
+    min-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 120ms var(--ease-in), transform 120ms var(--ease-in);
+  }
+  .wm-expand[data-state='open'] > .wm-expand-in {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--t-quick) var(--ease-out) 60ms, transform var(--t-quick) var(--ease-out) 60ms;
+  }
+  /* once open, nothing inside is clipped (hit areas, focus rings, shadows) */
+  .wm-expand[data-settled] > .wm-expand-in { overflow: visible; }
+
+  /* AutoHeight: the box clips only while its height glides (WAAPI sets the height) */
+  .wm-autoh { overflow: clip; overflow-clip-margin: 24px; }
+
+  /* ── Strike: a clay line drawn left to right (220 ms), retracted right to left (180 ms) ── */
+  .wm-strike {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 2px;
+    margin-top: -1px;
+    border-radius: 1px;
+    background: var(--sf-clay);
+    box-shadow: 0 0 4px rgba(156, 90, 64, 0.5);
+    pointer-events: none;
+    transform: scaleX(0);
+    transform-origin: 100% 50%;
+    transition: transform var(--t-quick) var(--ease-in);
+  }
+  .wm-strike.is-on { transform: scaleX(1); transform-origin: 0 50%; transition: transform 220ms var(--ease-out); }
+  /* a whole row being swapped out: the line runs through the row's middle */
+  .wm-strike.is-row { left: 48px; right: 8px; }
+
+  /* ── Tick: the ✓ (it flips in from MotionPrimitives.tsx) ── */
+  .wm-tick { display: inline-block; }
+
+  /* ── Swap: a row on its way out keeps its place while it is struck and collapses ── */
+  .wm-swap.is-out .wm-swap-face { position: relative; }
+
+  /* ── runes (page 56): a teal glow-in when one appears (700 ms); dimming to "seen" over 1.2 s ── */
+  .wm-rune { animation: wm-rune-in var(--t-moment) var(--ease-out) both; }
+  .wm-rune .cut, .wm-rune .chip { transition: stroke 1.2s ease; }
+
+  /* ── check-in cards (page 59 §5.3 Rise): each card slides 24 px with a fade (220 ms); Back reverses it ── */
+  .bz-deck[data-step='next'] .bz-bd.is-step { animation: wm-step-next 220ms var(--ease-out) both; }
+  .bz-deck[data-step='back'] .bz-bd.is-step { animation: wm-step-back 220ms var(--ease-out) both; }
+
+  /* Today's rows: a struck name dims after its line is drawn */
+  .td-row .td-nm .wm-cell { transition: color var(--t-quick) ease 220ms; }
+}
+
+@keyframes wm-rune-in {
+  0% { opacity: 0; filter: drop-shadow(0 0 0 rgba(143, 212, 184, 0)); }
+  40% { opacity: 1; filter: drop-shadow(0 0 6px rgba(143, 212, 184, 0.75)); }
+  100% { opacity: 1; filter: drop-shadow(0 0 0 rgba(143, 212, 184, 0)); }
+}
+@keyframes wm-step-next { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@keyframes wm-step-back { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
+
+/* Reduce Motion: end states, a short fade at most */
+@media (prefers-reduced-motion: reduce) {
+  .wm-pane.is-waiting { visibility: visible; }
+  .wm-expand, .wm-expand[data-state='open'] { transition: none; }
+  .wm-expand > .wm-expand-in,
+  .wm-expand[data-state='open'] > .wm-expand-in { transform: none; transition: opacity 120ms linear; }
+  .wm-strike, .wm-strike.is-on { transition: none; }
+  .wm-rune { animation: none; }
+  .wm-rune .cut, .wm-rune .chip { transition: none; }
+  .bz-deck[data-step] .bz-bd.is-step { animation: wm-fade-in 160ms linear both; }
+  .td-row .td-nm .wm-cell { transition: none; }
+}

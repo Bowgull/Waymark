@@ -1,18 +1,14 @@
-import { Suspense, lazy, useEffect } from 'react'
+import { Suspense, lazy, useEffect, useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { OfflinePill, ShellLayout } from './ShellLayout'
 import { WorldLayer } from '../world/WorldLayer'
 import { cascadeForScreen } from '../design/cascade'
-import { HistoryPage } from '../features/history/HistoryPage'
-import { LibraryPage } from '../features/library/LibraryPage'
 import { OnboardingPage } from '../features/onboarding/OnboardingPage'
-import { ProgramPage } from '../features/program/ProgramPage'
 import { WorkoutPage } from '../features/session/WorkoutPage'
 import { BodyMetricsPage } from '../features/metrics/BodyMetricsPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { LogsPage } from '../features/settings/LogsPage'
-import { TodayPage } from '../features/today/TodayPage'
 import { EndGatePage } from '../features/blockZero/EndGate'
 
 /**
@@ -60,8 +56,11 @@ export function AppRoutes() {
   // Arm the cascade as the new screen renders, before its labels' first layout effects run (idempotent).
   cascadeForScreen(cascadeScreen(location.pathname))
 
+  // The onboarding check, once at boot (page 59 §6 item 5), not on every tab tap.
+  const profileChecked = useRef(false)
   useEffect(() => {
-    if (location.pathname === '/onboarding' || location.pathname === '/design') return
+    if (profileChecked.current || location.pathname === '/onboarding' || location.pathname === '/design') return
+    profileChecked.current = true
     apiFetch<{ onboardedAt: number | null } | null>('/api/user-profile')
       .then(profile => {
         if (!profile || !profile.onboardedAt) {
@@ -183,10 +182,11 @@ export function AppRoutes() {
 
       <Route element={<ShellLayout />}>
         <Route path="/" element={<Navigate to="/today" replace />} />
-        <Route path="/today" element={<ErrorBoundary level="page"><TodayPage /></ErrorBoundary>} />
-        <Route path="/program" element={<ErrorBoundary level="page"><ProgramPage /></ErrorBoundary>} />
-        <Route path="/library" element={<ErrorBoundary level="page"><LibraryPage /></ErrorBoundary>} />
-        <Route path="/history" element={<ErrorBoundary level="page"><HistoryPage /></ErrorBoundary>} />
+        {/* the four tabs are kept alive by the shell (TabStack): their routes only match */}
+        <Route path="/today" element={null} />
+        <Route path="/program" element={null} />
+        <Route path="/library" element={null} />
+        <Route path="/history" element={null} />
         <Route path="*" element={<Navigate to="/today" replace />} />
       </Route>
     </Routes>
