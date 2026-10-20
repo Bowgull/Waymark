@@ -97,7 +97,11 @@ test('the splash: one tap skips to the title screen, then into the app', async (
   const splash = page.locator('.wm-splash')
   await expect(splash).toBeVisible()
   await page.waitForTimeout(400)
-  await splash.click({ position: { x: 200, y: 300 } })
+  // A raw tap, as the hold test does: a locator click waits for two still
+  // frames first, and on the Linux runner the world's first software-WebGL
+  // compile can hold the page long enough for the splash to end on its own.
+  const box = await splash.boundingBox()
+  await page.mouse.click((box?.width ?? 390) / 2, 300)
   // the title screen at once: WAYMARK under the whole crest
   await expect(splash.getByRole('img', { name: 'WAYMARK' })).toBeVisible({ timeout: 1500 })
   // then it lifts as usual, in under 3 s instead of 10
