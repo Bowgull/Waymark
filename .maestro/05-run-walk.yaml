@@ -46,15 +46,18 @@ name: Run-walk - the warm-up, then run and walk intervals
 - launchApp:
     stopApp: false
 - takeScreenshot: 05-run-walk-start
-# Poll (a plain long wait gave up early on the runner: REST after 1.5 s of
-# 30, WALK after 103 s of 300); about 200 s at most, as before.
+# Poll in short waits (a long wait gave up early on the runner: REST after
+# 1.5 s of 30, WALK after 103 s of 300; and waitForAnimationToEnd on these
+# moving screens took 18 s a turn, missing FINISH's 10 s). Up to about 200 s, as before.
 - repeat:
     while:
       notVisible: "RUN 1/.*"
     times: 100
     commands:
-      - waitForAnimationToEnd:
+      - extendedWaitUntil:
+          visible: "RUN 1/.*"
           timeout: 2000
+          optional: true
 - assertVisible: "RUN 1/.*"
 - takeScreenshot: 05-run-walk-run
 - repeat:
@@ -62,7 +65,9 @@ name: Run-walk - the warm-up, then run and walk intervals
       notVisible: "WALK 1/.*"
     times: 150
     commands:
-      - waitForAnimationToEnd:
+      - extendedWaitUntil:
+          visible: "WALK 1/.*"
           timeout: 2000
+          optional: true
 - assertVisible: "WALK 1/.*"
 - takeScreenshot: 05-run-walk-walk
