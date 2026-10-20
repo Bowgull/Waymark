@@ -32,7 +32,7 @@
   "lapse-4wk": {
     "P1": "fail",
     "P2": "fail",
-    "P3": "fail"
+    "P3": "pass"
   },
   "sandbagger": {
     "S1": "pass",
