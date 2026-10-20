@@ -8,9 +8,12 @@ name: The page 56 coach model - REPLACE, + Add, runes, UNDO, the week log
 - runFlow: shared/open-today.yaml
 # REPLACE with ROUGH DAY: swaps at once.
 - tapOn: "Foundation FOUNDATION ~.*"
+# Centred: the run-walk from 05 is still open, so the live strip (page 61)
+# sits above the tab bar and takes a tap on a button low on the screen.
 - scrollUntilVisible:
     element: "REPLACE"
     direction: DOWN
+    centerElement: true
 - tapOn: "REPLACE"
 - tapOn: "ROUGH DAY"
 - takeScreenshot: 07-coach-replace
