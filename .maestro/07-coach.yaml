@@ -25,6 +25,10 @@ name: The page 56 coach model - REPLACE, + Add, runes, UNDO, the week log
 - takeScreenshot: 07-coach-replace
 - tapOn: "Pick (Coach pick: )?Bag Work.*"
 - takeScreenshot: 07-coach-swapped
+# The swapped-out row is struck, then collapses (page 59 Swap): wait for the
+# board to settle, or the Waybook line moves up under the + add session tap.
+- waitForAnimationToEnd:
+    timeout: 3000
 # + Add always adds, MT Class included.
 - runFlow: shared/today-bottom.yaml
 - tapOn: "\\+ add session"
