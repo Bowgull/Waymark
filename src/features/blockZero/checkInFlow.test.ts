@@ -13,6 +13,10 @@ import {
   initialCheckIn,
   noteDayLabel,
   shouldOpenCheckIn,
+  firstUnanswered,
+  isCheckInComplete,
+  mergeAnswers,
+  parseCheckInDraft,
   type CheckInState,
 } from './checkInFlow'
 
@@ -123,11 +127,15 @@ for (const q of CHECK_IN_QUESTIONS) {
 // ─── when the cards open ──
 {
   const today = '2026-10-18'
-  assert.equal(shouldOpenCheckIn({ today, hasLogToday: false, skippedOn: null, requested: false }), true, 'first open of the day')
-  assert.equal(shouldOpenCheckIn({ today, hasLogToday: true, skippedOn: null, requested: false }), false, 'already checked in')
-  assert.equal(shouldOpenCheckIn({ today, hasLogToday: false, skippedOn: today, requested: false }), false, 'skipped today')
-  assert.equal(shouldOpenCheckIn({ today, hasLogToday: false, skippedOn: '2026-10-17', requested: false }), true, 'yesterday’s skip is old')
-  assert.equal(shouldOpenCheckIn({ today, hasLogToday: true, skippedOn: today, requested: true }), true, "the alarm's I'M UP always opens")
+  const all = { sleepHours: 8, sleepQuality: 4, energy: 4, soreness: 2, stress: 2, mood: 4, backToday: 4, alcoholScale: 0, herbScale: 0 }
+  assert.equal(shouldOpenCheckIn({ answers: {}, requested: false }), true, 'nothing answered: the cards open')
+  assert.equal(shouldOpenCheckIn({ answers: { sleepHours: 7, energy: 3 }, requested: false }), true, 'partly answered: they come back')
+  const { herbScale: _h, ...eight } = all
+  void _h
+  assert.equal(shouldOpenCheckIn({ answers: eight, requested: false }), true, 'eight of nine still opens')
+  assert.equal(shouldOpenCheckIn({ answers: all, requested: false }), false, 'all nine in: no more cards today')
+  assert.equal(shouldOpenCheckIn({ answers: all, requested: true }), true, "the alarm's I'M UP always opens")
+  void today
 }
 
 // + ADD NOTE opened (page 46): the board names the day as "Sun 18"
@@ -154,3 +162,25 @@ assert.equal(noteDayLabel('nope'), '')
 }
 
 console.log('checkInFlow tests passed')
+
+// ─── reminds until complete (approved 2026-10-19) ──
+{
+  assert.equal(firstUnanswered({}), 0, 'nothing answered: the first card')
+  assert.equal(firstUnanswered({ sleepHours: 7, sleepQuality: 3 }), 2, 'resumes at energy')
+  assert.equal(firstUnanswered({ sleepHours: 7, energy: 3 }), 1, 'a passed card comes first')
+  const qs = checkInQuestions([{ region: 'knee', label: 'KNEE TODAY' }])
+  const upToBack = { sleepHours: 7, sleepQuality: 3, energy: 3, soreness: 2, stress: 2, mood: 3, backToday: 4 }
+  assert.equal(qs[firstUnanswered(upToBack, qs)].key, 'region:knee', 'a place on watch is asked in its turn')
+  assert.equal(isCheckInComplete(upToBack), false)
+  assert.equal(isCheckInComplete({ ...upToBack, alcoholScale: 0, herbScale: 0 }), true, 'the nine, without the place card')
+  assert.deepEqual(mergeAnswers({ sleepHours: 7 }, { sleepHours: 8, energy: 2 }), { sleepHours: 8, energy: 2 }, "the phone's unsent answers are newer")
+  assert.deepEqual(mergeAnswers({ sleepHours: 7 }, null), { sleepHours: 7 })
+  const raw = JSON.stringify({ date: '2026-10-19', answers: { sleepHours: 6, mood: 'x' }, backNotes: 'Bending' })
+  assert.deepEqual(parseCheckInDraft(raw, '2026-10-19'), { answers: { sleepHours: 6 }, backNotes: 'Bending' })
+  assert.equal(parseCheckInDraft(raw, '2026-10-20'), null, "yesterday's draft is ignored")
+  assert.equal(parseCheckInDraft('{nope', '2026-10-19'), null)
+  // the deck resumes on the first unanswered card, with the answers kept
+  const s0 = initialCheckIn({ sleepHours: 7, sleepQuality: 3 }, firstUnanswered({ sleepHours: 7, sleepQuality: 3 }))
+  assert.equal(s0.index, 2)
+  assert.equal(s0.answers.sleepHours, 7)
+}

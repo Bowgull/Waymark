@@ -27,6 +27,11 @@ async function openDeck(page: Page) {
   return deck
 }
 
+// A complete morning to start from: the cards open by themselves while any of the nine is missing.
+test.beforeAll(async ({ request }) => {
+  await setMorning(makeApiFor(request))
+})
+
 test.afterAll(async ({ request }) => {
   // Leave a plain good morning for the specs after this one.
   await setMorning(makeApiFor(request))
@@ -92,4 +97,65 @@ test('Morning check-in: a rough morning names what is off trend, a bad back asks
 
   const log = await api.get<{ herbScale: number; backToday: number; backNotes: string }>(`/api/daily-logs/today?date=${todayISO()}`)
   expect(log).toMatchObject({ herbScale: 9, backToday: 2, backNotes: 'Bending forward' })
+})
+
+test('Morning check-in: comes back until all nine are in, at the first unanswered card, with no skip', async ({ page, api }) => {
+  // A fresh morning: nothing answered yet.
+  const blank = Object.fromEntries(GOOD.map((_, i) => [['sleepHours', 'sleepQuality', 'energy', 'soreness', 'stress', 'mood', 'backToday', 'alcoholScale', 'herbScale'][i], null]))
+  await setMorning(api, blank)
+
+  // The app opens on Today: the cards come up by themselves (a takeover, Today waits behind them).
+  // No "Skip today", only Close.
+  await page.goto('/today?resume=0')
+  const deck = page.getByRole('dialog', { name: 'Morning check-in' })
+  await expect(deck).toBeVisible({ timeout: 20_000 })
+  await expect(deck.getByText('1 of 9')).toBeVisible()
+  await expect(page.getByText(/skip today/i)).toHaveCount(0)
+  await expect(deck.getByRole('button', { name: 'Close ›' })).toBeVisible()
+
+  // Three answers, each saved as it is given.
+  for (const [title, tile] of GOOD.slice(0, 3)) {
+    await expect(deck.getByRole('img', { name: title, exact: true })).toBeVisible()
+    await deck.getByRole('button', { name: tile, exact: true }).tap()
+  }
+  await expect(deck.getByText('4 of 9')).toBeVisible()
+  await expect.poll(async () => (await api.get<{ energy: number | null }>(`/api/daily-logs/today?date=${todayISO()}`)).energy).toBe(4)
+  const partial = await api.get<{ sleepHours: number; sleepQuality: number; soreness: number | null }>(`/api/daily-logs/today?date=${todayISO()}`)
+  expect(partial).toMatchObject({ sleepHours: 8, sleepQuality: 4, soreness: null })
+
+  // Closed: the Morning Report row still reads CHECK IN.
+  await deck.getByRole('button', { name: 'Close ›' }).tap()
+  await expect(deck).toBeHidden()
+  await expect(page.getByRole('button', { name: /^Morning Report, not logged yet\./ })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'CHECK IN' })).toBeVisible()
+
+  // The next app open: back, on the first unanswered card (soreness).
+  await page.reload()
+  await expect(deck).toBeVisible({ timeout: 20_000 })
+  await expect(deck.getByText('4 of 9')).toBeVisible()
+  await expect(deck.getByRole('img', { name: 'SORENESS', exact: true })).toBeVisible()
+  await deck.getByRole('button', { name: 'Close ›' }).tap()
+  await expect(deck).toBeHidden()
+
+  // Today back in the foreground (from another app): back again.
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await expect(deck).toBeVisible()
+  await expect(deck.getByText('4 of 9')).toBeVisible()
+
+  // The rest of the nine: GOOD TO GO, and the row reads LOGGED.
+  for (const [title, tile] of GOOD.slice(3)) {
+    await expect(deck.getByRole('img', { name: title, exact: true })).toBeVisible()
+    await deck.getByRole('button', { name: tile, exact: true }).tap()
+  }
+  await expect(deck.getByRole('img', { name: 'GOOD TO GO' })).toBeVisible()
+  await deck.getByRole('button', { name: 'TO TODAY' }).tap()
+  await expect(page.getByRole('button', { name: /^Morning Report, logged\./ })).toBeVisible()
+
+  // All nine in: the next open stays on Today.
+  await page.reload()
+  await expect(page.getByRole('button', { name: /^Morning Report, logged\./ })).toBeVisible({ timeout: 20_000 })
+  await expect(deck).toBeHidden()
 })

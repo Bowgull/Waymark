@@ -9,6 +9,7 @@ import {
   checkInPayload,
   checkInQuestions,
   checkInReducer,
+  firstUnanswered,
   initialCheckIn,
   noteDayLabel,
   type CheckInAnswers,
@@ -18,14 +19,16 @@ import { readinessLine, type ReadinessIn } from './readinessLine'
 export interface CheckInDeckProps {
   date: string
   existing?: CheckInAnswers | null
-  /** Open on this card (editing one answer from the collapsed card). */
-  startAt?: number
+  /** What bothers the back, if already written today. */
+  existingBackNotes?: string | null
+  /** Open on this card, or 'resume': the first card without an answer. */
+  startAt?: number | 'resume'
   /** Saves the body; resolves with today's readiness (or null when unknown). */
   onSubmit: (body: Record<string, unknown>) => Promise<ReadinessIn | null>
-  /** Closed: saved true after a save, false when skipped. */
+  /** Each answer as it is given (the partial log), so a closed deck resumes where it stopped. */
+  onPartial?: (body: Record<string, unknown>, answers: CheckInAnswers, backNotes: string) => void
+  /** Closed: saved true after a save, false when closed before the end (it comes back next open). */
   onClose: (saved: boolean) => void
-  /** Skip the whole thing for today (first-open cards only). */
-  onSkipToday?: () => void
   /** Today's note on the daily log (+ ADD NOTE edits it). */
   note?: string | null
   /** The daily log after a note was saved. */
@@ -45,9 +48,12 @@ const SWIPE_PX = 60
  * TODAY clay / GOOD TO GO teal) with its line, then + ADD NOTE (the daily
  * log's note) and TO TODAY.
  */
-export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, onSkipToday, note, onNoteSaved, previewSettled, regions }: CheckInDeckProps) {
+export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, onSubmit, onPartial, onClose, note, onNoteSaved, previewSettled, regions }: CheckInDeckProps) {
   const [questions] = useState(() => checkInQuestions(regions ?? []))
-  const [state, dispatch] = useReducer(checkInReducer, undefined, () => initialCheckIn(existing, startAt, questions))
+  const [state, dispatch] = useReducer(checkInReducer, undefined, () => ({
+    ...initialCheckIn(existing, startAt === 'resume' ? firstUnanswered(existing ?? {}, questions) : startAt, questions),
+    backNotes: existingBackNotes ?? '',
+  }))
   const [phase, setPhase] = useState<'cards' | 'saving' | 'settled' | 'error'>(previewSettled !== undefined ? 'settled' : 'cards')
   const [line, setLine] = useState<ReturnType<typeof readinessLine>>(() => (previewSettled ? readinessLine(previewSettled) : null))
   const [noteOpen, setNoteOpen] = useState(false)
@@ -55,6 +61,18 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
   const [noteSaving, setNoteSaving] = useState(false)
   const touch = useRef<{ x: number; y: number } | null>(null)
   const submitted = useRef(false)
+
+  // Each answer is saved as it is given (the last one goes with the full save below).
+  const lastPartial = useRef<string | null>(null)
+  useEffect(() => {
+    if (state.done || state.askingBackNotes || !onPartial) return
+    const body = checkInPayload(state, date)
+    const sig = JSON.stringify(body)
+    if (lastPartial.current == null) { lastPartial.current = sig; return }
+    if (sig === lastPartial.current) return
+    lastPartial.current = sig
+    onPartial(body, state.answers, state.backNotes)
+  }, [state, date, onPartial])
 
   // The last card answered: save once, then the verdict.
   useEffect(() => {
@@ -143,8 +161,8 @@ export function CheckInDeck({ date, existing, startAt = 0, onSubmit, onClose, on
         <div className="bz-toprow">
           <FlapLabel text="MORNING CHECK-IN" size="xs" tone="gold" animate={false} />
           {(phase === 'cards' || phase === 'settled') && (
-            <button type="button" className="bz-lnk" onClick={() => { if (phase === 'cards') onSkipToday?.(); onClose(phase === 'settled') }}>
-              {onSkipToday ? 'Skip today ›' : 'Close ›'}
+            <button type="button" className="bz-lnk" onClick={() => onClose(phase === 'settled')}>
+              Close ›
             </button>
           )}
         </div>

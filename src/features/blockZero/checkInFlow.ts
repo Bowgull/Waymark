@@ -1,7 +1,10 @@
 // Morning check-in as swipe cards (Block Zero Phase C, direction 1; Morning
 // Report "both" in design-decisions.md): one question per card, big tiles,
-// a tap answers and moves on. Shows on the first open of the day (skippable)
-// and from the morning alarm's I'M UP. Pure: no React, no fetch.
+// a tap answers and moves on. Re-opens on every app open and every return of
+// Today to the foreground until all nine are answered (approved 2026-10-19:
+// no "skip today"), resuming at the first unanswered card; each answer is
+// saved as it is given. Also from the morning alarm's I'M UP. Pure: no React,
+// no fetch.
 //
 // Scales match POST /api/daily-logs (schemas.ts): 1-5 for the detailed items
 // (stress and soreness: higher is worse; back today: 1 is worst), sleep in
@@ -181,6 +184,27 @@ export function answeredCount(answers: CheckInAnswers): number {
   return CHECK_IN_QUESTIONS.filter(q => answers[q.key] != null).length
 }
 
+/** All nine answered: the check-in stops coming back and the Morning Report reads LOGGED. */
+export function isCheckInComplete(answers: CheckInAnswers): boolean {
+  return answeredCount(answers) === CHECK_IN_QUESTIONS.length
+}
+
+/** Where the cards resume: the first card without an answer (the first card when all are in). */
+export function firstUnanswered(answers: CheckInAnswers, questions: ReadonlyArray<CheckInQuestion> = CHECK_IN_QUESTIONS): number {
+  const i = questions.findIndex(q => answers[q.key] == null)
+  return i < 0 ? 0 : i
+}
+
+/**
+ * Answers saved on this phone while the server couldn't be reached, laid over
+ * what the server has (the phone's are the newer ones).
+ */
+export function mergeAnswers(server: CheckInAnswers, local: CheckInAnswers | null | undefined): CheckInAnswers {
+  const out: CheckInAnswers = { ...server }
+  for (const [k, v] of Object.entries(local ?? {})) if (typeof v === 'number') out[k as CheckInKey] = v
+  return out
+}
+
 /** A saved daily log back into answers (for editing from the collapsed card). */
 export function answersFromLog(log: (Partial<Record<BaseCheckInKey, number | null | undefined>> & { regionRatingsJson?: string | null }) | null | undefined): CheckInAnswers {
   const out: CheckInAnswers = {}
@@ -206,17 +230,33 @@ export function answerLabel(key: CheckInKey, value: number): string {
 
 // ─── When the cards open ──────────────────────────────────────
 
-export const CHECK_IN_SKIP_KEY = 'waymark_checkin_skipped'
 export const CHECK_IN_REQUEST_KEY = 'waymark_checkin_requested'
+/** Today's answers kept on this phone as they are given (until the full save lands). */
+export const CHECK_IN_DRAFT_KEY = 'waymark_checkin_draft'
 
 /**
- * Open the cards on the first open of the day: no check-in saved today and
- * not skipped today. The morning alarm (I'M UP) always opens them.
+ * Open the cards on every app open and every return of Today to the
+ * foreground until all nine are answered today. There is no skip: closing
+ * the deck only lasts until the next open. The morning alarm (I'M UP) always
+ * opens them.
  */
-export function shouldOpenCheckIn(input: { today: string; hasLogToday: boolean; skippedOn: string | null; requested: boolean }): boolean {
+export function shouldOpenCheckIn(input: { answers: CheckInAnswers; requested: boolean }): boolean {
   if (input.requested) return true
-  if (input.hasLogToday) return false
-  return input.skippedOn !== input.today
+  return !isCheckInComplete(input.answers)
+}
+
+/** A draft from storage, for today only. */
+export function parseCheckInDraft(raw: string | null, today: string): { answers: CheckInAnswers; backNotes: string } | null {
+  if (!raw) return null
+  try {
+    const d = JSON.parse(raw) as { date?: unknown; answers?: unknown; backNotes?: unknown }
+    if (d.date !== today || !d.answers || typeof d.answers !== 'object') return null
+    const answers: CheckInAnswers = {}
+    for (const [k, v] of Object.entries(d.answers as Record<string, unknown>)) if (typeof v === 'number' && Number.isFinite(v)) answers[k as CheckInKey] = v
+    return { answers, backNotes: typeof d.backNotes === 'string' ? d.backNotes : '' }
+  } catch {
+    return null
+  }
 }
 
 const NOTE_DAY3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']

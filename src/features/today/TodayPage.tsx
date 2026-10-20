@@ -9,6 +9,8 @@ import { localActiveSession } from '@/lib/workoutCache'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
 import { endAllLiveActivities } from '@/lib/liveActivity'
+import { App as CapacitorApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
 
 import { FlapLabel, glowRow, showPop } from '@/design'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
@@ -29,8 +31,8 @@ import { AllDoneBoard, EmptyDayBoard, NoBlockBoard, RestDayBoards, TodayHeader, 
 import { TodayDay, type TodaySession } from './TodayDay'
 import { ALL_DONE_AFTER_CONFIRM_MS, fadesToAllDone, lanternFor, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
-import { answersFromLog, answeredCount, shouldOpenCheckIn } from '@/features/blockZero/checkInFlow'
-import { CHECK_IN_EVENT, checkInSkippedOn, markCheckInSkipped, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
+import { answersFromLog, isCheckInComplete, mergeAnswers, shouldOpenCheckIn, type CheckInAnswers } from '@/features/blockZero/checkInFlow'
+import { CHECK_IN_EVENT, clearCheckInDraft, loadCheckInDraft, saveCheckInDraft, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
 import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessLine'
 import { MorningReportRow } from '@/features/blockZero/TodayPieces'
 import { useBodyWatch } from '@/features/raven/bodyWatch'
@@ -163,7 +165,7 @@ export function TodayPage() {
   useEffect(() => {
     const open = () => {
       takeCheckInRequest()
-      setDeck({ startAt: 0, firstOpen: false })
+      setDeck({ startAt: 'resume' })
     }
     window.addEventListener(CHECK_IN_EVENT, open)
     return () => window.removeEventListener(CHECK_IN_EVENT, open)
@@ -214,9 +216,9 @@ export function TodayPage() {
             return
           }
         }
-        // First open of the day (or the alarm's I'M UP): the check-in cards.
-        if (shouldOpenCheckIn({ today, hasLogToday: logData != null, skippedOn: checkInSkippedOn(), requested: takeCheckInRequest() })) {
-          setDeck({ startAt: 0, firstOpen: logData == null })
+        // Every open until all nine are in (or the alarm's I'M UP): the check-in cards, at the first unanswered one.
+        if (shouldOpenCheckIn({ answers: checkInAnswersFor(logData, today), requested: takeCheckInRequest() })) {
+          setDeck({ startAt: 'resume' })
         }
       } catch (e) {
         // Reopened offline mid-session: the session screen carries on from this
@@ -591,8 +593,47 @@ export function TodayPage() {
       body: JSON.stringify(body),
     })
     setDailyLog(log)
+    clearCheckInDraft()
     return refreshReadiness()
   }, [refreshReadiness])
+
+  // Each answer as it is given: kept on this phone at once, then sent as a partial log
+  // (the server holds back the coach's check-in rules until the full save).
+  const handleCheckInPartial = useCallback((body: Record<string, unknown>, answers: CheckInAnswers, backNotes: string) => {
+    saveCheckInDraft(today, answers, backNotes)
+    apiFetch<DailyLog>('/api/daily-logs', { method: 'POST', body: JSON.stringify({ ...body, partial: true }) })
+      .then(log => setDailyLog(log))
+      .catch(e => logger.warn('system', 'partial check-in not sent', { message: e instanceof Error ? e.message : String(e) }, 'Kept on this phone; sent with the next answer.'))
+  }, [today])
+
+  // Today back in the foreground (the app reopened from the background): the cards again while any of the nine is missing.
+  useEffect(() => {
+    let last = 0
+    const onForeground = () => {
+      if (Date.now() - last < 1500) return
+      last = Date.now()
+      if (deckOpenRef.current) return
+      apiFetch<DailyLog | null>(`/api/daily-logs/today?date=${today}`)
+        .then(log => {
+          setDailyLog(log)
+          if (!deckOpenRef.current && shouldOpenCheckIn({ answers: checkInAnswersFor(log, today), requested: takeCheckInRequest() })) setDeck({ startAt: 'resume' })
+        })
+        .catch(() => {
+          // offline: what this phone holds decides
+          if (!deckOpenRef.current && shouldOpenCheckIn({ answers: checkInAnswersFor(null, today), requested: false })) setDeck({ startAt: 'resume' })
+        })
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') onForeground() }
+    document.addEventListener('visibilitychange', onVisible)
+    let removeNative: (() => void) | null = null
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorApp.addListener('resume', onForeground).then(h => { removeNative = () => { void h.remove() } })
+    }
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      removeNative?.()
+    }
+  }, [today])
 
   const handleCheckInClose = useCallback(() => setDeck(null), [])
 
@@ -611,7 +652,9 @@ export function TodayPage() {
   const newWeekTomorrow = todayEpoch + 1 > mondayOf(todayEpoch) + 6 ? nextWeek?.week?.weekNumber ?? null : null
   const tomorrowText = tomorrowLine(tomorrow, s => sessionDisplayName({ type: s.type, label: s.label ?? null, notes: s.notes ?? null }), newWeekTomorrow)
   const home = showsHome(mode)
-  const morningLogged = dailyLog != null && answeredCount(answersFromLog(dailyLog)) > 0
+  // CHECK IN until all nine are in; partial answers don't count as logged.
+  const morningAnswers = checkInAnswersFor(dailyLog ?? null, today)
+  const morningLogged = isCheckInComplete(morningAnswers)
 
   return (
     <div className="td-page">
@@ -648,7 +691,7 @@ export function TodayPage() {
       {mode === 'day' && (
         <>
           {/* page 56 item 14: the Morning Report row: CHECK IN, then LOGGED and the readiness line; tap for the why */}
-          <MorningReportRow logged={morningLogged} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: 0, firstOpen: false })} raven={raven} />
+          <MorningReportRow logged={morningLogged} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: morningLogged ? 0 : 'resume' })} raven={raven} />
           {/* the clearing and its lantern show between the top and the boards (pages 17, 35, 56) */}
           <div className="td-spacer" style={{ minHeight: strip ? '16dvh' : '24dvh' }} />
           <TodayDay
@@ -725,11 +768,12 @@ export function TodayPage() {
           // a place on watch adds its card (page 58): the deck starts over if the watch answers after it opened
           key={(bodyWatch?.checkIn ?? []).map(c => c.region).join(',')}
           date={today}
-          existing={dailyLog ? answersFromLog(dailyLog) : null}
+          existing={morningAnswers}
+          existingBackNotes={dailyLog?.backNotes ?? loadCheckInDraft(today)?.backNotes ?? null}
           startAt={deck.startAt}
           onSubmit={handleCheckInSubmit}
+          onPartial={handleCheckInPartial}
           onClose={handleCheckInClose}
-          onSkipToday={deck.firstOpen ? markCheckInSkipped : undefined}
           note={dailyLog?.notes ?? null}
           onNoteSaved={log => setDailyLog(log as DailyLog)}
           regions={bodyWatch?.checkIn ?? []}
@@ -742,6 +786,11 @@ export function TodayPage() {
       <ToastContainer />
     </div>
   )
+}
+
+/** Today's answers: the server's log with this phone's unsent ones laid over it. */
+function checkInAnswersFor(log: DailyLog | null | undefined, today: string): CheckInAnswers {
+  return mergeAnswers(answersFromLog(log ?? null), loadCheckInDraft(today)?.answers)
 }
 
 /** Loaded before the crest was needed: show the page on the next tick. */

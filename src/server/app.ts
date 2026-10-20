@@ -2322,7 +2322,16 @@ app.post('/api/daily-logs', async (c) => {
       regionRatingsJson: hasKey('regionRatings') ? mergeRegionRatings(prev.regionRatingsJson, body.regionRatings ?? null) : prev.regionRatingsJson,
     }).where(eq(dailyLogs.id, prev.id))
     const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, prev.id))
-    c.executionCtx.waitUntil(checkInCoachRules(createDB(c.env), epochDay, nowSec))
+    if (!body.partial) {
+      // The check-in built up card by card (partial saves) is complete now: the replan a fresh log gets.
+      if (!checkInComplete(prev)) {
+        c.executionCtx.waitUntil(
+          runReactiveReplan(createDB(c.env), c.env.ANTHROPIC_API_KEY, { trigger: 'wellness_logged', todayEpochDay: Math.floor(Date.now() / 86400000) })
+            .catch(err => console.warn('[reactive] wellness_logged failed', err))
+        )
+      }
+      c.executionCtx.waitUntil(checkInCoachRules(createDB(c.env), epochDay, nowSec))
+    }
     return c.json(row)
   }
 
@@ -2347,6 +2356,7 @@ app.post('/api/daily-logs', async (c) => {
   })
 
   const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, id))
+  if (body.partial) return c.json(row)
 
   const todayEpochDay = Math.floor(Date.now() / 86400000)
   c.executionCtx.waitUntil(
@@ -2359,6 +2369,11 @@ app.post('/api/daily-logs', async (c) => {
 
   return c.json(row)
 })
+
+/** All nine check-in items answered on a saved log. */
+function checkInComplete(row: Pick<typeof dailyLogs.$inferSelect, 'sleepHours' | 'sleepQuality' | 'energy' | 'soreness' | 'stress' | 'mood' | 'backToday' | 'alcoholScale' | 'herbScale'>): boolean {
+  return [row.sleepHours, row.sleepQuality, row.energy, row.soreness, row.stress, row.mood, row.backToday, row.alcoholScale, row.herbScale].every(v => v != null)
+}
 
 // The check-in is the morning after: soreness 4+ eases the next similar
 // session; a fresh streak with easy sessions gets one push (once a week).
