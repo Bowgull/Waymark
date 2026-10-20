@@ -474,7 +474,7 @@ export const TOOL_BAG_PRESCRIPTION: Tool = {
 export const TOOL_REACTIVE_REPLAN: Tool = {
   name: 'reactiveReplan',
   description:
-    'Mid-week adjustment. Triggered when a meaningful signal changes (HR drift, repeated missed days, sleep or soreness overreach, MT class diverging from prescribed type). Produces one adjustment at a time. Never address the user directly. Small changes are applied with your note; big ones (another day, another type, an added session) become a question the app asks with safe options. Voice canon: observation before conclusion, no hype.',
+    'Mid-week adjustment. Triggered when a meaningful signal changes (HR drift, repeated missed days, sleep or soreness overreach, an MT class done in place of another planned session). Produces one adjustment at a time. Never address the user directly. Small changes are applied with your note; big ones (another day, another type, an added session) become a question the app asks with safe options. Voice canon: observation before conclusion, no hype.',
   input_schema: {
     type: 'object',
     properties: {

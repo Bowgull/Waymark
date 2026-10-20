@@ -54,7 +54,7 @@ export function injuryFlag(skips: SkipSignal[], day: number): InjuryFlag | null 
   return { region, since: injury.epochDay, reason: `${label} flagged on ${DAY_NAMES[dowOf(injury.epochDay)]}.` }
 }
 
-export type InjuryAction = 'none' | 'back_swap' | 'ease' | 'walk_or_bike' | 'technical'
+export type InjuryAction = 'none' | 'back_swap' | 'ease' | 'walk_or_bike' | 'technical' | 'skip_or_move'
 
 const LOWER = new Set(['back', 'knee', 'hip', 'ankle', 'shin', 'leg'])
 
@@ -72,8 +72,13 @@ export function injuryActionFor(type: string, flag: InjuryFlag | null): { action
     if (LOWER.has(flag.region)) return { action: 'walk_or_bike', note: `${flag.reason} Easy bike instead of the run.` }
     return { action: 'none', note: null }
   }
-  if (type === 'bag_work' || type === 'mt_class') {
+  // His own bag work can go technique-only. A class can't: what is taught is the
+  // gym's call, so the only ease is his call to skip it or move it.
+  if (type === 'bag_work') {
     return { action: 'technical', note: `${flag.reason} Technique only. No hard rounds.` }
+  }
+  if (type === 'mt_class') {
+    return { action: 'skip_or_move', note: `${flag.reason} Your call tonight: skip the class or move it.` }
   }
   return { action: 'none', note: null }
 }

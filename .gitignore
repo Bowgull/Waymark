@@ -39,3 +39,11 @@ _smoke.sqlite
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Coach-brain replay (P0): his backup copies and anything derived from them
+# stay outside the repo (scripts/replay.mts refuses an --out inside it).
+replay-*.json
+replay-*.sqlite
+backup-copy.sqlite
+waymark-db-*.sql
+sim-*.json

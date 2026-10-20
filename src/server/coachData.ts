@@ -123,7 +123,14 @@ export function weekStamps(block: Block, tw: TrainingWeek): { weekNumber: number
   }
 }
 
+/**
+ * The return ramp after a gap (F12/F13) on `day`. Never inside Block Zero:
+ * Block Zero week 1 is the comeback (Josh, 2026-10-20; coach-brain lead-in
+ * item 6), so its sessions get no ramp on top of an already easy week.
+ */
 export async function returnContextFor(db: DB, day: number): Promise<ReturnContext> {
+  const block = await getActiveBlock(db)
+  if (block?.blockType === 'block_zero') return returnContext([], day)
   return returnContext(await loadCompletedKeyDays(db, day), day)
 }
 
@@ -395,7 +402,7 @@ export async function loadSessionCoachState(db: DB, session: Pick<SessionRow, 't
     injury,
     injuryAction: injuryActionFor(session.type, injury),
   }
-  // A raven's plan on this session (page 58, server/bodyWatch.ts): bag work and MT technique only,
+  // A raven's plan on this session (page 58, server/bodyWatch.ts): bag work technique only (a class comes off instead),
   // back-friendly lifts, or the bad-neck Foundation, through the same eases an injury flag uses.
   const plan = bodyPlanMark(session.contextJson)
   if (plan && state.injuryAction.action === 'none') {

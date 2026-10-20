@@ -139,6 +139,8 @@ export interface FeltHardEase {
 export function feltHardEase(input: FeltHardInput): FeltHardEase | null {
   const { done } = input
   if (done.type === 'mobility' || done.type === 'active_recovery') return null
+  // A class is never eased: what happens in it is the gym's call (coach-brain §14).
+  if (done.type === 'mt_class') return null
   const verdict = effortVerdict(done)
   const sore = input.nextMorningSoreness != null && input.nextMorningSoreness >= SORE_NEXT_DAY && isHard(done)
   if (verdict !== 'way_harder' && !sore) return null

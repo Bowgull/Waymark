@@ -63,7 +63,7 @@ const longRun = s('running', MON + 5, { notes: 'progression' })
 expectRefusal('heavy legs the evening before a long run', add('strength', MON + 4, { timeSlot: 'pm' }), ctx({ sessions: [longRun] }), 'legs_24h')
 expectRefusal('a class within 24 h of heavy legs', add('mt_class', MON + 1, { timeSlot: 'am', label: 'MT Class' }), ctx({ sessions: [s('strength', MON + 1 - 1, { timeSlot: 'pm' })] }), 'legs_24h')
 assert(checkSessionChange(add('strength', MON + 2), ctx({ sessions: [mtMon] })).ok, 'heavy legs 38 h after a class: ok')
-assert(checkSessionChange(add('mt_class', MON + 1, { timeSlot: 'pm', label: 'MT Technique' }), ctx({ sessions: [s('strength', MON + 1, { timeSlot: 'am' })] })).ok, 'a technique class is not hard interval work')
+expectRefusal('a class labelled technique is still a class: hard work, not stacked on heavy legs', add('mt_class', MON + 1, { timeSlot: 'pm', label: 'MT Technique' }), ctx({ sessions: [s('strength', MON + 1, { timeSlot: 'am' })] }), 'stacked_hard')
 
 expectRefusal('Block Zero strength back to back', add('strength', MON + 1, { label: 'Strength C' }), bz({ sessions: [s('strength', MON, { label: 'Strength A' })] }), 'strength_back_to_back')
 expectRefusal('Block Zero strength after a morning run', add('strength', MON + 1, { label: 'Strength C', timeSlot: 'pm' }), bz({ sessions: [s('foundation_run', MON + 1)] }), 'strength_order')
@@ -86,20 +86,21 @@ assert(floored.ok && floored.change.estimatedMin == null, 'run cap floor: after 
 
 // ─── Muay thai ramp and cap ──────────────────────────────────
 
-expectRefusal('sparring in the first weeks back', add('mt_class', MON + 1, { timeSlot: 'pm', label: 'MT Sparring' }), ctx({ mt: { weeksSinceRampStart: null, profileCap: null } }), 'mt_ramp')
+assert(checkSessionChange(add('mt_class', MON + 1, { timeSlot: 'pm', label: 'MT Sparring' }), ctx({ mt: { weeksSinceRampStart: null, profileCap: null } })).ok, 'any kind of class in the first weeks back: his call and the gym (only the weekly cap can say no)')
 expectRefusal('Block Zero class cap', add('mt_class', MON + 3, { timeSlot: 'pm', label: 'MT Technique' }), bz({ mt: { weeksSinceRampStart: 0, profileCap: null }, sessions: [s('mt_class', MON, { timeSlot: 'pm', label: 'MT Technique' }), s('mt_class', MON + 1, { timeSlot: 'pm', label: 'MT Technique' })] }), 'mt_cap')
 expectRefusal('Fighter class cap', add('mt_class', MON + 4, { timeSlot: 'pm', label: 'MT Class' }), ctx({ mt: { weeksSinceRampStart: 8, profileCap: 2 }, sessions: [s('mt_class', MON, { timeSlot: 'pm' }), s('mt_class', MON + 2, { timeSlot: 'pm' })] }), 'mt_cap')
 assert(checkSessionChange(add('mt_class', MON + 4, { timeSlot: 'pm', label: 'MT Sparring' }), ctx({ mt: { weeksSinceRampStart: 8, profileCap: null } })).ok, 'Fighter past the ramp: the class is allowed (sparring criteria are E2)')
 
 // ─── No cramming (F14) ───────────────────────────────────────
 
-const full = ctx({ planWeekLoad: 1200, sessions: [s('strength', MON + 1), s('mt_class', MON + 2, { timeSlot: 'pm' })] })
+// A class is a fixed hour at RPE 7 (420), strength 75 min at 7 (525): 945 of a 1000 plan.
+const full = ctx({ planWeekLoad: 1000, sessions: [s('strength', MON + 1), s('mt_class', MON + 2, { timeSlot: 'pm' })] })
 expectRefusal('over the planned week load', add('bag_work', MON + 4), full, 'over_plan')
 assert(checkSessionChange({ kind: 'move', type: 'strength', epochDay: MON + 4, timeSlot: 'am', sessionId: full.sessions[0].id, fromEpochDay: MON + 1 }, full).ok, 'a move inside the week adds no load')
-const missedRoom = ctx({ planWeekLoad: 1200, sessions: [s('strength', MON + 1, { status: 'missed' }), s('mt_class', MON + 2, { timeSlot: 'pm' })] })
+const missedRoom = ctx({ planWeekLoad: 1000, sessions: [s('strength', MON + 1, { status: 'missed' }), s('mt_class', MON + 2, { timeSlot: 'pm' })] })
 assert(checkSessionChange(add('strength', MON + 4), missedRoom).ok, 'a missed session frees its load: putting it back fits the plan')
 assert(checkSessionChange(add('mobility', MON + 4), full).ok, 'back care never counts against the plan')
-assert(checkSessionChange(add('mt_class', MON + 2, { timeSlot: 'pm', label: 'MT Technique' }), bz({ planWeekLoad: 10, mt: { weeksSinceRampStart: 0, profileCap: null } })).ok, 'Block Zero classes are governed by the ramp, not the template load')
+assert(checkSessionChange(add('mt_class', MON + 2, { timeSlot: 'pm', label: 'MT Technique' }), bz({ planWeekLoad: 10, mt: { weeksSinceRampStart: 0, profileCap: null } })).ok, 'Block Zero classes are governed by the weekly cap, not the template load')
 
 // ─── Replace takes the original out ─────────────────────────
 

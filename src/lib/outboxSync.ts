@@ -6,6 +6,7 @@ import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 
 import { ApiError, apiFetch, idempotencyHeaders, newIdempotencyKey } from './api'
+import { localIsoOf, TODAY_HEADER } from './dates'
 import { logger } from './logger'
 import { enqueue, flushStoredOutbox, isRetryableStatus, loadDeadLetters, loadOutbox, nextDueAt, pendingFor, saveOutbox, type FlushSummary, type OutboxEntry, type SendOutcome, type StorageLike } from './outbox'
 
@@ -19,7 +20,8 @@ function storage(): StorageLike | null {
 
 async function send(entry: OutboxEntry): Promise<SendOutcome> {
   try {
-    await apiFetch(entry.path, { method: entry.method, body: entry.body, headers: idempotencyHeaders(entry.id) })
+    // A queued write keeps the local day it was made on, however late it lands.
+    await apiFetch(entry.path, { method: entry.method, body: entry.body, headers: { ...idempotencyHeaders(entry.id), [TODAY_HEADER]: localIsoOf(entry.createdAtMs) } })
     return { ok: true }
   } catch (err) {
     if (err instanceof ApiError) {

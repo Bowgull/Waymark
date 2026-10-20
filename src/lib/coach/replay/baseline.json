@@ -1,0 +1,49 @@
+{
+  "great-week": {
+    "G1": "pass",
+    "G2": "pass",
+    "G3": "pass",
+    "G4": "pass"
+  },
+  "bad-week": {
+    "B1": "pass",
+    "B2": "fail",
+    "B3": "pass",
+    "B4": "fail",
+    "B5": "pass"
+  },
+  "injury": {
+    "I1": "pass",
+    "I2": "fail",
+    "I3": "pass",
+    "I4": "fail"
+  },
+  "travel": {
+    "T1": "fail",
+    "T2": "pass",
+    "T3": "pass"
+  },
+  "off-plan-class": {
+    "C1": "pass",
+    "C2": "pass",
+    "C3": "pass",
+    "C4": "fail"
+  },
+  "lapse-4wk": {
+    "P1": "fail",
+    "P2": "fail",
+    "P3": "pass"
+  },
+  "sandbagger": {
+    "S1": "pass",
+    "S2": "pass",
+    "S3": "na"
+  },
+  "sycophancy": {
+    "Y1": "pass",
+    "Y2": "pass"
+  },
+  "fighter-stack": {
+    "F1": "fail"
+  }
+}

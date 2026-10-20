@@ -184,7 +184,7 @@ export function rampUpOptions(input: RampUpOptionInput): RampUpOption[] {
   const rampCtx: PlacementContext = { ...ctx, planWeekLoad: ctx.planWeekLoad != null ? ctx.planWeekLoad * RAMP_LOAD_ALLOWANCE / 1.05 : null }
   const adds: Array<{ id: 'extra_run' | 'extra_class'; title: string; type: string; sessionLabel: string; days?: ReadonlySet<number>; slots: TimeSlot[]; what: string }> = [
     { id: 'extra_run', title: 'EXTRA RUN', type: 'foundation_run', sessionLabel: input.blockType === 'block_zero' ? 'Run-Walk' : 'Zone 2', slots: ['am', 'pm'], what: 'Easy run' },
-    { id: 'extra_class', title: 'EXTRA CLASS', type: 'mt_class', sessionLabel: input.blockType === 'block_zero' ? 'MT Technique' : 'MT Class', days: input.classDays, slots: ['pm'], what: 'Class' },
+    { id: 'extra_class', title: 'EXTRA CLASS', type: 'mt_class', sessionLabel: 'MT Class', days: input.classDays, slots: ['pm'], what: 'Class' },
   ]
   for (const a of adds) {
     let placed: RampUpOption | null = null

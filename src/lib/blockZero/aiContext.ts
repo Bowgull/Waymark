@@ -5,7 +5,7 @@
 // Target: under 350 tokens.
 
 import type { BackTrend } from './endGate'
-import { allowedClassTypes, mtRampWeek, weeklyClassCap } from './muayThai'
+import { mtRampWeek, weeklyClassCap } from './muayThai'
 import type { ReadinessItem } from './readiness'
 import { RESTART_SESSION_SEC, SINGLE_RUN_CAP_RATIO, getRunWalkWeek, runWalkTotalSec, weeklyRunAllowanceSec } from './running'
 import { getStrengthWeekTarget } from './strength'
@@ -59,8 +59,6 @@ const ITEM_WORD: Record<ReadinessItem, string> = {
 }
 
 const CHANGE_WORD = { increase: 'up', hold: 'hold', decrease: 'down' } as const
-
-const CLASS_WORD: Record<string, string> = { technical: 'technique', padwork: 'pads/bag', clinch: 'light clinch', general: 'general (light)' }
 
 function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
@@ -144,9 +142,9 @@ export function serializeBlockZeroContext(input: BlockZeroAiContextInput): strin
 
   const started = input.mt.weeksSinceFirstClass != null
   const ramp = mtRampWeek(input.mt.weeksSinceFirstClass)
-  const allowed = allowedClassTypes(ramp).map(c => CLASS_WORD[c]).join(', ')
   const cap = weeklyClassCap(ramp, input.mt.profileCap)
-  lines.push(`Muay thai: ${started ? `ramp week ${ramp}` : 'no classes yet, next is ramp week 1'}. Allowed: ${allowed}. Cap ${cap}/week, ${input.mt.classesThisWeek} done. No sparring.`)
+  // A class is a fixed hour of hard work; what is taught is the gym's call. No class types here.
+  lines.push(`Muay thai: ${started ? `week ${ramp} back` : 'no classes yet'}. Cap ${cap}/week, ${input.mt.classesThisWeek} done. Each class is 60 min of hard work.`)
 
   const limits = [
     'no mt_class',

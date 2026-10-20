@@ -1,13 +1,15 @@
-// Muay thai ramp for Block Zero. The template never schedules classes; the
-// athlete adds them. R12 (Gartland 2001; Strotmeyer 2016): technique, pad and
-// bag classes only in the first 2 weeks back; light controlled clinch from
-// week 3; no hard sparring anywhere in Block Zero. Beginners ran ~5x the injury
-// rate of amateurs, so the ramp counts from the first class, not the block start.
-// R15: hard strength and hard MT sit apart, or strength comes first.
+// Muay thai classes in Block Zero. The template never schedules classes; the
+// athlete adds them. A class is a fixed 60-minute session and what is taught
+// is the gym's call (Josh, 2026-10-20: "I'll never be able to decide what I get
+// taught"): the coach never says what to do in class or which class to take.
+// It only counts each class as an hour of hard work and caps how many a week
+// (R12: beginners ran ~5x the injury rate of amateurs, so the cap counts from
+// the first class back, not the block start). R15: hard strength and hard MT
+// sit apart, or strength comes first.
 
 import type { PlannedSession } from './autoEase'
 
-/** Class types as MtClassLogView records them. */
+/** Class types as the MT class log records them (a log field only: nothing is refused by type). */
 export type MtClassType = 'technical' | 'padwork' | 'clinch' | 'general' | 'sparring'
 
 const ALIASES: Record<string, MtClassType> = {
@@ -33,15 +35,9 @@ export function mtRampWeek(weeksSinceFirstClass: number | null): number {
   return Math.floor(weeksSinceFirstClass) + 1
 }
 
-/** Class types allowed in a ramp week. Sparring is never allowed in Block Zero. */
-export function allowedClassTypes(rampWeek: number): MtClassType[] {
-  if (rampWeek <= 2) return ['technical', 'padwork']
-  return ['technical', 'padwork', 'clinch', 'general']
-}
-
 /**
  * Weekly class cap. 2 in ramp weeks 1-2, 3 after, never above a cap set on the
- * profile (the assessment's mtCapPerWeek).
+ * profile (the assessment's mtCapPerWeek). How often, never what kind.
  */
 export function weeklyClassCap(rampWeek: number, profileCap?: number | null): number {
   const ramp = rampWeek <= 2 ? 2 : 3
@@ -49,7 +45,6 @@ export function weeklyClassCap(rampWeek: number, profileCap?: number | null): nu
 }
 
 export interface ClassRequest {
-  classType: string
   weeksSinceFirstClass: number | null
   classesThisWeek: number
   profileCap?: number | null
@@ -57,33 +52,19 @@ export interface ClassRequest {
 
 export interface ClassDecision {
   allowed: boolean
-  classType: MtClassType | null
   rampWeek: number
-  /** What to do instead when refused. */
-  suggestedType: MtClassType | null
+  cap: number
   reason: string
 }
 
+/** One more class this week: only the weekly cap can say no. The class itself is never judged. */
 export function evaluateClassRequest(req: ClassRequest): ClassDecision {
   const rampWeek = mtRampWeek(req.weeksSinceFirstClass)
-  const type = normaliseClassType(req.classType)
   const cap = weeklyClassCap(rampWeek, req.profileCap)
-
   if (req.classesThisWeek >= cap) {
-    return { allowed: false, classType: type, rampWeek, suggestedType: null, reason: `That makes ${req.classesThisWeek + 1} classes this week. The cap is ${cap} in Block Zero.` }
+    return { allowed: false, rampWeek, cap, reason: `That makes ${req.classesThisWeek + 1} classes this week. The cap is ${cap} in Block Zero.` }
   }
-  if (type === 'sparring') {
-    return { allowed: false, classType: type, rampWeek, suggestedType: 'technical', reason: 'No hard sparring in Block Zero. Take the technique class or work pads.' }
-  }
-  if (type == null) {
-    return { allowed: false, classType: null, rampWeek, suggestedType: 'technical', reason: 'Unknown class type. Log it as technique, pads or clinch.' }
-  }
-  const allowed = allowedClassTypes(rampWeek)
-  if (!allowed.includes(type)) {
-    return { allowed: false, classType: type, rampWeek, suggestedType: 'technical', reason: `Week ${rampWeek} back. Technique, pads and bag only until week 3.` }
-  }
-  const note = type === 'clinch' || type === 'general' ? ' Light and controlled. No hard rounds.' : ''
-  return { allowed: true, classType: type, rampWeek, suggestedType: null, reason: `Week ${rampWeek} back. ${type === 'padwork' ? 'Pads' : type.charAt(0).toUpperCase() + type.slice(1)} is in.${note}` }
+  return { allowed: true, rampWeek, cap, reason: `Class ${req.classesThisWeek + 1} of ${cap} this week.` }
 }
 
 export interface RebalancedDay {

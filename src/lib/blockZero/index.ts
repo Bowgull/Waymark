@@ -78,10 +78,9 @@ export { WEEKLY_LOAD_SOFT_CAP, sessionLoad, weekOverWeekChange, weeklyLoadFlag, 
 
 export { evaluateReadiness, latestReadiness, oversleepRead, READINESS_ITEMS, OVERSLEEP_HOURS, type CheckIn, type OversleepRead, type ReadinessDay, type ReadinessItem, type ReadinessVerdict } from './readiness'
 
-export { EASED_RPE_CEILING, easeSession, type EaseTriggers, type EasedSession, type PlannedSession } from './autoEase'
+export { CLASS_EASE_LINE, EASED_RPE_CEILING, easeSession, type EaseTriggers, type EasedSession, type PlannedSession } from './autoEase'
 
 export {
-  allowedClassTypes,
   evaluateClassRequest,
   mtRampWeek,
   normaliseClassType,
@@ -153,7 +152,6 @@ export {
   capLoad,
   checkPlacement,
   clampsForStorage,
-  classTypeFromLabel,
   guardCalibrationStarts,
   guardCalibrationWrites,
   guardLoadProposals,

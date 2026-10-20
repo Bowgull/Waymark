@@ -69,7 +69,6 @@ export function easeDetail(kind: CoachEaseKind, s: Pick<SessionLike, 'type' | 'l
   if (s.type === 'strength' && kind === 'one_set') return { was: 'Planned sets', now: 'One set less, same weights' }
   if (s.type === 'strength') return { was: 'Planned sets and load', now: 'One set less, load 10% lower' }
   if (RUN_TYPES.has(s.type)) return { was: 'Planned run time', now: 'About 80% of the time' }
-  if (s.type === 'mt_class') return { was: sessionName(s), now: 'Technique only, sit out the hard rounds' }
   return { was: 'Planned length', now: 'Shorter and easier' }
 }
 
@@ -93,7 +92,8 @@ export function weekRuleEases(s: WeekSignals, planned: Array<Pick<SessionLike, '
   if (s.returnRamp.active) return []
   const order = planned
     .map((p, index) => ({ p, index }))
-    .filter(({ p }) => isHard(p) || RUN_TYPES.has(p.type))
+    // Never a class: easing a class would mean saying what to do in it (coach-brain §14).
+    .filter(({ p }) => (isHard(p) || RUN_TYPES.has(p.type)) && p.type !== 'mt_class')
     .sort((a, b) => (a.p.type === 'strength' ? 0 : 1) - (b.p.type === 'strength' ? 0 : 1) || a.p.epochDay - b.p.epochDay)
   const out: WeekEase[] = []
   const used = new Set<number>()

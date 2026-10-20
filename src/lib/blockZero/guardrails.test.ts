@@ -1,14 +1,13 @@
 // Run: tsx src/lib/blockZero/guardrails.test.ts
 //
 // Every guardrail rule, fed crafted AI outputs, adversarial ones included:
-// sparring in week 1, a class on the rest day, a 50-min run after a 20-min
+// classes the planner may not schedule, a class on the rest day, a 50-min run after a 20-min
 // longest, three strength days in a row, loads above the rules' next load.
 
 import type { ReactiveReplanOutput, WeekPlanOutput } from '../prompts/tools'
 import {
   capLoad,
   checkPlacement,
-  classTypeFromLabel,
   guardCalibrationStarts,
   guardCalibrationWrites,
   guardLoadProposals,
@@ -79,7 +78,7 @@ for (const w of [1, 2, 3, 4, 5, 6, 7, 8]) {
   p.mtSessionsThisWeek = 2
   const g = guardWeekPlan(p, { weekNumber: 1 })
   const all = g.output.days.flatMap(d => d.sessions)
-  assert(!all.some(s => s.type === 'mt_class'), 'sparring in week 1 and a class on the rest day are dropped')
+  assert(!all.some(s => s.type === 'mt_class'), 'the planner never schedules classes in Block Zero (he adds them); the rest-day class goes too')
   assert(g.output.mtSessionsThisWeek === 0, 'mtSessionsThisWeek forced to 0')
   assert(day(g.output, 0).every(s => s.type === 'mobility'), 'Sunday keeps back care only')
   assert(has(g.clamps, 'mt_class_dropped') && has(g.clamps, 'rest_day'), 'clamps: mt_class_dropped, rest_day')
@@ -216,7 +215,6 @@ const replan = (o: Partial<ReactiveReplanOutput>): ReactiveReplanOutput => ({
 })
 
 assert(isBlockZeroRestDay(3, 0) && !isBlockZeroRestDay(3, 1), 'Sunday is the rest day')
-assert(classTypeFromLabel('Sparring') === 'sparring' && classTypeFromLabel('Pads') === 'padwork' && classTypeFromLabel('MT Class') === 'general' && classTypeFromLabel('Technique') === 'technical', 'class type from label')
 
 // ─── Reactive replan ────────────────────────────────────────────
 
@@ -225,16 +223,16 @@ assert(classTypeFromLabel('Sparring') === 'sparring' && classTypeFromLabel('Pads
   assert(g.clamps.length === 0 && g.output.shiftAction === 'hold', 'hold passes untouched')
 }
 {
-  // Swap Thursday's run into sparring (no classes yet: ramp week 1).
+  // The AI swaps Thursday's run into "Sparring": the coach may place a class night, never name its kind.
   const g = guardReactiveReplan(replan({ targetSessionType: 'mt_class', targetLabel: 'Sparring', targetTimeSlot: 'pm', originalSessionId: `${dayFor(4)}-foundation_run` }), ctx(WED))
-  assert(g.output.targetSessionType === 'mt_class' && classTypeFromLabel(g.output.targetLabel) === 'technical', `sparring swap converted to technique (${g.output.targetLabel})`)
-  assert(has(g.clamps, 'mt_class_type') && voiceOk(g.output.shiftReason), 'clamp: mt_class_type, why rewritten')
+  assert(g.output.targetSessionType === 'mt_class' && g.output.targetLabel === 'MT Class', `a class the coach places is just a class (${g.output.targetLabel})`)
+  assert(has(g.clamps, 'mt_class_content') && g.clamps.every(c => !/technique|pads|clinch/i.test(c.reason)), 'clamp: mt_class_content, and no class type suggested')
 }
 {
-  // Clinch in ramp week 1 also converts; in ramp week 3 it is in.
+  // Any kind of class asked for, any week: the label is plain and nothing is suggested instead.
   const early = guardReactiveReplan(replan({ targetSessionType: 'mt_class', targetLabel: 'Clinch', targetTimeSlot: 'pm' }), ctx(WED))
-  const later = guardReactiveReplan(replan({ targetSessionType: 'mt_class', targetLabel: 'Clinch', targetTimeSlot: 'pm' }), ctx(WED, { mt: { weeksSinceFirstClass: 2, classesThisWeek: 0, profileCap: null } }))
-  assert(classTypeFromLabel(early.output.targetLabel) === 'technical' && classTypeFromLabel(later.output.targetLabel) === 'clinch', 'clinch only from ramp week 3')
+  const later = guardReactiveReplan(replan({ targetSessionType: 'mt_class', targetLabel: 'Technique', targetTimeSlot: 'pm' }), ctx(WED, { mt: { weeksSinceFirstClass: 2, classesThisWeek: 0, profileCap: null } }))
+  assert(early.output.targetLabel === 'MT Class' && later.output.targetLabel === 'MT Class', 'the coach never picks a kind of class, early or late')
 }
 {
   // Class cap reached: refused, the week holds.
@@ -290,7 +288,8 @@ assert(classTypeFromLabel('Sparring') === 'sparring' && classTypeFromLabel('Pads
   const past = guardReactiveReplan(replan({ targetDay: 1 }), ctx(WED))
   assert(has(past.clamps, 'bad_day') && past.output.shiftAction === 'hold', 'a past day is refused')
   const soft = guardReactiveReplan(replan({ shiftAction: 'reduce_intensity', targetSessionType: 'mt_class', targetLabel: 'Sparring', targetDay: 4 }), ctx(WED))
-  assert(soft.output.shiftAction === 'reduce_intensity' && classTypeFromLabel(soft.output.targetLabel) === 'technical', 'reduce on a sparring class keeps it to technique')
+  assert(soft.output.shiftAction === 'hold' && has(soft.clamps, 'mt_class_content'), 'an ease on a class holds: never "go light in class"')
+  assert(soft.output.targetLabel === 'Sparring', 'the class itself is left as it is')
 }
 {
   // Rest day: anything hard placed on Sunday is refused.

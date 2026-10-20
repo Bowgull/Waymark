@@ -4,11 +4,11 @@
 // here touches the DB: it is the rules engine alone, the way the app will
 // call it. Scenario: good weeks; a 4-day bad-sleep + high-soreness stretch in
 // week 3; a missed week 4; back at 2 for 3 days in week 5; two MT classes
-// asked for in week 3 (one is sparring). Plus a clean athlete and a
+// asked for in week 3 (the coach never judges what kind). Plus a clean athlete and a
 // persistently inconsistent one for the gate.
 //
 // Phase D: every week's plan comes from a fake "AI" that tries to break the
-// rules (sparring, strength on the wrong days, 50-min runs, wrong labels) and
+// rules (classes, strength on the wrong days, 50-min runs, wrong labels) and
 // goes through the guardrails before the athlete follows it. On ease days and
 // class days the fake coach also pushes hard mid-week changes. The guardrails
 // must correct every one.
@@ -69,7 +69,7 @@ interface Script {
 interface RunLog { day: number; sec: number; longest30: number; capped: boolean }
 interface LoadStep { day: number; liftId: string; rpe: number; target: [number, number]; before: number; after: number }
 interface BackPick { day: number; picked: string; original: string }
-interface ClassLog { day: number; type: string; allowed: boolean; rampWeek: number; classType: string | null }
+interface ClassLog { day: number; type: string; allowed: boolean; rampWeek: number; reason: string }
 interface GuardWeek { week: number; plan: WeekPlanOutput; clamps: Clamp[]; longest30: number; lastWeek: number; shapeMatches: boolean }
 interface GuardDay { day: number; kind: 'ease' | 'class'; action: string; type: string; label: string; clamps: Clamp[] }
 
@@ -193,12 +193,12 @@ function simulate(script: Script) {
       const classType = classByDay.get(day)
       if (classType && !isMissed) {
         const weeksSinceFirst = firstClassDay == null ? null : Math.floor((day - firstClassDay) / 7)
-        const decision = evaluateClassRequest({ classType, weeksSinceFirstClass: weeksSinceFirst, classesThisWeek })
-        classes.push({ day, type: classType, allowed: decision.allowed, rampWeek: decision.rampWeek, classType: decision.classType })
+        const decision = evaluateClassRequest({ weeksSinceFirstClass: weeksSinceFirst, classesThisWeek })
+        classes.push({ day, type: classType, allowed: decision.allowed, rampWeek: decision.rampWeek, reason: decision.reason })
         if (decision.allowed) {
           if (firstClassDay == null) firstClassDay = day
           classesThisWeek++
-          sessions = rebalanceDayForClass(sessions, { type: 'mt_class', label: 'MT Class', timeSlot: 'pm', estimatedMin: 90, classType: decision.classType ?? 'technical' }).sessions
+          sessions = rebalanceDayForClass(sessions, { type: 'mt_class', label: 'MT Class', timeSlot: 'pm', estimatedMin: 60 }).sessions
         }
       }
 
@@ -281,7 +281,7 @@ function assertGuarded(name: string, sim: ReturnType<typeof simulate>): void {
   for (const g of sim.guardWeeks) {
     const all = g.plan.days.flatMap(d => d.sessions)
     const tag = `${name} week ${g.week}`
-    assert(!all.some(s => s.type === 'mt_class') && g.plan.mtSessionsThisWeek === 0, `${tag}: fake AI's sparring and open mat dropped`)
+    assert(!all.some(s => s.type === 'mt_class') && g.plan.mtSessionsThisWeek === 0, `${tag}: the planner never schedules classes in Block Zero (he adds them)`)
     const strengthDays = g.plan.days.filter(d => d.sessions.some(s => s.type === 'strength')).map(d => d.dayOfWeek).sort()
     assert(strengthDays.join(',') === '1,3,5', `${tag}: strength Mon/Wed/Fri only, never back to back`)
     assert(g.plan.days.every(d => d.sessions.filter(s => s.type === 'strength').every(s => s.label === `Strength ${({ 1: 'A', 3: 'B', 5: 'C' } as Record<number, string>)[d.dayOfWeek]}`)), `${tag}: labels A/B/C preserved`)
@@ -299,8 +299,9 @@ function assertGuarded(name: string, sim: ReturnType<typeof simulate>): void {
     const tag = `${name} day ${d.day - START} (${d.kind})`
     if (d.kind === 'ease') {
       assert(d.action !== 'add_recovery' && d.clamps.some(c => c.code === 'ease_day'), `${tag}: heavy strength on an ease day refused, ${d.action} instead`)
-    } else {
-      assert(!/spar/i.test(d.label), `${tag}: sparring never gets through (${d.action} ${d.type} ${d.label})`)
+    } else if (d.type === 'mt_class') {
+      // A class is the gym's call: the guard never relabels it or makes it "lighter".
+      assert(d.action !== 'reduce_intensity' && d.label === 'MT Class' && !d.clamps.some(c => /techni|pads|clinch/i.test(c.reason)), `${tag}: the coach never says what kind of class (${d.action} ${d.label})`)
     }
   }
 }
@@ -357,14 +358,11 @@ for (const s of scripted.loadSteps) {
   if (s.rpe >= s.target[0]) assert(s.after <= s.before, `day ${s.day - START} ${s.liftId}: RPE ${s.rpe} vs ${s.target.join('-')}, no increase`)
 }
 
-// MT ramp.
+// MT classes: how many a week, never what kind (coach-brain §14).
 const allowed = scripted.classes.filter(c => c.allowed)
-assert(allowed.length >= 2, `${allowed.length} classes allowed`)
-for (const c of scripted.classes.filter(x => x.rampWeek <= 2 && x.allowed)) {
-  assert(c.classType === 'technical' || c.classType === 'padwork', `ramp week ${c.rampWeek} class is ${c.classType}: technique/pads only`)
-}
-assert(scripted.classes.filter(c => c.type === 'sparring').length === 3 && scripted.classes.filter(c => c.type === 'sparring').every(c => !c.allowed), 'sparring refused every time (3 attempts)')
-assert(scripted.classes.some(c => c.type === 'clinch' && c.rampWeek === 3 && c.allowed), 'light clinch allowed from ramp week 3')
+assert(allowed.length === scripted.classes.length, `every class he asked for fits the weekly cap (${allowed.length} of ${scripted.classes.length})`)
+assert(scripted.classes.filter(c => c.type === 'sparring').every(c => c.allowed), 'a sparring class is never refused: it is up to him and the gym')
+assert(scripted.classes.every(c => !/techni|pads|clinch|sparring|light/i.test(c.reason)), 'no class content in any reason')
 
 // Load: return from the missed week trips the soft flag.
 const weeklyLoad = weeklyLoadTotals(scripted.loadEntries, START, 8)

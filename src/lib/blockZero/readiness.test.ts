@@ -1,7 +1,7 @@
 // Run: tsx src/lib/blockZero/readiness.test.ts
 import { evaluateReadiness, latestReadiness, oversleepRead, type CheckIn } from './readiness'
 import { easeSession, type PlannedSession } from './autoEase'
-import { allowedClassTypes, evaluateClassRequest, mtRampWeek, normaliseClassType, rebalanceDayForClass, weeklyClassCap } from './muayThai'
+import { evaluateClassRequest, mtRampWeek, normaliseClassType, rebalanceDayForClass, weeklyClassCap } from './muayThai'
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(msg)
@@ -79,8 +79,10 @@ const er = easeSession(run, { loadFlag: true, loadReason: 'Load is up 25% on las
 assert(er.eased && er.session.type === 'active_recovery' && er.reason?.includes('walk or bike'), 'run becomes easy walk or bike on a load flag')
 assert(!easeSession(mob, { readinessEase: true }).eased, 'back care is never eased away')
 assert(easeSession({ ...strength, sets: 1 }, { readinessEase: true }).session.sets === 1, 'never below one set')
-const mt = easeSession({ type: 'mt_class', label: 'MT', timeSlot: 'pm', estimatedMin: 90, classType: 'clinch' }, { readinessEase: true })
-assert(mt.session.classType === 'technical', 'class eases to technique')
+const mtPlanned = { type: 'mt_class', label: 'MT Class', timeSlot: 'pm' as const, estimatedMin: 60 }
+const mt = easeSession(mtPlanned, { readinessEase: true })
+assert(mt.eased && mt.session === mtPlanned, 'an eased class night leaves the class itself alone')
+assert(mt.reason?.endsWith('Your call tonight: skip the class or move it.') && !/techni|hard rounds|sit out/i.test(mt.reason ?? ''), 'the only class ease is skip or move, never what to do in it')
 assert([es, er, mt].every(e => houseVoice(e.reason)), 'ease reasons in house voice')
 
 // ─── Oversleep (soft rule) ──────────────────────────────────────
@@ -101,28 +103,24 @@ const normalMore = evaluateReadiness([...steadySleep, { epochDay: 307, sleepHour
 assert(normalMore[normalMore.length - 1].oversleep === null && normalMore[normalMore.length - 1].betterItems.includes('sleepHours'), 'an hour more than usual is just better sleep')
 assert(oversleepRead({ sleepHours: 9, sleepMean: null, energy: 1 }) === null, 'no sleep baseline: no oversleep read')
 
-// ─── MT ramp (R12) ──────────────────────────────────────────────
+// ─── MT classes (R12; coach-brain §14) ──────────────────────────
+// How many a week, never what kind: a class is a fixed hour and what is taught
+// is the gym's call, so no class type is ever refused or suggested.
 
 assert(mtRampWeek(null) === 1 && mtRampWeek(0) === 1 && mtRampWeek(2) === 3, 'ramp week counts from the first class')
-assert(allowedClassTypes(1).join(',') === 'technical,padwork' && allowedClassTypes(2).join(',') === 'technical,padwork', 'weeks 1-2: technique and pads only')
-assert(allowedClassTypes(3).includes('clinch') && !allowedClassTypes(3).includes('sparring'), 'week 3+: light clinch, never sparring')
-assert(!allowedClassTypes(20).includes('sparring'), 'no sparring however long in')
 assert(weeklyClassCap(1) === 2 && weeklyClassCap(3) === 3 && weeklyClassCap(3, 2) === 2 && weeklyClassCap(1, 0) === 0, 'weekly cap: 2 then 3, profile cap wins when lower')
-assert(normaliseClassType('Technique') === 'technical' && normaliseClassType('pads') === 'padwork' && normaliseClassType('Bag') === 'padwork' && normaliseClassType('kickboxing') === null, 'class type aliases')
+assert(normaliseClassType('Technique') === 'technical' && normaliseClassType('pads') === 'padwork' && normaliseClassType('Bag') === 'padwork' && normaliseClassType('kickboxing') === null, 'class type aliases (a log field)')
 
-const tech = evaluateClassRequest({ classType: 'technique', weeksSinceFirstClass: null, classesThisWeek: 0 })
-assert(tech.allowed && tech.classType === 'technical', 'first class, technique: allowed')
-const spar = evaluateClassRequest({ classType: 'sparring', weeksSinceFirstClass: 5, classesThisWeek: 0 })
-assert(!spar.allowed && spar.suggestedType === 'technical', 'sparring refused even 6 weeks in')
-const earlyClinch = evaluateClassRequest({ classType: 'clinch', weeksSinceFirstClass: 1, classesThisWeek: 0 })
-assert(!earlyClinch.allowed && earlyClinch.reason.includes('week 3'), 'clinch in ramp week 2: refused')
-const laterClinch = evaluateClassRequest({ classType: 'clinch', weeksSinceFirstClass: 2, classesThisWeek: 1 })
-assert(laterClinch.allowed && laterClinch.reason.includes('Light and controlled'), 'clinch in ramp week 3: allowed, light')
-const capped = evaluateClassRequest({ classType: 'technique', weeksSinceFirstClass: 0, classesThisWeek: 2 })
+const first = evaluateClassRequest({ weeksSinceFirstClass: null, classesThisWeek: 0 })
+assert(first.allowed && first.cap === 2, 'first class: allowed')
+const capped = evaluateClassRequest({ weeksSinceFirstClass: 0, classesThisWeek: 2 })
 assert(!capped.allowed && capped.reason.includes('cap is 2'), 'third class in ramp week 1: over the cap')
-assert(!evaluateClassRequest({ classType: 'technique', weeksSinceFirstClass: 4, classesThisWeek: 0, profileCap: 0 }).allowed, 'profile cap 0: no classes')
-assert(!evaluateClassRequest({ classType: 'zumba', weeksSinceFirstClass: 4, classesThisWeek: 0 }).allowed, 'unknown type refused')
-assert([tech, spar, earlyClinch, laterClinch, capped].every(d => houseVoice(d.reason)), 'class reasons in house voice')
+const later = evaluateClassRequest({ weeksSinceFirstClass: 2, classesThisWeek: 2 })
+assert(later.allowed && later.cap === 3, 'week 3 back: a third class fits')
+assert(!evaluateClassRequest({ weeksSinceFirstClass: 4, classesThisWeek: 0, profileCap: 0 }).allowed, 'profile cap 0: no classes')
+assert([first, capped, later].every(d => houseVoice(d.reason)), 'class reasons in house voice')
+assert([first, capped, later].every(d => !/techni|sparring|clinch|pads|light|hard rounds/i.test(d.reason)), 'no class content in any reason')
+assert(!('suggestedType' in capped) && !('classType' in capped), 'a decision never names a kind of class')
 
 const mtClass: PlannedSession = { type: 'mt_class', label: 'MT Class', timeSlot: 'pm', estimatedMin: 90, classType: 'technical' }
 const runDay = rebalanceDayForClass([mob, run], mtClass)

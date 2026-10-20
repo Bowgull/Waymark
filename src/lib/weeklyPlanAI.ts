@@ -64,6 +64,16 @@ interface StoredBodyIssuesEntry {
   detections: BodyIssueDetection[]
 }
 
+/**
+ * Start of the body-issue window: 4 weeks before last week's Monday, in unix
+ * seconds (coaching_outputs.created_at). prevWeekStart is an epoch day; the
+ * old "day - 28 x 86400" mixed days with seconds and read every row ever
+ * written (coach-brain P0).
+ */
+export function bodyIssuesSinceSec(prevWeekStartDay: number): number {
+  return (prevWeekStartDay - 28) * 86400
+}
+
 function rollupTrackedIssues(
   rows: Array<{ outputJson: string; createdAt: number }>,
   currentWeekNumber: number,
@@ -305,7 +315,7 @@ export async function generateWeekPlan(
       summaries.map(s => `  Week ${s.weekNumber}: ${s.narrative} ${s.adherence}. ${s.wellnessTrend}`).join('\n')
     : ''
 
-  const fourWeeksAgo = params.prevWeekStart - 28 * 86400
+  const fourWeeksAgo = bodyIssuesSinceSec(params.prevWeekStart)
 
   const [prevSessions, prevLogs, prevMtLogs, prevJournalRows, priorBodyIssueRows] = await Promise.all([
     db

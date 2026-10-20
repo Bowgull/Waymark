@@ -15,6 +15,7 @@ import { e1rmFromRir, epley } from './e1rm'
 import { isFighterMainLift } from './lifts'
 import { BLOCK_ZERO_BASE_WEEKS, BLOCK_ZERO_MAX_EXTENSIONS } from './weeks'
 import { transitionTmWrites } from '../coach/tm'
+import { KEY_TYPES } from '../keyTypes'
 
 export const MIN_COMPLETION_RATE = 0.7
 export const MAX_RECENT_GAP_DAYS = 7
@@ -74,8 +75,8 @@ export function evaluateEndGate(input: EndGateInput): EndGateResult {
 
 // ─── Gate inputs from raw history (pure) ──────────────────────
 
-/** Session types that count toward consistency. Foundation is a habit, not a training dose. */
-export const KEY_SESSION_TYPES = new Set(['strength', 'foundation_run', 'running', 'skip_rope', 'bag_work', 'mt_class'])
+/** Session types that count toward consistency (lib/keyTypes). Foundation is a habit, not a training dose. */
+export const KEY_SESSION_TYPES = KEY_TYPES
 
 export interface GateSession {
   type: string

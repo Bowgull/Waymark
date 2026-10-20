@@ -13,8 +13,6 @@ export interface PlannedSession {
   sets?: number
   /** Strength only: target RPE band. */
   rpe?: [number, number]
-  /** MT class only. */
-  classType?: string
 }
 
 export interface EaseTriggers {
@@ -33,6 +31,9 @@ export interface EasedSession {
 }
 
 export const EASED_RPE_CEILING = 6
+
+/** The only thing the coach says about an eased class night: skip or move, never what to do in it. */
+export const CLASS_EASE_LINE = 'Your call tonight: skip the class or move it.'
 const RUN_TYPES = new Set(['foundation_run', 'running'])
 
 function cause(t: EaseTriggers): string {
@@ -74,11 +75,13 @@ export function easeSession(planned: PlannedSession, triggers: EaseTriggers): Ea
     }
   }
 
+  // A class is a fixed hour and its content is the gym's call: the only ease is
+  // his call to skip it or move it. The session itself is left as it is.
   if (planned.type === 'mt_class') {
     return {
-      session: { ...planned, classType: 'technical' },
+      session: planned,
       eased: true,
-      reason: `${why} Technique only tonight. Sit out the hard rounds.`,
+      reason: `${why} ${CLASS_EASE_LINE}`,
     }
   }
 

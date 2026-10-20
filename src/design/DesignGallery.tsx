@@ -132,9 +132,7 @@ function Gallery({ screen }: { screen: string }) {
     case 'effort':
       return <Phone><EffortCard setLabel="Set 2 of 3" onPick={noop} onSkip={noop} /></Phone>
     case 'class':
-      return <Phone><MtClassLogCard classType="technical" minutes={60} note="" refused={null} error={null} saving={false} onType={noop} onMinutes={noop} onNote={noop} onSave={noop} /></Phone>
-    case 'class-refused':
-      return <Phone><MtClassLogCard classType="technical" minutes={60} note="" refused={{ type: 'sparring', reason: 'No hard sparring in Block Zero. Take the technique class or work pads.' }} error={null} saving={false} onType={noop} onMinutes={noop} onNote={noop} onSave={noop} /></Phone>
+      return <Phone><MtClassLogCard classType="general" note="" error={null} saving={false} onType={noop} onNote={noop} onSave={noop} /></Phone>
     case 'gate':
       return (
         <EndGateView
@@ -169,7 +167,7 @@ function Gallery({ screen }: { screen: string }) {
       return (
         <Phone>
           <Board head="Design gallery">
-            <p className="wm-prose">?screen= foundation, checkin, checkin-back, checkin-done, today, effort, class, class-refused, gate, gate-extend, gate-check, error-session, error-page, settings</p>
+            <p className="wm-prose">?screen= foundation, checkin, checkin-back, checkin-done, today, effort, class, gate, gate-extend, gate-check, error-session, error-page, settings</p>
           </Board>
         </Phone>
       )

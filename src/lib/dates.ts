@@ -54,3 +54,29 @@ export function serverRolloverDay(nowMs: number = Date.now()): number {
 export function epochDayToISO(epochDay: number): string {
   return new Date(epochDay * 86400000).toISOString().slice(0, 10)
 }
+
+// ─── The athlete's local day on the server (coach-brain P0) ─────
+
+/** Every app request carries the phone's local date (YYYY-MM-DD) in this header (lib/api.ts). */
+export const TODAY_HEADER = 'X-Waymark-Today'
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+
+/** A unix-ms time as the device's local YYYY-MM-DD (an outbox write keeps the day it was made). */
+export function localIsoOf(ms: number): string {
+  return new Date(ms).toLocaleDateString('en-CA')
+}
+
+/**
+ * The athlete's local today for one request: an explicit `today` (body or
+ * query) first, then the X-Waymark-Today header, else the target day capped
+ * at UTC today (so tonight never reads as past), else UTC today. Late
+ * evening in the Americas is already tomorrow in UTC: the header keeps
+ * "today" his day.
+ */
+export function athleteDayFrom(input: { today?: unknown; header?: string | null; targetDay?: number | null; nowMs: number }): number {
+  if (typeof input.today === 'string' && ISO_DAY.test(input.today)) return isoToEpochDay(input.today)
+  if (typeof input.header === 'string' && ISO_DAY.test(input.header)) return isoToEpochDay(input.header)
+  const utc = Math.floor(input.nowMs / 86400000)
+  return input.targetDay != null ? Math.min(input.targetDay, utc) : utc
+}
