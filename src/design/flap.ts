@@ -112,39 +112,73 @@ export function fitFlapSize(text: string, maxWidth: number, preferred: FlapSizeK
   return 'xs'
 }
 
-// ─── The screen-open cascade (page 17, 17-split-flap.html `cascade` + `flip`) ──
-// A screen opens: every label waits 120 ms + 2 ms per px it sits below the top
-// of the screen, then its tiles flip in 22 ms apart, a flip every 45 ms, 4 to 7
-// flips each, so the board fills row by row from the top.
+// ─── The flip (page 59 §5.2, approved 2026-10-19) ──────────────────
+// One flip pass, only the tiles that change. A screen opening: each tile flips
+// twice (blank -> a nearby glyph -> its glyph). A change: letters at most
+// three flips, digits the short way. A flip every 55 ms with an 80 ms fold,
+// 14 ms per column left to right (Vestaboard's "Fast" wave), so a label lands
+// within 400 ms and a screen's flaps within 0.9 s of their board.
 
-export const CASCADE = { baseMs: 120, msPerPx: 2, staggerMs: 22, stepMs: 45, flips: 4, extraFlips: 4 } as const
+export const FLIP = {
+  stepMs: 55,
+  foldMs: 80,
+  columnMs: 14,
+  /** At most this many flips for a letter on a change. */
+  changeFlips: 3,
+  /** A label opening lands within this. */
+  openMaxMs: 400,
+  /** Any flip lands within this (the motion rule). */
+  maxMs: 900,
+  /** Boards rise 60 ms apart; the 4th and everything after it together. */
+  boardGapMs: 60,
+  boardStaggerMax: 3,
+  /** A board's labels start flipping this long after the board starts rising. */
+  afterRiseMs: 120,
+  /** At most this many tiles flip as a screen opens; the rest land at once. */
+  maxOpenTiles: 120,
+} as const
 
-/** When a label at `top` px (from the top of the screen) starts its cascade. Clamped to the screen. */
-export function cascadeDelayMs(top: number, screenHeight: number): number {
-  const y = Math.max(0, Math.min(Math.max(0, screenHeight), Number.isFinite(top) ? top : 0))
-  return Math.round(CASCADE.baseMs + y * CASCADE.msPerPx)
+/** A screen opening: blank -> the glyph before it -> the glyph. A gap stays clear; anything else lands in one. */
+export function openFrames(ch: string): string[] {
+  if (ch === ' ') return []
+  if (isLetter(ch)) return [LETTERS[(LETTERS.indexOf(ch) + 25) % 26], ch]
+  if (isDigit(ch)) return [String((Number(ch) + 9) % 10), ch]
+  return [ch]
 }
 
-/** A small stable hash, so a label's flip counts are the same on every open (the mockup draws them at random). */
-export function cascadeSeed(text: string): number {
-  let h = 7
-  for (const c of text) h = (h * 31 + c.charCodeAt(0)) % 9973
-  return h
+/** A change: letters through at most three, digits the short way, the rest land. */
+export function changeFrames(from: string, to: string): string[] {
+  return flipFrames(from, to, FLIP.changeFlips)
+}
+
+/** When the labels on board `boardIndex` start flipping, given when the screen's boards rise. Never in the past. */
+export function openStartMs(riseAt: number, boardIndex: number, now: number): number {
+  const board = riseAt + Math.min(Math.max(0, boardIndex), FLIP.boardStaggerMax) * FLIP.boardGapMs
+  return Math.max(now, board + FLIP.afterRiseMs)
+}
+
+/** One glyph write: tile `cell` shows `glyph` from `at` ms. */
+export interface FlipStep { cell: number; at: number; glyph: string }
+
+/**
+ * Every write a label's flip makes, from `start`: per tile its frames `stepMs`
+ * apart, tiles `columnMs` apart (squeezed so the last lands within `maxMs`).
+ * Tiles with no frames are left alone.
+ */
+export function planFlip(frames: ReadonlyArray<ReadonlyArray<string>>, start: number, maxMs: number = FLIP.maxMs): FlipStep[] {
+  const longest = Math.max(1, ...frames.map(f => f.length))
+  const last = frames.reduce((n, f, i) => (f.length > 0 ? i : n), 0)
+  const column = flapStaggerMs(last + 1, longest, FLIP.stepMs, maxMs, FLIP.columnMs)
+  const out: FlipStep[] = []
+  frames.forEach((seq, i) => seq.forEach((glyph, k) => out.push({ cell: i, at: start + i * column + k * FLIP.stepMs, glyph })))
+  return out
 }
 
 /**
- * The glyphs one tile shows as it cascades in from blank, ending on `ch`.
- * Page 17 gives each tile 4 + (0..3) flips and then lands: a letter flips
- * through letters, a digit counts the short way through digits and lands, a
- * gap stays clear, anything else just lands.
+ * The frame a tile should show at time `t` (-1: not started). Time-based, so a
+ * phone that falls behind skips frames instead of stretching the flip out.
  */
-export function cascadeFrames(ch: string, index: number, seed = 0): string[] {
-  if (ch === ' ') return []
-  const n = CASCADE.flips + ((seed + index * 7) % CASCADE.extraFlips)
-  if (ch >= 'A' && ch <= 'Z') return flipFrames(' ', ch, n + 1)
-  if (ch >= '0' && ch <= '9') {
-    const start = (Number(ch) - Math.min(n, 9) + 10) % 10
-    return [...flipFrames(String(start), ch), ch]
-  }
-  return [ch]
+export function frameAt(start: number, stepMs: number, count: number, t: number): number {
+  if (count <= 0 || t < start) return -1
+  return Math.min(count - 1, Math.floor((t - start) / stepMs))
 }

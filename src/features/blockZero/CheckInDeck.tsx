@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 
 import { Board, FlapButton, FlapLabel, showPop } from '@/design'
 import { SORENESS_COLOURS } from '@/design/tokens'
@@ -61,6 +61,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
   const [noteSaving, setNoteSaving] = useState(false)
   const touch = useRef<{ x: number; y: number } | null>(null)
   const submitted = useRef(false)
+  useDeckOpenClass()
 
   // Each answer is saved as it is given (the last one goes with the full save below).
   const lastPartial = useRef<string | null>(null)
@@ -246,4 +247,14 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
       </BzOverlay>
     </div>
   )
+}
+
+/** While the deck is open, <body> carries wm-deck-open: Today and the tab bar hide under it (blockZero.css). */
+let decksOpen = 0
+function useDeckOpenClass() {
+  useLayoutEffect(() => {
+    decksOpen++
+    document.body.classList.add('wm-deck-open')
+    return () => { if (--decksOpen <= 0) { decksOpen = 0; document.body.classList.remove('wm-deck-open') } }
+  }, [])
 }
