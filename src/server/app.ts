@@ -139,6 +139,19 @@ for (const path of [
 
 app.route('/api/class-combos', classCombos)
 
+// H1 (page 61): ENTER after a RESET (or any start that finds the session
+// already set up) went back to the workout without putting the session in
+// progress again, so it ran untracked. Every start route: a session still
+// planned afterwards is in progress from now.
+app.use('/api/sessions/:id/*', async (c, next) => {
+  await next()
+  if (c.req.method !== 'POST' || !/\/start-[a-z-]+$/.test(new URL(c.req.url).pathname) || c.res.status !== 200) return
+  const id = c.req.param('id')
+  if (!id) return
+  await createDB(c.env).update(sessions).set({ status: 'in_progress', startedAt: Math.floor(Date.now() / 1000) })
+    .where(and(eq(sessions.id, id), eq(sessions.status, 'planned')))
+})
+
 app.onError((err, c) => {
   console.error('[Waymark API Error]', err.message, err.stack)
   const status = 'status' in err && typeof err.status === 'number' ? err.status : 500

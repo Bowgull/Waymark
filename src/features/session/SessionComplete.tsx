@@ -5,6 +5,7 @@ import { SessionButton } from '@/components/timers'
 import { completeHaptic } from '@/lib/haptics'
 import { endLiveActivity } from '@/lib/liveActivity'
 import { effortWord } from '@/lib/timers/timerLook'
+import { getItem, removeItem, setItem } from '@/lib/safeStorage'
 
 import './session.css'
 
@@ -14,6 +15,8 @@ interface SessionCompleteProps {
   startRpe?: number
   onFinish: (rpe: number, notes: string) => void
   submitting: boolean
+  /** The note is kept on the phone as it is typed (page 61): an app kill can't lose it. */
+  sessionId?: string
 }
 
 /**
@@ -26,10 +29,12 @@ interface SessionCompleteProps {
  * opens the box in the card; the note saves with the session (sessions.notes),
  * where the coach reads it.
  */
-export function SessionComplete({ startRpe = 7, onFinish, submitting }: SessionCompleteProps) {
+export function SessionComplete({ startRpe = 7, onFinish, submitting, sessionId }: SessionCompleteProps) {
   const [rpe, setRpe] = useState(() => Math.min(10, Math.max(1, Math.round(startRpe))))
-  const [noteOpen, setNoteOpen] = useState(false)
-  const [notes, setNotes] = useState('')
+  const draftKey = sessionId ? `waymark_close_note:${sessionId}` : null
+  const [notes, setNotesState] = useState(() => (draftKey ? getItem(draftKey) : null) ?? '')
+  const [noteOpen, setNoteOpen] = useState(() => notes.trim() !== '')
+  const setNotes = (t: string) => { setNotesState(t); if (draftKey) { if (t) setItem(draftKey, t); else removeItem(draftKey) } }
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {

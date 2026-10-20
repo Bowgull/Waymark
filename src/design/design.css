@@ -416,6 +416,15 @@
   /* full-screen dark pages (errors, tests, the gate) sit above the world layer (fixed, z 0, opaque) */
   .wm-dark { position: relative; z-index: 1; background: radial-gradient(ellipse 80% 50% at 50% 42%, #101a15, #050907 70%); }
 
+  /* ── the live strip (page 61, 3B, choice A): the open session, above the tabs on every tab ── */
+  .wm-live { position: relative; z-index: 30; flex: none; margin: 0 10px 8px; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 8px; border: 0; border-radius: 12px; cursor: pointer; overflow: hidden; text-align: left;
+    background: linear-gradient(180deg, rgba(30, 24, 8, 0.88), rgba(14, 12, 6, 0.92)); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.5), 0 0 16px rgba(184, 152, 74, 0.16), 0 8px 18px rgba(0, 0, 0, 0.5); -webkit-tap-highlight-color: transparent; }
+  .wm-live .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .wm-live .sl { font: 600 14px var(--font-body); color: #d8c08a; }
+  .wm-live .chev { font: 800 18px var(--font-mono); color: #e8c878; }
+  .wm-live .fill { position: absolute; left: 0; bottom: 0; height: 2px; background: #b8984a; box-shadow: 0 0 6px #e8c878; }
+  .wm-live .beat { width: 7px; height: 7px; border-radius: 50%; background: #e8c878; box-shadow: 0 0 6px #e8c878; animation: wm-beat 1.6s ease-in-out infinite; flex: none; }
+
   /* ── tab bar (page 42, A): painted place icons; the lit one lifted with a brass light ── */
   .wm-tabs {
     position: relative;
@@ -544,6 +553,7 @@
 @keyframes wm-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes wm-fade-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes wm-card-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes wm-beat { 50% { opacity: 0.35; } }
 @keyframes wm-pop-drop { from { transform: translateY(-140%); } to { transform: none; } }
 @keyframes wm-pop-lift { from { transform: none; opacity: 1; } to { transform: translateY(-140%); opacity: 0; } }
 @keyframes wm-row-good { 0%, 100% { box-shadow: none; } 20% { box-shadow: inset 0 0 0 2px rgba(143, 212, 184, 0.8), 0 0 18px rgba(95, 160, 140, 0.45); } }
@@ -553,6 +563,7 @@
 
 /* Reduce Motion: flaps land at once, no drops or turns, crossfades only. */
 @media (prefers-reduced-motion: reduce) {
+  .wm-live .beat { animation: none !important; }
   .wm-flap .wm-cell.is-tick::before,
   .wm-crest,
   .wm-glow-good,

@@ -7,7 +7,7 @@
 
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth'
 import { App as CapacitorApp } from '@capacitor/app'
-import { Capacitor } from '@capacitor/core'
+import { Capacitor, registerPlugin } from '@capacitor/core'
 
 import { showPop } from '@/design/popFlap'
 
@@ -110,4 +110,14 @@ export function subscribe(listener: Listener): () => void {
   return () => {
     listeners.delete(listener)
   }
+}
+
+// Page 61 item 6: while the Waybook is open, the app-switcher picture is a plain dark cover.
+const privacy = registerPlugin<{ setCover(o: { on: boolean }): Promise<void> }>('WaymarkPrivacy')
+let shown = 0
+/** The Waybook's pages or box are on screen (counted, so two places can say so). */
+export function setWaybookShown(on: boolean): void {
+  shown = Math.max(0, shown + (on ? 1 : -1))
+  if (!native()) return
+  void privacy.setCover({ on: shown > 0 }).catch(() => {})
 }

@@ -6,6 +6,8 @@ import { TAB_ICON_SRC, type TabKey } from '@/design/tabIcons'
 import { useNetworkStatus } from '@/lib/network'
 import { onOutboxChange, pendingWrites } from '@/lib/outboxSync'
 
+import { LiveStrip } from './LiveStrip'
+
 // The tab bar (page 42, A, approved): the world's places as painted icons.
 // Active: full colour, lifted, a soft glow, a small brass light above, a gold
 // flap label. Others: dimmed, dim flap labels. The world itself sits behind
@@ -66,6 +68,7 @@ export function ShellLayout() {
         <main className="waymark-scroll min-h-0 flex-1 overflow-auto px-4 pb-4">
           <Outlet />
         </main>
+        <LiveStrip />
         <nav className="wm-tabs" aria-label="Main">
           {TABS.map(t => <NavTab key={t.key} to={t.to} tab={t.key} label={t.label} end={t.end} />)}
         </nav>

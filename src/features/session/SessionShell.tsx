@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 
+import { useEdgeBack } from '@/design'
+import '@/components/timers/timers.css'
 import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { GoldDivider } from '@/components/ui/GoldDivider'
 import { getMarkAsset, getSessionAccent, getSessionLabel } from '@/lib/markAssets'
@@ -67,7 +69,7 @@ export function SessionShell({
   children,
   footer,
   onExit,
-  exitLabel = 'Back',
+  exitLabel = '‹ TODAY',
   hideExit = false,
   bodyClassName,
   noBodyPadding = false,
@@ -81,6 +83,8 @@ export function SessionShell({
     if (onExit) onExit()
     else navigate('/today')
   }
+  // page 61: the left-edge swipe steps out the same way
+  useEdgeBack(hideExit ? null : handleExit)
 
   return (
     <div className="relative flex min-h-[100dvh] flex-col bg-near-black text-foreground">
@@ -106,7 +110,7 @@ export function SessionShell({
         ) : (
           <button
             onClick={handleExit}
-            className="-ml-2 inline-flex min-h-[44px] min-w-[44px] items-center px-3 text-sm font-medium text-muted-foreground active:text-teal"
+            className="tm-back -ml-2 inline-flex min-h-[44px] min-w-[44px] items-center px-3"
           >
             {exitLabel}
           </button>

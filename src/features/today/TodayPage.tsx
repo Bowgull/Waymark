@@ -4,7 +4,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { ApiError, apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
 import { submitBoardPick, submitReplace, submitSkip, submitSkipReason } from '@/lib/boardPick'
-import { clearResume, loadResume, resumeDecision } from '@/lib/sessionResume'
+import { clearResume, loadResume } from '@/lib/sessionResume'
+import { clearLiveSession, readLiveSession, takeLaunch } from '@/lib/liveSession'
 import { localActiveSession } from '@/lib/workoutCache'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
@@ -32,7 +33,7 @@ import { AllDoneBoard, EmptyDayBoard, NoBlockBoard, RestDayBoards, TodayHeader, 
 import { TodayDay, type TodaySession } from './TodayDay'
 import { ALL_DONE_AFTER_CONFIRM_MS, fadesToAllDone, lanternFor, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
-import { answersFromLog, isCheckInComplete, mergeAnswers, shouldOpenCheckIn, type CheckInAnswers } from '@/features/blockZero/checkInFlow'
+import { answeredCount, answersFromLog, isCheckInComplete, mergeAnswers, shouldOpenCheckIn, type CheckInAnswers } from '@/features/blockZero/checkInFlow'
 import { CHECK_IN_EVENT, clearCheckInDraft, loadCheckInDraft, saveCheckInDraft, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
 import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessLine'
 import { MorningReportRow } from '@/features/blockZero/TodayPieces'
@@ -126,9 +127,6 @@ export function TodayPage() {
   const todayEpoch = isoToEpochDay(today)
   const todayDate = new Date(`${today}T12:00:00`)
 
-  useEffect(() => {
-    void endAllLiveActivities()
-  }, [])
 
   const refreshSessions = useCallback(async (): Promise<Session[] | null> => {
     try {
@@ -204,24 +202,24 @@ export function TodayPage() {
         void refreshReadiness()
         if (!autoResumeAttempted.current) {
           autoResumeAttempted.current = true
-          // Reopened mid-session (app killed, reload): straight back into it.
-          // Any engine with a fresh save on this phone, and strength as
-          // before. An older save waits for a tap on Resume (the session
-          // screen then asks: resume or end).
+          // Page 61: only a launch (iOS closed the app, a reload, a restart) goes
+          // back into an open session by itself, and lands paused on BACK IN
+          // YOUR SESSION. Any other visit to Today stays on Today: the live
+          // strip is the way back.
+          const launch = takeLaunch()
           let storage: Storage | null = null
           try { storage = window.localStorage } catch { storage = null }
           const activeSession = sessionsData.find(session =>
             session.status === 'in_progress' &&
             WORKOUT_SESSION_TYPES.includes(session.type) &&
-            (() => {
-              const saved = loadResume(storage, session.id)
-              return saved ? resumeDecision(saved, Date.now()) === 'resume' : session.type === 'strength'
-            })()
+            (loadResume(storage, session.id) != null || session.type === 'strength')
           )
-          if (activeSession && !autoResumeSuppressed()) {
-            navigate(`/session/${activeSession.id}`, { replace: true })
+          if (launch && activeSession && !autoResumeSuppressed()) {
+            navigate(`/session/${activeSession.id}`, { replace: true, state: { relaunch: true } })
             return
           }
+          // The lock-screen card stays while a session is open (page 61, M5); a stale one goes.
+          if (!sessionsData.some(x => x.status === 'in_progress') && !readLiveSession(storage)) void endAllLiveActivities()
         }
         // Every open until all nine are in (or the alarm's I'M UP): the check-in cards, at the first unanswered one.
         if (shouldOpenCheckIn({ answers: checkInAnswersFor(logData, today), requested: takeCheckInRequest() })) {
@@ -234,11 +232,11 @@ export function TodayPage() {
           autoResumeAttempted.current = true
           let storage: Storage | null = null
           try { storage = window.localStorage } catch { storage = null }
-          const localId = autoResumeSuppressed()
+          const localId = autoResumeSuppressed() || !takeLaunch()
             ? null
             : localActiveSession(storage, { types: WORKOUT_SESSION_TYPES, todayEpochDay: isoToEpochDay(today), nowMs: Date.now() })
           if (localId) {
-            navigate(`/session/${localId}`, { replace: true })
+            navigate(`/session/${localId}`, { replace: true, state: { relaunch: true } })
             return
           }
         }
@@ -447,7 +445,7 @@ export function TodayPage() {
   async function handleEndEarly(id: string, action: 'completed' | 'reset') {
     const nowSec = Math.floor(Date.now() / 1000)
     // Ended on purpose (held x, then a choice): the saved step goes with it.
-    try { clearResume(window.localStorage, id) } catch { /* storage unavailable */ }
+    try { clearResume(window.localStorage, id); clearLiveSession(window.localStorage, id) } catch { /* storage unavailable */ }
     const prevSessions = sessions
     if (action === 'completed') {
       setSessions((prev) =>
@@ -674,6 +672,8 @@ export function TodayPage() {
             home={showsHome(mode)}
             openDay={backDay}
             onRune={d => {
+              // tapping the open day again closes it (page 61)
+              if (backDay === d) { setBackDay(null); return }
               setBackDay(d)
               markSeen(backChanges(changes, d).map(c => c.id))
             }}
@@ -698,7 +698,7 @@ export function TodayPage() {
       {mode === 'day' && (
         <>
           {/* page 56 item 14: the Morning Report row: CHECK IN, then LOGGED and the readiness line; tap for the why */}
-          <MorningReportRow logged={morningLogged} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: morningLogged ? 0 : 'resume' })} raven={raven} />
+          <MorningReportRow logged={morningLogged} answered={answeredCount(morningAnswers)} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: morningLogged ? 0 : 'resume' })} raven={raven} />
           {/* the clearing and its lantern show between the top and the boards (pages 17, 35, 56) */}
           <div className="td-spacer" style={{ minHeight: strip ? '16dvh' : '24dvh' }} />
           <TodayDay

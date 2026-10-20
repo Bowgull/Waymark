@@ -1,7 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { logger } from '@/lib/logger'
-import { apiFetch } from '@/lib/api'
-import { clearResume } from '@/lib/sessionResume'
 import { PageErrorScreen, SessionInterruptedScreen } from './ErrorScreens'
 
 interface Props {
@@ -42,19 +40,8 @@ export class ErrorBoundary extends Component<Props, State> {
     return match?.[1] ?? null
   }
 
-  private clearSessionResume() {
-    const sessionId = this.sessionIdFromPath()
-    if (!sessionId) return
-    try {
-      clearResume(window.localStorage, sessionId)
-    } catch {
-      // storage unavailable
-    }
-  }
-
   handleRetry = () => {
-    // The saved step may be what crashed the render: retry from the server's view.
-    this.clearSessionResume()
+    // H2 (page 61): RESUME keeps the save, so it carries on where it was.
     this.setState({ hasError: false, error: null })
   }
 
@@ -62,15 +49,15 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.href = '/today'
   }
 
-  handleAbandonSession = () => {
-    const match = typeof window !== 'undefined' ? window.location.pathname.match(/\/session\/([^/]+)/) : null
-    const sessionId = match?.[1]
-    this.clearSessionResume()
-    if (sessionId) {
-      logger.warn('session', 'session abandoned via error boundary', { sessionId }, 'Session abandoned via error-boundary Back button. POST /abandon fired.')
-      apiFetch(`/api/sessions/${sessionId}/abandon`, { method: 'POST' }).catch(() => {})
-    }
-    window.location.href = '/today'
+  /** BACK TO TODAY (page 61): the session stays in progress, as ‹ TODAY leaves it. */
+  handleSessionToToday = () => {
+    window.location.href = '/today?resume=0'
+  }
+
+  /** END AND LOG IT: the session's close (effort, then the moment), on a fresh load of the session. */
+  handleEndAndLog = () => {
+    const sessionId = this.sessionIdFromPath()
+    window.location.href = sessionId ? `/session/${sessionId}?close=1` : '/today'
   }
 
   render() {
@@ -83,7 +70,8 @@ export class ErrorBoundary extends Component<Props, State> {
         <SessionInterruptedScreen
           sessionId={this.sessionIdFromPath()}
           onResume={this.handleRetry}
-          onBack={this.handleAbandonSession}
+          onBack={this.handleSessionToToday}
+          onEnd={this.handleEndAndLog}
         />
       )
     }

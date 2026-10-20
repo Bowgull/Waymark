@@ -25,6 +25,13 @@ async function midSession(page: Page, api: Api) {
   return s
 }
 
+/** BACK IN YOUR SESSION (page 61, 3E): what is saved, then RESUME. */
+async function backIn(page: Page) {
+  await expect(page.getByRole('img', { name: 'BACK IN YOUR SESSION' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('SAVED ON THE PHONE')).toBeVisible()
+  await page.getByRole('button', { name: 'RESUME', exact: true }).tap()
+}
+
 test.beforeEach(async ({ context, baseURL }) => {
   await serveBundle(context, new URL(baseURL!).origin)
 })
@@ -52,6 +59,8 @@ test('Offline reload mid-session: the same set comes back', async ({ page, conte
   await context.setOffline(true)
   await page.reload()
   await expect(page).toHaveURL(new RegExp(`/session/${s.id}`))
+  // Page 61, 3E: a reload lands on BACK IN YOUR SESSION, paused where it was.
+  await backIn(page)
   await expect(page.getByText(/^Warmup 2 of \d+/)).toBeVisible({ timeout: 15_000 })
   await expect(offlinePill(page)).toBeVisible()
 })
@@ -63,5 +72,6 @@ test('Reopened offline mid-session: straight back into it', async ({ page, conte
   await context.setOffline(true)
   await page.goto('/')
   await expect(page).toHaveURL(new RegExp(`/session/${s.id}`), { timeout: 15_000 })
+  await backIn(page)
   await expect(page.getByText(/^Warmup 2 of \d+/)).toBeVisible()
 })

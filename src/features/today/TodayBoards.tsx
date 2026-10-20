@@ -5,7 +5,7 @@ import { Board, CloseWord, Crest, FlapButton, FlapLabel, SessionIcon, showPop, u
 import { getItem as storageGet, removeItem as storageRemove, setItem as storageSet } from '@/lib/safeStorage'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
 import { logger } from '@/lib/logger'
-import { markWaybookOpen, requireUnlock } from '@/lib/waybookGate'
+import { markWaybookOpen, requireUnlock, setWaybookShown } from '@/lib/waybookGate'
 import { Rune } from '@/features/coach/Rune'
 import { dateFlap, type StripDay } from './weekStrip'
 
@@ -105,7 +105,8 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
   // The 3 minutes without Face ID count from the last time the box was open.
   useEffect(() => {
     if (!open) return
-    return () => markWaybookOpen()
+    setWaybookShown(true)
+    return () => { markWaybookOpen(); setWaybookShown(false) }
   }, [open])
 
   useEffect(() => {

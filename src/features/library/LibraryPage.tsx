@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type TouchEvent } from 
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Board, Crest, FlapLabel, SessionIcon, showPop, useEdgeBack } from '@/design'
 import { apiFetch } from '@/lib/api'
-import { markWaybookOpen, requireUnlock } from '@/lib/waybookGate'
+import { markWaybookOpen, requireUnlock, setWaybookShown } from '@/lib/waybookGate'
 
 import {
   EXERCISE_GROUPS,
@@ -342,7 +342,8 @@ export function LibraryPage() {
   // The 3 minutes count from the last time the pages were open.
   useEffect(() => {
     if (open !== 'waybook' || !unlocked) return
-    return () => markWaybookOpen()
+    setWaybookShown(true)
+    return () => { markWaybookOpen(); setWaybookShown(false) }
   }, [open, unlocked])
 
   // ── a group opened ──

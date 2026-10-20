@@ -44,6 +44,8 @@ import { coachLine, nextAlarmDay } from '../lib/coachLine'
 import { startOutboxSync } from '../lib/outboxSync'
 import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
 import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
+import { readLiveSession, sessionPathFor } from '../lib/liveSession'
 import { CHECK_IN_EVENT } from '../features/blockZero/checkInTrigger'
 import { BodyWatchSync } from '../features/raven/bodyWatch'
 
@@ -73,6 +75,18 @@ export function AppRoutes() {
 
   // Queued set saves and finishes retry on reconnect, foreground and resume.
   useEffect(() => startOutboxSync(), [])
+
+  // Page 61 (M6): tapping the Live Activity or the Dynamic Island (waymark://session/live,
+  // or waymark://session/<id>) opens the running session, not wherever the app last was.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    let remove: (() => void) | null = null
+    void CapacitorApp.addListener('appUrlOpen', ({ url }) => {
+      const to = sessionPathFor(url, () => { try { return readLiveSession(window.localStorage)?.sessionId ?? null } catch { return null } })
+      if (to) navigate(to)
+    }).then(h => { remove = () => { void h.remove() } })
+    return () => remove?.()
+  }, [navigate])
 
   // The morning alarm's I'M UP: go to Today, where the check-in cards open.
   useEffect(() => {
