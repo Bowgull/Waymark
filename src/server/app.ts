@@ -2608,7 +2608,11 @@ app.get('/api/program', async (c) => {
   const weekNumber = leadIn ? 0 : block.currentWeek
   const [week, week1] = await Promise.all([
     weekJson(db, block.id, leadIn ? 1 : weekNumber, leadIn),
-    block.blockType === 'block_zero' ? latestWeekPlan(db, block.id, 1).then(w => w != null) : Promise.resolve(true),
+    // "Set up" = any plan for the block (week 1, or the lead-in to it); a start still ahead or a lead-in
+    // week has no week-1 plan yet, which made Program show the assessment's BEGIN again on every open.
+    block.blockType === 'block_zero'
+      ? db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, block.id)).limit(1).then(r => r.length > 0)
+      : Promise.resolve(true),
   ])
   const past = cycleWeeks(Math.max(1, weekNumber), block.totalWeeks, block.blockType).filter(w => w < weekNumber)
   const counts = await Promise.all(past.map(async w => {
