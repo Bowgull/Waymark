@@ -70,6 +70,8 @@ test('Every board closes the same ways: CLOSE, tap outside, pull it down, Escape
   await pull(40)
   await expect(picker).toBeVisible()
   await expect(picker).not.toHaveAttribute('style', /translateY/)
+  // it glides back (0.28 s): measure the grabber once it has settled
+  await expect.poll(() => picker.evaluate(el => getComputedStyle(el).transform)).toBe('none')
   await pull(130)
   await expect(picker).toBeHidden()
 

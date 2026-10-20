@@ -112,8 +112,10 @@ test('the splash: a hold skips it all, straight into the app', async ({ page }) 
   const box = await splash.boundingBox()
   await page.mouse.move((box?.width ?? 390) / 2, 300)
   await page.mouse.down()
-  // gone as soon as it is held, before the press ends
-  await expect(splash).toHaveCount(0, { timeout: 1500 })
+  // gone as soon as it is held, before the press ends. Held while the crest is
+  // still loading, the skip plays once it is up: WebKit's software WebGL can
+  // take a second or two there, with Today rendering behind it.
+  await expect(splash).toHaveCount(0, { timeout: 4000 })
   await page.mouse.up()
   await expect(page.getByRole('button', { name: '+ add session' })).toBeVisible()
 })
