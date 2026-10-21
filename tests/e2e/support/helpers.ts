@@ -29,11 +29,19 @@ export function todayRow(page: Page, id: string): Locator {
   return page.locator(`.td-row[data-sid="${id}"]`)
 }
 
+/** Opens a Today row (Today opens the first session to do by itself; a second tap would close it). */
+export async function openRow(row: Locator) {
+  const hit = row.locator('[role=button]').first()
+  await expect(hit).toBeVisible()
+  if ((await hit.getAttribute('aria-expanded')) !== 'true') await hit.tap()
+  await expect(hit).toHaveAttribute('aria-expanded', 'true')
+}
+
 /** Tap a row open, then ENTER (the real path into a session). */
 export async function enterFromToday(page: Page, id: string) {
   await gotoToday(page)
   const row = todayRow(page, id)
-  await row.locator('[role=button]').first().tap()
+  await openRow(row)
   await row.getByRole('button', { name: 'ENTER' }).tap()
   await expect(page).toHaveURL(new RegExp(`/session/${id}`))
 }

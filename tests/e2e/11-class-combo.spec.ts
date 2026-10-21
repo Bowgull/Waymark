@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { enterFromToday, gotoToday, insertSession, todayRow } from './support/helpers'
+import { enterFromToday, gotoToday, insertSession, openRow, todayRow } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -119,7 +119,7 @@ test('Skipped: + What you learned on that evening\'s class row; strikes it doesn
   // The opened class row: one small line.
   await gotoToday(page)
   const row = todayRow(page, cls.id)
-  await row.locator('[role=button]').first().tap()
+  await openRow(row)
   const learned = row.getByRole('button', { name: '+ What you learned' })
   await expect(learned).toBeVisible()
   await learned.tap()

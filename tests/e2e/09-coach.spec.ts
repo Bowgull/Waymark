@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { addDaysISO, gotoToday, insertSession, todayISO, todayRow } from './support/helpers'
+import { addDaysISO, gotoToday, insertSession, openRow, todayISO, todayRow } from './support/helpers'
 import { GOOD_MORNING, setMorning } from './support/data'
 
 /**
@@ -24,7 +24,7 @@ test('REPLACE with ROUGH DAY swaps at once', async ({ page }) => {
   // Foundation is on every day of Block Zero.
   const foundation = row(page, /^Foundation FOUNDATION ~\d+min$/).first()
   const sid = await foundation.getAttribute('data-sid')
-  await foundation.locator('[role=button]').first().tap()
+  await openRow(foundation)
   await foundation.getByRole('button', { name: 'REPLACE' }).tap()
 
   const picker = page.getByRole('dialog', { name: 'Replace foundation' })
@@ -52,7 +52,7 @@ test('SKIP is instant, then offers the reason tiles', async ({ page, api }) => {
   expect(swapped, 'the replacement session').toBeTruthy()
   await gotoToday(page)
   const bag = todayRow(page, swapped!.id)
-  await bag.locator('[role=button]').first().tap()
+  await openRow(bag)
   await bag.getByRole('button', { name: 'SKIP' }).tap()
   await expect(bag.getByText('SKIPPED')).toBeVisible()
   const why = bag.getByRole('radiogroup', { name: 'Why, optional' })

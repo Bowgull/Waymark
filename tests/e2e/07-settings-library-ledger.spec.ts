@@ -60,6 +60,6 @@ test('Ledger: the week, month and season boards', async ({ page }) => {
     await range.getByRole('tab', { name: tab }).tap()
     await expect(range.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true')
   }
-  await expect(page.getByText('Aerobic base')).toBeVisible()
+  await expect(page.getByText('Aerobic base', { exact: true })).toBeVisible()
   await expect(page.getByText('Consistency')).toBeVisible()
 })
