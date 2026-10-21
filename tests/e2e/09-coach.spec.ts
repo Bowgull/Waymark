@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
 import { addDaysISO, gotoToday, insertSession, todayISO, todayRow } from './support/helpers'
+import { GOOD_MORNING, setMorning } from './support/data'
 
 /**
  * The page 56 coach model on Today: REPLACE (with the optional ROUGH DAY tile)
@@ -76,7 +77,11 @@ test('+ Add always adds, MT Class included', async ({ page }) => {
   await expect(page.getByRole('button', { name: /^Skip Rope SKIP ROPE/ })).toHaveCount(ropesBefore + 2)
 })
 
-test('a Dagaz day opens its back: before -> after, why, UNDO; UNDO puts it back', async ({ page }) => {
+test('a Dagaz day opens its back: before -> after, why, UNDO; UNDO puts it back', async ({ page, api }) => {
+  // Coach brain P2: the coach re-plans only at night; in the day only a rough morning
+  // caps today's dose. A strength session tonight and a 4 h, energy-1 morning: a coach rune.
+  await insertSession(api, 'strength', 'pm')
+  await setMorning(api, { ...GOOD_MORNING, sleepHours: 4, energy: 1 })
   await gotoToday(page)
   const dagaz = strip(page).getByRole('listitem', { name: /The coach changed this day\./ })
   // The week's changes arrive after the board: wait for a rune day before counting
@@ -107,6 +112,7 @@ test('a Dagaz day opens its back: before -> after, why, UNDO; UNDO puts it back'
 
   await change.getByRole('button', { name: 'UNDO' }).tap()
   await expect(back.getByRole('img', { name: 'PUT BACK' }).first()).toBeVisible()
+  await setMorning(api, GOOD_MORNING)
 })
 
 test('the week log in Program lists his changes and the coach ones', async ({ page }) => {

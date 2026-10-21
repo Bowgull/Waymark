@@ -91,7 +91,8 @@ test('Morning check-in: a rough morning names what is off trend, a bad back asks
   // rough morning stays GOOD TO GO ("One day doesn't change the plan"); the
   // server decides when it eases (readinessFor).
   await expect(deck.getByRole('img', { name: /^(GOOD TO GO|EASING TODAY)$/ })).toBeVisible()
-  await expect(deck.getByText(/off (your 7-day )?trend/)).toBeVisible()
+  // The brain names the numbers (coach brain P2): "Slept 4 h with energy 1.", or what is off trend.
+  await expect(deck.getByText(/off trend|Slept \d+(\.\d)? h/).first()).toBeVisible()
   await deck.getByRole('button', { name: 'TO TODAY' }).tap()
   await expect(page.getByRole('button', { name: /^Morning Report, logged\./ })).toBeVisible()
 

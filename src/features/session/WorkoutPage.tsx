@@ -718,6 +718,13 @@ export function WorkoutPage() {
             data = keep('foundation-run-workout', await apiFetch<FoundationRunWorkoutData>(`/api/sessions/${id}/start-foundation-run`, { method: 'POST' }))
           }
           setFoundationRunData(data)
+          // The coach wants the run line checked (its first run-walk, then rechecks): Log your run asks the talk test.
+          const due = data.prescription as { talkTestDue?: boolean; weekNumber?: number } | null | undefined
+          if (due?.talkTestDue && session.blockType === 'block_zero') {
+            void apiFetch<{ id: string } | null>(`/api/blocks/current?date=${getTodayISO()}`)
+              .then(b => { if (b?.id) setTalkTest(t => t ?? { blockId: b.id, week: Math.max(1, due.weekNumber ?? 1) }) })
+              .catch(() => {})
+          }
           showLength((data.prescription?.targetDurSec ? data.prescription.targetDurSec / 60 : null))
           setCounts = data.postureExercises.map(e => Math.max(1, e.sets ?? 1))
           const next = deriveMobilityPosition(data.postureExercises)
@@ -930,7 +937,7 @@ export function WorkoutPage() {
     if (phase === 'mark-earned') setPhase('complete')
   }, [phase])
 
-  async function handleFinish(rpe: number, notes: string) {
+  async function handleFinish(rpe: number, notes: string, endReason?: string | null) {
     if (!id) return
     setSubmitting(true)
     logger.sessionEvent('session finish attempt', { sessionId: id, rpe, hasNotes: notes.length > 0 })
@@ -942,7 +949,7 @@ export function WorkoutPage() {
       const result = await queueWrite({
         method: 'POST',
         path: `/api/sessions/${id}/complete`,
-        body: { rpe, notes, completedAt: Math.floor(Date.now() / 1000), ...(roundSecs ? { roundSecs } : {}) },
+        body: { rpe, notes, completedAt: Math.floor(Date.now() / 1000), ...(roundSecs ? { roundSecs } : {}), ...(endReason ? { endReason } : {}) },
         sessionId: id,
         kind: 'finish',
         key: finishKeyRef.current,
@@ -1065,9 +1072,12 @@ export function WorkoutPage() {
   // ─── Closing: effort (page 19 #6), the same for every session ───
 
   const closing = phase === 'complete' || phase === 'mark-earned'
+  // Bag work ended before its last round (hold ×): the close asks why, one optional tap.
+  const endedEarly = closing && sessionType === 'bag_work' && bagData != null && id != null
+    && (parseRoundSecs(storageGetItem(roundSecsKey(id))) ?? []).filter(x => x >= 20).length < bagData.rounds.length
   const closeScreen = (
     <>
-      <SessionComplete sessionId={id} sessionType={sessionType ?? 'strength'} startRpe={typicalRpe({ type: sessionType ?? 'strength', label: sessionLabel, notes: runCategory })} onFinish={handleFinish} submitting={submitting} />
+      <SessionComplete sessionId={id} sessionType={sessionType ?? 'strength'} startRpe={typicalRpe({ type: sessionType ?? 'strength', label: sessionLabel, notes: runCategory })} onFinish={handleFinish} submitting={submitting} early={endedEarly} />
       <ToastContainer />
     </>
   )

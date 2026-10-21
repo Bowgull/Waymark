@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 
 import { FlapLabel, SessionIcon, glowRow, showPop } from '@/design'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
-import { REPLACE_REASONS, SKIP_PLACES, SKIP_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
+import { CLASS_SKIP_REASONS, REPLACE_REASONS, SKIP_PLACES, SKIP_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
 import { submitBoardPick, submitReplace, submitSkip, submitSkipReason } from '@/lib/boardPick'
 import { DayBoardRow } from '@/features/dayboard/DayBoardRow'
 import { bodyPlanDetail, dowOfEpochDay, runWalkDetail, sessionDisplayName, strengthPlanDetail, withoutReplaced, type DayBoardSession } from '@/features/dayboard/rowState'
@@ -247,7 +247,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
                 onToggle={() => setOpenRow(prev => (prev === s.id ? null : s.id))}
                 openContent={sk ? (
                   <div className="db-sum">
-                    <ReasonTiles tiles={SKIP_REASONS} value={sk.reason} onChange={r => { void skipReason(s.id, r, null) }} />
+                    <ReasonTiles tiles={s.type === 'mt_class' ? CLASS_SKIP_REASONS : SKIP_REASONS} value={sk.reason} onChange={r => { void skipReason(s.id, r, null) }} />
                     {sk.reason === 'injury' && (
                       <ReasonTiles label={false} tiles={SKIP_PLACES.map(p => ({ value: p, label: p.toUpperCase() }))} value={sk.detail} onChange={d => { void skipReason(s.id, 'injury', d) }} />
                     )}

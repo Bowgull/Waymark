@@ -46,7 +46,8 @@ test('START WHEN?: seven days, TODAY lit, the line follows the tile; closing sta
   await days.nth(2).tap()
   await expect(days.nth(2)).toHaveAttribute('aria-pressed', 'true')
   await expect(days.nth(0)).toHaveAttribute('aria-pressed', 'false')
-  await expect(board.locator('.sd-what')).toHaveText(dowOf(third) === 1 ? /Week 1 starts that day\.$/ : /lead-in days?, all optional\. Week 1 starts Mon \d+ \w{3}\.$/)
+  // Coach brain P2: no lead-in. Week 1 starts on the chosen day, whatever the weekday.
+  await expect(board.locator('.sd-what')).toHaveText(/Week 1 starts that day\.$/)
   await expect(board.getByRole('button', { name: 'START' })).toBeVisible()
 
   // page 61: CLOSE, or a tap on the dim forest, and nothing starts
@@ -64,7 +65,7 @@ test('A start tomorrow: the countdown, and under it the planned week on Program 
   const today = todayISO()
   const tomorrow = addDaysISO(today, 1)
   const startEpoch = epoch(tomorrow)
-  // the start's week: the lead-in from a mid-week start (today is in it), or week 1 from a Monday (next week)
+  // the start's week (week 1, coach brain P2): today is in it unless tomorrow is a Monday
   const sameWeek = dowOf(tomorrow) !== 1
   await setMorning(api)
   const board = await openRestart(page)
@@ -141,7 +142,7 @@ test('A later day: nothing planned before it, the waiting board on Program and T
   await page.goto('/today?resume=0')
   await expect(page.getByRole('button', { name: 'CHANGE DAY' })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByRole('img', { name: 'NOTHING TODAY' })).toHaveCount(0)
-  await expect(page.locator('.sd-wait')).toContainText(dowOf(tomorrow) === 1 ? 'Week 1 starts that day.' : 'easy lead-in day')
+  await expect(page.locator('.sd-wait')).toContainText('Week 1 starts that day.')
 
   // CHANGE DAY: the same board, tomorrow lit, "Change start day", SAVE; TODAY starts it now
   await page.getByRole('button', { name: 'CHANGE DAY' }).tap()
@@ -155,8 +156,8 @@ test('A later day: nothing planned before it, the waiting board on Program and T
   await expect(page.getByRole('dialog', { name: 'Change start day' })).toHaveCount(0)
 
   // the start day's morning: one line on top of the day
-  await expect(page.getByRole('img', { name: /^BLOCK ZERO · (DAY|WEEK) 1$/ })).toBeVisible({ timeout: 20_000 })
-  await expect(page.locator('.sd-dayone p')).toHaveText(/^(Lead-in day, (both |all )?optional\. Week 1 starts Mon\.|Day 1 of 6 weeks\.)$/)
+  await expect(page.getByRole('img', { name: 'BLOCK ZERO · DAY 1' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('.sd-dayone p')).toHaveText('Day 1. Light today: the coach learns you from here.')
   const now = await api.get<{ startedAt: number }>(`/api/blocks/current?date=${today}`)
   expect(dayOf(now.startedAt)).toBe(epoch(today))
   // a started block keeps its day

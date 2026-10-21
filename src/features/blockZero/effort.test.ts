@@ -58,17 +58,18 @@ import { readinessLine } from './readinessLine'
   assert.equal(eased?.why, 'Sleep and your back are off your 7-day trend for 2 days.')
   assert.equal(eased?.lead, 'Easing today.', 'the bold lead, as the why line writes it (page 36)')
   assert.equal(eased?.rest, 'Sleep and back off trend.')
-  const load = readinessLine({ checkedIn: true, ease: true, worseItems: [], reason: 'Load jumped 30%.' })
-  assert.equal(load?.text, 'Easing today. Load is up.')
+  // Load is never an ease on its own (coach brain P2): an ease with no item named is "a rough read".
+  const sick = readinessLine({ checkedIn: true, ease: true, worseItems: [], reason: 'Sick. Recover today.' })
+  assert.equal(sick?.text, 'Easing today. A rough read.')
   const oneOff = readinessLine({ checkedIn: true, ease: false, worseItems: ['energy'], reason: null })
   assert.equal(oneOff?.tone, 'good')
   assert.equal(oneOff?.lead, 'Good to go.')
   assert.equal(oneOff?.rest, '', 'a one-sentence line is all lead')
-  assert.match(oneOff!.why, /^Energy is off your 7-day trend today/)
+  assert.match(oneOff!.why, /^Energy is off trend today/)
   const fresh = readinessLine({ checkedIn: true, ease: false, worseItems: [], reason: null, items: [] })
   assert.match(fresh!.why, /Not enough check-ins yet/)
   const steady = readinessLine({ checkedIn: true, ease: false, worseItems: [], reason: null, items: [{ item: 'sleepHours', today: 7, mean7: 7, worse: false }] })
-  assert.equal(steady?.why, 'Everything is near your 7-day average.')
+  assert.equal(steady?.why, 'Everything is near your usual.')
 }
 
 // ─── Settings: the coach's fields ──

@@ -68,13 +68,13 @@ export function readinessLine(r: ReadinessIn | null | undefined): ReadinessLineV
   if (!r || !r.checkedIn) return null
   const worse = (r.worseItems ?? []).map(i => WORDS[i] ?? i)
   if (r.ease) {
-    const what = worse.length > 0 ? `${capital(joinWords(worse))} off trend.` : 'Load is up.'
-    return view('bad', `Easing today. ${what}`, r.reason ?? 'Off your 7-day trend.')
+    const what = worse.length > 0 ? `${capital(joinWords(worse))} off trend.` : 'A rough read.'
+    return view('bad', `Easing today. ${what}`, r.reason ?? 'Off your usual.')
   }
   if (worse.length > 0) {
-    return view('good', 'Good to go.', `${capital(joinWords(worse))} ${worse.length === 1 ? 'is' : 'are'} off your 7-day trend today. One day doesn't change the plan.`)
+    return view('good', 'Good to go.', `${capital(joinWords(worse))} ${worse.length === 1 ? 'is' : 'are'} off trend today. One day doesn't change the plan.`)
   }
   const hasBaseline = (r.items ?? []).some(i => i.today != null && i.mean7 != null)
-  if (!hasBaseline) return view('good', 'Good to go.', 'Not enough check-ins yet for a 7-day average. Keep logging.')
-  return view('good', 'Good to go.', 'Everything is near your 7-day average.')
+  if (!hasBaseline) return view('good', 'Good to go.', 'Not enough check-ins yet for your usual. Keep logging.')
+  return view('good', 'Good to go.', 'Everything is near your usual.')
 }

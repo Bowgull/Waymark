@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon, useOutsideClose } from '@/design'
-import { SKIP_PLACES, SKIP_REASONS } from '@/components/ui/departures'
+import { CLASS_SKIP_REASONS, SKIP_PLACES, SKIP_REASONS } from '@/components/ui/departures'
 import { ReasonTiles } from '@/features/coach/ReasonTiles'
 import { Rune } from '@/features/coach/Rune'
 import type { RuneState } from '@/lib/coach/changes'
@@ -154,7 +154,7 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
       <Expand open={tiles}>
         {skip && onSkipReason && (
           <div className="td-more2" onClick={e => e.stopPropagation()}>
-            <ReasonTiles tiles={SKIP_REASONS} value={skip.reason} onChange={r => onSkipReason(s.id, r, null)} />
+            <ReasonTiles tiles={s.type === 'mt_class' ? CLASS_SKIP_REASONS : SKIP_REASONS} value={skip.reason} onChange={r => onSkipReason(s.id, r, null)} />
             {skip.reason === 'injury' && (
               <ReasonTiles label={false} tiles={SKIP_PLACES.map(p => ({ value: p, label: p.toUpperCase() }))} value={skip.detail} onChange={d => onSkipReason(s.id, 'injury', d)} />
             )}

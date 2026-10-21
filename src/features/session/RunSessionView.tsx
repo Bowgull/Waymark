@@ -5,6 +5,8 @@ import { Capacitor } from '@capacitor/core'
 import { CentredCard, FlapLabel, SessionIcon } from '@/design'
 import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
 import { useToast } from '@/components/ui/Toast'
+import { EARLY_END_REASONS } from '@/components/ui/departures'
+import { ReasonTiles } from '@/features/coach/ReasonTiles'
 import { apiFetch } from '@/lib/api'
 import { logger } from '@/lib/logger'
 import { soundRoundEnd, soundRoundStart } from '@/lib/sounds'
@@ -187,6 +189,7 @@ export function RunSessionView({
   const [onePaceArc, setOnePaceArc] = useState(draft.onePaceArc ?? runSession.onePaceArc ?? '')
   const [onePaceEp, setOnePaceEp] = useState(draft.onePaceEp ?? runSession.onePaceEp ?? '')
   const [saving, setSaving] = useState(false)
+  const [endReason, setEndReason] = useState<string | null>(null)
   const [talkHr, setTalkHr] = useState(() => talkTestStart(Number(draft.avgHr ?? runSession.avgHr ?? NaN)))
   // Naruto: the saved next episode (settings), and the after-run confirm.
   const [narutoEp, setNarutoEp] = useState<number | null>(null)
@@ -403,6 +406,7 @@ export function RunSessionView({
           onePaceEp: isIndoor && media === 'one_pace' && onePaceEp ? onePaceEp : undefined,
           avgHr: Number.isFinite(avgHrNum) ? avgHrNum : undefined,
           maxHr: Number.isFinite(maxHrNum) ? maxHrNum : undefined,
+          ...(showRunRealityMark ? { shortReason: endReason } : {}),
         }),
       })
 
@@ -773,6 +777,8 @@ export function RunSessionView({
           </div>
         )}
         {showRunRealityMark && <p className="tm-note" style={{ margin: 0 }}>Short run noted.</p>}
+        {/* Cut short: one optional tap says why (NO TIME holds the next run; it never reads as too hard). */}
+        {showRunRealityMark && !fromStrava && <ReasonTiles tiles={EARLY_END_REASONS} value={endReason} onChange={setEndReason} />}
         <div className="wm-btns" style={{ marginTop: 12 }}>
           <SessionButton label={saving ? 'SAVING' : 'SAVE RUN'} primary disabled={saving} onClick={() => void handleSave()} />
         </div>

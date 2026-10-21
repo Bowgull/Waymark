@@ -130,6 +130,8 @@ const SKIP_WORDS: Record<string, string> = {
   variety: 'changing it up',
   rough_day: 'rough day',
   other: 'other',
+  class_time: "class time doesn't fit",
+  coach_rest: 'rest day',
 }
 
 /** The raven's plan mark on a session (page 58, context_json.bodyPlan). */

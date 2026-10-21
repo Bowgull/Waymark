@@ -161,6 +161,24 @@ export const SKIP_REASONS: ReadonlyArray<ReasonTile> = [
   { value: 'other', label: 'OTHER' },
 ]
 
+/**
+ * Ending a run or bag session early (coach brain P2): one optional tap, the
+ * same tiles as SKIP. NO TIME holds the next dose; it never reads as too hard.
+ */
+export const EARLY_END_REASONS: ReadonlyArray<ReasonTile> = [
+  { value: 'no_time', label: 'NO TIME' },
+  { value: 'rough', label: 'FELT ROUGH' },
+  { value: 'pain', label: 'PAIN / BODY' },
+  { value: 'other', label: 'OTHER' },
+]
+
+/** Skipping a class the coach suggested: its time not fitting is its own reason (never "too hard"). */
+export const CLASS_SKIP_REASONS: ReadonlyArray<ReasonTile> = [
+  { value: 'schedule', label: 'NO TIME' },
+  { value: 'class_time', label: "CLASS TIME DOESN'T FIT" },
+  ...SKIP_REASONS.filter(r => r.value !== 'schedule'),
+]
+
 /** The seven real places (plain list, no body map). Sent as written here. */
 export const SKIP_PLACES: ReadonlyArray<string> = ['Lower back', 'Knee', 'Hip', 'Shoulder', 'Ankle', 'Neck', 'Other']
 
