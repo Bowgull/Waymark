@@ -6,7 +6,7 @@
 
 import type { AiDecision, Candidate, DecisionPacket } from './decision'
 
-export type MockAiName = 'mirror' | 'careful' | 'sycophant' | 'travel' | 'class-content'
+export type MockAiName = 'mirror' | 'careful' | 'sycophant' | 'travel' | 'class-content' | 'pusher' | 'note-pusher' | 'notebook'
 export type MockAi = (packet: DecisionPacket, retry: boolean) => unknown
 
 const rulesPicks = (p: DecisionPacket) => p.candidates.filter(c => c.rules).map(c => ({ candidateId: c.id, tweak: { setsDelta: 0, loadStep: 0, roundsDelta: 0 } }))
@@ -76,7 +76,60 @@ export const classContentAi: MockAi = p => ({
   confidence: 'medium',
 })
 
-export const MOCK_AIS: Record<MockAiName, MockAi> = { mirror: mirrorAi, careful: carefulAi, sycophant: sycophantAi, travel: travelAi, 'class-content': classContentAi }
+/**
+ * Item 12: picks an above-default candidate whenever one is offered and cites
+ * its evidence ids (numbers), with a plain why that quotes no new number.
+ */
+export const pusherAi: MockAi = p => {
+  const today = sessionsOf(p).map(id => {
+    const list = p.candidates.filter(c => c.sessionId === id)
+    const up = list.filter(c => c.above).slice(-1)[0]
+    return { candidateId: (up ?? list.find(c => c.rules) ?? list[0]).id, tweak: { setsDelta: 0, loadStep: 0, roundsDelta: 0 } }
+  })
+  const ups = today.map(t => p.candidates.find(c => c.id === t.candidateId)!).filter(c => c.above)
+  return {
+    today, week: { useSolver: true, actions: [] },
+    reasons: [...new Set(ups.flatMap(c => c.evidenceIds ?? []))],
+    why: ups.map(c => ({ ref: c.id, text: `${nameOf(p, c.sessionId)} goes up a step: it went easily last time.` })),
+    confidence: 'high',
+  } satisfies AiDecision
+}
+
+/** Item 12's refusal case: picks an above-default candidate on the strength of his note alone. */
+export const notePusherAi: MockAi = p => {
+  const note = [...p.notes].reverse()[0]?.id ?? 'f.state'
+  const today = sessionsOf(p).map(id => {
+    const list = p.candidates.filter(c => c.sessionId === id)
+    const up = list.filter(c => c.above).slice(-1)[0]
+    return { candidateId: (up ?? list.find(c => c.rules) ?? list[0]).id, tweak: { setsDelta: 0, loadStep: 0, roundsDelta: 0 } }
+  })
+  return { today, week: { useSolver: true, actions: [] }, reasons: [note], why: [], confidence: 'high' } satisfies AiDecision
+}
+
+/**
+ * Item 1: agrees with the rules and proposes notebook lessons from whatever
+ * evidence it was shown: one sound response lesson (3 days of evidence), one
+ * verdict on him and one with a number (both must be refused), and support
+ * for the first lesson it sees.
+ */
+export const notebookAi: MockAi = p => {
+  const ev = (p.evidence ?? []).map(l => l.split(' | ')[0])
+  const byDay = new Map<string, string>()
+  for (const l of p.evidence ?? []) { const [id, day] = l.split(' | '); if (!byDay.has(day)) byDay.set(day, id) }
+  const three = [...byDay.values()].slice(0, 3)
+  const add = three.length >= 3 ? [
+    { kind: 'response', claim: 'Back feels stiffer the morning after hinge sessions.', evidence: three },
+    { kind: 'response', claim: 'Skips the evening sessions and ignores the plan.', evidence: three },
+    { kind: 'preference', claim: 'Prefers 3 sets over 4 on squats.', evidence: three },
+  ] : []
+  const first = (p.notebook ?? [])[0]?.split(' | ')[0]
+  return {
+    ...mirrorAi(p, false) as AiDecision,
+    notebook: { add, support: first && ev.length ? [{ lesson: first, evidence: ev.slice(-2) }] : [], retire: [] },
+  } satisfies AiDecision
+}
+
+export const MOCK_AIS: Record<MockAiName, MockAi> = { mirror: mirrorAi, careful: carefulAi, sycophant: sycophantAi, travel: travelAi, 'class-content': classContentAi, pusher: pusherAi, 'note-pusher': notePusherAi, notebook: notebookAi }
 
 function isoMinus(iso: string, days: number): string {
   return new Date(Date.parse(`${iso}T00:00:00Z`) - days * 86400000).toISOString().slice(0, 10)

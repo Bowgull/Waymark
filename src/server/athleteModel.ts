@@ -108,6 +108,8 @@ export async function loadModelEvents(db: DB, fromDay: number, today: number): P
       slot: s.timeSlot === 'pm' ? 'pm' : s.timeSlot === 'am' ? 'am' : null,
       startMin: s.startedAt != null ? localMinuteOf(s.startedAt, tz) : null,
       durationSec: s.durationSec, rpe: s.rpe, skipReason: s.skipReason, source: s.source, blockType: s.blockType, notes: s.notes,
+      avgHr: runRows.find(r => r.run.sessionId === s.id)?.run.avgHr ?? null,
+      replacedFrom: parse<{ replaced?: { originalType?: string } }>(s.contextJson, {}).replaced?.originalType ?? null,
     })),
     sets: setRows.map(r => ({
       sessionId: r.sessionId, day: dayOf.get(r.sessionId) as number, exerciseId: r.exerciseId, section: r.section, setNumber: r.setNumber,
@@ -150,7 +152,7 @@ export async function loadModelEvents(db: DB, fromDay: number, today: number): P
       ...journal.map(j => ({ day: j.date, text: j.content, source: 'journal' as const })),
     ],
     moves: moves.filter(m => m.fromDay >= fromDay),
-    classLogs: classLogs.filter(l => sessionIds.has(l.sessionId)).map(l => ({ sessionId: l.sessionId, day: dayOf.get(l.sessionId) as number, learned: !!l.learnedNote })),
+    classLogs: classLogs.filter(l => sessionIds.has(l.sessionId)).map(l => ({ sessionId: l.sessionId, day: dayOf.get(l.sessionId) as number, learned: !!l.learnedNote, classType: l.classType ?? null })),
     trainingMaxes: tms.map(t => ({ exerciseId: t.exerciseId, weightKg: t.weightKg, day: localDayOf(t.updatedAt, tz) })),
     openBodyAlerts: alerts,
   }

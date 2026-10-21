@@ -7,7 +7,7 @@
 /** Evidence state of an estimate (§4): GUESS → LEARNING → KNOWN. */
 export type EstimateState = 'GUESS' | 'LEARNING' | 'KNOWN'
 
-export type AreaKind = 'lift' | 'run' | 'bag' | 'class' | 'recovery' | 'back' | 'adherence'
+export type AreaKind = 'lift' | 'run' | 'bag' | 'class' | 'recovery' | 'back' | 'adherence' | 'load' | 'level'
 
 /** Reasons that mean "it didn't fit the day", never "it was too hard" (Josh, 2026-10-20). */
 export const SCHEDULE_REASONS: ReadonlySet<string> = new Set(['schedule', 'time', 'no_time', 'class_time'])
@@ -35,6 +35,10 @@ export interface ModelSession {
   source: string | null
   blockType: string | null
   notes: string | null
+  /** Average HR for the session when a strap or watch recorded one (any type). */
+  avgHr?: number | null
+  /** He swapped this in for another session (page 56 replace): the type it replaced. */
+  replacedFrom?: string | null
 }
 
 export interface ModelSet {
@@ -129,7 +133,7 @@ export interface ModelEvents {
   notes: ModelNote[]
   moves: ModelMove[]
   /** MT class logs: whether "What you learned" was written (page 49). */
-  classLogs: Array<{ sessionId: string; day: number; learned: boolean }>
+  classLogs: Array<{ sessionId: string; day: number; learned: boolean; /** The class type he logged afterwards (only for a default effort). */ classType?: string | null }>
   /** Training maxes on file: a GUESS prior for a lift with no logged sets. */
   trainingMaxes: Array<{ exerciseId: string; weightKg: number; day: number }>
   /** Open raven plans by region (body_alerts not cleared). */
@@ -345,6 +349,67 @@ export interface AdherenceEstimate extends Confidence {
   scheduleSkips: { total: number; byType: Record<string, number>; recent: Array<{ day: number; type: string; reason: string }> }
 }
 
+// ─── Load pools, levels, his own eases (approved 2026-10-21, ideas 3, 4, 10, 11, 12) ─
+
+export type LoadPool = 'strength' | 'endurance'
+
+/** One done session's training load in session-RPE units (effort x minutes). */
+export interface SessionLoad {
+  sessionId: string
+  day: number
+  type: string
+  pool: LoadPool
+  minutes: number
+  /** The effort used: his logged RPE, else a default for the type (a class: its type). */
+  rpe: number
+  rpeSource: 'logged' | 'default'
+  rpeLoad: number
+  /** From average HR when there was one (an RPE-equivalent of %HRmax x minutes). */
+  hrLoad: number | null
+  /** The load counted: bag and class take the larger of HR and RPE (wrist HR undercounts striking). */
+  load: number
+}
+
+/**
+ * Two pools with their own decay. Endurance (runs, bag, class, rope) has a
+ * short fatigue and a long fitness; strength fatigue decays slower and counts
+ * toward fatigue only, never fitness. Arbitrary units, facts for the AI and the
+ * builders; no dose reads them.
+ */
+export interface LoadEstimate {
+  strengthFatigue: number
+  enduranceFatigue: number
+  enduranceFitness: number
+  /** strengthFatigue + enduranceFatigue. */
+  fatigue: number
+  fitness: number
+  /** fitness - fatigue (negative: carrying fatigue). */
+  form: number
+  last7: Record<LoadPool, number>
+  /** The last 14 days' sessions, oldest first. */
+  recent: SessionLoad[]
+}
+
+export type LevelDomain = 'run' | 'squat' | 'hinge' | 'press' | 'pull' | 'mtConditioning'
+
+/** A progression level per domain (TrainerRoad style), 1-10, moved by completion and effort only. */
+export interface DomainLevel {
+  level: number
+  sessions: number
+  lastDay: number | null
+  /** The last session's move (+ up, - down). */
+  lastChange: number
+}
+
+/** Something he did himself that says "easier": a weight he lowered, a set he dropped, a skip for how he felt, a swap to something lighter. */
+export interface OwnEase {
+  day: number
+  domain: 'strength' | 'run' | 'bag'
+  kind: 'lowered' | 'dropped_sets' | 'skipped' | 'swapped'
+  /** The skip or swap reason code, when he gave one. */
+  reason: string | null
+}
+
 export interface AthleteModel {
   version: number
   asOfDay: number
@@ -355,6 +420,10 @@ export interface AthleteModel {
   recovery: RecoveryEstimate
   back: BackEstimate
   adherence: AdherenceEstimate
+  load: LoadEstimate
+  levels: Record<LevelDomain, DomainLevel>
+  /** His own eases in the last 7 days, oldest first. Each holds that domain's next session (no push), no guilt, nothing made up. */
+  ownEases: OwnEase[]
 }
 
 /** One athlete_estimates row (§13.5). */

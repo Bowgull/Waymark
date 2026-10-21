@@ -120,6 +120,25 @@ export function isHeavyLegs(s: Pick<SessionLike, 'type' | 'label'>, blockType: B
   return m ? m[1] !== 'C' : true
 }
 
+/**
+ * A heavy hip hinge (approved 2026-10-21, idea 2): kept 24 h clear of a muay
+ * thai class either side (kicks load the hips and lower back). Block Zero B is
+ * the hinge day; Fighter's pull day carries the deadlift.
+ */
+export function isHeavyHinge(s: Pick<SessionLike, 'type' | 'label'>, blockType: BlockKind): boolean {
+  if (s.type !== 'strength') return false
+  const label = s.label ?? ''
+  if (blockType === 'fighter') return /pull|deadlift|hinge/i.test(label)
+  const m = label.match(/Strength ([ABC])\b/)
+  return m ? m[1] === 'B' : false
+}
+
+/** A hard run (idea 2): long, progression, tempo or intervals. Block Zero run-walks are easy. */
+export function isHardRun(s: Pick<SessionLike, 'type' | 'notes' | 'estimatedMin'>): boolean {
+  if (s.type !== 'running') return false
+  return isLongRun(s) || s.notes === 'tempo' || s.notes === 'intervals'
+}
+
 /** Sessions heavy legs keep 24 h away from (F6; Josh: no heavy legs before a class): every class, and long runs. */
 export function isLegInterference(s: Pick<SessionLike, 'type' | 'label' | 'notes' | 'estimatedMin'>): boolean {
   if (s.type === 'mt_class') return true

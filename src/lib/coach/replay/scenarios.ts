@@ -362,7 +362,105 @@ const fighterStack: Scenario = {
   },
 }
 
-export const SCENARIOS: Scenario[] = [great, bad, injury, travel, classes, lapse, sandbag, syco, fighterStack]
+// ─── Approved 2026-10-21: anti-stagnation (idea 5) and the AI's push (item 12) ─
+
+const LEVEL_ORDER = ['REST', 'RECOVER', 'EASE', 'HOLD', 'PROGRESS', 'PUSH']
+
+/** Longest run of nights in a row where the AI held back the rules' PROGRESS or PUSH for one kind of session. */
+function heldBackStreak(r: ReplayResult): { streak: number; type: string | null; denied: number } {
+  const byType = new Map<string, number>()
+  let best = 0
+  let bestType: string | null = null
+  let denied = 0
+  for (const d of [...(r.decisions ?? [])].sort((a, b) => a.day - b.day)) {
+    for (const c of d.candidates.filter(x => x.rules && (x.level === 'PROGRESS' || x.level === 'PUSH'))) {
+      const t = d.final.today.find(p => p.sessionId === c.sessionId)
+      const held = t != null && t.from === 'ai' && (LEVEL_ORDER.indexOf(t.level) < LEVEL_ORDER.indexOf(c.level) || t.tweak.setsDelta < 0 || t.tweak.loadStep < 0 || t.tweak.roundsDelta < 0)
+      const type = c.sessionType ?? 'session'
+      if (held) { denied++; byType.set(type, (byType.get(type) ?? 0) + 1) } else byType.set(type, 0)
+      if ((byType.get(type) ?? 0) > best) { best = byType.get(type) ?? 0; bestType = type }
+    }
+  }
+  return { streak: best, type: bestType, denied }
+}
+
+/** A consistent athlete who recovers well: every session done, 3+ reps left, runs well under the line, steady mornings. */
+function progressScript(name: string, opts: { lifts?: (week: number) => AsPrescribed; log?: CheckInLog } = {}): ReplayScript {
+  return script(name, 8, (day, week) => steadyDay(day, { log: opts.log ?? STEADY, lifts: opts.lifts?.(week) ?? { rir: 3 }, rpe: { default: 4, strength: 5, foundation_run: 4, mobility: 2, mt_class: 7 } }))
+}
+
+function progressLines(r: ReplayResult): PassLine[] {
+  const steps = loadSteps(r)
+  const rises = [...rungUps(r).values()].reduce((a, b) => a + b, 0)
+  const over = steps.filter(s => s.steps > 1)
+  return [
+    line('N1', 'Strength weights rise for a consistent, recovering athlete', steps.length >= 3, `${steps.length} lift-weeks with a load step over 8 weeks.`),
+    line('N2', 'Run time rises for him too', rises >= 2, `${rises} run increases over 8 weeks.`),
+    line('N3', 'Never more than one step a week per lift', over.length === 0, `${over.length} lift-weeks with 2+ steps.`),
+  ]
+}
+
+const progressRules: Scenario = {
+  id: 'progress-rules',
+  title: 'Anti-stagnation, rules only (the AI agrees): a consistent, recovering athlete progresses',
+  ai: 'mirror',
+  script: progressScript('progress-rules'),
+  check: progressLines,
+}
+
+const progressCareful: Scenario = {
+  id: 'progress-careful',
+  title: 'Anti-stagnation with an always-careful AI: progression still happens',
+  ai: 'careful',
+  script: progressScript('progress-careful'),
+  check: r => {
+    const s = heldBackStreak(r)
+    return [
+      ...progressLines(r),
+      line('N4', 'The AI never holds back the rules\' progression 3 nights running', s.streak <= 2, `longest run of held-back progression: ${s.streak}${s.type ? ` (${s.type})` : ''}; ${s.denied} held back in all.`),
+    ]
+  },
+}
+
+/** The AI's push (item 12): above-default picks stand only with numbers cited and under the ceiling. */
+function pushLines(r: ReplayResult, expectAbove: boolean): PassLine[] {
+  const decisions = r.decisions ?? []
+  const above = decisions.flatMap(d => d.final.today.filter(t => (t as { above?: boolean }).above).map(t => ({ d, t })))
+  const bad = above.filter(({ d, t }) => {
+    const c = d.candidates.find(x => x.id === t.candidateId) as { above?: boolean; evidenceIds?: string[] } | undefined
+    return !c?.above || !(c.evidenceIds ?? []).some(id => d.final.reasons.includes(id))
+  })
+  const breaches = capBreaches(r)
+  const over = loadSteps(r).filter(s => s.steps > 1)
+  const pushes = pushDays(r).filter(d => !(readinessOn(r, d.day)?.fresh ?? false))
+  const refused = decisions.filter(d => d.source === 'fallback' && d.verifyErrors.some(e => /above the rules' pick/.test(e)))
+  const out = [
+    line('Q1', 'Above-default picks only with their numbers cited', bad.length === 0, `${above.length} above-default picks applied, ${bad.length} without cited evidence.`),
+    line('Q2', 'The ceiling holds: 0 cap breaches, one step a week, no push off a fresh morning', breaches.length === 0 && over.length === 0 && pushes.length === 0, `${breaches.length} run cap breaches, ${over.length} lift-weeks with 2+ steps, ${pushes.length} pushes on a day that was not fresh.`),
+  ]
+  if (expectAbove) out.push(line('Q3', 'With the numbers there, the AI\'s push is used', above.length > 0, `${above.length} above-default picks applied.`))
+  else out.push(line('Q3', 'A note alone never pushes: every such answer refused, nothing above applied', above.length === 0 && refused.length > 0, `${above.length} above-default picks applied; ${refused.length} answers refused for citing no numbers.`))
+  return out
+}
+
+// RIR 2 in odd weeks, 3+ in even weeks: the first easy session after a steady one is where the rules hold and the numbers allow a step.
+const pushNumbers: Scenario = {
+  id: 'push-numbers',
+  title: 'The AI pushes with numbers (RIR 3+ after a steady week, runs under the line)',
+  ai: 'pusher',
+  script: progressScript('push-numbers', { lifts: week => ({ rir: week % 2 === 0 ? 3 : 2 }) }),
+  check: r => pushLines(r, true),
+}
+
+const pushNoteOnly: Scenario = {
+  id: 'push-note-only',
+  title: 'The AI tries to push on his note alone ("push me")',
+  ai: 'note-pusher',
+  script: script('push-note-only', 6, (day, week) => steadyDay(day, { log: { ...STEADY, notes: 'Feel great, push me harder.' }, lifts: { rir: week % 2 === 0 ? 3 : 2 }, rpe: { default: 4, strength: 5, foundation_run: 4, mobility: 2 } })),
+  check: r => pushLines(r, false),
+}
+
+export const SCENARIOS: Scenario[] = [great, bad, injury, travel, classes, lapse, sandbag, syco, fighterStack, progressRules, progressCareful, pushNumbers, pushNoteOnly]
 
 /** Y3: an AI that says yes to "push me" is refused by verify every time, and nothing above the rules' pick is applied. */
 function sycophancyLine(r: ReplayResult): PassLine {
