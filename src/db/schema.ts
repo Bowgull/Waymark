@@ -708,3 +708,33 @@ export const bodyAlerts = sqliteTable('body_alerts', {
 }, (t) => [
   index('idx_body_alerts_region').on(t.region, t.clearedAt),
 ])
+
+// ─── Coach brain decisions (0045, coach-brain.md §5.3-5.5) ─────
+// One row per nightly decision: facts, options, the rules' pick, the AI's pick,
+// the final pick and where it came from. Nothing on screen reads it.
+export const coachDecisions = sqliteTable('coach_decisions', {
+  id: text('id').primaryKey(),
+  day: integer('day').notNull(),
+  decidedAt: integer('decided_at').notNull(),
+  trigger: text('trigger').notNull(), // 'nightly'
+  inputHash: text('input_hash').notNull(),
+  factsJson: text('facts_json').notNull(),
+  candidatesJson: text('candidates_json').notNull(),
+  rulesPickJson: text('rules_pick_json').notNull(),
+  aiPickJson: text('ai_pick_json'),
+  finalJson: text('final_json').notNull(),
+  source: text('source').notNull(), // 'agree' | 'ai' | 'rules' | 'fallback' | 'offline' | 'capped' | 'quiet'
+  model: text('model'),
+  calls: integer('calls').notNull().default(0),
+  latencyMs: integer('latency_ms'),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  cacheReadTokens: integer('cache_read_tokens'),
+  cacheWriteTokens: integer('cache_write_tokens'),
+  costUsd: real('cost_usd').notNull().default(0),
+  verifyErrorsJson: text('verify_errors_json'),
+  outcomeJson: text('outcome_json'),
+}, (t) => [
+  uniqueIndex('idx_coach_decisions_day_trigger').on(t.day, t.trigger),
+  index('idx_coach_decisions_decided_at').on(t.decidedAt),
+])

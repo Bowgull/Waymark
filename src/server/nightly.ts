@@ -19,7 +19,9 @@ export interface NightlyEnv {
 }
 
 // Nightly (cron, about 2-3 AM in the athlete's zone): the coach brain's one
-// re-plan of the day (coach-brain.md §5.1). Rules only in P2: no AI call.
+// re-plan of the day (coach-brain.md §5.1): the rules' facts and options, the
+// one AI call (P3: claude-opus-5-5, verified and arbitrated; the rules' pick on
+// any failure), then the writes.
 // 1. Skipped (but for the model and housekeeping) when nothing was logged and
 //    the app wasn't opened in the last 2 days: no narration through a lapse.
 // 2. Days of this week never opened get their template sessions, stale planned
@@ -56,8 +58,8 @@ export async function runNightlyReplan(env: NightlyEnv, nowMs: number = Date.now
       console.warn('[cron] weekly pass failed', err)
     }
     try {
-      const night = await runBrainNight(db, todayEpochDay, nowSec, { used })
-      console.log(`[cron] brain ran=${night.ran} ${night.reason ?? ''} changes=${night.changes} doses=${night.doses}`)
+      const night = await runBrainNight(db, todayEpochDay, nowSec, { used, apiKey: env.ANTHROPIC_API_KEY })
+      console.log(`[cron] brain ran=${night.ran} ${night.reason ?? ''} decision=${night.decision ?? '-'} changes=${night.changes} doses=${night.doses}`)
     } catch (err) {
       console.warn('[cron] brain night failed', err)
     }

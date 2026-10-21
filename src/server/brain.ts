@@ -21,10 +21,13 @@ import { and, desc, eq, gte, inArray, isNull, lt, lte } from 'drizzle-orm'
 import { bodyAlerts, dailyLogs, exercises, runSessions, sessions, settings, trainingMaxes, userProfile, type sessions as SessionsTable } from '../db/schema'
 import type { createDB } from '../db/client'
 import { buildAthleteModel, modelSummary } from '../lib/brain/athleteModel'
-import { bagDose, runDose, strengthDose, CEILING, type BagDose, type DoseCtx, type Level, type RunDose, type StrengthDose } from '../lib/brain/doses'
-import { solveOutline, type OutlineChange, type OutlineSession } from '../lib/brain/outline'
+import { bagDose, runDose, strengthDose, tweakBag, tweakRun, tweakStrength, CEILING, LEVELS, levelAbove, type BagDose, type DoseCtx, type Level, type RunDose, type StrengthDose, type Tweak } from '../lib/brain/doses'
+import { score as outlineScore, solveOutline, violations as outlineViolations, type OutlineChange, type OutlineIn, type OutlineSession } from '../lib/brain/outline'
+import { athleteSignals } from '../lib/brain/signals'
+import { arbitrate, DAILY_CALL_CAP, DAY_KEYS, doseWords, MAX_WEEK_ACTIONS, packetFacts, rulesDecision, type AiWeekAction, type Candidate, type DecisionPacket, type FinalDecision, type SolverChange, type TweakRange, type WeekScorer, type WeekSession } from '../lib/brain/decision'
+import { callDecision, existingDecision, inputHash, loadRecentNotes, overCap, spendToday, storeDecision, type CallOutcome } from './coachDecision'
 import { lowerState, readinessState, STATE_RANK, type ReadinessState } from '../lib/brain/readiness'
-import type { AthleteModel, ModelCheckIn } from '../lib/brain/types'
+import type { AthleteModel, ModelCheckIn, ModelEvents } from '../lib/brain/types'
 import { KEY_TYPES } from '../lib/keyTypes'
 import { getRunWalkWeek, type WeeklyRunContext } from '../lib/blockZero'
 import { applyContext, coachEaseFrom, injuryActionFor, isoOf, mondayOf, runAllowanceBaseSec, slotStart, withMergedLifts, type InjuryFlag } from '../lib/coach'
@@ -60,6 +63,18 @@ export interface StoredDose {
   facts: { u: number | null; modelState: string | null }
   why: string[]
   at: number
+  /** The night's decision for this day (coach brain P3): its level, tweak and why. */
+  decision?: DoseDecision
+}
+
+/** What the nightly decision chose for a session today (coach_decisions row id). */
+export interface DoseDecision {
+  id: string | null
+  day: number
+  level: Level
+  tweak: Tweak
+  why: string | null
+  from: 'ai' | 'rules'
 }
 
 /** A morning cap on a session (context_json.brainCap): the check-in's state. UNDO removes it. */
@@ -86,6 +101,7 @@ export function parseDose(json: string | null | undefined): StoredDose | null {
 export interface BrainInputs {
   today: number
   model: AthleteModel
+  events: ModelEvents
   checkIns: ModelCheckIn[]
   notesByDay: Map<number, string>
   sickDays: Set<number>
@@ -110,6 +126,7 @@ export async function loadBrainInputs(db: DB, today: number): Promise<BrainInput
   return {
     today,
     model,
+    events,
     checkIns,
     notesByDay: new Map(logs.filter(l => l.notes).map(l => [l.logDate, l.notes as string])),
     sickDays: new Set(sick.filter(s => s.day != null && (s.reason === 'sick' || s.reason === 'illness')).map(s => s.day as number)),
@@ -219,18 +236,56 @@ function injuryFrom(s: Pick<SessionRow, 'type' | 'contextJson'>, flag: InjuryFla
  * Compute a session's dose now. Null for sessions with no dose to set
  * (Foundation, Reset, a class: a class is a fixed hour the gym runs).
  */
-export async function computeDose(db: DB, s: SessionRow, today: number, inp?: BrainInputs): Promise<StoredDose | null> {
+export interface ComputeOpts {
+  /** The decision to apply (null: none; omitted: the one stored on the session for its day). */
+  decision?: DoseDecision | null
+  /** A level cap without a decision (the candidates the rules offer). */
+  levelCap?: Level | null
+}
+
+/** The decision stored on a session for its own day, if any. */
+export function storedDecision(s: Pick<SessionRow, 'doseJson' | 'scheduledDate'>): DoseDecision | null {
+  const d = parseDose(s.doseJson)?.decision
+  return d && d.day === s.scheduledDate ? d : null
+}
+
+export async function computeDose(db: DB, s: SessionRow, today: number, inp?: BrainInputs, opts: ComputeOpts = {}): Promise<StoredDose | null> {
+  const inputs = inp ?? await loadBrainInputs(db, today)
+  const dose = await computeRulesDose(db, s, today, inputs, opts)
+  if (!dose) return null
+  const dec = opts.decision !== undefined ? opts.decision : storedDecision(s)
+  if (!dec) return dose
+  // A rough morning that lowered the ceiling under the decision's level: its own why leads.
+  const cap = brainCapFrom(s.contextJson)
+  const capLowered = cap != null && levelAbove(dec.level, CEILING[cap.state]) && STATE_RANK[cap.state] < STATE_RANK[nightState(inputs, s.scheduledDate ?? today).state]
+  return withDecision(dose, dec, inputs, capLowered)
+}
+
+/** The decision's tweak and why on a dose already capped at its level. */
+function withDecision(d: StoredDose, dec: DoseDecision, inp: BrainInputs, capLowered: boolean): StoredDose {
+  const out: StoredDose = { ...d, decision: dec }
+  if (out.strength) out.strength = tweakStrength(out.strength, dec.tweak, inp.equipment)
+  if (out.run) out.run = tweakRun(out.run, dec.tweak)
+  if (out.bag) out.bag = tweakBag(out.bag, dec.tweak)
+  out.level = out.strength?.level ?? out.run?.level ?? out.bag?.level ?? out.level
+  if (dec.from === 'ai' && dec.why && !capLowered) out.why = [dec.why]
+  return out
+}
+
+async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: BrainInputs | undefined, opts: ComputeOpts): Promise<StoredDose | null> {
   if (!KEY_TYPES.has(s.type) || s.type === 'mt_class' || s.type === 'skip_rope') return null
   const day = s.scheduledDate ?? today
   const inputs = inp ?? await loadBrainInputs(db, today)
   const night = nightState(inputs, day)
   const cap = brainCapFrom(s.contextJson)
   const effective = cap && STATE_RANK[cap.state] < STATE_RANK[night.state] ? { state: cap.state, why: cap.why } : night
+  const dec = opts.decision !== undefined ? opts.decision : storedDecision(s)
+  const levelCap = opts.levelCap ?? dec?.level ?? null
   const flag = await loadInjuryFlag(db, day)
   const inj = injuryFrom(s, flag)
   const backToday = inj.action.action === 'back_swap' ? 1 : (inputs.backByDay.get(day) ?? null)
   const plan = bodyPlanMark(s.contextJson)
-  const ctx: DoseCtx = { day, state: effective.state, stateWhy: effective.why, model: inputs.model, backToday: plan?.op === 'back' ? 1 : backToday, openPlans: inputs.openPlans }
+  const ctx: DoseCtx = { day, state: effective.state, stateWhy: effective.why, model: inputs.model, backToday: plan?.op === 'back' ? 1 : backToday, openPlans: inputs.openPlans, levelCap }
   const base = {
     v: DOSE_VERSION, sessionId: s.id, day, type: s.type, state: effective.state, stateWhy: effective.why,
     stamp: doseStamp(s, cap, ctx.backToday), at: Math.floor(Date.now() / 1000),
@@ -390,8 +445,9 @@ function changedFrom(a: StoredDose | null, b: StoredDose): boolean {
 /** The last day with anything from him: a check-in, a session started or done, a skip, an app open. */
 export async function lastActiveDay(db: DB): Promise<number | null> {
   const [log] = await db.select({ d: dailyLogs.logDate }).from(dailyLogs).orderBy(desc(dailyLogs.logDate)).limit(1)
-  const acts = await db.select({ day: sessions.scheduledDate, status: sessions.status, startedAt: sessions.startedAt }).from(sessions)
-    .where(inArray(sessions.status, ['completed', 'in_progress', 'skipped']))
+  // A rest day the coach set is not something he did.
+  const acts = (await db.select({ day: sessions.scheduledDate, status: sessions.status, skipReason: sessions.skipReason }).from(sessions)
+    .where(inArray(sessions.status, ['completed', 'in_progress', 'skipped']))).filter(a => a.skipReason !== 'coach_rest')
   const [st] = await db.select({ seen: settings.coachSeenAt }).from(settings)
   const days = [log?.d ?? null, ...acts.map(a => a.day), st?.seen != null ? Math.floor(st.seen / 86400) : null].filter((d): d is number => d != null)
   return days.length ? Math.max(...days) : null
@@ -403,6 +459,8 @@ export interface NightResult {
   changes: number
   doses: number
   summary?: string[]
+  /** Where the night's decision came from (agree / ai / rules / fallback / offline / capped / quiet). */
+  decision?: string
 }
 
 /** Session rows of a week as the outline reads them. */
@@ -496,8 +554,12 @@ export async function restDueFor(db: DB, inp: BrainInputs, today: number): Promi
 /**
  * The nightly re-plan for `today` (the athlete's local day). Skipped when
  * nothing was logged and the app wasn't opened in the last 2 days.
+ *
+ * This week: the solver proposes the week's changes, the rules work out each
+ * of today's sessions' candidates, and the AI makes the call inside them
+ * (decideNight). Next week (from Saturday): the solver alone.
  */
-export async function runBrainNight(db: DB, today: number, nowSec: number, opts: { used?: number } = {}): Promise<NightResult> {
+export async function runBrainNight(db: DB, today: number, nowSec: number, opts: { used?: number; apiKey?: string } = {}): Promise<NightResult> {
   const block = await getActiveBlock(db)
   if (!block) return { ran: false, reason: 'no active block', changes: 0, doses: 0 }
   const last = await lastActiveDay(db)
@@ -525,10 +587,10 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
   const classTime = `${Math.floor(classMin / 60)}:${String(classMin % 60).padStart(2, '0')}`
   const restDue = await restDueFor(db, inp, today)
   // At most 2 visible coach changes a night, missed-session records written tonight included.
-  let budget = Math.max(0, 2 - (opts.used ?? 0))
+  let budget = Math.max(0, MAX_WEEK_ACTIONS - (opts.used ?? 0))
   let changes = 0
+  let decision: NightDecision | null = null
   for (const w of weeks) {
-    if (budget <= 0) break
     const rows = await db.select().from(sessions).where(and(gte(sessions.scheduledDate, w - 1), lte(sessions.scheduledDate, w + 7)))
     const held = await loadHeld(db, w)
     const mine = await hisSessions(db, w)
@@ -538,18 +600,238 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
       .sort((x, y) => (y.day ?? 0) - (x.day ?? 0)).slice(0, 2)
     const classPaused = suggested.length === 2 && suggested.every(x => x.status !== 'completed') && w <= mondayOf(suggested[0].day ?? 0) + 7
     const classHeld = weekChanges.some(({ change }) => change.actor !== 'you' && change.kind === 'add' && change.sessionType === 'mt_class' && change.undoneAt != null)
-    const result = solveOutline({
+    const outlineIn: OutlineIn = {
       today, monday: w, blockType: kind, blockStart: start, sessions: outlineRows(rows, today, held, mine), classNights,
       classCap: profile?.cap ?? null, classHeld, classPaused, model: inp.model, state: nightState(inp, today).state, restDue: w === monday ? restDue : null,
-    })
-    const chosen = result.changes.slice(0, budget)
+    }
+    const result = solveOutline(outlineIn)
+    let chosen = result.changes.slice(0, budget)
+    if (w === monday) {
+      decision = await decideNight(db, { today, nowSec, inp, rows, held, mine, outlineIn, solver: result, solverChanges: chosen, budget, apiKey: opts.apiKey ?? '', lastActive: last, weekChanges })
+      chosen = decision.outline
+    }
+    chosen = chosen.slice(0, budget)
     const n = await applyOutline(db, chosen, rows, block.id, nowSec, classTime)
     budget -= chosen.length
     changes += n
   }
+  // Today's sessions get the decision's pick (when still planned and still today), then every dose for the week.
+  if (decision) {
+    const todayRows = await db.select().from(sessions).where(and(eq(sessions.scheduledDate, today), eq(sessions.status, 'planned')))
+    const fresh = await loadBrainInputs(db, today)
+    for (const pick of decision.final.today) {
+      const s = todayRows.find(r => r.id === pick.sessionId)
+      if (!s) continue
+      const dec: DoseDecision = { id: decision.id, day: today, level: pick.level, tweak: pick.tweak, why: pick.why, from: pick.from }
+      const dose = await computeDose(db, s, today, fresh, { decision: dec })
+      if (dose) await db.update(sessions).set({ doseJson: JSON.stringify(dose) }).where(eq(sessions.id, s.id))
+    }
+  }
   const doses = await refreshDoses(db, today, today + 6, today, await loadBrainInputs(db, today))
-  console.log(`[brain] night ${isoOf(today)}: changes=${changes} doses=${doses} run=${inp.model.run.state} u=${inp.model.run.u}`)
-  return { ran: true, changes, doses, summary: modelSummary(inp.model) }
+  console.log(`[brain] night ${isoOf(today)}: changes=${changes} doses=${doses} decision=${decision?.final.source ?? 'none'} run=${inp.model.run.state} u=${inp.model.run.u}`)
+  return { ran: true, changes, doses, summary: modelSummary(inp.model), decision: decision?.final.source }
+}
+
+// ─── The decision (coach brain P3: §5.3 the call, §5.4 check and arbitrate) ─
+
+export interface NightDecision {
+  id: string
+  final: FinalDecision
+  /** The week changes to apply tonight, with their why lines. */
+  outline: OutlineChange[]
+  packet: DecisionPacket
+  call: CallOutcome | null
+}
+
+interface DecideIn {
+  today: number
+  nowSec: number
+  inp: BrainInputs
+  rows: SessionRow[]
+  held: Set<string>
+  mine: Set<string>
+  outlineIn: OutlineIn
+  solver: ReturnType<typeof solveOutline>
+  solverChanges: OutlineChange[]
+  budget: number
+  apiKey: string
+  lastActive: number | null
+  weekChanges: Awaited<ReturnType<typeof loadWeekChanges>>
+}
+
+const DOSED = new Set(['strength', 'foundation_run', 'running', 'bag_work'])
+const ZERO_RANGE: TweakRange = { setsDelta: [0, 0], loadStep: [0, 0], roundsDelta: [0, 0] }
+const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function rangeFor(d: StoredDose, inp: BrainInputs): TweakRange {
+  if (d.level === 'RECOVER' || d.level === 'REST') return ZERO_RANGE
+  if (d.strength) {
+    const sets = d.strength.lifts.some(l => l.sets > (l.workUp ? 2 : 1))
+    const load = d.strength.lifts.some(l => !l.workUp && l.weightKg != null && l.weightKg > 0 && (inp.equipment[l.exerciseId] ?? 'none') !== 'none')
+    return { setsDelta: [sets ? -1 : 0, 0], loadStep: [load ? -1 : 0, 0], roundsDelta: [0, 0] }
+  }
+  if (d.run) return { setsDelta: [0, 0], loadStep: [0, 0], roundsDelta: [!d.run.walkOnly && (d.run.rounds > 2 || d.run.rounds <= 1) ? -1 : 0, 0] }
+  if (d.bag) return { setsDelta: [0, 0], loadStep: [0, 0], roundsDelta: [d.bag.rounds > 1 ? -1 : 0, 0] }
+  return ZERO_RANGE
+}
+
+function tweaked(d: StoredDose, t: Tweak, inp: BrainInputs): StoredDose {
+  const x: StoredDose = { ...d }
+  if (x.strength) x.strength = tweakStrength(x.strength, t, inp.equipment)
+  if (x.run) x.run = tweakRun(x.run, t)
+  if (x.bag) x.bag = tweakBag(x.bag, t)
+  x.level = x.strength?.level ?? x.run?.level ?? x.bag?.level ?? x.level
+  return x
+}
+
+function tweakedWords(d: StoredDose, range: TweakRange, inp: BrainInputs): Candidate['tweaked'] {
+  const out: NonNullable<Candidate['tweaked']> = {}
+  const words = (t: Tweak) => doseWords(tweaked(d, t, inp))
+  if (range.setsDelta[0] < 0) out.setsDelta = words({ setsDelta: -1, loadStep: 0, roundsDelta: 0 })
+  if (range.loadStep[0] < 0) out.loadStep = words({ setsDelta: 0, loadStep: -1, roundsDelta: 0 })
+  if (range.roundsDelta[0] < 0) out.roundsDelta = words({ setsDelta: 0, loadStep: 0, roundsDelta: -1 })
+  if (range.setsDelta[0] < 0 && range.loadStep[0] < 0) out.setsDelta = `${out.setsDelta} | both: ${words({ setsDelta: -1, loadStep: -1, roundsDelta: 0 })}`
+  return Object.keys(out).length ? out : undefined
+}
+
+/** Today's candidates for one session: every level from RECOVER up to the rules' own pick (§5.2). */
+async function candidatesFor(db: DB, s: SessionRow, n: number, today: number, inp: BrainInputs): Promise<{ rules: StoredDose; list: Candidate[] } | null> {
+  const rules = await computeDose(db, s, today, inp, { decision: null })
+  if (!rules) return null
+  const list: Candidate[] = []
+  const seen = new Set<string>()
+  const push = (d: StoredDose, isRules: boolean) => {
+    const words = doseWords(d)
+    const id = `c${n}.${d.level.toLowerCase()}`
+    // The same dose under another level name is not another option.
+    const body = words.slice(words.indexOf(':') + 1)
+    if (seen.has(body) || list.some(c => c.id === id)) return
+    seen.add(body)
+    const range = rangeFor(d, inp)
+    list.push({ id, sessionId: s.id, sessionType: s.type, level: d.level, rules: isRules, dose: words, range, tweaked: tweakedWords(d, range, inp) })
+  }
+  push(rules, true)
+  for (const level of [...LEVELS].reverse()) {
+    if (level === 'REST' || !levelAbove(rules.level, level)) continue
+    const d = await computeDose(db, s, today, inp, { decision: null, levelCap: level })
+    if (d && levelAbove(rules.level, d.level)) push(d, false)
+  }
+  list.sort((a, b) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level))
+  return { rules, list }
+}
+
+const slotRank = (s: Pick<SessionRow, 'timeSlot'>) => (s.timeSlot === 'pm' ? 1 : 0)
+const dayKey = (d: number) => DAY_KEYS[new Date(d * 86400000).getUTCDay()]
+
+/**
+ * The night's decision: candidates and the week from the rules, the AI's
+ * call (only when something is new since yesterday, under the daily spend
+ * cap), verify, arbitrate, one coach_decisions row. A retried night reuses
+ * the night's decision and makes no second set of changes.
+ */
+export async function decideNight(db: DB, x: DecideIn): Promise<NightDecision> {
+  const { today, inp } = x
+  const monday = mondayOf(today)
+  const sunday = monday + 6
+  const todays = x.rows.filter(r => r.scheduledDate === today && r.status === 'planned' && DOSED.has(r.type)).sort((a, b) => slotRank(a) - slotRank(b) || a.id.localeCompare(b.id))
+  const candidates: Candidate[] = []
+  const rulesWhy: string[] = []
+  for (let i = 0; i < todays.length; i++) {
+    const c = await candidatesFor(db, todays[i], i + 1, today, inp)
+    if (!c) continue
+    candidates.push(...c.list)
+    for (const w of c.rules.why) if (!rulesWhy.includes(w)) rulesWhy.push(w)
+  }
+  const weekRows = x.rows.filter(r => r.scheduledDate != null && r.scheduledDate >= monday && r.scheduledDate <= sunday && KEY_TYPES.has(r.type))
+    .sort((a, b) => (a.scheduledDate as number) - (b.scheduledDate as number) || slotRank(a) - slotRank(b) || a.id.localeCompare(b.id))
+  const free = (r: SessionRow) => r.status === 'planned' && (r.scheduledDate as number) >= today && !x.held.has(r.id) && !x.mine.has(r.id) && r.source !== 'ad_hoc' && r.source !== 'replace'
+  const weekSessions: WeekSession[] = weekRows.map((r, i) => ({
+    ref: `s${i + 1}`, sessionId: r.id, type: r.type, name: r.label ?? NAME[r.type] ?? r.type, day: dayKey(r.scheduledDate as number), epochDay: r.scheduledDate as number,
+    slot: r.timeSlot === 'pm' ? 'pm' : 'am', status: r.status, movable: free(r) && r.type !== 'mt_class', restable: free(r),
+  }))
+  const refOf = (id: string) => weekSessions.find(w => w.sessionId === id)?.ref ?? null
+  const solver: SolverChange[] = x.solverChanges.map((c, i) => ({
+    ref: `w${i + 1}`, kind: c.kind, session: c.kind === 'add' ? null : refOf(c.sessionId),
+    to: c.kind === 'add' ? { day: dayKey(c.day), slot: 'pm' } : c.kind === 'move' ? { day: dayKey(c.day), slot: c.slot } : null, why: c.why,
+  }))
+  const facts = packetFacts(athleteSignals(inp.model, inp.events, today).filter(f => !f.id.startsWith('f.note.')))
+  const night = nightState(inp, today)
+  facts.unshift({ id: 'f.state', value: night.state })
+  const notes = await loadRecentNotes(db, today)
+  const packet: DecisionPacket = {
+    v: 1,
+    today: { iso: isoOf(today), day: dayKey(today) },
+    state: { state: night.state, why: night.why },
+    facts, notes, candidates,
+    week: { sessions: weekSessions, days: Array.from({ length: sunday - today + 1 }, (_, i) => dayKey(today + i)), solver, budget: x.budget },
+    rulesWhy,
+    recentChanges: x.weekChanges.slice(-8).map(({ change }) => ({ day: isoOf(change.after.day), actor: change.actor, kind: change.kind, session: NAME[change.sessionType] ?? change.sessionType, why: change.why, undone: change.undoneAt != null })),
+  }
+  const hash = await inputHash(packet)
+
+  // A retried night: the same picks for today, no second set of week changes.
+  const prior = await existingDecision(db, today)
+  if (prior) return { id: prior.id, final: { ...prior.final, week: { from: 'solver', actions: [], solverRefs: [], why: {} } }, outline: [], packet, call: null }
+
+  const rules = rulesDecision(packet, 'rules')
+  let final: FinalDecision
+  let call: CallOutcome | null = null
+  // The AI only when there is something new from him since the last night (§15 item 3).
+  const newInfo = x.lastActive != null && x.lastActive >= today - 1
+  const spent = await spendToday(db, x.nowSec)
+  if (!newInfo) final = rulesDecision(packet, 'quiet')
+  else if (overCap(spent)) final = rulesDecision(packet, 'capped')
+  else {
+    call = await callDecision(x.apiKey, packet, Math.max(0, DAILY_CALL_CAP - spent.calls))
+    if (call.verified?.decision) final = arbitrate(packet, call.verified.decision, weekScorer(x, weekSessions))
+    else final = rulesDecision(packet, call.offline && call.errors.length === 0 ? 'offline' : 'fallback')
+  }
+  const id = crypto.randomUUID()
+  await storeDecision(db, { id, day: today, nowSec: x.nowSec, inputHash: hash, packet, rules, final, call })
+  return { id, final, outline: outlineFrom(final, x, weekSessions), packet, call }
+}
+
+/** The AI's week actions as outline changes (its why, else a plain line with no numbers). */
+function actionChanges(actions: AiWeekAction[], why: Record<string, string>, x: DecideIn, weekSessions: WeekSession[]): OutlineChange[] {
+  const out: OutlineChange[] = []
+  for (const a of actions) {
+    const w = weekSessions.find(s => s.ref === a.ref)
+    const r = w ? x.rows.find(q => q.id === w.sessionId) : undefined
+    if (!w || !r || r.scheduledDate == null) continue
+    const name = r.label ?? NAME[r.type] ?? r.type
+    if (a.action === 'rest') {
+      out.push({ kind: 'rest', sessionId: r.id, type: r.type, label: r.label, day: r.scheduledDate, why: why[a.ref] || `${name} comes off this week.` })
+    } else if (a.toDay && a.toSlot) {
+      const day = x.today + ((DAY_KEYS.indexOf(a.toDay) - new Date(x.today * 86400000).getUTCDay() + 7) % 7)
+      out.push({ kind: 'move', sessionId: r.id, type: r.type, label: r.label, fromDay: r.scheduledDate, fromSlot: r.timeSlot === 'pm' ? 'pm' : 'am', day, slot: a.toSlot, why: why[a.ref] || `${name} moves to ${DAY_FULL[DAY_KEYS.indexOf(a.toDay)]}.` })
+    }
+  }
+  return out
+}
+
+function outlineFrom(final: FinalDecision, x: DecideIn, weekSessions: WeekSession[]): OutlineChange[] {
+  if (final.week.from === 'ai') return actionChanges(final.week.actions, final.week.why, x, weekSessions)
+  return x.solverChanges.map((c, i) => ({ ...c, why: final.week.why[`w${i + 1}`] || c.why }))
+}
+
+/** Scores the AI's week plan with the solver's own score and limits. */
+function weekScorer(x: DecideIn, weekSessions: WeekSession[]): WeekScorer {
+  const inp = x.outlineIn
+  return {
+    best: x.solver.after,
+    base: x.solver.before,
+    baseViolations: x.solver.violationsBefore.length,
+    scoreOf(actions) {
+      const changes = actionChanges(actions, {}, x, weekSessions)
+      const after = inp.sessions.map(s => {
+        const c = changes.find(q => 'sessionId' in q && q.sessionId === s.id)
+        if (c?.kind === 'rest') return { ...s, status: 'skipped' }
+        if (c?.kind === 'move') return { ...s, day: c.day, slot: c.slot }
+        return s
+      })
+      return { score: outlineScore({ sessions: after, changes }, inp), violations: outlineViolations(after, inp.blockType, inp.monday).length }
+    },
+  }
 }
 
 /** The ceiling as a level, for screens and the replay. */

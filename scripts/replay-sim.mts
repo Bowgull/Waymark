@@ -3,7 +3,12 @@
  * today's coach, each on its own in-memory database (made-up athlete, no real
  * data), with the doc's pass lines.
  *
- *   npx tsx scripts/replay-sim.mts [--out <dir>] [--only <id>] [--update] [--model]
+ *   npx tsx scripts/replay-sim.mts [--out <dir>] [--only <id>] [--update] [--model] [--ai <mock>]
+ *
+ * Coach brain P3: the nightly decision call is answered by a deterministic
+ * stand-in (lib/brain/mockAi.ts): each scenario's own (travel reads the note,
+ * the sycophancy probe says yes to everything), else mirror. --ai offline
+ * answers it offline (rules only); --ai <name> uses that stand-in everywhere.
  *
  * Prints PASS / FAIL / N/A per line and compares with the committed baseline
  * (src/lib/coach/replay/baseline.json): a line that passed there must still
@@ -19,6 +24,7 @@ import { runReplay } from '../src/server/replay/driver'
 import { SCENARIOS } from '../src/lib/coach/replay/scenarios'
 import { compareToBaseline, type Baseline } from '../src/lib/coach/replay/ratchet'
 import type { PassLine } from '../src/lib/coach/replay/metrics'
+import { MOCK_AIS, type MockAiName } from '../src/lib/brain/mockAi'
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(name)
@@ -26,6 +32,7 @@ const arg = (name: string) => {
 }
 const out = arg('--out')
 const only = arg('--only')
+const aiArg = arg('--ai')
 const BASELINE = join(process.cwd(), 'src', 'lib', 'coach', 'replay', 'baseline.json')
 
 /** The made-up athlete every scenario starts from. */
@@ -42,12 +49,16 @@ for (const s of SCENARIOS.filter(x => !only || x.id === only)) {
   const sqlite = migratedSqlite(':memory:')
   seedAthlete(sqlite)
   const t0 = Date.now()
-  const r = await runReplay(sqlite, s.script, { beforeDay: s.beforeDay as never })
+  const aiName = (aiArg ?? s.ai ?? 'mirror') as MockAiName | 'offline'
+  const r = await runReplay(sqlite, s.script, { beforeDay: s.beforeDay as never, decisionAi: aiName === 'offline' ? undefined : MOCK_AIS[aiName] })
   sqlite.close()
   const lines = s.check(r)
   results[s.id] = lines
   console.log(`\n${s.id}: ${s.title} (${Math.round((Date.now() - t0) / 1000)} s, ${r.doses.length} sessions, ${r.changes.length} changes, ${r.aiCalls.length} AI calls tried, ${r.errors.length} errors)`)
   for (const l of lines) console.log(`  ${!l.measured ? 'N/A ' : l.pass ? 'PASS' : 'FAIL'} ${l.id} ${l.title}: ${l.evidence}`)
+  const sources = new Map<string, number>()
+  for (const d of r.decisions ?? []) sources.set(d.source, (sources.get(d.source) ?? 0) + 1)
+  console.log(`  decisions (AI stand-in: ${aiName}): ${[...sources.entries()].map(([k, n]) => `${k} ${n}`).join(', ') || 'none'}`)
   for (const e of r.errors.slice(0, 5)) console.log(`  error: ${e}`)
   if (process.argv.includes('--model')) for (const m of r.model?.summary ?? []) console.log(`  model ${m}`)
   if (out) writeFileSync(join(out, `sim-${s.id}.json`), JSON.stringify({ result: r, lines }, null, 2))
