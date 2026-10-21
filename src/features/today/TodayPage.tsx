@@ -101,6 +101,8 @@ export function TodayPage() {
   // SKIP (page 56 item 3): instant; the open row then offers the reason tiles.
   const [skips, setSkips] = useState<Record<string, { changeId: string | null; reason: string | null; detail: string | null }>>({})
   const [openRow, setOpenRow] = useState<string | null>(null)
+  // The first session to do opens by itself (once per day), so ENTER is right there.
+  const defaultOpened = useRef<string | null>(null)
   // The day's back (page 56 item 8): the day open under the strip.
   const [backDay, setBackDay] = useState<number | null>(null)
   const [changesVersion, setChangesVersion] = useState(0)
@@ -132,6 +134,13 @@ export function TodayPage() {
   }, [])
 
   const today = getTodayISO()
+  useEffect(() => {
+    if (defaultOpened.current === today) return
+    const first = sessions.find(s => s.status === 'planned' || s.status === 'in_progress')
+    if (!first) return
+    defaultOpened.current = today
+    setOpenRow(prev => prev ?? first.id)
+  }, [sessions, today])
   const todayEpoch = isoToEpochDay(today)
   const todayDate = new Date(`${today}T12:00:00`)
 

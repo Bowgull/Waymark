@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
-import { FlapLabel, SessionIcon, glowRow, showPop } from '@/design'
+import { FlapButton, FlapLabel, SessionIcon, glowRow, showPop } from '@/design'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
 import { CLASS_SKIP_REASONS, REPLACE_REASONS, SKIP_PLACES, SKIP_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
 import { submitBoardPick, submitReplace, submitSkip, submitSkipReason } from '@/lib/boardPick'
@@ -12,6 +13,7 @@ import { Rune } from '@/features/coach/Rune'
 import { backChanges, runeForDay, runeForSession, type WeekChangesIn } from '@/features/coach/changeView'
 import { pickToast } from '@/features/coach/pickToast'
 import { apiFetch } from '@/lib/api'
+import { isStartableToday, startSession } from '@/lib/startSession'
 import { getTodayISO } from '@/lib/dates'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import { getWeekLabel } from '@/lib/strengthTemplates'
@@ -85,6 +87,7 @@ function sortDay(list: DayBoardSession[]): DayBoardSession[] {
 }
 
 export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, onOpenDay, onSessionUpdate, onSessionAdded, changes, markSeen, onUndo, onChanged, startsOn = null }: WeekViewProps) {
+  const navigate = useNavigate()
   const [openRow, setOpenRow] = useState<string | null>(null)
   const [picker, setPicker] = useState<{ mode: 'add'; date: string } | { mode: 'replace'; date: string; session: DayBoardSession; reason: string | null } | null>(null)
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
@@ -245,6 +248,13 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
                 onSkip={x => { void skip(x) }}
                 open={openRow === s.id}
                 onToggle={() => setOpenRow(prev => (prev === s.id ? null : s.id))}
+                summaryActions={isStartableToday(s.status, s.scheduledDate ?? null, todayEpochDay) ? (
+                  <FlapButton
+                    label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'}
+                    primary
+                    onClick={() => { startSession(s).then(path => navigate(path)).catch(() => showPop("Couldn't start. Check your connection.", 'bad')) }}
+                  />
+                ) : undefined}
                 openContent={sk ? (
                   <div className="db-sum">
                     <ReasonTiles tiles={s.type === 'mt_class' ? CLASS_SKIP_REASONS : SKIP_REASONS} value={sk.reason} onChange={r => { void skipReason(s.id, r, null) }} />
