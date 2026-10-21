@@ -60,6 +60,16 @@ export function athleteSignals(model: AthleteModel, events: ModelEvents, today: 
         { id: `${k}.raised`, value: l.last.raised, day: l.last.day },
         { id: `${k}.incomplete`, value: l.last.incomplete, day: l.last.day },
       )
+      // Numeric push evidence (item 12): the last exposures in a row with 3+ left and every rep in.
+      const recent = l.recent ?? [l.last]
+      let easy = 0
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const e = recent[i]
+        if (e.lastRir != null && e.lastRir >= 3 && e.allReps !== false && !e.lowered && !e.incomplete) easy++
+        else break
+      }
+      facts.push({ id: `${k}.easyStreak`, value: easy })
+      if (recent.length >= 2) facts.push({ id: `${k}.prevRir`, value: recent[recent.length - 2].lastRir, day: recent[recent.length - 2].day })
     }
   }
 
@@ -69,6 +79,9 @@ export function athleteSignals(model: AthleteModel, events: ModelEvents, today: 
     { id: 'f.run.U', value: r.uShare }, { id: 'f.run.drift', value: r.driftBpm, unit: 'bpm' }, { id: 'f.run.rungSec', value: r.rungSec, unit: 's' },
     { id: 'f.run.longestLast30Sec', value: r.longestLast30Sec, unit: 's' }, { id: 'f.run.recheckDue', value: r.recheckDue },
   )
+  let handled = 0
+  for (let i = r.recent.length - 1; i >= 0 && r.recent[i].handled; i--) handled++
+  facts.push({ id: 'f.run.handledStreak', value: handled })
   const lastRun = r.recent[r.recent.length - 1]
   if (lastRun) {
     facts.push(
@@ -77,10 +90,19 @@ export function athleteSignals(model: AthleteModel, events: ModelEvents, today: 
       { id: 'f.run.last.cutShort', value: lastRun.cutShort, day: lastRun.day }, { id: 'f.run.last.scheduleCut', value: lastRun.scheduleCut, day: lastRun.day },
       { id: 'f.run.last.tooFast', value: lastRun.tooFast, day: lastRun.day }, { id: 'f.run.last.tooSlow', value: lastRun.tooSlow, day: lastRun.day },
       { id: 'f.run.last.indoor', value: lastRun.isIndoor, day: lastRun.day },
+      { id: 'f.run.last.rpe', value: lastRun.rpe, day: lastRun.day },
     )
   }
 
-  facts.push({ id: 'f.bag.rounds', value: model.bag.roundsTolerated }, { id: 'f.bag.u', value: model.bag.u }, { id: 'f.class.perWeek', value: model.klass.perWeekTolerated }, { id: 'f.class.u', value: model.klass.u })
+  facts.push({ id: 'f.bag.rounds', value: model.bag.roundsTolerated }, { id: 'f.bag.u', value: model.bag.u }, { id: 'f.bag.lastEffort', value: model.bag.lastEffort }, { id: 'f.class.perWeek', value: model.klass.perWeekTolerated }, { id: 'f.class.u', value: model.klass.u })
+  // Load pools (ideas 3, 4, 10): arbitrary units, for context; strength fatigue counts toward fatigue only.
+  const L = model.load
+  facts.push({ id: 'f.load.strengthFatigue', value: L.strengthFatigue }, { id: 'f.load.enduranceFatigue', value: L.enduranceFatigue }, { id: 'f.load.enduranceFitness', value: L.enduranceFitness }, { id: 'f.load.form', value: L.form })
+  // Per-domain levels (idea 11), 1-10.
+  for (const [d, l] of Object.entries(model.levels)) if (l.sessions > 0) facts.push({ id: `f.level.${d}`, value: l.level })
+  // His own eases still holding (idea 12): that domain's next session holds, no push.
+  const own = new Map(model.ownEases.map(e => [e.domain, e]))
+  for (const e of own.values()) facts.push({ id: `f.own.${e.domain}`, value: e.kind, day: e.day })
   for (const [d, n] of Object.entries(model.klass.nights)) if (n.n > 0) facts.push({ id: `f.class.night.${d}.p`, value: n.p })
   for (const [cell, c] of Object.entries(model.adherence.cells)) facts.push({ id: `f.when.${cell}.p`, value: c.p }, { id: `f.when.${cell}.n`, value: c.n })
   for (const [t, s] of Object.entries(model.adherence.usualStart)) facts.push({ id: `f.when.start.${t}`, value: s.minute, unit: 'min' })

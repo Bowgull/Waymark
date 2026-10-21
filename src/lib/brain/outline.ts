@@ -20,7 +20,7 @@
 // gain. A class is a fixed 60-minute hard session: the solver only picks the
 // night, never what is taught. Pure.
 
-import { isHard, isHeavyLegs, type BlockKind } from '../coach/sessions'
+import { isHard, isHardRun, isHeavyHinge, isHeavyLegs, type BlockKind } from '../coach/sessions'
 import { KEY_TYPES } from '../keyTypes'
 import { cellOf } from './athleteModel'
 import type { AthleteModel } from './types'
@@ -42,6 +42,8 @@ export interface OutlineSession {
   source: string | null
   /** Fixed: his own pick or move, held by an UNDO, started or done, or a past day. */
   locked: boolean
+  /** Run category ('tempo', 'progression', ...) for the spacing costs. */
+  notes?: string | null
 }
 
 export interface OutlineIn {
@@ -87,6 +89,35 @@ export function classTarget(inp: Pick<OutlineIn, 'blockType' | 'blockStart' | 'm
   return Math.max(0, Math.min(inp.model.klass.perWeekTolerated, inp.classCap ?? 3, inp.classNights.length))
 }
 
+const SLOT_HOUR = { am: 8, pm: 18 } as const
+/** Hours from session a to session b (negative: b is earlier). */
+export function hoursAfter(a: Pick<OutlineSession, 'day' | 'slot'>, b: Pick<OutlineSession, 'day' | 'slot'>): number {
+  return (b.day * 24 + SLOT_HOUR[b.slot]) - (a.day * 24 + SLOT_HOUR[a.slot])
+}
+
+/**
+ * Spacing suggestions that cost a little but never block (idea 2, Schumann
+ * 2022, Doma 2017, Robineau 2016): a hard run within 24 h after heavy legs
+ * (inside 6 h would be a clash; the slots never allow it), and a run before
+ * the lift on a shared day (lift first, 3 h+ apart).
+ */
+export function spacingCosts(sessions: readonly OutlineSession[], blockType: BlockKind, monday: number): Array<{ cost: number; why: string }> {
+  const out: Array<{ cost: number; why: string }> = []
+  const week = sessions.filter(s => live(s) && s.day >= monday - 1 && s.day <= monday + 6)
+  for (const legs of week.filter(s => isHeavyLegs(s, blockType))) {
+    for (const run of week.filter(s => isHardRun({ type: s.type, notes: s.notes ?? null, estimatedMin: null }))) {
+      const h = hoursAfter(legs, run)
+      if (h > 0 && h < 6) out.push({ cost: 3, why: `hard run within 6 h of ${DAY_NAME[dow(legs.day)]}'s heavy legs` })
+      else if (h > 0 && h < 24) out.push({ cost: 0.5, why: `hard run the day after ${DAY_NAME[dow(legs.day)]}'s heavy legs` })
+    }
+  }
+  for (const lift of week.filter(s => s.type === 'strength')) {
+    const run = week.find(s => s.day === lift.day && (s.type === 'running' || s.type === 'foundation_run') && hoursAfter(s, lift) > 0)
+    if (run) out.push({ cost: 0.4, why: `${DAY_NAME[dow(lift.day)]}: lift first, run later` })
+  }
+  return out
+}
+
 /** The limits a week must keep. Each broken one is a violation. */
 export function violations(sessions: readonly OutlineSession[], blockType: BlockKind, monday: number): string[] {
   const out: string[] = []
@@ -97,6 +128,14 @@ export function violations(sessions: readonly OutlineSession[], blockType: Block
     if (cls.length && (on(d).some(s => isHeavyLegs(s, blockType) && !(s.slot === 'pm' && cls.every(c => c.slot === 'am'))) || on(d - 1).some(s => isHeavyLegs(s, blockType) && s.slot === 'pm'))) out.push(`heavy legs before ${DAY_NAME[dow(d)]}'s class`)
     const key = on(d).filter(s => KEY_TYPES.has(s.type) && s.type !== 'mt_class')
     if (key.length > 1 && d >= monday && d <= monday + 6) out.push(`${DAY_NAME[dow(d)]} holds ${key.length} sessions`)
+  }
+  // Interference spacing (approved 2026-10-21, idea 2): no heavy hip hinge in the 24 h after a
+  // class either (kicks load the hips and lower back). A clash moves the lift, never the class.
+  for (const d of days) {
+    for (const c of on(d).filter(s => s.type === 'mt_class')) {
+      const hinge = [...on(d), ...on(d + 1)].find(s => isHeavyHinge(s, blockType) && hoursAfter(c, s) > 0 && hoursAfter(c, s) < 24)
+      if (hinge) out.push(`heavy hinge the ${hinge.day === d ? 'evening' : 'morning'} after ${DAY_NAME[dow(d)]}'s class`)
+    }
   }
   const hard = (d: number) => on(d).some(s => isHard(like(s)))
   for (let d = monday - 2; d <= monday + 6; d++) if (hard(d) && hard(d + 1) && hard(d + 2) && d + 2 >= monday) out.push(`3 hard days from ${DAY_NAME[dow(d)]}`)
@@ -135,6 +174,8 @@ export function score(plan: Plan, inp: OutlineIn): number {
   }
   // A second rest day when it is due: tomorrow-ish (the first changeable day or the one after).
   if (inp.restDue && (plan.changes.some(c => c.kind === 'rest'))) v += 2.5
+  // Spacing suggestions (idea 2): small costs, never blocks.
+  for (const c of spacingCosts(s, inp.blockType, inp.monday)) v -= c.cost
   // Lifting on back-to-back days is a soft no.
   for (let d = inp.monday; d < inp.monday + 6; d++) {
     const lift = (x: number) => s.some(q => q.day === x && live(q) && q.type === 'strength')
@@ -171,7 +212,22 @@ function edits(plan: Plan, inp: OutlineIn): Plan[] {
       // A class never before the block's eighth day (§7: week 2 at the earliest).
       if (d < inp.blockStart + 7 || !inp.classNights.includes(dow(d)) || s.some(x => x.day === d && x.type === 'mt_class')) continue
       const tempId = `class-${d}`
-      out.push({ sessions: [...s, { id: tempId, type: 'mt_class', label: 'MT Class', day: d, slot: 'pm', status: 'planned', source: 'coach', locked: false }], changes: [...plan.changes, { kind: 'add', type: 'mt_class', day: d, slot: 'pm', why: nightWhy(inp, d), tempId }] })
+      const added: Plan = { sessions: [...s, { id: tempId, type: 'mt_class', label: 'MT Class', day: d, slot: 'pm', status: 'planned', source: 'coach', locked: false }], changes: [...plan.changes, { kind: 'add', type: 'mt_class', day: d, slot: 'pm', why: nightWhy(inp, d), tempId }] }
+      out.push(added)
+      // The class clashes with a lift (heavy legs before it, a heavy hinge after it): the lift moves, never the class (idea 2).
+      const before = violations(plan.sessions, inp.blockType, inp.monday).length
+      if (violations(added.sessions, inp.blockType, inp.monday).length > before && added.changes.length < MAX_CHANGES) {
+        const clashing = added.sessions.filter(x => free(x) && x.type === 'strength' && (isHeavyLegs(x, inp.blockType) || isHeavyHinge(x, inp.blockType)) && Math.abs(x.day - d) <= 1)
+        for (const x of clashing) {
+          for (const e of days) {
+            if (e === x.day || added.sessions.some(y => y.day === e && live(y) && KEY_TYPES.has(y.type) && y.type !== 'mt_class')) continue
+            out.push({
+              sessions: added.sessions.map(y => (y.id === x.id ? { ...y, day: e } : y)),
+              changes: [...added.changes, { kind: 'move', sessionId: x.id, type: x.type, label: x.label, fromDay: x.day, fromSlot: x.slot, day: e, slot: x.slot, why: '' }],
+            })
+          }
+        }
+      }
     }
   }
   // Move a key session to another day (alone there), or swap two.
@@ -245,6 +301,8 @@ function moveWhy(c: Extract<OutlineChange, { kind: 'move' }>, plan: Plan, inp: O
   if (c.day === c.fromDay && c.slot === 'am') return `${name} moves to the morning: that is when you train.`
   const cls = plan.sessions.find(s => s.type === 'mt_class' && (s.day === c.fromDay || s.day === c.fromDay + 1) && live(s))
   if (cls && c.type === 'strength' && isHeavyLegs({ type: c.type, label: c.label }, inp.blockType)) return `${name} moves to ${DAY_NAME[dow(c.day)]}: no heavy legs before ${DAY_NAME[dow(cls.day)]}'s class.`
+  const before = plan.sessions.find(s => s.type === 'mt_class' && (s.day === c.fromDay || s.day === c.fromDay - 1) && live(s))
+  if (before && c.type === 'strength' && isHeavyHinge({ type: c.type, label: c.label }, inp.blockType)) return `${name} moves to ${DAY_NAME[dow(c.day)]}: no heavy hinge right after ${DAY_NAME[dow(before.day)]}'s class.`
   const cells = inp.model.adherence.cells
   const gain = cells[cellOf(c.day, c.slot, null)].p - cells[cellOf(c.fromDay, c.fromSlot, null)].p
   if (gain >= 0.15) return `${name} moves to ${DAY_NAME[dow(c.day)]}: ${dow(c.day) === 0 || dow(c.day) === 6 ? 'weekends' : 'weekday mornings'} are when you get it done.`

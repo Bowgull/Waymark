@@ -51,6 +51,32 @@ export interface DoseCtx {
    * decision's pick when it is below the rules' own. Only ever lowers.
    */
   levelCap?: Level | null
+  /**
+   * A level above the rules' default the nightly decision chose with numeric
+   * evidence (approved 2026-10-21, item 12). It only lifts a HOLD signal (never
+   * an ease, never a lift with no reps-left on file or a high uncertainty), and
+   * the readiness ceiling and every hard limit (one step a week, felt hard,
+   * run caps, AMBER) still apply on top.
+   */
+  levelFloor?: Level | null
+}
+
+/** The higher of two levels. */
+export function maxLevel(a: Level, b: Level): Level {
+  return RANK[a] >= RANK[b] ? a : b
+}
+
+/** Most uncertainty a push above the rules' default may carry (item 12). */
+export const PUSH_MAX_U = 0.5
+
+const DAY_WORD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+/** His own skip or lighter swap still holding a domain (idea 12): the level stays at HOLD at most. */
+export function ownHold(model: AthleteModel, domain: 'strength' | 'run' | 'bag'): { why: string } | null {
+  const e = [...(model.ownEases ?? [])].reverse().find(x => x.domain === domain && (x.kind === 'skipped' || x.kind === 'swapped'))
+  if (!e) return null
+  const day = DAY_WORD[((e.day % 7) + 11) % 7]
+  return { why: e.kind === 'skipped' ? `You sat out ${day}'s session. Same as last time today, nothing added.` : `You went lighter on ${day}. Same as last time today, nothing added.` }
 }
 
 /** Today's ceiling: the readiness state's, lowered by a decision's level cap. */
@@ -222,8 +248,10 @@ function blockZeroLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCe
   // The weight reads the target RIR unrounded (2 + 1.5u), so it climbs as u falls; he sees the rounded RIR.
   const fromE1rm = lift.e1rmKg != null ? workingWeight(lift.e1rmKg, reps, BASE_RIR + 1.5 * u, lift.rirBias, eq) : null
   const sig = liftSignal(lift)
-  let level = minLevel(sig.level, sessionCeiling)
-  if (level === 'PROGRESS' && ctx.state === 'FRESH' && sessionCeiling === 'PUSH') level = 'PUSH'
+  // A decision's push (item 12) lifts only a HOLD signal on a lift with reps-left on file and low uncertainty.
+  const floorOk = ctx.levelFloor != null && sig.level === 'HOLD' && last?.lastRir != null && u <= PUSH_MAX_U
+  let level = minLevel(floorOk ? maxLevel(sig.level, ctx.levelFloor as Level) : sig.level, sessionCeiling)
+  if (level === 'PROGRESS' && ctx.state === 'FRESH' && sessionCeiling === 'PUSH' && !floorOk) level = 'PUSH'
   if (levelAbove(level, 'HOLD') && inp.lastFeltHard) level = 'HOLD'
   if (levelAbove(level, 'HOLD') && inp.steppedThisWeek.includes(exerciseId)) level = 'HOLD'
   if (sig.why && level === sig.level) whys.push(named(sig.why, lift.exerciseId, label) as string)
@@ -286,7 +314,8 @@ function fighterLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCeil
   const age = ageingU(lift)
   const base = f.loadKg[tex.exerciseId] ?? null
   const sig = liftSignal(lift)
-  let level = minLevel(sig.level, sessionCeiling)
+  const floorOk = ctx.levelFloor != null && sig.level === 'HOLD' && lift?.last?.lastRir != null && (lift?.u ?? 1) <= PUSH_MAX_U
+  let level = minLevel(floorOk ? maxLevel(sig.level, ctx.levelFloor as Level) : sig.level, sessionCeiling)
   if (levelAbove(level, 'HOLD') && inp.lastFeltHard) level = 'HOLD'
   if (sig.why && level === sig.level) whys.push(named(sig.why, lift?.exerciseId ?? '', label) as string)
   // The wave carries Fighter progression; time away trims the load a little (≤ 10% at u = 0.4).
@@ -306,7 +335,8 @@ function fighterLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCeil
 }
 
 export function strengthDose(ctx: DoseCtx, inp: StrengthIn): StrengthDose {
-  const ceiling = ceilingFor(ctx)
+  const own = ownHold(ctx.model, 'strength')
+  const ceiling = own ? minLevel(ceilingFor(ctx), 'HOLD') : ceilingFor(ctx)
   const lifts = inp.main.map(tex => (inp.kind === 'fighter' && inp.fighter ? fighterLift(ctx, inp, tex, ceiling) : blockZeroLift(ctx, inp, tex, ceiling)))
   // HOLD sets: what the rules give with readiness and signals set aside (the replay's "plain" dose).
   const holdSets = inp.main.reduce((n, _tex, i) => {
@@ -317,7 +347,7 @@ export function strengthDose(ctx: DoseCtx, inp: StrengthIn): StrengthDose {
   }, 0)
   const sets = lifts.reduce((n, l) => n + l.sets, 0)
   const level = lifts.reduce<Level>((m, l) => minLevel(m, l.level), lifts[0]?.level ?? 'HOLD')
-  const why = [ctx.state === 'AMBER' || ctx.state === 'RED' ? ctx.stateWhy : null, ...lifts.map(l => l.why)].filter((w): w is string => !!w)
+  const why = [ctx.state === 'AMBER' || ctx.state === 'RED' ? ctx.stateWhy : null, own && !recoverOrLess(ceiling) ? own.why : null, ...lifts.map(l => l.why)].filter((w): w is string => !!w)
   return { kind: 'strength', level, lifts, accessorySets: recoverOrLess(ceiling) ? 1 : null, holdSets, sets, why }
 }
 
@@ -414,8 +444,14 @@ export function runDose(ctx: DoseCtx, inp: RunIn): RunDose {
     }
   }
   const sig = runSignal(ctx.model, ctx.day)
-  const level = minLevel(sig.level === 'PROGRESS' && ceiling === 'PUSH' ? 'PROGRESS' : sig.level, ceiling)
+  const own = ownHold(ctx.model, 'run')
+  // A decision's push (item 12): one rung up from a HOLD, never past one rung a week, never with high uncertainty. Runs never PUSH.
+  const recentUp = m.rungUpDay != null && ctx.day - m.rungUpDay < 7
+  const floorOk = ctx.levelFloor != null && sig.level === 'HOLD' && !recentUp && !inp.riseThisWeek && m.u <= PUSH_MAX_U && !own
+  const signal: Level = floorOk ? maxLevel(sig.level, minLevel(ctx.levelFloor as Level, 'PROGRESS')) : sig.level
+  const level = minLevel(minLevel(signal === 'PROGRESS' && ceiling === 'PUSH' ? 'PROGRESS' : signal, ceiling), own ? 'HOLD' : 'PUSH')
   if (sig.why && level === sig.level) why.push(sig.why)
+  if (own && sig.level === 'PROGRESS') why.push(own.why)
 
   if (inp.kind === 'continuous') {
     const planned = inp.plannedSec ?? 1800
@@ -497,13 +533,20 @@ export function bagDose(ctx: DoseCtx, inp: { maxRounds: number; injuryWhy?: stri
     return { kind: 'bag', level: minLevel('HOLD', ceiling), rounds: recoverOrLess(ceiling) ? 3 : ceiling === 'EASE' ? rounds - 1 : rounds, holdRounds: rounds, finishers: false, why: ['First bag session: technique rounds while it learns you.'] }
   }
   const hold = Math.max(1, Math.min(inp.maxRounds, Math.round(b.roundsTolerated * (1 - 0.3 * b.u))))
+  const own = ownHold(ctx.model, 'bag')
   if (ceiling === 'EASE' && !inp.injuryWhy) return { kind: 'bag', level: 'EASE', rounds: Math.max(1, hold - 1), holdRounds: hold, finishers: false, why: [] }
   if (recoverOrLess(ceiling) || inp.injuryWhy) return { kind: 'bag', level: 'RECOVER', rounds: Math.min(3, hold), holdRounds: hold, finishers: false, why: [inp.injuryWhy ?? ctx.stateWhy ?? 'Technique only today.'] }
   let rounds = hold
   const why: string[] = []
   if (ctx.state === 'AMBER') { rounds = Math.max(1, rounds - 1); why.push(ctx.stateWhy ?? 'One round fewer today.') }
-  const finishers = b.finishersAllowed && ceiling !== 'HOLD' && ctx.state !== 'AMBER'
-  const level: Level = ctx.state === 'AMBER' ? 'HOLD' : finishers ? 'PROGRESS' : 'HOLD'
+  const finishers = b.finishersAllowed && ceiling !== 'HOLD' && ctx.state !== 'AMBER' && !own
+  let level: Level = ctx.state === 'AMBER' ? 'HOLD' : finishers ? 'PROGRESS' : 'HOLD'
+  // A decision's push (item 12): one round more than the hold, inside the cap.
+  if (level === 'HOLD' && ctx.levelFloor != null && levelAbove(ctx.levelFloor, 'HOLD') && levelAbove(ceiling, 'HOLD') && ctx.state !== 'AMBER' && !own && b.u <= PUSH_MAX_U && rounds < inp.maxRounds) {
+    rounds += 1
+    level = 'PROGRESS'
+  }
+  if (own) why.push(own.why)
   return { kind: 'bag', level, rounds, holdRounds: hold, finishers, why }
 }
 

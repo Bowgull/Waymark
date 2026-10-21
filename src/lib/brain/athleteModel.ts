@@ -27,8 +27,9 @@ import type {
   RunEstimate, RunObservation, SlotCellKey,
 } from './types'
 import { betaCell, cellState, clamp, confidence, round, rungDecay, strengthDecay } from './uncertainty'
+import { buildLevels, buildLoad, buildOwnEases, domainOf, sessionLoads, type LevelInputs } from './loadLevels'
 
-export const MODEL_VERSION = 1
+export const MODEL_VERSION = 2
 
 // ─── Notes flags (code's read; the AI reads notes in P3) ─────
 
@@ -248,7 +249,7 @@ function finishLift(state: LiftState, today: number, tmKg: number | null): LiftE
   }
 }
 
-function buildLifts(events: ModelEvents, today: number): Record<string, LiftEstimate> {
+function buildLifts(events: ModelEvents, today: number, sink?: Array<{ exerciseId: string; exposure: LiftExposure }>): Record<string, LiftEstimate> {
   const main = events.sets.filter(s => s.section === 'main' && s.day <= today)
   const byExposure = new Map<string, ModelSet[]>()
   for (const s of main) {
@@ -263,6 +264,7 @@ function buildLifts(events: ModelEvents, today: number): Record<string, LiftEsti
     states.set(id, st)
     updateLift(st, sets)
   }
+  if (sink) for (const st of states.values()) for (const e of st.exposures) sink.push({ exerciseId: st.exerciseId, exposure: e })
   const tms = new Map(events.trainingMaxes.map(t => [t.exerciseId, t.weightKg]))
   const out: Record<string, LiftEstimate> = {}
   for (const [id, st] of states) {
@@ -329,7 +331,7 @@ function ladderBelow(sec: number): number {
   return below.length ? below[below.length - 1] : RUNG_PRIOR_SEC
 }
 
-function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<NoteFlag>>): RunEstimate {
+function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<NoteFlag>>, sink?: RunObservation[]): RunEstimate {
   const prior = linePrior(events.profile.dob, today, events.profile.maxHr)
   const tests = events.talkTests.filter(t => t.day <= today).sort((a, b) => a.day - b.day)
   const lineOn = (day: number): { bpm: number; source: 'talk_test' | 'prior' } => {
@@ -377,6 +379,7 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
       hasHr: r.avgHr != null || r.splits.some(s => s.avgHr != null), isIndoor: r.isIndoor, cutShort, scheduleCut, tooFast, tooSlow, handled, struggled,
     })
   }
+  if (sink) sink.push(...recent)
   const withHr = recent.filter(o => o.hasHr)
   const line = lineOn(today)
   const lastTwo = tests.slice(-2)
@@ -798,16 +801,38 @@ export function buildAthleteModel(input: ModelEvents, today: number, opts: { fro
   const flags = flagsByDay(events)
   const byDay = new Map(events.checkIns.map(c => [c.day, c]))
   const sorenessAfter = (day: number) => byDay.get(day + 1)?.soreness ?? null
+  const liftSink: Array<{ exerciseId: string; exposure: LiftExposure }> = []
+  const runSink: RunObservation[] = []
+  const lifts = buildLifts(events, today, liftSink)
+  const run = buildRun(events, today, flags, runSink)
+  const rpeOf = new Map(events.sessions.map(s => [s.id, s.rpe]))
+  const sessionOfDay = (exerciseId: string, day: number) => events.sets.find(s => s.exerciseId === exerciseId && s.day === day)?.sessionId
+  const levelIn: LevelInputs = {
+    runs: runSink,
+    lifts: liftSink.map(l => ({ ...l, sessionRpe: rpeOf.get(sessionOfDay(l.exerciseId, l.exposure.day) ?? '') ?? null })),
+    combat: events.sessions.filter(s => s.status === 'completed' && s.day <= today && (s.type === 'mt_class' || s.type === 'bag_work')).sort((a, b) => a.day - b.day)
+      .map(s => { const b = events.bag.find(x => x.sessionId === s.id); return { day: s.day, type: s.type, rpe: s.rpe, hardEnd: isHardEnd(b?.endReason) } }),
+  }
+  // His own eases still holding: none in a domain once he has done a session there since.
+  const doneByDomain = new Map<string, number[]>()
+  for (const s of events.sessions) {
+    const d = domainOf(s.type)
+    if (d && s.status === 'completed' && s.day <= today) doneByDomain.set(d, [...(doneByDomain.get(d) ?? []), s.day])
+  }
+  const ownEases = buildOwnEases(events, liftSink, today).filter(e => !(doneByDomain.get(e.domain) ?? []).some(d => d > e.day))
   return {
     version: MODEL_VERSION,
     asOfDay: today,
-    lifts: buildLifts(events, today),
-    run: buildRun(events, today, flags),
+    lifts,
+    run,
     bag: buildBag(events, today, flags, sorenessAfter),
     klass: buildClass(events, today, d => worseItems(events.checkIns, d)),
     recovery: buildRecovery(events, today),
     back: buildBack(events, today, flags),
     adherence: buildAdherence(events, today),
+    load: buildLoad(sessionLoads(events, today), today),
+    levels: buildLevels(levelIn),
+    ownEases,
   }
 }
 
@@ -831,6 +856,9 @@ export function modelRows(m: AthleteModel): EstimateRow[] {
   rows.push(row('adherence', 'start-times', a, { usualStart: a.usualStart, pmShareOfDone: a.pmShareOfDone }))
   rows.push(row('adherence', 'rest-days', a, { restDays: a.restDays, preferredRestDays: a.preferredRestDays }))
   rows.push(row('adherence', 'schedule', a, a.scheduleSkips))
+  const known = m.load.recent.length ? { state: 'LEARNING' as EstimateState, n: m.load.recent.length, u: 0.5 } : { state: 'GUESS' as EstimateState, n: 0, u: 1 }
+  rows.push(row('load', 'pools', known, { ...m.load, ownEases: m.ownEases }))
+  for (const [d, l] of Object.entries(m.levels)) rows.push(row('level', d, { state: l.sessions >= 6 ? 'KNOWN' : l.sessions > 0 ? 'LEARNING' : 'GUESS', n: l.sessions, u: l.sessions >= 6 ? 0.15 : l.sessions > 0 ? 0.5 : 1 }, l))
   return rows
 }
 
@@ -855,5 +883,8 @@ export function modelSummary(m: AthleteModel): string[] {
   const starts = Object.entries(a.usualStart).map(([t, s]) => `${t} ~${hhmm(s.minute)} (${s.inCluster}/${s.of})`).join(', ')
   lines.push(`when: ${a.state} u=${a.u} ${cells}`)
   lines.push(`when: usual starts ${starts || '-'}; PM share of done ${a.pmShareOfDone ?? '-'}; rest days ${a.preferredRestDays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ') || '-'}; schedule skips ${a.scheduleSkips.total}`)
+  const L = m.load
+  lines.push(`load: strength fatigue ${L.strengthFatigue}, endurance fatigue ${L.enduranceFatigue}, endurance fitness ${L.enduranceFitness}, form ${L.form}; last 7 days strength ${L.last7.strength} endurance ${L.last7.endurance}`)
+  lines.push(`levels: ${Object.entries(m.levels).map(([d, l]) => `${d} ${l.level} (${l.sessions})`).join(', ')}; own eases holding: ${m.ownEases.map(e => `${e.domain} ${e.kind}`).join(', ') || 'none'}`)
   return lines
 }

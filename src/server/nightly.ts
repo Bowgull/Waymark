@@ -10,6 +10,7 @@ import { runWeeklyPass } from './weeklyPass'
 import { refreshAthleteModel } from './athleteModel'
 import { lastActiveDay, runBrainNight } from './brain'
 import { getActiveBlock } from './blockZeroData'
+import { rebuildNotebook } from './notebook'
 import { blockStartDay } from './coachData'
 import { athleteTimeZone, localDayIn } from './timeZone'
 
@@ -71,6 +72,14 @@ export async function runNightlyReplan(env: NightlyEnv, nowMs: number = Date.now
     console.log(`[cron] athlete model: lifts=${Object.keys(model.lifts).length} run=${model.run.state} recovery=${model.recovery.state} when=${model.adherence.state}`)
   } catch (err) {
     console.warn('[cron] athlete model failed', err)
+  }
+  try {
+    // The notebook's records rebuilt from their evidence every night, quiet nights too (item 1),
+    // so a lesson's re-check and retirement come on time.
+    const lessons = await rebuildNotebook(db, todayEpochDay, nowSec)
+    console.log(`[cron] notebook: ${lessons.filter(l => l.status !== 'retired').length} lessons`)
+  } catch (err) {
+    console.warn('[cron] notebook rebuild failed', err)
   }
   try {
     await pruneIdempotencyKeys(db, nowSec)

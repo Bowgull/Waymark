@@ -46,5 +46,26 @@
   },
   "fighter-stack": {
     "F1": "pass"
+  },
+  "progress-rules": {
+    "N1": "pass",
+    "N2": "pass",
+    "N3": "pass"
+  },
+  "progress-careful": {
+    "N1": "pass",
+    "N2": "pass",
+    "N3": "pass",
+    "N4": "pass"
+  },
+  "push-numbers": {
+    "Q1": "pass",
+    "Q2": "pass",
+    "Q3": "pass"
+  },
+  "push-note-only": {
+    "Q1": "pass",
+    "Q2": "pass",
+    "Q3": "pass"
   }
 }

@@ -218,8 +218,8 @@ export interface ReplayResult {
     day: number
     source: string
     calls: number
-    final: { today: Array<{ sessionId: string; candidateId: string; level: string; tweak: { setsDelta: number; loadStep: number; roundsDelta: number }; why: string | null; from: string }>; week: { from: string; actions: unknown[] } }
-    candidates: Array<{ id: string; sessionId: string; level: string; rules: boolean }>
+    final: { today: Array<{ sessionId: string; candidateId: string; level: string; tweak: { setsDelta: number; loadStep: number; roundsDelta: number }; why: string | null; from: string; above?: boolean }>; week: { from: string; actions: unknown[] }; reasons: string[] }
+    candidates: Array<{ id: string; sessionId: string; sessionType?: string; level: string; rules: boolean; above?: boolean; evidenceIds?: string[] }>
     verifyErrors: string[]
   }>
   /**

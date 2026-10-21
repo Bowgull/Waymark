@@ -734,7 +734,44 @@ export const coachDecisions = sqliteTable('coach_decisions', {
   costUsd: real('cost_usd').notNull().default(0),
   verifyErrorsJson: text('verify_errors_json'),
   outcomeJson: text('outcome_json'),
+  // 0046: the night's notebook proposals and what code accepted or refused.
+  notebookJson: text('notebook_json'),
 }, (t) => [
   uniqueIndex('idx_coach_decisions_day_trigger').on(t.day, t.trigger),
   index('idx_coach_decisions_decided_at').on(t.decidedAt),
+])
+
+// ─── The coach's notebook (0046, item 1) ───────────────────────
+// Lessons the nightly AI proposed and code checked; each tied to raw evidence
+// rows. Status, dates and counts are rebuilt from the links every night
+// (server/notebook.ts). Nothing on screen reads these.
+export const coachLessons = sqliteTable('coach_lessons', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(), // 'response' | 'preference' | 'back'
+  claim: text('claim').notNull(),
+  source: text('source').notNull(), // 'said' | 'seen'
+  status: text('status').notNull(), // 'candidate' | 'confirmed' | 'recheck' | 'retired'
+  firstSeenDay: integer('first_seen_day'),
+  lastConfirmedDay: integer('last_confirmed_day'),
+  supportCount: integer('support_count').notNull().default(0),
+  counterCount: integer('counter_count').notNull().default(0),
+  createdDay: integer('created_day').notNull(),
+  createdDecisionId: text('created_decision_id'),
+  retiredDay: integer('retired_day'),
+  retiredReason: text('retired_reason'),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [
+  index('idx_coach_lessons_status').on(t.status),
+])
+
+export const coachLessonEvidence = sqliteTable('coach_lesson_evidence', {
+  id: text('id').primaryKey(),
+  lessonId: text('lesson_id').notNull().references(() => coachLessons.id),
+  evidenceId: text('evidence_id').notNull(),
+  role: text('role').notNull(), // 'support' | 'counter'
+  day: integer('day').notNull(),
+  addedDay: integer('added_day').notNull(),
+  decisionId: text('decision_id'),
+}, (t) => [
+  uniqueIndex('idx_coach_lesson_evidence').on(t.lessonId, t.evidenceId),
 ])
