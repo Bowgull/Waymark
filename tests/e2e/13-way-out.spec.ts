@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
-import { enterFromToday, gotoToday, insertSession, todayRow } from './support/helpers'
+import { enterFromToday, gotoToday, insertSession, tapWaybookLine, todayRow } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -99,8 +99,7 @@ test('A page you went into goes back with the edge swipe (a Library group)', asy
 
 test('The Waybook box: CLOSE and tap outside fold it; the words are kept as a DRAFT, never shown on the line', async ({ page }) => {
   await gotoToday(page)
-  const line = page.locator('button.td-wline')
-  await line.tap()
+  const line = await tapWaybookLine(page)
   const box = page.getByRole('textbox', { name: 'Waybook entry' })
   await box.fill('Knee felt fine on the stairs today.')
 
@@ -111,7 +110,7 @@ test('The Waybook box: CLOSE and tap outside fold it; the words are kept as a DR
   await expect(page.getByText('Knee felt fine on the stairs today.')).toHaveCount(0)
 
   // Back: the words are there. CLOSE folds it the same way.
-  await line.tap()
+  await tapWaybookLine(page)
   await expect(box).toHaveValue('Knee felt fine on the stairs today.')
   await page.locator('.td-wb').getByRole('button', { name: 'Close', exact: true }).tap()
   await expect(box).toBeHidden()
@@ -119,7 +118,7 @@ test('The Waybook box: CLOSE and tap outside fold it; the words are kept as a DR
   // Even after the app is reloaded.
   await page.reload()
   await expect(page.locator('button.td-wline').getByRole('img', { name: 'DRAFT' })).toBeVisible({ timeout: 20_000 })
-  await page.locator('button.td-wline').tap()
+  await tapWaybookLine(page)
   await expect(page.getByRole('textbox', { name: 'Waybook entry' })).toHaveValue('Knee felt fine on the stairs today.')
   await page.getByRole('button', { name: 'SAVE', exact: true }).tap()
   await expect(page.getByText('Saved to the Waybook.')).toBeVisible()

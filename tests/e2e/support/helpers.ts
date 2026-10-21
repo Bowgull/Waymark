@@ -40,6 +40,25 @@ export async function openRow(row: Locator) {
   }).toPass({ timeout: 10_000 })
 }
 
+/**
+ * Taps the Waybook line once Today has stopped moving. The line sits just above
+ * SETTINGS; a board settling while the tap scrolls can drop the tap onto SETTINGS.
+ */
+export async function tapWaybookLine(page: Page) {
+  const line = page.locator('button.td-wline')
+  await line.evaluate(el => el.scrollIntoView({ block: 'center' }))
+  let last = ''
+  await expect(async () => {
+    const box = JSON.stringify(await line.boundingBox())
+    const same = box === last
+    last = box
+    expect(same).toBe(true)
+  }).toPass({ intervals: [250], timeout: 10_000 })
+  await line.tap()
+  await expect(page).toHaveURL(/\/today/)
+  return line
+}
+
 /** Tap a row open, then ENTER (the real path into a session). */
 export async function enterFromToday(page: Page, id: string) {
   await gotoToday(page)

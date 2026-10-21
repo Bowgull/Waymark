@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { gotoToday } from './support/helpers'
+import { gotoToday, tapWaybookLine } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -161,8 +161,7 @@ test.describe('moving (no Reduce Motion)', () => {
 
 test('page 61 unchanged: a tap on the scene closes an open board and does nothing else; a pull down at the top only bounces', async ({ page }) => {
   await gotoToday(page)
-  const line = page.locator('button.td-wline')
-  await line.tap()
+  const line = await tapWaybookLine(page)
   const box = page.getByRole('textbox', { name: 'Waybook entry' })
   await expect(box).toBeVisible()
   await scrollTo(page, 0)
