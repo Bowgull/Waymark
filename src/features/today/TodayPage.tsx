@@ -29,7 +29,7 @@ import { setWorldLantern, setWorldPlace } from '@/world/worldStore'
 
 import { ClassLearnedFlow } from '@/features/session/ClassLearnedFlow'
 import { ReassignRunSheet } from './ReassignRunSheet'
-import { AllDoneBoard, EmptyDayBoard, NoBlockBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip } from './TodayBoards'
+import { AllDoneBoard, EmptyDayBoard, NextDayBoard, NoBlockBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip } from './TodayBoards'
 import { TodayDay, type TodaySession } from './TodayDay'
 import { ALL_DONE_AFTER_CONFIRM_MS, fadesToAllDone, lanternFor, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
@@ -41,7 +41,7 @@ import { useBodyWatch } from '@/features/raven/bodyWatch'
 import { useRavenOnToday } from '@/features/raven/useRaven'
 import { DayOneLine, StartDayBoard, StartWaitBoard } from '@/features/program/StartDay'
 import { moveStartDay } from '@/features/program/startDayApi'
-import { dayOneLine, isPendingStart, startDayOf } from '@/lib/coach/startDay'
+import { dayOneLine, isPendingStart, startDayOf, startHasLeadIn, startPreviewLabel } from '@/lib/coach/startDay'
 import './today.css'
 
 /** The day's fade out, and ALL DONE's fade in, after the last Strava confirm. */
@@ -262,9 +262,13 @@ export function TodayPage() {
   useEffect(() => {
     if (!block?.id || block.currentWeek == null) return
     let cancelled = false
+    // Page 64: a Block Zero start still ahead reads its start's week (the lead-in, or week 1 from a Monday).
+    const start = block.blockType === 'block_zero' ? startDayOf(block.startedAt) : null
+    const pending = start != null && isPendingStart(start, todayEpoch)
     // A mid-week start: the lead-in and next Monday's week 1 are both week 1.
-    const leadIn = block.trainingWeek?.leadIn === true
-    apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${block.currentWeek}${leadIn ? '&leadIn=1' : ''}`)
+    const leadIn = pending ? startHasLeadIn(start) : block.trainingWeek?.leadIn === true
+    const weekNumber = pending ? 1 : block.currentWeek
+    apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${weekNumber}${leadIn ? '&leadIn=1' : ''}`)
       .then(w => {
         if (cancelled) return
         setWeek(w)
@@ -275,7 +279,7 @@ export function TodayPage() {
       apiFetch<WeekPayload | null>(`/api/weeks/current?blockId=${block.id}&weekNumber=${leadIn ? 1 : block.currentWeek + 1}`).then(w => { if (!cancelled) setNextWeek(w) }).catch(() => {})
     }
     return () => { cancelled = true }
-  }, [block?.id, block?.currentWeek, block?.trainingWeek?.leadIn, todayEpoch, weekVersion])
+  }, [block?.id, block?.currentWeek, block?.trainingWeek?.leadIn, block?.blockType, block?.startedAt, todayEpoch, weekVersion])
 
   // Silent Strava poll on mount. Refreshes Today once ingestion completes so
   // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
@@ -331,7 +335,12 @@ export function TodayPage() {
 
   // The week's changes and runes (page 56): Dagaz where the coach changed a day, Algiz where a session was missed.
   const { week: changes, markSeen, undo } = useWeekChanges(block ? mondayOf(todayEpoch) : null, changesVersion)
-  const strip = useMemo(() => (week?.sessions ? weekStripDays(withoutReplaced(week.sessions), mondayOf(todayEpoch), todayEpoch, d => runeForDay(changes, d)) : null), [week, todayEpoch, changes])
+  const strip = useMemo(() => {
+    if (!week?.sessions) return null
+    const days = weekStripDays(withoutReplaced(week.sessions), mondayOf(todayEpoch), todayEpoch, d => runeForDay(changes, d))
+    // page 64: a start still ahead: the days before it are empty, not rest days
+    return waitingFor != null ? days.map(d => (d.epochDay < waitingFor ? { ...d, rest: false } : d)) : days
+  }, [week, todayEpoch, changes, waitingFor])
   const rowRunes = useMemo(() => Object.fromEntries(sessions.map(s => [s.id, runeForSession(changes, s.id)])), [sessions, changes])
   const backList = useMemo(() => (backDay != null ? backChanges(changes, backDay) : []), [changes, backDay])
   // The raven (page 58): on the Morning Report, its boards, and the return's question on top.
@@ -686,6 +695,9 @@ export function TodayPage() {
   const newWeekTomorrow = todayEpoch + 1 > mondayOf(todayEpoch) + 6 ? nextWeek?.week?.weekNumber ?? null : null
   const tomorrowText = tomorrowLine(tomorrow, s => sessionDisplayName({ type: s.type, label: s.label ?? null, notes: s.notes ?? null }), newWeekTomorrow)
   const home = showsHome(mode)
+  // Page 64: under the waiting board, the start day's planned sessions (page 43's Tomorrow row).
+  const startSessions = waitingFor != null ? withoutReplaced(week?.sessions ?? []).filter(s => s.scheduledDate === waitingFor) : []
+  const startLineText = tomorrowLine(startSessions, s => sessionDisplayName({ type: s.type, label: s.label ?? null, notes: s.notes ?? null }))
   const dayOne = mode === 'day' && block?.blockType === 'block_zero' ? dayOneLine(blockStart, todayEpoch, withoutReplaced(sessions).length) : null
   // CHECK IN until all nine are in; partial answers don't count as logged.
   const morningAnswers = checkInAnswersFor(dailyLog ?? null, today)
@@ -697,7 +709,7 @@ export function TodayPage() {
       <TodayHeader date={todayDate} />
       {/* page 67: the clearing in the top 40%, the boards start under it and scroll up over it */}
       {mode === 'day' && <SceneWindow at={SCENE.boardsAtToday} />}
-      {strip && waitingFor == null && (
+      {strip && (
         <div className="wm-backwrap">
           <WeekStrip
             days={strip}
@@ -763,7 +775,19 @@ export function TodayPage() {
           <div className="td-spacer" />
           {mode === 'rest' && <RestDayBoards tomorrow={tomorrowIcons} tomorrowLine={tomorrowText} />}
           {mode === 'unprepared' && (waitingFor != null
-            ? <><StartWaitBoard startDay={waitingFor} todayDay={todayEpoch} onChange={() => setChangeStart(true)} /><div className="td-spacer" /></>
+            ? (
+              <>
+                <StartWaitBoard startDay={waitingFor} todayDay={todayEpoch} onChange={() => setChangeStart(true)} />
+                {startLineText && (
+                  <NextDayBoard
+                    label={startPreviewLabel(waitingFor, todayEpoch)}
+                    icons={startSessions.map(s => iconFor({ type: s.type, notes: s.notes ?? null }))}
+                    line={startLineText}
+                  />
+                )}
+                <div className="td-spacer" />
+              </>
+            )
             : blockChecked && !block
             ? <NoBlockBoard onStart={() => navigate('/program')} />
             : <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} />)}

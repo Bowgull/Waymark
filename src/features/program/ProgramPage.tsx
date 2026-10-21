@@ -257,8 +257,13 @@ export function ProgramPage() {
         if (existingBlock.returnPlan?.offerBlockZero) setBlockZeroPrompt('return_from_break')
 
         setBlock(existingBlock)
-        // Page 64: a Block Zero waiting for its start shows only the waiting board.
-        if (waitingStart(existingBlock) != null) return
+        // Page 64: a Block Zero waiting for its start: the waiting board, and its start's week under it
+        // (the lead-in, or week 1 from a Monday), as the server sends it.
+        if (waitingStart(existingBlock) != null) {
+          setWeekData(program.week)
+          setWeekNumber(program.weekNumber ?? 1)
+          return
+        }
         const cw = currentWeekOf(existingBlock)
         // A deep link (/program?day=YYYY-MM-DD) opens the week holding that day.
         const day = parseDayParam(new URLSearchParams(window.location.search).get('day'))
@@ -283,7 +288,8 @@ export function ProgramPage() {
     let cancelled = false
     const wn = weekForDay(dayParam, todayEpochDay, currentWeekOf(block), block.totalWeeks, firstWeekOf(block))
     void (async () => {
-      if (wn !== weekNumber) await loadWeek(block, wn).catch(() => {})
+      // a start still ahead shows only its own week
+      if (wn !== weekNumber && waitingStart(block) == null) await loadWeek(block, wn).catch(() => {})
       if (!cancelled) setOpenDay(dayParam)
     })()
     return () => { cancelled = true }
@@ -321,6 +327,12 @@ export function ProgramPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [block?.id, pastKey, doneCounts, currentDone, currentWeek])
 
+  /** Reads Program again from the server (one request, as on open). */
+  function reload() {
+    setLoading(true)
+    setReloadKey(k => k + 1)
+  }
+
   async function handleStartBlockZero(freshStart = false, startDay?: number) {
     // Fresh start clears all history, so it takes a second tap to confirm.
     if (freshStart && !confirmFreshStart) {
@@ -351,7 +363,7 @@ export function ProgramPage() {
       setAssessmentLoading(false)
       setAssessment(result)
       // No assessment (AI offline): prepare the current week now, as any open does (a start ahead: its own week).
-      if (!result && waitingStart(newBlock) != null) await prepareStartWeek(newBlock.id, startDay, getTodayISO()).catch(() => {})
+      if (!result && waitingStart(newBlock) != null) { await prepareStartWeek(newBlock.id, startDay, getTodayISO()).catch(() => {}); reload() }
       else if (!result) await loadWeek(newBlock, currentWeekOf(newBlock)).catch(() => {})
     } catch (e) {
       console.error('Failed to start Block Zero:', e)
@@ -369,6 +381,7 @@ export function ProgramPage() {
       if (ahead != null) {
         await prepareStartWeek(block.id, ahead, getTodayISO())
         setAssessment(null)
+        reload()
         return
       }
       const wd = await apiFetch<WeekData>('/api/weeks/generate', {
@@ -450,7 +463,7 @@ export function ProgramPage() {
       if (!block) return
       // a start still ahead: its week is prepared and the waiting board shows (page 64)
       const ahead = waitingStart(block)
-      if (ahead != null) void prepareStartWeek(block.id, ahead, getTodayISO()).catch(() => {})
+      if (ahead != null) void prepareStartWeek(block.id, ahead, getTodayISO()).catch(() => {}).then(reload)
       else void loadWeek(block, currentWeekOf(block)).catch(() => {})
     }
     return (
@@ -545,11 +558,11 @@ export function ProgramPage() {
     const saveStart = async (day: number) => {
       setSavingStart(true)
       try {
-        const moved = await moveStartDay<Block>(block.id, day, getTodayISO())
+        await moveStartDay<Block>(block.id, day, getTodayISO())
         setChangeOpen(false)
-        // TODAY starts now: Program opens on the week as usual.
-        if (waitingStart(moved) == null) { setLoading(true); setReloadKey(k => k + 1) }
-        else setBlock(b => (b ? { ...b, startedAt: moved.startedAt } : b))
+        // TODAY starts now: Program opens on the week as usual; a day still ahead shows its own week.
+        setOpenDay(null)
+        reload()
       } catch (e) {
         console.error('Failed to change the start day:', e)
         showPop("Couldn't save. Check your connection.", 'bad', { title: "COULDN'T SAVE", durationMs: 4000 })
@@ -557,10 +570,39 @@ export function ProgramPage() {
         setSavingStart(false)
       }
     }
+    // Below the board, the start's planned week as usual: the days before the start are empty and dim.
+    const startDays = weekDays(mondayOf(ahead))
+    const startOpen = openDay != null && startDays.includes(openDay) ? openDay : ahead
     return (
       <Frame>
         <div className="sd-gap" />
         <StartWaitBoard startDay={ahead} todayDay={todayEpochDay} onChange={() => setChangeOpen(true)} />
+        {weekData && (
+          <WeekView
+            key={weekData.week.id}
+            sessions={viewedSessions}
+            changes={changes}
+            markSeen={markSeen}
+            onUndo={async id => {
+              const ok = await undo(id)
+              if (ok) reload()
+              return ok
+            }}
+            onChanged={() => setChangesVersion(v => v + 1)}
+            weekNumber={Math.max(1, weekNumber)}
+            days={startDays}
+            todayEpochDay={todayEpochDay}
+            openDay={startOpen}
+            onOpenDay={setOpenDay}
+            startsOn={ahead}
+            onSessionUpdate={(id, patch) => {
+              setWeekData(prev => prev ? { ...prev, sessions: prev.sessions.map(s => (s.id === id ? { ...s, ...patch } : s)) } : null)
+            }}
+            onSessionAdded={session => {
+              setWeekData(prev => prev ? { ...prev, sessions: [...prev.sessions.filter(s => s.id !== session.id), session] } : null)
+            }}
+          />
+        )}
         {changeOpen && (
           <StartDayBoard todayDay={todayEpochDay} selected={ahead} change busy={savingStart} onPick={day => { void saveStart(day) }} onDismiss={() => setChangeOpen(false)} />
         )}

@@ -8,6 +8,8 @@ import {
   isChoosableStart,
   isPendingStart,
   startDayOf,
+  startHasLeadIn,
+  startPreviewLabel,
   startLine,
   startMeaning,
   startTiles,
@@ -57,5 +59,12 @@ assert(JSON.stringify(dayOneLine(TUE + 2, TUE + 2, 2)) === JSON.stringify({ flap
 assert(dayOneLine(TUE + 5, TUE + 5, 1)?.line === 'Lead-in day, optional. Week 1 starts Mon.', 'Sun: one session')
 assert(JSON.stringify(dayOneLine(TUE + 6, TUE + 6, 2)) === JSON.stringify({ flap: 'BLOCK ZERO · WEEK 1', line: 'Day 1 of 6 weeks.' }), 'Mon: week 1')
 assert(dayOneLine(TUE + 2, TUE + 3, 2) === null && dayOneLine(null, TUE, 2) === null, 'gone from day 2 on')
+
+
+// ─── the planned week under the waiting board ────────────────
+assert(startHasLeadIn(TUE + 1) && startHasLeadIn(TUE + 5), 'a mid-week or Sunday start leads in')
+assert(!startHasLeadIn(TUE + 6), 'a Monday start is week 1 that day')
+assert(startPreviewLabel(TUE + 1, TUE) === 'Tomorrow', 'a start tomorrow previews as Tomorrow')
+assert(startPreviewLabel(TUE + 2, TUE) === 'Starts Thu', 'a later start previews by its day')
 
 console.log('startDay: all ok')

@@ -212,17 +212,22 @@ export function RestDayBoards({ tomorrow, tomorrowLine }: { tomorrow: SessionIco
         <FlapLabel text="REST DAY" size="md" tone="gold" animate="mount" />
         <p>The work is in the bank.</p>
       </div>
-      {tomorrowLine && (
-        <Board>
-          <div className="td-next">
-            <span className="lbl">Tomorrow</span>
-            <span style={{ flex: 1 }} />
-            {tomorrow.map((k, i) => <SessionIcon key={`${k}-${i}`} kind={k} size={32} />)}
-          </div>
-          <p className="td-nextline">{tomorrowLine}</p>
-        </Board>
-      )}
+      {tomorrowLine && <NextDayBoard label="Tomorrow" icons={tomorrow} line={tomorrowLine} />}
     </>
+  )
+}
+
+/** Page 43's "Tomorrow" row: the label, the day's icons, one line. Page 64 reuses it under the waiting board ("Starts Wed"). */
+export function NextDayBoard({ label, icons, line }: { label: string; icons: SessionIconKey[]; line: string }) {
+  return (
+    <Board>
+      <div className="td-next">
+        <span className="lbl">{label}</span>
+        <span style={{ flex: 1 }} />
+        {icons.map((k, i) => <SessionIcon key={`${k}-${i}`} kind={k} size={32} />)}
+      </div>
+      <p className="td-nextline">{line}</p>
+    </Board>
   )
 }
 
