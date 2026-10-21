@@ -213,6 +213,15 @@ export interface ReplayResult {
   /** Every session at the end, for checks over the plan. */
   sessions: Array<{ id: string; day: number | null; type: string; label: string | null; slot: string | null; status: string; source: string | null; contextJson: string | null; rpe: number | null; durationSec: number | null }>
   errors: string[]
+  /** The nightly decisions (coach brain P3, coach_decisions rows). */
+  decisions?: Array<{
+    day: number
+    source: string
+    calls: number
+    final: { today: Array<{ sessionId: string; candidateId: string; level: string; tweak: { setsDelta: number; loadStep: number; roundsDelta: number }; why: string | null; from: string }>; week: { from: string; actions: unknown[] } }
+    candidates: Array<{ id: string; sessionId: string; level: string; rules: boolean }>
+    verifyErrors: string[]
+  }>
   /**
    * The athlete model (coach brain P1) as the nightly job stored it each morning
    * (compact: state and u per row), and as it stood after the last day.

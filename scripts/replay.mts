@@ -2,7 +2,7 @@
  * Coach-brain P0 replay (coach-brain.md §12.1): Josh's real history through
  * today's coach, on a COPY of a backup. Never production, never the repo.
  *
- *   npx tsx scripts/replay.mts --dump <backup.sql> --out <dir outside the repo> [--mode may-june|october]
+ *   npx tsx scripts/replay.mts --dump <backup.sql> --out <dir outside the repo> [--mode may-june|october] [--ai mirror|careful|sycophant|travel|offline]
  *
  * may-june (default): a fresh scratch database with the migrations and the
  *   library, Block Zero started on 2026-05-16, then every check-in, session,
@@ -17,7 +17,9 @@
  *
  * The output holds his personal data: --out must sit outside the repo
  * (the script refuses a path inside it). AI calls are counted and answered
- * offline; no network request leaves the process.
+ * offline; no network request leaves the process. The coach brain's nightly
+ * decision call (P3) is answered by a deterministic stand-in instead
+ * (lib/brain/mockAi.ts, --ai, default mirror); --ai offline makes it rules only.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join, resolve, relative, isAbsolute } from 'node:path'
@@ -29,6 +31,7 @@ import { scriptFromHistory, type History } from '../src/lib/coach/replay/history
 import { replayLines, easeStack } from '../src/lib/coach/replay/metrics'
 import type { ReplayScript } from '../src/lib/coach/replay/types'
 import { isoToEpochDay } from '../src/lib/dates'
+import { MOCK_AIS, type MockAiName } from '../src/lib/brain/mockAi'
 
 const arg = (name: string, fallback?: string) => {
   const i = process.argv.indexOf(name)
@@ -126,13 +129,17 @@ if (mode === 'may-june') {
   script = { name: 'october-restart-2026', fromDay: from, toDay: to, tzOffsetMin: TORONTO_SUMMER, days, talkTestBpm: 151 }
 }
 
-const result = await runReplay(replayDb, script)
+const aiName = arg('--ai', 'mirror') as MockAiName | 'offline'
+const result = await runReplay(replayDb, script, { decisionAi: aiName === 'offline' ? undefined : MOCK_AIS[aiName] })
 replayDb.close()
 const lines = replayLines(result)
 const stack = easeStack(result.doses)
 writeFileSync(join(outDir, `replay-${mode}.json`), JSON.stringify({ result, lines, stack }, null, 2))
 console.log(`replay ${result.name}: ${result.days.length} days, ${result.doses.length} sessions started, ${result.changes.length} change rows, ${result.aiCalls.length} AI calls tried, ${result.errors.length} errors`)
 for (const l of lines) console.log(`${!l.measured ? 'N/A ' : l.pass ? 'PASS' : 'FAIL'} ${l.id} ${l.title}: ${l.evidence}`)
+const sources = new Map<string, number>()
+for (const d of result.decisions ?? []) sources.set(d.source, (sources.get(d.source) ?? 0) + 1)
+console.log(`nightly decisions (AI stand-in: ${aiName}): ${[...sources.entries()].map(([k, n]) => `${k} ${n}`).join(', ') || 'none'}`)
 console.log('athlete model (coach brain P1, shadow) after the last day:')
 for (const m of result.model?.summary ?? []) console.log(`  ${m}`)
 console.log(`written: ${join(outDir, `replay-${mode}.json`)}`)

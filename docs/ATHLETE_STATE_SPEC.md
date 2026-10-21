@@ -2,6 +2,8 @@
 
 _The unified reasoning layer from `docs/INTELLIGENCE_AUDIT.md`. Date: 2026-06-10._
 
+> **Retired (coach brain P3, 2026-10-21).** The athlete-state AI call (`runAthleteState`) is removed. The coach brain makes one decision a night instead (`src/server/coachDecision.ts`, `src/lib/brain/decision.ts`); stored states are still read and guarded (`src/lib/athleteState/store.ts`, `guard.ts`). Kept for history.
+
 ## Goal
 
 Replace the fragmented, memoryless coaching rules with **one reasoning pass** that:

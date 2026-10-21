@@ -26,6 +26,7 @@ import type {
   AiCallRecord, AsPrescribed, ChangeRecord, DayRecord, DoseLayers, DoseRecord, LoggedLift, ReplayAction, ReplayResult, ReplayScript,
 } from '../../lib/coach/replay/types'
 import { liftPattern } from '../../lib/coach/replay/history'
+import { mockMessage, packetFromRequest, type MockAi } from '../../lib/brain/mockAi'
 
 const API_KEY = 'replay-only-not-a-secret'
 // A non-empty key so every AI caller tries (and is counted); the stub answers 400.
@@ -41,6 +42,7 @@ interface Phase { when: 'nightly' | 'day'; day: number }
 
 /** Which AI caller made a request, from the stack (tsx keeps file names). */
 function callerFromStack(stack: string): string {
+  if (stack.includes('coachDecision')) return 'coachDecision'
   const known = ['reactiveCoach', 'weeklyPlanAI', 'sessionReviewAI', 'ledgerInsightsAI', 'bagPrescriptionAI', 'runAthleteState', 'classComboAI', 'sessionSuggestions', 'blockZeroAssessment', 'transitionAI', 'summarize']
   for (const k of known) if (stack.includes(k)) return k
   const m = stack.match(/src[\\/](?:lib|server)[\\/][\w/\\.-]+\.ts/g)?.find(f => !f.includes('anthropic.ts') && !f.includes('replay'))
@@ -55,6 +57,12 @@ export interface DriverOptions {
    * it to stand in for a recorded AI answer (e.g. a stored athlete state).
    */
   beforeDay?: (day: number, sqlite: Database.Database) => void
+  /**
+   * Coach brain P3: a deterministic stand-in for the nightly decision call
+   * (lib/brain/mockAi.ts). Without one, the decision call is answered
+   * "offline" like every other AI call, and the rules' pick stands.
+   */
+  decisionAi?: MockAi
 }
 
 export async function runReplay(sqlite: Database.Database, script: ReplayScript, opts: DriverOptions = {}): Promise<ReplayResult> {
@@ -78,7 +86,10 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     if (url.includes('anthropic.com')) {
       let model = 'unknown'
       try { model = (JSON.parse(String(init?.body ?? '{}')) as { model?: string }).model ?? 'unknown' } catch { /* keep unknown */ }
-      aiCalls.push({ day: phase.day, caller: callerFromStack(new Error().stack ?? ''), model, when: phase.when })
+      // A nightly call reads the day before (the cron runs in the small hours): it counts for that day.
+      aiCalls.push({ day: phase.when === 'nightly' ? phase.day - 1 : phase.day, caller: callerFromStack(new Error().stack ?? ''), model, when: phase.when })
+      const decision = opts.decisionAi ? packetFromRequest(String(init?.body ?? '')) : null
+      if (decision && opts.decisionAi) return new Response(JSON.stringify(mockMessage(opts.decisionAi(decision.packet, decision.retry))), { status: 200, headers: { 'content-type': 'application/json' } })
       return new Response('{"type":"error","error":{"type":"invalid_request_error","message":"replay: offline"}}', { status: 400 })
     }
     return new Response('replay: no network', { status: 404 })
@@ -427,7 +438,13 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
   }
 
   const finalRows = await db.select().from(sessions)
+  const decisionRows = sqlite.prepare('SELECT day, source, calls, final_json, verify_errors_json, candidates_json FROM coach_decisions ORDER BY day').all() as Array<Record<string, unknown>>
   return {
+    decisions: decisionRows.map(r => ({
+      day: r.day as number, source: r.source as string, calls: r.calls as number,
+      final: JSON.parse(r.final_json as string), candidates: JSON.parse(r.candidates_json as string),
+      verifyErrors: r.verify_errors_json ? JSON.parse(r.verify_errors_json as string) as string[] : [],
+    })),
     name: script.name,
     fromDay: script.fromDay,
     toDay: script.toDay,

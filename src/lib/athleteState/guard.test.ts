@@ -1,11 +1,10 @@
 // Run: tsx src/lib/athleteState/guard.test.ts
 // The athlete model decides within the rules: clamped loadFactor, no push on
-// an ease day or after a gap, a one-line verdict, a 10-day expiry. Also the
-// request: Sonnet 5.5 (MODELS.reasoning) with structured output, no forced tool.
+// an ease day or after a gap, a one-line verdict, a 10-day expiry. (The AI
+// call that wrote these states is retired: coach brain P3 makes one decision
+// a night instead. Stored states are still read and guarded.)
 import { guardAthleteState, isAthleteStateFresh, ATHLETE_STATE_TTL_SEC } from './guard'
-import { athleteStateRequest, buildAthleteStatePrompt } from './runAthleteState'
-import { MODELS } from '../models'
-import type { AthleteContext, AthleteState } from './types'
+import type { AthleteState } from './types'
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(msg)
@@ -46,11 +45,5 @@ assert(gap.clamps.length >= 2 && (gap.state.guardrails ?? []).length === gap.cla
 assert(isAthleteStateFresh(open.state, T + 9 * 86400), 'fresh at 9 days')
 assert(!isAthleteStateFresh(open.state, T + 10 * 86400), 'stale at 10 days: never sets loads')
 assert(!isAthleteStateFresh({ computedAtEpoch: T }, T + 11 * 86400), 'old rows without expiry use the 10-day rule')
-
-const ctx: AthleteContext = { todayEpochDay: 20000, todayDow: 0, weekStart: 19994, weekEnd: 20000, lifts: [], effort: [], wellness: [], notes: [], runs: [], adherenceBlock: null, hrBlock: null, comboRatings: [], bodyweightKg: null, trainingMaxes: [], priorState: null }
-const req = athleteStateRequest([], buildAthleteStatePrompt(ctx))
-assert(req.model === MODELS.reasoning && req.model === 'claude-sonnet-5-5', 'model: MODELS.reasoning (Sonnet 5.5)')
-assert(req.tool_choice == null && req.tools == null && req.output_config?.format?.type === 'json_schema', 'structured output, no forced tool_choice')
-assert(typeof req.messages[0].content === 'string' && req.messages[0].content.includes('Reply with only the assessAthlete JSON object'), 'prompt asks for the JSON object')
 
 console.log('athlete-state guard tests passed')

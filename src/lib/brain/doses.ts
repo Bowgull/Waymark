@@ -46,7 +46,20 @@ export interface DoseCtx {
   backToday: number | null
   /** Open raven plans by region (an implemented plan is a limit). */
   openPlans: ReadonlyArray<{ region: string }>
+  /**
+   * The highest level this dose may take (coach brain P3): the nightly
+   * decision's pick when it is below the rules' own. Only ever lowers.
+   */
+  levelCap?: Level | null
 }
+
+/** Today's ceiling: the readiness state's, lowered by a decision's level cap. */
+export function ceilingFor(ctx: Pick<DoseCtx, 'state' | 'levelCap'>): Level {
+  return ctx.levelCap ? minLevel(CEILING[ctx.state], ctx.levelCap) : CEILING[ctx.state]
+}
+
+/** At or below RECOVER (a rest pick doses like recover if it is started anyway). */
+const recoverOrLess = (l: Level) => RANK[l] <= RANK.RECOVER
 
 // ─── Strength ────────────────────────────────────────────────
 
@@ -190,7 +203,7 @@ function blockZeroLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCe
     const first = fromTm ?? startKg(eq)
     const weights: Array<number | null> = []
     let w = first
-    const n = sessionCeiling === 'RECOVER' ? 2 : ctx.state === 'AMBER' ? WORKUP_SETS - 1 : WORKUP_SETS
+    const n = recoverOrLess(sessionCeiling) ? 2 : ctx.state === 'AMBER' || sessionCeiling === 'EASE' ? WORKUP_SETS - 1 : WORKUP_SETS
     for (let i = 0; i < n; i++) {
       weights.push(w)
       if (w != null && eq !== 'none') w = stepUpKg(w, exerciseId, eq, true)
@@ -293,7 +306,7 @@ function fighterLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCeil
 }
 
 export function strengthDose(ctx: DoseCtx, inp: StrengthIn): StrengthDose {
-  const ceiling = CEILING[ctx.state]
+  const ceiling = ceilingFor(ctx)
   const lifts = inp.main.map(tex => (inp.kind === 'fighter' && inp.fighter ? fighterLift(ctx, inp, tex, ceiling) : blockZeroLift(ctx, inp, tex, ceiling)))
   // HOLD sets: what the rules give with readiness and signals set aside (the replay's "plain" dose).
   const holdSets = inp.main.reduce((n, _tex, i) => {
@@ -305,7 +318,7 @@ export function strengthDose(ctx: DoseCtx, inp: StrengthIn): StrengthDose {
   const sets = lifts.reduce((n, l) => n + l.sets, 0)
   const level = lifts.reduce<Level>((m, l) => minLevel(m, l.level), lifts[0]?.level ?? 'HOLD')
   const why = [ctx.state === 'AMBER' || ctx.state === 'RED' ? ctx.stateWhy : null, ...lifts.map(l => l.why)].filter((w): w is string => !!w)
-  return { kind: 'strength', level, lifts, accessorySets: ceiling === 'RECOVER' ? 1 : null, holdSets, sets, why }
+  return { kind: 'strength', level, lifts, accessorySets: recoverOrLess(ceiling) ? 1 : null, holdSets, sets, why }
 }
 
 // ─── Run ─────────────────────────────────────────────────────
@@ -389,10 +402,10 @@ function capRounds(shape: { runSec: number; walkSec: number; rounds: number; war
 
 export function runDose(ctx: DoseCtx, inp: RunIn): RunDose {
   const m = ctx.model.run
-  const ceiling = CEILING[ctx.state]
+  const ceiling = ceilingFor(ctx)
   const why: string[] = []
   const talkTestDue = inp.kind === 'run_walk' && m.recheckDue
-  if (inp.bike || ceiling === 'RECOVER') {
+  if (inp.bike || recoverOrLess(ceiling)) {
     const reason = inp.bike?.why ?? ctx.stateWhy ?? 'Recover today.'
     const min = RECOVER_WALK_MIN
     return {
@@ -423,6 +436,8 @@ export function runDose(ctx: DoseCtx, inp: RunIn): RunDose {
   let shape = build(rung)
   const hold = build(rungAtOrBelow(Math.min(m.rungSec, inp.maxRungSec ?? Infinity)))
   if (ctx.state === 'AMBER') shape = { ...shape, rounds: Math.max(2, shape.rounds - 1) }
+  // An ease the decision chose (no struggle on file): one round fewer.
+  else if (level === 'EASE' && sig.level !== 'EASE') shape = { ...shape, rounds: Math.max(2, shape.rounds - 1) }
   // Caps: a single run ≤ 110% of the longest in 30 days (never under the first run-walk), the week ≤ +30%.
   const total = runWalkTotalSec(shape)
   const single = singleRunCap(total, inp.longestLast30Sec)
@@ -476,13 +491,14 @@ export interface BagDose {
 
 export function bagDose(ctx: DoseCtx, inp: { maxRounds: number; injuryWhy?: string | null }): BagDose {
   const b = ctx.model.bag
-  const ceiling = CEILING[ctx.state]
+  const ceiling = ceilingFor(ctx)
   if (b.roundsTolerated == null) {
     const rounds = Math.min(FIRST_BAG_ROUNDS, inp.maxRounds)
-    return { kind: 'bag', level: minLevel('HOLD', ceiling), rounds: ceiling === 'RECOVER' ? 3 : rounds, holdRounds: rounds, finishers: false, why: ['First bag session: technique rounds while it learns you.'] }
+    return { kind: 'bag', level: minLevel('HOLD', ceiling), rounds: recoverOrLess(ceiling) ? 3 : ceiling === 'EASE' ? rounds - 1 : rounds, holdRounds: rounds, finishers: false, why: ['First bag session: technique rounds while it learns you.'] }
   }
   const hold = Math.max(1, Math.min(inp.maxRounds, Math.round(b.roundsTolerated * (1 - 0.3 * b.u))))
-  if (ceiling === 'RECOVER' || inp.injuryWhy) return { kind: 'bag', level: 'RECOVER', rounds: Math.min(3, hold), holdRounds: hold, finishers: false, why: [inp.injuryWhy ?? ctx.stateWhy ?? 'Technique only today.'] }
+  if (ceiling === 'EASE' && !inp.injuryWhy) return { kind: 'bag', level: 'EASE', rounds: Math.max(1, hold - 1), holdRounds: hold, finishers: false, why: [] }
+  if (recoverOrLess(ceiling) || inp.injuryWhy) return { kind: 'bag', level: 'RECOVER', rounds: Math.min(3, hold), holdRounds: hold, finishers: false, why: [inp.injuryWhy ?? ctx.stateWhy ?? 'Technique only today.'] }
   let rounds = hold
   const why: string[] = []
   if (ctx.state === 'AMBER') { rounds = Math.max(1, rounds - 1); why.push(ctx.stateWhy ?? 'One round fewer today.') }
@@ -522,4 +538,57 @@ export function templateFromDose<T extends { exercises: Array<{ exerciseId: stri
     return tex
   })
   return { ...template, exercises }
+}
+
+// ─── A decision's tweak (coach brain P3) ─────────────────────
+
+/**
+ * A bounded tweak on top of a chosen dose (coach-brain.md §5.3). Each field is
+ * a step count: -1 or 0 (the rules never let a tweak go up; a harder dose is
+ * only ever one of the rules' own candidates). setsDelta: every main lift one
+ * set less; loadStep: every known lift one weight step down; roundsDelta: a
+ * run-walk or bag session one round less (a continuous run 10% shorter).
+ */
+export interface Tweak { setsDelta: number; loadStep: number; roundsDelta: number }
+
+export const NO_TWEAK: Tweak = { setsDelta: 0, loadStep: 0, roundsDelta: 0 }
+
+export function isNoTweak(t: Tweak | null | undefined): boolean {
+  return !t || (t.setsDelta === 0 && t.loadStep === 0 && t.roundsDelta === 0)
+}
+
+export function tweakStrength(d: StrengthDose, t: Tweak, equipment: Readonly<Record<string, LoadEquipment>>): StrengthDose {
+  if (isNoTweak(t)) return d
+  const lifts = d.lifts.map(l => {
+    let { sets, weightKg, change, setWeightsKg } = l
+    if (t.setsDelta < 0) {
+      sets = Math.max(l.workUp ? 2 : 1, sets + t.setsDelta)
+      if (setWeightsKg) setWeightsKg = setWeightsKg.slice(0, sets)
+    }
+    if (t.loadStep < 0 && !l.workUp && weightKg != null && weightKg > 0) {
+      const eq = equipment[l.exerciseId] ?? 'none'
+      if (eq !== 'none') {
+        const down = snap(weightKg * (1 - STEP_DOWN[liftRegion(l.exerciseId)]), eq, 'down')
+        if (down != null && down < weightKg) { weightKg = down; change = 'decrease' }
+      }
+    }
+    return { ...l, sets, weightKg, change, setWeightsKg, level: minLevel(l.level, 'EASE') }
+  })
+  return { ...d, lifts, sets: lifts.reduce((n, l) => n + l.sets, 0), level: minLevel(d.level, 'EASE') }
+}
+
+export function tweakRun(d: RunDose, t: Tweak): RunDose {
+  if (isNoTweak(t) || t.roundsDelta >= 0 || d.walkOnly) return d
+  if (d.rounds <= 1) {
+    const sec = Math.round((d.runSec * 0.9) / 30) * 30
+    return { ...d, runSec: sec, totalSec: sec, runTotalSec: sec, level: minLevel(d.level, 'EASE') }
+  }
+  const rounds = Math.max(2, d.rounds + t.roundsDelta)
+  const shape = { runSec: d.runSec, walkSec: d.walkSec, rounds, warmupSec: d.warmupSec }
+  return { ...d, rounds, totalSec: runWalkTotalSec(shape), runTotalSec: d.runSec * rounds, level: minLevel(d.level, 'EASE') }
+}
+
+export function tweakBag(d: BagDose, t: Tweak): BagDose {
+  if (isNoTweak(t) || t.roundsDelta >= 0) return d
+  return { ...d, rounds: Math.max(1, d.rounds + t.roundsDelta), finishers: false, level: minLevel(d.level, 'EASE') }
 }
