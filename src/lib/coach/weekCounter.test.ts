@@ -9,20 +9,18 @@ const base = (over: Partial<TrainingWeekInput>): TrainingWeekInput => ({
 const trained = (weeks: number[]) => weeks.flatMap(w => [MON + 7 * w, MON + 7 * w + 2, MON + 7 * w + 4])
 
 assert(anchorMondayFor(MON + 2) === MON && anchorMondayFor(MON + 3) === MON + 7 && anchorMondayFor(MON + 6) === MON + 7, 'Fighter: Mon-Wed starts count their week; Thu-Sun starts lead into the next')
-// Block Zero: week 1 always starts on a Monday. Start each weekday Mon..Sun.
+// Block Zero (coach brain P2): no lead-in. The start's calendar week is week 1, whatever the weekday.
 for (let i = 0; i < 7; i++) {
-  const anchor = anchorMondayFor(MON + i, 'block_zero')
-  assert(anchor === (i === 0 ? MON : MON + 7), `Block Zero start day +${i}: week 1 is ${i === 0 ? 'that Monday' : 'the next Monday'}`)
+  assert(anchorMondayFor(MON + i, 'block_zero') === MON, `Block Zero start day +${i}: week 1 is that calendar week`)
   const wrong: number[] = []
-  for (let d = MON + i; d < MON + 14; d++) {
+  for (let d = MON + i; d < MON + 7; d++) {
     const tw = trainingWeek(base({ blockType: 'block_zero', totalWeeks: 6, startDay: MON + i, day: d, todayDay: d }))
-    const lead = i > 0 && d < MON + 7
-    if (tw.leadIn !== lead || isLeadInDay(MON + i, d) !== lead || tw.week !== 1) wrong.push(d - MON)
+    if (tw.leadIn || isLeadInDay(MON + i, d) || tw.week !== 1) wrong.push(d - MON)
   }
-  assert(wrong.length === 0, `start +${i}: lead-in is ${i === 0 ? 'empty' : `days +${i}..+6`}, every day reads week 1${wrong.length ? ` (wrong: ${wrong})` : ''}`)
+  assert(wrong.length === 0, `start +${i}: no lead-in, every day of the start week reads week 1${wrong.length ? ` (wrong: ${wrong})` : ''}`)
 }
 const bzLate = trainingWeek(base({ blockType: 'block_zero', totalWeeks: 6, startDay: MON + 2, completedKeyDays: [MON + 3, MON + 5, MON + 7, MON + 9], day: MON + 14, todayDay: MON + 14 }))
-assert(bzLate.week === 2 && !bzLate.leadIn, 'Wednesday start: lead-in work does not count a week; the Monday after week 1 is week 2')
+assert(bzLate.week === 3 && !bzLate.leadIn, 'Wednesday start: its week is week 1, so the Monday two weeks on is week 3')
 assert(!trainingWeek(base({ startDay: MON + 4, day: MON + 4 })).leadIn, 'Fighter never reads as lead-in')
 
 const steady = trainingWeek(base({ completedKeyDays: trained([0, 1, 2]), day: MON + 21, todayDay: MON + 21 }))

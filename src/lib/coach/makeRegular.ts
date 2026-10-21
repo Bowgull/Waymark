@@ -10,8 +10,13 @@
 
 import { checkSessionChange, type PlacementContext } from './placement'
 import { DAY_NAMES, dowOf, isoOf, mondayOf, plannedLoad, sessionName, type TimeSlot } from './sessions'
-import { effortVerdict, SORE_NEXT_DAY } from './feltHard'
-import type { ProofTile } from './rampUp'
+import { effortVerdict, SORE_NEXT_DAY } from './effort'
+
+/** A short fact behind a coach line, on a flap ("EASY 3 OF 3"). */
+export interface ProofTile {
+  label: string
+  value: string
+}
 
 export const MAKE_REGULAR_MIN_WEEKS = 2
 /** After a no (or a lapse), the same type is not asked about again for this long. */

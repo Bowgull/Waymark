@@ -87,6 +87,8 @@ export const sessions = sqliteTable('sessions', {
   contextJson: text('context_json'),
   // 'template' | 'ad_hoc' | 'coach' | 'replace'. Null = written before 0027.
   source: text('source'),
+  // 0044: the coach brain's dose (P2), JSON.
+  doseJson: text('dose_json'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_sessions_date').on(t.scheduledDate),
@@ -533,6 +535,8 @@ export const settings = sqliteTable('settings', {
   // 0032: Naruto progress (arc name, next episode 1..220).
   narutoArc: text('naruto_arc'),
   narutoEp: integer('naruto_ep'),
+  // 0044: the phone's IANA time zone.
+  timeZone: text('time_zone'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 })

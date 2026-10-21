@@ -1,7 +1,6 @@
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
 import { applyStoredBlockZeroTransition, getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
-import { rebalanceForClassTonight } from './classTonight'
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { cors } from 'hono/cors'
@@ -9,7 +8,7 @@ import { cors } from 'hono/cors'
 import { createDB } from '../db/client'
 import { CONSISTENCY_SPAN, blockConsistency, weeksConsistency } from '../lib/ledgerConsistency'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, runTypes, techniques, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
-import { athleteDayFrom, isoToEpochDay, mondayOf, TODAY_HEADER } from '../lib/dates'
+import { athleteDayFrom, isoToEpochDay, mondayOf, TODAY_HEADER, TZ_HEADER } from '../lib/dates'
 import { cycleWeeks } from '../lib/programWeeks'
 import { loggedAtSec } from '../lib/units'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
@@ -25,44 +24,37 @@ import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, sn
 import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
-import { BLOCK_ZERO_BASE_WEEKS, CLASS_EASE_LINE, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
+import { BLOCK_ZERO_BASE_WEEKS, CLASS_EASE_LINE, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, validateTestResult } from '../lib/blockZero'
 import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, gotBodyNote, lowerLegOnWatch, markAgainstFlag, ravenLineFor, seenBodyNote } from './bodyWatch'
-import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
+import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
 import { allBoardRows, boardSuggestions, computeSuggestions } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, weekLineFor } from './weeklyPass'
-import { applyFeltHard, applyTmUpdate, coachPushFrom, maybeRampUp } from './coachAsks'
-import { addedWhy, applyPendingMerges, emptyState, lineChanges, markSeen, pmStart, rebalanceAfter, reasonWords, recordChanges, rolloverAndFix, snap, undoChange, weekChangeViews } from './changes'
-import { runAthleteState } from '../lib/athleteState/runAthleteState'
+import { applyTmUpdate } from './coachAsks'
+import { addedWhy, applyPendingMerges, emptyState, lineChanges, markSeen, pmStart, reasonWords, recordChanges, rolloverAndFix, snap, undoChange, weekChangeViews } from './changes'
 import { loadEasyHrCeiling } from '../lib/hrAnalysis'
 import { isZone2Run, stravaPlanLine } from '../lib/stravaMatch'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
-import { loadLiftTrends } from '../lib/athleteState/liftTrends'
-import { loadLatestAthleteState, resolveEffectiveLift } from '../lib/athleteState/store'
 import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 import { waybookEntries } from '../lib/waybook'
-import { runReactiveReplan } from '../lib/reactiveCoach'
 import { strava } from './routes/strava'
 import { clearCollectedTrainingData } from './trainingReset'
-import { easeForReadiness, getActiveBlock, loadMtRamp, listBlockTests, planBlockZeroStrength, planSetWeightKg, readinessFor, recordCheckSetE1rm, upsertBlockTest, type BlockZeroStrengthPlan } from './blockZeroData'
+import { getActiveBlock, loadMtRamp, listBlockTests, readinessFor, recordCheckSetE1rm, upsertBlockTest } from './blockZeroData'
 import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
 import { pendingReviews } from './linkHealth'
 import {
-  blockDayPlan,
   blockStartDay,
   bodyPlanMark,
   currentBlockWeek,
   loadInjuryFlag,
   loadPlacementContext,
-  isBlockLeadInDay,
-  loadTemplateExtras,
-  mtClassDays,
   startedAtForLocalDay,
+  dayHasPlan,
   generateDaySessions,
   latestWeekPlan,
   loadSessionCoachState,
@@ -70,9 +62,10 @@ import {
   returnContextFor,
   trainingWeekFor,
   weekStamps,
-  type SessionCoachState,
 } from './coachData'
-import { EASED_RUN_FACTOR, adjustFighterRun, adjustFighterStrength, applyCoachPush, liftTrendReason } from './coachPrescribe'
+import { capToday, doseFor, type StoredDose } from './brain'
+import { noteAppOpen } from './timeZone'
+import { templateFromDose } from '../lib/brain/doses'
 
 type Bindings = {
   DB: D1Database
@@ -122,6 +115,15 @@ function timingSafeEqualStr(a: string, b: string): boolean {
   for (let i = 0; i < Math.max(ea.length, eb.length); i++) diff |= (ea[i] ?? 0) ^ (eb[i] ?? 0)
   return diff === 0
 }
+
+// The phone's zone and the day the app was opened (coach brain P2): kept on
+// settings for local days and the nightly pass's quiet-days rule.
+app.use('/api/*', async (c, next) => {
+  if (c.req.header(TODAY_HEADER) != null || c.req.header(TZ_HEADER) != null) {
+    try { await noteAppOpen(createDB(c.env), c.req.header(TZ_HEADER), Math.floor(Date.now() / 1000)) } catch (err) { console.warn('[tz] note failed', err) }
+  }
+  return next()
+})
 
 app.route('/api/strava', strava)
 app.route('/api/logs', logs)
@@ -198,17 +200,6 @@ function computeWarmupWeightKg(trainingMaxKg: number | null): number | null {
   return Math.round(trainingMaxKg * 0.5 * 100) / 100
 }
 
-// What today's Block Zero rules did to a strength session, for the response
-// and sessions.context_json: auto-ease, back swaps, RIR-based loads.
-function blockZeroPlanSummary(plan: BlockZeroStrengthPlan) {
-  return {
-    autoEase: plan.autoEase,
-    backToday: plan.backToday,
-    swaps: plan.swaps,
-    loads: [...plan.loads.entries()].map(([exerciseId, l]) => ({ exerciseId, weightKg: l.weightKg, change: l.change, reason: l.reason })),
-  }
-}
-
 async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const sexes = await db.select().from(strengthSessionExercises)
@@ -265,34 +256,17 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   return { session, exercises: result, plannedMin }
 }
 
-/** A Block Zero strength session in the lead-in: the intro session (Part B). */
-async function isLeadInStrength(db: DrizzleDB, session: { blockType: string | null; scheduledDate: number | null }): Promise<boolean> {
-  if (session.blockType !== 'block_zero' || session.scheduledDate == null) return false
-  return isBlockLeadInDay(await getActiveBlock(db), session.scheduledDate)
-}
-
 async function buildStrengthPreview(db: DrizzleDB, sessionId: string, todayDay: number) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   if (!session) return null
 
-  // Same template lookup logic as start-strength — keep in sync
-  const epochDay = session.scheduledDate ?? 0
-  const dateMs = epochDay * 86400 * 1000
-  const dayOfWeek = new Date(dateMs).getUTCDay()
+  // The brain's dose (coach brain P2), the same one start-strength writes.
   const blockWeek = session.blockWeek ?? 1
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
-  let template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label, { leadIn: await isLeadInStrength(db, session) })
-  // A missed session's main lifts, when the coach moved them here (page 56 §5).
-  template = withMergedLifts(template, session.contextJson, blockWeek, blockType)
+  const dose = await doseFor(db, session, todayDay)
+  const base = withMergedLifts(getStrengthTemplate(new Date((session.scheduledDate ?? 0) * 86400000).getUTCDay(), blockWeek, blockType, session.label), session.contextJson, blockWeek, blockType)
+  const template = dose?.strength ? templateFromDose(base, dose.strength) : base
   const wavePct = getWeekPercentage(blockWeek, blockType)
-  // Same coach and Block Zero adjustments start-strength applies.
-  const state = await loadSessionCoachState(db, session, todayDay)
-  const push = applyCoachPush(template, coachPushFrom(session.contextJson), state)
-  template = push.template
-  const bzPlan = blockType === 'block_zero' ? await planBlockZeroStrength(db, session, template, coachStrengthInputs(state)) : null
-  if (bzPlan) template = bzPlan.template
-  const fighter = blockType === 'fighter' ? adjustFighterStrength(template, state) : null
-  if (fighter) template = fighter.template
 
   const exRows = await db.select().from(exercises)
   const exMap = new Map(exRows.map(e => [e.id, e]))
@@ -305,12 +279,9 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string, todayDay: 
     const workingSets = tex.sets.filter(s => !s.isWarmup)
     const setsCount = workingSets.length
     const targetReps = workingSets[0]?.targetReps ?? 0
-    const bzLoad = tex.section === 'main' ? bzPlan?.loads.get(tex.exerciseId) : undefined
-    const base = computeWorkingWeightKg(tmKg, tex.section, wavePct)
-    const raw = bzLoad ? bzLoad.weightKg : base != null && fighter && tex.section === 'main' ? Math.round(base * fighter.loadMultiplier * Math.min(push.loadFactor, RAMP_LOAD_STEP) * 100) / 100 : base
-    // Same plate snapping as start-strength, so the preview matches the bar.
-    const prescribedWeightKg = raw != null ? snapForChangeKg(raw, loadEquipment(ex?.equipment), bzLoad?.change, bzLoad?.fromKg) : null
-
+    const written = workingSets[workingSets.length - 1]?.suggestedWeightKg ?? null
+    const fallback = computeWorkingWeightKg(tmKg, tex.section, wavePct)
+    const prescribedWeightKg = written ?? (fallback != null ? snapLoadKg(fallback, loadEquipment(ex?.equipment)) : null)
     return {
       exerciseId: tex.exerciseId,
       name: ex?.name ?? tex.label,
@@ -330,25 +301,18 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string, todayDay: 
     session,
     templateLabel: template.label,
     exercises: previewExercises,
-    // The planned length from the template's sets and rests (the done summary's "+N min").
     plannedMin: plannedStrengthMinutes(template.exercises.flatMap(tex => tex.sets.map(st => ({ isWarmup: st.isWarmup, restSec: st.restSec })))),
-    ...(bzPlan ? { blockZero: blockZeroPlanSummary(bzPlan) } : {}),
-    coach: coachSummary(state, fighter),
+    ...(dose?.strength ? { brain: brainSummary(dose) } : {}),
   }
 }
 
-/** What the coach rules hand Block Zero strength planning. */
-function coachStrengthInputs(state: SessionCoachState) {
-  return { returnCtx: state.returnCtx, coachEase: state.coachEase, injury: state.injuryAction }
-}
-
-/** The coach's reasons for today's loads, for the response and context_json. */
-function coachSummary(state: SessionCoachState, fighter: { loadMultiplier: number; noPush: boolean; notes: string[] } | null) {
+/** What the brain decided, for the response and context_json (level, readiness, each lift's why). */
+function brainSummary(dose: StoredDose) {
   return {
-    returnRamp: state.returnCtx.active ? { gapDays: state.returnCtx.plan.gapDays, tier: state.returnCtx.plan.tier, loadFactor: state.returnCtx.loadFactor, volumeFactor: state.returnCtx.volumeFactor, reason: state.returnCtx.reason } : null,
-    coachEase: state.coachEase,
-    injury: state.injury ? { region: state.injury.region, note: state.injuryAction.note } : null,
-    ...(fighter ? { loadMultiplier: fighter.loadMultiplier, noPush: fighter.noPush, notes: fighter.notes } : {}),
+    level: dose.level,
+    state: dose.state,
+    why: dose.why,
+    lifts: (dose.strength?.lifts ?? []).map(l => ({ exerciseId: l.exerciseId, weightKg: l.weightKg, sets: l.sets, reps: l.reps, targetRir: l.targetRir, change: l.change, workUp: l.workUp, level: l.level, why: l.why })),
   }
 }
 
@@ -453,96 +417,6 @@ async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
   return { session, rounds: result, plannedMin, roundSecs }
 }
 
-const RUN_SESSION_TYPES = ['foundation_run', 'running']
-
-// Run history the Block Zero guards need (R7 110% single run, R8 30% weekly),
-// relative to the session's date. The session itself is left out so the
-// prescription reads the same before and after it is logged.
-async function loadRunGuardInputs(db: DrizzleDB, sessionId: string | null, weekPlanId: string | null, epochDay: number) {
-  const dow = new Date(epochDay * 86400000).getUTCDay()
-  const monday = epochDay - ((dow + 6) % 7)
-  const historyStart = Math.min(epochDay - 30, monday - 14)
-
-  const done = await db
-    .select({ sessionId: sessions.id, scheduledDate: sessions.scheduledDate, durationSec: runSessions.durationSec })
-    .from(runSessions)
-    .innerJoin(sessions, eq(runSessions.sessionId, sessions.id))
-    .where(and(eq(sessions.status, 'completed'), gte(sessions.scheduledDate, historyStart), lte(sessions.scheduledDate, monday + 6)))
-  const others = done.filter(r => r.sessionId !== sessionId && r.scheduledDate != null)
-
-  const longestLast30Sec = others
-    .filter(r => r.scheduledDate! >= epochDay - 30 && r.scheduledDate! <= epochDay)
-    .reduce((m, r) => Math.max(m, r.durationSec ?? 0), 0)
-  const weekSec = (from: number) => others
-    .filter(r => r.scheduledDate! >= from && r.scheduledDate! < from + 7)
-    .reduce((sum, r) => sum + (r.durationSec ?? 0), 0)
-  // R3 (page 56): the larger of the last two weeks, so one swap never shrinks next week's runs.
-  const lastWeekRunSec = runAllowanceBaseSec(weekSec(monday - 7), weekSec(monday - 14))
-  const thisWeekSoFarSec = others
-    .filter(r => r.scheduledDate! >= monday && r.scheduledDate! <= monday + 6)
-    .reduce((sum, r) => sum + (r.durationSec ?? 0), 0)
-
-  const upcoming = await db.select({ id: sessions.id, type: sessions.type, status: sessions.status, weekPlanId: sessions.weekPlanId })
-    .from(sessions)
-    .where(and(gte(sessions.scheduledDate, epochDay), lte(sessions.scheduledDate, monday + 6)))
-  // Only this week's plan counts, so planned runs left over from an ended block don't split the budget.
-  const laterRuns = upcoming.filter(s => s.id !== sessionId && (weekPlanId == null || s.weekPlanId === weekPlanId) && RUN_SESSION_TYPES.includes(s.type) && (s.status === 'planned' || s.status === 'in_progress'))
-
-  return {
-    longestLast30Sec,
-    weekly: { lastWeekRunSec, thisWeekSoFarSec, sessionsLeftThisWeek: laterRuns.length + 1 },
-  }
-}
-
-// Block Zero run-walk: week shape from the rules module, capped by the run
-// guards and the return ramp, under the shared easy-run HR ceiling. runType
-// stays 'zone2' so the run screen keeps its easy-run framing and HR ceiling.
-async function getBlockZeroRunPrescription(db: DrizzleDB, session: RunSessionInput, weekNumber: number, state: SessionCoachState, todayEpochDay: number) {
-  const epochDay = session.scheduledDate ?? todayEpochDay
-  const guards = await loadRunGuardInputs(db, session.id ?? null, session.weekPlanId, epochDay)
-  // R9: talk test, else HRmax, else age. Compliance scoring reads the same ceiling.
-  const ceiling = await loadEasyHrCeiling(db, epochDay)
-  // F12/F13: the return ramp trims run time like the caps do.
-  const ramp = state.returnCtx.active ? state.returnCtx : null
-  // A raven's plan: the run comes back at an earlier week's shape (2:00 / 1:00 × 7, then 3:30 × 5).
-  const shapeWeek = bodyPlanMark(session.contextJson ?? null)?.shapeWeek
-  const runWeek = shapeWeek != null && shapeWeek < weekNumber ? shapeWeek : weekNumber
-  const plannedSec = runWalkTotalSec(getRunWalkWeek(runWeek))
-  // A coach ease: about 80% of the time, or the rebalance's rounds or minutes (page 56).
-  const ease = state.coachEase
-  const easeCap = ease?.kind === 'rounds' && ease.rounds != null
-    ? { capSec: runWalkTotalSec({ ...getRunWalkWeek(runWeek), rounds: ease.rounds }), reason: ease.reason }
-    : ease?.kind === 'reduce' ? { capSec: ease.capMin != null ? ease.capMin * 60 : Math.round(plannedSec * EASED_RUN_FACTOR), reason: ease.reason } : null
-  const rampCap = ramp ? { capSec: Math.round(plannedSec * ramp.volumeFactor), reason: ramp.reason ?? 'Back from a break. Shorter today.' } : null
-  const extraCap = rampCap && easeCap ? (easeCap.capSec < rampCap.capSec ? easeCap : rampCap) : rampCap ?? easeCap
-  const p = prescribeRunWalk({ week: runWeek, ...guards, hrCeilingBpm: ceiling.bpm, extraCap })
-  const base = {
-    weekNumber: blockZeroTrainingWeek(weekNumber),
-    runType: 'zone2',
-    targetDesc: p.reasons.length > 0 ? `${p.targetDesc} ${p.reasons.join(' ')}` : p.targetDesc,
-    targetDurSec: p.totalSec,
-    targetDistKm: null,
-    z2CeilingBpm: ceiling.bpm,
-    runWalk: { runSec: p.runSec, walkSec: p.walkSec, rounds: p.rounds, warmupSec: p.warmupSec, capped: p.capped },
-  }
-
-  // Auto-ease: readiness or load says run down, an applied coach ease, or an
-  // injury flag on the legs or back. The run becomes an easy walk or bike.
-  const report = await readinessFor(db, epochDay)
-  const eased = easeForReadiness(report, { type: 'foundation_run', label: 'Run-Walk', timeSlot: 'am', estimatedMin: Math.round(p.totalSec / 60) })
-  const coachWhy = state.injuryAction.action === 'walk_or_bike' ? state.injuryAction.note : state.coachEase?.kind === 'run_to_walk' ? state.coachEase.reason : null
-  if (!eased.eased && !coachWhy) return { ...base, autoEase: { eased: false, reason: null } }
-  const min = eased.eased ? eased.session.estimatedMin : Math.min(30, Math.max(15, Math.round(p.totalSec / 60)))
-  const reason = (eased.eased ? eased.reason : coachWhy) ?? 'Easy day.'
-  return {
-    ...base,
-    targetDesc: `Easy walk or bike, ${min} min. Keep HR at or below ${ceiling.bpm} bpm. ${reason}`,
-    targetDurSec: min * 60,
-    runWalk: { runSec: 0, walkSec: 0, rounds: 0, warmupSec: min * 60, capped: p.capped },
-    autoEase: { eased: true, reason },
-  }
-}
-
 interface RunSessionInput {
   id?: string
   type?: string
@@ -554,56 +428,47 @@ interface RunSessionInput {
   contextJson?: string | null
 }
 
-// Helper: get running prescription for a session based on its training week and run category
+function secWords(sec: number): string {
+  return sec >= 60 && sec % 60 === 0 ? `${sec / 60} min` : sec > 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : `${sec} s`
+}
+
+/**
+ * A run's prescription from the brain's dose (coach brain P2): the run-walk's
+ * pieces and rounds (Block Zero), or the run's minutes, under the HR line.
+ * The dose already holds the caps (R7 single run, R8 week) and the readiness
+ * ceiling; nothing else multiplies it.
+ */
 async function getRunPrescription(db: DrizzleDB, session: RunSessionInput, todayEpochDay: number) {
-  let weekNumber: number | null = null
-  const epochDay = session.scheduledDate ?? todayEpochDay
-
-  if (session.weekPlanId) {
-    const [wp] = await db.select().from(weekPlans).where(eq(weekPlans.id, session.weekPlanId))
-    if (wp) weekNumber = wp.weekNumber
+  const [row] = session.id ? await db.select().from(sessions).where(eq(sessions.id, session.id)) : []
+  if (!row) return null
+  const weekNumber = await blockWeekForSession(db, row, row.scheduledDate ?? todayEpochDay)
+  const dose = (await doseFor(db, row, todayEpochDay))?.run
+  if (!dose) return null
+  const why = dose.why.join(' ')
+  const ceiling = `Keep HR at or below ${dose.hrCeilingBpm} bpm.`
+  const base = { weekNumber: row.blockType === 'block_zero' ? blockZeroTrainingWeek(weekNumber) : weekNumber, targetDistKm: null, z2CeilingBpm: dose.hrCeilingBpm, talkTestDue: dose.talkTestDue, brain: { level: dose.level, rungSec: dose.rungSec, why: dose.why } }
+  if (dose.walkOnly) {
+    const min = Math.round(dose.totalSec / 60)
+    return {
+      ...base, runType: 'zone2', targetDesc: `Easy walk or bike, ${min} min. ${ceiling} ${why}`.trim(), targetDurSec: dose.totalSec,
+      runWalk: row.blockType === 'block_zero' && row.type === 'foundation_run' ? { runSec: 0, walkSec: 0, rounds: 0, warmupSec: dose.totalSec, capped: dose.capped } : undefined,
+      autoEase: { eased: true, reason: why || null }, coach: { eased: true, reasons: dose.why },
+    }
   }
-
-  if (weekNumber == null) {
-    // Fallback: the active block's training week (paused through gaps)
-    const block = await getActiveBlock(db)
-    if (block) weekNumber = (await trainingWeekFor(db, block, epochDay, epochDay)).week
+  if (dose.rounds > 1 && dose.walkSec > 0) {
+    return {
+      ...base, runType: 'zone2', targetDurSec: dose.totalSec,
+      targetDesc: `Run-walk. ${Math.round(dose.warmupSec / 60)} min brisk walk, then ${dose.rounds} x (${secWords(dose.runSec)} easy run / ${secWords(dose.walkSec)} walk). Talk-test pace: you can speak in full sentences. ${ceiling}${why ? ` ${why}` : ''}`,
+      runWalk: { runSec: dose.runSec, walkSec: dose.walkSec, rounds: dose.rounds, warmupSec: dose.warmupSec, capped: dose.capped },
+      autoEase: { eased: false, reason: null }, coach: { eased: false, reasons: dose.why },
+    }
   }
-
-  if (weekNumber == null) return null
-
-  const state = await loadSessionCoachState(db, { type: session.type ?? 'running', scheduledDate: session.scheduledDate ?? null, contextJson: session.contextJson ?? null }, todayEpochDay)
-
-  if (session.blockType === 'block_zero') {
-    return getBlockZeroRunPrescription(db, session, weekNumber, state, todayEpochDay)
+  const plan = row.notes === 'zone2' || row.type === 'foundation_run' ? ZONE2_PRESCRIPTION : RUNNING_PLAN_TEMPLATE.find(r => r.weekNumber === weekNumber) ?? ZONE2_PRESCRIPTION
+  return {
+    ...base, runType: plan.runType, targetDurSec: dose.totalSec,
+    targetDesc: `${dose.totalSec !== plan.targetDurSec ? `${Math.round(dose.totalSec / 60)} min today. ` : ''}${plan.targetDesc} ${ceiling}${why ? ` ${why}` : ''}`.trim(),
+    autoEase: { eased: false, reason: null }, coach: { eased: false, reasons: dose.why },
   }
-
-  const { longestLast30Sec } = await loadRunGuardInputs(db, session.id ?? null, session.weekPlanId, epochDay)
-
-  // Check if this is a Zone 2 run (tagged during generation)
-  if (session.notes === 'zone2') {
-    const ceiling = await loadEasyHrCeiling(db, epochDay)
-    return adjustFighterRun({
-      weekNumber: ZONE2_PRESCRIPTION.weekNumber,
-      runType: ZONE2_PRESCRIPTION.runType,
-      targetDesc: `${ZONE2_PRESCRIPTION.targetDesc} Keep HR at or below ${ceiling.bpm} bpm.`,
-      targetDurSec: ZONE2_PRESCRIPTION.targetDurSec,
-      targetDistKm: ZONE2_PRESCRIPTION.targetDistKm,
-      z2CeilingBpm: ceiling.bpm,
-    }, state, longestLast30Sec)
-  }
-
-  // Progression run: the training week picks the plan week
-  const plan = RUNNING_PLAN_TEMPLATE.find(r => r.weekNumber === weekNumber)
-  if (!plan) return null
-
-  return adjustFighterRun({
-    weekNumber: plan.weekNumber,
-    runType: plan.runType,
-    targetDesc: plan.targetDesc,
-    targetDurSec: plan.targetDurSec,
-    targetDistKm: plan.targetDistKm,
-  }, state, longestLast30Sec)
 }
 
 /**
@@ -725,7 +590,8 @@ app.post('/api/sessions/generate-today', async (c) => {
   // alone don't count, so an early add can't stop the template filling.
   const existing = await db.select().from(sessions).where(eq(sessions.scheduledDate, epochDay))
   const sortDay = <T extends { timeSlot: string | null }>(rows: T[]) => rows.sort((a, b) => (a.timeSlot === 'am' ? -1 : 1) - (b.timeSlot === 'am' ? -1 : 1))
-  if (existing.some(s => s.source == null || s.source === 'template')) return c.json(sortDay(existing))
+  const active = await getActiveBlock(db)
+  if (!active || await dayHasPlan(db, active.id, epochDay)) return c.json(sortDay(existing))
 
   // Template for the day's training week (paused through gaps), stamped
   // source 'template', in the week plan for this calendar week.
@@ -862,7 +728,7 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   const ctx = await loadPlacementContext(db, epochDay, todayDay)
   // Block Zero strength carries its letter (D8, R10): C after a heavy-leg day, else the one not yet in the week.
   const label = body.type === 'strength' && ctx.blockType === 'block_zero' && !/Strength [ABC]\b/.test(body.label ?? '')
-    ? `Strength ${strengthLetterFor(epochDay, ctx.sessions.filter(s => s.epochDay >= mondayOf(epochDay) && s.epochDay <= mondayOf(epochDay) + 6), ctx.leadIn === true)}`
+    ? `Strength ${strengthLetterFor(epochDay, ctx.sessions.filter(s => s.epochDay >= mondayOf(epochDay) && s.epochDay <= mondayOf(epochDay) + 6), false)}`
     : body.label ?? null
   const check = checkSessionChange({ kind: 'add', type: body.type, label, notes: runTag, epochDay, timeSlot: body.timeSlot }, ctx, { alternatives: false })
   const timeSlot = check.ok ? check.change.timeSlot : body.timeSlot
@@ -882,7 +748,6 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   const notes = check.ok ? check.notes : []
   const addCtx = {
     ...(notes.length > 0 ? { placement: { notes, estimatedMin: check.ok ? check.change.estimatedMin ?? null : null } } : {}),
-    ...(ctx.leadIn ? LEAD_IN_CONTEXT : {}),
   }
   await db.insert(sessions).values({
     id,
@@ -911,8 +776,7 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   }], nowSec)
   // Page 58 / 57 T4: a pick of what the coach leaves out for a place on watch is noted quietly. Never refused.
   await markAgainstFlag(db, addIds, body.type, runTag, epochDay)
-  if (body.type === 'mt_class' && epochDay === todayDay) await rebalanceForClassTonight(db, id, setId, todayDay, nowSec)
-  else await rebalanceAfter(db, { kind: 'add', sessionId: id, reason: null }, setId, todayDay, nowSec)
+  // His add applies at once; tonight's pass absorbs it (coach brain: the nightly re-plan only).
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
   return c.json(notes.length > 0 ? { ...row, coach: { notes } } : row)
@@ -958,7 +822,7 @@ app.post('/api/sessions/:id/pull-forward', async (c) => {
     why: `${session.label ?? 'Strength'} came forward from ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(from * 86400000).getUTCDay()]}.`,
     undoUntil: slotStart(epochDay, slot, await pmStart(db)),
   }], nowSec)
-  await rebalanceAfter(db, { kind: 'pull_forward', sessionId: id, reason: null }, setId, todayDay, nowSec)
+  void todayDay
   const [moved] = await db.select().from(sessions).where(eq(sessions.id, id))
   const others = displacedRows.length > 0 ? await db.select().from(sessions).where(inArray(sessions.id, displacedRows.map(d => d.id))) : []
   return c.json({ session: moved, displaced: others })
@@ -1018,7 +882,7 @@ app.post('/api/sessions/:id/replace', async (c) => {
       notes: runTag,
       source: 'replace',
       // A swap in the lead-in stays optional like what it replaced (Part B).
-      contextJson: JSON.stringify({ replaced: swapSource, ...(isLeadInContext(original.contextJson) ? LEAD_IN_CONTEXT : {}) }),
+      contextJson: JSON.stringify({ replaced: swapSource }),
       createdAt: nowSec,
     }),
   ] as unknown as Parameters<typeof db.batch>[0])
@@ -1034,7 +898,7 @@ app.post('/api/sessions/:id/replace', async (c) => {
     extraSource: { reason: reasonCode },
   }], nowSec)
   await markAgainstFlag(db, swapIds, body.type, runTag, scheduledDate)
-  await rebalanceAfter(db, { kind: 'swap', sessionId: newId, replacedId: id, reason: reasonCode }, setId, todayDay, nowSec)
+  void todayDay
 
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
   const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
@@ -1048,6 +912,9 @@ const TYPE_WORDS: Record<string, string> = {
 }
 
 const SESSION_STATUSES = new Set(['planned', 'in_progress', 'completed', 'skipped', 'missed'])
+
+/** The one-tap reasons for ending a run or bag session early. */
+const EARLY_END_REASONS: ReadonlySet<string> = new Set(['no_time', 'rough', 'pain', 'other'])
 
 app.patch('/api/sessions/:id', async (c) => {
   const id = c.req.param('id')
@@ -1099,7 +966,7 @@ app.patch('/api/sessions/:id', async (c) => {
       why: words ? `Skipped. ${words}.` : 'Skipped.',
       undoUntil: slotStart(row.scheduledDate, row.timeSlot, await pmStart(db)),
     }], nowSec)
-    await rebalanceAfter(db, { kind: 'skip', sessionId: id, reason: row.skipReason }, setId, todayDay, nowSec)
+    void todayDay
     return c.json({ session: row, changeId: changeId ?? null })
   }
 
@@ -1173,10 +1040,9 @@ app.patch('/api/changes/:id/reason', async (c) => {
   const fixed = snaps.map(s => (s.id === session.id ? { ...s, f: { ...s.f, skipReason: reason, skipReasonDetail: detail } } : s))
   const why = words ? `Skipped. ${words}${detail ? `: ${detail}` : ''}.` : 'Skipped.'
   await db.update(weekAdjustments).set({ why, reason: why, afterJson: JSON.stringify({ ...after, sessions: fixed }) }).where(eq(weekAdjustments.id, row.id))
-  const added = reason && STRESS_REASONS.has(reason) && row.changeSetId && session.scheduledDate != null
-    ? await rebalanceAfter(db, { kind: 'skip', sessionId: session.id, reason }, row.changeSetId, athleteDay(c, body.today, session.scheduledDate), nowSec)
-    : []
-  return c.json({ ok: true, coachChanges: added.length })
+  void nowSec
+  // Tonight's pass reads the reason (a schedule reason never counts as too hard).
+  return c.json({ ok: true, coachChanges: 0 })
 })
 
 // One quiet line (page 56 item 12): the morning alarm (?for=morning&day=the
@@ -1253,34 +1119,14 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
     return c.json(await buildWorkoutResponse(db, sessionId))
   }
 
-  // Determine template from scheduled date + block week
-  const epochDay = session.scheduledDate ?? 0
-  const dateMs = epochDay * 86400 * 1000
-  const dayOfWeek = new Date(dateMs).getUTCDay()
+  // The brain's dose (coach brain P2): the exercises, sets, reps and weights for today.
   const blockWeek = session.blockWeek ?? 1
   const blockType = (session.blockType === 'block_zero' ? 'block_zero' : 'fighter') as 'fighter' | 'block_zero'
-
-  let template = getStrengthTemplate(dayOfWeek, blockWeek, blockType, session.label, { leadIn: await isLeadInStrength(db, session) })
-  // A missed session's main lifts, when the coach moved them here (page 56 §5).
-  template = withMergedLifts(template, session.contextJson, blockWeek, blockType)
   const weekPct = getWeekPercentage(blockWeek, blockType)
-
-  // Coach state: return ramp after a gap (F12/F13), an applied coach ease, injury flags (F16).
-  const state = await loadSessionCoachState(db, session, athleteDay(c))
-
-  // Block Zero: back swaps, auto-ease, the return ramp and RIR-based loads for today.
-  // An accepted push (ramp-up ask), skipped on a day the rules ease.
-  const push = applyCoachPush(template, coachPushFrom(session.contextJson), state)
-  template = push.template
-  const loadReasons: string[] = push.note ? [push.note] : []
-  let bzPlan: BlockZeroStrengthPlan | null = null
-  if (blockType === 'block_zero') {
-    bzPlan = await planBlockZeroStrength(db, session, template, coachStrengthInputs(state))
-    template = bzPlan.template
-  }
-  // Fighter: the same inputs trim sets and scale TM x wave.
-  const fighter = blockType === 'fighter' ? adjustFighterStrength(template, state) : null
-  if (fighter) template = fighter.template
+  const dose = await doseFor(db, session, athleteDay(c))
+  const baseTemplate = withMergedLifts(getStrengthTemplate(new Date((session.scheduledDate ?? 0) * 86400000).getUTCDay(), blockWeek, blockType, session.label), session.contextJson, blockWeek, blockType)
+  const template = dose?.strength ? templateFromDose(baseTemplate, dose.strength) : baseTemplate
+  const loadReasons: string[] = dose?.why ?? []
 
   // Block Zero templates use exercises from migrations 0022 and 0026; fail clearly if
   // the library is behind instead of tripping a foreign key mid-insert.
@@ -1293,11 +1139,6 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   const maxes = await db.select().from(trainingMaxes)
   const maxMap = new Map(maxes.map(m => [m.exerciseId, m.weightKg]))
   const equipmentById = equipmentMap(await db.select({ id: exercises.id, equipment: exercises.equipment }).from(exercises))
-  const liftTrends = await loadLiftTrends(db, athleteDay(c))
-  // Phase 3: the AI verdict from the latest AthleteState wins per-lift; fall back
-  // to the deterministic trend when no state has assessed that lift.
-  const latestState = await loadLatestAthleteState(db)
-  const stateLiftById = new Map((latestState?.lifts ?? []).map(l => [l.exerciseId, l]))
 
   // Create exercises and sets
   for (let exIdx = 0; exIdx < template.exercises.length; exIdx++) {
@@ -1315,36 +1156,13 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
 
     const trainingMax = maxMap.get(tex.exerciseId) ?? null
     const equipment = equipmentById.get(tex.exerciseId) ?? 'none'
-    const trend = liftTrends.get(tex.exerciseId)
-    const effective = resolveEffectiveLift(trend, stateLiftById.get(tex.exerciseId))
-    // Right after a gap, or on an eased day, the trend / AI factor may not push.
-    const trendFactor = fighter?.noPush ? Math.min(1, effective.loadFactor) : effective.loadFactor
-    // MORE WEIGHT on top of a trend push never goes past +5% a session.
-    const pushFactor = fighter && tex.section === 'main' && push.loadFactor > 1 ? Math.min(push.loadFactor, RAMP_LOAD_STEP / Math.max(1, trendFactor)) : 1
-    const coachFactor = fighter && tex.section === 'main' ? fighter.loadMultiplier * pushFactor : 1
-    if (fighter && tex.section === 'main' && trendFactor !== 1) {
-      const why = liftTrendReason(tex.label, trendFactor)
-      if (why) loadReasons.push(why)
-    }
     const baseWorking = computeWorkingWeightKg(trainingMax, tex.section, weekPct)
-    // Block Zero: the last RIR-logged top set sets the load; TM x % only until one exists.
-    const bzLoad = tex.section === 'main' ? bzPlan?.loads.get(tex.exerciseId) : undefined
-    if (bzLoad && bzLoad.change !== 'hold' && bzLoad.reason) loadReasons.push(`${tex.label}: ${bzLoad.reason}`)
 
     const planned = tex.sets.map(ts => {
+      // Main lifts carry the dose's weight (already snapped); the rest TM-based as before.
       const templateWeight = ts.suggestedWeightKg ?? null
-      // Check sets (Block Zero weeks 3 and 6) run ~10% above the working load.
-      const adjustedWorking = baseWorking == null
-        ? null
-        : Math.round(baseWorking * trendFactor * coachFactor * (ts.loadMultiplier ?? 1) * 100) / 100
-      const raw = templateWeight ?? (ts.isWarmup
-        ? computeWarmupWeightKg(trainingMax)
-        : bzLoad ? planSetWeightKg(bzLoad, ts) : adjustedWorking)
-      // Snap to what the bar or rack can load. An increase takes the next
-      // loadable step, so a small upper-body step still moves the bar.
-      const weightKg = raw == null || templateWeight != null || ts.isWarmup
-        ? raw
-        : snapForChangeKg(raw, equipment, ts.loadMultiplier == null ? bzLoad?.change : 'hold', bzLoad?.fromKg)
+      const raw = templateWeight ?? (ts.isWarmup ? computeWarmupWeightKg(trainingMax) : baseWorking)
+      const weightKg = raw == null || templateWeight != null || ts.isWarmup ? raw : snapForChangeKg(raw, equipment, 'hold')
       return { isWarmup: ts.isWarmup, reps: ts.targetReps, restSec: ts.restSec, weightKg }
     })
 
@@ -1373,19 +1191,17 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
     }
   }
 
-  // Mark session as in_progress. Keep what today's rules did on the session
-  // (merged, so an applied coach ease stays readable).
-  const blockZero = bzPlan ? blockZeroPlanSummary(bzPlan) : null
-  // Every automatic load change carries its reason (lift trend, RIR step, an accepted push).
-  const coach = { ...coachSummary(state, fighter), loadReasons }
+  // Mark session as in_progress. Keep what the brain decided on the session.
+  const brain = dose ? brainSummary(dose) : null
+  const coach = { loadReasons }
   await db.update(sessions).set({
     status: 'in_progress',
     startedAt: nowSec,
-    contextJson: mergeContext(session.contextJson, { ...(blockZero ? { blockZero } : {}), coach }),
+    contextJson: mergeContext(session.contextJson, { ...(brain ? { brain } : {}), coach }),
   }).where(eq(sessions.id, sessionId))
 
   const workout = await buildWorkoutResponse(db, sessionId)
-  return c.json({ ...workout, ...(blockZero ? { blockZero } : {}), coach })
+  return c.json({ ...workout, ...(brain ? { brain } : {}), coach })
 })
 
 app.get('/api/sessions/:id/workout', async (c) => {
@@ -1495,7 +1311,7 @@ app.post('/api/sessions/:id/complete', async (c) => {
   // context_json.userNotes (the injury rule reads them); a run's category tag
   // in the notes column stays put.
   const kept = notesOnComplete(session.notes, body.notes)
-  const ctxPatch: Record<string, unknown> = { ...(roundSecs ? { roundSecs } : {}), ...(kept.userNotes ? { userNotes: kept.userNotes } : {}) }
+  const ctxPatch: Record<string, unknown> = { ...(roundSecs ? { roundSecs } : {}), ...(kept.userNotes ? { userNotes: kept.userNotes } : {}), ...(body.endReason ? { endReason: body.endReason } : {}) }
   await db.update(sessions).set({
     status: 'completed',
     completedAt,
@@ -1547,17 +1363,7 @@ app.post('/api/sessions/:id/complete', async (c) => {
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
 
-  const todayEpochDay = athleteDay(c)
-  c.executionCtx.waitUntil(
-    runReactiveReplan(db, c.env.ANTHROPIC_API_KEY, {
-      trigger: 'session_completed',
-      todayEpochDay,
-      sessionId,
-    }).catch(err => console.warn('[reactive] session_completed failed', err))
-  )
-  // How it felt: way over target effort eases the next similar session (auto, with a note).
-  c.executionCtx.waitUntil(applyFeltHard(db, updated?.scheduledDate ?? todayEpochDay, nowSec).catch(err => console.warn('[coach] felt-hard failed', err)))
-
+  // Nothing re-plans here: tonight's pass reads this session (coach brain, nightly only).
   return c.json({ ...updated, reviewSource })
 })
 
@@ -1766,23 +1572,20 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
     return c.json({ error: 'no unlocked combos available' }, 400)
   }
 
-  // Governance (map #9): ease day, injury flag, gap and block decide finishers and round count.
+  // The brain's dose (coach brain P2): rounds from his tolerance and its uncertainty, finishers only when earned.
   const bagDay = session.scheduledDate ?? athleteDay(c)
-  const bagState = await loadSessionCoachState(db, session, bagDay)
-  const bagReport = await readinessFor(db, bagDay)
-  const bagEase = easeForReadiness(bagReport, { type: 'bag_work', label: 'Bag Work', timeSlot: session.timeSlot === 'pm' ? 'pm' : 'am', estimatedMin: 30 })
-  const activeBlock = await getActiveBlock(db)
-  const rules = bagRules({
-    blockType: session.blockType === 'block_zero' ? 'block_zero' : 'fighter',
-    weekNumber: activeBlock ? (await trainingWeekFor(db, activeBlock, bagDay, bagDay)).week : 1,
-    eased: bagEase.eased || bagState.coachEase != null,
-    easeReason: bagEase.eased ? bagEase.reason : bagState.coachEase?.reason ?? null,
-    returnActive: bagState.returnCtx.active,
-    gapDays: bagState.returnCtx.plan.gapDays,
-    returnReason: bagState.returnCtx.reason,
-    injuryReason: bagState.injuryAction.action === 'technical' ? bagState.injuryAction.note : null,
-    leadIn: session.blockType === 'block_zero' && isBlockLeadInDay(activeBlock, bagDay),
-  })
+  const bag = (await doseFor(db, session, bagDay))?.bag
+  const rounds = bag?.rounds ?? 4
+  const noFinishers = !(bag?.finishers ?? false)
+  const reason = bag?.why[0] ?? null
+  const rules = {
+    noFinishers, maxRounds: rounds, reason,
+    promptLines: [
+      ...(noFinishers ? [`- No power or conditioning rounds today. Finish on technical_flow or combo_practice. Why: ${reason ?? 'technique day'}`] : []),
+      `- At most ${rounds} rounds today.`,
+      ...(session.blockType === 'block_zero' ? ['- Block Zero. Technique and pads level work, never hard rounds.'] : []),
+    ],
+  }
 
   // AI prescription path (coach prescribes typed rounds), inside the rules
   const apiKey = (c.env as { ANTHROPIC_API_KEY?: string }).ANTHROPIC_API_KEY
@@ -1824,7 +1627,7 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
     // Deterministic fallback: weighted-random rounds with positional round types,
     // after the rules (no power or conditioning finishers when eased or back from a gap).
     // Used when AI is offline or returns too few rounds.
-    const POSITIONAL_TYPES = fallbackRoundTypes(rules)
+    const POSITIONAL_TYPES = fallbackRoundTypes(rules).slice(0, rounds)
     const ROUND_COUNT = POSITIONAL_TYPES.length
     const COMBOS_PER_ROUND = 3
 
@@ -2075,10 +1878,13 @@ app.patch('/api/run-sessions/:id', async (c) => {
     avgHr?: number
     maxHr?: number
     elevationGainM?: number
+    shortReason?: string | null
   }>()
 
   const db = createDB(c.env)
   const updates: Record<string, unknown> = {}
+  // Why he ended early (one tap: no_time | rough | pain | other). "No time" holds, never "too hard".
+  if (body.shortReason !== undefined) updates.shortReason = typeof body.shortReason === 'string' && EARLY_END_REASONS.has(body.shortReason) ? body.shortReason : null
 
   if (body.runType !== undefined) updates.runType = body.runType
   if (body.distanceKm !== undefined) updates.distanceKm = body.distanceKm
@@ -2122,12 +1928,12 @@ app.post('/api/sessions/:id/start-skip-rope', async (c) => {
     return c.json({ session, skipSession: existing[0] })
   }
 
-  // Rope is lower-leg load (F11): fewer rounds on an ease day, an injury flag or the return ramp.
+  // Rope is lower-leg load (F11): fewer rounds on a rough morning or an injury flag.
   const state = await loadSessionCoachState(db, session, athleteDay(c))
   const report = await readinessFor(db, session.scheduledDate ?? athleteDay(c))
-  const eased = report.readinessEase || state.coachEase != null || state.injuryAction.action === 'walk_or_bike'
-  const roundCount = eased ? 3 : state.returnCtx.active ? Math.max(2, Math.round(5 * state.returnCtx.volumeFactor)) : 5
-  const ropeNote = eased ? (state.injuryAction.note ?? state.coachEase?.reason ?? report.reason ?? 'Easy day.') : state.returnCtx.reason
+  const eased = report.readinessEase || state.injuryAction.action === 'walk_or_bike'
+  const roundCount = eased ? 3 : 5
+  const ropeNote = eased ? (state.injuryAction.note ?? report.reason ?? 'Easy day.') : null
   if (ropeNote) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: ropeNote, roundCount } }) }).where(eq(sessions.id, sessionId))
 
   const skipId = crypto.randomUUID()
@@ -2223,11 +2029,9 @@ app.post('/api/sessions/:id/start-mt-class', async (c) => {
   const day = session.scheduledDate ?? athleteDay(c)
   const state = await loadSessionCoachState(db, session, day)
   const report = await readinessFor(db, day)
-  const eased = easeForReadiness(report, { type: 'mt_class', label: session.label ?? 'MT Class', timeSlot: session.timeSlot === 'am' ? 'am' : 'pm', estimatedMin: CLASS_MINUTES })
   const mtNote = state.injuryAction.action === 'skip_or_move'
     ? state.injuryAction.note
-    : eased.eased ? eased.reason
-      : state.coachEase ? `${state.coachEase.reason} ${CLASS_EASE_LINE}` : null
+    : report.readinessEase ? `${report.reason ?? 'A rough morning.'} ${CLASS_EASE_LINE}` : null
 
   const logId = crypto.randomUUID()
   await db.insert(mtClassLogs).values({ id: logId, sessionId })
@@ -2336,16 +2140,8 @@ app.post('/api/daily-logs', async (c) => {
       regionRatingsJson: hasKey('regionRatings') ? mergeRegionRatings(prev.regionRatingsJson, body.regionRatings ?? null) : prev.regionRatingsJson,
     }).where(eq(dailyLogs.id, prev.id))
     const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, prev.id))
-    if (!body.partial) {
-      // The check-in built up card by card (partial saves) is complete now: the replan a fresh log gets.
-      if (!checkInComplete(prev)) {
-        c.executionCtx.waitUntil(
-          runReactiveReplan(createDB(c.env), c.env.ANTHROPIC_API_KEY, { trigger: 'wellness_logged', todayEpochDay: epochDay })
-            .catch(err => console.warn('[reactive] wellness_logged failed', err))
-        )
-      }
-      c.executionCtx.waitUntil(checkInCoachRules(createDB(c.env), epochDay, nowSec))
-    }
+    // The morning can only cap today's dose (coach brain §6.1): rules only, never another day.
+    if (!body.partial) await morningCap(db, epochDay, nowSec)
     return c.json(row)
   }
 
@@ -2372,32 +2168,18 @@ app.post('/api/daily-logs', async (c) => {
   const [row] = await db.select().from(dailyLogs).where(eq(dailyLogs.id, id))
   if (body.partial) return c.json(row)
 
-  // The check-in's own day is his today (never the UTC day: an evening check-in is still today).
-  const todayEpochDay = epochDay
-  c.executionCtx.waitUntil(
-    runReactiveReplan(createDB(c.env), c.env.ANTHROPIC_API_KEY, {
-      trigger: 'wellness_logged',
-      todayEpochDay,
-    }).catch(err => console.warn('[reactive] wellness_logged failed', err))
-  )
-  c.executionCtx.waitUntil(checkInCoachRules(createDB(c.env), epochDay, nowSec))
+  // The check-in's own day is his today. The morning can only cap today's dose.
+  await morningCap(db, epochDay, nowSec)
 
   return c.json(row)
 })
 
-/** All nine check-in items answered on a saved log. */
-function checkInComplete(row: Pick<typeof dailyLogs.$inferSelect, 'sleepHours' | 'sleepQuality' | 'energy' | 'soreness' | 'stress' | 'mood' | 'backToday' | 'alcoholScale' | 'herbScale'>): boolean {
-  return [row.sleepHours, row.sleepQuality, row.energy, row.soreness, row.stress, row.mood, row.backToday, row.alcoholScale, row.herbScale].every(v => v != null)
-}
-
-// The check-in is the morning after: soreness 4+ eases the next similar
-// session; a fresh streak with easy sessions gets one push (once a week).
-async function checkInCoachRules(db: DrizzleDB, logDay: number, nowSec: number): Promise<void> {
+/** The morning cap (server/brain capToday); a failure never fails the check-in. */
+async function morningCap(db: DrizzleDB, day: number, nowSec: number): Promise<void> {
   try {
-    await applyFeltHard(db, logDay, nowSec)
-    await maybeRampUp(db, logDay, nowSec)
+    await capToday(db, day, nowSec)
   } catch (err) {
-    console.warn('[coach] check-in rules failed', err)
+    console.warn('[brain] morning cap failed', err)
   }
 }
 
@@ -2453,15 +2235,6 @@ app.post('/api/blocks/:id/tests', async (c) => {
   const saved = []
   for (const v of valid) {
     saved.push(await upsertBlockTest(db, { blockId, week: v.week, testKey: v.testKey, value: v.value, unit: v.unit, notes: v.notes, source: 'manual', recordedAt: nowSec }))
-  }
-  // A retest refreshes the athlete model (guarded: no push after a gap or on an ease day).
-  if (valid.some(v => v.week > 1)) {
-    const today = athleteDay(c)
-    c.executionCtx.waitUntil((async () => {
-      const ret = await returnContextFor(db, today)
-      const report = await readinessFor(db, today)
-      await runAthleteState(db, c.env.ANTHROPIC_API_KEY, 'retest', today, { noPush: ret.active || ret.noPush, easeActive: report.ease })
-    })().catch(err => console.warn('[athleteState] retest run failed', err)))
   }
   return c.json(saved)
 })
@@ -2641,7 +2414,6 @@ app.post('/api/weeks/generate', async (c) => {
   // Determine block type for template and session stamping
   const [blockRow] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, body.blockId))
   if (!blockRow) return c.json({ error: 'block not found' }, 404)
-  const blockType = blockRow.blockType === 'block_zero' ? 'block_zero' : 'fighter'
 
   // The server decides the training week for this Monday-Sunday week (paused
   // through gaps); the client's number is only a hint.
@@ -2653,66 +2425,19 @@ app.post('/api/weeks/generate', async (c) => {
   const [existingWeek] = await db.select().from(weekPlans).where(eq(weekPlans.id, weekId))
   if (weekSessions.length > 0) return c.json({ week: weekForClient(existingWeek), sessions: weekSessions })
 
-  const createdSessions = []
-
-  // Block week for strength sessions. Fighter cycles every 6 weeks; Block Zero
-  // extension weeks hold week-5 levels instead of wrapping to week 1.
-  const blockWeek = stamps.strengthWeek
-  const mtDays = await mtClassDays(db)
-  const extras = await loadTemplateExtras(db, blockRow.id)
-
-  // Seven days, Monday first. Days before the start get nothing; a Block Zero
-  // lead-in day gets the lead-in day (Foundation, an easy run-walk Tue/Thu/Sat),
-  // all optional (D1, Part B).
-  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-    const epochDay = mondayDay + dayOffset
-    const day = blockDayPlan(blockRow, epochDay, weekNumber, mtDays, extras)
-    const contextJson = day.leadIn ? JSON.stringify({ leadIn: true }) : null
-    for (const entry of day.entries) {
-      const sessionId = crypto.randomUUID()
-      const isStrength = entry.type === 'strength'
-      const label = blockType === 'block_zero' ? entry.label : null
-      await db.insert(sessions).values({
-        id: sessionId,
-        type: entry.type,
-        label,
-        weekPlanId: weekId,
-        scheduledDate: epochDay,
-        timeSlot: entry.timeSlot,
-        blockWeek: isStrength ? blockWeek : null,
-        blockType,
-        status: 'planned',
-        notes: entry.runCategory ?? null,
-        source: 'template',
-        contextJson,
-        createdAt: nowSec,
-      })
-      createdSessions.push({
-        id: sessionId,
-        type: entry.type,
-        label,
-        weekPlanId: weekId,
-        scheduledDate: epochDay,
-        timeSlot: entry.timeSlot,
-        blockWeek: isStrength ? blockWeek : null,
-        blockType,
-        status: 'planned',
-        startedAt: null,
-        completedAt: null,
-        durationSec: null,
-        rpe: null,
-        difficulty: null,
-        notes: entry.runCategory ?? null,
-        contextJson,
-        createdAt: nowSec,
-      })
-    }
+  // One creation path (coach brain P2): each day of the week from the block's template, as generate-today does.
+  const todayDay = athleteDay(c, body.today, mondayDay + 6)
+  const createdSessions: Array<typeof sessions.$inferSelect> = []
+  for (let d = mondayDay; d <= mondayDay + 6; d++) {
+    if (await dayHasPlan(db, blockRow.id, d)) continue
+    createdSessions.push(...await generateDaySessions(db, d, todayDay, nowSec))
   }
-
+  await applyPendingMerges(db, createdSessions.map(r => r.id))
   // A raven's plan that waited for this week lands on its days (page 58).
-  await applyPendingBodyPlans(db, createdSessions.map(r => (r as { id: string }).id))
+  await applyPendingBodyPlans(db, createdSessions.map(r => r.id))
   const [week] = await db.select().from(weekPlans).where(eq(weekPlans.id, weekId))
-  return c.json({ week: weekForClient(week), sessions: createdSessions })
+  const fresh = createdSessions.length ? await db.select().from(sessions).where(inArray(sessions.id, createdSessions.map(r => r.id))) : []
+  return c.json({ week: weekForClient(week), sessions: fresh })
 })
 
 // Prepare a week: the same path the nightly weekly pass takes (server/weeklyPass).

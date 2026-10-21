@@ -76,17 +76,6 @@ export function getBlockZeroWeekTemplate(weekNumber: number): Record<number, Blo
   }
 }
 
-/**
- * A lead-in day (Part B): the days from a non-Monday start until week 1's
- * Monday. Foundation every day (the habit starts day one); an easy run-walk
- * in the week-1 shape on the template's run days (Tue/Thu/Sat). Strength is
- * opt-in (an intro session), Sunday is rest. Every lead-in session is optional.
- */
-export function getLeadInDayTemplate(dayOfWeek: number): BlockZeroTemplateSession[] {
-  if (dayOfWeek === 2 || dayOfWeek === 4 || dayOfWeek === 6) return [FOUNDATION, runWalk(1, false)]
-  return [FOUNDATION]
-}
-
 const RUN_TYPES = new Set(['foundation_run', 'running'])
 
 /** R15 check: on a shared day, strength comes before any running. */

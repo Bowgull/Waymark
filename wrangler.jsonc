@@ -16,7 +16,7 @@
 	// 03:00 America/Los_Angeles (10:00 UTC) — nightly reactive replan window.
 	// Reads state as-of run time and makes at most one silent week adjustment.
 	"triggers": {
-		"crons": ["0 10 * * *"]
+		"crons": ["0 7 * * *"]
 	}
 	// Secret bindings (set via `wrangler secret put`):
 	//   ANTHROPIC_API_KEY            - Anthropic API key for AI calls

@@ -59,6 +59,18 @@ export function epochDayToISO(epochDay: number): string {
 
 /** Every app request carries the phone's local date (YYYY-MM-DD) in this header (lib/api.ts). */
 export const TODAY_HEADER = 'X-Waymark-Today'
+/** The phone's IANA time zone on every app request (coach brain P2). */
+export const TZ_HEADER = 'X-Waymark-TZ'
+
+/** The phone's IANA zone ("America/Toronto"), or null when Intl can't say. */
+export function phoneTimeZone(): string | null {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return typeof tz === 'string' && tz ? tz : null
+  } catch {
+    return null
+  }
+}
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 

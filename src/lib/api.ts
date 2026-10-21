@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from './apiBase'
-import { getTodayISO, TODAY_HEADER } from './dates'
+import { getTodayISO, phoneTimeZone, TODAY_HEADER, TZ_HEADER } from './dates'
 import { logger } from './logger'
 import { maxAttemptsFor } from './retryPolicy'
 import { dropPrefetched, putPrefetch, takePrefetched } from './prefetchCache'
@@ -71,6 +71,8 @@ async function requestApi<T>(path: string, options?: ApiFetchOptions): Promise<T
       ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
       // The phone's local date: the server's "today" is his day, never the UTC day (coach-brain P0).
       [TODAY_HEADER]: getTodayISO(),
+      // The phone's time zone (coach brain P2): local start times and the nightly day.
+      ...(phoneTimeZone() ? { [TZ_HEADER]: phoneTimeZone() as string } : {}),
       ...options?.headers,
     },
   }

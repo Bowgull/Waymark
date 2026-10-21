@@ -588,6 +588,9 @@ const REASON_WORDS: Record<string, string> = {
   injury: 'Injury or pain',
   sick: 'Sick',
   other: 'Other',
+  class_time: "Class time doesn't fit",
+  no_time: 'No time',
+  coach_rest: 'Rest day',
 }
 
 /** A reason code as the log writes it ("Rough day."). */

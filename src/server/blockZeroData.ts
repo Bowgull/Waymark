@@ -2,12 +2,11 @@
 // Rules stay pure in lib/blockZero; this file only loads rows and applies the
 // results (readiness, auto-ease, RIR loads, back swaps, MT class checks, tests).
 
-import { and, asc, eq, gte, inArray, isNotNull, lte, ne } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNotNull, lte,} from 'drizzle-orm'
 import { blockTests, dailyLogs, exercises, runSessions, sessions, strengthSessionExercises, strengthSets, trainingBlocks, userProfile, weekPlans } from '../db/schema'
 import {
   BLOCK_ZERO_BASE_WEEKS,
   ageFromDob,
-  backFriendlyVariation,
   backTrend,
   calibrationCeilingKg,
   e1rmsFromTests,
@@ -18,20 +17,12 @@ import {
   testDeltas,
   week1LiftBaselines,
   blockZeroWorkingLoad,
-  checkInFromDailyLog,
   checkSetE1rm,
   e1rmTestKey,
-  easeSession,
   getStrengthWeekTarget,
-  introStartLoad,
-  LEAD_IN_TARGET,
-  mainLiftHardSets,
-  readinessReport,
-  rollingLoadRead,
   type AiContextLift,
   type BlockZeroAiContextInput,
   type BlockZeroGuardContext,
-  type EasedSession,
   type GuardSession,
   type LiftBaseline,
   type LoadEntry,
@@ -40,16 +31,14 @@ import {
   type WorkupSet,
   type LoggedWorkingSet,
   type ReadinessReport,
-  type WorkingLoad,
-  restateSetCount,
 } from '../lib/blockZero'
-import type { StrengthTemplate, TemplateSet } from '../lib/strengthTemplates'
-import { CLASS_MINUTES, countsFromDay, inLeadIn, mtRampStartDay, runAllowanceBaseSec, scaleLoadKg, scaleSets, type CoachEase, type ReturnContext } from '../lib/coach'
-import type { InjuryAction } from '../lib/coach/injury'
+import { CLASS_MINUTES, countsFromDay, mtRampStartDay, runAllowanceBaseSec,} from '../lib/coach'
 import { trainingWeekFor } from './coachData'
 import { zone2CeilingBpm } from '../lib/hrAnalysis'
 import { mondayOf } from '../lib/dates'
 import type { createDB } from '../db/client'
+import { readinessState, type ReadinessState } from '../lib/brain/readiness'
+import type { ModelCheckIn } from '../lib/brain/types'
 import { lbText } from '../lib/units'
 import { loadEquipment, snapForChangeKg } from '../lib/strengthLoads'
 
@@ -102,195 +91,32 @@ export async function loadSessionLoadEntries(db: DB, fromDay: number, toDay: num
   }))
 }
 
-/** Readiness for one day: check-ins vs the 7-day mean, plus the rolling load flag inside Block Zero. */
-export async function readinessFor(db: DB, epochDay: number): Promise<ReadinessReport & { blockZero: boolean }> {
-  const logs = await db.select().from(dailyLogs)
-    .where(and(gte(dailyLogs.logDate, epochDay - 14), lte(dailyLogs.logDate, epochDay)))
-  const block = await getActiveBlockZero(db)
-  const load = block
-    ? rollingLoadRead(await loadSessionLoadEntries(db, epochDay - 14, epochDay - 1), epochDay, blockStartDay(block))
-    : null
-  return { ...readinessReport(logs.map(checkInFromDailyLog), epochDay, load), blockZero: block != null }
-}
-
-/** Auto-ease one planned session when today's read says so (Block Zero only). */
-export function easeForReadiness(report: ReadinessReport, planned: Parameters<typeof easeSession>[0]): EasedSession {
-  return easeSession(planned, {
-    readinessEase: report.readinessEase,
-    readinessReason: report.readinessEase ? report.reason : null,
-    loadFlag: report.load?.flagged ?? false,
-    loadReason: report.load?.reason ?? null,
-  })
-}
-
-// ─── Block Zero strength plan ──────────────────────────────────
-
-export interface BlockZeroStrengthPlan {
-  template: StrengthTemplate
-  /** RIR-based working load per main exercise id. Missing = TM x % fallback. */
-  loads: Map<string, WorkingLoad>
-  autoEase: { eased: boolean; reason: string | null }
-  swaps: Array<{ from: string; to: string; reason: string }>
-  backToday: number | null
-}
-
-/** Main-lift working sets per exercise this block, before a given session. */
-async function loadMainSetHistory(db: DB, blockStart: number, excludeSessionId: string, exerciseIds: string[]): Promise<Map<string, Array<LoggedWorkingSet & { scheduledDate: number | null }>>> {
-  const out = new Map<string, Array<LoggedWorkingSet & { scheduledDate: number | null }>>()
-  if (exerciseIds.length === 0) return out
-  const rows = await db
-    .select({
-      exerciseId: strengthSessionExercises.exerciseId,
-      weightKg: strengthSets.weightKg,
-      reps: strengthSets.reps,
-      plannedReps: strengthSets.plannedReps,
-      rir: strengthSets.rir,
-      completedAt: strengthSets.completedAt,
-      setNumber: strengthSets.setNumber,
-      sessionId: sessions.id,
-      scheduledDate: sessions.scheduledDate,
-    })
-    .from(strengthSets)
-    .innerJoin(strengthSessionExercises, eq(strengthSets.sessionExerciseId, strengthSessionExercises.id))
-    .innerJoin(sessions, eq(strengthSessionExercises.sessionId, sessions.id))
-    .where(and(
-      eq(sessions.blockType, 'block_zero'),
-      gte(sessions.scheduledDate, blockStart),
-      ne(sessions.id, excludeSessionId),
-      eq(strengthSessionExercises.section, 'main'),
-      eq(strengthSets.isWarmup, 0),
-      // Logged sets only: pre-filled sets the athlete never lifted don't set loads.
-      isNotNull(strengthSets.completedAt),
-      inArray(strengthSessionExercises.exerciseId, exerciseIds),
-    ))
-  for (const r of rows) {
-    const list = out.get(r.exerciseId) ?? []
-    list.push({ weightKg: r.weightKg, reps: r.reps, plannedReps: r.plannedReps, rir: r.rir, completedAt: r.completedAt, setNumber: r.setNumber, sessionId: r.sessionId, scheduledDate: r.scheduledDate })
-    out.set(r.exerciseId, list)
-  }
-  return out
-}
-
 /**
- * Adjust a Block Zero strength template for today: back-friendly swaps when
- * "back today" is 2 or less, auto-ease when readiness or load say so (one set
- * fewer, no check set, RPE 6 cap), and RIR-based working loads per main lift.
- * Pure on the template it is given; reads check-ins, history and readiness.
+ * Readiness for one day (coach brain P2, §6.1): FRESH / GREEN / AMBER / RED
+ * from the check-in against his 28-day baseline. "Ease" is AMBER or RED. The
+ * old weekly and daily load flags are gone (load is never an ease on its own).
  */
-/** What the coach rules add on top of readiness: the return ramp, an applied coach ease, an injury flag. */
-export interface CoachStrengthInputs {
-  returnCtx?: ReturnContext | null
-  coachEase?: CoachEase | null
-  injury?: { action: InjuryAction; note: string | null } | null
-}
-
-export async function planBlockZeroStrength(
-  db: DB,
-  session: { id: string; scheduledDate: number | null; blockWeek: number | null; label: string | null; timeSlot: string | null },
-  template: StrengthTemplate,
-  coach: CoachStrengthInputs = {},
-): Promise<BlockZeroStrengthPlan> {
-  const epochDay = session.scheduledDate ?? todayEpochDayUtc()
+export async function readinessFor(db: DB, epochDay: number): Promise<ReadinessReport & { blockZero: boolean; state: ReadinessState }> {
+  const logs = await db.select().from(dailyLogs)
+    .where(and(gte(dailyLogs.logDate, epochDay - 40), lte(dailyLogs.logDate, epochDay)))
   const block = await getActiveBlockZero(db)
-  const startDay = block ? blockStartDay(block) : null
-  // Lead-in (Part B): the intro target, and its sets never set the starting load.
-  const leadIn = startDay != null && inLeadIn('block_zero', startDay, epochDay)
-  const target = leadIn ? LEAD_IN_TARGET : getStrengthWeekTarget(session.blockWeek ?? 1)
-  const report = await readinessFor(db, epochDay)
-  const [log] = await db.select({ backToday: dailyLogs.backToday }).from(dailyLogs).where(eq(dailyLogs.logDate, epochDay))
-  const injuryAction = coach.injury?.action ?? 'none'
-  // An injury flag on the back reads as "back today" 1: the back-friendly lifts.
-  const backToday = injuryAction === 'back_swap' ? Math.min(log?.backToday ?? 1, 1) : log?.backToday ?? null
-
-  const planned = {
-    type: 'strength',
-    label: session.label ?? template.label,
-    timeSlot: (session.timeSlot === 'pm' ? 'pm' : 'am') as 'am' | 'pm',
-    estimatedMin: 60,
-    sets: mainLiftHardSets(target),
-    rpe: target.rpe,
-  }
-  // Readiness first; an injury flag or an applied coach ease also eases (same shape).
-  let eased = easeForReadiness(report, planned)
-  // The rebalance's ease (page 56): one main set less, same weights, same effort.
-  const oneSet = coach.coachEase?.kind === 'one_set' && injuryAction !== 'ease' && injuryAction !== 'back_swap' ? coach.coachEase : null
-  const extraWhy = injuryAction === 'ease' || injuryAction === 'back_swap' ? coach.injury?.note ?? null : oneSet ? null : coach.coachEase?.reason ?? null
-  if (!eased.eased && extraWhy) {
-    eased = { ...easeSession(planned, { readinessEase: true, readinessReason: extraWhy }), reason: extraWhy }
-  }
-  // F12/F13: the return ramp trims sets on top of any ease.
-  const ramp = coach.returnCtx?.active ? coach.returnCtx : null
-  let easedSets = eased.eased ? eased.session.sets ?? target.mainSets : oneSet ? Math.max(1, target.mainSets - 1) : null
-  const easedRpe = eased.eased ? eased.session.rpe ?? target.rpe : null
-  if (ramp) easedSets = scaleSets(easedSets ?? mainLiftHardSets(target), ramp.volumeFactor)
-
-  const swaps: BlockZeroStrengthPlan['swaps'] = []
-  const exercises = template.exercises.map(tex => {
-    if (tex.section !== 'main') return tex
-    let next = tex
-    const pick = backFriendlyVariation(tex.exerciseId, backToday)
-    if (pick.swapped && pick.reason) {
-      swaps.push({ from: tex.exerciseId, to: pick.exerciseId, reason: pick.reason })
-      next = { ...next, exerciseId: pick.exerciseId, label: pick.label ?? next.label, notes: `${pick.reason} ${next.notes ?? ''}`.trim() }
-    }
-    if (easedSets != null) {
-      // Eased or ramping: the e1RM check (RPE 8) waits, working sets drop to the eased count.
-      const working = next.sets.filter((s: TemplateSet) => !s.isWarmup && s.loadMultiplier == null)
-      const warm = next.sets.filter((s: TemplateSet) => s.isWarmup)
-      const why = [eased.eased ? eased.reason : oneSet?.reason ?? null, ramp?.reason ?? null].filter(Boolean).join(' ')
-      const keep = Math.max(1, Math.min(easedSets, working.length))
-      next = {
-        ...next,
-        sets: [...warm, ...working.slice(0, keep)],
-        notes: `${why} ${restateSetCount(next.notes, keep) ?? ''}`.trim(),
-      }
-    }
-    return next
-  })
-
-  const mainIds = [...new Set(exercises.filter(e => e.section === 'main').map(e => e.exerciseId))]
-  // Load steps read sets from week 1's Monday on; lead-in intro sets only give
-  // the start of week 1's work-up (shown as last time, never a step).
-  const weekOneMonday = startDay != null ? countsFromDay('block_zero', startDay) : epochDay - 56
-  const allSets = await loadMainSetHistory(db, startDay ?? epochDay - 56, session.id, mainIds)
-  const loads = new Map<string, WorkingLoad>()
-  for (const id of mainIds) {
-    const sets = allSets.get(id) ?? []
-    const intro = sets.filter(s => s.scheduledDate != null && s.scheduledDate < weekOneMonday)
-    const hist = leadIn ? [] : sets.filter(s => s.scheduledDate == null || s.scheduledDate >= weekOneMonday)
-    if (hist.length === 0) {
-      const start = introStartLoad(intro)
-      if (start) loads.set(id, start)
-      continue
-    }
-    const load = blockZeroWorkingLoad({
-      exerciseId: id,
-      history: hist,
-      target: { reps: target.reps, rpe: easedRpe ?? target.rpe },
-      eased: eased.eased || ramp != null,
-    })
-    if (load && ramp) {
-      // F12/F13: after a gap the last top set is scaled down, never pushed.
-      const top = latestRirTopSet(hist, target.reps)
-      const from = top?.weightKg ?? load.weightKg
-      loads.set(id, { weightKg: Math.min(load.weightKg, scaleLoadKg(from, ramp.loadFactor)), source: 'rir', change: 'decrease', reason: ramp.reason ?? 'Back from a break. Load down.', fromKg: from })
-    } else if (load) {
-      loads.set(id, load)
-    }
-  }
-
+  const cis: ModelCheckIn[] = logs.map(l => ({ day: l.logDate, sleepHours: l.sleepHours, sleepQuality: l.sleepQuality, energy: l.energy, soreness: l.soreness, stress: l.stress, mood: l.mood, backToday: l.backToday }))
+  const today = logs.find(l => l.logDate === epochDay)
+  const r = readinessState(cis, epochDay, { notes: today?.notes ?? null })
+  const ease = r.state === 'AMBER' || r.state === 'RED'
   return {
-    template: { ...template, exercises },
-    loads,
-    autoEase: { eased: eased.eased || ramp != null, reason: [eased.reason, ramp?.reason].filter(Boolean).join(' ') || null },
-    swaps,
-    backToday,
+    epochDay,
+    checkedIn: r.checkedIn,
+    items: r.today.items.map(i => ({ item: i.item, today: i.today, mean7: i.mean, delta: i.today != null && i.mean != null ? Math.round((i.item === 'soreness' || i.item === 'stress' ? i.today - i.mean : i.mean - i.today) * 100) / 100 : null, worse: i.worse })),
+    worseItems: r.today.worse,
+    flaggedToday: r.today.worse.length >= 2,
+    readinessEase: ease,
+    load: null,
+    ease,
+    reason: ease ? r.why : null,
+    blockZero: block != null,
+    state: r.state,
   }
-}
-
-/** Working-set weight from a plan load, check sets scaled (~1.1x) and rounded to 0.5 kg. */
-export function planSetWeightKg(load: WorkingLoad, set: TemplateSet): number {
-  return Math.round(load.weightKg * (set.loadMultiplier ?? 1) * 2) / 2
 }
 
 // ─── Test results ──────────────────────────────────────────────

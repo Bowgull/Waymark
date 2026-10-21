@@ -9,7 +9,7 @@ import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { sessions } from '../db/schema'
-import { CLASS_MINUTES, easeFor, estimatedMinutes, feltHardEase, isHard, isLegInterference, typicalRpe, weekRuleEases, type WeekSignals } from '../lib/coach'
+import { CLASS_MINUTES, easeFor, estimatedMinutes, isHard, isLegInterference, typicalRpe, } from '../lib/coach'
 import { planFor, type PlanSession } from '../lib/coach/bodyWatch'
 import { injuryActionFor } from '../lib/coach/injury'
 import { evaluateClassRequest } from '../lib/blockZero/muayThai'
@@ -41,26 +41,6 @@ assert.doesNotMatch(eased.reason ?? '', CONTENT)
 const knee = { region: 'knee', since: MON, reason: 'Knee flagged on Mon.' }
 assert.equal(injuryActionFor('mt_class', knee).action, 'skip_or_move')
 assert.doesNotMatch(injuryActionFor('mt_class', knee).note ?? '', CONTENT)
-assert.equal(feltHardEase({
-  done: { sessionId: 'c1', epochDay: MON, type: 'mt_class', label: 'MT Class', rpe: 10 },
-  nextMorningSoreness: 5,
-  upcoming: [{ id: 'c2', type: 'mt_class', label: 'MT Class', notes: null, epochDay: MON + 2, timeSlot: 'pm', status: 'planned' }],
-  todayEpochDay: MON + 1,
-  nowSec: (MON + 1) * 86400,
-}), null, 'a hard class never eases the next class')
-const signals: WeekSignals = {
-  weekNumber: 3, totalWeeks: 6, blockType: 'block_zero', lastWeek: { planned: 6, completed: 6, missed: 0, skipped: 0, added: 0 }, completionRate: 1,
-  load: { last7: 3000, prev7: 1500, changePct: 100, flagged: true }, readiness: { days: 7, flaggedDays: 2, easeDays: 2, freshDays: 0, oversleepFatigueDays: 0 },
-  effort: { sessions: 6, easier: 0, onTarget: 6, harder: 0, wayHarder: 0, avgRpe: 6 }, avgSoreness: 4.2, avgSleep: 7, returnRamp: { active: false, gapDays: 0, reason: null },
-  retestLastWeek: false, waveEnd: false, athleteShape: null,
-}
-const week = [
-  { type: 'mt_class', label: 'MT Class', notes: null, epochDay: MON, timeSlot: 'pm' as const, estimatedMin: null },
-  { type: 'strength', label: 'Strength A', notes: null, epochDay: MON + 1, timeSlot: 'am' as const, estimatedMin: null },
-  { type: 'foundation_run', label: 'Run-Walk', notes: null, epochDay: MON + 2, timeSlot: 'am' as const, estimatedMin: null },
-]
-const eases = weekRuleEases(signals, week)
-assert.ok(eases.length > 0 && eases.every(e => week[e.index].type !== 'mt_class'), 'the weekly pass eases strength and runs, never a class')
 assert.equal(easeFor({ id: 'c', type: 'mt_class', label: 'MT Class', notes: null, epochDay: MON, timeSlot: 'pm', status: 'planned' }, { blockType: 'block_zero', weekNumber: 3 }), null, 'a rebalance never makes a class "easier"')
 const cap = evaluateClassRequest({ weeksSinceFirstClass: 0, classesThisWeek: 2 })
 assert.ok(!cap.allowed && !CONTENT.test(cap.reason), 'only the weekly cap can say no, and it names no kind of class')

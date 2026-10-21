@@ -12,6 +12,8 @@ export const completeSessionSchema = z.object({
   completedAt: z.number().int().min(0).optional(),
   // Bag work and rope: seconds actually worked in each round, in order (the done summary's per-round lines).
   roundSecs: z.array(z.number().int().min(0).max(3600)).max(40).optional(),
+  // Ended early (bag work, rope): the one-tap reason. "no_time" holds the next dose; it never reads as too hard.
+  endReason: z.enum(['no_time', 'rough', 'pain', 'other']).nullable().optional(),
 })
 
 export const strengthSetSchema = z.object({

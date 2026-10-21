@@ -1,18 +1,15 @@
-// Block Zero lead-in (Part B, owner-approved 2026-10-19). Week 1 always
-// starts on a Monday. A start on any other day leads in to that Monday:
-// - Days before the start get no sessions, ever (any block).
-// - Lead-in days get Foundation, plus an easy run-walk on Tue/Thu/Sat.
-// - Lead-in sessions are optional: no missed asks, no week-1 completion or
-//   gate consistency, no week count, no "felt easier" reads. They do count
-//   for session load and the check-in baseline.
-// - Strength picked in the lead-in is an intro session (2 x 8 @ RPE 5-6),
-//   at most 2, never back to back, never Sunday. Bag: at most 2, 4 rounds.
-// Pure: callers pass the block start and the training week.
+// The block's first days. Coach brain P2 (coach-brain.md §7, approved
+// 2026-10-20) removed the Block Zero lead-in: the start day is day 1 whatever
+// the weekday, and its calendar week is week 1. Days before the start get no
+// sessions, ever (any block). In a Block Zero that starts mid-week the first
+// days follow the week's order from the start day (Strength A first, the most
+// reliable session), Sunday staying rest. Older rows stamped leadIn read as
+// ordinary sessions. Pure: callers pass the block start and the training week.
 
-import { getLeadInDayTemplate } from '../blockZero/weekPlan'
+import { getBlockZeroWeekTemplate } from '../blockZero/weekPlan'
 import { getDayTemplate, type TemplateSession } from '../weeklyTemplate'
 import { anchorMondayFor } from './weekCounter'
-import { dowOf, type BlockKind } from './sessions'
+import { dowOf, mondayOf, type BlockKind } from './sessions'
 
 /** Intro strength sessions, and bag sessions, the lead-in takes (each). */
 export const LEAD_IN_MAX_SESSIONS = 2
@@ -40,9 +37,10 @@ export function startedAtForLocalDay(localDay: number): number {
   return localDay * 86400 + 12 * 3600
 }
 
-/** Block Zero lead-in day: from the start day up to week 1's Monday. */
-export function inLeadIn(blockType: BlockKind, startDay: number, day: number): boolean {
-  return blockType === 'block_zero' && day >= startDay && day < anchorMondayFor(startDay, 'block_zero')
+/** Block Zero lead-in day: there is none since coach brain P2 (kept for older callers). */
+export function inLeadIn(_blockType: BlockKind, _startDay: number, _day: number): boolean {
+  void _blockType; void _startDay; void _day
+  return false
 }
 
 export interface PlannedDay {
@@ -52,16 +50,28 @@ export interface PlannedDay {
 }
 
 /**
- * The template sessions a day gets: none before the start; the lead-in day in
- * a Block Zero lead-in; else the block's day template for the training week.
+ * The start week of a Block Zero begun after Monday: day N after the start
+ * takes the week's Nth training day (Mon A, Tue run, Wed B, ...), Sunday rest.
+ * Null for any other day.
+ */
+export function startWeekDay(startDay: number, epochDay: number, weekNumber: number): TemplateSession[] | null {
+  if (mondayOf(epochDay) !== mondayOf(startDay) || dowOf(startDay) === 1 || epochDay < startDay) return null
+  const week = getBlockZeroWeekTemplate(weekNumber)
+  if (dowOf(epochDay) === 0) return week[0] ?? []
+  let n = 0
+  for (let d = startDay; d < epochDay; d++) if (dowOf(d) !== 0) n++
+  return week[Math.min(6, 1 + n)] ?? []
+}
+
+/**
+ * The template sessions a day gets: none before the start; else the block's
+ * day template for the training week (Block Zero's start week from day 1).
  */
 export function planDayTemplate(input: { blockType: BlockKind; startDay: number; epochDay: number; weekNumber: number; mtDays: Set<number> }): PlannedDay {
   if (input.epochDay < input.startDay) return { sessions: [], leadIn: false, beforeStart: true }
   const dow = dowOf(input.epochDay)
-  if (inLeadIn(input.blockType, input.startDay, input.epochDay)) {
-    return { sessions: getLeadInDayTemplate(dow), leadIn: true, beforeStart: false }
-  }
-  return { sessions: getDayTemplate(input.blockType, input.weekNumber, dow, input.mtDays), leadIn: false, beforeStart: false }
+  const first = input.blockType === 'block_zero' ? startWeekDay(input.startDay, input.epochDay, input.weekNumber) : null
+  return { sessions: first ?? getDayTemplate(input.blockType, input.weekNumber, dow, input.mtDays), leadIn: false, beforeStart: false }
 }
 
 /** context_json stamp for a lead-in session. */

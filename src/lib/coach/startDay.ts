@@ -5,12 +5,10 @@
 //
 // The block is stored at once with its start in the future (noon UTC of the
 // local day, D4). It is the running block, but nothing is planned before its
-// start (planDayTemplate, generateDaySessions), and the lead-in and week
-// counter (leadIn.ts, weekCounter.ts) apply from the chosen day: a Monday
-// start is week 1 that day; any other day leads in to the next Monday.
+// start (planDayTemplate, generateDaySessions), and the week counter
+// (weekCounter.ts) applies from the chosen day: week 1 starts that day.
 // Pure, so the tests run under node.
 
-import { anchorMondayFor } from './weekCounter'
 import { dowOf } from './sessions'
 
 /** Days on the board: today and the next six. */
@@ -60,14 +58,12 @@ export function startTiles(todayDay: number): StartTile[] {
 }
 
 /**
- * What the start means, after "Starts <day>.": a Monday is week 1 that day;
- * any other day leads in to the next Monday (lead-in days are optional).
+ * What the start means, after "Starts <day>.": week 1 starts that day,
+ * whatever the weekday (coach brain P2: no lead-in).
  */
-export function startMeaning(startDay: number, { optional = true }: { optional?: boolean } = {}): string {
-  const monday = anchorMondayFor(startDay, 'block_zero')
-  if (monday === startDay) return 'Week 1 starts that day.'
-  const span = dowOf(startDay) === 0 ? 'Sun is an easy lead-in day' : `${dayName(startDay)}–Sun are easy lead-in days`
-  return `${span}${optional ? ', all optional' : ''}. Week 1 starts ${dayDate(monday)}.`
+export function startMeaning(_startDay: number, _opts: { optional?: boolean } = {}): string {
+  void _startDay; void _opts
+  return 'Week 1 starts that day.'
 }
 
 /** The waiting board's line (page 64 2A): what the start means, without "all optional". */
@@ -93,23 +89,19 @@ export function countdownFlap(startDay: number, todayDay: number): string {
 }
 
 /**
- * The start day's morning only: one line on top of the day. A lead-in start
- * says the day is optional; a Monday start is week 1. Null on any other day.
+ * The start day's morning only: one line on top of the day. Null on any other day.
+ * No fixed block length since coach brain P2: the coach decides when he is ready.
  */
-export function dayOneLine(startDay: number | null | undefined, todayDay: number, sessionsToday: number): { flap: string; line: string } | null {
+export function dayOneLine(startDay: number | null | undefined, todayDay: number, _sessionsToday: number): { flap: string; line: string } | null {
+  void _sessionsToday
   if (startDay == null || startDay !== todayDay) return null
-  if (anchorMondayFor(startDay, 'block_zero') === startDay) return { flap: 'BLOCK ZERO · WEEK 1', line: 'Day 1 of 6 weeks.' }
-  const which = sessionsToday === 2 ? 'both optional' : sessionsToday > 2 ? 'all optional' : 'optional'
-  return { flap: 'BLOCK ZERO · DAY 1', line: `Lead-in day, ${which}. Week 1 starts Mon.` }
+  return { flap: 'BLOCK ZERO · DAY 1', line: 'Day 1. Light today: the coach learns you from here.' }
 }
 
-/**
- * The start's first week holds a lead-in: any start but a Monday. While the
- * start is ahead, its planned week (the lead-in, or week 1 from a Monday) is
- * shown under the waiting board; plan week 1 either way.
- */
-export function startHasLeadIn(startDay: number): boolean {
-  return anchorMondayFor(startDay, 'block_zero') !== startDay
+/** The start's first week holds no lead-in any more (coach brain P2). Kept for callers. */
+export function startHasLeadIn(_startDay: number): boolean {
+  void _startDay
+  return false
 }
 
 /** The preview's label under the waiting board: "Tomorrow", else "Starts Thu". */

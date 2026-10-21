@@ -293,6 +293,18 @@ export async function generateDaySessions(db: DB, epochDay: number, todayDay: nu
 }
 
 /**
+ * The day already holds the active block's own template sessions (the one
+ * creation path's idempotency check). An ended block's leftovers and his own
+ * adds don't count.
+ */
+export async function dayHasPlan(db: DB, blockId: string, day: number): Promise<boolean> {
+  const rows = await db.select({ source: sessions.source, blockId: weekPlans.blockId }).from(sessions)
+    .leftJoin(weekPlans, eq(weekPlans.id, sessions.weekPlanId))
+    .where(eq(sessions.scheduledDate, day))
+  return rows.some(r => (r.source == null || r.source === 'template') && (r.blockId == null || r.blockId === blockId))
+}
+
+/**
  * Days of the current week that were never opened get their template
  * sessions, so the rollover sees them as missed (map #4). From the block
  * start or this Monday, through yesterday.

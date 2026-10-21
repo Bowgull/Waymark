@@ -3,10 +3,9 @@
 // doesn't move them further into the program (F12, F13; program for exposure,
 // not the calendar). Pure: callers pass completed key-session days.
 //
-// - Week 1 is the block's first Monday-Sunday week. Block Zero: week 1 always
-//   starts on a Monday. A Monday start is week 1 that day; any other start day
-//   leads in to the next Monday (the lead-in, Part B). Fighter keeps the older
-//   rule: Monday-Wednesday count their own week, Thursday-Sunday lead in.
+// - Week 1 is the block's first Monday-Sunday week. Block Zero: the week of the
+//   start day, whatever the weekday (coach brain P2: no lead-in). Fighter keeps
+//   the older rule: Monday-Wednesday count their own week, Thursday-Sunday lead in.
 // - A past week with no completed key session is paused.
 // - The week a 7+ day gap began is paused too when under half its key sessions
 //   were done, so the athlete resumes at the week they left.
@@ -61,7 +60,8 @@ export interface TrainingWeek {
  */
 export function anchorMondayFor(startDay: number, blockType: BlockKind = 'fighter'): number {
   const dow = dowOf(startDay)
-  if (blockType === 'block_zero') return mondayOf(startDay) + (dow === 1 ? 0 : 7)
+  // Block Zero (coach brain P2): no lead-in. The start day is day 1 and its calendar week is week 1.
+  if (blockType === 'block_zero') return mondayOf(startDay)
   const lateStart = dow === 0 || dow >= 4
   return mondayOf(startDay) + (lateStart ? 7 : 0)
 }

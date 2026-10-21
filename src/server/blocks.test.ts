@@ -1,7 +1,7 @@
 // Run: tsx src/server/blocks.test.ts
 // E2E 2026-10-19b majors on a real (in-memory) database:
-// M1: a mid-week Block Zero start has two plans numbered week 1; the lead-in
-//     and next Monday's week 1 are each read as themselves.
+// M1: a mid-week Block Zero start: its own week is week 1 (no lead-in since coach
+//     brain P2) and next week is a plan of its own.
 // M2: restarting Block Zero (not fresh) takes the old block's planned
 //     sessions with it, so the new week has no doubles.
 import assert from 'node:assert/strict'
@@ -30,14 +30,12 @@ const nowSec = WED * 86400 + 18 * 3600
   assert.equal(plans.filter(p => p.weekNumber === 1).length, 2, 'two plans are numbered week 1')
 
   const daysOf = async (id: string) => (await db.select({ d: sessions.scheduledDate }).from(sessions).where(eq(sessions.weekPlanId, id))).map(r => r.d as number)
-  const lead = await latestWeekPlan(db, block.id, 1, { leadIn: true })
-  assert.ok(lead, 'the lead-in plan is found')
-  const leadDays = await daysOf(lead.id)
-  assert.ok(leadDays.length > 0 && leadDays.every(d => d >= WED && d < NEXT), `M1: the lead-in plan holds this week from Wednesday (${leadDays})`)
-  const week1 = await latestWeekPlan(db, block.id, 1)
-  assert.ok(week1 && week1.id !== lead.id, 'week 1 is its own plan')
-  const week1Days = await daysOf(week1.id)
-  assert.ok(week1Days.length > 0 && week1Days.every(d => d >= NEXT && d <= NEXT + 6), 'M1: week 1 is next Monday to Sunday')
+  // Coach brain P2: no lead-in. The start week holds Wednesday to Sunday; next week its own plan.
+  const ids = plans.filter(p => p.weekNumber === 1).map(p => p.id)
+  const days = await Promise.all(ids.map(daysOf))
+  assert.ok(days.some(ds => ds.length > 0 && ds.every(d => d >= WED && d < NEXT)), 'M1: the start week holds this week from Wednesday')
+  assert.ok(days.some(ds => ds.length > 0 && ds.every(d => d >= NEXT && d <= NEXT + 6)), 'M1: next Monday to Sunday is its own plan')
+  assert.equal(await latestWeekPlan(db, block.id, 1, { leadIn: true }), null, 'no lead-in plan any more')
   console.log('ok: M1 lead-in and week 1 read apart')
 }
 

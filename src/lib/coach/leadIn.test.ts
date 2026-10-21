@@ -6,7 +6,7 @@ import { countsFromDay, inLeadIn, optionalDay, pickWeekPlan, planDayTemplate, st
 import { hasCoachEase, whyThisWeek } from './weeklyPass'
 import { anchorMondayFor } from './weekCounter'
 import { checkSessionChange } from './placement'
-import { blockZeroEffortTarget, consistentlyEasier, effortVerdict, noEasierReadFor, summarizeEffort, type EffortRead } from './feltHard'
+import { blockZeroEffortTarget, consistentlyEasier, effortVerdict, noEasierReadFor, summarizeEffort, type EffortRead } from './effort'
 import { bagRules } from './bag'
 import { getStrengthTemplate } from '../strengthTemplates'
 import { LEAD_IN_TARGET, introStartLoad } from '../blockZero/strength'
@@ -17,30 +17,21 @@ const MT = new Set([1, 3, 5])
 const types = (start: number, day: number) => planDayTemplate({ blockType: 'block_zero', startDay: start, epochDay: day, weekNumber: 1, mtDays: MT }).sessions.map(x => x.type).join('+')
 const houseVoice = (t: string) => !/[!—–]/.test(t)
 
-// ─── Start each weekday Mon..Sun ─────────────────────────────
+// ─── Start each weekday Mon..Sun (coach brain P2: no lead-in) ─
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 for (let i = 0; i < 7; i++) {
   const start = MON + i
-  const anchor = anchorMondayFor(start, 'block_zero')
-  assert(anchor === (i === 0 ? MON : MON + 7) && countsFromDay('block_zero', start) === anchor, `${DOW[i]} start: week 1 starts ${i === 0 ? 'today' : 'next Monday'}`)
-  // Nothing before the start, ever.
+  assert(anchorMondayFor(start, 'block_zero') === MON && countsFromDay('block_zero', start) === MON, `${DOW[i]} start: its week is week 1`)
   const before = Array.from({ length: i }, (_, k) => MON + k)
   assert(before.every(d => planDayTemplate({ blockType: 'block_zero', startDay: start, epochDay: d, weekNumber: 1, mtDays: MT }).sessions.length === 0), `${DOW[i]} start: no sessions on the ${i} day(s) before it`)
-  // Lead-in days: Foundation daily, an easy run-walk Tue/Thu/Sat, never strength.
-  const lead: string[] = []
-  for (let d = start; d < anchor; d++) {
-    const p = planDayTemplate({ blockType: 'block_zero', startDay: start, epochDay: d, weekNumber: 1, mtDays: MT })
-    lead.push(types(start, d))
-    if (!p.leadIn || !inLeadIn('block_zero', start, d) || !optionalDay('block_zero', start, d)) throw new Error(`${DOW[i]} start: day +${d - MON} should be lead-in`)
-    if (p.sessions.some(x => x.type === 'strength')) throw new Error('no strength in the lead-in template')
-  }
-  const want = ['mobility', 'mobility+foundation_run', 'mobility', 'mobility+foundation_run', 'mobility', 'mobility+foundation_run', 'mobility'].slice(i, 7)
-  assert(i === 0 ? lead.length === 0 : lead.join(',') === want.join(','), `${DOW[i]} start lead-in: ${lead.join(', ') || 'none'}`)
-  // Week 1 is the normal week from its Monday.
-  assert(types(start, anchor) === 'mobility+strength' && !inLeadIn('block_zero', start, anchor) && !optionalDay('block_zero', start, anchor), `${DOW[i]} start: week 1 Monday is Foundation + Strength A, counted`)
+  assert(!inLeadIn('block_zero', start, start) && !optionalDay('block_zero', start, start), `${DOW[i]} start: day 1 counts, nothing optional`)
+  // Day 1 is the most reliable session, Strength A (Sunday stays rest).
+  if (i < 6) assert(types(start, start) === 'mobility+strength' && planDayTemplate({ blockType: 'block_zero', startDay: start, epochDay: start, weekNumber: 1, mtDays: MT }).sessions.some(x => x.label === 'Strength A'), `${DOW[i]} start: day 1 is Foundation + Strength A`)
+  else assert(types(start, start) === 'mobility', 'Sun start: day 1 is rest with Foundation')
+  if (i < 5) assert(types(start, start + 1) === 'mobility+foundation_run', `${DOW[i]} start: day 2 is the first run-walk`)
 }
-const leadRun = planDayTemplate({ blockType: 'block_zero', startDay: MON + 3, epochDay: MON + 3, weekNumber: 1, mtDays: MT }).sessions.find(x => x.type === 'foundation_run')
-assert(leadRun?.estimatedMin === 23 && !('alternativeType' in (leadRun ?? {})), 'lead-in run-walk is the week-1 shape (23 min)')
+assert(types(MON + 3, MON + 6) === 'mobility', 'Thu start: Sunday stays rest')
+assert(types(MON + 3, MON + 7) === 'mobility+strength', 'Thu start: the next Monday is the normal week')
 assert(planDayTemplate({ blockType: 'fighter', startDay: MON + 2, epochDay: MON + 1, weekNumber: 1, mtDays: MT }).sessions.length === 0, 'Fighter: nothing before the start either')
 assert(!planDayTemplate({ blockType: 'fighter', startDay: MON + 2, epochDay: MON + 3, weekNumber: 1, mtDays: MT }).leadIn, 'Fighter has no lead-in template')
 
@@ -50,28 +41,12 @@ const wedLocal = isoToEpochDay('2026-10-21')
 const utcThu = Math.floor(Date.UTC(2026, 9, 22, 1, 0) / 86400000)
 const stored = startedAtForLocalDay(wedLocal)
 assert(utcThu === wedLocal + 1 && Math.floor(stored / 86400) === wedLocal, 'Wednesday-evening start: stored as Wednesday (noon UTC of the local date), not Thursday')
-assert(inLeadIn('block_zero', Math.floor(stored / 86400), wedLocal) && anchorMondayFor(wedLocal, 'block_zero') === anchorMondayFor(utcThu, 'block_zero'), 'the local start leads in to the same Monday')
-const monLocal = isoToEpochDay('2026-10-19')
-assert(anchorMondayFor(Math.floor(startedAtForLocalDay(monLocal) / 86400), 'block_zero') === monLocal, 'a Monday-evening start is week 1 that day (the UTC date would have made it a Tuesday lead-in)')
 
-// ─── Intro strength (Part B) ─────────────────────────────────
-const intro = getStrengthTemplate(5, 1, 'block_zero', 'Strength C', { leadIn: true })
-const main = intro.exercises.filter(e => e.section === 'main')
-assert(main.every(e => e.sets.filter(x => !x.isWarmup).length === 2 && e.sets.every(x => x.loadMultiplier == null)), 'intro: 2 working sets, no check set')
-assert(main.every(e => (e.notes ?? '').includes('Intro. Learn the lifts. Stop with 4-5 in the tank. Monday finds your starting load.')), 'intro: the line on the lifts')
-assert(!intro.exercises.some(e => e.exerciseId === 'ex-neck-iso-4way') && intro.exercises.filter(e => e.section === 'accessory').every(e => e.sets.length === 1), 'intro: no durability finisher, accessories 1 set')
-assert(intro.exercises.filter(e => e.section === 'core').every(e => e.sets.length === 1), 'intro: core 1 set')
-assert(LEAD_IN_TARGET.rpe[0] === 5 && LEAD_IN_TARGET.rpe[1] === 6 && LEAD_IN_TARGET.rir[0] === 4 && LEAD_IN_TARGET.rir[1] === 5, 'intro target: RPE 5-6, 4-5 reps left')
-const introA = getStrengthTemplate(2, 1, 'block_zero', 'Strength A', { leadIn: true })
-assert(introA.exercises.some(e => e.exerciseId === 'ex-goblet-squat' || /goblet/i.test(e.label)), 'intro A uses the week-1 lift (goblet squat)')
+// ─── The intro template is gone with the lead-in (coach brain P2) ─
 const full = getStrengthTemplate(1, 1, 'block_zero', 'Strength A')
-assert(full.exercises.some(e => e.exerciseId === 'ex-neck-iso-4way'), 'week 1 proper keeps its durability finisher')
-const start = introStartLoad([
-  { weightKg: 20, reps: 8, plannedReps: 8, rir: 3.5, completedAt: 100, setNumber: 3, sessionId: 'i1' },
-  { weightKg: 22.5, reps: 8, plannedReps: 8, rir: 3.5, completedAt: 110, setNumber: 4, sessionId: 'i1' },
-])
-assert(start?.weightKg === 22.5 && start.change === 'hold', 'intro top weight is the start of the week-1 work-up, never a load step')
-assert(introStartLoad([]) === null, 'no intro: no start weight')
+assert(full.exercises.some(e => e.exerciseId === 'ex-neck-iso-4way'), 'week 1 keeps its durability finisher')
+void LEAD_IN_TARGET
+void introStartLoad
 
 // ─── Felt hard / felt easy by Block Zero week (D5) ───────────
 const bzStrength = (week: number, rpe: number | null, rir: number | null, leadIn = false): EffortRead => {
@@ -122,7 +97,7 @@ assert(pickWeekPlan([{ plan: 'empty', contexts: [] }], false) === 'empty', 'M1: 
 assert(pickWeekPlan([{ plan: 'new', contexts: [null] }, { plan: 'old', contexts: [null] }], false) === 'new', 'M1: a repeated week number still reads the newest plan')
 const leadLineSignals = { weekNumber: 1, totalWeeks: 6, blockType: 'block_zero' as const, returnRamp: { active: false, gapDays: 0, reason: null } } as unknown as Parameters<typeof whyThisWeek>[0]
 const leadLine = whyThisWeek(leadLineSignals, [], { leadIn: true })
-assert(/^Lead-in/.test(leadLine) && /Week 1 starts Monday/.test(leadLine), `m7: the lead-in's week line says it is the lead-in (${leadLine})`)
+assert(/^Week 1\./.test(leadLine) && !/lead-in/i.test(leadLine), `no lead-in line any more (coach brain P2): ${leadLine}`)
 
 // m2: an undone ease leaves "coachEase":null, which is not an ease.
 assert(!hasCoachEase('{"coachEase":null}') && hasCoachEase('{"coachEase":{"kind":"set"}}') && !hasCoachEase(null), 'm2: an undone weekly ease drops out of the week line')

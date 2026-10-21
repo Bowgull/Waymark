@@ -2,9 +2,9 @@
 // The adaptive coach's other rules: the training max proposal, the weekly
 // pass (eases with reasons, the week line, idempotency).
 import { fighterTmDecision, tmAcceptValues, tmProposal, type BlockWorkingSet } from './tm'
-import { claimDecision, easeDetail, placePlannedWeek, type PlannedEntry, houseLine, STALE_CLAIM_SEC, weekRuleEases, weeklyPassKey, weeklyPassTarget, whyThisWeek, type WeekSignals } from './weeklyPass'
-import { summarizeEffort } from './feltHard'
-import { MON, assert, ctx, s } from './testUtil'
+import { claimDecision, easeDetail, placePlannedWeek, type PlannedEntry, houseLine, STALE_CLAIM_SEC, weeklyPassKey, weeklyPassTarget, whyThisWeek, type WeekSignals } from './weeklyPass'
+import { summarizeEffort } from './effort'
+import { MON, assert, ctx,} from './testUtil'
 import { analyzeWeek, previousAnalysisFrom } from '../weekAnalysis'
 
 const houseVoice = (t: string) => !t.includes('!') && !t.includes('—')
@@ -42,35 +42,14 @@ const base: WeekSignals = {
   returnRamp: { active: false, gapDays: 0, reason: null },
   retestLastWeek: false, waveEnd: false, athleteShape: null,
 }
-const week = [s('foundation_run', MON, { label: 'Zone 2' }), s('mt_class', MON, { timeSlot: 'pm' }), s('strength', MON + 1), s('strength', MON + 3), s('bag_work', MON + 5)]
-assert(weekRuleEases(base, week).length === 0, 'good week: nothing eases')
 const good = whyThisWeek(base, [])
 assert(good === 'New this week: main lifts at 75% of your max, down from 90%. Next week: 80%.' && houseVoice(good) && plainWords(good), `Fighter week line: ${good}`)
 
 // Page 56 item 16: Block Zero week 3 -> 4, in plain words with the real numbers.
 const bz4: WeekSignals = { ...base, blockType: 'block_zero', weekNumber: 4, totalWeeks: 6 }
-assert(whyThisWeek(bz4, []) === 'New this week: every main lift goes from 2 sets of 8 to 3, and you run 3:30 at a time, up from 2:00 (5 rounds, not 7). Next week: runs go to 4:00.', `page 56 week line: ${whyThisWeek(bz4, [])}`)
-assert(whyThisWeek({ ...bz4, weekNumber: 1 }, []).startsWith('First week: two sets of 8 on every main lift, and run-walks of 1:00 run, 2:00 walk (6 rounds).'), `week 1: ${whyThisWeek({ ...bz4, weekNumber: 1 }, [])}`)
-assert(whyThisWeek({ ...bz4, weekNumber: 6 }, []).includes('Next week: the gate'), 'the last week points at the gate')
+assert(whyThisWeek(bz4, []).startsWith('Week 4. Each session is set the night before') && plainWords(whyThisWeek(bz4, [])), `Block Zero week line (coach brain P2): ${whyThisWeek(bz4, [])}`)
 assert([1, 2, 3, 4, 5, 6].every(w => plainWords(whyThisWeek({ ...bz4, weekNumber: w }, []))), 'no jargon in any Block Zero week line')
 
-const tired: WeekSignals = { ...base, readiness: { ...base.readiness, flaggedDays: 3, easeDays: 2 }, avgSoreness: 3.8 }
-const eases = weekRuleEases(tired, week)
-assert(eases.length === 2 && week[eases[0].index].type === 'strength' && week[eases[1].index].type === 'strength', 'two causes: the two strength days ease first')
-assert(eases.every(e => e.kind === 'one_set' && houseVoice(e.reason) && e.was && e.now), 'each ease has a reason and a was/now')
-// m4 (E2E 2026-10-19b): the reason says "same weights", so the ease keeps the weights.
-assert(eases.every(e => /same weights/.test(e.reason) && e.now === 'One set less, same weights'), 'm4: a weekly strength ease drops a set at the same weights, and says so everywhere')
-assert(eases[0].reason.startsWith('Check-ins were off your usual on 2 mornings.') && plainWords(eases[0].reason), `reason names the cause in plain words: ${eases[0].reason}`)
-const lineEases = eases.map(e => ({ cause: e.cause, epochDay: week[e.index].epochDay, name: 'Strength', type: 'strength' }))
-const why = whyThisWeek(tired, lineEases)
-assert(why.includes('Check-ins were off your usual on 2 mornings.') && why.includes('drops a set') && plainWords(why), `the week line says which session eases and why: ${why}`)
-const spiky = weekRuleEases({ ...base, load: { last7: 3200, prev7: 2300, changePct: 39, flagged: true }, avgSoreness: 4, effort: summarizeEffort([{ epochDay: 1, type: 'strength', rpe: 9 }, { epochDay: 2, type: 'strength', rpe: 10 }]) }, week)
-assert(spiky.length === 2, 'never more than two eases a week')
-assert(spiky.every(e => plainWords(e.reason)), 'ease reasons in plain words')
-assert(weekRuleEases({ ...tired, returnRamp: { active: true, gapDays: 12, reason: 'Back after 12 days.' } }, week).length === 0, 'after a gap the return ramp does the easing')
-assert(whyThisWeek({ ...tired, returnRamp: { active: true, gapDays: 12, reason: 'Back after 12 days. Loads at 90%.' } }, []).startsWith('Back after 12 days:'), 'gap: the week line says it starts lighter')
-const low = weekRuleEases({ ...base, lastWeek: { planned: 10, completed: 3, missed: 7, skipped: 0, added: 0 }, completionRate: 0.3 }, week)
-assert(low.length === 1 && low[0].reason.includes('Nothing is made up'), 'low completion eases, never makes up')
 assert(whyThisWeek({ ...base, waveEnd: true }, []).includes('New maxes'), 'wave end: the week line says new maxes go in')
 assert(easeDetail('reduce', { type: 'strength' }).now === 'One set less, load 10% lower', 'ease detail in plain words')
 assert(houseLine('Big week — huge!! Keep going.') === 'Big week, huge. Keep going.', 'house voice: no em dash, no exclamation')

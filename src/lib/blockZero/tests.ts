@@ -75,7 +75,9 @@ export type TestValidation =
  * must be one the key allows. Exercise existence is the caller's job (DB).
  */
 export function validateTestResult(input: TestResultInput, totalWeeks: number): TestValidation {
-  if (!isTestWeek(input.week, totalWeeks)) {
+  // The talk test is asked on any week the coach wants the line rechecked (coach brain P2: first run, then rechecks).
+  const talk = input.testKey === 'talk_test_hr' && Number.isInteger(input.week) && input.week >= 1 && input.week <= Math.max(totalWeeks, 52)
+  if (!talk && !isTestWeek(input.week, totalWeeks)) {
     return { ok: false, error: `Week ${input.week} has no tests. Use 1, 3, ${BLOCK_ZERO_BASE_WEEKS} or an extension week.` }
   }
   const parsed = typeof input.testKey === 'string' ? parseTestKey(input.testKey) : null

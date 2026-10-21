@@ -18,30 +18,25 @@ import { getRunWalkWeek } from '../lib/blockZero/running'
 import { TALK_TEST_KEY } from '../lib/blockZero/talkTest'
 import { getActiveBlock } from './blockZeroData'
 import { blockStartDay } from './coachData'
+import { FALLBACK_TIME_ZONE, athleteTimeZone, localDayIn, localMinuteIn } from './timeZone'
 
 type DB = ReturnType<typeof createDB>
 
-/**
- * The athlete's time zone, for local start times (when he trains). Nothing
- * stores it yet; Josh trains in Toronto. Intl handles daylight saving.
- */
-export const ATHLETE_TIME_ZONE = 'America/Toronto'
-
-const minuteFmt = new Intl.DateTimeFormat('en-CA', { timeZone: ATHLETE_TIME_ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-const dateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: ATHLETE_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' })
-
-/** Local minute of day (0-1439) of a unix-seconds time. */
-export function localMinuteOf(unixSec: number): number {
-  const parts = minuteFmt.formatToParts(new Date(unixSec * 1000))
-  const h = Number(parts.find(p => p.type === 'hour')?.value ?? 0)
-  const m = Number(parts.find(p => p.type === 'minute')?.value ?? 0)
-  return (h % 24) * 60 + m
+/** Local minute of day (0-1439) of a unix-seconds time, in the athlete's zone (default: the fallback). */
+export function localMinuteOf(unixSec: number, tz: string = FALLBACK_TIME_ZONE): number {
+  return localMinuteIn(unixSec, tz)
 }
 
-/** Local epoch day of a unix-seconds time. */
-export function localDayOf(unixSec: number): number {
-  const iso = dateFmt.format(new Date(unixSec * 1000)) // YYYY-MM-DD
-  return Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86400000)
+/** Local epoch day of a unix-seconds time, in the athlete's zone. */
+export function localDayOf(unixSec: number, tz: string = FALLBACK_TIME_ZONE): number {
+  return localDayIn(unixSec, tz)
+}
+
+/** Rounds worked from context_json.roundSecs (seconds per round; a round under 20 s was not worked). */
+function roundsDoneOf(contextJson: string | null): number | null {
+  const secs = parse<{ roundSecs?: unknown }>(contextJson, {}).roundSecs
+  if (!Array.isArray(secs) || secs.length === 0) return null
+  return secs.filter(x => typeof x === 'number' && x >= 20).length
 }
 
 function parse<T>(json: string | null | undefined, fallback: T): T {
@@ -58,6 +53,7 @@ export async function modelFromDay(db: DB, today: number): Promise<number> {
 /** Everything the model reads, logged on or after `fromDay` and up to `today`. */
 export async function loadModelEvents(db: DB, fromDay: number, today: number): Promise<ModelEvents> {
   const [profile] = await db.select().from(userProfile).limit(1)
+  const tz = await athleteTimeZone(db)
   const inRange = and(gte(sessions.scheduledDate, fromDay), lte(sessions.scheduledDate, today))
   const sess = await db.select().from(sessions).where(inRange)
   const sessionIds = new Set(sess.map(s => s.id))
@@ -110,7 +106,7 @@ export async function loadModelEvents(db: DB, fromDay: number, today: number): P
     sessions: sess.map(s => ({
       id: s.id, type: s.type, status: s.status, day: s.scheduledDate as number,
       slot: s.timeSlot === 'pm' ? 'pm' : s.timeSlot === 'am' ? 'am' : null,
-      startMin: s.startedAt != null ? localMinuteOf(s.startedAt) : null,
+      startMin: s.startedAt != null ? localMinuteOf(s.startedAt, tz) : null,
       durationSec: s.durationSec, rpe: s.rpe, skipReason: s.skipReason, source: s.source, blockType: s.blockType, notes: s.notes,
     })),
     sets: setRows.map(r => ({
@@ -121,22 +117,28 @@ export async function loadModelEvents(db: DB, fromDay: number, today: number): P
     runs: runRows.map(({ run: r, weekNumber }) => {
       const s = sess.find(x => x.id === r.sessionId)
       const runWalk = s?.type === 'foundation_run' && s.blockType === 'block_zero'
+      // The coach brain's dose (P2): the piece it prescribed and the rung it aimed at.
+      const dosed = (() => { try { const d = JSON.parse(s?.doseJson ?? 'null') as { run?: { runSec?: number; rungSec?: number; walkOnly?: boolean } } | null; return d?.run && !d.run.walkOnly ? { runSec: d.run.runSec ?? null, rungSec: d.run.rungSec ?? null } : null } catch { return null } })()
       return {
         sessionId: r.sessionId, day: dayOf.get(r.sessionId) as number, type: s?.type ?? 'running',
         durationSec: r.durationSec, plannedDurationSec: r.plannedDurationSec, distanceKm: r.distanceKm, avgHr: r.avgHr, maxHr: r.maxHr,
         splits: splits.filter(sp => sp.runSessionId === r.id).sort((a, b) => a.kmIndex - b.kmIndex).map(sp => ({ durationSec: sp.durationSec, avgHr: sp.avgHr })),
         isIndoor: r.isIndoor === 1, completionStatus: r.completionStatus, shortReason: r.shortReason, rpe: s?.rpe ?? null,
         // A Block Zero run-walk's piece is its week's run interval; any other run is one piece.
-        pieceSec: runWalk ? getRunWalkWeek(Math.max(1, weekNumber ?? 1)).runSec : null,
+        pieceSec: runWalk ? dosed?.runSec ?? getRunWalkWeek(Math.max(1, weekNumber ?? 1)).runSec : null,
+        rungSec: runWalk ? dosed?.rungSec ?? null : null,
       }
     }),
-    talkTests: tests.map(t => ({ day: localDayOf(t.recordedAt), bpm: t.value })).filter(t => t.day >= fromDay && t.day <= today),
+    talkTests: tests.map(t => ({ day: localDayOf(t.recordedAt, tz), bpm: t.value })).filter(t => t.day >= fromDay && t.day <= today),
     bag: sess.filter(s => s.type === 'bag_work').map(s => {
       const mineRatings = ratings.filter(r => r.sessionId === s.id)
       return {
         sessionId: s.id, day: s.scheduledDate as number, status: s.status,
         roundsPlanned: rounds.filter(r => r.sessionId === s.id).length,
         roundsRated: mineRatings.length ? new Set(mineRatings.map(r => r.roundId)).size : null,
+        // Rounds he actually worked (the finish's seconds per round), rated or not, and why he ended early.
+        roundsDone: roundsDoneOf(s.contextJson),
+        endReason: parse<{ endReason?: string }>(s.contextJson, {}).endReason ?? null,
         ratings: mineRatings.map(r => r.rating), rpe: s.rpe, skipReason: s.skipReason,
       }
     }),
@@ -149,7 +151,7 @@ export async function loadModelEvents(db: DB, fromDay: number, today: number): P
     ],
     moves: moves.filter(m => m.fromDay >= fromDay),
     classLogs: classLogs.filter(l => sessionIds.has(l.sessionId)).map(l => ({ sessionId: l.sessionId, day: dayOf.get(l.sessionId) as number, learned: !!l.learnedNote })),
-    trainingMaxes: tms.map(t => ({ exerciseId: t.exerciseId, weightKg: t.weightKg, day: localDayOf(t.updatedAt) })),
+    trainingMaxes: tms.map(t => ({ exerciseId: t.exerciseId, weightKg: t.weightKg, day: localDayOf(t.updatedAt, tz) })),
     openBodyAlerts: alerts,
   }
 }

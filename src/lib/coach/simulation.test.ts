@@ -18,16 +18,11 @@
 // every missed key session gets the coach's fix, never a question.
 
 import { getDayTemplate } from '../weeklyTemplate'
-import { keySessionCompletionRate, prescribeRunWalk, singleRunCap, weeklyRunAllowanceSec, RESTART_SESSION_SEC } from '../blockZero'
+import {  singleRunCap, RESTART_SESSION_SEC } from '../blockZero'
 import {
   KEY_TYPES,
   RUN_TYPES,
-  anchorMondayFor,
   checkSessionChange,
-  inLeadIn,
-  optionalDay,
-  pickDayOption,
-  planDayTemplate,
   classifyReplan,
   estimatedMinutes,
   injuryFlag,
@@ -44,20 +39,13 @@ import {
   type SessionLike,
   type SkipSignal,
 } from './index'
-import {
-  blockZeroEffortTarget,
-  consistentlyEasier,
-  noEasierReadFor,
-  feltHardEase,
+import { 
   fighterTmDecision,
-  freshStreak,
   makeRegularAsk,
   makeRegularCandidates,
-  rampUpAsk,
   summarizeEffort,
   tmProposal,
   typicalRpe,
-  weekRuleEases,
   weeklyPassKey,
   weeklyPassTarget,
   whyThisWeek,
@@ -352,10 +340,8 @@ assert(bzRet.plan.restart && bzRet.loadFactor === 0.75 && bzRet.noFinishers, 'Bl
   const checkIns: CheckIn[] = []
   const done: Array<EffortRead & { id: string }> = []
   const planned: Array<SessionLike & { id: string; eased?: boolean; reason?: string }> = []
-  const rampAsks: Array<{ day: number; easeToday: boolean; streak: number }> = []
   const passRuns = new Map<string, number>()
   const preparedWeeks: Array<{ monday: number; status: string; why: string; changes: Array<{ reason: string; was: string }> }> = []
-  const easeLog: Array<{ day: number; target: string; reason: string }> = []
   const tmSets: BlockWorkingSet[] = []
   let aid = 0
 
@@ -408,33 +394,7 @@ assert(bzRet.plan.restart && bzRet.loadFactor === 0.75 && bzRet.noFinishers, 'Bl
       done.push({ id: `add${aid++}`, epochDay: day, type: 'skip_rope', label: 'Rope', rpe: 5, source: 'ad_hoc' })
     }
 
-    // Nightly: felt hard (next-morning soreness), then the ramp-up rule.
-    const upcoming = planned.filter(p => p.status === 'planned' && p.epochDay > day)
-    for (const d of done.filter(x => x.epochDay === day - 1)) {
-      const ease = feltHardEase({ done: d, nextMorningSoreness: rByDay.get(day)?.epochDay === day ? checkIns.find(ci => ci.epochDay === day)?.soreness ?? null : null, upcoming, todayEpochDay: day, nowSec: day * 86400 })
-      if (!ease) continue
-      const t = planned.find(p => p.id === ease.targetSessionId)!
-      t.eased = true
-      t.reason = ease.ease.reason
-      easeLog.push({ day, target: t.type, reason: ease.ease.reason })
-    }
-    const r = rByDay.get(day)
-    const easeToday = Boolean(r?.ease) || planned.some(p => p.epochDay === day && p.eased)
-    const askedThisWeek = rampAsks.some(a => mondayOf(a.day) === monday)
-    const effort = summarizeEffort(done.filter(x => x.epochDay >= day - 7 && x.epochDay < day))
-    const weekSessions = planned.filter(p => mondayOf(p.epochDay) === monday)
-    const ask = rampUpAsk(
-      { todayEpochDay: day, readiness: readiness.filter(x => x.epochDay <= day), effort, liftPush: false, easeToday, noPush: false, askedThisWeek },
-      { ctx: { ...context(day, day), weekNumber: wi + 1, planWeekLoad: planLoad(wi + 1), sessions: weekSessions, easeDays: weekSessions.filter(p => p.eased).map(p => p.epochDay) }, upcoming: weekSessions.filter(p => p.status === 'planned'), blockType: 'fighter', weekNumber: wi + 1, liftPush: false, classDays: MT_DAYS },
-    )
-    if (ask) {
-      rampAsks.push({ day, easeToday, streak: freshStreak(readiness.filter(x => x.epochDay <= day), day) })
-      for (const o of ask.options) {
-        if (o.epochDay < day || mondayOf(o.epochDay) !== monday) violations.push(`ramp option outside the week on ${day}`)
-        if (o.kind === 'add' && !checkSessionChange({ kind: 'add', type: o.type, label: o.sessionLabel, epochDay: o.epochDay, timeSlot: o.timeSlot }, { ...context(day, day), sessions: weekSessions, planWeekLoad: null }, { alternatives: false }).ok) violations.push(`unsafe ramp add on ${day}`)
-        if (weekSessions.some(p => p.eased && p.epochDay === o.epochDay)) violations.push(`ramp option on an eased day ${o.epochDay}`)
-      }
-    }
+    // Coach brain P2: no felt-hard ease and no ramp-up ask here (the brain's own rules are in lib/brain).
 
     // Sunday night: the weekly pass prepares next week (and a Monday catch-up
     // run finds it done). No approval step: the week is active with a why line.
@@ -460,7 +420,7 @@ assert(bzRet.plan.restart && bzRet.loadFactor === 0.75 && bzRet.noFinishers, 'Bl
       }
       const nextTemplate: SessionLike[] = []
       for (let d = target; d < target + 7; d++) for (const t of getDayTemplate('fighter', signals.weekNumber, dowOf(d), MT_DAYS)) nextTemplate.push({ type: t.type, label: t.label, notes: t.runCategory ?? null, epochDay: d, timeSlot: t.timeSlot, status: 'planned' })
-      const weekEases = weekRuleEases(signals, nextTemplate)
+      const weekEases: Array<{ index: number; cause: 'completion'; reason: string; was: string | null }> = [] // no rule eases since coach brain P2
       preparedWeeks.push({ monday: target, status: 'active', why: whyThisWeek(signals, weekEases.map(e => ({ cause: e.cause, epochDay: nextTemplate[e.index].epochDay, name: nextTemplate[e.index].label ?? nextTemplate[e.index].type, type: nextTemplate[e.index].type }))), changes: weekEases.map(e => ({ reason: e.reason, was: e.was })) })
       // The prepared week becomes next week's plan, eases applied.
       for (let i = 0; i < nextTemplate.length; i++) {
@@ -470,19 +430,6 @@ assert(bzRet.plan.restart && bzRet.loadFactor === 0.75 && bzRet.noFinishers, 'Bl
       }
     }
   }
-
-  // Ramp-up asks.
-  assert(rampAsks.length >= 2, `sim: well-rested streaks produced ramp-up asks (${rampAsks.length})`)
-  const perWeek = new Map<number, number>()
-  for (const a of rampAsks) perWeek.set(mondayOf(a.day), (perWeek.get(mondayOf(a.day)) ?? 0) + 1)
-  assert([...perWeek.values()].every(n => n <= 1), 'sim: at most one ramp-up ask a week')
-  assert(rampAsks.every(a => !a.easeToday && a.streak >= 2), 'sim: never on an ease day, always after a 2-day fresh streak')
-  assert(rampAsks.every(a => restedWeeks.has(aWeekOf(a.day))), 'sim: asks only in well-rested weeks')
-  assert(!rampAsks.some(a => aWeekOf(a.day) === 5), 'sim: long sleep with good energy never triggers a push')
-
-  // Hard session + next-day soreness.
-  const w8 = easeLog.find(e => aWeekOf(e.day) === 8)
-  assert(w8 != null && w8.target === 'strength' && w8.reason.includes('eases'), `sim: RPE 9 then soreness 4 eases the next strength day (${w8?.reason})`)
 
   // Repeated added sessions: an ask after the second week, not the first.
   const adds = (upTo: number): AddedSession[] => done.filter(x => x.source === 'ad_hoc' && x.epochDay < upTo).map(x => ({ type: x.type, label: x.label, notes: null, epochDay: x.epochDay, timeSlot: 'pm', status: 'completed', rpe: x.rpe }))
@@ -503,154 +450,10 @@ assert(bzRet.plan.restart && bzRet.loadFactor === 0.75 && bzRet.noFinishers, 'Bl
   assert(preparedWeeks.every(w => w.status === 'active' && w.why.length > 0 && !w.why.includes('!') && !w.why.includes('—')), 'sim: every prepared week is active (no approval) with a why line')
   assert(preparedWeeks.every(w => w.changes.every(c => c.reason.length > 0 && c.was.length > 0)), 'sim: every automatic change carries a reason and a was')
   const afterTired = preparedWeeks.find(w => w.monday === A_MON + 8 * 7)
-  assert(afterTired != null && afterTired.changes.length >= 1, `sim: after the week with three bad check-in days the next week eases (${afterTired?.why})`)
+  assert(afterTired != null && afterTired.changes.length === 0, `sim: a bad week never carries into next week as a rule ease (coach brain P2: the morning cap does it day by day) (${afterTired?.why})`)
   assert(violations.length === 0, `sim: no rule broken by the adaptive coach${violations.length ? `: ${violations.slice(0, 5).join('; ')}` : ''}`)
 }
 
-// ─── Part 3: Block Zero mid-week starts (Part B lead-in) ──────
-// A Wednesday start and a Saturday start, day by day through week 2, the way
-// the server calls the rules: the day's template (planDayTemplate), the week
-// counter, missed fixes only from week 1's Monday, the run cap floor, intro
-// strength on a lead-in day, felt-easy reads by week, and the board's picks.
-function simulateStart(startDay: number, name: string) {
-  const anchor = anchorMondayFor(startDay, 'block_zero')
-  const end = anchor + 13
-  const sess: Array<SessionLike & { id: string; durationSec?: number; rpe?: number; rir?: number; leadIn: boolean }> = []
-  const asked: string[] = []
-  const bzViolations: string[] = []
-  const reads: EffortRead[] = []
-  let id = 0
-  const done = (upTo: number) => sess.filter(x => x.status === 'completed' && KEY_TYPES.has(x.type) && x.epochDay <= upTo).map(x => x.epochDay)
-  const week = (day: number, today: number) => trainingWeek({ blockType: 'block_zero', startDay, totalWeeks: 6, completedKeyDays: done(today), day, todayDay: today, plannedKeyPerWeek: 6 })
-  const bzPlanLoad = (w: number) => {
-    let n = 0
-    for (let d = 0; d < 7; d++) for (const t of getDayTemplate('block_zero', w, d, MT_DAYS)) if (KEY_TYPES.has(t.type)) n += plannedLoad({ type: t.type, label: t.label, notes: null, estimatedMin: null }, 'block_zero', w)
-    return n
-  }
-  const runHist = (today: number) => {
-    const runs = sess.filter(x => x.status === 'completed' && RUN_TYPES.has(x.type))
-    const monday = mondayOf(today)
-    return {
-      longestLast30Sec: runs.filter(r => r.epochDay >= today - 30 && r.epochDay < today).reduce((m, r) => Math.max(m, r.durationSec ?? 0), 0) || null,
-      lastWeekRunSec: runs.filter(r => r.epochDay >= monday - 7 && r.epochDay < monday).reduce((n, r) => n + (r.durationSec ?? 0), 0),
-      thisWeekRunSec: runs.filter(r => r.epochDay >= monday && r.epochDay < today).reduce((n, r) => n + (r.durationSec ?? 0), 0),
-    }
-  }
-  const bzCtx = (target: number, today: number): PlacementContext => {
-    const tw = week(Math.max(target, today), today)
-    const lead = inLeadIn('block_zero', startDay, target)
-    const monday = mondayOf(target)
-    return {
-      blockType: 'block_zero', weekNumber: tw.week, todayEpochDay: today, sessions: sess.filter(x => x.epochDay >= monday - 1 && x.epochDay <= monday + 7),
-      readinessEase: false, loadFlag: false, easeReason: null, easeDays: [], run: runHist(today),
-      mt: { weeksSinceRampStart: null, profileCap: null }, planWeekLoad: lead ? null : bzPlanLoad(tw.week), injury: null, leadIn: lead,
-    }
-  }
-
-  for (let day = startDay - 3; day <= end; day++) {
-    const tw = week(day, day)
-    const plan = planDayTemplate({ blockType: 'block_zero', startDay, epochDay: day, weekNumber: tw.week, mtDays: MT_DAYS })
-    if (day < startDay && plan.sessions.length > 0) bzViolations.push(`${name}: sessions before the start on +${day - startDay}`)
-    if (plan.leadIn !== tw.leadIn && day >= startDay) bzViolations.push(`${name}: lead-in flag disagrees on +${day - startDay}`)
-    for (const t of plan.sessions) sess.push({ id: `${name}${id++}`, type: t.type, label: t.label, epochDay: day, timeSlot: t.timeSlot, status: 'planned', leadIn: plan.leadIn })
-
-    // The athlete: Foundation daily; the first lead-in run done, the second missed.
-    const today = sess.filter(x => x.epochDay === day)
-    for (const x of today) {
-      if (x.type === 'mobility') x.status = 'completed'
-      if (x.type === 'foundation_run') {
-        const leadRuns = sess.filter(r => r.leadIn && r.type === 'foundation_run' && r.epochDay < day)
-        if (x.leadIn && leadRuns.length >= 1) { x.status = 'missed'; continue }
-        const p = prescribeRunWalk({ week: tw.week, longestLast30Sec: runHist(day).longestLast30Sec, weekly: { lastWeekRunSec: runHist(day).lastWeekRunSec, thisWeekSoFarSec: runHist(day).thisWeekRunSec, sessionsLeftThisWeek: sess.filter(r => RUN_TYPES.has(r.type) && r.epochDay >= day && r.epochDay <= mondayOf(day) + 6 && r.status === 'planned').length } })
-        if (!x.leadIn && tw.week === 1 && p.totalSec < RESTART_SESSION_SEC) bzViolations.push(`${name}: week-1 run shrunk to ${p.totalSec}s after the lead-in`)
-        x.status = 'completed'
-        x.durationSec = p.totalSec
-      }
-      if (x.type === 'strength') {
-        // Week 2's Monday A is missed on the Saturday start (the pull-forward case).
-        if (name === 'sat' && tw.week === 2 && dowOf(day) === 1) { x.status = 'missed'; continue }
-        x.status = 'completed'
-        const info = { type: 'strength', blockType: 'block_zero', blockWeek: tw.week, leadIn: x.leadIn, weekNumber: tw.week }
-        // "3 or more" left at the top of the band, every session.
-        reads.push({ epochDay: day, type: 'strength', rpe: tw.week <= 2 ? 6 : 7, rir: 3, target: blockZeroEffortTarget(info), noEasierRead: noEasierReadFor(info) })
-      }
-    }
-
-    // Lead-in strength: pick it on the first lead-in Friday (or Saturday) the board allows.
-    if (inLeadIn('block_zero', startDay, day) && (dowOf(day) === 5 || dowOf(day) === 6) && !sess.some(x => x.leadIn && x.type === 'strength')) {
-      const pick = pickDayOption({ type: 'strength', timeSlot: 'am' }, day, bzCtx(day, day))
-      // He picks an intro on a day the rules call safe (the board itself never refuses, page 56).
-      if (pick.action.kind === 'add' && checkSessionChange({ kind: 'add', type: 'strength', label: pick.action.label, epochDay: day, timeSlot: pick.action.timeSlot }, bzCtx(day, day), { alternatives: false }).ok) {
-        sess.push({ id: `${name}${id++}`, type: 'strength', label: pick.action.label, epochDay: day, timeSlot: pick.action.timeSlot, status: 'completed', leadIn: true })
-        const info = { type: 'strength', blockType: 'block_zero', blockWeek: 1, leadIn: true, weekNumber: 1 }
-        reads.push({ epochDay: day, type: 'strength', rpe: 4, rir: 3, target: blockZeroEffortTarget(info), noEasierRead: noEasierReadFor(info) })
-      }
-    }
-
-    // The nightly fixes: missed key sessions from week 1's Monday only (never a question).
-    for (const m of sess.filter(x => x.status === 'missed' && KEY_TYPES.has(x.type) && x.epochDay < day && !asked.includes(x.id))) {
-      if (optionalDay('block_zero', startDay, m.epochDay)) continue
-      asked.push(m.id)
-      const fix = missedFix(m, sess.filter(x => x.status === 'planned' && x.epochDay > m.epochDay), { blockType: 'block_zero', weekNumber: week(m.epochDay, day).week })
-      if (fix.kind === 'merge' && fix.targetSessionId && !sess.some(x => x.id === fix.targetSessionId && x.type === 'strength')) bzViolations.push(`${name}: missed fix onto a non-strength session`)
-    }
-  }
-  return { anchor, sess, asked, bzViolations, reads, bzCtx, week }
-}
-
-for (const [startOffset, name] of [[2, 'wed'], [5, 'sat']] as const) {
-  const START_DAY = MON + startOffset
-  const r = simulateStart(START_DAY, name)
-  const lead = r.sess.filter(x => x.epochDay < r.anchor)
-  assert(r.anchor === MON + 7 && lead.every(x => x.leadIn && x.epochDay >= START_DAY), `${name} start: week 1 is the next Monday; lead-in only from the start day`)
-  assert(!lead.some(x => x.type === 'strength' && x.label !== 'Strength C'), `${name} start: no week-1 strength in the lead-in (only the intro picked: ${lead.filter(x => x.type === 'strength').map(x => x.label).join(', ') || 'none'})`)
-  const leadRuns = lead.filter(x => x.type === 'foundation_run').map(x => dowOf(x.epochDay))
-  assert(leadRuns.join() === (name === 'wed' ? '4,6' : '6'), `${name} start: lead-in run-walks on ${leadRuns.join(',')} (Tue/Thu/Sat from the start)`)
-  assert(lead.filter(x => x.type === 'mobility').length === MON + 7 - START_DAY, `${name} start: Foundation every lead-in day`)
-  assert(!r.asked.some(id => lead.some(x => x.id === id)), `${name} start: a missed lead-in session changes nothing`)
-  assert(r.week(r.anchor, r.anchor).week === 1 && !r.week(r.anchor, r.anchor).leadIn && r.week(r.anchor + 7, r.anchor + 7).week === 2, `${name} start: week 1 on the Monday, week 2 a week later (the lead-in never counts a week)`)
-  const w1 = r.sess.filter(x => x.epochDay >= r.anchor && x.epochDay < r.anchor + 7 && x.type === 'strength').map(x => `${dowOf(x.epochDay)}${x.label?.slice(-1)}`)
-  assert(w1.join() === '1A,3B,5C', `${name} start: week 1 runs the full A/B/C week (${w1.join()})`)
-  const w1Runs = r.sess.filter(x => x.epochDay >= r.anchor && x.epochDay < r.anchor + 7 && x.type === 'foundation_run')
-  assert(w1Runs.length === 3 && w1Runs.every(x => x.durationSec === RESTART_SESSION_SEC), `${name} start: week 1 keeps three full 23-min run-walks after the lead-in (run cap floor)`)
-  assert(weeklyRunAllowanceSec(RESTART_SESSION_SEC) === RESTART_SESSION_SEC * 3, `${name} start: one lead-in run sets an allowance of week-1 volume, not 30 min`)
-  // Gate consistency from week 1's Monday: the missed lead-in run is not counted.
-  const counted = r.sess.filter(x => !optionalDay('block_zero', START_DAY, x.epochDay))
-  const rateAll = keySessionCompletionRate(r.sess.map(x => ({ type: x.type, status: x.status, scheduledDate: x.epochDay })), r.anchor + 14)
-  const rate = keySessionCompletionRate(counted.map(x => ({ type: x.type, status: x.status, scheduledDate: x.epochDay })), r.anchor + 14)
-  assert(rate != null && (name === 'sat' ? rate < 1 : rate === 1) && (name === 'wed' ? (rateAll ?? 1) < 1 : true), `${name} start: consistency counts from week 1 (${rate?.toFixed(2)}${name === 'wed' ? `, ${rateAll?.toFixed(2)} if the lead-in counted` : ''})`)
-  // No false push in weeks 1-2: on-target "3 or more" sets, intro included.
-  assert(!consistentlyEasier(summarizeEffort(r.reads)), `${name} start: weeks 1-2 on target never read as "ready to push"`)
-  assert(r.bzViolations.length === 0, `${name} start: no rule broken${r.bzViolations.length ? `: ${r.bzViolations.slice(0, 4).join('; ')}` : ''}`)
-}
-
-// The Wednesday start picks an intro strength on lead-in Friday: Strength C, at the intro band.
-{
-  const r = simulateStart(MON + 2, 'wed')
-  const intro = r.sess.find(x => x.leadIn && x.type === 'strength')
-  assert(intro?.label === 'Strength C' && dowOf(intro.epochDay) === 5, 'wed start: intro Strength C on lead-in Friday')
-  const sat = pickDayOption({ type: 'strength', timeSlot: 'am' }, MON + 5, r.bzCtx(MON + 5, MON + 5))
-  assert(sat.action.kind === 'add', 'wed start: a second intro the day after another still adds (the coach rebalances, page 56)')
-  // Week 2 Tuesday: strength after Monday's A pulls Friday's C forward (R10); bag is a plain add.
-  const tue = r.anchor + 8
-  const morning: PlacementContext = { ...r.bzCtx(tue, tue), sessions: r.bzCtx(tue, tue).sessions.map(x => (x.epochDay >= tue ? { ...x, status: 'planned' } : x)) }
-  const str = pickDayOption({ type: 'strength', timeSlot: 'am' }, tue, morning)
-  assert(str.action.kind === 'pull_forward' && str.action.label === 'Strength C', `wed start, week 2 Tuesday after Monday's A: Friday's C comes forward (R10)`)
-  const bag = pickDayOption({ type: 'bag_work', timeSlot: 'pm' }, tue, morning)
-  assert(bag.action.kind === 'add', 'wed start, week 2 Tuesday: bag always adds (REPLACE is the swap)')
-}
-// The Saturday start misses week 2's Monday A: Tuesday's board pulls Wednesday's B forward.
-{
-  const r = simulateStart(MON + 5, 'sat')
-  const tue = r.anchor + 8
-  const ctx2 = r.bzCtx(tue, tue)
-  const plannedTue = ctx2.sessions.filter(x => x.epochDay === tue)
-  // Put Tuesday back as planned (the sim ran through week 2), as the board would see it that morning.
-  const morning: PlacementContext = { ...ctx2, sessions: ctx2.sessions.map(x => (x.epochDay >= tue ? { ...x, status: 'planned' } : x)) }
-  const str = pickDayOption({ type: 'strength', timeSlot: 'am' }, tue, morning)
-  assert(plannedTue.length > 0 && str.action.kind === 'pull_forward' && str.action.fromEpochDay === tue + 1, 'sat start, week 2 Tuesday after a missed Monday: Wednesday\'s B comes forward')
-  const bag = pickDayOption({ type: 'bag_work', timeSlot: 'pm' }, tue, morning)
-  assert(bag.action.kind === 'add', 'sat start, week 2 Tuesday: with Monday missed the week has room, so bag is a plain add')
-}
+// Part 3 (the Block Zero lead-in) is gone with the lead-in (coach brain P2); lib/coach/leadIn.test.ts covers the start week.
 
 console.log('coach simulation passed')

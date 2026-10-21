@@ -201,7 +201,11 @@ export function prescribeRunWalk(input: RunWalkInput): RunWalkPrescription {
 
 // ─── HR ceiling (R9) ──────────────────────────────────────────
 
-export const Z2_CEILING_FRACTION_OF_MAX = 0.7
+/**
+ * The run line before a talk test (coach-brain.md §4, §7, approved 2026-10-20):
+ * 0.78 × HRmax (183 at 36 → 143). A rule of thumb the first talk test replaces.
+ */
+export const Z2_CEILING_FRACTION_OF_MAX = 0.78
 
 export type HrCeilingSource = 'talk_test' | 'measured_max' | 'tanaka' | 'default'
 

@@ -11,25 +11,16 @@
 import { and, eq, gte, inArray, lte } from 'drizzle-orm'
 import { coachingOutputs, dailyLogs, exercises, sessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, weekAdjustments, weekPlans } from '../db/schema'
 import type { createDB } from '../db/client'
-import {
-  applyContext,
+import { 
   blockZeroEffortTarget,
-  coachEaseFrom,
-  easeFor,
-  feltHardEase,
   fighterTmDecision,
   inLeadIn,
   makeRegularAsk,
   makeRegularCandidates,
   mondayOf,
-  nameToken,
   noEasierReadFor,
-  rampUpAsk,
-  sessionName,
   slotStart,
-  summarizeEffort,
   tmProposal,
-  withCoachEase,
   MAKE_REGULAR_COOLDOWN_DAYS,
   type AddedSession,
   type BlockWorkingSet,
@@ -37,31 +28,23 @@ import {
   type TmDecision,
 } from '../lib/coach'
 import { checkInFromDailyLog, evaluateReadiness, liftRegion } from '../lib/blockZero'
-import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
-import { loadLiftTrends } from '../lib/athleteState/liftTrends'
 import { isLoggedWorkSet } from '../lib/loggedSets'
 import { kgToLbs } from '../lib/units'
-import { getActiveBlock, readinessFor } from './blockZeroData'
+import { getActiveBlock,} from './blockZeroData'
 import {
   addTemplateExtra,
-  blockKind,
   blockStartDay,
-  loadInjuryFlag,
   loadPlacementContext,
-  mtClassDays,
   resolveWeekPlan,
-  returnContextFor,
-  toSessionLike,
   trainingWeekFor,
   weekStamps,
 } from './coachData'
-import { loadHeld, pmStart, recordChanges, snap } from './changes'
+import {  pmStart, recordChanges,} from './changes'
 
 type DB = ReturnType<typeof createDB>
 type Block = typeof trainingBlocks.$inferSelect
 
 const DAY_SEC = 86400
-const HOLD_LINE = 'The coach leaves it as you set it this week.'
 
 function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   if (!raw) return fallback
@@ -120,186 +103,6 @@ export async function loadEffortReads(db: DB, fromDay: number, toDay: number): P
       status: r.status,
     }
   })
-}
-
-// ─── How a session felt -> ease the next similar one ─────────
-
-/**
- * For sessions done in the last 2 days: way harder than target, or soreness
- * 4+ on the next morning's check-in, eases the next similar planned session.
- * Idempotent: one ease per source session. Held sessions are left alone.
- */
-export async function applyFeltHard(db: DB, todayDay: number, nowSec: number): Promise<number> {
-  const block = await getActiveBlock(db)
-  if (!block) return 0
-  const done = await loadEffortReads(db, todayDay - 2, todayDay)
-  if (done.length === 0) return 0
-  const prior = await db.select({ sourceData: weekAdjustments.sourceData }).from(weekAdjustments)
-    .where(and(eq(weekAdjustments.adjustmentType, 'felt_hard'), gte(weekAdjustments.createdAt, (todayDay - 14) * DAY_SEC)))
-  const handled = new Set(prior.map(p => parseJson<{ fromSessionId?: string }>(p.sourceData, {}).fromSessionId).filter(Boolean))
-  const logs = await db.select({ logDate: dailyLogs.logDate, soreness: dailyLogs.soreness }).from(dailyLogs)
-    .where(and(gte(dailyLogs.logDate, todayDay - 2), lte(dailyLogs.logDate, todayDay + 1)))
-  const soreBy = new Map(logs.map(l => [l.logDate, l.soreness]))
-  const held = new Set([...(await loadHeld(db, todayDay)), ...(await loadHeld(db, todayDay + 7))])
-  const upcomingRows = (await db.select().from(sessions)
-    .where(and(eq(sessions.status, 'planned'), gte(sessions.scheduledDate, todayDay), lte(sessions.scheduledDate, todayDay + 8))))
-    .filter(r => !held.has(r.id))
-  const upcoming = upcomingRows.filter(r => r.scheduledDate != null).map(r => ({ ...toSessionLike(r), id: r.id, eased: coachEaseFrom(r.contextJson) != null }))
-  const pm = await pmStart(db)
-  const kind = blockKind(block.blockType)
-  let n = 0
-  for (const d of done) {
-    if (handled.has(d.id)) continue
-    const result = feltHardEase({ done: d, nextMorningSoreness: soreBy.get(d.epochDay + 1) ?? null, upcoming, todayEpochDay: todayDay, nowSec })
-    if (!result) continue
-    const target = upcomingRows.find(r => r.id === result.targetSessionId)
-    if (!target || target.scheduledDate == null) continue
-    const week = (await trainingWeekFor(db, block, target.scheduledDate, todayDay)).week
-    const words = easeFor({ ...toSessionLike(target), id: target.id }, { blockType: kind, weekNumber: week })
-    const before = snap(target, [], ['coachEase'])
-    const ctxJson = withCoachEase(target.contextJson, result.ease)
-    await db.update(sessions).set({ contextJson: ctxJson }).where(eq(sessions.id, target.id))
-    const u = upcoming.find(x => x.id === target.id)
-    if (u) u.eased = true
-    const name = sessionName(toSessionLike(target))
-    const walk = result.ease.kind === 'run_to_walk'
-    await recordChanges(db, [{
-      setId: crypto.randomUUID(), actor: 'coach', kind: 'ease', targetSessionId: target.id, sessionType: target.type,
-      adjustmentType: 'felt_hard',
-      before: { show: walk ? name.toUpperCase() : words?.show.before ?? 'AS PLANNED', ...(words?.show.logBefore ? { logShow: words.show.logBefore } : {}), day: target.scheduledDate, sessions: [before] },
-      after: { show: walk ? 'EASY WALK' : words?.show.after ?? 'EASIER', day: target.scheduledDate, sessions: [snap({ ...target, contextJson: ctxJson }, [], ['coachEase'])], put: { line: `${nameToken(name, target.scheduledDate)} is back as planned.`, dim: HOLD_LINE } },
-      why: result.ease.reason,
-      detail: walk ? 'An easy walk or bike instead.' : target.type === 'strength' ? 'One set less, about 10% lighter.' : null,
-      undoUntil: slotStart(target.scheduledDate, target.timeSlot, pm),
-      extraSource: { fromSessionId: result.fromSessionId, cause: result.cause, rpe: d.rpe, rir: d.rir, soreness: soreBy.get(d.epochDay + 1) ?? null },
-    }], nowSec)
-    n++
-  }
-  return n
-}
-
-// ─── Ramp-up: one push a week, applied ──────────────────────
-
-/** Main lifts of a Fighter strength session and today's working loads (TM x wave). */
-async function mainLiftLoads(db: DB, session: { scheduledDate: number | null; blockWeek: number | null; label: string | null }) {
-  const day = session.scheduledDate ?? 0
-  const template = getStrengthTemplate(new Date(day * DAY_SEC * 1000).getUTCDay(), session.blockWeek ?? 1, 'fighter', session.label)
-  const pct = getWeekPercentage(session.blockWeek ?? 1, 'fighter')
-  const tms = new Map((await db.select().from(trainingMaxes)).map(t => [t.exerciseId, t.weightKg]))
-  const names = new Map((await db.select({ id: exercises.id, name: exercises.name }).from(exercises)).map(e => [e.id, e.name]))
-  return template.exercises
-    .filter(e => e.section === 'main' && tms.has(e.exerciseId))
-    .map(e => ({ exerciseId: e.exerciseId, name: names.get(e.exerciseId) ?? e.label, workingKg: Math.round((tms.get(e.exerciseId) as number) * pct * 100) / 100 }))
-}
-
-/**
- * The next strength day's main lifts and planned working sets, for the +1 SET
- * line ("Squat and RDL, 3×8"): the template's main section, short names.
- */
-export async function nextStrengthPlan(db: DB, session: { scheduledDate: number | null; blockWeek: number | null; label: string | null }, kind: 'fighter' | 'block_zero'): Promise<{ names: string[]; sets: number; reps: number } | null> {
-  const day = session.scheduledDate ?? 0
-  const template = getStrengthTemplate(new Date(day * DAY_SEC * 1000).getUTCDay(), session.blockWeek ?? 1, kind, session.label)
-  const main = template.exercises.filter(e => e.section === 'main')
-  if (main.length === 0) return null
-  const names = new Map((await db.select({ id: exercises.id, name: exercises.name }).from(exercises)).map(e => [e.id, e.name]))
-  const work = main[0].sets.filter(st => !st.isWarmup && (st.loadMultiplier ?? 1) === 1)
-  const reps = work.find(st => st.targetReps > 0)?.targetReps ?? 0
-  return { names: main.map(e => shortLiftName(names.get(e.exerciseId) ?? e.label)), sets: work.length, reps }
-}
-
-/** "Front Squat" → "Front squat" (the main squat, as the owner names it), "Romanian Deadlift" → "RDL": the short names the coach screens use. */
-export function shortLiftName(name: string): string {
-  const n = name.trim()
-  if (/romanian deadlift/i.test(n)) return 'RDL'
-  if (/^front squat$/i.test(n)) return 'Front squat'
-  return n
-}
-
-export interface CoachPush {
-  kind: 'extra_set' | 'load_step'
-  factor?: number
-  reason: string
-  at: number
-}
-
-/** Read a push back from a session's context_json. */
-export function coachPushFrom(contextJson: string | null | undefined): CoachPush | null {
-  const p = parseJson<{ coachPush?: CoachPush }>(contextJson, {}).coachPush
-  if (!p || (p.kind !== 'extra_set' && p.kind !== 'load_step') || typeof p.reason !== 'string') return null
-  return p
-}
-
-/**
- * The ramp-up rule for today: at most one push a calendar week, applied with
- * its rune and UNDO (page 56: the coach never asks). Returns the change id.
- */
-export async function maybeRampUp(db: DB, todayDay: number, nowSec: number): Promise<string | null> {
-  const block = await getActiveBlock(db)
-  if (!block) return null
-  const monday = mondayOf(todayDay)
-  const [already] = await db.select({ id: weekAdjustments.id }).from(weekAdjustments)
-    .where(and(eq(weekAdjustments.adjustmentType, 'ramp_up'), gte(weekAdjustments.createdAt, monday * DAY_SEC))).limit(1)
-  const logs = await db.select().from(dailyLogs).where(and(gte(dailyLogs.logDate, todayDay - 21), lte(dailyLogs.logDate, todayDay)))
-  const readiness = evaluateReadiness(logs.map(checkInFromDailyLog))
-  const effort = summarizeEffort(await loadEffortReads(db, todayDay - 7, todayDay))
-  const trends = await loadLiftTrends(db, todayDay)
-  const liftPush = [...trends.values()].some(t => t.verdict === 'push')
-  const report = await readinessFor(db, todayDay)
-  const ctx = await loadPlacementContext(db, todayDay, todayDay)
-  const ret = await returnContextFor(db, todayDay)
-  const injury = await loadInjuryFlag(db, todayDay)
-  const easeToday = report.ease || (ctx.easeDays ?? []).includes(todayDay)
-  const kind = blockKind(block.blockType)
-  const held = await loadHeld(db, todayDay)
-  const upcomingRows = (await db.select().from(sessions)
-    .where(and(eq(sessions.status, 'planned'), gte(sessions.scheduledDate, todayDay), lte(sessions.scheduledDate, monday + 6))))
-    .filter(r => !held.has(r.id))
-  const upcoming = upcomingRows.filter(r => r.scheduledDate != null).map(r => ({ ...toSessionLike(r), id: r.id }))
-  const nextStrength = upcomingRows.filter(r => r.type === 'strength').sort((a, b) => (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0))[0]
-  const mainLifts = kind === 'fighter' && nextStrength ? (await mainLiftLoads(db, nextStrength)).map(l => ({ ...l, name: shortLiftName(l.name) })) : []
-  const strengthPlan = nextStrength ? await nextStrengthPlan(db, nextStrength, kind) : null
-  const signals = { todayEpochDay: todayDay, readiness, effort, liftPush, easeToday, noPush: ret.active || ret.noPush || injury != null, askedThisWeek: already != null }
-  const ask = rampUpAsk(signals, { ctx, upcoming, blockType: kind, weekNumber: ctx.weekNumber, liftPush, classDays: await mtClassDays(db), mainLifts, nextStrength: strengthPlan })
-  if (!ask) return null
-  const choice = ask.defaultOption
-  const pm = await pmStart(db)
-  const setId = crypto.randomUUID()
-  const why = `${ask.why} ${choice.title.charAt(0)}${choice.title.slice(1).toLowerCase()}: ${choice.detail}.`.replace(/\.\./g, '.')
-  if (choice.kind === 'add') {
-    const tw = await trainingWeekFor(db, block, choice.epochDay, todayDay)
-    const stamps = weekStamps(block, tw)
-    const id = crypto.randomUUID()
-    await db.insert(sessions).values({
-      id, type: choice.type, label: choice.sessionLabel,
-      weekPlanId: await resolveWeekPlan(db, block.id, stamps.weekNumber, mondayOf(choice.epochDay), nowSec),
-      scheduledDate: choice.epochDay, timeSlot: choice.timeSlot,
-      blockWeek: choice.type === 'strength' ? stamps.strengthWeek : null, blockType: block.blockType,
-      status: 'planned', notes: choice.type === 'running' ? choice.notes ?? null : null, source: 'coach',
-      contextJson: JSON.stringify({ coachNote: { reason: why, at: nowSec, source: 'ramp_up' } }), createdAt: nowSec,
-    })
-    const [ids] = await recordChanges(db, [{
-      setId, actor: 'coach', kind: 'push', targetSessionId: id, sessionType: choice.type, adjustmentType: 'ramp_up',
-      before: { show: 'AS PLANNED', day: choice.epochDay, sessions: [] },
-      after: { show: `+ ${choice.title}`, day: choice.epochDay, sessions: [], created: [id], put: { line: 'The week is back as planned.', dim: HOLD_LINE } },
-      why, detail: null, undoUntil: slotStart(choice.epochDay, choice.timeSlot, pm),
-    }], nowSec)
-    return ids ?? null
-  }
-  const target = upcomingRows.find(r => r.id === choice.sessionId)
-  if (!target || target.scheduledDate == null || coachEaseFrom(target.contextJson)) return null
-  const push: CoachPush = { kind: choice.kind, ...(choice.kind === 'load_step' ? { factor: choice.factor } : {}), reason: why, at: nowSec }
-  const before = snap(target, [], ['coachPush'])
-  const ctxJson = applyContext(target.contextJson, { coachPush: push })
-  await db.update(sessions).set({ contextJson: ctxJson }).where(eq(sessions.id, target.id))
-  const name = sessionName(toSessionLike(target))
-  const [id] = await recordChanges(db, [{
-    setId, actor: 'coach', kind: 'push', targetSessionId: target.id, sessionType: target.type, adjustmentType: 'ramp_up',
-    before: { show: 'AS PLANNED', day: target.scheduledDate, sessions: [before] },
-    after: { show: choice.title, day: target.scheduledDate, sessions: [snap({ ...target, contextJson: ctxJson }, [], ['coachPush'])], put: { line: `${nameToken(name, target.scheduledDate)} is back as planned.`, dim: HOLD_LINE } },
-    why, detail: choice.kind === 'load_step' ? choice.lifts.map(l => `${shortLiftName(l.name)} ${kgToLbs(l.toKg)}, not ${kgToLbs(l.fromKg)}`).join('. ') + '.' : null,
-    undoUntil: slotStart(target.scheduledDate, target.timeSlot, pm),
-  }], nowSec)
-  return id ?? null
 }
 
 // ─── Added sessions -> made part of the plan, applied ────────
@@ -458,4 +261,12 @@ export async function applyTmUpdate(db: DB, block: Block, todayDay: number, nowS
     createdAt: nowSec,
   })
   return { changeId, decisions, idempotent: false }
+}
+
+/** A lift name short enough for a flap ("RDL"). */
+export function shortLiftName(name: string): string {
+  const n = name.trim()
+  if (/romanian deadlift/i.test(n)) return 'RDL'
+  if (/^front squat$/i.test(n)) return 'Front squat'
+  return n
 }

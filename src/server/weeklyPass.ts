@@ -24,24 +24,15 @@ import { blockTests, coachingOutputs, dailyLogs, sessions, trainingBlocks, weekP
 import type { createDB } from '../db/client'
 import {
   KEY_TYPES,
-  easeFor,
-  nameToken,
   sessionName,
-  slotStart,
   claimDecision,
-  houseLine,
   isoOf,
   summarizeEffort,
-  weekRuleEases,
   weeklyPassKey,
   weeklyPassTarget,
   whyThisWeek,
   isLeadInContext,
   hasCoachEase,
-  withCoachEase,
-  mergeContext,
-  placePlannedWeek,
-  type PlacementContext,
   type WeekChange,
   type WeekIntelligence,
   type WeekSignals,
@@ -49,25 +40,19 @@ import {
 import { checkInFromDailyLog, evaluateReadiness, weeklyLoadFlag } from '../lib/blockZero'
 import { strengthBlockWeek } from '../lib/weeklyTemplate'
 import { analyzeWeek, previousAnalysisFrom } from '../lib/weekAnalysis'
-import { generateWeekPlan } from '../lib/weeklyPlanAI'
-import { runAthleteState } from '../lib/athleteState/runAthleteState'
 import { loadLatestAthleteState } from '../lib/athleteState/store'
-import { getActiveBlock, loadRunHistory, loadSessionLoadEntries, readinessFor } from './blockZeroData'
+import { getActiveBlock, loadSessionLoadEntries } from './blockZeroData'
 import {
-  blockCountsFrom,
-  blockDayPlan,
   blockKind,
-  loadInjuryFlag,
-  loadPlacementContext,
-  loadTemplateExtras,
-  mtClassDays,
+  dayHasPlan,
+  generateDaySessions,
   resolveWeekPlan,
   returnContextFor,
   trainingWeekFor,
   weekStamps,
 } from './coachData'
 import { applyTmUpdate, loadEffortReads, maybeMakeRegular } from './coachAsks'
-import { applyPendingMerges, pmStart, recordChanges, snap } from './changes'
+import { applyPendingMerges } from './changes'
 import { applyPendingBodyPlans } from './bodyWatch'
 
 type DB = ReturnType<typeof createDB>
@@ -230,7 +215,7 @@ export interface PrepareWeekResult {
   analysis: WeekIntelligence | null
 }
 
-export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptions): Promise<PrepareWeekResult | null> {
+export async function prepareWeek(db: DB, _apiKey: string, opts: PrepareWeekOptions): Promise<PrepareWeekResult | null> {
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, opts.blockId))
   if (!block) return null
   const { monday, todayDay, nowSec } = opts
@@ -245,113 +230,24 @@ export async function prepareWeek(db: DB, apiKey: string, opts: PrepareWeekOptio
     return { week: weekForClient(weekRow), sessions: sortSessions(existing), prepared: false, source: 'existing', analysis: null }
   }
 
-  const mtDays = await mtClassDays(db)
-  const extras = await loadTemplateExtras(db, block.id)
   const { signals, analysis } = await loadWeekSignals(db, block, monday, todayDay)
-  const template: Planned[] = []
-  // No sessions before the start; a Block Zero lead-in day gets the lead-in day (D1).
-  for (let d = monday; d <= monday + 6; d++) {
-    const day = blockDayPlan(block, d, stamps.weekNumber, mtDays, extras)
-    for (const t of day.entries) {
-      template.push({ type: t.type, label: isBlockZero || 'extra' in t ? t.label : null, notes: t.runCategory ?? null, epochDay: d, timeSlot: t.timeSlot, estimatedMin: null, why: null, extra: 'extra' in t, ...(day.leadIn ? { leadIn: true } : {}) })
-    }
-  }
-  // The start week (lead-in or pre-start days) is the template alone: the planner never fills it.
-  const startWeek = monday < blockCountsFrom(block)
-
-  // 1. The planner.
-  let source: 'ai' | 'rules' = 'rules'
-  let planned: Planned[] = template
-  const dropped: WeekIntelligence['dropped'] = []
-  let narrative: string | null = null
-  let adjustmentNotes: string | null = null
-  const aiPlan = opts.useAi && !startWeek
-    ? await generateWeekPlan(db, apiKey, {
-      blockId: block.id, weekId, weekNumber: stamps.weekNumber, blockWeek: stamps.strengthWeek, isBlockZero,
-      mtClassDays: mtDays, prevWeekStart: monday - 7, prevWeekEnd: monday - 1, coachContext: serializeWeekSignals(signals),
-    }).catch(err => { console.warn('[weeklyPass] planner failed', err); return null })
-    : null
-  if (aiPlan && Array.isArray(aiPlan.days)) {
-    source = 'ai'
-    narrative = aiPlan.narrative ?? null
-    adjustmentNotes = aiPlan.adjustmentNotes ?? null
-    const fromAi: Planned[] = []
-    for (const day of aiPlan.days) {
-      if (!Number.isInteger(day?.dayOfWeek)) continue
-      const epochDay = monday + ((day.dayOfWeek + 6) % 7)
-      for (const e of Array.isArray(day.sessions) ? day.sessions : []) {
-        // Block Zero never schedules classes; Fighter only on class days.
-        if (e.type === 'mt_class' && (isBlockZero || !mtDays.has(day.dayOfWeek))) continue
-        fromAi.push({ type: e.type, label: isBlockZero ? e.label : null, notes: e.runCategory ?? null, epochDay, timeSlot: e.timeSlot === 'pm' ? 'pm' : 'am', estimatedMin: e.estimatedMin ?? null, why: e.notes ? houseLine(e.notes, 140) : null })
-      }
-    }
-    // Sessions made regular stay in the plan unless the planner kept them already.
-    for (const x of template.filter(t => t.extra)) {
-      if (!fromAi.some(p => p.epochDay === x.epochDay && p.type === x.type)) fromAi.push(x)
-    }
-    planned = fromAi
-  }
-
-  // Fighter: E1 placement for everything that differs from the template (the
-  // AI's added or moved sessions, sessions made regular). The template's own
-  // sessions are the rules' week and stay.
-  if (!isBlockZero && (source === 'ai' || planned.some(p => p.extra))) {
-    const base = await loadPlacementContext(db, monday, todayDay)
-    const ctx: PlacementContext = { ...base, todayEpochDay: Math.min(todayDay, monday), readinessEase: false, easeDays: [], run: await loadRunHistory(db, monday) }
-    const placed = placePlannedWeek(planned, template.filter(t => !t.extra), ctx, Math.max(todayDay, monday))
-    planned = placed.accepted
-    for (const d of placed.dropped) dropped.push({ type: d.entry.type, epochDay: d.entry.epochDay, reason: d.reason })
-  }
-
-  // 2. The rules: small eases with a reason.
-  const eases = weekRuleEases(signals, planned.map(p => ({ type: p.type, label: p.label, notes: p.notes, epochDay: p.epochDay, timeSlot: p.timeSlot, estimatedMin: p.estimatedMin })))
-  const easeBy = new Map(eases.map(e => [e.index, e]))
-
-  // 3. Insert, with reasons.
+  // One creation path (coach brain P2): each day from the block's template, as generate-today does.
+  // No planner and no rule eases: the nightly brain doses each session and shapes the week.
+  void opts.useAi
+  const source: 'ai' | 'rules' = 'rules'
   const ids: string[] = []
-  const changes: WeekChange[] = []
-  const pm = await pmStart(db)
-  const setId = crypto.randomUUID()
-  for (let i = 0; i < planned.length; i++) {
-    const p = planned[i]
-    const id = crypto.randomUUID()
-    ids.push(id)
-    const ease = easeBy.get(i)
-    let ctxJson: string | null = null
-    if (p.why || p.extra) ctxJson = mergeContext(null, { coachNote: { reason: p.why ?? 'Part of the plan since you made it regular.', source: p.extra ? 'make_regular' : 'planner', at: nowSec } })
-    if (p.leadIn) ctxJson = mergeContext(ctxJson, { leadIn: true })
-    if (ease) ctxJson = withCoachEase(ctxJson, { kind: ease.kind, reason: ease.reason, source: 'reactive', at: nowSec })
-    await db.insert(sessions).values({
-      id,
-      type: p.type,
-      label: p.label,
-      weekPlanId: weekId,
-      scheduledDate: p.epochDay,
-      timeSlot: p.timeSlot,
-      blockWeek: p.type === 'strength' ? stamps.strengthWeek : null,
-      blockType: block.blockType,
-      status: 'planned',
-      notes: p.notes,
-      source: 'template',
-      contextJson: ctxJson,
-      createdAt: nowSec,
-    })
-    if (ease) {
-      const words = easeFor({ id, type: p.type, label: p.label, notes: p.notes, epochDay: p.epochDay, timeSlot: p.timeSlot, status: 'planned' }, { blockType: kind, weekNumber: stamps.weekNumber })
-      const row = { id, contextJson: ctxJson }
-      await recordChanges(db, [{
-        setId, actor: 'weekly_pass', kind: 'ease', targetSessionId: id, sessionType: p.type, adjustmentType: 'weekly_ease', weekPlanId: weekId,
-        before: { show: words?.show.before ?? 'AS PLANNED', ...(words?.show.logBefore ? { logShow: words.show.logBefore } : {}), day: p.epochDay, sessions: [{ id, f: {}, ctx: { coachEase: null } }] },
-        after: { show: words?.show.after ?? 'EASIER', day: p.epochDay, sessions: [snap(row, [], ['coachEase'])], put: p.type === 'strength' && words?.put ? words.put : { line: `${nameToken(sessionName(p), p.epochDay)} is back as planned.`, dim: 'The coach leaves it as you set it this week.' } },
-        why: ease.reason, detail: p.type === 'strength' ? words?.detail ?? 'Same weights.' : null,
-        undoUntil: slotStart(p.epochDay, p.timeSlot, pm), extraSource: { cause: ease.cause },
-      }], nowSec)
-      changes.push({ sessionId: id, epochDay: p.epochDay, type: p.type, reason: ease.reason, was: ease.was, now: ease.now, source: 'rules', cause: ease.cause })
-    } else if (p.why) {
-      changes.push({ sessionId: id, epochDay: p.epochDay, type: p.type, reason: p.why, was: null, now: null, source: 'ai' })
-    }
+  for (let d = monday; d <= monday + 6; d++) {
+    if (await dayHasPlan(db, block.id, d)) continue
+    ids.push(...(await generateDaySessions(db, d, todayDay, nowSec)).map(r => r.id))
   }
-  for (const d of dropped) changes.push({ sessionId: null, epochDay: d.epochDay, type: d.type, reason: `Dropped ${isoOf(d.epochDay)}: ${d.reason}`, was: null, now: null, source: 'placement' })
+  const changes: WeekChange[] = []
+  const dropped: WeekIntelligence['dropped'] = []
+  const narrative: string | null = null
+  const adjustmentNotes: string | null = null
+  const eases: Array<{ cause: NonNullable<WeekChange['cause']>; index: number }> = []
+  const planned: Planned[] = []
+  void kind
+  void isBlockZero
 
   // A missed session's lifts waiting for this week land on its strength day.
   await applyPendingMerges(db, ids)
@@ -432,22 +328,10 @@ export async function runWeeklyPass(db: DB, apiKey: string, todayDay: number, no
 
   const applied: string[] = []
   const errors: string[] = []
-  // The athlete model first, so its read shapes the week (within the rules).
-  let athleteVerdict: string | null = null
-  try {
-    const ret = await returnContextFor(db, todayDay)
-    const injury = await loadInjuryFlag(db, todayDay)
-    const report = await readinessFor(db, todayDay)
-    const r = await runAthleteState(db, apiKey, 'weekly_pass', todayDay, { noPush: ret.active || ret.noPush || injury != null, easeActive: report.ease })
-    athleteVerdict = r?.state.verdict ?? null
-  } catch (err) {
-    errors.push('athlete_state')
-    console.warn('[weeklyPass] athlete state failed', err)
-  }
-
+  const athleteVerdict: string | null = null
   let prepared: PrepareWeekResult | null = null
   try {
-    prepared = await prepareWeek(db, apiKey, { blockId: block.id, monday, todayDay, nowSec, useAi: true })
+    prepared = await prepareWeek(db, apiKey, { blockId: block.id, monday, todayDay, nowSec, useAi: false })
   } catch (err) {
     errors.push('prepare')
     console.warn('[weeklyPass] prepare failed', err)

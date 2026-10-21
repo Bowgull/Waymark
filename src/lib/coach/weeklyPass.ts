@@ -9,14 +9,12 @@
 
 import type { CoachEaseKind } from './classify'
 import { checkSessionChange, type PlacementContext } from './placement'
-import { RUN_TYPES, dowOf, isHard, mondayOf, sessionName, type BlockKind, type SessionLike } from './sessions'
-import { getRunWalkWeek } from '../blockZero/running'
-import { getStrengthWeekTarget } from '../blockZero/strength'
+import { RUN_TYPES, dowOf, mondayOf, sessionName, type BlockKind, type SessionLike } from './sessions'
 import { getWeekPercentage } from '../strengthTemplates'
 import { midName } from './changes'
 
 const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-import type { EffortSummary } from './feltHard'
+import type { EffortSummary } from './effort'
 
 /** The pass runs the night the athlete's local day is Sunday; Monday catches up a missed run. */
 export const WEEKLY_PASS_DOW = 0
@@ -83,39 +81,7 @@ function causes(s: WeekSignals): Array<{ cause: WeekEaseCause; why: string }> {
   return out
 }
 
-/**
- * The automatic eases for the week: one per cause, at most MAX_WEEKLY_EASES,
- * on the earliest hard sessions (strength first). Not after a gap: the return
- * ramp already lowers loads in every prescription.
- */
-export function weekRuleEases(s: WeekSignals, planned: Array<Pick<SessionLike, 'type' | 'label' | 'notes' | 'epochDay' | 'timeSlot' | 'estimatedMin'>>): WeekEase[] {
-  if (s.returnRamp.active) return []
-  const order = planned
-    .map((p, index) => ({ p, index }))
-    // Never a class: easing a class would mean saying what to do in it (coach-brain §14).
-    .filter(({ p }) => (isHard(p) || RUN_TYPES.has(p.type)) && p.type !== 'mt_class')
-    .sort((a, b) => (a.p.type === 'strength' ? 0 : 1) - (b.p.type === 'strength' ? 0 : 1) || a.p.epochDay - b.p.epochDay)
-  const out: WeekEase[] = []
-  const used = new Set<number>()
-  for (const c of causes(s)) {
-    if (out.length >= MAX_WEEKLY_EASES) break
-    const pick = order.find(o => !used.has(o.index))
-    if (!pick) break
-    used.add(pick.index)
-    // Strength drops a set at the same weights (the line says so); runs shorten.
-    const kind: CoachEaseKind = pick.p.type === 'strength' ? 'one_set' : 'reduce'
-    const d = easeDetail(kind, pick.p)
-    out.push({
-      index: pick.index,
-      kind,
-      cause: c.cause,
-      reason: `${c.why} ${DAY_LONG[dowOf(pick.p.epochDay)]}'s ${midName(sessionName(pick.p))} ${pick.p.type === 'strength' ? 'drops a set, same weights' : 'eases'}.`,
-      was: d.was,
-      now: d.now,
-    })
-  }
-  return out
-}
+// weekRuleEases (the weekly 15% load flag and its company) went with coach brain P2: load is never an ease on its own.
 
 /** House voice for any line: no em dashes, no exclamation marks, one line. */
 export function houseLine(s: string, max = WHY_MAX): string {
@@ -129,53 +95,8 @@ export function houseLine(s: string, max = WHY_MAX): string {
 /** The week line is longer than other lines: what's new, then what's next. */
 const WEEK_LINE_MAX = 260
 
-function mmss(sec: number): string {
-  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
-}
 
-const NUM = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']
 
-/** Block Zero: what the main lifts and the run-walks do in `week` against `prev` (null = first week). */
-function blockZeroNews(week: number, prev: number | null): string[] {
-  const t = getStrengthWeekTarget(week)
-  const r = getRunWalkWeek(week)
-  const out: string[] = []
-  if (prev == null) {
-    out.push(`${NUM[t.mainSets] ?? t.mainSets} sets of ${t.reps} on every main lift`)
-    out.push(`run-walks of ${mmss(r.runSec)} run, ${mmss(r.walkSec)} walk (${r.rounds} rounds)`)
-    return out
-  }
-  const pt = getStrengthWeekTarget(prev)
-  const pr = getRunWalkWeek(prev)
-  if (t.mainSets !== pt.mainSets) {
-    out.push(t.mainSets > pt.mainSets
-      ? `every main lift goes from ${pt.mainSets} sets of ${pt.reps} to ${t.mainSets}`
-      : `every main lift drops to ${NUM[t.mainSets] ?? t.mainSets} ${t.mainSets === 1 ? 'set' : 'sets'} of ${t.reps}`)
-  }
-  if (t.checkSet && !pt.checkSet) out.push(`a heavier set of ${t.checkSet.repRange[0]} to ${t.checkSet.repRange[1]} comes first`)
-  if (r.runSec !== pr.runSec || r.rounds !== pr.rounds) {
-    if (r.runSec > pr.runSec) out.push(`you run ${mmss(r.runSec)} at a time, up from ${mmss(pr.runSec)}${r.rounds !== pr.rounds ? ` (${r.rounds} rounds, not ${pr.rounds})` : ''}`)
-    else if (r.rounds < pr.rounds) out.push(`runs drop to ${r.rounds} rounds`)
-    else out.push(`runs go to ${r.rounds} rounds of ${mmss(r.runSec)}`)
-  }
-  return out
-}
-
-/** Block Zero: the next week's change in a few words, or null when it holds. */
-function blockZeroNext(week: number, total: number): string | null {
-  if (week >= total) return 'the gate, then the next block'
-  const t = getStrengthWeekTarget(week)
-  const n = getStrengthWeekTarget(week + 1)
-  const r = getRunWalkWeek(week)
-  const nr = getRunWalkWeek(week + 1)
-  const parts: string[] = []
-  if (nr.runSec > r.runSec) parts.push(`runs go to ${mmss(nr.runSec)}`)
-  else if (nr.rounds < r.rounds) parts.push(`runs drop to ${nr.rounds} rounds`)
-  else if (nr.rounds > r.rounds) parts.push(`runs go to ${nr.rounds} rounds`)
-  if (n.mainSets > t.mainSets) parts.push(`main lifts go to ${n.mainSets} sets`)
-  else if (n.mainSets < t.mainSets) parts.push(`main lifts drop to ${NUM[n.mainSets] ?? n.mainSets} ${n.mainSets === 1 ? 'set' : 'sets'}`)
-  return parts.length > 0 ? parts.join(', and ') : null
-}
 
 /** Fighter: the main lifts' share of the training max that week. */
 function fighterPct(week: number): number {
@@ -198,22 +119,10 @@ export interface WeekLineEase {
  */
 export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>, opts: { leadIn?: boolean } = {}): string {
   const parts: string[] = []
-  if (opts.leadIn && s.blockType === 'block_zero') {
-    // A mid-week start's lead-in has no strength: say what it holds, then week 1.
-    const r = getRunWalkWeek(1)
-    const t = getStrengthWeekTarget(1)
-    return houseLine(`Lead-in, all optional: Foundation every day and an easy run-walk on Tue, Thu and Sat. Week 1 starts Monday: ${NUM[t.mainSets] ?? t.mainSets} sets of ${t.reps} on every main lift, and run-walks of ${mmss(r.runSec)} run, ${mmss(r.walkSec)} walk.`, WEEK_LINE_MAX)
-  }
-  if (s.returnRamp.active) {
-    parts.push(`Back after ${s.returnRamp.gapDays} days: lifts and runs start lighter and climb back over the next weeks.`)
-  } else if (s.blockType === 'block_zero') {
-    const prev = s.weekNumber > 1 ? s.weekNumber - 1 : null
-    const news = blockZeroNews(s.weekNumber, prev)
-    if (prev == null) parts.push(`First week: ${news.join(', and ')}.`)
-    else if (news.length > 0) parts.push(`New this week: ${news.join(', and ')}.`)
-    else parts.push('Same as last week, with a little more weight where the last top set felt easy.')
-    const next = blockZeroNext(s.weekNumber, s.totalWeeks)
-    parts.push(next ? `Next week: ${next}.` : 'Next week: the same.')
+  void opts
+  if (s.blockType === 'block_zero') {
+    // Coach brain P2: no week template drives the dose; each session is set the night before.
+    parts.push(`Week ${s.weekNumber}. Each session is set the night before from your last ones: weights from the reps you had left, run pieces from your heart rate.`)
   } else {
     const pct = fighterPct(s.weekNumber)
     const prevPct = s.weekNumber > 1 ? fighterPct(s.weekNumber - 1) : null
@@ -221,7 +130,7 @@ export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>, 
     parts.push(s.waveEnd ? 'New maxes go in after this week.' : `Next week: ${fighterPct(s.weekNumber + 1)}%.`)
   }
   const first = eases[0]
-  if (first && !s.returnRamp.active) {
+  if (first) {
     const why = causes(s).find(c => c.cause === first.cause)?.why
     const what = `${DAY_LONG[dowOf(first.epochDay)]}'s ${midName(first.name)} ${first.type == null || first.type === 'strength' ? 'drops a set' : 'eases'}${eases.length > 1 ? ', and one more session eases' : ''}.`
     parts.push(why ? `${why} ${what}` : what)
