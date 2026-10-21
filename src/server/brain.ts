@@ -33,7 +33,7 @@ import { loadEquipment, type LoadEquipment } from '../lib/strengthLoads'
 import { loadEasyHrCeiling } from '../lib/hrAnalysis'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getActiveBlock } from './blockZeroData'
-import { blockKind, blockStartDay, bodyPlanMark, dayHasPlan, generateDaySessions, loadInjuryFlag, mtClassDays, resolveWeekPlan, trainingWeekFor, weekStamps } from './coachData'
+import { blockKind, blockStartDay, bodyPlanMark, dayHasPlan, generateDaySessions, loadInjuryFlag, resolveWeekPlan, trainingWeekFor, weekStamps } from './coachData'
 import { loadModelEvents, modelFromDay } from './athleteModel'
 import { emptyState, loadHeld, loadWeekChanges, pmStart, recordChanges, snap, type NewChange } from './changes'
 
@@ -429,7 +429,7 @@ const DAY3 = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const NAME: Record<string, string> = { strength: 'Strength', foundation_run: 'Run-Walk', running: 'Run', bag_work: 'Bag Work', mt_class: 'MT Class', skip_rope: 'Skip Rope' }
 
 /** Apply the outline's changes: each a coach change row with its rune and UNDO. */
-async function applyOutline(db: DB, changes: OutlineChange[], rows: SessionRow[], blockId: string, nowSec: number): Promise<number> {
+async function applyOutline(db: DB, changes: OutlineChange[], rows: SessionRow[], blockId: string, nowSec: number, classTime = '18:30'): Promise<number> {
   if (changes.length === 0) return 0
   const pm = await pmStart(db)
   const setId = crypto.randomUUID()
@@ -441,11 +441,11 @@ async function applyOutline(db: DB, changes: OutlineChange[], rows: SessionRow[]
       const tw = await trainingWeekFor(db, block, c.day, Math.floor(nowSec / 86400))
       const weekPlanId = await resolveWeekPlan(db, block.id, weekStamps(block, tw).weekNumber, mondayOf(c.day), nowSec)
       const id = crypto.randomUUID()
-      await db.insert(sessions).values({ id, type: 'mt_class', label: 'MT Class', weekPlanId, scheduledDate: c.day, timeSlot: 'pm', blockWeek: null, blockType: block.blockType, status: 'planned', notes: null, source: 'coach', contextJson: JSON.stringify({ suggested: { at: nowSec } }), createdAt: nowSec })
+      await db.insert(sessions).values({ id, type: 'mt_class', label: 'MT Class', weekPlanId, scheduledDate: c.day, timeSlot: 'pm', blockWeek: null, blockType: block.blockType, status: 'planned', notes: null, source: 'coach', contextJson: JSON.stringify({ suggested: { at: nowSec, time: classTime } }), createdAt: nowSec })
       records.push({
         setId, actor: 'coach', kind: 'add', targetSessionId: id, sessionType: 'mt_class', weekPlanId,
         before: emptyState(c.day), after: { ...emptyState(c.day, '+ MT CLASS'), created: [id], put: { line: 'The class is off the week.', dim: 'The coach leaves this week as it is.' } },
-        why: c.why, detail: 'A class is an hour of hard work; what is taught is the gym\'s call. Skip or replace it like anything else.', undoUntil: slotStart(c.day, 'pm', pm), extraSource: { rule: 'class_night' },
+        why: c.why, detail: 'A class is an hour of hard work; what is taught is the gym\'s call. Skip or replace it like anything else.', undoUntil: slotStart(c.day, 'pm', classTime), extraSource: { rule: 'class_night', time: classTime },
       })
     } else if (c.kind === 'move') {
       const s = rows.find(r => r.id === c.sessionId)
@@ -516,7 +516,13 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
   const inp = await loadBrainInputs(db, today)
   const kind = blockKind(block.blockType)
   const [profile] = await db.select({ cap: userProfile.mtCapPerWeek }).from(userProfile).where(eq(userProfile.id, 'default'))
-  const classNights = [...await mtClassDays(db)]
+  // Class nights: the days he set in Settings win; none set, the coach suggests from any night but Sunday.
+  const [st] = await db.select({ mt: settings.mtClassDays }).from(settings).limit(1)
+  const setDays = (st?.mt ?? '').split(',').filter(Boolean).map(Number).filter(d => d >= 0 && d <= 6)
+  const classNights = setDays.length > 0 ? setDays : [1, 2, 3, 4, 5, 6]
+  // Class time: 6:30 PM until his logged class starts say otherwise. Nothing to set.
+  const classMin = inp.model.adherence.usualStart.mt_class?.minute ?? 18 * 60 + 30
+  const classTime = `${Math.floor(classMin / 60)}:${String(classMin % 60).padStart(2, '0')}`
   const restDue = await restDueFor(db, inp, today)
   // At most 2 visible coach changes a night, missed-session records written tonight included.
   let budget = Math.max(0, 2 - (opts.used ?? 0))
@@ -537,7 +543,7 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
       classCap: profile?.cap ?? null, classHeld, classPaused, model: inp.model, state: nightState(inp, today).state, restDue: w === monday ? restDue : null,
     })
     const chosen = result.changes.slice(0, budget)
-    const n = await applyOutline(db, chosen, rows, block.id, nowSec)
+    const n = await applyOutline(db, chosen, rows, block.id, nowSec, classTime)
     budget -= chosen.length
     changes += n
   }

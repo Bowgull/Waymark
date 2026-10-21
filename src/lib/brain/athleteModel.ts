@@ -65,6 +65,11 @@ const flaggedNear = (flags: Map<number, Set<NoteFlag>>, day: number, flag: NoteF
 
 // ─── Small helpers ───────────────────────────────────────────
 
+/** An early end he said was hard (felt rough, pain): the only early end that eases. */
+export function isHardEnd(reason: string | null | undefined): boolean {
+  return reason === 'rough' || reason === 'pain'
+}
+
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null)
 function sd(xs: number[]): number | null {
   const m = mean(xs)
@@ -288,7 +293,9 @@ export const RUNG_PRIOR_SEC = RUNG_LADDER[0]
 const MIN_RUN_SEC = 120
 const MAX_RUN_SEC = 4 * 3600
 
-export function linePrior(dob: string | null, today: number): number {
+export function linePrior(dob: string | null, today: number, maxHr: number | null = null): number {
+  // His measured max HR from the profile first, else his age (birth date): nothing new to ask.
+  if (maxHr != null && maxHr > 0) return Math.round(LINE_PRIOR_FRACTION * maxHr)
   const age = ageFromDob(dob, today) ?? DEFAULT_AGE
   return Math.round(LINE_PRIOR_FRACTION * tanakaMaxHr(age))
 }
@@ -323,11 +330,11 @@ function ladderBelow(sec: number): number {
 }
 
 function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<NoteFlag>>): RunEstimate {
-  const prior = linePrior(events.profile.dob, today)
+  const prior = linePrior(events.profile.dob, today, events.profile.maxHr)
   const tests = events.talkTests.filter(t => t.day <= today).sort((a, b) => a.day - b.day)
   const lineOn = (day: number): { bpm: number; source: 'talk_test' | 'prior' } => {
     const upTo = tests.filter(t => t.day <= day)
-    if (upTo.length === 0) return { bpm: linePrior(events.profile.dob, day), source: 'prior' }
+    if (upTo.length === 0) return { bpm: linePrior(events.profile.dob, day, events.profile.maxHr), source: 'prior' }
     const [a, b] = upTo.slice(-2).reverse()
     return { bpm: b && Math.abs(a.bpm - b.bpm) <= LINE_KNOWN_TOLERANCE ? Math.round((a.bpm + b.bpm) / 2) : a.bpm, source: 'talk_test' }
   }
@@ -352,7 +359,9 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
     const calfShin = flaggedNear(flags, r.day, 'calf_shin')
     const tooFast = u != null && u < 0.7
     const tooSlow = u != null && u >= 0.95 && r.avgHr != null && r.avgHr <= line - 10 && rpe != null && rpe <= 4
-    const struggled = tooFast || (rpe != null && rpe >= 7) || (drift != null && drift >= 10) || calfShin || (cutShort && !scheduleCut)
+    // Cut short counts as a struggle only when he said so (felt rough, pain). The reason is an
+    // optional tap: skipped, "no time" or "other" is neutral (HOLD), never an ease (Josh, 2026-10-21).
+    const struggled = tooFast || (rpe != null && rpe >= 7) || (drift != null && drift >= 10) || calfShin || (cutShort && isHardEnd(r.shortReason))
     const handled = !struggled && !cutShort && ((u != null && u >= 0.85 && (rpe == null || rpe <= 5)) || (u == null && rpe != null && rpe <= 5))
     const piece = r.pieceSec ?? dur
     if (lastRunDay != null) rung = rungDecay(rung, r.day - lastRunDay, RUNG_PRIOR_SEC)
@@ -426,7 +435,7 @@ function buildBag(events: ModelEvents, today: number, flags: Map<number, Set<Not
     // Rounds he actually worked: the finish's per-round seconds, else the rounds he rated, else the plan.
     const worked = b.roundsDone ?? b.roundsRated
     const rounds = worked ?? b.roundsPlanned
-    const cut = worked != null && worked < b.roundsPlanned && !isScheduleReason(b.endReason)
+    const cut = worked != null && worked < b.roundsPlanned && isHardEnd(b.endReason)
     const flag = flaggedNear(flags, b.day, 'wrist') || flaggedNear(flags, b.day, 'calf_shin')
     if (flag) flagCount++
     const sore = softAfter(b.day)

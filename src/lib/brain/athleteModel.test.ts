@@ -201,10 +201,13 @@ assert.equal(bagRoundsFromU(6, 0.5, 5), 5, 'never above the cap')
   assert.equal(lc.struggled, false, 'time is never "too hard"')
   assert.equal(m4.run.rungSec, 120)
   assert.equal(m4.adherence.scheduleSkips.total, 1)
-  // Cut short with no reason: a step back.
+  // Cut short with no reason given (the tap is optional): neutral, never a step back (Josh, 2026-10-21).
   const m5 = buildAthleteModel(events({ sessions: [s1, s2, s3, s6], talkTests: tests, runs: [easy(s1, 60), easy(s2, 90), easy(s3, 120), { ...timeCut, shortReason: null }] }), MON + 7)
-  assert.equal(m5.run.rungSec, 120, 'min(rung, the step below 210) = 120')
-  assert.equal(m5.run.recent[m5.run.recent.length - 1].struggled, true)
+  assert.equal(m5.run.recent[m5.run.recent.length - 1].struggled, false)
+  assert.equal(m5.run.rungSec, 120, 'the rung holds')
+  // Cut short because it felt rough: a step back.
+  const m5b = buildAthleteModel(events({ sessions: [s1, s2, s3, s6], talkTests: tests, runs: [easy(s1, 60), easy(s2, 90), easy(s3, 120), { ...timeCut, shortReason: 'rough' }] }), MON + 7)
+  assert.equal(m5b.run.recent[m5b.run.recent.length - 1].struggled, true)
 
   // No HR: effort and finishing decide, with more uncertainty.
   const s7 = session(MON + 7, 'running', { rpe: 4 })

@@ -1,10 +1,10 @@
-// Coach brain P2 (coach-brain.md §6.2; Josh's gym, 2026-10-20 interview):
-// which exercise fills each Block Zero main slot. Progression is earned, not
-// tied to a week:
+// Coach brain P2 (coach-brain.md §6.2): which exercise fills each Block Zero
+// main slot. He trains at a full commercial gym (barbells, racks with pins, a
+// trap bar, dumbbells, cables, machines, heavy bags): no kit list, no setting.
+// Progression is earned, not tied to a week:
 //   squat  goblet squat  → front squat
-//   hinge  DB RDL        → block pull from the rack's safety pins at knee
-//                          height (no lifting blocks), or the trap bar when
-//                          his back says so (the back-friendly hinge)
+//   hinge  DB RDL        → block pull (blocks or the rack's pins), or the
+//                          trap bar when his back says so (back-friendly)
 //   row    DB row        → bent-over row
 // The harder version comes once the easier one is KNOWN, a 3 × 8 has been
 // done at 2+ reps left with every rep in, and his back averages 3 or better.
@@ -23,7 +23,7 @@ export interface SlotLadder {
   backFriendly?: { exerciseId: string; label: string; note?: string }
 }
 
-export const PIN_PULL_NOTE = 'From the rack\'s safety pins at knee height.'
+export const PIN_PULL_NOTE = "From blocks or the rack's pins, just below the knee."
 
 export const LADDERS: Readonly<Record<MainSlot, SlotLadder>> = {
   squat: { easy: { exerciseId: 'ex-goblet-squat', label: 'Goblet Squat' }, hard: { exerciseId: 'ex-front-squat', label: 'Front Squat' } },

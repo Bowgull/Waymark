@@ -168,12 +168,12 @@ const lifted = (days: number[], w: number, rir: number, extra: Partial<{ planW: 
   assert.ok(c.stepped && /3 × 8/.test(c.why ?? ''), 'says why')
   const sore = buildAthleteModel({ ...ev, checkIns: ev.checkIns.map(x => ({ ...x, backToday: 2 })) }, MON)
   assert.equal(chooseSlot('squat', sore).exerciseId, 'ex-goblet-squat', 'back averaging under 3: not yet')
-  // Josh has no blocks: the block pull is from the rack's safety pins.
+  // The block pull: blocks or the rack's pins (a full gym), whichever is there.
   const hinge = buildAthleteModel(events(), MON)
   hinge.lifts['ex-db-rdl'] = { ...m.lifts['ex-goblet-squat'], exerciseId: 'ex-db-rdl' }
   const h = chooseSlot('hinge', hinge)
   assert.equal(h.exerciseId, 'ex-block-pull')
-  assert.ok(/safety pins at knee height/.test(h.note ?? ''), 'from the pins')
+  assert.ok(/blocks or the rack's pins/.test(h.note ?? ''), 'blocks or pins')
   const sensitive = { ...hinge, back: { ...hinge.back, profileSensitive: true, level: 3.2, last21Mean: 3.2 } }
   assert.ok(preferTrapBar(sensitive) && chooseSlot('hinge', sensitive).exerciseId === 'ex-trap-bar-deadlift', 'a sensitive back: the trap bar')
   assert.equal(backDaySwap('ex-front-squat', 2)?.exerciseId, 'ex-goblet-squat', 'back 2 today: the back-friendly version')
@@ -212,6 +212,11 @@ function runIn(over: Partial<RunIn> = {}): RunIn {
   assert.equal(runDose(ctxFor(evCut, MON), runIn({ longestLast30Sec: 1400 })).level, 'HOLD', 'no time: HOLD')
   const evRough = events({ sessions: [r1, cut], runs: [run(r1), run(cut, { durationSec: 700, completionStatus: 'partial', shortReason: 'rough' })], talkTests: [{ day: MON - 4, bpm: 150 }] })
   assert.equal(runDose(ctxFor(evRough, MON), runIn({ longestLast30Sec: 1400 })).level, 'EASE', 'felt rough: EASE')
+  // The reason is an optional tap: skipped, it is neutral (HOLD), never an ease.
+  const evSkip = events({ sessions: [r1, cut], runs: [run(r1), run(cut, { durationSec: 700, completionStatus: 'partial', shortReason: null })], talkTests: [{ day: MON - 4, bpm: 150 }] })
+  assert.equal(runDose(ctxFor(evSkip, MON), runIn({ longestLast30Sec: 1400 })).level, 'HOLD', 'no reason given: HOLD')
+  // The starting line: his max HR when the profile has one, else his age.
+  assert.equal(buildAthleteModel(events({ profile: { dob: '1990-06-01', maxHr: 190, backSensitive: false } }), MON).run.lineBpm, Math.round(0.78 * 190))
   // No HR at all: effort and finishing decide, with more caution.
   const noHr = session(MON - 2, 'foundation_run')
   const mNoHr = buildAthleteModel(events({ sessions: [noHr], runs: [run(noHr, { avgHr: null, maxHr: null })] }), MON)
@@ -272,6 +277,9 @@ const outlineIn = (over: Partial<OutlineIn> = {}): OutlineIn => ({
   // Locked sessions never move.
   const locked = solveOutline(outlineIn({ sessions: bzWeek(MON + 7).map(s => ({ ...s, locked: true })) }))
   assert.ok(locked.changes.every(c => c.kind === 'add'), 'held or done sessions stay')
+  // No class nights set: the coach suggests one, never on a heavy-legs day.
+  const open = solveOutline(outlineIn({ classNights: [1, 2, 3, 4, 5, 6] })).changes.find(c => c.kind === 'add')
+  assert.ok(open && ![MON + 7, MON + 9].includes(open.day), `no nights set: a night that fits (${open?.day})`)
   // A second rest day when it is due.
   const rest = solveOutline(outlineIn({ restDue: 'Soreness 4 then 5. A rest day.' }))
   assert.ok(rest.changes.some(c => c.kind === 'rest' && c.day <= MON + 8), 'a rest day lands tomorrow-ish')
