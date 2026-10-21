@@ -45,6 +45,8 @@ export interface WeekViewProps {
   onUndo: (id: string) => Promise<boolean>
   /** His own change landed: the week's changes are read again. */
   onChanged: () => void
+  /** Page 64: a Block Zero start still ahead: the days before it are empty and dim. */
+  startsOn?: number | null
 }
 
 const DAY3 = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
@@ -82,7 +84,7 @@ function sortDay(list: DayBoardSession[]): DayBoardSession[] {
   return [...list].sort((a, b) => (a.timeSlot === 'pm' ? 1 : 0) - (b.timeSlot === 'pm' ? 1 : 0))
 }
 
-export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, onOpenDay, onSessionUpdate, onSessionAdded, changes, markSeen, onUndo, onChanged }: WeekViewProps) {
+export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, onOpenDay, onSessionUpdate, onSessionAdded, changes, markSeen, onUndo, onChanged, startsOn = null }: WeekViewProps) {
   const [openRow, setOpenRow] = useState<string | null>(null)
   const [picker, setPicker] = useState<{ mode: 'add'; date: string } | { mode: 'replace'; date: string; session: DayBoardSession; reason: string | null } | null>(null)
   const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
@@ -180,6 +182,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
 
   const dayDate = new Date(openDay * 86400000)
   const isToday = openDay === todayEpochDay
+  const beforeStart = (d: number) => startsOn != null && d < startsOn
 
   return (
     <>
@@ -197,7 +200,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
                   data-day={t.epochDay}
                   aria-selected={t.epochDay === openDay}
                   aria-label={`${DAY3[dowOfEpochDay(t.epochDay)]} ${t.date}${t.today ? ', today' : ''}, ${t.icons.length} ${t.icons.length === 1 ? 'session' : 'sessions'}${rune ? (rune.startsWith('miss') ? ', a missed session' : ', the coach changed it') : ''}`}
-                  className={`pg-t7${t.today ? ' is-today' : ''}${t.epochDay === openDay ? ' is-sel' : ''}${rune ? ' has-rn' : ''}`}
+                  className={`pg-t7${t.today ? ' is-today' : ''}${t.epochDay === openDay ? ' is-sel' : ''}${rune ? ' has-rn' : ''}${beforeStart(t.epochDay) ? ' is-before' : ''}`}
                   onClick={() => {
                     onOpenDay(t.epochDay)
                     setOpenRow(null)
@@ -229,7 +232,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
           <FlapLabel text={`${DAY3[dayDate.getUTCDay()]} ${dayDate.getUTCDate()}`} size="sm" tone={isToday ? 'gold' : 'ink'} />
           <span>day board</span>
         </div>
-        {daySessions.length === 0 && <p className="wm-prose is-dim pg-empty">No sessions planned.</p>}
+        {daySessions.length === 0 && <p className="wm-prose is-dim pg-empty">{beforeStart(openDay) ? 'Before the start. Nothing planned.' : 'No sessions planned.'}</p>}
         {daySessions.map(s => {
           const sk = s.status === 'skipped' ? skips[s.id] : undefined
           return (
@@ -254,7 +257,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
             </div>
           )
         })}
-        {openDay >= todayEpochDay && (
+        {openDay >= todayEpochDay && !beforeStart(openDay) && (
           <button type="button" className="db-add" onClick={openAdd}>+ add session</button>
         )}
       </div>

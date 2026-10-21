@@ -102,3 +102,17 @@ export function dayOneLine(startDay: number | null | undefined, todayDay: number
   const which = sessionsToday === 2 ? 'both optional' : sessionsToday > 2 ? 'all optional' : 'optional'
   return { flap: 'BLOCK ZERO · DAY 1', line: `Lead-in day, ${which}. Week 1 starts Mon.` }
 }
+
+/**
+ * The start's first week holds a lead-in: any start but a Monday. While the
+ * start is ahead, its planned week (the lead-in, or week 1 from a Monday) is
+ * shown under the waiting board; plan week 1 either way.
+ */
+export function startHasLeadIn(startDay: number): boolean {
+  return anchorMondayFor(startDay, 'block_zero') !== startDay
+}
+
+/** The preview's label under the waiting board: "Tomorrow", else "Starts Thu". */
+export function startPreviewLabel(startDay: number, todayDay: number): string {
+  return startDay - todayDay <= 1 ? 'Tomorrow' : `Starts ${dayName(startDay)}`
+}

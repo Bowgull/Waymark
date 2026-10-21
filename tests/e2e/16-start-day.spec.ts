@@ -60,6 +60,59 @@ test('START WHEN?: seven days, TODAY lit, the line follows the tile; closing sta
   expect(after?.id).toBe(before?.id)
 })
 
+test('A start tomorrow: the countdown, and under it the planned week on Program and the Tomorrow preview on Today', async ({ page, api }) => {
+  const today = todayISO()
+  const tomorrow = addDaysISO(today, 1)
+  const startEpoch = epoch(tomorrow)
+  // the start's week: the lead-in from a mid-week start (today is in it), or week 1 from a Monday (next week)
+  const sameWeek = dowOf(tomorrow) !== 1
+  await setMorning(api)
+  const board = await openRestart(page)
+  await board.getByRole('group', { name: 'Start day' }).getByRole('button').nth(1).tap()
+  await board.getByRole('button', { name: 'START' }).tap()
+
+  // Program: the waiting board stays, and the start's week shows below it, opened on the start day
+  await expect(page.getByRole('button', { name: 'CHANGE DAY' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('img', { name: `STARTS ${DAY3[dowOf(tomorrow)]}` })).toBeVisible()
+  const days = page.getByRole('tablist', { name: 'Days of the week' })
+  await expect(days).toBeVisible({ timeout: 20_000 })
+  const startTab = days.locator(`[data-day="${startEpoch}"]`)
+  await expect(startTab).toHaveAttribute('aria-selected', 'true')
+  await expect(startTab).toHaveAccessibleName(/, [1-9] sessions?(,|$)/)
+  const dayBoard = page.locator('.db-glass').filter({ hasText: 'day board' })
+  await expect(dayBoard).toContainText(/Foundation/i)
+  if (sameWeek) {
+    // the days before the start: empty and dim, nothing to add
+    const todayTab = days.locator(`[data-day="${epoch(today)}"]`)
+    await expect(todayTab).toHaveClass(/is-before/)
+    await expect(todayTab).toHaveAccessibleName(/, 0 sessions(,|$)/)
+    await todayTab.tap()
+    await expect(dayBoard).toContainText('Before the start. Nothing planned.')
+    await expect(dayBoard.getByRole('button', { name: '+ add session' })).toHaveCount(0)
+  }
+
+  // Today: the same board, and under it the start day's sessions as page 43's Tomorrow row
+  await page.route('**/api/sessions/today?*', route => route.fulfill({ contentType: 'application/json', body: '[]' }))
+  await page.goto('/today?resume=0')
+  await expect(page.getByRole('button', { name: 'CHANGE DAY' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('.td-next .lbl')).toHaveText('Tomorrow')
+  await expect(page.locator('.td-nextline')).toContainText(/Foundation/i)
+  if (sameWeek) {
+    // the week strip: tomorrow's planned icons; today is not a rest day
+    await expect(page.locator(`.td-t7[data-day="${startEpoch}"] .ic`).first()).toBeVisible()
+    await expect(page.locator(`.td-t7[data-day="${epoch(today)}"]`)).not.toHaveAccessibleName(/, rest\./)
+  }
+  await page.unroute('**/api/sessions/today?*')
+
+  // back to a started Block Zero for the next test: CHANGE DAY to today on Program
+  await page.goto('/program')
+  await page.getByRole('button', { name: 'CHANGE DAY' }).tap()
+  const change = page.getByRole('dialog', { name: 'Change start day' })
+  await change.getByRole('group', { name: 'Start day' }).getByRole('button').nth(0).tap()
+  await change.getByRole('button', { name: 'SAVE' }).tap()
+  await expect(page.getByRole('group', { name: 'Weeks of the block' })).toBeVisible({ timeout: 20_000 })
+})
+
 test('A later day: nothing planned before it, the waiting board on Program and Today, CHANGE DAY to today starts it', async ({ page, api }) => {
   const today = todayISO()
   const tomorrow = addDaysISO(today, 1)

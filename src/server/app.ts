@@ -27,7 +27,7 @@ import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTem
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { BLOCK_ZERO_BASE_WEEKS, CLASS_EASE_LINE, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, prescribeRunWalk, runWalkTotalSec, validateTestResult } from '../lib/blockZero'
 import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, gotBodyNote, lowerLegOnWatch, markAgainstFlag, ravenLineFor, seenBodyNote } from './bodyWatch'
-import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
+import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, LEAD_IN_CONTEXT, STRESS_REASONS, applyContext, bagRules, checkSessionChange, finishLine, isLeadInContext, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, RAMP_LOAD_STEP, runAllowanceBaseSec } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
@@ -2602,10 +2602,15 @@ app.get('/api/weeks/current', async (c) => {
  */
 app.get('/api/program', async (c) => {
   const db = createDB(c.env)
-  const block = await currentBlockJson(db, athleteDay(c, c.req.query('date')))
+  const todayDay = athleteDay(c, c.req.query('date'))
+  const block = await currentBlockJson(db, todayDay)
   if (!block) return c.json({ block: null, weekNumber: null, week: null, week1: false, pastDone: {} })
-  const leadIn = block.trainingWeek.leadIn === true
-  const weekNumber = leadIn ? 0 : block.currentWeek
+  // Page 64: a Block Zero whose start is still ahead opens on its start's week (read-only): the
+  // lead-in from a mid-week start, or week 1 from a Monday. Nothing is planned before the start day.
+  const startDay = block.blockType === 'block_zero' ? startDayOf(block.startedAt) : null
+  const pending = startDay != null && isPendingStart(startDay, todayDay)
+  const leadIn = pending ? startHasLeadIn(startDay) : block.trainingWeek.leadIn === true
+  const weekNumber = leadIn ? 0 : pending ? 1 : block.currentWeek
   const [week, week1] = await Promise.all([
     weekJson(db, block.id, leadIn ? 1 : weekNumber, leadIn),
     // "Set up" = any plan for the block (week 1, or the lead-in to it); a start still ahead or a lead-in
