@@ -46,7 +46,7 @@ export function TodayHeader({ date }: { date: Date }) {
  * (page 56: Dagaz, the coach changed it; Algiz, a missed session) opens its
  * back in place under the strip; any other day opens in Program.
  */
-export function WeekStrip({ days, home = false, openDay = null, onRune }: { days: StripDay[]; home?: boolean; openDay?: number | null; onRune?: (epochDay: number) => void }) {
+export function WeekStrip({ days, home = false, openDay = null, onRune, hasBack }: { days: StripDay[]; home?: boolean; openDay?: number | null; onRune?: (epochDay: number) => void; hasBack?: (epochDay: number) => boolean }) {
   const navigate = useNavigate()
   // a new week: the seven tiles turn over (page 59 §5.3 Flip)
   const tilesRef = useRef<HTMLDivElement>(null)
@@ -61,8 +61,8 @@ export function WeekStrip({ days, home = false, openDay = null, onRune }: { days
             role="listitem"
             data-day={d.epochDay}
             className={`td-t7${d.isToday ? ' is-today' : ''}${d.rune ? ' has-rn' : ''}${openDay === d.epochDay ? ' is-open' : ''}`}
-            onClick={() => (d.rune && onRune ? onRune(d.epochDay) : navigate(`/program?day=${d.iso}`))}
-            aria-label={`${d.iso}${d.isToday ? ', today' : ''}${d.rest ? ', rest' : ''}. ${d.icons.map(i => `${i.name} ${i.state}`).join(', ')}.${d.rune ? (d.rune.startsWith('miss') ? ' A missed session. Tap to see what the coach did.' : ' The coach changed this day. Tap to see.') : ' Open in Program.'}`}
+            onClick={() => ((d.rune || hasBack?.(d.epochDay)) && onRune ? onRune(d.epochDay) : navigate(`/program?day=${d.iso}`))}
+            aria-label={`${d.iso}${d.isToday ? ', today' : ''}${d.rest ? ', rest' : ''}. ${d.icons.map(i => `${i.name} ${i.state}`).join(', ')}.${d.rune ? (d.rune.startsWith('miss') ? ' A missed session. Tap to see what the coach did.' : ' The coach changed this day. Tap to see.') : hasBack?.(d.epochDay) ? ' You changed this day. Tap to put it back.' : ' Open in Program.'}`}
           >
             <span className="dn">{d.letter}</span>
             <span className="dd">{d.date}</span>

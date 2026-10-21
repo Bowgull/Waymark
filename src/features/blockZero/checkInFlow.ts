@@ -119,6 +119,8 @@ export interface CheckInState {
   /** On the back-notes card (only when back today is low). */
   askingBackNotes: boolean
   done: boolean
+  /** Cards passed today without an answer: they count as answered for re-opening the deck, not for LOGGED. */
+  passed: CheckInKey[]
 }
 
 export type CheckInAction =
@@ -129,9 +131,10 @@ export type CheckInAction =
   | { type: 'finishNotes' }
   | { type: 'jump'; index: number }
 
-export function initialCheckIn(existing?: CheckInAnswers | null, startAt = 0, questions: ReadonlyArray<CheckInQuestion> = CHECK_IN_QUESTIONS): CheckInState {
+export function initialCheckIn(existing?: CheckInAnswers | null, startAt = 0, questions: ReadonlyArray<CheckInQuestion> = CHECK_IN_QUESTIONS, passed: ReadonlyArray<CheckInKey> = []): CheckInState {
   const total = questions.length
-  return { index: Math.max(0, Math.min(startAt, total - 1)), total, answers: { ...(existing ?? {}) }, backNotes: '', askingBackNotes: false, done: false }
+  const answers = { ...(existing ?? {}) }
+  return { index: Math.max(0, Math.min(startAt, total - 1)), total, answers, backNotes: '', askingBackNotes: false, done: false, passed: passed.filter(k => answers[k] == null) }
 }
 
 function advance(state: CheckInState): CheckInState {
@@ -140,17 +143,22 @@ function advance(state: CheckInState): CheckInState {
   return { ...state, index: state.total, askingBackNotes: false, done: true }
 }
 
-export function checkInReducer(state: CheckInState, action: CheckInAction): CheckInState {
+export function checkInReducer(state: CheckInState, action: CheckInAction, questions: ReadonlyArray<CheckInQuestion> = CHECK_IN_QUESTIONS): CheckInState {
   if (state.done && action.type !== 'back' && action.type !== 'jump') return state
   switch (action.type) {
     case 'answer': {
-      const answered = { ...state, answers: { ...state.answers, [action.key]: action.value } }
+      const answered = { ...state, answers: { ...state.answers, [action.key]: action.value }, passed: (state.passed ?? []).filter(k => k !== action.key) }
       // A bad back asks what bothers it before moving on.
       if (action.key === 'backToday' && action.value <= BACK_NOTES_AT) return { ...answered, askingBackNotes: true }
       return advance(answered)
     }
-    case 'pass':
-      return advance(state)
+    case 'pass': {
+      // A passed card is kept, so the deck stops coming back for it (it can still be answered from CHECK IN).
+      const key = questions[state.index]?.key
+      const passed = state.passed ?? []
+      if (!key || state.answers[key] != null || passed.includes(key)) return advance(state)
+      return advance({ ...state, passed: [...passed, key] })
+    }
     case 'backNotes':
       return { ...state, backNotes: action.text.slice(0, 500) }
     case 'finishNotes':
@@ -236,24 +244,29 @@ export const CHECK_IN_DRAFT_KEY = 'waymark_checkin_draft'
 
 /**
  * Open the cards on every app open and every return of Today to the
- * foreground until all nine are answered today. There is no skip: closing
- * the deck only lasts until the next open. The morning alarm (I'M UP) always
- * opens them.
+ * foreground until each of the nine is answered or passed today (approved
+ * 2026-10-21: a PASS counts as answered for re-opening; LOGGED still needs
+ * all nine). Closing the deck only lasts until the next open. The morning
+ * alarm (I'M UP) always opens them.
  */
-export function shouldOpenCheckIn(input: { answers: CheckInAnswers; requested: boolean }): boolean {
+export function shouldOpenCheckIn(input: { answers: CheckInAnswers; passed?: ReadonlyArray<CheckInKey>; requested: boolean }): boolean {
   if (input.requested) return true
-  return !isCheckInComplete(input.answers)
+  const passed = input.passed ?? []
+  return !CHECK_IN_QUESTIONS.every(q => input.answers[q.key] != null || passed.includes(q.key))
 }
 
+export interface CheckInDraft { answers: CheckInAnswers; backNotes: string; passed: CheckInKey[] }
+
 /** A draft from storage, for today only. */
-export function parseCheckInDraft(raw: string | null, today: string): { answers: CheckInAnswers; backNotes: string } | null {
+export function parseCheckInDraft(raw: string | null, today: string): CheckInDraft | null {
   if (!raw) return null
   try {
-    const d = JSON.parse(raw) as { date?: unknown; answers?: unknown; backNotes?: unknown }
+    const d = JSON.parse(raw) as { date?: unknown; answers?: unknown; backNotes?: unknown; passed?: unknown }
     if (d.date !== today || !d.answers || typeof d.answers !== 'object') return null
     const answers: CheckInAnswers = {}
     for (const [k, v] of Object.entries(d.answers as Record<string, unknown>)) if (typeof v === 'number' && Number.isFinite(v)) answers[k as CheckInKey] = v
-    return { answers, backNotes: typeof d.backNotes === 'string' ? d.backNotes : '' }
+    const passed = Array.isArray(d.passed) ? d.passed.filter((k): k is CheckInKey => typeof k === 'string') : []
+    return { answers, backNotes: typeof d.backNotes === 'string' ? d.backNotes : '', passed }
   } catch {
     return null
   }

@@ -13,7 +13,7 @@ import { Rune } from '@/features/coach/Rune'
 import { backChanges, runeForDay, runeForSession, type WeekChangesIn } from '@/features/coach/changeView'
 import { pickToast } from '@/features/coach/pickToast'
 import { apiFetch } from '@/lib/api'
-import { isStartableToday, startSession } from '@/lib/startSession'
+import { isStartableOnBoard, startSession } from '@/lib/startSession'
 import { getTodayISO } from '@/lib/dates'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
 import { getWeekLabel } from '@/lib/strengthTemplates'
@@ -99,7 +99,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
   const shown = withoutReplaced(sessions)
   const strip = dayStrip(days, shown, todayEpochDay)
   const daySessions = sortDay(shown.filter(s => s.scheduledDate === openDay))
-  const backList = backDay != null ? backChanges(changes, backDay) : []
+  const backList = backDay != null ? backChanges(changes, backDay, todayEpochDay) : []
 
   function loadSuggestions(date: string, mode: 'add' | 'replace', replacing?: string) {
     setPickerSuggestions(null)
@@ -207,9 +207,11 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
                   onClick={() => {
                     onOpenDay(t.epochDay)
                     setOpenRow(null)
-                    if (rune) {
+                    // a coach change (rune), or his own SKIP / REPLACE that can still be put back
+                    const back = backChanges(changes, t.epochDay, todayEpochDay)
+                    if (rune || back.length > 0) {
                       setBackDay(b => (b === t.epochDay ? null : t.epochDay))
-                      markSeen(backChanges(changes, t.epochDay).map(c => c.id))
+                      markSeen(back.map(c => c.id))
                     }
                   }}
                 >
@@ -248,7 +250,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
                 onSkip={x => { void skip(x) }}
                 open={openRow === s.id}
                 onToggle={() => setOpenRow(prev => (prev === s.id ? null : s.id))}
-                summaryActions={isStartableToday(s.status, s.scheduledDate ?? null, todayEpochDay) ? (
+                summaryActions={isStartableOnBoard(s.status, s.scheduledDate ?? null, todayEpochDay) ? (
                   <FlapButton
                     label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'}
                     primary

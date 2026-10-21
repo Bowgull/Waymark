@@ -33,7 +33,7 @@ import { AllDoneBoard, EmptyDayBoard, NextDayBoard, NoBlockBoard, RestDayBoards,
 import { TodayDay, type TodaySession } from './TodayDay'
 import { ALL_DONE_AFTER_CONFIRM_MS, fadesToAllDone, lanternFor, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
-import { answeredCount, answersFromLog, isCheckInComplete, mergeAnswers, shouldOpenCheckIn, type CheckInAnswers } from '@/features/blockZero/checkInFlow'
+import { answeredCount, answersFromLog, isCheckInComplete, mergeAnswers, shouldOpenCheckIn, type CheckInAnswers, type CheckInKey } from '@/features/blockZero/checkInFlow'
 import { CHECK_IN_EVENT, clearCheckInDraft, loadCheckInDraft, saveCheckInDraft, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
 import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessLine'
 import { MorningReportRow } from '@/features/blockZero/TodayPieces'
@@ -239,7 +239,7 @@ export function TodayPage() {
           if (!sessionsData.some(x => x.status === 'in_progress') && !readLiveSession(storage)) void endAllLiveActivities()
         }
         // Every open until all nine are in (or the alarm's I'M UP): the check-in cards, at the first unanswered one.
-        if (shouldOpenCheckIn({ answers: checkInAnswersFor(logData, today), requested: takeCheckInRequest() })) {
+        if (shouldOpenCheckIn({ answers: checkInAnswersFor(logData, today), passed: loadCheckInDraft(today)?.passed, requested: takeCheckInRequest() })) {
           setDeck({ startAt: 'resume' })
         }
       } catch (e) {
@@ -351,7 +351,7 @@ export function TodayPage() {
     return waitingFor != null ? days.map(d => (d.epochDay < waitingFor ? { ...d, rest: false } : d)) : days
   }, [week, todayEpoch, changes, waitingFor])
   const rowRunes = useMemo(() => Object.fromEntries(sessions.map(s => [s.id, runeForSession(changes, s.id)])), [sessions, changes])
-  const backList = useMemo(() => (backDay != null ? backChanges(changes, backDay) : []), [changes, backDay])
+  const backList = useMemo(() => (backDay != null ? backChanges(changes, backDay, todayEpoch) : []), [changes, backDay, todayEpoch])
   // The raven (page 58): on the Morning Report, its boards, and the return's question on top.
   const bodyWatch = useBodyWatch()
   const { raven, overlay: ravenOverlay } = useRavenOnToday(() => { void refreshSessions(); setChangesVersion(v => v + 1); setWeekVersion(v => v + 1) })
@@ -620,7 +620,7 @@ export function TodayPage() {
   }
 
   // The check-in cards save here; the readiness read comes back for the closing line.
-  const handleCheckInSubmit = useCallback(async (body: Record<string, unknown>): Promise<ReadinessIn | null> => {
+  const handleCheckInSubmit = useCallback(async (body: Record<string, unknown>, passed: CheckInKey[]): Promise<ReadinessIn | null> => {
     const log = await apiFetch<DailyLog>('/api/daily-logs', {
       method: 'POST',
       headers: idempotencyHeaders(),
@@ -628,13 +628,20 @@ export function TodayPage() {
     })
     setDailyLog(log)
     clearCheckInDraft()
+    // The passed cards stay on this phone for today, so the deck doesn't come back for them.
+    if (passed.length > 0) saveCheckInDraft(today, {}, '', passed)
     return refreshReadiness()
-  }, [refreshReadiness])
+  }, [refreshReadiness, today])
 
   // Each answer as it is given: kept on this phone at once, then sent as a partial log
   // (the server holds back the coach's check-in rules until the full save).
-  const handleCheckInPartial = useCallback((body: Record<string, unknown>, answers: CheckInAnswers, backNotes: string) => {
-    saveCheckInDraft(today, answers, backNotes)
+  const lastPartialSent = useRef<string | null>(null)
+  const handleCheckInPartial = useCallback((body: Record<string, unknown>, answers: CheckInAnswers, backNotes: string, passed: CheckInKey[]) => {
+    saveCheckInDraft(today, answers, backNotes, passed)
+    // a PASS changes only this phone's draft: nothing new to send
+    const sig = JSON.stringify(body)
+    if (sig === lastPartialSent.current) return
+    lastPartialSent.current = sig
     apiFetch<DailyLog>('/api/daily-logs', { method: 'POST', body: JSON.stringify({ ...body, partial: true }) })
       .then(log => setDailyLog(log))
       .catch(e => logger.warn('system', 'partial check-in not sent', { message: e instanceof Error ? e.message : String(e) }, 'Kept on this phone; sent with the next answer.'))
@@ -650,11 +657,11 @@ export function TodayPage() {
       apiFetch<DailyLog | null>(`/api/daily-logs/today?date=${today}`)
         .then(log => {
           setDailyLog(log)
-          if (!deckOpenRef.current && shouldOpenCheckIn({ answers: checkInAnswersFor(log, today), requested: takeCheckInRequest() })) setDeck({ startAt: 'resume' })
+          if (!deckOpenRef.current && shouldOpenCheckIn({ answers: checkInAnswersFor(log, today), passed: loadCheckInDraft(today)?.passed, requested: takeCheckInRequest() })) setDeck({ startAt: 'resume' })
         })
         .catch(() => {
           // offline: what this phone holds decides
-          if (!deckOpenRef.current && shouldOpenCheckIn({ answers: checkInAnswersFor(null, today), requested: false })) setDeck({ startAt: 'resume' })
+          if (!deckOpenRef.current && shouldOpenCheckIn({ answers: checkInAnswersFor(null, today), passed: loadCheckInDraft(today)?.passed, requested: false })) setDeck({ startAt: 'resume' })
         })
     }
     const onVisible = () => { if (document.visibilityState === 'visible') onForeground() }
@@ -728,8 +735,9 @@ export function TodayPage() {
               // tapping the open day again closes it (page 61)
               if (backDay === d) { setBackDay(null); return }
               setBackDay(d)
-              markSeen(backChanges(changes, d).map(c => c.id))
+              markSeen(backChanges(changes, d, todayEpoch).map(c => c.id))
             }}
+            hasBack={d => backChanges(changes, d, todayEpoch).length > 0}
           />
           {backDay != null && backList.length > 0 && (
             <DayBack
@@ -858,6 +866,7 @@ export function TodayPage() {
           date={today}
           existing={morningAnswers}
           existingBackNotes={dailyLog?.backNotes ?? loadCheckInDraft(today)?.backNotes ?? null}
+          existingPassed={loadCheckInDraft(today)?.passed ?? []}
           startAt={deck.startAt}
           onSubmit={handleCheckInSubmit}
           onPartial={handleCheckInPartial}
