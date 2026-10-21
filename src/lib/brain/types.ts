@@ -73,6 +73,8 @@ export interface ModelRun {
   rpe: number | null
   /** The run piece (seconds of running per interval): the run-walk's, or the whole run when continuous. */
   pieceSec: number | null
+  /** The ladder rung the coach's dose aimed at (P2 dose_json), when it had one. */
+  rungSec?: number | null
 }
 
 export interface ModelBag {
@@ -82,6 +84,10 @@ export interface ModelBag {
   roundsPlanned: number
   /** Distinct rounds he rated (null when nothing was rated: rounds done unknown). */
   roundsRated: number | null
+  /** Rounds he actually worked (the finish's per-round seconds), rated or not. */
+  roundsDone?: number | null
+  /** Why he ended early (the one-tap reason): 'no_time' holds, never "too hard". */
+  endReason?: string | null
   /** Combo ratings, 1-3 (3 = Sharp, 2 = Solid). */
   ratings: number[]
   rpe: number | null
@@ -157,6 +163,13 @@ export interface LiftExposure {
   raised: boolean
   /** A set not finished: fewer reps than prescribed, or a prescribed set never logged. */
   incomplete: boolean
+  /** Short of the reps while saying 2+ were left on that set: a reporting gap (his RIR bias), not a miss. */
+  claimedShort?: boolean
+  /** Working sets he logged, and whether every one hit its planned reps. */
+  workSets?: number
+  allReps?: boolean
+  /** Lowest RIR he reported on a working set. */
+  minRir?: number | null
   /** Last-set e1RM of this exposure (null without RIR). */
   e1rmKg: number | null
 }
@@ -177,6 +190,8 @@ export interface LiftEstimate extends Confidence {
   rirExposures: number
   exposures: number
   last: LiftExposure | null
+  /** The last three exposures, oldest first. */
+  recent?: LiftExposure[]
   /** Consecutive latest exposures with an ease sign (lowered / incomplete / last RIR ≤ 1). */
   easeStreak: number
 }
@@ -188,7 +203,7 @@ export interface RunObservation {
   pieceSec: number | null
   /** Share of running time under the line (0-1), and where it came from. */
   u: number | null
-  uSource: 'splits' | 'avg' | 'none'
+  uSource: 'splits' | 'avg' | 'max' | 'none'
   driftBpm: number | null
   avgHr: number | null
   rpe: number | null
@@ -224,6 +239,8 @@ export interface RunEstimate extends Confidence {
   driftBpm: number | null
   /** Longest run piece handled (sec), after the detraining prior. */
   rungSec: number
+  /** The day the rung last went up (one rung a week at most). */
+  rungUpDay?: number | null
   longestLast30Sec: number | null
   /** Pace (sec/km) of runs held at the line (U ≥85%), indoor or out. */
   easyPaceSecKm: number | null

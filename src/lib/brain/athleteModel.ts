@@ -161,7 +161,11 @@ export function updateLift(state: LiftState, sets: ModelSet[]): void {
   const planned = work.map(s => s.plannedWeightKg ?? 0).filter(w => w > 0)
   const plannedKg = planned.length ? Math.max(...planned) : null
   const lowered = logged.some(s => s.weightKg != null && s.weightKg > 0 && s.plannedWeightKg != null && s.plannedWeightKg > 0 && s.weightKg < s.plannedWeightKg - 0.5)
-  const incomplete = logged.some(s => s.plannedReps != null && s.reps < s.plannedReps) || work.length > logged.length
+  const shortSets = logged.filter(s => s.plannedReps != null && s.reps < s.plannedReps)
+  const incomplete = shortSets.length > 0 || work.length > logged.length
+  // Short on reps while saying 2+ were left: his reporting gap (the bias below learns it), not a missed rep.
+  const claimedShort = incomplete && work.length === logged.length && shortSets.every(s => s.rir != null && s.rir >= 2)
+  const rirs = logged.map(s => s.rir).filter((r): r is number => r != null)
   const atTop = logged.filter(s => topKg != null && s.weightKg === topKg)
   const raised = topKg != null && plannedKg != null && topKg > plannedKg + 0.5
     && atTop.every(s => s.reps >= (s.plannedReps ?? s.reps) && (s.rir == null || s.rir >= 1))
@@ -183,7 +187,10 @@ export function updateLift(state: LiftState, sets: ModelSet[]): void {
     state.lastE1rmDay = day
     state.lastSetValues.push({ day, e1rm: x })
   }
-  state.exposures.push({ day, topKg, plannedKg, lastRir: lastSet.rir, lowered, raised, incomplete, e1rmKg: x == null ? null : round(x, 1) })
+  state.exposures.push({
+    day, topKg, plannedKg, lastRir: lastSet.rir, lowered, raised, incomplete, claimedShort, e1rmKg: x == null ? null : round(x, 1),
+    workSets: logged.length, allReps: shortSets.length === 0, minRir: rirs.length ? Math.min(...rirs) : null,
+  })
 }
 
 function finishLift(state: LiftState, today: number, tmKg: number | null): LiftEstimate {
@@ -215,7 +222,7 @@ function finishLift(state: LiftState, today: number, tmKg: number | null): LiftE
   let easeStreak = 0
   for (let i = state.exposures.length - 1; i >= 0; i--) {
     const e = state.exposures[i]
-    if (e.lowered || e.incomplete || (e.lastRir != null && e.lastRir <= DEFAULT_TARGET.rir - 1)) easeStreak++
+    if (e.lowered || (e.incomplete && !e.claimedShort) || (e.lastRir != null && e.lastRir <= DEFAULT_TARGET.rir - 1)) easeStreak++
     else break
   }
   const sdv = sd(state.lastSetValues.slice(-5).map(v => v.e1rm))
@@ -231,6 +238,7 @@ function finishLift(state: LiftState, today: number, tmKg: number | null): LiftE
     rirExposures,
     exposures: state.exposures.length,
     last,
+    recent: state.exposures.slice(-3),
     easeStreak,
   }
 }
@@ -286,7 +294,9 @@ export function linePrior(dob: string | null, today: number): number {
 }
 
 /** Share of running time under the line: splits when there are, else from the average HR. */
-export function runUnderLine(run: { splits: Array<{ durationSec: number; avgHr: number | null }>; avgHr: number | null }, lineBpm: number): { u: number | null; source: RunObservation['uSource'] } {
+export function runUnderLine(run: { splits: Array<{ durationSec: number; avgHr: number | null }>; avgHr: number | null; maxHr?: number | null }, lineBpm: number): { u: number | null; source: RunObservation['uSource'] } {
+  // The strap's max never went over the line: all of the running sat under it.
+  if (run.maxHr != null && run.maxHr > 0 && run.maxHr <= lineBpm && run.avgHr != null) return { u: 1, source: 'max' }
   const hr = run.splits.filter(s => s.avgHr != null && s.durationSec > 0)
   if (hr.length >= 2) {
     const total = hr.reduce((a, s) => a + s.durationSec, 0)
@@ -325,6 +335,7 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
   const rpeBySession = new Map(events.sessions.map(s => [s.id, s.rpe]))
   const recent: RunObservation[] = []
   let rung = RUNG_PRIOR_SEC
+  let rungUpDay: number | null = null
   let lastRunDay: number | null = null
   const paces: number[] = []
   for (const r of runs) {
@@ -345,7 +356,10 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
     const handled = !struggled && !cutShort && ((u != null && u >= 0.85 && (rpe == null || rpe <= 5)) || (u == null && rpe != null && rpe <= 5))
     const piece = r.pieceSec ?? dur
     if (lastRunDay != null) rung = rungDecay(rung, r.day - lastRunDay, RUNG_PRIOR_SEC)
-    if (piece != null && handled) rung = Math.max(rung, piece)
+    // Handled at the rung the coach's dose aimed at (P2): that rung is his, even when
+    // uncertainty trimmed the piece a little. A struggle drops one rung below the piece.
+    const reached = r.rungSec != null && r.rungSec > 0 ? Math.max(piece ?? 0, r.rungSec) : piece
+    if (reached != null && handled && reached > rung) { rung = reached; rungUpDay = r.day }
     if (piece != null && struggled) rung = Math.min(rung, ladderBelow(piece))
     lastRunDay = r.day
     if (u != null && u >= 0.85 && dur != null && r.distanceKm != null && r.distanceKm > 0.5) paces.push(dur / r.distanceKm)
@@ -386,6 +400,7 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
     uShare: uShare == null ? null : round(uShare),
     driftBpm: drift == null ? null : Math.round(drift),
     rungSec: lastRunDay == null ? rung : rungDecay(rung, today - lastRunDay, RUNG_PRIOR_SEC),
+    rungUpDay,
     longestLast30Sec: longest,
     easyPaceSecKm: pace == null ? null : Math.round(pace),
     runsWithHr: withHr.length,
@@ -402,14 +417,16 @@ export const BAG_MAX_ROUNDS = 12
 
 function buildBag(events: ModelEvents, today: number, flags: Map<number, Set<NoteFlag>>, softAfter: (day: number) => number | null): BagEstimate {
   const all = events.bag.filter(b => b.day <= today).sort((a, b) => a.day - b.day)
-  const scheduleCuts = all.filter(b => b.status === 'skipped' && isScheduleReason(b.skipReason)).length
+  const scheduleCuts = all.filter(b => (b.status === 'skipped' && isScheduleReason(b.skipReason)) || (b.status === 'completed' && isScheduleReason(b.endReason))).length
   const done = all.filter(b => b.status === 'completed')
   let tol: number | null = null
   let flagCount = 0
   const hist: Array<{ effort: number | null; flag: boolean; rounds: number; solid: number | null }> = []
   for (const b of done) {
-    const rounds = b.roundsRated ?? b.roundsPlanned
-    const cut = b.roundsRated != null && b.roundsRated < b.roundsPlanned
+    // Rounds he actually worked: the finish's per-round seconds, else the rounds he rated, else the plan.
+    const worked = b.roundsDone ?? b.roundsRated
+    const rounds = worked ?? b.roundsPlanned
+    const cut = worked != null && worked < b.roundsPlanned && !isScheduleReason(b.endReason)
     const flag = flaggedNear(flags, b.day, 'wrist') || flaggedNear(flags, b.day, 'calf_shin')
     if (flag) flagCount++
     const sore = softAfter(b.day)
