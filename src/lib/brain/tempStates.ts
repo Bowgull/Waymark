@@ -65,7 +65,8 @@ export function namedEnd(text: string, day: number): number | null {
     const k = /^\d+$/.test(raw) ? Number(raw) : (NUMBER_WORDS[raw] ?? 1)
     return day + Math.max(1, n[2] === 'week' ? k * 7 : k) - 1
   }
-  if (/\b(this|the) week\b/.test(t)) return day + ((7 - dowOf(day)) % 7)
+  // "This week" said on a Sunday means the week ahead.
+  if (/\b(this|the) week\b/.test(t)) return day + (dowOf(day) === 0 ? 7 : (7 - dowOf(day)) % 7)
   return null
 }
 
