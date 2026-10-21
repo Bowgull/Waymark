@@ -44,8 +44,11 @@ assert.equal(videoButton('jab cross body kick', { url: 'https://www.youtube.com/
 // dead and nothing else: a search, never a broken WATCH (page 60's Band Row)
 const row = videoButton('Band Row', { url: 'https://www.youtube.com/watch?v=dead', status: 'dead', source: 'E3 Rehab' })
 assert.deepEqual(row, { label: 'SEARCH ON YOUTUBE', host: 'youtube', length: null, start: null, href: searchUrl('band row', 'E3 Rehab'), source: null, detail: 'band row · E3 Rehab', note: 'Video gone. Showing a search.', kind: 'search' })
-// no video at all (brisk walk): no button
-assert.equal(videoButton('Brisk Walk', { url: null }), null)
+// no video at all (brisk walk): the YouTube search, without the "gone" note (approved 2026-10-21)
+const walk = videoButton('Brisk Walk', { url: null })
+assert.equal(walk?.kind, 'search')
+assert.equal(walk?.href, searchUrl('brisk walk', null))
+assert.equal(walk?.note, null)
 
 // 0039 (2026-10-20): the start time opens YouTube where the move starts
 assert.equal(videoButton('Bent Over Row', { url: 'https://www.youtube.com/watch?v=RQU8wZPbioA', startSec: 105, status: 'live' })?.href, 'https://www.youtube.com/watch?v=RQU8wZPbioA&t=105')

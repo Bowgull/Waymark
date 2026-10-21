@@ -30,7 +30,7 @@ import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPend
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
-import { allBoardRows, boardSuggestions, computeSuggestions } from '../lib/sessionSuggestions'
+import { allBoardRows, boardSuggestions, computeSuggestions, withBlockLabels } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, weekLineFor } from './weeklyPass'
 import { applyTmUpdate } from './coachAsks'
 import { addedWhy, applyPendingMerges, emptyState, lineChanges, markSeen, pmStart, reasonWords, recordChanges, rolloverAndFix, snap, undoChange, weekChangeViews } from './changes'
@@ -682,7 +682,7 @@ app.get('/api/sessions/suggestions', async (c) => {
     const replacing = c.req.query('replacing') ?? null
     // A knee, ankle or shin flag, or one on watch (page 58): the knee-safe pick, not rope.
     const kneeSafe = kneeSafeOnly(await loadInjuryFlag(db, targetEpochDay)) || await lowerLegOnWatch(db)
-    return c.json({ ...result, suggestions: boardSuggestions(allBoardRows(), { mode: 'replace', replacing, dayTypes, kneeSafe }) })
+    return c.json({ ...result, suggestions: withBlockLabels(boardSuggestions(allBoardRows(), { mode: 'replace', replacing, dayTypes, kneeSafe }), blockType) })
   }
   const board = boardSuggestions(allBoardRows(), { mode: 'add', dayTypes })
   if (!block) return c.json({ ...result, suggestions: board })
@@ -700,7 +700,7 @@ app.get('/api/sessions/suggestions', async (c) => {
       action: a,
     }
   })
-  return c.json({ ...result, suggestions: rows })
+  return c.json({ ...result, suggestions: withBlockLabels(rows, blockType) })
 })
 
 // ─── Ad-hoc session insertion ────────────────────────────────
@@ -1325,43 +1325,55 @@ app.post('/api/sessions/:id/complete', async (c) => {
   // TM progression is handled by POST /api/blocks/:id/progress-tm after 6-week blocks.
   // We track exercise-level weight history via the last-session endpoint instead of auto-updating TMs.
 
-  const reviewRowsBefore = await db
-    .select({ id: coachingOutputs.id })
-    .from(coachingOutputs)
-    .where(and(eq(coachingOutputs.kind, 'session_review'), eq(coachingOutputs.scopeSessionId, sessionId)))
-
-  const reviewOutput = await runSessionReview(db, c.env.ANTHROPIC_API_KEY, {
-    id: sessionId,
-    type: session.type,
-    rpe: body.rpe ?? null,
-    notes: body.notes ?? null,
-    durationSec,
-  })
-
-  if (reviewOutput) {
-    await db.update(sessions).set({
-      review: reviewOutput.line,
-      reviewFlag: reviewOutput.flag,
-    }).where(eq(sessions.id, sessionId))
-  }
-
-  const reviewRowsAfter = reviewOutput
-    ? await db
-      .select({ id: coachingOutputs.id })
-      .from(coachingOutputs)
-      .where(and(eq(coachingOutputs.kind, 'session_review'), eq(coachingOutputs.scopeSessionId, sessionId)))
-    : reviewRowsBefore
-  const reviewSource = reviewOutput
-    ? reviewRowsAfter.length > reviewRowsBefore.length ? 'ai' : 'local'
-    : 'none'
-
-  // Mark the finish as done, so a repeat returns this result.
-  const [afterReview] = await db.select({ contextJson: sessions.contextJson }).from(sessions).where(eq(sessions.id, sessionId))
+  // Mark the finish as done first, so a repeat returns this result (and never runs a second review).
+  const [afterFinish] = await db.select({ contextJson: sessions.contextJson }).from(sessions).where(eq(sessions.id, sessionId))
   await db.update(sessions).set({
-    contextJson: mergeContext(afterReview?.contextJson ?? null, { completeResult: { reviewSource, at: nowSec } }),
+    contextJson: mergeContext(afterFinish?.contextJson ?? null, { completeResult: { reviewSource: 'pending', at: nowSec } }),
   }).where(eq(sessions.id, sessionId))
 
+  // The session review (AI, up to its own timeout) runs after the answer (dead end #15):
+  // the phone's finish never waits on it, so no false "No connection".
+  const review = (async () => {
+    try {
+      const reviewRowsBefore = await db
+        .select({ id: coachingOutputs.id })
+        .from(coachingOutputs)
+        .where(and(eq(coachingOutputs.kind, 'session_review'), eq(coachingOutputs.scopeSessionId, sessionId)))
+      const reviewOutput = await runSessionReview(db, c.env.ANTHROPIC_API_KEY, {
+        id: sessionId,
+        type: session.type,
+        rpe: body.rpe ?? null,
+        notes: body.notes ?? null,
+        durationSec,
+      })
+      if (reviewOutput) {
+        await db.update(sessions).set({
+          review: reviewOutput.line,
+          reviewFlag: reviewOutput.flag,
+        }).where(eq(sessions.id, sessionId))
+      }
+      const reviewRowsAfter = reviewOutput
+        ? await db
+          .select({ id: coachingOutputs.id })
+          .from(coachingOutputs)
+          .where(and(eq(coachingOutputs.kind, 'session_review'), eq(coachingOutputs.scopeSessionId, sessionId)))
+        : reviewRowsBefore
+      const reviewSource = reviewOutput
+        ? reviewRowsAfter.length > reviewRowsBefore.length ? 'ai' : 'local'
+        : 'none'
+      const [afterReview] = await db.select({ contextJson: sessions.contextJson }).from(sessions).where(eq(sessions.id, sessionId))
+      await db.update(sessions).set({
+        contextJson: mergeContext(afterReview?.contextJson ?? null, { completeResult: { reviewSource, at: nowSec } }),
+      }).where(eq(sessions.id, sessionId))
+    } catch (e) {
+      console.error('[complete] session review failed', sessionId, e)
+    }
+  })()
+  let waited = false
+  try { c.executionCtx.waitUntil(review) } catch { await review; waited = true }
+
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
+  const reviewSource = waited ? (parseJson<{ completeResult?: { reviewSource?: string } }>(updated.contextJson, {}).completeResult?.reviewSource ?? 'none') : 'pending'
 
   // Nothing re-plans here: tonight's pass reads this session (coach brain, nightly only).
   return c.json({ ...updated, reviewSource })

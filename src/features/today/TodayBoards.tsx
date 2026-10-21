@@ -184,12 +184,14 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
 }
 
 /** A day not prepared yet (page 35 #2 A, page 43): NOTHING TODAY, the app's line, PREPARE THE DAY. */
-export function EmptyDayBoard({ onPrepare, preparing }: { onPrepare: () => void; preparing: boolean }) {
+export function EmptyDayBoard({ onPrepare, preparing, onAdd }: { onPrepare: () => void; preparing: boolean; onAdd?: () => void }) {
   return (
     <Board className="td-empty">
       <FlapLabel text="NOTHING TODAY" size="md" tone="gold" />
       <p>No sessions planned for today.</p>
       <FlapButton label={preparing ? 'PREPARING' : 'PREPARE THE DAY'} primary onClick={onPrepare} disabled={preparing} />
+      {/* page 56: the same quiet + add session line as the day's board */}
+      {onAdd && <div className="td-addrow"><button type="button" className="td-addq" onClick={onAdd}>+ add session</button></div>}
     </Board>
   )
 }
@@ -206,12 +208,14 @@ export function NoBlockBoard({ onStart }: { onStart: () => void }) {
 }
 
 /** A day planned as rest (page 43, layout B): REST DAY, one line, and tomorrow's sessions. */
-export function RestDayBoards({ tomorrow, tomorrowLine }: { tomorrow: SessionIconKey[]; tomorrowLine: string | null }) {
+export function RestDayBoards({ tomorrow, tomorrowLine, onAdd }: { tomorrow: SessionIconKey[]; tomorrowLine: string | null; onAdd?: () => void }) {
   return (
     <>
       <div className="td-restline">
         <FlapLabel text="REST DAY" size="md" tone="gold" animate="mount" />
         <p>The work is in the bank.</p>
+        {/* page 56: the same quiet + add session line as the day's board */}
+        {onAdd && <div className="td-addrow"><button type="button" className="td-addq" onClick={onAdd}>+ add session</button></div>}
       </div>
       {tomorrowLine && <NextDayBoard label="Tomorrow" icons={tomorrow} line={tomorrowLine} />}
     </>

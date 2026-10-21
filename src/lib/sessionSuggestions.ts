@@ -275,3 +275,13 @@ export function boardSuggestions(rows: ReadonlyArray<SessionSuggestion>, input: 
 export function allBoardRows(): SessionSuggestion[] {
   return optionsForTargets(TRAINING_TARGETS).map(o => ({ ...o, reason: null, priority: 'neutral' as const }))
 }
+
+/**
+ * The board's names in the running block (dead end #19): in Block Zero the
+ * run-walk reads Run-Walk (not "Zone 2") and the plain run reads what it opens
+ * as there (Zone 2 Run), not "Progression Run".
+ */
+export function withBlockLabels<T extends { type: string; label: string; runCategory?: string }>(rows: T[], blockType: string | null | undefined): T[] {
+  if (blockType !== 'block_zero') return rows
+  return rows.map(r => (r.type === 'foundation_run' ? { ...r, label: 'Run-Walk' } : r.type === 'running' && r.runCategory === 'progression' ? { ...r, label: 'Zone 2 Run' } : r))
+}

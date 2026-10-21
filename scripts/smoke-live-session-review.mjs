@@ -21,6 +21,20 @@ async function api(path, options = {}) {
   return data
 }
 
+/** The review runs after /complete answers (waitUntil): wait for it to land on the session. */
+async function settledReview(completed, timeoutMs = 90_000) {
+  if (completed.reviewSource !== 'pending') return completed
+  const until = Date.now() + timeoutMs
+  while (Date.now() < until) {
+    await new Promise(r => setTimeout(r, 1000))
+    const row = (await api('/api/sessions')).find(s => s.id === completed.id)
+    let source = null
+    try { source = JSON.parse(row?.contextJson ?? '{}').completeResult?.reviewSource ?? null } catch { source = null }
+    if (row && source && source !== 'pending') return { ...row, reviewSource: source }
+  }
+  throw new Error('the session review never landed')
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -71,13 +85,13 @@ try {
     }),
   })
 
-  const completed = await api(`/api/sessions/${sessionId}/complete`, {
+  const completed = await settledReview(await api(`/api/sessions/${sessionId}/complete`, {
     method: 'POST',
     body: JSON.stringify({
       rpe: 6,
       notes: 'Live AI smoke. Keep the review factual.',
     }),
-  })
+  }))
 
   if (completed.reviewSource !== 'ai') {
     throw new Error(`expected ai review source, got ${completed.reviewSource}`)

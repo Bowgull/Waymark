@@ -102,20 +102,20 @@ const dead = (s: string | null | undefined) => s === 'dead'
 
 /**
  * The button an item shows. Its own video while live; else the backup; else
- * (a combo) its technique's video; else a search on YouTube. Never a dead
- * WATCH button.
+ * (a combo) its technique's video; else a search on YouTube (also for a row
+ * that never had a video). Never a dead WATCH button.
  */
 export function videoButton(name: string, v: VideoFields, technique?: VideoFields | null): VideoButton | null {
   if (v.url && !dead(v.status)) {
     return { label: watchLabel(v.url), host: hostOf(v.url), length: v.length ?? null, start: startText(v.url, v.startSec), href: withStart(v.url, v.startSec), source: v.source ?? null, detail: v.title ? `${v.title}${v.length ? ` · ${v.length}` : ''}` : v.length ?? null, note: null, kind: 'watch' }
   }
-  if (!v.url) return null
+  // No video of its own (approved 2026-10-21): it falls through to the technique's video, then a search.
   if (v.altUrl) return { label: watchLabel(v.altUrl), host: hostOf(v.altUrl), length: null, start: null, href: v.altUrl, source: v.altSource ?? null, detail: null, note: null, kind: 'watch' }
   if (technique?.url && !dead(technique.status)) {
     return { label: watchLabel(technique.url), host: hostOf(technique.url), length: technique.length ?? null, start: startText(technique.url, technique.startSec), href: withStart(technique.url, technique.startSec), source: technique.source ?? null, detail: technique.title ?? null, note: null, kind: 'watch' }
   }
   const channel = v.source ?? null
-  return { label: 'SEARCH ON YOUTUBE', host: 'youtube', length: null, start: null, href: searchUrl(name.toLowerCase(), channel), source: null, detail: [name.toLowerCase(), channel].filter(Boolean).join(' · '), note: 'Video gone. Showing a search.', kind: 'search' }
+  return { label: 'SEARCH ON YOUTUBE', host: 'youtube', length: null, start: null, href: searchUrl(name.toLowerCase(), channel), source: null, detail: [name.toLowerCase(), channel].filter(Boolean).join(' · '), note: v.url ? 'Video gone. Showing a search.' : null, kind: 'search' }
 }
 
 export interface SecondLink { label: string; href: string; who: string | null }

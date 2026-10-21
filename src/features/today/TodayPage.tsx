@@ -134,6 +134,8 @@ export function TodayPage() {
     return () => window.clearTimeout(t)
   }, [])
 
+  // Bumped when the app comes back to the front on a new day: today is read again and the day reloads.
+  const [, setDayTick] = useState(0)
   const today = getTodayISO()
   useEffect(() => {
     if (defaultOpened.current === today) return
@@ -475,6 +477,12 @@ export function TodayPage() {
   }
 
   async function handleEndEarly(id: string, action: 'completed' | 'reset') {
+    // MARK COMPLETED on a session with a runner: its own close (effort, notes), not a status-only save (dead end #16).
+    const ending = sessions.find(s => s.id === id)
+    if (action === 'completed' && ending && WORKOUT_SESSION_TYPES.includes(ending.type)) {
+      navigate(`/session/${id}?close=1`)
+      return
+    }
     const nowSec = Math.floor(Date.now() / 1000)
     // Ended on purpose (held x, then a choice): the saved step goes with it.
     try { clearResume(window.localStorage, id); clearLiveSession(window.localStorage, id) } catch { /* storage unavailable */ }
@@ -656,6 +664,8 @@ export function TodayPage() {
     const onForeground = () => {
       if (Date.now() - last < 1500) return
       last = Date.now()
+      // A new day since Today was read (the phone slept past midnight): read the whole day again (dead end #11).
+      if (getTodayISO() !== today) { setDayTick(t => t + 1); return }
       if (deckOpenRef.current) return
       apiFetch<DailyLog | null>(`/api/daily-logs/today?date=${today}`)
         .then(log => {
@@ -793,7 +803,7 @@ export function TodayPage() {
         <>
           {/* page 43: the hobbit home fills the screen behind; the boards sit low, the Waybook last */}
           <div className="td-spacer" />
-          {mode === 'rest' && <RestDayBoards tomorrow={tomorrowIcons} tomorrowLine={tomorrowText} />}
+          {mode === 'rest' && <RestDayBoards tomorrow={tomorrowIcons} tomorrowLine={tomorrowText} onAdd={openAddPicker} />}
           {mode === 'unprepared' && (waitingFor != null
             ? (
               <>
@@ -810,7 +820,7 @@ export function TodayPage() {
             )
             : blockChecked && !block
             ? <NoBlockBoard onStart={() => navigate('/program')} />
-            : <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} />)}
+            : <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} onAdd={openAddPicker} />)}
           {mode === 'allDone' && <AllDoneBoard icons={doneIcons} onShowDay={() => setShowDayAnyway(true)} />}
           <AutoHeight><WaybookLine today={today} variant="home" /></AutoHeight>
         </>
