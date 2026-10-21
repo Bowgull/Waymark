@@ -44,7 +44,7 @@ function script(name: string, weeks: number, dayFor: (day: number, week: number,
     const d = dayFor(day, Math.floor(i / 7) + 1, (i + 1) % 7)
     if (d) days.push(d)
   }
-  return { name, fromDay: SIM_START, toDay: SIM_START + weeks * 7 - 1, tzOffsetMin: TZ, startBlock: { type: start.type, day: SIM_START }, days }
+  return { name, fromDay: SIM_START, toDay: SIM_START + weeks * 7 - 1, tzOffsetMin: TZ, startBlock: { type: start.type, day: SIM_START }, days, talkTestBpm: 150 }
 }
 
 // ─── Helpers over a result ───────────────────────────────────
@@ -89,10 +89,15 @@ function capBreaches(r: ReplayResult): DoseRecord[] {
     && d.prescribedTotalSec > Math.max(RESTART_SESSION_SEC, Math.round((d.longestLast30Sec ?? 0) * SINGLE_RUN_CAP_RATIO)) + 1)
 }
 
+/**
+ * Days holding two planned key sessions besides a class. A class is a fixed
+ * evening hour the coach pairs with an easy morning session by design
+ * (coach-brain §2.5, §6.3), so it never makes a day "crammed" on its own.
+ */
 function crammedDays(r: ReplayResult): number[] {
   const by = new Map<number, number>()
   for (const s of r.sessions) {
-    if (s.day == null || !KEY_TYPES.has(s.type) || s.source === 'ad_hoc' || s.status === 'missed' || s.status === 'skipped') continue
+    if (s.day == null || !KEY_TYPES.has(s.type) || s.type === 'mt_class' || s.source === 'ad_hoc' || s.status === 'missed' || s.status === 'skipped') continue
     by.set(s.day, (by.get(s.day) ?? 0) + 1)
   }
   return [...by.entries()].filter(([, n]) => n > 1).map(([d]) => d)
@@ -213,11 +218,13 @@ const travel: Scenario = {
     return steadyDay(day)
   }),
   check: r => {
-    const awayChanges = r.changes.filter(c => c.actor !== 'you' && c.targetDay != null && c.targetDay >= AWAY_FROM && c.targetDay <= AWAY_TO && c.kind !== 'missed')
+    // Read from the note: a coach change to the away days that names the trip (the rules can't read notes; the AI can, P3).
+    const awayChanges = r.changes.filter(c => c.actor !== 'you' && c.targetDay != null && c.targetDay >= AWAY_FROM && c.targetDay <= AWAY_TO && c.kind !== 'missed' && /away|hotel|travel|trip/i.test(c.why ?? ''))
     const firstRun = runDoses(r).find(d => d.day > AWAY_TO)
     const breach = firstRun ? capBreaches({ ...r, doses: [firstRun] }).length > 0 : false
-    const preStrength = strengthDoses(r).filter(d => d.day < AWAY_FROM).slice(-1)[0]
+    // The same session (its lifts) before and after: a different day's lifts can't be compared.
     const postStrength = strengthDoses(r).find(d => d.day > AWAY_TO)
+    const preStrength = strengthDoses(r).filter(d => d.day < AWAY_FROM && d.label === postStrength?.label).slice(-1)[0]
     const ratio = postStrength && preStrength ? doseVs(postStrength, preStrength) : null
     return [
       line('T1', 'The note is read: the away days shift to hotel-gym work', awayChanges.length > 0, `${awayChanges.length} coach changes to the away days besides missed-session fixes (no AI in rules-only runs; rules cannot read notes).`),
@@ -269,8 +276,8 @@ const lapse: Scenario = {
     const calls = r.aiCalls.filter(a => lapseDays.has(a.day))
     const late = r.changes.filter(c => c.actor !== 'you' && c.day >= LAPSE_FROM + 3 && c.day < LAPSE_FROM + LAPSE_DAYS)
     const back = LAPSE_FROM + LAPSE_DAYS
-    const pre = strengthDoses(r).filter(d => d.day < LAPSE_FROM).slice(-1)[0]
     const firstBack = strengthDoses(r).find(d => d.day >= back)
+    const pre = strengthDoses(r).filter(d => d.day < LAPSE_FROM && d.label === firstBack?.label).slice(-1)[0]
     const ratio = pre && firstBack ? doseVs(firstBack, pre) : null
     const twoWeeks = strengthDoses(r).filter(d => d.day >= back + 14)[0]
     const recal = twoWeeks ? (twoWeeks.volumeRatio ?? 0) * (twoWeeks.layers.returnRamp?.loadFactor ?? 1) : null

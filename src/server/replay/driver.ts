@@ -8,8 +8,8 @@
 // Never imported by the app or the Worker. Use it only on a scratch database:
 // a copy of a backup (scripts/replay.mts) or a migrated in-memory one (tests).
 import type Database from 'better-sqlite3'
-import { and, eq, gte, inArray, lte } from 'drizzle-orm'
-import { dailyLogs, sessions, strengthSessionExercises, strengthSets, trainingMaxes, weekPlans } from '../../db/schema'
+import { and, eq, inArray,} from 'drizzle-orm'
+import {  sessions, strengthSessionExercises, strengthSets, trainingMaxes, weekPlans } from '../../db/schema'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../db/schema'
 import { d1Shim } from './d1Shim'
@@ -17,11 +17,10 @@ import { clockMs, installClock, setClock, uninstallClock } from './clock'
 import { runNightlyReplan } from '../nightly'
 import { modelSummary, readAthleteEstimates, refreshAthleteModel } from '../athleteModel'
 import { loadSessionCoachState } from '../coachData'
+import { brainCapFrom, parseDose } from '../brain'
 import { loadRunHistory, readinessFor } from '../blockZeroData'
 import { getStrengthTemplate, getWeekPercentage } from '../../lib/strengthTemplates'
 import { getRunWalkWeek } from '../../lib/blockZero/running'
-import { checkInFromDailyLog } from '../../lib/blockZero'
-import { evaluateReadiness } from '../../lib/blockZero/readiness'
 import { isoOf, withMergedLifts } from '../../lib/coach'
 import type {
   AiCallRecord, AsPrescribed, ChangeRecord, DayRecord, DoseLayers, DoseRecord, LoggedLift, ReplayAction, ReplayResult, ReplayScript,
@@ -135,9 +134,7 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
 
   async function readinessSnapshot(day: number): Promise<DayRecord['readiness']> {
     const report = await readinessFor(db, day)
-    const logs = await db.select().from(dailyLogs).where(and(gte(dailyLogs.logDate, day - 14), lte(dailyLogs.logDate, day)))
-    const evald = evaluateReadiness(logs.map(checkInFromDailyLog)).find(d => d.epochDay === day)
-    return { ease: report.readinessEase, fresh: evald?.fresh ?? false, flaggedItems: report.worseItems.length, loadFlag: report.load?.flagged ?? false }
+    return { ease: report.readinessEase, fresh: report.state === 'FRESH', flaggedItems: report.worseItems.length, loadFlag: false, state: report.state }
   }
 
   async function plannedFor(day: number): Promise<DayRecord['planned']> {
@@ -162,22 +159,24 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     return row ?? null
   }
 
+  /** The ease layers on a started session: since coach brain P2, one dose with one level (dose_json). */
   async function layersFor(s: SessionRow, day: number): Promise<DoseLayers> {
     const state = await loadSessionCoachState(db, s, day)
-    const report = await readinessFor(db, day)
-    let push = false
-    try { push = (JSON.parse(s.contextJson ?? '{}') as { coachPush?: unknown }).coachPush != null } catch { push = false }
+    const [row] = await db.select().from(sessions).where(eq(sessions.id, s.id))
+    const dose = parseDose(row?.doseJson)
+    const cap = brainCapFrom(row?.contextJson)
     return {
-      leadIn: /"leadIn":true/.test(s.contextJson ?? ''),
-      returnRamp: state.returnCtx.active ? { tier: state.returnCtx.plan.tier, gapDays: state.returnCtx.plan.gapDays, loadFactor: state.returnCtx.loadFactor, volumeFactor: state.returnCtx.volumeFactor } : null,
-      coachEase: state.coachEase ? { kind: state.coachEase.kind, reason: state.coachEase.reason } : null,
-      readinessEase: report.readinessEase,
-      loadFlag: report.load?.flagged ?? false,
-      loadReason: report.load?.flagged ? report.load.reason ?? null : null,
+      leadIn: false,
+      returnRamp: null,
+      coachEase: cap ? { kind: `morning cap ${cap.state}`, reason: cap.why ?? '' } : null,
+      readinessEase: dose?.state === 'RED',
+      loadFlag: false,
+      loadReason: null,
       autoEased: false,
       autoEaseReason: null,
       injury: state.injuryAction.action !== 'none' ? `${state.injuryAction.action}: ${state.injuryAction.note ?? ''}`.trim() : null,
-      push,
+      push: dose?.level === 'PUSH',
+      brain: dose ? { level: dose.level, state: dose.state, u: dose.facts.u, modelState: dose.facts.modelState } : null,
     }
   }
 
@@ -239,12 +238,16 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     if (s.type === 'strength') {
       base.rirOnFile = (sqlite.prepare(`SELECT count(*) AS n FROM strength_sets st JOIN strength_session_exercises e ON e.id = st.session_exercise_id
         WHERE e.section = 'main' AND st.rir IS NOT NULL AND st.completed_at IS NOT NULL`).get() as { n: number }).n > 0
-      const r = await call<{ blockZero?: { autoEase?: { eased: boolean; reason: string | null }; loads?: Array<{ exerciseId: string; weightKg: number; change: string; reason: string | null }> }; coach?: { loadReasons?: string[]; notes?: string[] } }>('POST', `/api/sessions/${s.id}/start-strength`)
+      const r = await call<{ brain?: { lifts?: Array<{ exerciseId: string; weightKg: number | null; change: string }> }; coach?: { loadReasons?: string[]; notes?: string[] } }>('POST', `/api/sessions/${s.id}/start-strength`)
+      base.layers = await layersFor(s, day)
+      const [startedRow] = await db.select().from(sessions).where(eq(sessions.id, s.id))
+      const startedDose = parseDose(startedRow?.doseJson)
       const dow = new Date(day * DAY_MS).getUTCDay()
       const kind = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
       // The plain dose: today's template plus any missed session's main lifts merged in, before any ease.
-      const template = withMergedLifts(getStrengthTemplate(dow, s.blockWeek ?? 1, kind, s.label, { leadIn: layers.leadIn }), s.contextJson, s.blockWeek ?? 1, kind)
-      const baselineMain = template.exercises.filter(e => e.section === 'main').reduce((n, e) => n + e.sets.filter(st => !st.isWarmup).length, 0)
+      // The plain dose: the rules' HOLD (the brain's own, readiness and signals set aside).
+      const template = withMergedLifts(getStrengthTemplate(dow, s.blockWeek ?? 1, kind, s.label), s.contextJson, s.blockWeek ?? 1, kind)
+      const baselineMain = startedDose?.strength?.holdSets ?? template.exercises.filter(e => e.section === 'main').reduce((n, e) => n + e.sets.filter(st => !st.isWarmup).length, 0)
       const exRows = await db.select().from(strengthSessionExercises).where(eq(strengthSessionExercises.sessionId, s.id))
       let prescribedMain = 0
       const loads: DoseRecord['loads'] = []
@@ -255,23 +258,20 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
       for (const ex of exRows.filter(e => e.section === 'main')) {
         const sets = (await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, ex.id))).filter(st => st.isWarmup !== 1)
         prescribedMain += sets.length
-        const bz = r.json?.blockZero?.loads?.find(l => l.exerciseId === ex.exerciseId)
+        const bz = r.json?.brain?.lifts?.find(l => l.exerciseId === ex.exerciseId)
         loads.push({ exerciseId: ex.exerciseId, weightKg: sets[0]?.weightKg ?? null, change: bz?.change ?? null })
         const tm = tms.get(ex.exerciseId)
         const w = sets[0]?.weightKg
         if (kind === 'fighter' && tm != null && w != null && tm * wavePct > 0) ratios.push(w / (tm * wavePct))
       }
-      const auto = r.json?.blockZero?.autoEase
       Object.assign(base, {
         baselineMainSets: baselineMain,
         prescribedMainSets: prescribedMain,
         loads,
         volumeRatio: baselineMain > 0 ? Math.round((prescribedMain / baselineMain) * 100) / 100 : null,
         loadRatio: ratios.length ? Math.round((ratios.reduce((a, b) => a + b, 0) / ratios.length) * 100) / 100 : null,
-        why: [...(r.json?.coach?.loadReasons ?? []), ...(r.json?.coach?.notes ?? []), ...(auto?.reason ? [auto.reason] : [])],
+        why: [...(r.json?.coach?.loadReasons ?? []), ...(r.json?.coach?.notes ?? [])],
       })
-      base.layers.autoEased = auto?.eased ?? false
-      base.layers.autoEaseReason = auto?.reason ?? null
       doses.push(base)
       if (a.lifts) await logStrength(s.id, a.lifts, Math.floor(endMs / 1000))
       await finish(s, a, endMs)
@@ -280,10 +280,13 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
 
     if (s.type === 'foundation_run' || s.type === 'running') {
       const route = s.type === 'foundation_run' ? 'start-foundation-run' : 'start-run'
-      const r = await call<{ runSession?: { id: string }; prescription?: { targetDurSec?: number | null; targetDesc?: string; z2CeilingBpm?: number; runWalk?: { runSec: number; walkSec: number; rounds: number; warmupSec: number }; autoEase?: { eased: boolean; reason: string | null }; coach?: { eased: boolean; reasons: string[] } } }>('POST', `/api/sessions/${s.id}/${route}`)
+      const r = await call<{ runSession?: { id: string }; prescription?: { targetDurSec?: number | null; targetDesc?: string; z2CeilingBpm?: number; talkTestDue?: boolean; runWalk?: { runSec: number; walkSec: number; rounds: number; warmupSec: number }; autoEase?: { eased: boolean; reason: string | null }; coach?: { eased: boolean; reasons: string[] } } }>('POST', `/api/sessions/${s.id}/${route}`)
       const p = r.json?.prescription
+      base.layers = await layersFor(s, day)
+      const [startedRow] = await db.select().from(sessions).where(eq(sessions.id, s.id))
+      const runDoseNow = parseDose(startedRow?.doseJson)?.run
       const shape = s.blockType === 'block_zero' && weekNumber != null ? getRunWalkWeek(weekNumber) : null
-      const baselineRun = shape ? shape.runSec * shape.rounds : null
+      const baselineRun = runDoseNow ? runDoseNow.holdRunSec : shape ? shape.runSec * shape.rounds : null
       const prescribedRun = p?.runWalk ? p.runWalk.runSec * p.runWalk.rounds : null
       const walkOnly = (p?.autoEase?.eased ?? false) || (p?.coach?.eased ?? false)
       const hist = await loadRunHistory(db, day)
@@ -304,10 +307,15 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
       if (runId && a.run) {
         const plannedSec = p?.targetDurSec ?? a.durationMin * 60
         const run = a.run === 'as_prescribed'
-          ? { durationSec: Math.round(plannedSec * (a.runFactor ?? 1)), avgHr: p?.z2CeilingBpm != null ? p.z2CeilingBpm - 5 : null, maxHr: p?.z2CeilingBpm != null ? p.z2CeilingBpm + 5 : null }
+          ? { durationSec: Math.round(plannedSec * (a.runFactor ?? 1)), avgHr: p?.z2CeilingBpm != null ? p.z2CeilingBpm - 8 : null, maxHr: p?.z2CeilingBpm != null ? p.z2CeilingBpm - 1 : null }
           : { durationSec: a.run.durationSec, distanceKm: a.run.distanceKm ?? undefined, avgHr: a.run.avgHr ?? undefined, maxHr: a.run.maxHr ?? undefined, isIndoor: a.run.isIndoor ? 1 : 0 }
         base.loggedAvgHr = run.avgHr ?? null
         await call('PATCH', `/api/run-sessions/${runId}`, run)
+        // Log your run asks the talk-test question when the coach wants the line (first run, rechecks).
+        if (p?.talkTestDue && script.talkTestBpm != null) {
+          const blockId = (sqlite.prepare(`SELECT id FROM training_blocks WHERE status = 'active'`).get() as { id: string } | undefined)?.id
+          if (blockId) await call('POST', `/api/blocks/${blockId}/tests`, { week: weekNumber ?? 1, testKey: 'talk_test_hr', value: script.talkTestBpm, unit: 'bpm' })
+        }
         const runEnd = a.run === 'as_prescribed' ? startMs + run.durationSec * 1000 + 5 * 60000 : endMs
         await finish(s, a, runEnd)
         return
@@ -381,9 +389,9 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     }
     const byDay = new Map(script.days.map(d => [d.day, d]))
     for (let day = script.fromDay; day <= script.toDay; day++) {
-      // The cron at 10:00 UTC: the athlete's early morning in the Americas.
+      // The cron at 07:00 UTC: the small hours in the athlete's zone (coach brain section 5.1).
       phase = { when: 'nightly', day }
-      setClock(day * DAY_MS + 10 * 3600000)
+      setClock(day * DAY_MS + 7 * 3600000)
       opts.beforeDay?.(day, sqlite)
       await runNightlyReplan(env, clockMs())
       while (waits.length > 0) await waits.shift()

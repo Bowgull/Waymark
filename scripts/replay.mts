@@ -123,7 +123,7 @@ if (mode === 'may-june') {
       ],
     })
   }
-  script = { name: 'october-restart-2026', fromDay: from, toDay: to, tzOffsetMin: TORONTO_SUMMER, days }
+  script = { name: 'october-restart-2026', fromDay: from, toDay: to, tzOffsetMin: TORONTO_SUMMER, days, talkTestBpm: 151 }
 }
 
 const result = await runReplay(replayDb, script)

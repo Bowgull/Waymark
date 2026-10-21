@@ -7,14 +7,14 @@
   },
   "bad-week": {
     "B1": "pass",
-    "B2": "fail",
+    "B2": "pass",
     "B3": "pass",
-    "B4": "fail",
+    "B4": "pass",
     "B5": "pass"
   },
   "injury": {
     "I1": "pass",
-    "I2": "fail",
+    "I2": "pass",
     "I3": "pass",
     "I4": "fail"
   },
@@ -30,8 +30,8 @@
     "C4": "fail"
   },
   "lapse-4wk": {
-    "P1": "fail",
-    "P2": "fail",
+    "P1": "pass",
+    "P2": "pass",
     "P3": "pass"
   },
   "sandbagger": {
@@ -44,6 +44,6 @@
     "Y2": "pass"
   },
   "fighter-stack": {
-    "F1": "fail"
+    "F1": "pass"
   }
 }

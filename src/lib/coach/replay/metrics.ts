@@ -83,12 +83,12 @@ export function replayLines(r: ReplayResult): PassLine[] {
   const legsBeforeClass = classes.filter(c => done.some(s => s.type === 'strength' && s.day != null && isHeavyLegs({ type: s.type, label: s.label }, 'block_zero')
     && (s.day === c.day || (s.day === c.day! - 1 && s.slot === 'pm'))))
   const keyByDay = new Map<number, number>()
-  for (const s of inRange.filter(s => KEY_TYPES.has(s.type) && s.source !== 'ad_hoc' && s.status !== 'missed' && s.status !== 'skipped')) keyByDay.set(s.day!, (keyByDay.get(s.day!) ?? 0) + 1)
+  for (const s of inRange.filter(s => KEY_TYPES.has(s.type) && s.type !== 'mt_class' && s.source !== 'ad_hoc' && s.status !== 'missed' && s.status !== 'skipped')) keyByDay.set(s.day!, (keyByDay.get(s.day!) ?? 0) + 1)
   const crammed = [...keyByDay.entries()].filter(([, n]) => n > 1)
   const bad = capBreaches.length + busyNights.length + banned.length + legsBeforeClass.length + crammed.length
   lines.push({
     id: 'L1', title: 'Invariants (caps, spacing, cramming, 2 a night, banned words)', measured: true, pass: bad === 0,
-    evidence: `single-run cap breaches ${capBreaches.length}; nights with >2 coach changes ${busyNights.length}; banned words ${banned.length}${banned.length ? ` (e.g. "${banned[0].slice(0, 90)}")` : ''}; heavy legs within 24 h before a class ${legsBeforeClass.length} of ${classes.length} classes; days with 2+ planned key sessions ${crammed.length}. Why-numbers in the facts: not measurable (no fact packet yet).`,
+    evidence: `single-run cap breaches ${capBreaches.length}; nights with >2 coach changes ${busyNights.length}; banned words ${banned.length}${banned.length ? ` (e.g. "${banned[0].slice(0, 90)}")` : ''}; heavy legs within 24 h before a class ${legsBeforeClass.length} of ${classes.length} classes; days with 2+ planned key sessions besides a class ${crammed.length}. Why-numbers in the facts: not measurable (no fact packet yet).`,
   })
 
   // 2. No AI calls on inactive days.

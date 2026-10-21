@@ -6,7 +6,7 @@
 // with their sets and runs, skips, adds). The driver opens the app the way
 // the phone does, starts each session through the real start route (so the
 // dose is exactly what the coach would have prescribed that day), logs what
-// the athlete really did, finishes it, and runs the nightly job at 10:00 UTC.
+// the athlete really did, finishes it, and runs the nightly job at 07:00 UTC.
 
 export type LiftPattern = 'squat' | 'hinge' | 'press' | 'pull' | 'other'
 
@@ -112,6 +112,8 @@ export interface ReplayScript {
   days: ReplayDay[]
   /** Athlete's offset from UTC in minutes (Toronto summer: -240). */
   tzOffsetMin: number
+  /** The heart rate he gives when Log your run asks the talk-test question (none: he skips it). */
+  talkTestBpm?: number | null
 }
 
 // ─── What the driver writes down ─────────────────────────────
@@ -131,8 +133,10 @@ export interface DoseLayers {
   autoEased: boolean
   autoEaseReason: string | null
   injury: string | null
-  /** An accepted push (ramp-up) applied today. */
+  /** The brain's level was PUSH today. */
   push: boolean
+  /** The coach brain's dose (P2): its level, the readiness state it sat under, the model's u. */
+  brain?: { level: string; state: string; u: number | null; modelState: string | null } | null
 }
 
 export interface DoseRecord {
@@ -195,7 +199,7 @@ export interface DayRecord {
   /** What the plan held for the day in the morning (before his actions). */
   planned: Array<{ id: string; type: string; label: string | null; slot: string | null; status: string; eased: boolean }>
   did: string[]
-  readiness: { ease: boolean; fresh: boolean; flaggedItems: number; loadFlag: boolean } | null
+  readiness: { ease: boolean; fresh: boolean; flaggedItems: number; loadFlag: boolean; state?: string } | null
 }
 
 export interface ReplayResult {
