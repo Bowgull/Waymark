@@ -9,6 +9,7 @@ import { clearLiveSession, readLiveSession, takeLaunch } from '@/lib/liveSession
 import { localActiveSession } from '@/lib/workoutCache'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
+import { notePollResult } from '@/lib/stravaHealth'
 import { endAllLiveActivities } from '@/lib/liveActivity'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
@@ -297,6 +298,8 @@ export function TodayPage() {
     async function poll() {
       try {
         const result = await apiFetch<{ ingested: number; connected: boolean; error?: string }>('/api/strava/poll-recent', { method: 'POST' })
+        // a 401 / 403 / failed refresh: Settings' Strava row says it needs reconnecting
+        notePollResult(result)
         if (result.connected && result.ingested > 0) {
           await refreshSessions()
         }

@@ -1201,7 +1201,8 @@ export function WorkoutPage() {
       }
     }
 
-    if (!currentExercise) return null
+    // An empty mobility session: not a blank screen (iOS has no back gesture here).
+    if (!currentExercise) return totalExercises === 0 ? <NoWorkoutScreen text="No exercises in this session." onBack={leaveSession} /> : null
 
     return (
       <MobilityExerciseView
@@ -1412,18 +1413,12 @@ export function WorkoutPage() {
         />
         <ToastContainer />
       </>
-    ) : null
+    ) : rounds.length === 0 ? <NoWorkoutScreen text="No rounds in this session." onBack={leaveSession} /> : null
   }
 
   // ─── Strength workout ──────────────────────────────────────
 
-  if (!strengthData) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-near-black">
-        <p className="text-sm text-muted-foreground">No workout data found.</p>
-      </div>
-    )
-  }
+  if (!strengthData) return <NoWorkoutScreen text="No workout data found." onBack={leaveSession} />
 
   const strengthTitle = (sessionLabel ?? 'Strength').toUpperCase()
 
@@ -1612,5 +1607,20 @@ export function WorkoutPage() {
       )}
       <ToastContainer />
     </>
+  )
+}
+
+/** A workout that didn't load or has nothing in it: say so, with the same way back to Today. */
+function NoWorkoutScreen({ text, onBack }: { text: string; onBack: () => void }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-near-black px-6 text-center">
+      <p className="text-sm text-muted-foreground">{text}</p>
+      <button
+        onClick={onBack}
+        className="min-h-[44px] px-3 text-sm text-muted-foreground active:text-foreground"
+      >
+        Back to Today
+      </button>
+    </div>
   )
 }

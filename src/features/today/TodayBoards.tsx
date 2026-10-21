@@ -130,7 +130,8 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
         const existing = await apiFetch<JournalEntryData | null>(`/api/journal?date=${today}&type=${entryType}`)
         await apiFetch(`/api/journal/${entryId}`, { method: 'PATCH', body: JSON.stringify({ content: existing ? `${existing.content}\n\n${text}` : text }) })
       } else {
-        const created = await apiFetch<JournalEntryData>('/api/journal', { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify({ date: today, type: entryType, content: text }) })
+        // append: the day's entry may exist and not have loaded yet; never write over it
+        const created = await apiFetch<JournalEntryData>('/api/journal', { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify({ date: today, type: entryType, content: text, append: true }) })
         setEntryId(created.id)
       }
       setDraft('')
