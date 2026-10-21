@@ -33,8 +33,11 @@ export function todayRow(page: Page, id: string): Locator {
 export async function openRow(row: Locator) {
   const hit = row.locator('[role=button]').first()
   await expect(hit).toBeVisible()
-  if ((await hit.getAttribute('aria-expanded')) !== 'true') await hit.tap()
-  await expect(hit).toHaveAttribute('aria-expanded', 'true')
+  // Today may open it by itself a beat after the board draws, racing a tap: settle, then retry.
+  await expect(async () => {
+    if ((await hit.getAttribute('aria-expanded')) !== 'true') await hit.tap()
+    await expect(hit).toHaveAttribute('aria-expanded', 'true', { timeout: 1500 })
+  }).toPass({ timeout: 10_000 })
 }
 
 /** Tap a row open, then ENTER (the real path into a session). */
