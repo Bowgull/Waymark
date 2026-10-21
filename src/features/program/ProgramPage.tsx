@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { App as CapacitorApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
 import { Board, CloseWord, Crest, FlapButton, FlapLabel, SceneWindow, showPop } from '@/design'
 import type { DayBoardSession } from '@/features/dayboard/rowState'
 import { apiFetch } from '@/lib/api'
@@ -214,8 +216,30 @@ export function ProgramPage() {
     setWeekNumber(wn)
   }, [])
 
+  // The day Program was read for: back in front on a new day, it reads again (dead end #11).
+  const loadedDay = useRef(getTodayISO())
+  useEffect(() => {
+    const onForeground = () => {
+      if (getTodayISO() === loadedDay.current) return
+      setOpenDay(null)
+      setLoading(true)
+      setReloadKey(k => k + 1)
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') onForeground() }
+    document.addEventListener('visibilitychange', onVisible)
+    let removeNative: (() => void) | null = null
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorApp.addListener('resume', onForeground).then(h => { removeNative = () => { void h.remove() } })
+    }
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      removeNative?.()
+    }
+  }, [])
+
   useEffect(() => {
     async function load() {
+      loadedDay.current = getTodayISO()
       try {
         // One request (page 59 §6 item 5): the block, the week it opens on, and the past weeks' done counts.
         const program = await apiFetch<ProgramPayload>(programPath(getTodayISO()))
@@ -239,7 +263,8 @@ export function ProgramPage() {
             } else {
               setAssessmentLoading(true)
               setLoading(false)
-              const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST' }).catch(() => null)
+              // the server gives the AI up to 150 s: wait for it (dead end #13)
+              const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST', timeoutMs: 160_000 }).catch(() => null)
               setAssessmentLoading(false)
               if (result) setAssessment(result)
               // No assessment (AI offline): prepare the current week as any open does, no tap needed
@@ -359,12 +384,14 @@ export function ProgramPage() {
       setStartingBlockZero(false)
       setConfirmFreshStart(false)
       setAssessmentLoading(true)
-      const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST' }).catch(() => null)
+      // the server gives the AI up to 150 s: wait for it (dead end #13)
+      const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST', timeoutMs: 160_000 }).catch(() => null)
       setAssessmentLoading(false)
       setAssessment(result)
       // No assessment (AI offline): prepare the current week now, as any open does (a start ahead: its own week).
       if (!result && waitingStart(newBlock) != null) { await prepareStartWeek(newBlock.id, startDay, getTodayISO()).catch(() => {}); reload() }
-      else if (!result) await loadWeek(newBlock, currentWeekOf(newBlock)).catch(() => {})
+      // then read Program again, so the week line is the server's (dead end #14)
+      else if (!result) { await loadWeek(newBlock, currentWeekOf(newBlock)).catch(() => {}); reload() }
     } catch (e) {
       console.error('Failed to start Block Zero:', e)
       setStartingBlockZero(false)
@@ -391,6 +418,8 @@ export function ProgramPage() {
       setAssessment(null)
       setWeekData(wd)
       setWeekNumber(1)
+      // read Program again (one request): the block's training week and the week line as the server has them (dead end #14)
+      reload()
     } catch (e) {
       console.error('Failed to generate week 1:', e)
     } finally {
@@ -554,22 +583,23 @@ export function ProgramPage() {
   // ─── Block Zero: waiting for its start day (page 64) ───────────
 
   const ahead = waitingStart(block)
-  if (ahead != null) {
-    const saveStart = async (day: number) => {
-      setSavingStart(true)
-      try {
-        await moveStartDay<Block>(block.id, day, getTodayISO())
-        setChangeOpen(false)
-        // TODAY starts now: Program opens on the week as usual; a day still ahead shows its own week.
-        setOpenDay(null)
-        reload()
-      } catch (e) {
-        console.error('Failed to change the start day:', e)
-        showPop("Couldn't save. Check your connection.", 'bad', { title: "COULDN'T SAVE", durationMs: 4000 })
-      } finally {
-        setSavingStart(false)
-      }
+  // CHANGE DAY → SAVE: the waiting board's, and (approved 2026-10-21) a started Block Zero's while nothing is begun.
+  const saveStart = async (day: number) => {
+    setSavingStart(true)
+    try {
+      await moveStartDay<Block>(block.id, day, getTodayISO())
+      setChangeOpen(false)
+      // TODAY starts now: Program opens on the week as usual; a day still ahead shows its own week.
+      setOpenDay(null)
+      reload()
+    } catch (e) {
+      console.error('Failed to change the start day:', e)
+      showPop("Couldn't save. Check your connection.", 'bad', { title: "COULDN'T SAVE", durationMs: 4000 })
+    } finally {
+      setSavingStart(false)
     }
+  }
+  if (ahead != null) {
     // Below the board, the start's planned week as usual: the days before the start are empty and dim.
     const startDays = weekDays(mondayOf(ahead))
     const startOpen = openDay != null && startDays.includes(openDay) ? openDay : ahead
@@ -621,6 +651,9 @@ export function ProgramPage() {
     ? `${weekInfo} · week ${weekNumber} of ${block.totalWeeks}`
     : `Fighter · ${weekInfo} · block week ${blockWeek} of 6`
   const read = readWeekAnalysis(weekData?.week.analysisJson, weekData?.week.whyLine)
+  const blockStart = startDayOf(block.startedAt)
+  const canMoveStart = isBlockZero && blockStart != null && weekNumber === currentWeek && currentWeek <= 1
+    && blockStart >= mondayOf(todayEpochDay) && !viewedSessions.some(s => s.status === 'completed' || s.status === 'in_progress')
   const changesLine = weekChangesLine(changes)
 
   // Monday to Sunday of the viewed week: from its sessions, else the calendar.
@@ -643,6 +676,8 @@ export function ProgramPage() {
           <button type="button" className="pg-lnk" onClick={() => goToWeek(weekNumber + 1)} disabled={weekNumber >= block.totalWeeks} aria-label="Next week">Next ›</button>
         </div>
         <p className="pg-blk">{blkLine}</p>
+        {/* dead end #12: the start day can still move while nothing in the block is started or done (the server checks the whole block) */}
+        {canMoveStart && <button type="button" className="sd-lnk" onClick={() => setChangeOpen(true)}>CHANGE DAY</button>}
         <div className="pg-six" role="group" aria-label="Weeks of the block">
           {windowWeeks.map(w => {
             const st = weekState(w, currentWeek)
@@ -721,6 +756,10 @@ export function ProgramPage() {
           }}
           onClose={() => setLogOpen(false)}
         />
+      )}
+
+      {changeOpen && canMoveStart && (
+        <StartDayBoard todayDay={todayEpochDay} selected={todayEpochDay} change busy={savingStart} onPick={day => { void saveStart(day) }} onDismiss={() => setChangeOpen(false)} />
       )}
 
       {/* Manual block starts */}

@@ -161,3 +161,34 @@ test('Morning check-in: comes back until all nine are in, at the first unanswere
   await expect(page.getByRole('button', { name: /^Morning Report, logged\./ })).toBeVisible({ timeout: 20_000 })
   await expect(deck).toBeHidden()
 })
+
+test('Morning check-in: a PASS counts for re-opening (approved 2026-10-21), LOGGED still needs all nine, CHECK IN reopens', async ({ page, api }) => {
+  const blank = Object.fromEntries(['sleepHours', 'sleepQuality', 'energy', 'soreness', 'stress', 'mood', 'backToday', 'alcoholScale', 'herbScale'].map(k => [k, null]))
+  await setMorning(api, blank)
+  await page.goto('/today?resume=0')
+  const deck = page.getByRole('dialog', { name: 'Morning check-in' })
+  await expect(deck).toBeVisible({ timeout: 20_000 })
+
+  // Eight answers, the herb card passed.
+  for (const [title, tile] of GOOD.slice(0, 8)) {
+    await expect(deck.getByRole('img', { name: title, exact: true })).toBeVisible()
+    await deck.getByRole('button', { name: tile, exact: true }).tap()
+  }
+  await expect(deck.getByRole('img', { name: 'HERB', exact: true })).toBeVisible()
+  await deck.getByRole('button', { name: /^PASS/ }).tap()
+  await expect(deck.getByRole('img', { name: /^(GOOD TO GO|EASING TODAY)$/ })).toBeVisible()
+  await deck.getByRole('button', { name: 'TO TODAY' }).tap()
+  await expect(deck).toBeHidden()
+  await expect(page.getByRole('button', { name: /^Morning Report, not logged yet, 8 of 9\./ })).toBeVisible()
+
+  // The next open stays on Today: the passed card doesn't bring the deck back.
+  await page.reload()
+  await expect(page.getByRole('button', { name: /^Morning Report, not logged yet, 8 of 9\./ })).toBeVisible({ timeout: 20_000 })
+  await expect(deck).toBeHidden()
+
+  // CHECK IN on the row still opens the cards, at the passed one.
+  await page.getByRole('button', { name: /^Morning Report, not logged yet/ }).tap()
+  await expect(deck).toBeVisible()
+  await expect(deck.getByRole('img', { name: 'HERB', exact: true })).toBeVisible()
+  await deck.getByRole('button', { name: 'Close', exact: true }).tap()
+})

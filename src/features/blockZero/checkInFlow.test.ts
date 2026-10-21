@@ -32,8 +32,11 @@ const total = CHECK_IN_QUESTIONS.length
   s = checkInReducer(s, { type: 'pass' })
   assert.equal(s.index, 2, 'pass skips a question')
   assert.equal(s.answers.sleepQuality, undefined, 'a passed question stays empty')
+  assert.deepEqual(s.passed, ['sleepQuality'], 'a passed card is kept')
   s = checkInReducer(s, { type: 'back' })
   assert.equal(s.index, 1)
+  s = checkInReducer(s, { type: 'answer', key: 'sleepQuality', value: 3 })
+  assert.deepEqual(s.passed, [], 'answering a passed card takes it off the passed list')
   s = checkInReducer(initialCheckIn(), { type: 'back' })
   assert.equal(s.index, 0, 'back on the first card stays put')
 }
@@ -135,6 +138,8 @@ for (const q of CHECK_IN_QUESTIONS) {
   assert.equal(shouldOpenCheckIn({ answers: eight, requested: false }), true, 'eight of nine still opens')
   assert.equal(shouldOpenCheckIn({ answers: all, requested: false }), false, 'all nine in: no more cards today')
   assert.equal(shouldOpenCheckIn({ answers: all, requested: true }), true, "the alarm's I'M UP always opens")
+  assert.equal(shouldOpenCheckIn({ answers: eight, passed: ['herbScale'], requested: false }), false, 'eight answered and the ninth passed: no more cards today')
+  assert.equal(isCheckInComplete(eight), false, 'a passed card still is not LOGGED')
   void today
 }
 
@@ -176,7 +181,10 @@ console.log('checkInFlow tests passed')
   assert.deepEqual(mergeAnswers({ sleepHours: 7 }, { sleepHours: 8, energy: 2 }), { sleepHours: 8, energy: 2 }, "the phone's unsent answers are newer")
   assert.deepEqual(mergeAnswers({ sleepHours: 7 }, null), { sleepHours: 7 })
   const raw = JSON.stringify({ date: '2026-10-19', answers: { sleepHours: 6, mood: 'x' }, backNotes: 'Bending' })
-  assert.deepEqual(parseCheckInDraft(raw, '2026-10-19'), { answers: { sleepHours: 6 }, backNotes: 'Bending' })
+  assert.deepEqual(parseCheckInDraft(raw, '2026-10-19'), { answers: { sleepHours: 6 }, backNotes: 'Bending', passed: [] })
+  // approved 2026-10-21: a PASS counts as answered for re-opening, not for LOGGED
+  const rawPassed = JSON.stringify({ date: '2026-10-19', answers: {}, backNotes: '', passed: ['stress', 7] })
+  assert.deepEqual(parseCheckInDraft(rawPassed, '2026-10-19')?.passed, ['stress'])
   assert.equal(parseCheckInDraft(raw, '2026-10-20'), null, "yesterday's draft is ignored")
   assert.equal(parseCheckInDraft('{nope', '2026-10-19'), null)
   // the deck resumes on the first unanswered card, with the answers kept

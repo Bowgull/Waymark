@@ -160,6 +160,15 @@ test('A later day: nothing planned before it, the waiting board on Program and T
   await expect(page.locator('.sd-dayone p')).toHaveText('Day 1. Light today: the coach learns you from here.')
   const now = await api.get<{ startedAt: number }>(`/api/blocks/current?date=${today}`)
   expect(dayOf(now.startedAt)).toBe(epoch(today))
-  // a started block keeps its day
-  await expect(api.post(`/api/blocks/${block.id}/start-day`, { startDate: tomorrow, today })).rejects.toThrow(/-> 409/)
+  // approved 2026-10-21: the day has come but nothing is started or done, so it can still move (and back)
+  await api.post(`/api/blocks/${block.id}/start-day`, { startDate: tomorrow, today })
+  await api.post(`/api/blocks/${block.id}/start-day`, { startDate: today, today })
+  const mondayISO = addDaysISO(today, -((new Date(`${today}T12:00:00`).getDay() + 6) % 7))
+  await api.post('/api/weeks/generate', { blockId: block.id, weekNumber: 1, startDate: mondayISO, today })
+  const back = await api.get<{ startedAt: number }>(`/api/blocks/current?date=${today}`)
+  expect(dayOf(back.startedAt)).toBe(epoch(today))
+  // Program offers the same CHANGE DAY while nothing is begun
+  await page.goto('/program')
+  await expect(page.getByRole('group', { name: 'Weeks of the block' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('button', { name: 'CHANGE DAY' })).toBeVisible()
 })

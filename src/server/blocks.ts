@@ -55,11 +55,11 @@ export async function endActiveBlocks(db: DB, nowSec: number, todayDay = Math.fl
  * exercise rows, run, or class log), go, with their change rows. Used when a
  * block ends and when a waiting Block Zero moves its start day (page 64).
  */
-export async function dropPlannedSessions(db: DB, blockId: string, fromDay: number): Promise<number> {
+export async function dropPlannedSessions(db: DB, blockId: string, fromDay: number, statuses: string[] = ['planned']): Promise<number> {
   const plans = await db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, blockId))
   if (plans.length === 0) return 0
   const doomed = await db.select({ id: sessions.id }).from(sessions)
-    .where(and(inArray(sessions.weekPlanId, plans.map(p => p.id)), eq(sessions.status, 'planned'), gte(sessions.scheduledDate, fromDay)))
+    .where(and(inArray(sessions.weekPlanId, plans.map(p => p.id)), inArray(sessions.status, statuses), gte(sessions.scheduledDate, fromDay)))
   // A session opened before (exercise rows, a run, a class log) stays.
   const opened = new Set<string>()
   for (let i = 0; i < doomed.length; i += 50) {
@@ -85,20 +85,41 @@ export type MoveStartResult =
   | { ok: false; status: 400 | 404 | 409; error: string }
 
 /**
- * CHANGE DAY (page 64): a Block Zero still waiting for its start moves to
- * another day (today up to six days on). Its sessions planned so far go (none
- * can have started), and the start is stored as the local day at noon UTC.
+ * CHANGE DAY (page 64): a Block Zero still waiting for its start, or one whose
+ * start has come with nothing started or done yet, moves to another day (today
+ * up to six days on). Its sessions planned so far go (none has started), and
+ * the start is stored as the local day at noon UTC.
  * The caller prepares the new start's week, as BEGIN does.
  */
 export async function moveBlockZeroStart(db: DB, blockId: string, startDay: number, todayDay: number): Promise<MoveStartResult> {
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
   if (!block || block.status !== 'active' || block.blockType !== 'block_zero') return { ok: false, status: 404, error: 'no waiting block zero' }
-  if (!isPendingStart(startDayOf(block.startedAt), todayDay)) return { ok: false, status: 409, error: 'block zero has started' }
+  // Approved 2026-10-21: the start day can still move once it has arrived, while
+  // nothing in the block has been started or done.
+  const arrived = !isPendingStart(startDayOf(block.startedAt), todayDay)
+  if (arrived && await blockHasBegun(db, block.id)) return { ok: false, status: 409, error: 'block zero has started' }
   if (!isChoosableStart(startDay, todayDay)) return { ok: false, status: 400, error: 'start must be today or one of the next six days' }
-  await dropPlannedSessions(db, block.id, todayDay)
+  // An arrived start's earlier days (missed or skipped, never opened) go too: they were before the new start.
+  await dropPlannedSessions(db, block.id, arrived ? (startDayOf(block.startedAt) ?? todayDay) : todayDay, arrived ? ['planned', 'missed', 'skipped'] : ['planned'])
   await db.update(trainingBlocks).set({ startedAt: startedAtForLocalDay(startDay) }).where(eq(trainingBlocks.id, block.id))
   const [moved] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, block.id))
   return { ok: true, block: moved }
+}
+
+/** Anything in the block started, done, or opened (exercise rows, a run, a class log). */
+export async function blockHasBegun(db: DB, blockId: string): Promise<boolean> {
+  const plans = await db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, blockId))
+  if (plans.length === 0) return false
+  const rows = await db.select({ id: sessions.id, status: sessions.status, startedAt: sessions.startedAt, completedAt: sessions.completedAt }).from(sessions)
+    .where(inArray(sessions.weekPlanId, plans.map(p => p.id)))
+  if (rows.some(r => r.status === 'in_progress' || r.status === 'completed' || r.startedAt != null || r.completedAt != null)) return true
+  for (let i = 0; i < rows.length; i += 50) {
+    const chunk = rows.slice(i, i + 50).map(r => r.id)
+    for (const t of [strengthSessionExercises, postureSessionExercises, runSessions, mtClassLogs]) {
+      if ((await db.select({ id: t.sessionId }).from(t).where(inArray(t.sessionId, chunk)).limit(1)).length > 0) return true
+    }
+  }
+  return false
 }
 
 /**

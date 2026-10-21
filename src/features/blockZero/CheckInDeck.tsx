@@ -14,7 +14,10 @@ import {
   firstUnanswered,
   initialCheckIn,
   noteDayLabel,
+  type CheckInAction,
   type CheckInAnswers,
+  type CheckInKey,
+  type CheckInState,
 } from './checkInFlow'
 import { readinessLine, type ReadinessIn } from './readinessLine'
 
@@ -25,10 +28,12 @@ export interface CheckInDeckProps {
   existingBackNotes?: string | null
   /** Open on this card, or 'resume': the first card without an answer. */
   startAt?: number | 'resume'
-  /** Saves the body; resolves with today's readiness (or null when unknown). */
-  onSubmit: (body: Record<string, unknown>) => Promise<ReadinessIn | null>
-  /** Each answer as it is given (the partial log), so a closed deck resumes where it stopped. */
-  onPartial?: (body: Record<string, unknown>, answers: CheckInAnswers, backNotes: string) => void
+  /** Cards passed earlier today (kept on this phone), so they stay passed. */
+  existingPassed?: ReadonlyArray<CheckInKey>
+  /** Saves the body; resolves with today's readiness (or null when unknown). `passed` is the cards passed without an answer. */
+  onSubmit: (body: Record<string, unknown>, passed: CheckInKey[]) => Promise<ReadinessIn | null>
+  /** Each answer or pass as it is given (the partial log), so a closed deck resumes where it stopped. */
+  onPartial?: (body: Record<string, unknown>, answers: CheckInAnswers, backNotes: string, passed: CheckInKey[]) => void
   /** Closed: saved true after a save, false when closed before the end (it comes back next open). */
   onClose: (saved: boolean) => void
   /** Today's note on the daily log (+ ADD NOTE edits it). */
@@ -50,10 +55,10 @@ const SWIPE_PX = 60
  * TODAY clay / GOOD TO GO teal) with its line, then + ADD NOTE (the daily
  * log's note) and TO TODAY.
  */
-export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, onSubmit, onPartial, onClose, note, onNoteSaved, previewSettled, regions }: CheckInDeckProps) {
+export function CheckInDeck({ date, existing, existingBackNotes, existingPassed, startAt = 0, onSubmit, onPartial, onClose, note, onNoteSaved, previewSettled, regions }: CheckInDeckProps) {
   const [questions] = useState(() => checkInQuestions(regions ?? []))
-  const [state, dispatch] = useReducer(checkInReducer, undefined, () => ({
-    ...initialCheckIn(existing, startAt === 'resume' ? firstUnanswered(existing ?? {}, questions) : startAt, questions),
+  const [state, dispatch] = useReducer((s: CheckInState, a: CheckInAction) => checkInReducer(s, a, questions), undefined, () => ({
+    ...initialCheckIn(existing, startAt === 'resume' ? firstUnanswered(existing ?? {}, questions) : startAt, questions, existingPassed ?? []),
     backNotes: existingBackNotes ?? '',
   }))
   const [phase, setPhase] = useState<'cards' | 'saving' | 'settled' | 'error'>(previewSettled !== undefined ? 'settled' : 'cards')
@@ -76,11 +81,11 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
   useEffect(() => {
     if (state.done || state.askingBackNotes || !onPartial) return
     const body = checkInPayload(state, date)
-    const sig = JSON.stringify(body)
+    const sig = JSON.stringify([body, state.passed])
     if (lastPartial.current == null) { lastPartial.current = sig; return }
     if (sig === lastPartial.current) return
     lastPartial.current = sig
-    onPartial(body, state.answers, state.backNotes)
+    onPartial(body, state.answers, state.backNotes, state.passed)
   }, [state, date, onPartial])
 
   // The last card answered: save once, then the verdict.
@@ -91,7 +96,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, startAt = 0, on
     ;(async () => {
       setPhase('saving')
       try {
-        const readiness = await onSubmit(checkInPayload(state, date))
+        const readiness = await onSubmit(checkInPayload(state, date), state.passed)
         if (!alive) return
         setLine(readinessLine(readiness))
         setPhase('settled')

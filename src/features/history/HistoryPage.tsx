@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { Crest, FlapLabel, SceneWindow } from '@/design'
 import { apiFetch } from '@/lib/api'
+import { PageErrorScreen } from '@/components/ui/ErrorScreens'
 import { getTodayISO } from '@/lib/dates'
 import { logger } from '@/lib/logger'
 import { pondReaction, type LedgerRange, type LedgerRing, type LiftSeries, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
@@ -57,12 +58,18 @@ export function HistoryPage() {
   const [range, setRange] = useState<LedgerRange>('week')
   const [data, setData] = useState<LedgerData | null>(null)
   const [week, setWeek] = useState<number | null>(null)
+  // The Ledger couldn't be read: the page error with RELOAD, not a blank page (dead end #18).
+  const [failed, setFailed] = useState(false)
+  const navigate = useNavigate()
 
   useEffect(() => {
     let cancelled = false
     apiFetch<LedgerData>(`/api/history/ledger?range=${range}&today=${getTodayISO()}&tz=${new Date().getTimezoneOffset()}`)
-      .then(d => { if (!cancelled) setData(d) })
-      .catch(e => logger.error('api', 'Ledger failed to load', { error: String(e) }))
+      .then(d => { if (!cancelled) { setData(d); setFailed(false) } })
+      .catch(e => {
+        logger.error('api', 'Ledger failed to load', { error: String(e) })
+        if (!cancelled) setFailed(true)
+      })
     return () => { cancelled = true }
   }, [range])
 
@@ -81,6 +88,8 @@ export function HistoryPage() {
   const title = RANGES.find(r => r.key === range)!.title
   // page 46: MONTH and SEASON count done / planned and say how far the charts reach
   const spanLine = data && range !== 'week' ? `Charts show the last ${data.weeks} weeks.` : null
+
+  if (failed) return <PageErrorScreen pathname="/history" onReload={() => window.location.reload()} onBack={() => navigate('/today')} />
 
   return (
     <div className="lg-root">

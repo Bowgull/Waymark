@@ -60,9 +60,16 @@ export function runeForSession(week: WeekChangesIn | null | undefined, sessionId
   return best
 }
 
-/** The changes a day's back shows: the coach's (runes), newest last. */
-export function backChanges(week: WeekChangesIn | null | undefined, day: number): ChangeViewIn[] {
-  return (week?.changes ?? []).filter(c => c.day === day && c.actor !== 'you')
+/** His own changes the day's back can put back (approved 2026-10-21): a SKIP or a REPLACE, today and later. */
+const OWN_UNDOABLE = new Set(['skip', 'swap'])
+
+/**
+ * The changes a day's back shows: the coach's (runes), newest last. With
+ * `todayDay`, also his own SKIP and REPLACE on today or a later day, so one
+ * mis-tap can be put back with the same UNDO.
+ */
+export function backChanges(week: WeekChangesIn | null | undefined, day: number, todayDay?: number): ChangeViewIn[] {
+  return (week?.changes ?? []).filter(c => c.day === day && (c.actor !== 'you' || (todayDay != null && day >= todayDay && OWN_UNDOABLE.has(c.kind))))
 }
 
 /** The who line on the day's back: COACH · TUE 6:11 PM, or MISSED · FRI 23 · STRENGTH C. */

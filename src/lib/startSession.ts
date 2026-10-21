@@ -34,3 +34,12 @@ export async function startSession(s: { id: string; type: string; status: string
 export function isStartableToday(status: string, scheduledDate: number | null, todayEpochDay: number): boolean {
   return scheduledDate === todayEpochDay && (status === 'planned' || status === 'in_progress' || status === 'missed')
 }
+
+/**
+ * Program's day board: today's rows to do, plus a missed session on an earlier
+ * day (it can still be done and logged late), and one left under way.
+ */
+export function isStartableOnBoard(status: string, scheduledDate: number | null, todayEpochDay: number): boolean {
+  if (isStartableToday(status, scheduledDate, todayEpochDay)) return true
+  return scheduledDate != null && scheduledDate < todayEpochDay && (status === 'missed' || status === 'in_progress')
+}

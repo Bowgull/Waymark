@@ -6,6 +6,7 @@ import { Capacitor } from '@capacitor/core'
 
 import { Board, FlapButton, FlapLabel, FlapSwitch } from '@/design'
 import { apiFetch } from '@/lib/api'
+import { stravaNeedsReconnect } from '@/lib/stravaHealth'
 import { scheduleAlarms } from '@/lib/notifications'
 import { coachLine, nextAlarmDay } from '@/lib/coachLine'
 import { getTodayISO } from '@/lib/dates'
@@ -304,10 +305,12 @@ export function SettingsPage() {
   const daysLeft = daysUntilRedeploy(Number(import.meta.env.VITE_BUILD_TIME), Date.now())
   const am = splitTime(amReminder)
   const pm = splitTime(pmSessionTime)
+  // Today's poll got a 401 / 403 / failed refresh since the last connect: only a reconnect fixes it.
+  const stravaBroken = !!strava?.connected && stravaNeedsReconnect(strava.connectedAt)
   const stravaLine = !strava?.connected ? 'Not connected.'
     : strava.clientConfigured === false ? 'Add Strava client credentials locally.'
     : strava.requiredScopesGranted === false ? `Reconnect Strava with ${strava.missingScopes?.join(', ') ?? 'required scopes'}.`
-    : strava.syncStatus === 'refresh_failed' ? 'Reconnect Strava. Token refresh is failing.'
+    : strava.syncStatus === 'refresh_failed' || stravaBroken ? 'Strava needs reconnecting. Runs are not coming in.'
     : 'Connected. Runs log themselves.'
   const stravaOk = !!strava?.connected && stravaLine.startsWith('Connected')
 
@@ -384,7 +387,7 @@ export function SettingsPage() {
             <b className="st-strava">Strava{stravaOk && <span className="st-dot" aria-hidden />}</b>
             <small>{stravaLine}</small>
           </div>
-          {strava?.connected ? (
+          {strava?.connected && !stravaBroken && strava.syncStatus !== 'refresh_failed' ? (
             <FlapButton label={disconnecting ? 'DISCONNECTING' : 'DISCONNECT'} size="xs" className="st-sbtn" disabled={disconnecting} onClick={() => void handleDisconnectStrava()} />
           ) : (
             <FlapButton label={connecting ? 'OPENING' : 'CONNECT'} size="xs" className="st-sbtn" disabled={connecting || strava == null} onClick={() => void handleConnectStrava()} />

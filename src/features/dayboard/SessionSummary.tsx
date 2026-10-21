@@ -374,6 +374,8 @@ export function SessionSummary({ session, weekNumber, onReplace, onSkip, variant
           )
         })()
       )}
+      {/* Program's ENTER / RESUME (today's rows to do, a missed one): the same full-width button as Today */}
+      {actions && status !== 'done' && <div className="wm-btns">{actions}</div>}
       {todo && (onReplace || onSkip) && (
         <div className="db-minis">
           {onReplace && <FlapButton label="REPLACE" primary size="xs" onClick={e => { e.stopPropagation(); onReplace() }} />}

@@ -125,7 +125,8 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
   const [endOpen, setEndOpen] = useState(false)
   const actionable = isActionableTodaySession(s.status, false)
   const done = s.status === 'completed'
-  const skipped = s.status === 'skipped' || s.status === 'missed'
+  // Approved 2026-10-21: only his own SKIP is struck; a missed row opens with ENTER, so it can still be done.
+  const skipped = s.status === 'skipped'
   const name = sessionDisplayName(s).toUpperCase()
   // Page 35: a done row reads ✓ in the minutes' place (a teal tick once opened); a to-do its planned length.
   // Page 40: a run confirmed from Strava reads its minutes and ✓ ("35min ✓").

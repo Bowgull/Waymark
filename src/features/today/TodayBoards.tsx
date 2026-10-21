@@ -46,7 +46,7 @@ export function TodayHeader({ date }: { date: Date }) {
  * (page 56: Dagaz, the coach changed it; Algiz, a missed session) opens its
  * back in place under the strip; any other day opens in Program.
  */
-export function WeekStrip({ days, home = false, openDay = null, onRune }: { days: StripDay[]; home?: boolean; openDay?: number | null; onRune?: (epochDay: number) => void }) {
+export function WeekStrip({ days, home = false, openDay = null, onRune, hasBack }: { days: StripDay[]; home?: boolean; openDay?: number | null; onRune?: (epochDay: number) => void; hasBack?: (epochDay: number) => boolean }) {
   const navigate = useNavigate()
   // a new week: the seven tiles turn over (page 59 §5.3 Flip)
   const tilesRef = useRef<HTMLDivElement>(null)
@@ -61,8 +61,8 @@ export function WeekStrip({ days, home = false, openDay = null, onRune }: { days
             role="listitem"
             data-day={d.epochDay}
             className={`td-t7${d.isToday ? ' is-today' : ''}${d.rune ? ' has-rn' : ''}${openDay === d.epochDay ? ' is-open' : ''}`}
-            onClick={() => (d.rune && onRune ? onRune(d.epochDay) : navigate(`/program?day=${d.iso}`))}
-            aria-label={`${d.iso}${d.isToday ? ', today' : ''}${d.rest ? ', rest' : ''}. ${d.icons.map(i => `${i.name} ${i.state}`).join(', ')}.${d.rune ? (d.rune.startsWith('miss') ? ' A missed session. Tap to see what the coach did.' : ' The coach changed this day. Tap to see.') : ' Open in Program.'}`}
+            onClick={() => ((d.rune || hasBack?.(d.epochDay)) && onRune ? onRune(d.epochDay) : navigate(`/program?day=${d.iso}`))}
+            aria-label={`${d.iso}${d.isToday ? ', today' : ''}${d.rest ? ', rest' : ''}. ${d.icons.map(i => `${i.name} ${i.state}`).join(', ')}.${d.rune ? (d.rune.startsWith('miss') ? ' A missed session. Tap to see what the coach did.' : ' The coach changed this day. Tap to see.') : hasBack?.(d.epochDay) ? ' You changed this day. Tap to put it back.' : ' Open in Program.'}`}
           >
             <span className="dn">{d.letter}</span>
             <span className="dd">{d.date}</span>
@@ -130,7 +130,8 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
         const existing = await apiFetch<JournalEntryData | null>(`/api/journal?date=${today}&type=${entryType}`)
         await apiFetch(`/api/journal/${entryId}`, { method: 'PATCH', body: JSON.stringify({ content: existing ? `${existing.content}\n\n${text}` : text }) })
       } else {
-        const created = await apiFetch<JournalEntryData>('/api/journal', { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify({ date: today, type: entryType, content: text }) })
+        // append: the day's entry may exist and not have loaded yet; never write over it
+        const created = await apiFetch<JournalEntryData>('/api/journal', { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify({ date: today, type: entryType, content: text, append: true }) })
         setEntryId(created.id)
       }
       setDraft('')
@@ -183,12 +184,14 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
 }
 
 /** A day not prepared yet (page 35 #2 A, page 43): NOTHING TODAY, the app's line, PREPARE THE DAY. */
-export function EmptyDayBoard({ onPrepare, preparing }: { onPrepare: () => void; preparing: boolean }) {
+export function EmptyDayBoard({ onPrepare, preparing, onAdd }: { onPrepare: () => void; preparing: boolean; onAdd?: () => void }) {
   return (
     <Board className="td-empty">
       <FlapLabel text="NOTHING TODAY" size="md" tone="gold" />
       <p>No sessions planned for today.</p>
       <FlapButton label={preparing ? 'PREPARING' : 'PREPARE THE DAY'} primary onClick={onPrepare} disabled={preparing} />
+      {/* page 56: the same quiet + add session line as the day's board */}
+      {onAdd && <div className="td-addrow"><button type="button" className="td-addq" onClick={onAdd}>+ add session</button></div>}
     </Board>
   )
 }
@@ -205,12 +208,14 @@ export function NoBlockBoard({ onStart }: { onStart: () => void }) {
 }
 
 /** A day planned as rest (page 43, layout B): REST DAY, one line, and tomorrow's sessions. */
-export function RestDayBoards({ tomorrow, tomorrowLine }: { tomorrow: SessionIconKey[]; tomorrowLine: string | null }) {
+export function RestDayBoards({ tomorrow, tomorrowLine, onAdd }: { tomorrow: SessionIconKey[]; tomorrowLine: string | null; onAdd?: () => void }) {
   return (
     <>
       <div className="td-restline">
         <FlapLabel text="REST DAY" size="md" tone="gold" animate="mount" />
         <p>The work is in the bank.</p>
+        {/* page 56: the same quiet + add session line as the day's board */}
+        {onAdd && <div className="td-addrow"><button type="button" className="td-addq" onClick={onAdd}>+ add session</button></div>}
       </div>
       {tomorrowLine && <NextDayBoard label="Tomorrow" icons={tomorrow} line={tomorrowLine} />}
     </>
