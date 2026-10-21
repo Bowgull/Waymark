@@ -147,133 +147,6 @@ export interface ReactiveReplanOutput {
 
 // ─── Tool definitions ─────────────────────────────────────────────
 
-const SESSION_TYPE_ENUM = [
-  'foundation_run',
-  'strength',
-  'mt_class',
-  'bag_work',
-  'running',
-  'skip_rope',
-  'active_recovery',
-  'mobility',
-]
-
-export const TOOL_WEEK_PLAN: Tool = {
-  name: 'weekPlan',
-  description:
-    'Structured weekly training plan. Sessions keyed by day of week (0=Sun, 6=Sat). Respects MT cap from user profile. narrative follows voice canon: short, no exclamation marks, no congratulations.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      narrative: {
-        type: 'string',
-        description: 'One-line plan summary. Voice canon: short sentence, no hype, no exclamation marks.',
-      },
-      days: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            dayOfWeek: { type: 'integer', description: '0=Sun, 1=Mon, ..., 6=Sat' },
-            sessions: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  type: { type: 'string', enum: SESSION_TYPE_ENUM },
-                  timeSlot: { type: 'string', enum: ['am', 'pm'] },
-                  label: { type: 'string' },
-                  estimatedMin: { type: 'integer' },
-                  runCategory: { type: 'string', enum: ['zone2', 'progression'] },
-                  notes: { type: 'string', description: 'One-line reason when this session differs from the template. Omit otherwise.' },
-                },
-                required: ['type', 'timeSlot', 'label', 'estimatedMin'],
-              },
-            },
-          },
-          required: ['dayOfWeek', 'sessions'],
-        },
-      },
-      mtSessionsThisWeek: {
-        type: 'integer',
-        description: 'Count of mt_class sessions in this plan. Target is mtCapPerWeek. May exceed by one if soreness is low and overall week load is light.',
-      },
-      adjustmentNotes: {
-        type: 'string',
-        description: 'The one "why this week" line: what happened last week and what that changes. Short, house voice, no exclamation marks, no em dashes.',
-      },
-      bodyIssuesDetected: {
-        type: 'array',
-        description: 'Body regions the athlete mentioned in wellness notes or session notes from the previous week. One entry per distinct region mentioned. Omit entirely if nothing body-related surfaced.',
-        items: {
-          type: 'object',
-          properties: {
-            region: {
-              type: 'string',
-              description: 'Normalized body region, lowercase. Examples: "lower_back", "left_knee", "right_shoulder", "neck", "hip", "wrist". Prefer the same wording across weeks so rolled-up counts work.',
-            },
-            context: {
-              type: 'string',
-              description: 'Short phrase quoting or paraphrasing the note that triggered the detection. No interpretation, just the signal.',
-            },
-            severity: {
-              type: 'string',
-              enum: ['mild', 'moderate', 'severe'],
-              description: 'mild: mentioned in passing. moderate: recurring or limiting. severe: explicit pain or stopped a session.',
-            },
-          },
-          required: ['region', 'context', 'severity'],
-        },
-      },
-    },
-    required: ['narrative', 'days', 'mtSessionsThisWeek'],
-  },
-}
-
-export const TOOL_WEEK_REVIEW: Tool = {
-  name: 'weekReview',
-  description:
-    'Review of a completed training week. summary is voice canon: observation first, no praise. Recommendations flow into the next week plan.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      summary: {
-        type: 'string',
-        description: 'One-line week summary. Voice canon style. Acknowledge and raise the bar, never congratulate.',
-      },
-      wellnessNote: {
-        type: 'string',
-        description: 'One observation on sleep, soreness, or recovery. Omit if nothing notable.',
-      },
-      performanceNote: {
-        type: 'string',
-        description: 'One observation on effort or completion rate. Omit if nothing notable.',
-      },
-      recommendations: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            action: {
-              type: 'string',
-              enum: ['add', 'swap', 'reduce_intensity', 'add_recovery', 'maintain'],
-            },
-            sessionType: { type: 'string' },
-            reason: {
-              type: 'string',
-              description: 'Voice canon: state the observation first, then the adjustment.',
-            },
-            dayOfWeek: { type: 'integer', description: '0=Sun..6=Sat. Omit if not day-specific.' },
-            timeSlot: { type: 'string', enum: ['am', 'pm'] },
-          },
-          required: ['action', 'sessionType', 'reason'],
-        },
-      },
-    },
-    required: ['summary', 'recommendations'],
-  },
-}
-
 export const TOOL_BLOCK_TRANSITION: Tool = {
   name: 'blockTransition',
   description:
@@ -364,49 +237,6 @@ export const TOOL_INSIGHT: Tool = {
   },
 }
 
-export const TOOL_SKIP_RESPONSE: Tool = {
-  name: 'skipResponse',
-  description:
-    'One-line coach response when the athlete skips a session. Decide the single best next move given the skip reason, wellness, day of week, and what is left in the week. Voice canon: plain, no hype, observation before conclusion.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      coachLine: {
-        type: 'string',
-        description: 'One sentence, under 140 chars. Voice canon. Observation first, then the call. No exclamation marks, no congratulations, no second-guessing the skip.',
-      },
-      action: {
-        type: 'string',
-        enum: ['hold', 'move', 'swap', 'recover'],
-        description: 'hold: accept the skip, no redistribution. move: reschedule the same session later in the week. swap: replace with a different session type better suited to current state. recover: prescribe rest or active recovery instead.',
-      },
-      targetDayOfWeek: {
-        type: 'integer',
-        description: 'Required when action is "move" or "swap". 0=Sun..6=Sat. Must be today or later in the current week.',
-      },
-      targetTimeSlot: {
-        type: 'string',
-        enum: ['am', 'pm'],
-        description: 'Required when action is "move" or "swap".',
-      },
-      swapToType: {
-        type: 'string',
-        enum: SESSION_TYPE_ENUM,
-        description: 'Required when action is "swap". The session type to substitute.',
-      },
-      swapToLabel: {
-        type: 'string',
-        description: 'Required when action is "swap". Short human label for the substitute (e.g. "Reset", "Zone 2").',
-      },
-      weekImpact: {
-        type: 'string',
-        description: 'Optional one-line note on how this affects the rest of the week. Omit if no downstream change.',
-      },
-    },
-    required: ['coachLine', 'action'],
-  },
-}
-
 export type BagRoundType =
   | 'warmup'
   | 'technical_flow'
@@ -471,45 +301,6 @@ export const TOOL_BAG_PRESCRIPTION: Tool = {
   },
 }
 
-export const TOOL_REACTIVE_REPLAN: Tool = {
-  name: 'reactiveReplan',
-  description:
-    'Mid-week adjustment. Triggered when a meaningful signal changes (HR drift, repeated missed days, sleep or soreness overreach, an MT class done in place of another planned session). Produces one adjustment at a time. Never address the user directly. Small changes are applied with your note; big ones (another day, another type, an added session) become a question the app asks with safe options. Voice canon: observation before conclusion, no hype.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      note: {
-        type: 'string',
-        description: 'One-line silent summary of what shifted. Under 140 chars. Voice canon. Observation before conclusion. No second person, no decision prompts.',
-      },
-      shiftAction: {
-        type: 'string',
-        enum: ['hold', 'swap', 'reduce_intensity', 'add_recovery', 'move'],
-        description: 'hold: accept the signal, no change. swap: replace an upcoming session type. reduce_intensity: keep type, soften prescription. add_recovery: insert a recovery block. move: push an upcoming session to a different day.',
-      },
-      shiftReason: {
-        type: 'string',
-        description: 'Exactly one sentence. Under 140 chars. Reads as a standalone coach note — the session/day context is rendered separately, so the sentence must stand on its own without relying on a prefix. Name the observation AND the shift in that single sentence. Voice canon: observation before conclusion, no hype, no exclamation, no em dashes. Do NOT include multiple sentences or a lead-in observation as its own sentence. Used verbatim as weekAdjustments.reason. Example: "Effort has been moderate-to-low and completion sits at 50%, so Thursday strength holds its slot but pulls intensity back one notch."',
-      },
-      targetSessionType: {
-        type: 'string',
-        enum: SESSION_TYPE_ENUM,
-      },
-      targetLabel: {
-        type: 'string',
-        description: 'Short human label for the target session (e.g. "Reset", "Zone 2", "Foundation").',
-      },
-      targetDay: { type: 'integer', description: '0=Sun..6=Sat. Today or later this week.' },
-      targetTimeSlot: { type: 'string', enum: ['am', 'pm'] },
-      originalSessionId: {
-        type: 'string',
-        description: 'Optional. The planned session this adjustment replaces or moves. Omit if adding a new session.',
-      },
-    },
-    required: ['note', 'shiftAction', 'shiftReason', 'targetSessionType', 'targetLabel', 'targetDay', 'targetTimeSlot'],
-  },
-}
-
 // ─── Athlete-State assessment (Phase 2) ───────────────────────────
 
 export type AthleteReadiness = 'fresh' | 'normal' | 'taxed' | 'overreached'
@@ -534,63 +325,11 @@ export interface AthleteAssessmentOutput {
   note: string
 }
 
-export const TOOL_ASSESS_ATHLETE: Tool = {
-  name: 'assessAthlete',
-  description:
-    'Form a single coherent read of the athlete from the full recent picture: strength ' +
-    'trends, effort, wellness, notes, runs. Compound the signals, do not treat them in ' +
-    'isolation: high effort plus poor sleep plus a strength shortfall together mean deload, ' +
-    'not three separate nudges. Honor the deterministic baseline verdicts; only override a ' +
-    'lift with a stated reason. Voice canon: observation before conclusion, no second person, ' +
-    'no hype, no em dashes.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      readiness: { type: 'string', enum: ['fresh', 'normal', 'taxed', 'overreached'] },
-      readinessRationale: { type: 'string', description: 'One sentence. Voice canon.' },
-      lifts: {
-        type: 'array',
-        description: 'Only lifts present in the trend window. Omit lifts with insufficient data.',
-        items: {
-          type: 'object',
-          properties: {
-            exerciseId: { type: 'string', description: 'The exerciseId exactly as given in the context.' },
-            verdict: { type: 'string', enum: ['push', 'hold', 'deload'] },
-            loadFactor: { type: 'number', description: 'Multiplier on the baseline prescription, 0.85 to 1.05.' },
-            rationale: { type: 'string', description: 'One sentence tying the verdict to the trend.' },
-          },
-          required: ['exerciseId', 'verdict', 'loadFactor', 'rationale'],
-        },
-      },
-      weekShape: { type: 'string', enum: ['as_planned', 'pull_back', 'add_recovery', 'push_volume'] },
-      weekShapeRationale: { type: 'string', description: 'One sentence. Voice canon.' },
-      flags: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            kind: { type: 'string', enum: ['pain', 'plateau', 'overreach', 'undertrained'] },
-            detail: { type: 'string' },
-          },
-          required: ['kind', 'detail'],
-        },
-      },
-      note: { type: 'string', description: 'One-line silent summary. Under 140 chars. Voice canon.' },
-    },
-    required: ['readiness', 'readinessRationale', 'lifts', 'weekShape', 'weekShapeRationale', 'note'],
-  },
-}
-
 export const ALL_TOOLS: Tool[] = [
-  TOOL_WEEK_PLAN,
-  TOOL_WEEK_REVIEW,
   TOOL_BLOCK_TRANSITION,
   TOOL_SESSION_REVIEW,
   TOOL_INSIGHT,
-  TOOL_SKIP_RESPONSE,
   TOOL_BAG_PRESCRIPTION,
-  TOOL_REACTIVE_REPLAN,
-  TOOL_ASSESS_ATHLETE,
 ]
 
 export const TOOL_BY_NAME: Record<string, Tool> = Object.fromEntries(
