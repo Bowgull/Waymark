@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { CentredCard, FlapLabel, SessionIcon } from '@/design'
-import { GrassZone, SessionButton, SessionFrame, TimerFace, useEaseAway, type TimerTrack } from '@/components/timers'
+import { GrassZone, SessionButton, SessionFrame, sentenceCase, TimerFace, useEaseAway, type TimerTrack } from '@/components/timers'
 import { HeartContainer } from '@/components/heart/HeartContainer'
 import { useToast } from '@/components/ui/Toast'
 import { EARLY_END_REASONS } from '@/components/ui/departures'
@@ -671,6 +671,7 @@ export function RunSessionView({
         count={seg ? runWalkCount(seg, rounds) : 'RUN'}
         onEnd={onExit}
         onEndAndLog={openLog}
+        closeHead={prescription?.runWalk ? 'Run-walk' : sentenceCase(runTypeLabel)}
         paused={runPaused && !logging}
         grass={<GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} zone={zone} hold={{ onHeld: openLog, held: logging }} />}
       >

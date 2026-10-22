@@ -77,7 +77,7 @@ test('Item 1-3: a hold starts on the grass (boxed hint the first time), pauses a
 
   // Ending is never one tap on the grass: still the session, the × only ends on a hold (item 3).
   await expect(page).toHaveURL(new RegExp(`/session/${s.id}`))
-  await expect(page.getByRole('button', { name: 'End. Hold for 1.5 seconds.' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'End. Hold for 3 seconds.' })).toBeVisible()
 
   // Remembered on this phone: after a reload the next timed step waits with the quiet foot line.
   await expect.poll(() => page.evaluate(() => localStorage.getItem('wm.grassStartTaught'))).toBe('1')
@@ -155,9 +155,11 @@ test('Items 4-5: a running session is only the strip; Today opens the next to-do
   // The strip is the way back in. End it (hold ×), close it: back in Today's list with ✓.
   await strip.tap()
   await expect(page).toHaveURL(new RegExp(`/session/${bag.id}`))
-  const x = page.getByRole('button', { name: 'End. Hold for 1.5 seconds.' })
+  const x = page.getByRole('button', { name: 'End. Hold for 3 seconds.' })
   await x.focus()
   await page.keyboard.press('Enter')
+  // page 74: the close window, END AND LOG (or DISCARD)
+  await page.getByRole('button', { name: 'END AND LOG' }).tap()
   const close = page.getByRole('button', { name: 'CLOSE SESSION' })
   await expect(close).toBeVisible({ timeout: 10_000 })
   await expect(async () => {
@@ -198,9 +200,11 @@ test.describe('Item 6: the row and the strip move into each other (motion on)', 
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await strip.tap()
     await expect(page).toHaveURL(new RegExp(`/session/${bag.id}`))
-    const x = page.getByRole('button', { name: 'End. Hold for 1.5 seconds.' })
+    const x = page.getByRole('button', { name: 'End. Hold for 3 seconds.' })
     await x.focus()
     await page.keyboard.press('Enter')
+    // page 74: the close window, END AND LOG (or DISCARD)
+    await page.getByRole('button', { name: 'END AND LOG' }).tap()
     const close = page.getByRole('button', { name: 'CLOSE SESSION' })
     await expect(close).toBeVisible({ timeout: 10_000 })
     // motion on again for the landing (the moment, then Today)

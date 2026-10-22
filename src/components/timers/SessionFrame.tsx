@@ -2,10 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 
 import { CentredCard, FlapLabel, SessionIcon, useEdgeBack, type FlapTone, type SessionIconKey } from '@/design'
 import { tapHaptic } from '@/lib/haptics'
-import { BOARD_OUT_MS, comboStrikes, END_HOLD_MS, ENDED_SHOW_MS } from '@/lib/timers/timerLook'
+import { comboStrikes, END_HOLD_MS, ENDED_SHOW_MS } from '@/lib/timers/timerLook'
 import { setWorldBackdrop } from '@/world/worldStore'
 
 import { SessionEndedContext, getSessionNav } from './endedContext'
+import { sentenceCase, useEaseAway } from './boardAway'
 
 import './timers.css'
 
@@ -66,25 +67,6 @@ export function CloseWindow({ head, onEndAndLog, onDiscard, onBack }: { head: st
       </div>
     </CentredCard>
   )
-}
-
-/** A board leaving on a tap outside (page 74): it fades away over 180 ms, then `then` runs. */
-export function useEaseAway(): [boolean, (then: () => void) => void] {
-  const [leaving, setLeaving] = useState(false)
-  const timer = useRef<number | null>(null)
-  useEffect(() => () => { if (timer.current != null) window.clearTimeout(timer.current) }, [])
-  const away = (then: () => void) => {
-    if (timer.current != null) return
-    setLeaving(true)
-    timer.current = window.setTimeout(() => { timer.current = null; setLeaving(false); then() }, BOARD_OUT_MS)
-  }
-  return [leaving, away]
-}
-
-/** "BAG WORK" → "Bag work" for the close window's head. */
-export function sentenceCase(text: string): string {
-  const t = text.trim().toLowerCase()
-  return t ? t[0].toUpperCase() + t.slice(1) : t
 }
 
 /**
