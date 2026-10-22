@@ -1,6 +1,7 @@
 // Coach brain P1: the athlete model's server side (coach-brain.md §4, §13.5).
-// Loads the logged events from D1, scoped to the active block (the live model
-// starts from scratch at the block start; Josh, 2026-10-20), builds the model
+// Loads the logged events from D1, scoped to the active block, plus the
+// history before it as a starting point (lib/brain/history.ts; Josh,
+// 2026-10-21: start at his real level, not from scratch), builds the model
 // with the pure lib/brain/athleteModel.ts and writes athlete_estimates. The
 // nightly job calls refreshAthleteModel. Shadow only in P1: nothing reads the
 // rows to decide a session or a dose.
@@ -13,6 +14,7 @@ import {
 import type { createDB } from '../db/client'
 import { buildAthleteModel, modelRows, modelSummary } from '../lib/brain/athleteModel'
 import type { AthleteModel, ModelEvents, ModelMove } from '../lib/brain/types'
+import { SEED_LOOKBACK_DAYS, seedFromHistory, type HistorySeed } from '../lib/brain/history'
 import { loadEquipment } from '../lib/strengthLoads'
 import { getRunWalkWeek } from '../lib/blockZero/running'
 import { TALK_TEST_KEY } from '../lib/blockZero/talkTest'
@@ -159,13 +161,24 @@ export async function loadModelEvents(db: DB, fromDay: number, today: number): P
 }
 
 /**
- * The nightly step: rebuild the model from the active block's events, aged to
- * `today`, and replace the athlete_estimates rows. Returns the model.
+ * His history before the block (history.ts): the starting point for the lifts
+ * and the run until the block has its own. Null with no block or no history.
+ */
+export async function loadHistorySeed(db: DB, fromDay: number, today: number): Promise<HistorySeed | null> {
+  if (fromDay > today) return null
+  const prior = await loadModelEvents(db, fromDay - SEED_LOOKBACK_DAYS, fromDay - 1)
+  return seedFromHistory(prior, fromDay)
+}
+
+/**
+ * The nightly step: rebuild the model from the active block's events (started
+ * from his history where the block has nothing yet), aged to `today`, and
+ * replace the athlete_estimates rows. Returns the model.
  */
 export async function refreshAthleteModel(db: DB, today: number, nowSec: number): Promise<AthleteModel> {
   const fromDay = await modelFromDay(db, today)
   const events = await loadModelEvents(db, fromDay, today)
-  const model = buildAthleteModel(events, today, { fromDay })
+  const model = buildAthleteModel(events, today, { fromDay, seed: await loadHistorySeed(db, fromDay, today) })
   const rows = modelRows(model)
   const existing = await db.select({ id: athleteEstimates.id, kind: athleteEstimates.kind, key: athleteEstimates.key }).from(athleteEstimates)
   const idOf = new Map(existing.map(e => [`${e.kind}|${e.key}`, e.id]))

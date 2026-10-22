@@ -26,7 +26,8 @@ import type {
   LiftEstimate, LiftExposure, ModelCheckIn, ModelEvents, ModelSet, RecoveryEstimate, RecoveryItemBaseline,
   RunEstimate, RunObservation, SlotCellKey,
 } from './types'
-import { betaCell, cellState, clamp, confidence, round, rungDecay, strengthDecay } from './uncertainty'
+import { betaCell, cellState, clamp, confidence, round, rungDecay, stateFromU, strengthDecay } from './uncertainty'
+import { CONTINUOUS_FROM_SEC, SEED_U, seededU, type HistorySeed, type SeededLift } from './history'
 import { buildLevels, buildLoad, buildOwnEases, domainOf, sessionLoads, type LevelInputs } from './loadLevels'
 
 export const MODEL_VERSION = 2
@@ -199,7 +200,7 @@ export function updateLift(state: LiftState, sets: ModelSet[]): void {
   })
 }
 
-function finishLift(state: LiftState, today: number, tmKg: number | null): LiftEstimate {
+function finishLift(state: LiftState, today: number, tmKg: number | null, seeded: boolean = false): LiftEstimate {
   const rirExposures = state.lastSetValues.length
   const last = state.exposures[state.exposures.length - 1] ?? null
   let evidence: EstimateState = 'GUESS'
@@ -210,7 +211,13 @@ function finishLift(state: LiftState, today: number, tmKg: number | null): LiftE
     const tight = recent.length >= LIFT_KNOWN_SESSIONS && recent.every(v => Math.abs(v.e1rm - m) <= m * LIFT_KNOWN_SPREAD)
     evidence = tight ? 'KNOWN' : 'LEARNING'
   }
-  const conf = confidence(evidence, rirExposures, state.lastE1rmDay, today)
+  // Started from his history: his own sessions in the block never make it more careful than the start was.
+  if (seeded && evidence === 'GUESS' && state.exposures.length > 0) evidence = 'LEARNING'
+  let conf = confidence(evidence, rirExposures, seeded ? (state.lastE1rmDay ?? last?.day ?? null) : state.lastE1rmDay, today)
+  if (seeded && evidence !== 'KNOWN') {
+    const u = Math.min(conf.u, seededU({ fromDay: state.lastE1rmDay ?? last?.day ?? today, u: SEED_U }, today))
+    conf = { ...conf, u, state: stateFromU(u) }
+  }
   const e1rm = state.e1rm != null && state.lastE1rmDay != null ? state.e1rm * strengthDecay(today - state.lastE1rmDay) : null
   let workingKg: number | null = null
   let workingSource: LiftEstimate['workingSource'] = null
@@ -249,7 +256,18 @@ function finishLift(state: LiftState, today: number, tmKg: number | null): LiftE
   }
 }
 
-function buildLifts(events: ModelEvents, today: number, sink?: Array<{ exerciseId: string; exposure: LiftExposure }>): Record<string, LiftEstimate> {
+/** A lift with no exposure in the block yet, started from his history (history.ts). */
+function seededLift(s: SeededLift, seed: HistorySeed, today: number): LiftEstimate {
+  const u = seededU(seed, today)
+  return {
+    evidence: 'LEARNING', state: stateFromU(u), n: 0, lastDay: null, u,
+    exerciseId: s.exerciseId, e1rmKg: null, e1rmSdKg: null, workingKg: s.workingKg, workingSource: 'history',
+    seed: { lastKg: s.lastKg, lastDay: s.lastDay, daysOff: seed.fromDay - s.lastDay, discount: seed.discount },
+    rirBias: 0, equipment: s.equipment, rirExposures: 0, exposures: 0, last: null, recent: [], easeStreak: 0,
+  }
+}
+
+function buildLifts(events: ModelEvents, today: number, sink?: Array<{ exerciseId: string; exposure: LiftExposure }>, seed?: HistorySeed | null): Record<string, LiftEstimate> {
   const main = events.sets.filter(s => s.section === 'main' && s.day <= today)
   const byExposure = new Map<string, ModelSet[]>()
   for (const s of main) {
@@ -269,8 +287,10 @@ function buildLifts(events: ModelEvents, today: number, sink?: Array<{ exerciseI
   const out: Record<string, LiftEstimate> = {}
   for (const [id, st] of states) {
     if (st.exposures.length === 0) continue
-    out[id] = finishLift(st, today, tms.get(id) ?? null)
+    out[id] = finishLift(st, today, tms.get(id) ?? null, seed?.lifts[id] != null)
   }
+  // No exposure in the block yet: his history's weight, less the time off.
+  if (seed && today >= seed.fromDay) for (const [id, s] of Object.entries(seed.lifts)) if (!out[id]) out[id] = seededLift(s, seed, today)
   for (const [id, tm] of tms) {
     if (out[id]) continue
     out[id] = finishLift({ exerciseId: id, equipment: 'barbell', e1rm: null, bias: 0, lastE1rmDay: null, lastSetValues: [], exposures: [] }, today, tm)
@@ -331,7 +351,13 @@ function ladderBelow(sec: number): number {
   return below.length ? below[below.length - 1] : RUNG_PRIOR_SEC
 }
 
-function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<NoteFlag>>, sink?: RunObservation[]): RunEstimate {
+/** A struggle on a continuous run: the next one is 20% shorter (to the minute), never under 10 min; a run-walk piece drops a rung. */
+export function rungAfterStruggle(pieceSec: number): number {
+  if (pieceSec >= CONTINUOUS_FROM_SEC) return Math.max(CONTINUOUS_FROM_SEC, Math.round((pieceSec * 0.8) / 60) * 60)
+  return ladderBelow(pieceSec)
+}
+
+function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<NoteFlag>>, sink?: RunObservation[], seed?: HistorySeed | null): RunEstimate {
   const prior = linePrior(events.profile.dob, today, events.profile.maxHr)
   const tests = events.talkTests.filter(t => t.day <= today).sort((a, b) => a.day - b.day)
   const lineOn = (day: number): { bpm: number; source: 'talk_test' | 'prior' } => {
@@ -343,9 +369,12 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
   const runs = events.runs.filter(r => r.day <= today).sort((a, b) => a.day - b.day)
   const rpeBySession = new Map(events.sessions.map(s => [s.id, s.rpe]))
   const recent: RunObservation[] = []
-  let rung = RUNG_PRIOR_SEC
+  // His history before the block (history.ts): the rung starts there, and decays from the block start.
+  const seedRun = seed && today >= seed.fromDay ? seed.run : null
+  let rung = seedRun?.rungSec ?? RUNG_PRIOR_SEC
   let rungUpDay: number | null = null
   let lastRunDay: number | null = null
+  const decayFrom = () => lastRunDay ?? (seedRun ? (seed as HistorySeed).fromDay : null)
   const paces: number[] = []
   for (const r of runs) {
     const dur = r.durationSec != null && r.durationSec >= MIN_RUN_SEC && r.durationSec <= MAX_RUN_SEC ? r.durationSec : null
@@ -365,13 +394,17 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
     // optional tap: skipped, "no time" or "other" is neutral (HOLD), never an ease (Josh, 2026-10-21).
     const struggled = tooFast || (rpe != null && rpe >= 7) || (drift != null && drift >= 10) || calfShin || (cutShort && isHardEnd(r.shortReason))
     const handled = !struggled && !cutShort && ((u != null && u >= 0.85 && (rpe == null || rpe <= 5)) || (u == null && rpe != null && rpe <= 5))
-    const piece = r.pieceSec ?? dur
-    if (lastRunDay != null) rung = rungDecay(rung, r.day - lastRunDay, RUNG_PRIOR_SEC)
+    // A continuous run's piece is what he actually ran of it.
+    const piece = r.pieceSec != null && r.pieceSec >= CONTINUOUS_FROM_SEC && dur != null ? Math.min(r.pieceSec, dur) : (r.pieceSec ?? dur)
+    const from = decayFrom()
+    if (from != null) rung = rungDecay(rung, r.day - from, RUNG_PRIOR_SEC)
     // Handled at the rung the coach's dose aimed at (P2): that rung is his, even when
-    // uncertainty trimmed the piece a little. A struggle drops one rung below the piece.
-    const reached = r.rungSec != null && r.rungSec > 0 ? Math.max(piece ?? 0, r.rungSec) : piece
+    // uncertainty trimmed the piece a little. A struggle drops one rung below the piece
+    // (a continuous run: 20% shorter).
+    const aimed = r.rungSec != null && r.rungSec > 0 ? (r.rungSec >= CONTINUOUS_FROM_SEC && dur != null ? Math.min(r.rungSec, dur) : r.rungSec) : null
+    const reached = aimed != null ? Math.max(piece ?? 0, aimed) : piece
     if (reached != null && handled && reached > rung) { rung = reached; rungUpDay = r.day }
-    if (piece != null && struggled) rung = Math.min(rung, ladderBelow(piece))
+    if (piece != null && struggled) rung = Math.min(rung, rungAfterStruggle(piece))
     lastRunDay = r.day
     if (u != null && u >= 0.85 && dur != null && r.distanceKm != null && r.distanceKm > 0.5) paces.push(dur / r.distanceKm)
     recent.push({
@@ -384,12 +417,17 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
   const line = lineOn(today)
   const lastTwo = tests.slice(-2)
   const lineKnown = lastTwo.length === 2 && Math.abs(lastTwo[0].bpm - lastTwo[1].bpm) <= LINE_KNOWN_TOLERANCE
-  const evidence: EstimateState = lineKnown && withHr.length >= RUN_KNOWN_HR_RUNS ? 'KNOWN' : tests.length > 0 || recent.length > 0 ? 'LEARNING' : 'GUESS'
+  const evidence: EstimateState = lineKnown && withHr.length >= RUN_KNOWN_HR_RUNS ? 'KNOWN' : tests.length > 0 || recent.length > 0 || seedRun ? 'LEARNING' : 'GUESS'
   const lastTest = tests[tests.length - 1]?.day ?? null
   const lastDay = Math.max(lastRunDay ?? -Infinity, lastTest ?? -Infinity)
   const lastRunHadHr = recent.length ? recent[recent.length - 1].hasHr : null
   // No HR on the last run: effort and finishing only, so it moves more cautiously (§6.2).
-  const conf = confidence(evidence, recent.length, Number.isFinite(lastDay) ? lastDay : null, today, { extra: lastRunHadHr === false ? 0.1 : 0 })
+  let conf = confidence(evidence, recent.length, Number.isFinite(lastDay) ? lastDay : null, today, { extra: lastRunHadHr === false ? 0.1 : 0 })
+  // Started from his history: a little careful, and his own runs never make it more careful than the start.
+  if (seedRun && evidence !== 'KNOWN') {
+    const u = Math.min(conf.u, seededU({ fromDay: Number.isFinite(lastDay) ? lastDay : (seed as HistorySeed).fromDay, u: SEED_U }, today) + (lastRunHadHr === false ? 0.1 : 0))
+    conf = { ...conf, u: round(u), state: stateFromU(u) }
+  }
   const uShare = last3(recent.map(o => o.u))
   const drift = last3(recent.map(o => o.driftBpm))
   const efforts = recent.slice(-3).map(o => o.rpe).filter((x): x is number => x != null)
@@ -411,8 +449,10 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
     recheckWhy,
     uShare: uShare == null ? null : round(uShare),
     driftBpm: drift == null ? null : Math.round(drift),
-    rungSec: lastRunDay == null ? rung : rungDecay(rung, today - lastRunDay, RUNG_PRIOR_SEC),
+    rungSec: decayFrom() == null ? rung : rungDecay(rung, today - (decayFrom() as number), RUNG_PRIOR_SEC),
     rungUpDay,
+    rungSource: recent.length > 0 ? 'block' : seedRun ? 'history' : 'prior',
+    seed: seedRun ? { medianSec: seedRun.medianSec, longestSec: seedRun.longestSec, runs: seedRun.runs, avgHr: seedRun.avgHr, lastDay: seedRun.lastDay, daysOff: (seed as HistorySeed).fromDay - seedRun.lastDay } : null,
     longestLast30Sec: longest,
     easyPaceSecKm: pace == null ? null : Math.round(pace),
     runsWithHr: withHr.length,
@@ -771,9 +811,9 @@ export function worseItems(checkIns: ModelCheckIn[], day: number): number | null
 }
 
 /**
- * Only what was logged on or after `fromDay` (the active block's start): the
- * live model starts from scratch at the block start and ignores older history
- * (Josh, 2026-10-20: May–June 2026 was him testing the app, not training).
+ * Only what was logged on or after `fromDay` (the active block's start). Older
+ * history no longer folds in as events: it only seeds the areas the block has
+ * no estimate for yet (history.ts; Josh, 2026-10-21: "start me at my real level").
  */
 export function scopeEvents(events: ModelEvents, fromDay: number): ModelEvents {
   const on = <T extends { day: number }>(xs: T[]) => xs.filter(x => x.day >= fromDay)
@@ -794,17 +834,18 @@ export function scopeEvents(events: ModelEvents, fromDay: number): ModelEvents {
 
 /**
  * The model as of `today`. `fromDay` scopes it to the active block (scopeEvents);
- * with nothing logged since, every area is a GUESS prior at u = 1.
+ * `seed` (history.ts) starts the lifts and the run from his history before it
+ * until the block has its own. With neither, every area is a GUESS prior at u = 1.
  */
-export function buildAthleteModel(input: ModelEvents, today: number, opts: { fromDay?: number } = {}): AthleteModel {
+export function buildAthleteModel(input: ModelEvents, today: number, opts: { fromDay?: number; seed?: HistorySeed | null } = {}): AthleteModel {
   const events = opts.fromDay != null ? scopeEvents(input, opts.fromDay) : input
   const flags = flagsByDay(events)
   const byDay = new Map(events.checkIns.map(c => [c.day, c]))
   const sorenessAfter = (day: number) => byDay.get(day + 1)?.soreness ?? null
   const liftSink: Array<{ exerciseId: string; exposure: LiftExposure }> = []
   const runSink: RunObservation[] = []
-  const lifts = buildLifts(events, today, liftSink)
-  const run = buildRun(events, today, flags, runSink)
+  const lifts = buildLifts(events, today, liftSink, opts.seed)
+  const run = buildRun(events, today, flags, runSink, opts.seed)
   const rpeOf = new Map(events.sessions.map(s => [s.id, s.rpe]))
   const sessionOfDay = (exerciseId: string, day: number) => events.sets.find(s => s.exerciseId === exerciseId && s.day === day)?.sessionId
   const levelIn: LevelInputs = {
@@ -867,10 +908,10 @@ export function modelSummary(m: AthleteModel): string[] {
   const kg = (v: number | null) => (v == null ? '-' : `${Math.round(v * 2.20462)} lb`)
   const lines: string[] = []
   for (const l of Object.values(m.lifts)) {
-    lines.push(`lift ${l.exerciseId}: ${l.state} u=${l.u} n=${l.n} e1RM=${kg(l.e1rmKg)} working=${kg(l.workingKg)} (${l.workingSource ?? '-'}) bias=${l.rirBias} exposures=${l.exposures}${l.last ? ` last: top ${kg(l.last.topKg)} of ${kg(l.last.plannedKg)}${l.last.lowered ? ' LOWERED' : ''}${l.last.raised ? ' RAISED' : ''}${l.last.incomplete ? ' INCOMPLETE' : ''} rir=${l.last.lastRir ?? '-'}` : ''} easeStreak=${l.easeStreak}`)
+    lines.push(`lift ${l.exerciseId}: ${l.state} u=${l.u} n=${l.n} e1RM=${kg(l.e1rmKg)} working=${kg(l.workingKg)} (${l.workingSource ?? '-'}${l.seed ? ` from ${kg(l.seed.lastKg)} ${l.seed.daysOff} days before the block, -${Math.round(l.seed.discount * 100)}%` : ''}) bias=${l.rirBias} exposures=${l.exposures}${l.last ? ` last: top ${kg(l.last.topKg)} of ${kg(l.last.plannedKg)}${l.last.lowered ? ' LOWERED' : ''}${l.last.raised ? ' RAISED' : ''}${l.last.incomplete ? ' INCOMPLETE' : ''} rir=${l.last.lastRir ?? '-'}` : ''} easeStreak=${l.easeStreak}`)
   }
   const r = m.run
-  lines.push(`run: ${r.state} u=${r.u} line=${r.lineBpm} (${r.lineSource}; age prior ${r.linePriorBpm}) U=${r.uShare ?? '-'} drift=${r.driftBpm ?? '-'} rung=${r.rungSec}s longest30=${r.longestLast30Sec ?? '-'}s easyPace=${r.easyPaceSecKm ?? '-'}s/km runs=${r.runs} withHr=${r.runsWithHr} recheck=${r.recheckWhy ?? 'no'}`)
+  lines.push(`run: ${r.state} u=${r.u} line=${r.lineBpm} (${r.lineSource}; age prior ${r.linePriorBpm}) U=${r.uShare ?? '-'} drift=${r.driftBpm ?? '-'} rung=${r.rungSec}s (${r.rungSource ?? '-'}${r.seed ? `: history median ${r.seed.medianSec}s, longest ${r.seed.longestSec}s, avg HR ${r.seed.avgHr ?? '-'}` : ''}) longest30=${r.longestLast30Sec ?? '-'}s easyPace=${r.easyPaceSecKm ?? '-'}s/km runs=${r.runs} withHr=${r.runsWithHr} recheck=${r.recheckWhy ?? 'no'}`)
   lines.push(`bag: ${m.bag.state} u=${m.bag.u} rounds=${m.bag.roundsTolerated ?? '-'} finishers=${m.bag.finishersAllowed} sessions=${m.bag.sessions} scheduleCuts=${m.bag.scheduleCuts}`)
   const nights = Object.entries(m.klass.nights).filter(([, n]) => n.n > 0 || n.recoverySkips > 0).map(([d, n]) => `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][Number(d)]} ${n.attended}/${n.suggested} sched-skip ${n.scheduleSkips} p=${n.p}`).join('; ')
   lines.push(`class: ${m.klass.state} u=${m.klass.u} perWeek=${m.klass.perWeekTolerated} classes=${m.klass.classes} nights: ${nights || '-'}`)

@@ -186,7 +186,9 @@ export interface LiftEstimate extends Confidence {
   e1rmSdKg: number | null
   /** Working weight for the default target (8 reps at RIR 2), snapped; else the weight he last used. */
   workingKg: number | null
-  workingSource: 'e1rm' | 'used' | 'training_max' | null
+  workingSource: 'e1rm' | 'used' | 'training_max' | 'history' | null
+  /** Started from his history before the block (no exposure in the block yet), with the time-off discount. */
+  seed?: { lastKg: number; lastDay: number; daysOff: number; discount: number } | null
   /** His RIR bias in reps (+ = more in reserve than he says), ±0.25 a session, clamped ±1.5. */
   rirBias: number
   equipment: ModelSet['equipment']
@@ -245,6 +247,13 @@ export interface RunEstimate extends Confidence {
   rungSec: number
   /** The day the rung last went up (one rung a week at most). */
   rungUpDay?: number | null
+  /**
+   * Where the rung came from: his runs in the block, or his history before it
+   * (no run in the block yet). From 10 min it is a continuous easy run, not a run-walk piece.
+   */
+  rungSource?: 'block' | 'history' | 'prior'
+  /** The history the rung was seeded from (typical and longest run, sec; average HR). */
+  seed?: { medianSec: number; longestSec: number; runs: number; avgHr: number | null; lastDay: number; daysOff: number } | null
   longestLast30Sec: number | null
   /** Pace (sec/km) of runs held at the line (U ≥85%), indoor or out. */
   easyPaceSecKm: number | null

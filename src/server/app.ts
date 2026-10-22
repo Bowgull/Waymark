@@ -26,7 +26,7 @@ import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTem
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { BLOCK_ZERO_BASE_WEEKS, CLASS_EASE_LINE, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, validateTestResult } from '../lib/blockZero'
 import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, gotBodyNote, lowerLegOnWatch, markAgainstFlag, ravenLineFor, seenBodyNote } from './bodyWatch'
-import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts } from '../lib/coach'
+import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, isoOf } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
@@ -63,8 +63,8 @@ import {
   trainingWeekFor,
   weekStamps,
 } from './coachData'
-import { capToday, doseFor, type StoredDose } from './brain'
-import { noteAppOpen } from './timeZone'
+import { capToday, doseFor, replanWeek, type StoredDose } from './brain'
+import { athleteTimeZone, localDayIn, noteAppOpen } from './timeZone'
 import { templateFromDose } from '../lib/brain/doses'
 
 type Bindings = {
@@ -460,6 +460,14 @@ async function getRunPrescription(db: DrizzleDB, session: RunSessionInput, today
       ...base, runType: 'zone2', targetDurSec: dose.totalSec,
       targetDesc: `Run-walk. ${Math.round(dose.warmupSec / 60)} min brisk walk, then ${dose.rounds} x (${secWords(dose.runSec)} easy run / ${secWords(dose.walkSec)} walk). Talk-test pace: you can speak in full sentences. ${ceiling}${why ? ` ${why}` : ''}`,
       runWalk: { runSec: dose.runSec, walkSec: dose.walkSec, rounds: dose.rounds, warmupSec: dose.warmupSec, capped: dose.capped },
+      autoEase: { eased: false, reason: null }, coach: { eased: false, reasons: dose.why },
+    }
+  }
+  // A Block Zero run he can hold straight (his runs or his history): one easy continuous run.
+  if (row.blockType === 'block_zero' && row.type === 'foundation_run' && dose.rounds === 1 && dose.walkSec === 0) {
+    return {
+      ...base, runType: 'zone2', targetDurSec: dose.totalSec,
+      targetDesc: `Easy run, ${Math.round(dose.totalSec / 60)} min, no walk breaks. Talk-test pace: you can speak in full sentences. ${ceiling}${why ? ` ${why}` : ''}`,
       autoEase: { eased: false, reason: null }, coach: { eased: false, reasons: dose.why },
     }
   }
@@ -1043,6 +1051,18 @@ app.patch('/api/changes/:id/reason', async (c) => {
   void nowSec
   // Tonight's pass reads the reason (a schedule reason never counts as too hard).
   return c.json({ ok: true, coachChanges: 0 })
+})
+
+// Re-plan the rest of this week now (after a deploy that changes the coach):
+// rules only, the night's outline solver and change rows (runes and UNDO),
+// then the doses. His local day comes from his time zone. Idempotent: a
+// second call finds nothing new to add. No screen calls it.
+app.post('/api/coach/replan-week', async (c) => {
+  const db = createDB(c.env)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const today = localDayIn(nowSec, await athleteTimeZone(db))
+  const result = await replanWeek(db, today, nowSec)
+  return c.json({ today: isoOf(today), ...result })
 })
 
 // One quiet line (page 56 item 12): the morning alarm (?for=morning&day=the
