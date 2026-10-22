@@ -66,6 +66,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
     private static let silentReconnectSec: Double = 20
     private static let connectSearchSec: Double = 20
     private static let laMinIntervalSec: Double = 5
+    private static let laDistanceIntervalSec: Double = 15
     private static let goldBand = 5
     private static let overSec: Double = 30
 
@@ -231,8 +232,18 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
                 // The same run (the app came back, or relaunched after a kill): rejoin it.
                 r.paused = false
                 r.ceiling = ceiling
-                self.run = r
+                // Seconds lost while the app was dead: kept as time gone (the run clock
+                // counted them), with no heart rate and no distance.
                 self.openJournalForAppend(runId)
+                let expected = min(6 * 3600, Int(Date().timeIntervalSince1970 - r.startedAt))
+                while r.t.count < expected {
+                    r.t.append(r.t.count)
+                    r.hr.append(nil)
+                    r.moving.append(1)
+                    r.distM.append(r.outdoor ? r.distance : 0)
+                    self.appendLine(["i": r.t.count - 1, "m": 1, "d": (r.distance * 10).rounded() / 10, "h": NSNull()])
+                }
+                self.run = r
                 self.startEngines(outdoor: r.outdoor)
                 call.resolve(["rejoined": true])
                 return
@@ -415,12 +426,15 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
 
     private func updateLiveActivity(hr: Int?, now: Double, distanceM: Double?) {
         let zoneChanged = zone != laLastZone
-        let hrMoved: Bool = {
-            guard let h = hr else { return laLastHr != nil }
-            guard let l = laLastHr else { return true }
-            return abs(h - l) >= 2
-        }()
-        guard zoneChanged || ((hrMoved || distanceM != nil) && now - laLastAt >= Self.laMinIntervalSec) else { return }
+        var hrMoved = false
+        if let h = hr {
+            if let l = laLastHr { hrMoved = abs(h - l) >= 2 } else { hrMoved = true }
+        } else {
+            hrMoved = laLastHr != nil
+        }
+        let since = now - laLastAt
+        // A zone change at once; a moved number every 5 s at most; distance alone every 15 s.
+        guard zoneChanged || (hrMoved && since >= Self.laMinIntervalSec) || (distanceM != nil && since >= Self.laDistanceIntervalSec) else { return }
         laLastAt = now
         laLastHr = hr
         laLastZone = zone
