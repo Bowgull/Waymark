@@ -38,6 +38,7 @@ import '@/design/pickers.css'
 import './session.css'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 import { NarutoEpisodeCard } from './NarutoEpisodeCard'
+import { checkMaxHrBump } from '@/lib/maxHrBump'
 
 interface RunSession {
   id: string
@@ -337,7 +338,8 @@ export function RunSessionView({
     try {
       // The recording goes up once, through the outbox (runId = its Idempotency-Key); then the log as he saw it.
       const rec = (await runRecorder().stop().catch(() => null)) ?? recRef.current
-      if (rec && rec.runId === runId) {
+      const recorded = !!rec && rec.runId === runId
+      if (rec && recorded) {
         recRef.current = rec
         await uploadRecording(rec)
       }
@@ -353,6 +355,9 @@ export function RunSessionView({
           ...(showRunRealityMark ? { shortReason: endReason } : {}),
         }),
       })
+
+      // A recorded run can raise his max HR (the ingest's sustained max): say so once.
+      const maxHrBumped = recorded ? await checkMaxHrBump(showToast) : false
 
       // The talk test (Block Zero week 1 / 6): that week's talk_test_hr, which sets the Zone 2 cap.
       if (talkTest) {
@@ -394,6 +399,10 @@ export function RunSessionView({
         return
       }
 
+      if (maxHrBumped) {
+        setTimeout(() => onComplete(), 1800)
+        return
+      }
       onComplete()
     } catch (e) {
       console.error('Failed to save run:', e)
