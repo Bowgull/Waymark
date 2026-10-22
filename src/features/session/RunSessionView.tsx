@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { App as CapacitorApp } from '@capacitor/app'
-import { Capacitor } from '@capacitor/core'
 
 import { CentredCard, FlapLabel, SessionIcon } from '@/design'
 import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
@@ -35,56 +33,6 @@ import './session.css'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 import { NarutoEpisodeCard } from './NarutoEpisodeCard'
 
-const STRAVA_APP_STORE_URL = 'https://apps.apple.com/app/strava/id426826309'
-const STRAVA_DEEP_LINK = 'strava://record'
-
-// Try to launch the Strava app. Uses a synthetic anchor click so Capacitor's
-// WKWebView delegates the non-http scheme to UIApplication.open. Plain
-// location.href assignments can be blocked by newer iOS WebView policies.
-// If the page is still visible ~1.8s later, the scheme didn't resolve —
-// offer an App Store link.
-function tryOpenStrava(onNotInstalled: () => void) {
-  const before = Date.now()
-  let cleaned = false
-  const cleanup = () => {
-    if (cleaned) return
-    cleaned = true
-    window.clearTimeout(handle)
-    document.removeEventListener('visibilitychange', onVisibility)
-    window.removeEventListener('pagehide', onVisibility)
-    window.removeEventListener('blur', onVisibility)
-  }
-  const handle = window.setTimeout(() => {
-    const elapsed = Date.now() - before
-    if (document.visibilityState === 'visible' && elapsed >= 1500) {
-      onNotInstalled()
-    }
-    cleanup()
-  }, 1800)
-  const onVisibility = () => {
-    if (document.visibilityState === 'hidden') cleanup()
-  }
-  document.addEventListener('visibilitychange', onVisibility)
-  window.addEventListener('pagehide', onVisibility)
-  window.addEventListener('blur', onVisibility)
-
-  try {
-    // Synthetic anchor click is the most reliable cross-webview way to hand
-    // off a custom scheme to iOS.
-    const a = document.createElement('a')
-    a.href = STRAVA_DEEP_LINK
-    a.target = '_blank'
-    a.rel = 'noopener noreferrer'
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  } catch {
-    cleanup()
-    onNotInstalled()
-  }
-}
-
 interface RunSession {
   id: string
   sessionId?: string
@@ -99,8 +47,6 @@ interface RunSession {
   onePaceEp: string | null
   avgHr?: number | null
   maxHr?: number | null
-  stravaActivityId?: number | null
-  attachmentStatus?: string | null
 }
 
 interface RunPrescription {
@@ -196,11 +142,6 @@ export function RunSessionView({
   const [narutoConfirm, setNarutoConfirm] = useState<
     { watched: number; minutes: number; proposed: number; adjusting: boolean } | null
   >(null)
-  const [stravaActivityId, setStravaActivityId] = useState<number | null>(
-    runSession.stravaActivityId ?? null,
-  )
-  const [fromStrava, setFromStrava] = useState(false)
-  const [checkingStrava, setCheckingStrava] = useState(false)
   const { show: showToast, ToastContainer } = useToast()
   const phaseRef = useRef<RunPhase>('ready')
   useEffect(() => { phaseRef.current = phase }, [phase])
@@ -253,127 +194,14 @@ export function RunSessionView({
       })
   }, [runSession.onePaceArc, runSession.onePaceEp])
 
-  // Poll Strava and re-read our own run_sessions row. If Strava has finished
-  // and our row has been upgraded with stravaActivityId, morph to logging
-  // phase with values prefilled. User still confirms before we commit.
-  const checkForStravaActivity = useCallback(async (opts?: { silent?: boolean }): Promise<boolean> => {
-    if (!runSession.sessionId) return false
-    if (checkingStrava) return false
-    setCheckingStrava(true)
-    try {
-      // Best-effort poll: ingests any new runs from the last 48h.
-      await apiFetch('/api/strava/poll-recent', { method: 'POST' }).catch(() => null)
-      const data = await apiFetch<{
-        runSession: {
-          id: string
-          distanceKm: number | null
-          durationSec: number | null
-          stravaActivityId: number | null
-          attachmentStatus: string | null
-          isIndoor: number
-          avgHr: number | null
-          maxHr: number | null
-        } | null
-      }>(`/api/sessions/${runSession.sessionId}/run-workout`)
-      const r = data?.runSession
-      if (!r || r.stravaActivityId == null) {
-        if (!opts?.silent) showToast('No Strava activity yet. Still waiting.', 'info')
-        return false
-      }
-      // Prefill from Strava values.
-      if (r.distanceKm != null) setDistance(r.distanceKm.toFixed(2))
-      if (r.durationSec != null) {
-        const mins = Math.floor(r.durationSec / 60)
-        const secs = r.durationSec % 60
-        setDuration(secs > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : String(mins))
-      }
-      if (r.avgHr != null) setAvgHr(String(r.avgHr))
-      if (r.maxHr != null) setMaxHr(String(r.maxHr))
-      setStravaActivityId(r.stravaActivityId)
-      setFromStrava(true)
-      if (phaseRef.current === 'running') {
-        setStopwatch(sw => (sw ? stopwatchPause(sw, Date.now()) : sw))
-        setPhase('logging')
-      }
-      logger.sessionEvent('strava activity linked', {
-        runSessionId: runSession.id,
-        stravaActivityId: r.stravaActivityId,
-      })
-      if (!opts?.silent) showToast('Strava run pulled in. Review and save.', 'success')
-      return true
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      logger.warn('session', 'strava poll failed', { message }, 'Strava activity poll failed. Run not auto-linked.')
-      if (!opts?.silent) showToast('Could not reach Strava. Try again.', 'warning')
-      return false
-    } finally {
-      setCheckingStrava(false)
-    }
-  }, [runSession.sessionId, runSession.id, checkingStrava, showToast])
-
-  // Auto-retry on the Log screen: Strava takes a moment to finalize an
-  // activity after the run ends, so poll every 10s for up to 2 min until we
-  // link it or the user navigates away. Manual button stays as a fallback.
-  useEffect(() => {
-    if (phase !== 'logging') return
-    if (isIndoor) return
-    if (fromStrava) return
-    if (!runSession.sessionId) return
-    let handle: number | null = null
-    let attempts = 0
-    const MAX_ATTEMPTS = 12
-    const tick = async () => {
-      attempts += 1
-      const found = await checkForStravaActivity({ silent: true })
-      if (found || attempts >= MAX_ATTEMPTS) return
-      handle = window.setTimeout(tick, 10_000)
-    }
-    handle = window.setTimeout(tick, 2_000)
-    return () => {
-      if (handle != null) window.clearTimeout(handle)
-    }
-  }, [phase, isIndoor, fromStrava, runSession.sessionId, checkForStravaActivity])
-
-  // On app resume during an outdoor run, auto-check for the Strava activity.
-  useEffect(() => {
-    if (isIndoor) return
-    let remove: (() => void) | null = null
-    if (Capacitor.isNativePlatform()) {
-      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-        if (isActive && phaseRef.current === 'running') {
-          checkForStravaActivity({ silent: true })
-        }
-      }).then((handle) => { remove = () => handle.remove() })
-    } else {
-      const onVis = () => {
-        if (document.visibilityState === 'visible' && phaseRef.current === 'running') {
-          checkForStravaActivity({ silent: true })
-        }
-      }
-      document.addEventListener('visibilitychange', onVis)
-      remove = () => document.removeEventListener('visibilitychange', onVis)
-    }
-    return () => { if (remove) remove() }
-  }, [isIndoor, checkForStravaActivity])
-
   const startRun = useCallback(() => {
     const now = Date.now()
     setStopwatch({ state: 'running', startedAtMs: now })
     setNowMs(now)
     setPhase('running')
-    if (isIndoor) {
-      window.open(media === 'naruto' ? NARUTO_NETFLIX_URL : ONEPACE_URL, '_blank')
-    } else {
-      logger.sessionEvent('strava launch attempt', { runSessionId: runSession.id })
-      tryOpenStrava(() => {
-        logger.warn('session', 'strava not installed', { runSessionId: runSession.id }, 'Strava app not installed on device. Deep link canceled.')
-        showToast('Strava not installed. Tap to get it from the App Store.', 'warning', {
-          actionLabel: 'App Store',
-          onAction: () => window.open(STRAVA_APP_STORE_URL, '_blank'),
-        })
-      })
-    }
-  }, [isIndoor, media, runSession.id, showToast])
+    // Indoors the show opens; outdoors Waymark records the run itself (page 74: no Strava).
+    if (isIndoor) window.open(media === 'naruto' ? NARUTO_NETFLIX_URL : ONEPACE_URL, '_blank')
+  }, [isIndoor, media])
 
   function finishRun() {
     const now = Date.now()
@@ -409,18 +237,6 @@ export function RunSessionView({
           ...(showRunRealityMark ? { shortReason: endReason } : {}),
         }),
       })
-
-      // If this run was pulled from Strava, lock the attachment and mark the
-      // parent session completed. The user has now approved the values.
-      if (stravaActivityId != null) {
-        await apiFetch(`/api/strava/activity/${stravaActivityId}/confirm`, {
-          method: 'POST',
-        }).catch((err) => {
-          logger.warn('session', 'strava confirm failed', {
-            message: err instanceof Error ? err.message : String(err),
-          }, 'POST /strava/activity/:id/confirm failed. Activity saved but not locked.')
-        })
-      }
 
       // The talk test (Block Zero week 1 / 6): that week's talk_test_hr, which sets the Zone 2 cap.
       if (talkTest) {
@@ -713,9 +529,7 @@ export function RunSessionView({
                 </div>
               </div>
             </>
-          ) : (
-            <p className="tm-note" style={{ margin: '10px 0 0' }}>START RUN also opens Strava.</p>
-          )}
+          ) : null}
           <div className="wm-btns" style={{ marginTop: 12 }}>
             <SessionButton label="START RUN" primary onClick={startRun} />
           </div>
@@ -744,14 +558,10 @@ export function RunSessionView({
   }
 
   // ─── Log your run (page 31 "Log your run") ───
-  const linkable = !isIndoor && !!runSession.sessionId && !fromStrava
   return (
     <>
       {/* CLOSE (page 61): back to the paused run, the fields kept; a stray tap outside does nothing */}
-      <CentredCard label="Log your run" head="Log your run" headRight={fromStrava ? <FlapLabel text="FROM STRAVA" size="xs" tone="teal" /> : undefined} onDismiss={saving ? undefined : () => setPhase('running')} closeOnOutside={false} className="ss-card">
-        {linkable && (
-          <SessionButton label={checkingStrava ? 'CHECKING STRAVA' : 'PULL RUN FROM STRAVA'} disabled={checkingStrava} onClick={() => void checkForStravaActivity()} />
-        )}
+      <CentredCard label="Log your run" head="Log your run" onDismiss={saving ? undefined : () => setPhase('running')} closeOnOutside={false} className="ss-card">
         <div className="ss-grid4">
           <ReadoutCell k="KM" value={distance} onChange={setDistance} inputMode="decimal" placeholder="5.0" />
           <ReadoutCell k="TIME" value={duration} onChange={setDuration} inputMode="numeric" placeholder="25:00" />
@@ -778,7 +588,7 @@ export function RunSessionView({
         )}
         {showRunRealityMark && <p className="tm-note" style={{ margin: 0 }}>Short run noted.</p>}
         {/* Cut short: one optional tap says why (NO TIME holds the next run; it never reads as too hard). */}
-        {showRunRealityMark && !fromStrava && <ReasonTiles tiles={EARLY_END_REASONS} value={endReason} onChange={setEndReason} />}
+        {showRunRealityMark && <ReasonTiles tiles={EARLY_END_REASONS} value={endReason} onChange={setEndReason} />}
         <div className="wm-btns" style={{ marginTop: 12 }}>
           <SessionButton label={saving ? 'SAVING' : 'SAVE RUN'} primary disabled={saving} onClick={() => void handleSave()} />
         </div>
