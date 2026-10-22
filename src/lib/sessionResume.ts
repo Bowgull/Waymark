@@ -54,6 +54,8 @@ export type EngineState =
       isIndoor: boolean
       media?: 'one_pace' | 'naruto'
       draft?: Record<string, string>
+      /** Page 74: the recorder's id for this run; the same id rejoins the recording after a relaunch. */
+      runId?: string
     }
   /** Reset: hip block then foam rolling, each with its own timer. */
   | {
@@ -224,6 +226,7 @@ function sanitizeEngineState(es: unknown): EngineState | null {
       const run: Extract<EngineState, { kind: 'run' }> = { kind: 'run', sub, stopwatch, isIndoor: e.isIndoor === true }
       if (e.media === 'naruto' || e.media === 'one_pace') run.media = e.media
       if (e.draft && typeof e.draft === 'object') run.draft = e.draft as Record<string, string>
+      if (typeof e.runId === 'string' && e.runId) run.runId = e.runId
       return run
     }
     case 'recovery': {

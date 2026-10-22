@@ -5,10 +5,11 @@
 import assert from 'node:assert/strict'
 
 import { flipFrames } from '../../design/flap'
-import { cellGlyph, grassGrid, timerCell } from './grassScene'
+import { cellGlyph, grassGrid, timerCell, zoneCell } from './grassScene'
 import {
   clockDigits, comboStrikes, effortWord, heatFor, momentLine,
   ENDED_SHOW_MS, PULL_SETTLE_MS, progressOf, pullAmount, releaseAction, settlePull, shownSeconds, swellK, workLabel,
+  BOARD_OUT_MS, END_HOLD_MS, FINISHING_AFTER_MS, GRASS_HOLD_MS, HOLD_RELEASE_MS, HOLD_TAP_MS, holdReleaseLeft, ZONE_EASE_MS, zoneEase,
 } from './timerLook'
 
 let passed = 0
@@ -136,6 +137,46 @@ test('an early pull settles back over about a third of a second, easing out', ()
 
 test('the hold-to-end shows ENDED before leaving', () => {
   assert.ok(ENDED_SHOW_MS >= 600 && ENDED_SHOW_MS <= 1200)
+})
+
+test('page 74 timings: the holds 3 s, FINISHING after 1 s, let-go 450 ms, a board out in 180 ms, zones ~1 s', () => {
+  assert.equal(END_HOLD_MS, 3000)
+  assert.equal(GRASS_HOLD_MS, 3000)
+  assert.equal(FINISHING_AFTER_MS, 1000)
+  assert.equal(HOLD_RELEASE_MS, 450)
+  assert.equal(BOARD_OUT_MS, 180)
+  assert.equal(ZONE_EASE_MS, 1000)
+  assert.ok(HOLD_TAP_MS < FINISHING_AFTER_MS, 'a tap is over long before FINISHING')
+})
+
+test('an early let-go of the grass eases back over 450 ms (ease-out); Reduce Motion: at once', () => {
+  assert.equal(holdReleaseLeft(0.6, 0), 0.6)
+  assert.equal(holdReleaseLeft(0.6, HOLD_RELEASE_MS), 0)
+  assert.ok(holdReleaseLeft(1, HOLD_RELEASE_MS / 2) < 0.5, 'eases out')
+  assert.equal(holdReleaseLeft(0.6, 10, true), 0)
+})
+
+test('the zone tint eases from where it was to the zone, ease-out over ~1 s; Reduce Motion: instant', () => {
+  const teal = [0.5, 0, 0] as const, ember = [0, 0, 1] as const
+  assert.deepEqual(zoneEase(teal, ember, 0), [0.5, 0, 0])
+  assert.deepEqual(zoneEase(teal, ember, ZONE_EASE_MS), [0, 0, 1])
+  assert.ok(zoneEase(teal, ember, ZONE_EASE_MS / 2)[2] > 0.5, 'more than halfway by half time')
+  assert.deepEqual(zoneEase(teal, ember, 0, true), [0, 0, 1])
+})
+
+test('the run grass: the zone tints it; the bend lies flat behind the wave, untouched beyond it', () => {
+  const base = { progress: 0.4, mode: 'work' as const }
+  const plain = timerCell(0.8, 0.5, 1, base, 1)
+  const ember = zoneCell(0.8, 0.5, 1, { ...base, zone: [0, 0, 1] }, 1)
+  assert.ok(ember.c[0] > ember.c[1], 'ember reads red-orange')
+  assert.notDeepEqual(ember.c, plain.c)
+  // the wave from the thumb at (0.5, 0.9): near the thumb it's flat ('_'), far beyond the front untouched
+  const near = zoneCell(0.5, 0.88, 1, { ...base, wave: 0.6, wx: 0.5, wy: 0.9 }, 1)
+  assert.equal(near.ch, '_')
+  const far = zoneCell(0.02, 0.02, 1, { ...base, wave: 0.2, wx: 0.9, wy: 0.9 }, 1)
+  assert.deepEqual(far, timerCell(0.02, 0.02, 1, base, 1))
+  // at full the whole band lies flat
+  for (const [x, y] of [[0, 0], [1, 0], [0.5, 0.5], [0, 1]]) assert.equal(zoneCell(x, y, 1, { ...base, wave: 1, wx: 0.5, wy: 0.9 }, 1).ch, '_', `${x},${y}`)
 })
 
 console.log(`timerLook: ${passed} passed`)

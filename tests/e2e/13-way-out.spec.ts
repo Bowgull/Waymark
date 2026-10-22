@@ -199,10 +199,10 @@ test('Relaunch (a reload): BACK IN YOUR SESSION, paused where it was; RESUME, or
   await expect(page.getByRole('button', { name: 'CLOSE SESSION' })).toBeVisible()
 })
 
-test('Hold × only ends: to the close; ‹ TODAY top left steps out', async ({ page, api }) => {
+test('Hold × (3 s): END AND LOG or DISCARD; END AND LOG goes to the close; ‹ TODAY top left steps out', async ({ page, api }) => {
   const bag = await insertSession(api, 'bag_work')
   await intoRound(page, bag.id)
-  const x = page.getByRole('button', { name: 'End. Hold for 1.5 seconds.' })
+  const x = page.getByRole('button', { name: 'End. Hold for 3 seconds.' })
   const back = page.getByRole('button', { name: '‹ TODAY' })
   const xb = (await x.boundingBox())!
   const bb = (await back.boundingBox())!
@@ -211,5 +211,9 @@ test('Hold × only ends: to the close; ‹ TODAY top left steps out', async ({ p
   expect(xb.x).toBeGreaterThan(vw / 2)
   await x.focus()
   await page.keyboard.press('Enter')
+  // page 74: Enter (the keyboard, VoiceOver) opens the close window at once: END AND LOG or DISCARD
+  const closeWin = page.getByRole('dialog', { name: /: end$/ })
+  await expect(closeWin.getByRole('button', { name: 'DISCARD', exact: true })).toBeVisible()
+  await closeWin.getByRole('button', { name: 'END AND LOG', exact: true }).tap()
   await expect(page.getByRole('button', { name: 'CLOSE SESSION' })).toBeVisible({ timeout: 10_000 })
 })

@@ -36,6 +36,15 @@ import WidgetKit
 //   glyph grass: three rows (21), unchanged
 // In rest it shows the next round's combo and counts that round. Nothing
 // changes in the last 10 s: iOS can't redraw then; the 10-second bell does it.
+//
+// The run with the strap (mockup page 74, approved 2026-10-22), drawn when a
+// run's state carries hrZone: the run card with the distance top right, the
+// heart container (14) and the bpm under RUNNING / EASE OFF, the rule and
+// grass in the zone's tint (teal / gold / ember); the island's heart and bpm.
+// The heart can't beat here: it glows once per heart-rate update (hrSeq).
+// Nothing on a run's card or island ends, logs or discards it: an easy run
+// has one wide pause / play stone filling the pair's slot; a run-walk has
+// pause / play and skip (the next piece). The stones take the zone's colour.
 
 // MARK: - Palette (mockups shared/flap.css + page 44)
 
@@ -331,12 +340,15 @@ private enum GrassFill {
 
 private enum GrassTone {
     case gold, teal, red
+    // Page 74: the strap run's zone tint (teal / gold / ember).
+    case tint(Color)
 
     var lit: Color {
         switch self {
         case .gold: return .wmGrassGold
         case .teal: return .wmGrassTeal
         case .red: return .wmGrassRed
+        case .tint(let c): return c
         }
     }
 }
@@ -348,11 +360,13 @@ private struct GrassStrip: View {
     let tone: GrassTone
     var fontSize: CGFloat = Grass.fontSize
     var rowHeight: CGFloat = Grass.rowHeight
+    // The unlit blades (page 74: the zone colour at .28 on a strap run).
+    var off: Color = .wmGrassOff
 
     var body: some View {
         ZStack {
             GrassGlyphs(fontSize: fontSize, rowHeight: rowHeight)
-                .foregroundStyle(Color.wmGrassOff)
+                .foregroundStyle(off)
             bar
                 .progressViewStyle(.linear)
                 .tint(tone.lit)
@@ -426,16 +440,97 @@ private enum RuneAction {
     case pause, resume, skip, startHold
 }
 
+// MARK: - The strap run's zone (page 74)
+
+// hrZone from the recorder: "in" teal, "gold" the top of the zone, "over"
+// ember (EASE OFF), "none" a dim heart and "--". Nil: not a strap run.
+private enum HRZone {
+    case inZone, gold, over, off
+
+    init?(_ raw: String?) {
+        guard let raw = raw else { return nil }
+        switch raw {
+        case "in": self = .inZone
+        case "gold": self = .gold
+        case "over": self = .over
+        case "none": self = .off
+        default: return nil
+        }
+    }
+
+    var isLive: Bool { self != .off }
+
+    // The number (mockup ZC / .hrl b): teal, gold, ember, dim.
+    var number: Color {
+        switch self {
+        case .inZone: return Color(wmHex: 0x4ACAAA)
+        case .gold: return Color(wmHex: 0xE8C878)
+        case .over: return Color(wmHex: 0xE8946E)
+        case .off: return Color(wmHex: 0x87918C)
+        }
+    }
+
+    // The grass tint (mockup .la.z-* .lgrass).
+    var tint: Color {
+        switch self {
+        case .inZone: return Color(wmHex: 0x4ACAAA)
+        case .gold: return Color(wmHex: 0xE8C878)
+        case .over: return Color(wmHex: 0xEC8A5E)
+        case .off: return .wmGrassGold
+        }
+    }
+
+    // The card's rule and its soft glow (mockup .la.z-in / .z-gold / .z-over).
+    var edge: Color {
+        switch self {
+        case .inZone: return Color(wmHex: 0x4ACAAA, opacity: 0.55)
+        case .gold: return Color(wmHex: 0xE8C860, opacity: 0.62)
+        case .over: return Color(wmHex: 0xEC8A5E, opacity: 0.70)
+        case .off: return .wmCardEdge
+        }
+    }
+
+    var edgeGlow: Color {
+        switch self {
+        case .inZone: return Color(wmHex: 0x4ACAAA, opacity: 0.12)
+        case .gold: return Color(wmHex: 0xE8C860, opacity: 0.14)
+        case .over: return Color(wmHex: 0xEC8A5E, opacity: 0.16)
+        case .off: return .clear
+        }
+    }
+
+    var runeTone: RuneTone? {
+        switch self {
+        case .inZone: return .teal
+        case .gold: return .gold
+        case .over: return .ember
+        case .off: return nil
+        }
+    }
+
+    var heart: HeartPal {
+        switch self {
+        case .inZone: return .under
+        case .gold: return .gold
+        case .over: return .over
+        case .off: return .idle
+        }
+    }
+}
+
 @available(iOS 16.2, *)
 private struct LAInfo {
     let state: WaymarkActivityAttributes.ContentState
     let sessionLabel: String
     // A running timer whose end has passed ("time ran out").
     let timeUp: Bool
+    // The run's Live Activity (page 74 draws its strap card).
+    let isRun: Bool
 
     init(context: ActivityViewContext<WaymarkActivityAttributes>, now: Date = Date()) {
         state = context.state
         sessionLabel = context.attributes.sessionLabel
+        isRun = context.attributes.sessionType == "run" || context.attributes.sessionType == "running"
         let s = context.state
         let timer = s.phase != "complete" && s.phase != "exercise" && s.phase != "ready"
         timeUp = timer && !s.isPaused && (context.isStale || s.endsAt <= now)
@@ -545,9 +640,16 @@ private struct LAInfo {
 
     // Round and rest: pause + skip. Other running timers: pause. Between
     // holds: start. Time ran out: skip. Strength set and finish: none.
+    // Page 74: nothing on the card or the island ends, logs or discards a
+    // run. An easy run: pause / play only (never skip, even when its time ran
+    // out); a run-walk: pause / play and skip (the next piece).
     var actions: [RuneAction] {
         if isComplete || isExercise { return [] }
         if isReady { return [.startHold] }
+        if isEasyRun || isRunWalk {
+            let first: RuneAction = state.isPaused ? .resume : .pause
+            return isRunWalk ? [first, .skip] : [first]
+        }
         if timeUp { return [.skip] }
         let skips = isRound || isRest
         let first: RuneAction = state.isPaused ? .resume : .pause
@@ -556,6 +658,70 @@ private struct LAInfo {
 
     // Time ran out keeps the gold stone (page 44); rest and holds are teal.
     var runesTeal: Bool { isTeal && !timeUp }
+
+    // MARK: The strap run (page 74)
+
+    var isEasyRun: Bool { state.runKind == "easy" }
+    var isRunWalk: Bool { state.runKind == "runwalk" }
+
+    // The zone, on a run only (nil: not a strap run, today's card).
+    var zone: HRZone? { isRun ? HRZone(state.hrZone) : nil }
+
+    // The strap run's card and island are drawn while the run is going.
+    var isStrapRun: Bool { zone != nil && !isComplete && !isCard }
+
+    // The stones take the zone's colour (teal, gold, ember); with no strap
+    // (or no zone) they keep today's colours.
+    var runeTone: RuneTone {
+        if !isComplete, let z = zone, let tone = z.runeTone { return tone }
+        return runesTeal ? .teal : .gold
+    }
+
+    // One control on an easy run: the stone fills the pair's slot.
+    var soloStone: Bool { isEasyRun && actions.count == 1 }
+
+    var runTitle: String {
+        if isRunWalk { return "RUN-WALK" }
+        let l = state.label.trimmingCharacters(in: .whitespaces)
+        return (l.isEmpty ? sessionLabel : l).uppercased()
+    }
+
+    // "1.41 km" (nil before the first fix and indoors).
+    var kmText: String? {
+        guard let km = state.distanceKm, km.isFinite, km >= 0 else { return nil }
+        return String(format: "%.2f km", km)
+    }
+
+    // The number beside the heart: "--" with no strap or no reading.
+    var bpmText: String {
+        guard let z = zone, z.isLive, let hr = state.hr, hr > 0 else { return "--" }
+        return "\(hr)"
+    }
+
+    // The heart's zone: dim when there's no reading.
+    var heartZone: HRZone {
+        guard let z = zone, state.hr != nil else { return .off }
+        return z
+    }
+
+    var hrSeq: Int { state.hrSeq ?? 0 }
+
+    // The lock card's flap under the clock: PAUSED, EASE OFF (clay) when
+    // over, TIME when it ran out, WALK (teal) in a run-walk's walk, RUNNING.
+    var runFlap: (text: String, tone: FlapTone) {
+        if state.isPaused { return ("PAUSED", .ink) }
+        if zone == .over { return ("EASE OFF", .clay) }
+        if timeUp { return ("TIME", .clay) }
+        if isRunWalk && isRest { return ("WALK", .teal) }
+        return ("RUNNING", .gold)
+    }
+
+    // The run-walk's piece count on the island ("RUN 3 OF 6"), when the
+    // app sends one.
+    var runPieceFlap: String? {
+        guard isRunWalk, let i = state.stepIndex, let t = state.stepTotal, i > 0, t > 0 else { return nil }
+        return "\(isRest ? "WALK" : "RUN") \(min(i, t)) OF \(t)"
+    }
 
     // MARK: The bag round's card (page 55)
 
@@ -640,19 +806,119 @@ private struct SessionIcon: View {
 
 // MARK: - Rune stones (the actions)
 
+// The glowing glyph's colour: gold (work), teal (rest, holds, in the zone),
+// ember (page 74: over the line). Assets.xcassets/rune-<symbol>-<asset>.
+private enum RuneTone {
+    case gold, teal, ember
+
+    var asset: String {
+        switch self {
+        case .gold: return "gold"
+        case .teal: return "teal"
+        case .ember: return "ember"
+        }
+    }
+
+    // The glyph and its glow, as carved into the PNG stones.
+    var glyph: Color {
+        switch self {
+        case .gold: return Color(wmHex: 0xE8C878)
+        case .teal: return Color(wmHex: 0x9EE0C6)
+        case .ember: return Color(wmHex: 0xEC8A5E)
+        }
+    }
+
+    var glow: Color {
+        switch self {
+        case .gold: return Color(wmHex: 0xE8C878, opacity: 0.8)
+        case .teal: return Color(wmHex: 0x4ACAAA, opacity: 0.8)
+        case .ember: return Color(wmHex: 0xEC8A5E, opacity: 0.8)
+        }
+    }
+}
+
 // The stone with its carved, glowing symbol, rendered from the mockup at 3x
-// (Assets.xcassets/rune-*). No words on them.
+// (Assets.xcassets/rune-*). No words on them. With a `width` wider than it is
+// tall it becomes the wide solo stone (page 74).
 private struct RuneStone: View {
     let symbol: String  // "pause", "skip", "play"
-    let teal: Bool
+    let tone: RuneTone
     var size: CGFloat = 44
+    var width: CGFloat? = nil
 
     var body: some View {
-        Image("rune-\(symbol)-\(teal ? "teal" : "gold")")
-            .resizable()
+        if let w = width, w > size {
+            WideRuneStone(symbol: symbol, tone: tone, width: w, height: size)
+        } else {
+            Image("rune-\(symbol)-\(tone.asset)")
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+// Page 74's one control: the same carved stone, widened to fill the pair's
+// slot (98 x 44 on the lock card, 96 x 44 on the island). The blank stone
+// (rune-stone-blank, the 44 pt stone without its glyph, @3x) keeps its
+// rounded ends and only its plain middle stretches, so it never looks pulled;
+// the glyph is drawn on it at the PNG glyph's size and glow.
+private struct WideRuneStone: View {
+    let symbol: String
+    let tone: RuneTone
+    let width: CGFloat
+    var height: CGFloat = 44
+
+    var body: some View {
+        Image("rune-stone-blank")
+            .resizable(capInsets: EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16), resizingMode: .stretch)
             .interpolation(.high)
-            .scaledToFit()
-            .frame(width: size, height: size)
+            .frame(width: width, height: height)
+            .overlay {
+                RuneGlyph(symbol: symbol, tone: tone, scale: height / 44)
+            }
+    }
+}
+
+// The glyph alone, sized from the 132 px PNGs (pause: two 11 px bars 11 px
+// apart, 38 px tall; play: 35 x 38 px), 1 pt = 3 px at 44 pt.
+private struct RuneGlyph: View {
+    let symbol: String
+    let tone: RuneTone
+    var scale: CGFloat = 1
+
+    var body: some View {
+        Group {
+            if symbol == "play" {
+                RunePlayShape()
+                    .fill(tone.glyph)
+                    .frame(width: 11.7 * scale, height: 12.7 * scale)
+                    .offset(x: 0.7 * scale)
+            } else {
+                HStack(spacing: 3.67 * scale) {
+                    RoundedRectangle(cornerRadius: 1.1 * scale, style: .continuous)
+                        .fill(tone.glyph)
+                        .frame(width: 3.67 * scale, height: 12.7 * scale)
+                    RoundedRectangle(cornerRadius: 1.1 * scale, style: .continuous)
+                        .fill(tone.glyph)
+                        .frame(width: 3.67 * scale, height: 12.7 * scale)
+                }
+            }
+        }
+        .shadow(color: tone.glow, radius: 2.5 * scale)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct RunePlayShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.closeSubpath()
+        return p
     }
 }
 
@@ -660,13 +926,14 @@ private struct RuneStone: View {
 private struct RuneButton<I: AppIntent>: View {
     let intent: I
     let symbol: String
-    let teal: Bool
+    let tone: RuneTone
     let name: String
     var size: CGFloat = 44
+    var width: CGFloat? = nil
 
     var body: some View {
         Button(intent: intent) {
-            RuneStone(symbol: symbol, teal: teal, size: size)
+            RuneStone(symbol: symbol, tone: tone, size: size, width: width)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -674,7 +941,8 @@ private struct RuneButton<I: AppIntent>: View {
     }
 }
 
-// The row of rune stones a state offers, wired to the existing intents.
+// The row of rune stones a state offers, wired to the existing intents. An
+// easy run's one stone fills the pair's slot: two stones and the gap between.
 @available(iOS 16.2, *)
 private struct RuneRow: View {
     let info: LAInfo
@@ -683,9 +951,10 @@ private struct RuneRow: View {
 
     var body: some View {
         if #available(iOS 17.0, *) {
+            let solo: CGFloat? = info.soloStone ? size * 2 + spacing : nil
             HStack(spacing: spacing) {
                 ForEach(Array(info.actions.enumerated()), id: \.offset) { item in
-                    rune(item.element)
+                    rune(item.element, width: solo)
                 }
             }
         }
@@ -693,18 +962,150 @@ private struct RuneRow: View {
 
     @available(iOS 17.0, *)
     @ViewBuilder
-    private func rune(_ action: RuneAction) -> some View {
-        let teal = info.runesTeal
+    private func rune(_ action: RuneAction, width: CGFloat?) -> some View {
+        let tone = info.runeTone
         switch action {
         case .pause:
-            RuneButton(intent: PauseTimerIntent(), symbol: "pause", teal: teal, name: "Pause", size: size)
+            RuneButton(intent: PauseTimerIntent(), symbol: "pause", tone: tone, name: "Pause", size: size, width: width)
         case .resume:
-            RuneButton(intent: ResumeTimerIntent(), symbol: "play", teal: teal, name: "Resume", size: size)
+            RuneButton(intent: ResumeTimerIntent(), symbol: "play", tone: tone, name: "Resume", size: size, width: width)
         case .skip:
-            RuneButton(intent: AdvancePhaseIntent(), symbol: "skip", teal: teal, name: "Skip", size: size)
+            RuneButton(intent: AdvancePhaseIntent(), symbol: "skip", tone: tone, name: "Skip", size: size, width: width)
         case .startHold:
-            RuneButton(intent: StartHoldIntent(), symbol: "play", teal: teal, name: "Start hold", size: size)
+            RuneButton(intent: StartHoldIntent(), symbol: "play", tone: tone, name: "Start hold", size: size, width: width)
         }
+    }
+}
+
+// MARK: - The heart container (page 74, option I)
+
+// heart-family.js PAL / HeartContainer.tsx HEART_PAL: outline, rim, pip,
+// body (lit), shade (mid), glow.
+private struct HeartPal {
+    let out: Color
+    let rim: Color
+    let pip: Color
+    let lit: Color
+    let mid: Color
+    let glow: Color
+
+    static let under = HeartPal(out: Color(wmHex: 0x04140F), rim: Color(wmHex: 0x9EE0C6), pip: Color(wmHex: 0xE8F8F4),
+                                lit: Color(wmHex: 0x5AC8AA), mid: Color(wmHex: 0x2A8A6C), glow: Color(wmHex: 0x4ACAAA))
+    static let gold = HeartPal(out: Color(wmHex: 0x1C1304), rim: Color(wmHex: 0xF6E2A0), pip: Color(wmHex: 0xFFF6DC),
+                               lit: Color(wmHex: 0xEAC860), mid: Color(wmHex: 0xC8A030), glow: Color(wmHex: 0xE8C860))
+    static let over = HeartPal(out: Color(wmHex: 0x1E0904), rim: Color(wmHex: 0xFFC7AA), pip: Color(wmHex: 0xFFF0E6),
+                               lit: Color(wmHex: 0xEC8A5E), mid: Color(wmHex: 0xB0583A), glow: Color(wmHex: 0xEC8A5E))
+    static let idle = HeartPal(out: Color(wmHex: 0x0A100E), rim: Color(wmHex: 0x87918C), pip: Color(wmHex: 0xA9B4B0),
+                               lit: Color(wmHex: 0x6B7D77), mid: Color(wmHex: 0x495A54), glow: Color(wmHex: 0x000000, opacity: 0))
+}
+
+// The pixels (heart-family.js GI, 13 x 11): O outline, R rim, W pip, B body,
+// D shade.
+private let heartGrid: [[Character]] = [
+    "..OOO...OOO..",
+    ".ORRRO.ORRRO.",
+    "ORWWBBOBBBBRO",
+    "ORWBBBBBBBBDO",
+    "ORBBBBBBBBBDO",
+    ".OBBBBBBBBDO.",
+    "..OBBBBBBDO..",
+    "...OBBBBDO...",
+    "....OBBDO....",
+    ".....ODO.....",
+    "......O......",
+].map { Array($0) }
+
+// One colour's pixels, as whole device-pixel squares centred in the box.
+private struct HeartPixels: Shape {
+    let code: Character
+    let px: CGFloat
+    let scale: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let cols = CGFloat(heartGrid.first?.count ?? 13)
+        let rows = CGFloat(heartGrid.count)
+        let ox = rect.minX + ((rect.width - cols * px) * scale / 2).rounded(.down) / scale
+        let oy = rect.minY + ((rect.height - rows * px) * scale / 2).rounded(.down) / scale
+        for (y, row) in heartGrid.enumerated() {
+            for (x, c) in row.enumerated() where c == code {
+                p.addRect(CGRect(x: ox + CGFloat(x) * px, y: oy + CGFloat(y) * px, width: px, height: px))
+            }
+        }
+        return p
+    }
+}
+
+// The heart container, crisp: each heart pixel is a whole number of device
+// pixels (as the mockup's drawPix: the box over 14 cells, at most the box
+// over 13), so 14 pt draws 1 pt pixels, 22 pt 5 px, 44 pt 9 px at 3x.
+private struct HeartContainer: View {
+    let zone: HRZone
+    let size: CGFloat
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        let scale = max(1, displayScale)
+        let box = size * scale
+        let dev = max(1, min((box / 13).rounded(.down), (box / 14).rounded()))
+        let px = dev / scale
+        let pal = zone.heart
+        ZStack {
+            HeartPixels(code: "O", px: px, scale: scale).fill(pal.out)
+            HeartPixels(code: "R", px: px, scale: scale).fill(pal.rim)
+            HeartPixels(code: "W", px: px, scale: scale).fill(pal.pip)
+            HeartPixels(code: "B", px: px, scale: scale).fill(pal.lit)
+            HeartPixels(code: "D", px: px, scale: scale).fill(pal.mid)
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+// The glow a heart-rate update brings: shown as the new heart arrives, then
+// settling (the transition's active state to its identity).
+private struct HeartGlow: ViewModifier {
+    let color: Color
+    let strength: Double
+    let radius: CGFloat
+
+    func body(content: Content) -> some View {
+        content.shadow(color: color.opacity(strength), radius: radius)
+    }
+}
+
+// The heart on the lock card and the island. Live Activities can't loop a
+// beat: each heart-rate update (hrSeq) brings a new heart that arrives glowing
+// softly and settles, once. `peak` is the glow's strength (very slight on the
+// lock card). No glow when there's no strap.
+@available(iOS 16.2, *)
+private struct LiveHeart: View {
+    let info: LAInfo
+    let size: CGFloat
+    var peak: Double = 0.4
+    var radius: CGFloat = 4
+
+    var body: some View {
+        let zone = info.heartZone
+        ZStack {
+            HeartContainer(zone: zone, size: size)
+                .id(info.hrSeq)
+                .transition(glowOnce(zone))
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: zone.isLive ? "Heart rate \(info.bpmText)" : "No heart rate"))
+    }
+
+    private func glowOnce(_ zone: HRZone) -> AnyTransition {
+        guard zone.isLive else { return AnyTransition.identity }
+        let glow = zone.heart.glow
+        return AnyTransition.asymmetric(
+            insertion: AnyTransition.modifier(
+                active: HeartGlow(color: glow, strength: peak, radius: radius),
+                identity: HeartGlow(color: glow, strength: 0, radius: radius)
+            ),
+            removal: AnyTransition.opacity
+        )
     }
 }
 
@@ -841,9 +1242,94 @@ private struct LockScreenView: View {
         let info = LAInfo(context: context)
         if info.isBagCard {
             bagCard(info)
+        } else if info.isStrapRun {
+            runCard(info)
         } else {
             card(info)
         }
+    }
+
+    // MARK: The strap run's card (page 74 "LOCK", mockup LA())
+
+    // Today's run card with the strap: header 22 (crest, the run on an xs
+    // flap, the distance, the icon), main row 62 (the clock; RUNNING or EASE
+    // OFF over the heart and bpm; the stones), the grass's three rows (21).
+    // The rule and the grass take the zone's tint; padding 10 / 12; 160 pt.
+    private func runCard(_ info: LAInfo) -> some View {
+        let zone = info.zone ?? .off
+        let tinted = zone.isLive
+        return VStack(spacing: 0) {
+            runHeader(info)
+            Spacer(minLength: 0)
+            runMainRow(info)
+            Spacer(minLength: 0)
+            GrassStrip(
+                fill: info.grass,
+                tone: tinted ? .tint(zone.tint) : info.grassTone,
+                off: tinted ? zone.tint.opacity(0.28) : .wmGrassOff
+            )
+            .padding(.horizontal, -2)
+            .frame(height: Grass.rowHeight * 3, alignment: .top)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .frame(height: 160)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(zone.edge, lineWidth: 1)
+                .shadow(color: zone.edgeGlow, radius: 9)
+        )
+    }
+
+    // 22 pt: crest 18, EASY RUN / RUN-WALK on an xs flap, "1.41 km", the icon 22.
+    private func runHeader(_ info: LAInfo) -> some View {
+        HStack(spacing: 7) {
+            CrestImage()
+                .frame(width: 18, height: 20)
+            FitFlap(text: info.runTitle, size: FlapSize.xs)
+                .layoutPriority(1)
+            Spacer(minLength: 4)
+            if let km = info.kmText {
+                Text(km)
+                    .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.wmBody)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.trailing, 6)
+            }
+            SessionIcon(context: context)
+                .frame(width: 22, height: 22)
+        }
+        .frame(height: 22)
+    }
+
+    // 62 pt: the lg clock, then RUNNING / EASE OFF over the heart (14) and
+    // the bpm in the zone's colour, then the stones (the wide one on an easy
+    // run, the pair on a run-walk, same right edge).
+    private func runMainRow(_ info: LAInfo) -> some View {
+        let flap = info.runFlap
+        return HStack(alignment: .center, spacing: 10) {
+            BigTiles(info: info, size: FlapSize.lg)
+            VStack(alignment: .leading, spacing: 5) {
+                FitFlap(text: flap.text, size: FlapSize.xs, tone: flap.tone)
+                HStack(spacing: 3) {
+                    LiveHeart(info: info, size: 14, peak: 0.3, radius: 2)
+                    (Text(info.bpmText)
+                        .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(info.heartZone.number)
+                     + Text(" bpm")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.wmBody))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.leading, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+            RuneRow(info: info, spacing: 10)
+        }
+        .frame(height: 62)
     }
 
     // Today's card (page 44): every session but a bag round with its combo.
@@ -998,7 +1484,14 @@ private struct CompactTrailing: View {
 
     var body: some View {
         let info = LAInfo(context: context)
-        if info.isComplete {
+        if info.isStrapRun {
+            // Page 74: the bpm in the zone's colour ("--" dim with no strap).
+            Text(info.bpmText)
+                .font(.system(size: 16, weight: .bold, design: .monospaced))
+                .foregroundStyle(info.heartZone.number)
+                .lineLimit(1)
+                .fixedSize()
+        } else if info.isComplete {
             CrestImage()
                 .frame(width: 18, height: 20)
         } else if info.timeUp {
@@ -1025,16 +1518,25 @@ private struct ExpandedCenter: View {
 
     var body: some View {
         let info = LAInfo(context: context)
-        VStack(alignment: .leading, spacing: 4) {
-            FitFlap(text: info.islandFlap, size: FlapSize.xs, tone: info.isComplete ? .gold : info.phaseTone)
-            if let line = info.islandLine, !line.isEmpty {
-                Text(line)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.wmBody)
-                    .lineLimit(1)
+        if info.isStrapRun {
+            // Page 74: the run on an xs flap over the time (mono 30).
+            VStack(alignment: .center, spacing: 6) {
+                FitFlap(text: info.runTitle, size: FlapSize.xs)
+                BigTimeText(info: info)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                FitFlap(text: info.islandFlap, size: FlapSize.xs, tone: info.isComplete ? .gold : info.phaseTone)
+                if let line = info.islandLine, !line.isEmpty {
+                    Text(line)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.wmBody)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
@@ -1045,7 +1547,20 @@ private struct ExpandedTrailing: View {
     var body: some View {
         let info = LAInfo(context: context)
         Group {
-            if info.isComplete {
+            if info.isStrapRun {
+                // Page 74: the big bpm in the zone's colour, BPM small under it.
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(info.bpmText)
+                        .font(.system(size: 34, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(info.heartZone.number)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text("BPM")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .tracking(1.3)
+                        .foregroundStyle(Color(wmHex: 0xF0E6C0, opacity: 0.75))
+                }
+            } else if info.isComplete {
                 CrestImage(big: true)
                     .frame(width: 36, height: 40)
                     .shadow(color: Color.wmGrassGold.opacity(0.55), radius: 6)
@@ -1065,14 +1580,134 @@ private struct ExpandedBottom: View {
 
     var body: some View {
         let info = LAInfo(context: context)
-        VStack(spacing: 8) {
-            GrassStrip(fill: info.grass, tone: info.grassTone)
-            if !info.actions.isEmpty {
-                RuneRow(info: info, spacing: 16)
-                    .frame(maxWidth: .infinity)
+        if info.isStrapRun {
+            // Page 74: the distance, the flap, the stones (the wide 96 x 44 on
+            // an easy run, the pair 44 + 44 with an 8 pt gap on a run-walk).
+            HStack(alignment: .center, spacing: 0) {
+                Text(info.kmText ?? "")
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color(wmHex: 0xE8DCB4))
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: 6)
+                IslandRunFlap(info: info)
+                Spacer(minLength: 6)
+                RuneRow(info: info, spacing: 8)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 44)
+        } else {
+            VStack(spacing: 8) {
+                GrassStrip(fill: info.grass, tone: info.grassTone)
+                if !info.actions.isEmpty {
+                    RuneRow(info: info, spacing: 16)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.top, 4)
+        }
+    }
+}
+
+// The time on the expanded island (mono 30 bold), counting by itself.
+@available(iOS 16.2, *)
+private struct BigTimeText: View {
+    let info: LAInfo
+
+    var body: some View {
+        Group {
+            if info.timeUp {
+                Text(formatDuration(0))
+            } else {
+                clockText(info.state)
             }
         }
-        .padding(.top, 4)
+        .font(.system(size: 30, weight: .bold, design: .monospaced))
+        .foregroundStyle(Color.wmInk.opacity(info.state.isPaused ? 0.74 : 1))
+        .multilineTextAlignment(.center)
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+    }
+}
+
+// The island's flap: PAUSED, EASE OFF (clay) when over, "no strap" (dim
+// text), RUN 3 OF 6 on a run-walk when the app sends the piece, RUNNING.
+@available(iOS 16.2, *)
+private struct IslandRunFlap: View {
+    let info: LAInfo
+
+    var body: some View {
+        if info.state.isPaused {
+            FitFlap(text: "PAUSED", size: FlapSize.xs)
+        } else if info.zone == .over {
+            FitFlap(text: "EASE OFF", size: FlapSize.xs, tone: .clay)
+        } else if !info.heartZone.isLive {
+            Text("no strap")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color(wmHex: 0xA9B8B0))
+                .lineLimit(1)
+                .fixedSize()
+        } else if let piece = info.runPieceFlap {
+            FitFlap(text: piece, size: FlapSize.xs, tone: info.isRest ? .teal : .gold)
+        } else if info.timeUp {
+            FitFlap(text: "TIME", size: FlapSize.xs, tone: .clay)
+        } else if info.isRunWalk && info.isRest {
+            FitFlap(text: "WALK", size: FlapSize.xs, tone: .teal)
+        } else {
+            FitFlap(text: "RUNNING", size: FlapSize.xs, tone: .gold)
+        }
+    }
+}
+
+// Compact leading: the session icon, or (page 74) the heart container.
+@available(iOS 16.2, *)
+private struct CompactLeading: View {
+    let context: ActivityViewContext<WaymarkActivityAttributes>
+
+    var body: some View {
+        let info = LAInfo(context: context)
+        if info.isStrapRun {
+            LiveHeart(info: info, size: 22, peak: 0.35, radius: 3)
+        } else {
+            SessionIcon(context: context)
+                .frame(width: 24, height: 24)
+        }
+    }
+}
+
+// Minimal: the session icon, or the heart alone.
+@available(iOS 16.2, *)
+private struct MinimalView: View {
+    let context: ActivityViewContext<WaymarkActivityAttributes>
+
+    var body: some View {
+        let info = LAInfo(context: context)
+        if info.isStrapRun {
+            LiveHeart(info: info, size: 22, peak: 0.35, radius: 3)
+        } else {
+            SessionIcon(context: context)
+                .frame(width: 22, height: 22)
+        }
+    }
+}
+
+// Expanded leading: the session icon, or the heart at 44.
+@available(iOS 16.2, *)
+private struct ExpandedLeading: View {
+    let context: ActivityViewContext<WaymarkActivityAttributes>
+
+    var body: some View {
+        let info = LAInfo(context: context)
+        Group {
+            if info.isStrapRun {
+                LiveHeart(info: info, size: 44, peak: 0.55, radius: 5)
+            } else {
+                SessionIcon(context: context)
+                    .frame(width: 36, height: 36)
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .padding(.leading, 2)
     }
 }
 
@@ -1090,10 +1725,7 @@ struct WaymarkActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    SessionIcon(context: context)
-                        .frame(width: 36, height: 36)
-                        .frame(maxHeight: .infinity)
-                        .padding(.leading, 2)
+                    ExpandedLeading(context: context)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     ExpandedCenter(context: context)
@@ -1105,13 +1737,11 @@ struct WaymarkActivityWidget: Widget {
                     ExpandedBottom(context: context)
                 }
             } compactLeading: {
-                SessionIcon(context: context)
-                    .frame(width: 24, height: 24)
+                CompactLeading(context: context)
             } compactTrailing: {
                 CompactTrailing(context: context)
             } minimal: {
-                SessionIcon(context: context)
-                    .frame(width: 22, height: 22)
+                MinimalView(context: context)
             }
             .widgetURL(WaymarkLiveURL.session)
         }

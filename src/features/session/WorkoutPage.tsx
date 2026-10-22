@@ -8,7 +8,7 @@ import { estimatedMinutes } from '@/lib/coach/sessions'
 import { getTodayISO } from '@/lib/dates'
 import { ApiError, apiFetch, newIdempotencyKey } from '@/lib/api'
 import { loadWithCopy, writeWorkoutCache } from '@/lib/workoutCache'
-import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
+import { dropSessionWrites, flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
 import { EffortCard } from '@/features/blockZero/EffortCard'
 import { asksEffort, effortWrite } from '@/features/blockZero/effort'
 import { setPlace } from '@/lib/setPlace'
@@ -70,7 +70,8 @@ import { StrengthExerciseView } from './StrengthExerciseView'
 import type { StrengthSection } from './strengthMicrocopy'
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
-import { endLiveActivity } from '@/lib/liveActivity'
+import { endAllLiveActivities, endLiveActivity } from '@/lib/liveActivity'
+import { runRecorder } from '@/lib/runRecorder'
 import { coachLine } from '@/lib/coachLine'
 
 // ─── Shared types ──────────────────────────────────────────────
@@ -528,10 +529,35 @@ export function WorkoutPage() {
     writeResume()
     setPhase('complete')
   }
-  const navRef = useRef({ leave: leaveSession, end: endSession })
-  navRef.current = { leave: leaveSession, end: endSession }
+  /**
+   * DISCARD (page 74, the × held 3 s, then the small ember plate): the session
+   * goes back to planned and nothing of it is kept, so the coach sees nothing.
+   * Its queued writes never go out, a run's recording is thrown away, the
+   * lock-screen card goes, and it's back to Today.
+   */
+  function discardSession() {
+    if (!id) return
+    armedRef.current = false
+    const s = resumeStorage()
+    clearResume(s, id)
+    clearLiveSession(s, id)
+    storageRemoveItem(`waymark_close_note:${id}`)
+    storageRemoveItem(roundSecsKey(id))
+    storageRemoveItem(carryKey(id))
+    void cancelAllCues()
+    if (sessionType === 'running' || sessionType === 'foundation_run') void runRecorder().discard().catch(() => {})
+    void endAllLiveActivities()
+    // Writes this session queued (set logs, a recorded run) stay on the phone, unsent; then the discard itself.
+    dropSessionWrites(id)
+    void queueWrite({ method: 'POST', path: `/api/sessions/${id}/discard`, body: {}, sessionId: null, kind: 'session_discard', key: `discard-${id}-${finishKeyRef.current}` })
+      .then(r => { if (r === 'rejected') logger.warn('session', 'session discard refused', { sessionId: id }, 'POST /sessions/:id/discard was refused (finished already?).') })
+    logger.sessionEvent('session discarded', { sessionId: id })
+    navigate('/today', { replace: true })
+  }
+  const navRef = useRef({ leave: leaveSession, end: endSession, discard: discardSession })
+  navRef.current = { leave: leaveSession, end: endSession, discard: discardSession }
   useEffect(() => {
-    setSessionNav({ leave: () => navRef.current.leave(), end: () => navRef.current.end() })
+    setSessionNav({ leave: () => navRef.current.leave(), end: () => navRef.current.end(), discard: () => navRef.current.discard() })
     return () => setSessionNav(null)
   }, [])
 

@@ -100,3 +100,22 @@
 .ss-ar:disabled { opacity: 0.45; cursor: default; }
 .ss-v { display: flex; align-items: baseline; gap: 8px; }
 .ss-u { font: 700 14px var(--font-body); letter-spacing: 0.14em; color: #c9d6cf; text-transform: uppercase; }
+
+/* ─── page 74: the run screen, the content fills the page ───
+   Between the stop row and the grass (47%): the bigger clock (84 px flaps), the phase word, and the
+   heart, BPM and distance as a larger row, evenly spaced down to the grass. Nothing on the grass. */
+.ss-runmid { flex: none; height: calc(53% - 0.47 * env(safe-area-inset-top, 0px) - 48px); min-height: 300px; display: flex; flex-direction: column; justify-content: space-evenly; }
+.tm-clock.is-big { margin-top: 0; min-height: 0; }
+.tm-clock.is-big .wm-flap.is-xl { font-size: 84px; gap: 5px; }
+.tm-phase.is-big { margin-top: 0; }
+.ss-live { display: flex; justify-content: center; align-items: center; gap: 22px; }
+.ss-stt { display: flex; align-items: baseline; gap: 6px; }
+.ss-stt .wm-flap.is-lg { font-size: 34px; }
+.ss-u { font: 700 14px/1 var(--font-mono); letter-spacing: 0.1em; color: rgba(240, 230, 192, 0.75); }
+.ss-hshow { width: 92px; height: 92px; display: grid; place-items: center; align-self: center; margin: -6px -4px -6px -10px; }
+/* the number in the zone's colour: teal, gold at the top, ember over; ~1 s on the page 59 ease-out */
+.ss-hrn .wm-cell { color: #4acaaa !important; transition: color 1s cubic-bezier(0.16, 1, 0.3, 1); }
+.ss-hrn.is-gold .wm-cell { color: #e8c878 !important; }
+.ss-hrn.is-over .wm-cell { color: #e8946e !important; }
+.ss-dashes .wm-cell { color: rgba(240, 230, 192, 0.7); }
+@media (prefers-reduced-motion: reduce) { .ss-hrn .wm-cell { transition: none; } }

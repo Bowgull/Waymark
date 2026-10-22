@@ -20,6 +20,8 @@ interface TimerFaceProps {
   track?: TimerTrack
   /** Page 31 spacing (clock 16 px down, 110 tall, phase 10 px under) instead of page 19's (18, 118, 12). */
   compact?: boolean
+  /** Page 74 (a run, the content fills the page): bigger flaps (84 px), the clock and phase spaced by the parent. */
+  big?: boolean
 }
 
 /**
@@ -29,7 +31,7 @@ interface TimerFaceProps {
  * last 10 s (digits and the phase word; the clock grows 6% at red); holds and
  * rest swell, brighten and breathe from 5 s out.
  */
-export function TimerFace({ seconds: liveSeconds, kind, heat, tone = 'ink', label: liveLabel, labelTone = 'gold', track, compact = false }: TimerFaceProps) {
+export function TimerFace({ seconds: liveSeconds, kind, heat, tone = 'ink', label: liveLabel, labelTone = 'gold', track, compact = false, big = false }: TimerFaceProps) {
   // Held × (page 19): the clock stops where it was and the phase word flips to ENDED.
   const ended = useContext(SessionEndedContext)
   const [stoppedAt, setStoppedAt] = useState<number | null>(null)
@@ -54,7 +56,7 @@ export function TimerFace({ seconds: liveSeconds, kind, heat, tone = 'ink', labe
     <>
       <div
         ref={clockRef}
-        className={`tm-clock${compact ? ' is-compact' : ''}${red ? ' is-red' : ''}`}
+        className={`tm-clock${compact ? ' is-compact' : ''}${big ? ' is-big' : ''}${red ? ' is-red' : ''}`}
         data-no-cascade
         role="timer"
         aria-label={`${Math.floor(seconds / 60)} minutes ${seconds % 60} seconds`}
@@ -67,7 +69,7 @@ export function TimerFace({ seconds: liveSeconds, kind, heat, tone = 'ink', labe
         <FlapLabel text={d[3]} size="xl" tone={digitTone} className={digitClass} />
       </div>
       {label && (
-        <div ref={phaseRef} className={`tm-phase${compact ? ' is-compact' : ''}`}>
+        <div ref={phaseRef} className={`tm-phase${compact ? ' is-compact' : ''}${big ? ' is-big' : ''}`}>
           <FlapLabel text={label} size="md" tone={heat ? 'ink' : labelTone} className={heat ? `is-${heat}` : ''} />
         </div>
       )}

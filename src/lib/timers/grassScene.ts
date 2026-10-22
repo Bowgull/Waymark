@@ -55,6 +55,12 @@ export interface GrassParams {
   /** A tap ripple: where and when (s). */
   touch?: { x: number; y: number; at: number; col?: RGB } | null
   calm?: boolean
+  /** Page 74: the zone's tint through the grass, [teal mix, gold mix, ember] (hrZoneState ZONE_TINT, eased by the caller). */
+  zone?: readonly [number, number, number]
+  /** Page 74 (bend, Josh's pick): the finish hold, 0..1; the grass flattens in a widening wave from (wx, wy). */
+  wave?: number
+  wx?: number
+  wy?: number
 }
 
 /** The pull's beam of light up the grass above the finger at (fx, fy), as strong as the pull k. */
@@ -104,6 +110,39 @@ export function timerCell(x: number, y: number, t: number, p: GrassParams, now: 
   return cell
 }
 
+const TEALD: RGB = [30, 138, 104], GOLDD: RGB = [150, 118, 52], EMBER: RGB = [236, 138, 94], EMBERH: RGB = [255, 188, 140]
+const CLAYD: RGB = [C.clay[0] * 0.6, C.clay[1] * 0.6, C.clay[2] * 0.6]
+
+/**
+ * The run's grass (page 74 `timerZone`): the timer cell, then the zone's tint
+ * (the rest teal showing through, gold to watch it, ember over the line), then
+ * the finish hold's bend: a soft wave from the thumb, the blades leaning then
+ * lying flat with a smoothstep fall-off behind the front, a bright crest on it.
+ */
+export function zoneCell(x: number, y: number, t: number, p: GrassParams, now: number): Cell {
+  const c = timerCell(x, y, t, p, now)
+  let col = c.c
+  const z = p.zone
+  if (z && (z[0] > 0 || z[1] > 0 || z[2] > 0)) {
+    const l = (0.3 * col[0] + 0.59 * col[1] + 0.11 * col[2]) / 255
+    if (z[0] > 0) col = mix(col, mix(TEALD, C.teal, Math.min(1, l * 1.4)), z[0])
+    if (z[1] > 0) col = mix(col, mix(GOLDD, C.gold, Math.min(1, l * 1.3)), z[1])
+    if (z[2] > 0) col = mix(col, l > 0.5 ? mix(EMBER, EMBERH, (l - 0.5) * 2) : mix(CLAYD, C.clay, l * 2), z[2])
+  }
+  const wave = p.wave ?? 0
+  if (wave > 0) {
+    const wx = p.wx ?? 0.5, wy = p.wy ?? 0.9
+    const d = Math.hypot((x - wx) * 1.6, y - wy), r = wave * 1.9, band = 0.32
+    const q = Math.max(0, Math.min(1, (r - d) / band)), k = q * q * (3 - 2 * q)
+    if (k > 0.02) {
+      const crest = Math.exp(-Math.pow((r - d) / 0.06, 2)), left = x < wx
+      const ch = k < 0.3 ? c.ch : k < 0.55 ? (left ? '\\' : '/') : k < 0.8 ? '-' : '_'
+      return { ch, c: mix(mix(col, mix(GOLDD, C.gold, 0.75), k), [255, 236, 170], crest * 0.8), b: Math.min(1, c.b * (1 - k) + 0.72 * k + 0.35 * crest) }
+    }
+  }
+  return { ...c, c: col }
+}
+
 /** The glyph and fill for a cell (wm.js mountAscii), or null when it draws nothing. */
 export function cellGlyph(cell: Cell, dim = 1): { glyph: string; fill: string } | null {
   const b = Math.pow(clamp(cell.b), 0.6) * dim
@@ -124,7 +163,7 @@ export function grassGrid(width: number, height: number, font = 14): { cols: num
 export function drawGrass(g: CanvasRenderingContext2D, grid: { cols: number; rows: number; cw: number; ch: number }, t: number, p: GrassParams, now: number): void {
   g.clearRect(0, 0, grid.cols * grid.cw, grid.rows * grid.ch)
   for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
-    const out = cellGlyph(timerCell(c / grid.cols, r / grid.rows, t, p, now))
+    const out = cellGlyph((p.zone || p.wave ? zoneCell : timerCell)(c / grid.cols, r / grid.rows, t, p, now))
     if (!out) continue
     g.fillStyle = out.fill
     g.fillText(out.glyph, c * grid.cw, r * grid.ch)
