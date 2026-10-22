@@ -47,3 +47,7 @@ replay-*.sqlite
 backup-copy.sqlite
 waymark-db-*.sql
 sim-*.json
+
+# Personal files (never commit)
+*CONDITIONING JOURNAL*.xlsx
+WAYMARK_SESSION_HANDOFF.md
