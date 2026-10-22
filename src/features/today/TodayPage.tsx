@@ -143,6 +143,11 @@ export function TodayPage() {
   const stripId = useStripSessionId()
   // Page 71 item 6: the row that is flying (down into the strip, or back up into the list).
   const [flying, setFlying] = useState<{ id: string; kind: 'lift' | 'land' } | null>(null)
+  // Today has its day and the stepped-out session is not in it: nothing to lift, the strip shows now.
+  useEffect(() => {
+    if (loading || flying || !stripId || !hasHandoff('lift', stripId)) return
+    if (!sessions.some(s => s.id === stripId)) endHandoff('lift', stripId)
+  }, [loading, flying, stripId, sessions])
   if (!flying && sessions.length > 0) {
     if (stripId && hasHandoff('lift', stripId) && sessions.some(s => s.id === stripId)) setFlying({ id: stripId, kind: 'lift' })
     else {

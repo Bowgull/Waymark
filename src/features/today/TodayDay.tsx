@@ -12,7 +12,7 @@ import { overCapBpm, stravaReadouts } from '@/lib/stravaMatch'
 import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
 import { Expand, Strike, SwapRow, Tick } from '@/design/MotionPrimitives'
 import { useSwapList } from '@/design/motionKit'
-import { flyRowToStrip, flyStripToRow } from '@/app/liveHandoff'
+import { bringIntoSight, endHandoff, flyRowToStrip, flyStripToRow, holdHandoff, whenSettled } from '@/app/liveHandoff'
 
 /** A run's Strava / manual row, attached by GET /api/sessions/today. */
 export interface RunSessionSummary {
@@ -133,13 +133,19 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
     const el = rowRef.current
     if (!fly || !el) return
     if (fly === 'land') el.style.visibility = 'hidden'
+    // the row is drawn: the strip stays unseen until the flight lands, however long Today took
+    holdHandoff(fly, s.id)
+    // Today opens with the row in sight (before its first paint, after the tab lands at its window)
+    const sight = requestAnimationFrame(() => { bringIntoSight(el) })
     let stop: (() => void) | null = null
-    // after the boards' own rise (choreography: up to ~0.5 s), so the row is where it will stay
-    const t = window.setTimeout(() => {
+    // measured only once Today has stopped arriving (the boards' rise, heights gliding), so the
+    // copy starts from where the row really stays
+    const cancel = whenSettled(el, () => {
       stop = (fly === 'lift' ? flyRowToStrip : flyStripToRow)(el, () => flownRef.current?.())
-    }, 450)
-    return () => { window.clearTimeout(t); stop?.() }
-  }, [fly])
+    })
+    // left before it flew (Today unmounted): the strip shows, nothing waits on it
+    return () => { cancelAnimationFrame(sight); cancel(); if (stop) stop(); else endHandoff(fly, s.id) }
+  }, [fly, s.id])
   const [endOpen, setEndOpen] = useState(false)
   const actionable = isActionableTodaySession(s.status, false)
   const done = s.status === 'completed'
