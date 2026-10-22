@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { FlapLabel, SessionIcon, type SessionIconKey } from '@/design'
 import { liveLine, readLiveSession, type LiveSession } from '@/lib/liveSession'
 import { loadResume } from '@/lib/sessionResume'
+
+import { noteStripBox, useLiftPending } from './liveHandoff'
 
 function storage(): Storage | null {
   try { return window.localStorage } catch { return null }
@@ -33,9 +35,13 @@ function useLiveSession(): { live: LiveSession; line: string; clock: string; fil
 export function LiveStrip() {
   const navigate = useNavigate()
   const v = useLiveSession()
+  const ref = useRef<HTMLButtonElement>(null)
+  // page 71 item 6: while Today's row is flying down into it, the strip keeps its place unseen
+  const awaiting = useLiftPending(v?.live.sessionId ?? null)
+  useLayoutEffect(() => { noteStripBox(ref.current) })
   if (!v) return null
   return (
-    <button type="button" className="wm-live" onClick={() => navigate(`/session/${v.live.sessionId}`)} aria-label={`${v.live.name}, ${v.line}, ${v.clock}. Back into the session.`}>
+    <button ref={ref} type="button" className={`wm-live${awaiting ? ' is-awaiting' : ''}`} onClick={() => navigate(`/session/${v.live.sessionId}`)} aria-label={`${v.live.name}, ${v.line}, ${v.clock}. Back into the session.`}>
       <SessionIcon kind={v.live.icon as SessionIconKey} size={36} label="" />
       <span className="tx">
         <FlapLabel text={v.live.name} size="sm" animate={false} />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { GrassZone, Pips, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
+import { GrassZone, Pips, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
 import {
   scheduleRoundCuesUntil,
   scheduleRestCuesUntil,
@@ -250,7 +250,8 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
           kind={resting ? 'rest' : 'work'}
           mode={resting ? 'rest' : skipping ? 'work' : 'ready'}
           heat={heat}
-          onTap={skipPhase === 'ready' ? undefined : togglePause}
+          state={skipPhase === 'ready' ? 'ready' : paused ? 'paused' : 'running'}
+          onTap={skipPhase === 'ready' ? startRound : togglePause}
           onSkip={skipPhase === 'ready' ? undefined : skip}
         />
       }
@@ -265,11 +266,6 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
         labelTone={resting ? 'teal' : 'gold'}
         track={track}
       />
-      {skipPhase === 'ready' && (
-        <div className="tm-wide">
-          <SessionButton label="START ROUND" primary onClick={startRound} />
-        </div>
-      )}
     </SessionFrame>
   )
 }

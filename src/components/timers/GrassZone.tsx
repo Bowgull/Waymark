@@ -1,11 +1,34 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { useReducedMotion } from '@/design'
 import { drawGrass, grassGrid, type GrassMode, type GrassParams } from '@/lib/timers/grassScene'
+import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { HEAT_RGB, progressOf, pullAmount, releaseAction, settlePull, swellBreath, swellK, trackRemainingMs, type Heat, type TimerKind, type TimerTrack } from '@/lib/timers/timerLook'
 
 const CALM_FINGER: [number, number, number] = [170, 236, 214]
 const WORK_FINGER: [number, number, number] = [236, 206, 120]
+
+/** Set once the grass has started a timer on this phone (page 71: the boxed TAP THE GRASS TO START shows the first time only). */
+const GRASS_TAUGHT_KEY = 'wm.grassStartTaught'
+
+/**
+ * Where the timer is (page 71): ready = not started (the grass starts it),
+ * running = TAP · PAUSE, paused = PAUSED · TAP TO GO ON.
+ */
+export type GrassState = 'ready' | 'running' | 'paused'
+
+/** The hint at the grass's foot for each state (page 71). */
+function grassHint(state: GrassState, taught: boolean): string {
+  if (state === 'ready') return taught ? 'TAP TO START' : 'TAP THE GRASS TO START'
+  return state === 'paused' ? 'PAUSED · TAP TO GO ON' : 'TAP · PAUSE'
+}
+
+function grassLabel(state: GrassState, canSkip: boolean): string {
+  const skip = canSkip ? ' Swipe up to skip.' : ''
+  if (state === 'ready') return 'Timer. Tap to start.'
+  if (state === 'paused') return `Timer paused. Tap to go on.${skip}`
+  return `Timer. Tap to pause.${skip}`
+}
 
 interface GrassZoneProps {
   track: TimerTrack
@@ -14,15 +37,19 @@ interface GrassZoneProps {
   /** Rest between rounds of a work timer draws teal too. */
   mode?: GrassMode
   heat?: Heat | null
-  /** Tap the grass: pause / resume. */
+  /** Tap the grass: start (ready), pause / go on (running, paused). */
   onTap?: () => void
+  /** Where the timer is: sets the hint and the label (page 71). Running by default. */
+  state?: GrassState
   /** A full pull up the grass, released: skip to the next phase. */
   onSkip?: () => void
   label?: string
   /**
    * The bag round's fixed band (page 55 layout 1): the grass takes this share
    * of the screen (0.34) and carries no hint, so nothing sits on it. Every
-   * other timer keeps page 19's half screen and its TAP · PAUSE hint.
+   * other timer keeps page 19's half screen and its TAP · PAUSE hint. The
+   * band still says TAP TO START before the round and PAUSED · TAP TO GO ON
+   * while paused (page 71), so the grass is never a hidden control.
    */
   band?: number
 }
@@ -34,8 +61,13 @@ interface GrassZoneProps {
  * early settles back); the blades part around the finger with a light under it
  * and a drag leaves a fading wake.
  */
-export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Timer. Tap to pause. Swipe up to skip.', band }: GrassZoneProps) {
+export function GrassZone({ track, kind, mode, heat, onTap, onSkip, state = 'running', label, band }: GrassZoneProps) {
   const reduced = useReducedMotion()
+  // Page 71: the first time, TAP THE GRASS TO START sits in a small box mid-grass; after the
+  // grass has started a timer once on this phone it is the quiet line at the foot.
+  const [taught, setTaught] = useState(() => storageGet(GRASS_TAUGHT_KEY) === '1')
+  const stateRef = useRef(state)
+  useLayoutEffect(() => { stateRef.current = state })
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const live = useRef({ track, kind, mode, heat })
@@ -45,6 +77,10 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Tim
   const settle = useRef<{ x: number; y: number; from: number; at: number } | null>(null)
   const handlers = useRef({ onTap, onSkip })
   useLayoutEffect(() => { handlers.current = { onTap, onSkip } })
+  const tap = () => {
+    if (stateRef.current === 'ready' && handlers.current.onTap && !taught) { storageSet(GRASS_TAUGHT_KEY, '1'); setTaught(true) }
+    handlers.current.onTap?.()
+  }
 
   useEffect(() => {
     const box = boxRef.current, canvas = canvasRef.current
@@ -108,9 +144,10 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Tim
         style={band != null ? { height: `${band * 100}%` } : undefined}
         role="button"
         tabIndex={0}
-        aria-label={label}
+        aria-label={label ?? grassLabel(state, !!onSkip)}
+        aria-disabled={onTap ? undefined : true}
         onKeyDown={e => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handlers.current.onTap?.() }
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tap() }
           if (e.key === 'ArrowUp' && handlers.current.onSkip) { e.preventDefault(); handlers.current.onSkip() }
         }}
         onPointerDown={e => {
@@ -136,13 +173,17 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, label = 'Tim
           const act = handlers.current.onSkip ? releaseAction(pull, e.clientY - gesture.current.y0) : 'tap'
           if (act !== 'skip' && pull > 0 && f) settle.current = { x: f.x, y: f.y, from: pull, at: performance.now() }
           if (act === 'skip') handlers.current.onSkip?.()
-          else if (act === 'tap') handlers.current.onTap?.()
+          else if (act === 'tap') tap()
         }}
         onPointerCancel={() => { gesture.current.down = false; touch.current = { ...touch.current, finger: { x: 0, y: 0, on: false }, pull: 0 } }}
       >
         <canvas ref={canvasRef} aria-hidden />
       </div>
-      {band == null && <div className="tm-ghint" aria-hidden><span>TAP · PAUSE</span><span /></div>}
+      {(band == null || state !== 'running') && (
+        state === 'ready' && !taught
+          ? <div className="tm-ghint is-mid" aria-hidden data-hint><span>{grassHint(state, taught)}</span></div>
+          : <div className="tm-ghint" aria-hidden data-hint><span>{grassHint(state, taught)}</span><span /></div>
+      )}
     </>
   )
 }

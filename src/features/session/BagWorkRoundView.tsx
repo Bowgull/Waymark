@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 import { FlapLabel } from '@/design'
-import { GrassZone, RoundClock, SessionButton, SessionFrame, type TimerTrack } from '@/components/timers'
+import { GrassZone, RoundClock, SessionFrame, type TimerTrack } from '@/components/timers'
 import { SessionEndedContext } from '@/components/timers/endedContext'
 import { heavyHaptic } from '@/lib/haptics'
 import {
@@ -401,7 +401,8 @@ export function BagWorkRoundView({
           mode={resting ? 'rest' : fighting ? 'work' : 'ready'}
           heat={heat}
           band={0.34}
-          onTap={phase === 'ready' ? undefined : togglePause}
+          state={phase === 'ready' ? 'ready' : paused ? 'paused' : 'running'}
+          onTap={phase === 'ready' ? handleStartRound : togglePause}
           onSkip={phase === 'ready' ? undefined : skip}
         />
       }
@@ -442,19 +443,14 @@ export function BagWorkRoundView({
           <FlapLabel text={String(shownRound)} size="xl" tone={resting ? 'teal' : 'gold'} className="bw-digit" />
           <small>OF {totalRounds}</small>
         </div>
-        {phase === 'ready' ? (
-          <div className="bw-start">
-            <SessionButton label="START ROUND" primary onClick={handleStartRound} />
-          </div>
-        ) : (
-          <RoundClock
-            seconds={shownSec}
-            kind={resting ? 'rest' : 'work'}
-            heat={heat}
-            tone={resting ? 'teal' : 'ink'}
-            track={track}
-          />
-        )}
+        {/* page 71: no START ROUND; the clock waits at the round's length and the grass starts it */}
+        <RoundClock
+          seconds={shownSec}
+          kind={resting ? 'rest' : 'work'}
+          heat={heat}
+          tone={resting ? 'teal' : 'ink'}
+          track={track}
+        />
       </div>
       <div className="bw-gspace" aria-hidden />
       {paused && <span className="sr-only" role="status"><FlapLabel text="PAUSED" size="xs" /></span>}

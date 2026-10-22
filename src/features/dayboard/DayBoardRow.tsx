@@ -1,9 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 
-import { useNavigate } from 'react-router-dom'
-
 import { AmPmFlap, FlapLabel, SessionIcon, useOutsideClose } from '@/design'
-import { readLiveSession } from '@/lib/liveSession'
 import { Rune } from '@/features/coach/Rune'
 
 import { dayRowState, type DayBoardSession, type RowContext } from './rowState'
@@ -18,6 +15,8 @@ import './dayboard.css'
 // rest; tap the icon to put it back; let go short and it springs back. Done
 // rows don't swipe. A row the coach changed carries the small rune before
 // its detail (page 56 item 7); a skipped row opened shows the reason tiles.
+// Page 71: today's running session opens like any row and reads "under way"
+// (Program's plan line); the live strip at the bottom is the way back in.
 
 /** The tucked face: a square around the icon. */
 const TUCK_PX = 62
@@ -50,11 +49,10 @@ export function DayBoardRow({ session, context, open, onToggle, onReplace, onSki
   const drag = useRef<{ x0: number; y0: number; base: number; off: number; moved: boolean } | null>(null)
   const suppressClick = useRef(false)
   const tucked = swiped && swipeable
-  const navigate = useNavigate()
-  const live = (session as { status?: string }).status === 'in_progress' && liveId() === session.id
   // page 61: an opened or swiped row closes (untucks) on a tap outside it; one at a time
-  useOutsideClose(rowRef, open && !tucked, onToggle)
-  useOutsideClose(rowRef, tucked, () => setSwiped(false))
+  // closed on the tap, not on the finger going down: the rows don't move under the finger before it lands
+  useOutsideClose(rowRef, open && !tucked, onToggle, { on: 'click' })
+  useOutsideClose(rowRef, tucked, () => setSwiped(false), { on: 'click' })
 
   function endDrag(commit: boolean) {
     const d = drag.current
@@ -100,8 +98,6 @@ export function DayBoardRow({ session, context, open, onToggle, onReplace, onSki
 
   function onClick() {
     if (suppressClick.current) { suppressClick.current = false; return }
-    // Page 61: the open session's row reads LIVE; a tap goes straight back in.
-    if (live) { navigate(`/session/${session.id}`); return }
     if (tucked) { setSwiped(false); return }
     onToggle()
   }
@@ -113,7 +109,7 @@ export function DayBoardRow({ session, context, open, onToggle, onReplace, onSki
   }
 
   const nameTone = base.status === 'skipped' ? 'struck' : base.status === 'missed' ? 'dim' : 'ink'
-  const cls = ['db-row', `is-${variant}`, open && !tucked ? 'is-open' : '', tucked ? 'is-swiped' : '', live ? 'is-live' : ''].filter(Boolean).join(' ')
+  const cls = ['db-row', `is-${variant}`, open && !tucked ? 'is-open' : '', tucked ? 'is-swiped' : ''].filter(Boolean).join(' ')
   const a11y = `${base.name}, ${base.slot.toUpperCase()}, ${base.detail}${base.status === 'done' ? ', done' : ''}`
 
   return (
@@ -151,7 +147,6 @@ export function DayBoardRow({ session, context, open, onToggle, onReplace, onSki
           <span className="db-nm"><FlapLabel text={base.name.toUpperCase()} size="sm" tone={nameTone} /></span>
           <span className="db-det">{base.rune && <Rune state={base.rune} size="row" />}{base.detail}</span>
         </div>
-        {live && <FlapLabel text="LIVE" size="xs" tone="gold" animate={false} />}
         {base.status === 'done' && <span className="db-tick" aria-hidden>✓</span>}
         <span className="db-slot"><AmPmFlap slot={base.slot} size="xs" /></span>
       </div>
@@ -169,8 +164,4 @@ export function DayBoardRow({ session, context, open, onToggle, onReplace, onSki
       </Expand>
     </div>
   )
-}
-
-function liveId(): string | null {
-  try { return readLiveSession(window.localStorage)?.sessionId ?? null } catch { return null }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon, useOutsideClose } from '@/design'
 import { CLASS_SKIP_REASONS, SKIP_PLACES, SKIP_REASONS } from '@/components/ui/departures'
@@ -10,9 +10,9 @@ import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } 
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
 import { overCapBpm, stravaReadouts } from '@/lib/stravaMatch'
 import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
-import { readLiveSession } from '@/lib/liveSession'
 import { Expand, Strike, SwapRow, Tick } from '@/design/MotionPrimitives'
 import { useSwapList } from '@/design/motionKit'
+import { bringIntoSight, endHandoff, flyRowToStrip, flyStripToRow, holdHandoff, whenSettled } from '@/app/liveHandoff'
 
 /** A run's Strava / manual row, attached by GET /api/sessions/today. */
 export interface RunSessionSummary {
@@ -68,6 +68,9 @@ export interface TodayDayProps {
   onLearned?: (sessionId: string, mtLogId: string) => void
   /** Classes whose note was written here since Today loaded (the line goes). */
   learnedSaved?: ReadonlySet<string>
+  /** Page 71 item 6: the row flying down into the live strip (lift) or back up from it (land). */
+  flying?: { id: string; kind: 'lift' | 'land' } | null
+  onFlown?: () => void
 }
 
 /** Strava's run matched this planned run and waits for CONFIRM (page 40, phone 1). */
@@ -120,8 +123,29 @@ export function TodayDay(props: TodayDayProps) {
   )
 }
 
-function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason, weekNumber, onLearned, learnedSaved }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
+function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason, weekNumber, onLearned, learnedSaved, flying, onFlown }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
   const rowRef = useRef<HTMLDivElement>(null)
+  // Page 71 item 6: this row flies (once its place is drawn and Today has risen).
+  const fly = flying?.id === s.id ? flying.kind : null
+  const flownRef = useRef(onFlown)
+  useEffect(() => { flownRef.current = onFlown })
+  useLayoutEffect(() => {
+    const el = rowRef.current
+    if (!fly || !el) return
+    if (fly === 'land') el.style.visibility = 'hidden'
+    // the row is drawn: the strip stays unseen until the flight lands, however long Today took
+    holdHandoff(fly, s.id)
+    // Today opens with the row in sight (before its first paint, after the tab lands at its window)
+    const sight = requestAnimationFrame(() => { bringIntoSight(el) })
+    let stop: (() => void) | null = null
+    // measured only once Today has stopped arriving (the boards' rise, heights gliding), so the
+    // copy starts from where the row really stays
+    const cancel = whenSettled(el, () => {
+      stop = (fly === 'lift' ? flyRowToStrip : flyStripToRow)(el, () => flownRef.current?.())
+    })
+    // left before it flew (Today unmounted): the strip shows, nothing waits on it
+    return () => { cancelAnimationFrame(sight); cancel(); if (stop) stop(); else endHandoff(fly, s.id) }
+  }, [fly, s.id])
   const [endOpen, setEndOpen] = useState(false)
   const actionable = isActionableTodaySession(s.status, false)
   const done = s.status === 'completed'
@@ -135,21 +159,20 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
   const rune = !skipped ? runes?.[s.id] ?? null : null
   const skip = skipped ? skipReasons?.[s.id] ?? null : null
   const tiles = open && skip != null && onSkipReason != null
-  useOutsideClose(rowRef, open, onToggle)
-  // Page 61, 3B: the open session's row is lit and reads LIVE; a tap goes straight back in.
-  const live = s.status === 'in_progress' && liveSessionId() === s.id
-  const tap = live ? () => onStart(s.id) : onToggle
+  // Page 71 / the layout-shift fix: close on the tap, so the rows don't move under the finger before it lands.
+  useOutsideClose(rowRef, open, onToggle, { on: 'click' })
+  // Page 71: the running session is not in this list (TodayPage leaves it out); the live strip is the way back in.
+  const tap = onToggle
 
   return (
-    <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${tiles ? ' is-openx' : ''}${live ? ' is-live' : ''}`}>
-      <div role="button" tabIndex={0} aria-expanded={open} aria-label={live ? `${name}, live. Back into the session.` : undefined} className="td-rowhit" onClick={tap} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tap() } }}>
+    <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${tiles ? ' is-openx' : ''}`}>
+      <div role="button" tabIndex={0} aria-expanded={open} className="td-rowhit" onClick={tap} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tap() } }}>
         <SessionIcon kind={iconFor(s)} size={40} />
         <span className="td-nm"><FlapLabel text={name} size="md" len={11} fit /><Strike on={skipped} /></span>
         {stravaMin != null ? (
           <><span className="td-mins">{stravaMin}min</span><Tick className="td-stick" /></>
         ) : done ? <>{rune && <Rune state={rune} size="row" />}<Tick className={open ? 'td-tick' : 'td-mins'} /></>
           : tiles ? <span className="td-skd">SKIPPED</span>
-          : live ? <FlapLabel text="LIVE" size="xs" tone="gold" animate={false} />
           : <>{rune && <Rune state={rune} size="row" />}<span className="td-mins">{mins}</span></>}
       </div>
       <Expand open={tiles}>
@@ -268,8 +291,4 @@ function EndHold({ onHeld }: { onHeld: () => void }) {
       <button type="button" aria-label="Hold to end early" className={`td-xbtn${holding ? ' is-hold' : ''}`} onPointerDown={start} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onContextMenu={e => e.preventDefault()}>×</button>
     </span>
   )
-}
-
-function liveSessionId(): string | null {
-  try { return readLiveSession(window.localStorage)?.sessionId ?? null } catch { return null }
 }

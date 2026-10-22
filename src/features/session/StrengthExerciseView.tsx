@@ -124,7 +124,7 @@ export function StrengthExerciseView({
         count={currentSet ? `${currentSet.setNumber}/${currentSet.totalSets}` : undefined}
         onEnd={onExit}
         paused={!!restState.isPaused}
-        grass={<GrassZone track={track} kind="rest" onTap={restState.onTogglePause} onSkip={onNextSet} />}
+        grass={<GrassZone track={track} kind="rest" state={restState.isPaused ? 'paused' : 'running'} onTap={restState.onTogglePause} onSkip={onNextSet} />}
       >
         <div className="tm-center" style={{ marginTop: 16 }}>
           <span className="wm-label" style={{ lineHeight: 1 }}>Resting after</span>

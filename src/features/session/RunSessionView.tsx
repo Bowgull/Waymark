@@ -660,7 +660,7 @@ export function RunSessionView({
           count={seg ? runWalkCount(seg, rounds) : 'RUN'}
           onEnd={onExit}
           paused={runPaused}
-          grass={<GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} onTap={toggleRunPause} onSkip={finishRun} />}
+          grass={<GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} state={runPaused ? 'paused' : 'running'} onTap={toggleRunPause} onSkip={finishRun} />}
         >
           {chips.length > 0 && (
             <div className="wm-board" style={{ margin: '12px 14px 0' }}>

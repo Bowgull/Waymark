@@ -123,4 +123,3 @@
 /* Page 49, if skipped: the opened class row's one small line, + What you learned (teal, no chip). */
 .db-sum-p.db-learned { margin-top: 8px; }
 .db-learned-lnk { appearance: none; border: 0; padding: 0; background: none; cursor: pointer; font: 700 13px var(--font-body); color: #8fc4b0; letter-spacing: .04em; }
-.db-row.is-live .db-face { box-shadow: inset 3px 0 0 #b8984a; background: linear-gradient(90deg, rgba(184, 152, 74, 0.16), transparent 70%); }

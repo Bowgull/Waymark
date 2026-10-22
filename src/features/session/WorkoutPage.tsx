@@ -43,6 +43,7 @@ import {
 import { clearLiveSession, pauseAt, savedSummary, takeLaunch, writeLiveSession } from '@/lib/liveSession'
 import { BackInSessionScreen } from '@/components/ui/ErrorScreens'
 import { setSessionNav } from '@/components/timers/endedContext'
+import { markHandoff } from '@/app/liveHandoff'
 import { logger } from '@/lib/logger'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/Toast'
@@ -277,8 +278,9 @@ type RoundPhase = 'ready' | 'fighting' | 'rest'
 /**
  * The skip-rope warm-up before bag work or strength (page 31 "Rope warm-up"):
  * WARM UP with the rope icon, SKIP ROPE and its line, the clock on the grass.
- * Before you start: START WARM UP. Running: SKIP, then FINISH with the heat in
- * the last 10 s; SKIP WARM UP moves on (so does a swipe up the grass).
+ * Before you start: READY, and the grass starts it (page 71, no start button).
+ * Running: SKIP, then FINISH with the heat in the last 10 s; SKIP WARM UP moves
+ * on (so does a swipe up the grass).
  */
 function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersist, onExit }: {
   durationSec: number
@@ -337,18 +339,18 @@ function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersi
       icon="rope"
       onEnd={onExit}
       paused={running && timer.isPaused}
-      grass={<GrassZone track={track} kind="work" mode={running ? 'work' : 'ready'} heat={heat} onTap={running ? togglePause : undefined} onSkip={running ? onComplete : undefined} />}
+      grass={<GrassZone track={track} kind="work" mode={running ? 'work' : 'ready'} heat={heat} state={!running ? 'ready' : timer.isPaused ? 'paused' : 'running'} onTap={running ? togglePause : handleStart} onSkip={running ? onComplete : undefined} />}
     >
       <div className="tm-center" style={{ marginTop: 14 }}>
         <FlapLabel text="SKIP ROPE" size="md" />
         {description && <p className="wm-prose is-dim" style={{ margin: '8px 22px 0' }}>{description}</p>}
       </div>
       <TimerFace seconds={shown} kind="work" heat={heat} label={running ? workLabel('SKIP', shown) : 'READY'} labelTone="gold" track={track} compact />
-      <div className="tm-wide">
-        {running
-          ? <SessionButton label="SKIP WARM UP" onClick={onComplete} />
-          : <SessionButton label="START WARM UP" primary onClick={handleStart} />}
-      </div>
+      {running && (
+        <div className="tm-wide">
+          <SessionButton label="SKIP WARM UP" onClick={onComplete} />
+        </div>
+      )}
     </SessionFrame>
   )
 }
@@ -516,6 +518,8 @@ export function WorkoutPage() {
     // time (their end times are saved), the bell cues stay scheduled and the
     // lock-screen card stays up; the live strip is the way back.
     writeResume()
+    // page 71 item 6: its row lifts out of Today's list into the live strip
+    if (id) markHandoff('lift', id)
     navigate('/today')
   }
 
@@ -1049,7 +1053,8 @@ export function WorkoutPage() {
   }
 
   if (moment) {
-    return <SessionMoment line={moment} onDone={() => navigate('/today', { replace: true })} />
+    // page 71 item 6: finished, the strip's row lands back in Today's list with its ✓
+    return <SessionMoment line={moment} onDone={() => { if (id) markHandoff('land', id); navigate('/today', { replace: true }) }} />
   }
 
   // ─── Entrance animation ───────────────────────────────────
