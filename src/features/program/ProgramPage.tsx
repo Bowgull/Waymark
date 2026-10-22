@@ -181,13 +181,12 @@ export function ProgramPage() {
   const [startingBlockZero, setStartingBlockZero] = useState(false)
   const [assessment, setAssessment] = useState<BlockZeroAssessmentOutput | null>(null)
   const [assessmentLoading, setAssessmentLoading] = useState(false)
-  const [confirmFreshStart, setConfirmFreshStart] = useState(false)
   const [openDay, setOpenDay] = useState<number | null>(dayParam)
   const [pastDone, setPastDone] = useState<{ key: string; counts: Map<number, number> } | null>(null)
   const [logOpen, setLogOpen] = useState(false)
   const [changesVersion, setChangesVersion] = useState(0)
   // Page 64: START WHEN? from the prompt (fresh: clears history), and CHANGE DAY while it waits.
-  const [startPick, setStartPick] = useState<{ fresh: boolean } | null>(null)
+  const [startPick, setStartPick] = useState(false)
   const [changeOpen, setChangeOpen] = useState(false)
   const [savingStart, setSavingStart] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -356,15 +355,11 @@ export function ProgramPage() {
     setReloadKey(k => k + 1)
   }
 
-  async function handleStartBlockZero(freshStart = false, startDay?: number) {
-    // Fresh start clears all history, so it takes a second tap to confirm.
-    if (freshStart && !confirmFreshStart) {
-      setConfirmFreshStart(true)
-      return
-    }
+  // A new Block Zero never clears his history (Josh, 2026-10-22): the fresh-start wipe is gone from the app.
+  async function handleStartBlockZero(startDay?: number) {
     // Page 64: START BLOCK ZERO first asks which day (START WHEN?).
     if (startDay == null) {
-      setStartPick({ fresh: freshStart })
+      setStartPick(true)
       return
     }
     setStartingBlockZero(true)
@@ -374,13 +369,12 @@ export function ProgramPage() {
       const startDate = epochDayToISO(startDay)
       const newBlock = await apiFetch<Block>('/api/blocks/block-zero', {
         method: 'POST',
-        body: JSON.stringify(freshStart ? { freshStart: true, confirmReset: true, today, startDate } : { today, startDate }),
+        body: JSON.stringify({ today, startDate }),
       })
       setBlock(newBlock)
-      setStartPick(null)
+      setStartPick(false)
       setBlockZeroPrompt(null)
       setStartingBlockZero(false)
-      setConfirmFreshStart(false)
       setAssessmentLoading(true)
       // the server gives the AI up to 150 s: wait for it (dead end #13)
       const result = await apiFetch<BlockZeroAssessmentOutput | null>('/api/ai/block-zero-assessment', { method: 'POST', timeoutMs: 160_000 }).catch(() => null)
@@ -427,7 +421,6 @@ export function ProgramPage() {
 
   async function handleContinueExisting() {
     setBlockZeroPrompt(null)
-    setConfirmFreshStart(false)
     // No block yet (first launch, dismissed): create a Fighter block.
     if (!block) {
       const newBlock = await apiFetch<Block>('/api/blocks', {
@@ -548,10 +541,7 @@ export function ProgramPage() {
             ))}
           </ul>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-            <FlapButton label={startingBlockZero && !confirmFreshStart ? 'SETTING UP' : 'START BLOCK ZERO'} primary disabled={startingBlockZero} onClick={() => handleStartBlockZero()} />
-            <button type="button" className="db-add" disabled={startingBlockZero} onClick={() => handleStartBlockZero(true)}>
-              {startingBlockZero && confirmFreshStart ? 'Clearing history...' : confirmFreshStart ? 'Tap again to clear history and start' : 'Start Block Zero fresh (clears history)'}
-            </button>
+            <FlapButton label={startingBlockZero ? 'SETTING UP' : 'START BLOCK ZERO'} primary disabled={startingBlockZero} onClick={() => handleStartBlockZero()} />
             <button type="button" className="db-add" onClick={handleContinueExisting}>
               {isFirstLaunch ? 'Skip. Go straight to Fighter block' : 'Continue current block'}
             </button>
@@ -562,8 +552,8 @@ export function ProgramPage() {
             todayDay={todayEpochDay}
             selected={todayEpochDay}
             busy={startingBlockZero}
-            onPick={day => { void handleStartBlockZero(startPick.fresh, day) }}
-            onDismiss={() => { setStartPick(null); setConfirmFreshStart(false) }}
+            onPick={day => { void handleStartBlockZero(day) }}
+            onDismiss={() => setStartPick(false)}
           />
         )}
       </Frame>
