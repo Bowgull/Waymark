@@ -102,6 +102,15 @@ test('Item 1: once taught, a timer that waits says TAP TO START at the foot (no 
   await expect(grass(page)).toBeVisible()
 })
 
+/** Page 74: hold the × (a press held past its 3 s, as a thumb would), then let go. */
+async function holdX(page: Page) {
+  const box = (await page.getByRole('button', { name: 'End. Hold for 3 seconds.' }).boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.waitForTimeout(3300)
+  await page.mouse.up()
+}
+
 /** Into a bag round, working (the warm-up and the round both start on the grass). */
 async function intoRound(page: Page, id: string) {
   await enterFromToday(page, id)
@@ -152,14 +161,26 @@ test('Items 4-5: a running session is only the strip; Today opens the next to-do
   // Still in Program: opening the row never jumped into the session.
   await expect(page).toHaveURL(/\/program/)
 
-  // The strip is the way back in. End it (hold ×), close it: back in Today's list with ✓.
+  // The strip is the way back in. End it (hold × 3 s, END AND LOG), close it: back in Today's list with ✓.
   await strip.tap()
   await expect(page).toHaveURL(new RegExp(`/session/${bag.id}`))
   const x = page.getByRole('button', { name: 'End. Hold for 3 seconds.' })
-  await x.focus()
-  await page.keyboard.press('Enter')
-  // page 74: the close window, END AND LOG (or DISCARD)
-  await page.getByRole('button', { name: 'END AND LOG' }).tap()
+  const closeWin = page.getByRole('dialog', { name: /: end$/ })
+  // Page 74: a tap on the × does nothing; it only opens on a 3 s hold.
+  await x.tap()
+  await page.waitForTimeout(400)
+  await expect(closeWin).toHaveCount(0)
+  // Held 3 s: the close window, END AND LOG and DISCARD. A tap outside: back in the session as it was.
+  await holdX(page)
+  await expect(closeWin).toBeVisible()
+  await expect(closeWin.getByRole('button', { name: 'END AND LOG', exact: true })).toBeVisible()
+  await expect(closeWin.getByRole('button', { name: 'DISCARD', exact: true })).toBeVisible()
+  await page.mouse.click(8, 8)
+  await expect(closeWin).toHaveCount(0)
+  await expect(page).toHaveURL(new RegExp(`/session/${bag.id}`))
+  // Held again: END AND LOG goes to the close.
+  await holdX(page)
+  await closeWin.getByRole('button', { name: 'END AND LOG', exact: true }).tap()
   const close = page.getByRole('button', { name: 'CLOSE SESSION' })
   await expect(close).toBeVisible({ timeout: 10_000 })
   await expect(async () => {
@@ -200,11 +221,9 @@ test.describe('Item 6: the row and the strip move into each other (motion on)', 
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await strip.tap()
     await expect(page).toHaveURL(new RegExp(`/session/${bag.id}`))
-    const x = page.getByRole('button', { name: 'End. Hold for 3 seconds.' })
-    await x.focus()
-    await page.keyboard.press('Enter')
-    // page 74: the close window, END AND LOG (or DISCARD)
-    await page.getByRole('button', { name: 'END AND LOG' }).tap()
+    // page 74: hold the × 3 s, then END AND LOG in the close window
+    await holdX(page)
+    await page.getByRole('dialog', { name: /: end$/ }).getByRole('button', { name: 'END AND LOG', exact: true }).tap()
     const close = page.getByRole('button', { name: 'CLOSE SESSION' })
     await expect(close).toBeVisible({ timeout: 10_000 })
     // motion on again for the landing (the moment, then Today)

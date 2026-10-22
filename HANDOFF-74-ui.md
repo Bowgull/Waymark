@@ -1,25 +1,29 @@
 # Handoff: mockup 74, the UI half (branch `run-ui`)
 
-Worktree: `C:\Users\Shadow\Waymark-runui`. Mockup: `Documents/Aang/waymark-mockups/74-run-with-strap.html`.
+Worktree: `Waymark-runui` (branch `run-ui`). Mockup: `Documents/Aang/waymark-mockups/74-run-with-strap.html`.
 Nothing is pushed or deployed.
 
 ## Commits on run-ui (newest last)
 - `606d37a` the run screen work, first pass (also has the Swift widget)
 - `aac2da4` merge of run-strap `87aefc0` (done: their HeartContainer + heartPixels kept, their runRecordingUpload used, their Strava removals kept; DISCARD calls `dropSessionWrites`)
-- the WIP commit with this file: closeHead, `boardAway.ts`, spec updates, the new spec, the timerLook unit tests
+- `30fe23d` closeHead, `boardAway.ts`, spec updates, the new spec, the timerLook unit tests
+- `9670f44` merge of run-strap `d3cb44f` (Swift rejoin padding, LA distance every 15 s, HANDOFF-74-recorder.md). Clean, no conflicts.
+- the commit with this update: 19-tap-grass Items 4-5 and Item 6 drive the real 3 s × hold; 13-way-out checks the close window's two plates.
 
-## Checks at handoff
-- `npx tsc -b`: clean. `npm run test:lib`: passes (timerLook gained 4 tests).
-- `tests/e2e/21-run-screen.spec.ts` (new, 5 tests): all passed on their own.
-- Full Playwright run (`--retries=1`) was at 82/83 when the session stopped. Known so far:
-  - `05-run-walk`: screenshot failures, expected (the ready board now has the Shape row and "≤ 147"; the run screen changed). Regenerate the baselines.
-  - `13-way-out`: every test retried; `A page you went into goes back with the edge swipe (a Library group)` timed out tapping the Library `strength` row. That row is outside this work. Rerun it alone to see if it's a flake. The way-out × test now taps END AND LOG after the hold.
-  - `19-tap-grass` Item 1-3 ("× still holds to end") and Item 1 (TAP TO START) were retrying at the stop. The × label is now 'End. Hold for 3 seconds.' (already updated in the spec). Check the hold timing / END AND LOG step in Item 1-3, then whether Item 1 is a knock-on.
-  - Everything else seen passed. The run was still going (retries) when the session stopped.
-- Swift: not compiled here (Windows). It needs the GitHub macOS build.
+## State (2026-10-22, on the Mac)
+- `npx tsc -b`: clean. `npm run test:lib`: passes. The edited specs also typecheck on their own.
+- Playwright was **not run**: it can't launch a browser on this Mac (macOS 13). The e2e suite runs on GitHub.
+- Swift was **not compiled** (Xcode 15.2 here). The risky spots were re-read and look right for iOS 17 / Swift 5.9: `AnyTransition.modifier(active:identity:)` in `LiveHeart`, `Image.resizable(capInsets:resizingMode:)` in `WideRuneStone`, `Text + Text` with `Text.foregroundStyle` (iOS 17, the target is 17.0), and the merged rejoin padding in `WaymarkRunRecorderPlugin.start`.
+- Spec changes (by reading the code, unverified in a browser):
+  - `19-tap-grass` Items 4-5: a tap on × opens nothing; a 3.3 s mouse hold opens the close window (`dialog` named `<head>: end`) with END AND LOG and DISCARD; a tap outside (8, 8) closes it and the session stays; a second hold, END AND LOG, then the close.
+  - `19-tap-grass` Item 6: hold × 3.3 s, then END AND LOG in the close window. A local `holdX` helper does the hold (the same mouse-down way 21-run-screen does).
+  - `13-way-out` Hold ×: Enter opens the close window at once (the keyboard path); checks DISCARD is there, then END AND LOG.
+  - Items 1-3 and Item 1 (TAP TO START): nothing in the code contradicts them (hint texts, grass labels and the × label match). Their retries on Windows are unexplained; rerun them on CI.
+- Approval list re-checked in code: heart 84 / 18 / 14 at whole pixels; gold within 5 bpm or over for under 30 s with no cue or buzz, one `tapHaptic` on entering ember; boards in 320 ms (`wm-card-in`, `--t-move`), out 180 ms; × fill rises and eases back 450 ms; island compact heart + BPM in zone colour, minimal heart only, expanded heart + BPM large, time, distance, EASE OFF when over; no strap dim heart and "--" (the run screen draws "---", as the mockup's LIVE2 does); the island and lock card offer only pause / play / skip; lock card distance top right; Log your run without the strap keeps "Tap a number to change it.". No mismatches found.
 
 ## Baselines to regenerate
 - win32 and Linux: `05-run-walk.spec.ts/run-walk-ready.png`, `run-walk-run.png`, `run-walk-walk.png`.
+- Linux: `20-strap.spec.ts/strap-connected.png` (new, from run-strap).
 - Any other run-screen or × screenshot the CI build flags.
 
 ## Per approval item
@@ -54,11 +58,12 @@ Nothing is pushed or deployed.
 22. **Log your run filled**: from `runRecorder().snapshot()` (km, avg, max) plus the clock time. "Tap a number to change it." shows only when nothing came from the strap. SAVE RUN calls `stop()`, then `uploadRecording(rec)` (outbox, key = runId), then the PATCH.
 
 ## Left to do (exact steps)
-1. Read the end of the full Playwright run (or rerun `npx playwright test --retries=1`). Rerun `13-way-out` alone. If the Library `strength` tap times out again, check whether it fails on run-strap too.
-2. Regenerate the `05-run-walk` baselines: win32 with `npx playwright test tests/e2e/05-run-walk.spec.ts --update-snapshots`. Linux via CI.
-3. Run the GitHub macOS build to confirm the Swift compiles. The riskiest spots: `AnyTransition.modifier` in `LiveHeart`, `Image.resizable(capInsets:)` in `WideRuneStone`, and `Text + Text` with `foregroundStyle` (needs iOS 17; the target is 17.0).
-4. Delete Playwright output: `test-results/`, `playwright-report/`.
-5. Phone-only checks:
+1. Run the full Playwright suite on GitHub (`--retries=1`). Watch `19-tap-grass` (Items 1-3, Item 1, Items 4-5, Item 6), `13-way-out` (the Library `strength` edge-swipe test timed out on Windows; check whether it fails on run-strap too) and `21-run-screen`.
+2. Regenerate the baselines listed above (win32 with `--update-snapshots`, Linux via CI).
+3. Run the GitHub macOS build to confirm the Swift compiles.
+4. The max-HR bump after a recorded run (Josh wants it): hook it in `RunSessionView.handleSave`, right after `await uploadRecording(rec)` returns `'sent'`. The server's ingest result has `maxHrBumped` but the outbox doesn't pass the response back, so either read `/api/user-profile` there and compare with Today's `MAX_HR_LS_KEY`, or have the outbox return the body. Not wired (Today is the other builder's file).
+5. Delete Playwright output (`test-results/`, `playwright-report/`) after any local run.
+6. Phone-only checks:
    - the lock card and island visuals
    - the glow per update
    - the wide stone's look
