@@ -526,25 +526,27 @@ export function ProgramPage() {
     const isRestart = blockZeroPrompt === 'restart'
     return (
       <Frame road={false}>
-        <Board head={isFirstLaunch ? 'Before you begin' : isRestart ? (block?.blockType === 'block_zero' ? 'Restart Block Zero' : 'Reset with Block Zero') : 'Welcome back'} solid>
+        <Board head={isFirstLaunch ? 'New Block Zero' : isRestart ? (block?.blockType === 'block_zero' ? 'Restart Block Zero' : 'Reset with Block Zero') : 'Welcome back'} solid>
           <FlapLabel text={isFirstLaunch ? 'START WITH BLOCK ZERO' : 'TIME FOR A RESET'} size="sm" tone="gold" fit />
           <p className="wm-prose" style={{ marginTop: 10 }}>
             {isFirstLaunch
-              ? 'After time away from training, jumping straight into heavy weights risks tendon injury. Muscle memory returns faster than connective tissue adapts. Block Zero is a 6-week ramp-up that gets your body ready to train hard without breaking down.'
+              ? 'Block Zero builds you back up after time off. It starts from your own history, a little lighter for the months away, and the coach adjusts every night from your sessions, sleep, back and check-ins.'
               : isRestart
                 ? 'Block Zero resets your starting weights and volume so you can build back up safely.'
                 : "It's been a while since your last session. Tendons and ligaments detrain faster than muscle. Block Zero resets your starting weights and volume so you can build back up safely."}
           </p>
           <ul className="pg-list">
-            {['Weeks 1–2: Foundation, run-walks and light strength (55–57.5% of your maxes).', 'Weeks 3–5: Weights climb to 60–65%. MT class is yours to add.', 'Week 6: Volume down, then the gate to Fighter Block 1.'].map(item => (
+            {/* How the coach runs Block Zero now (Josh, 2026-10-22): no fixed weeks or percentages. */}
+            {['Every day: Foundation, about 12 minutes. Strength 3 days a week. Easy runs that grow week by week.', 'Classes: the coach suggests one from week 2, then more if your body handles it. Log any class you go to.', 'At least 4 weeks, no set end. When the four parts on Ledger are in, you get a lighter week, then Fighter Block 1.'].map(item => (
               <li key={item} className="wm-prose is-dim">{item}</li>
             ))}
           </ul>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
             <FlapButton label={startingBlockZero ? 'SETTING UP' : 'START BLOCK ZERO'} primary disabled={startingBlockZero} onClick={() => handleStartBlockZero()} />
-            <button type="button" className="db-add" onClick={handleContinueExisting}>
-              {isFirstLaunch ? 'Skip. Go straight to Fighter block' : 'Continue current block'}
-            </button>
+            {/* No skipping to Fighter: the coach moves him on when the four parts are in. */}
+            {!isFirstLaunch && (
+              <button type="button" className="db-add" onClick={handleContinueExisting}>Continue current block</button>
+            )}
           </div>
         </Board>
         {startPick && (
