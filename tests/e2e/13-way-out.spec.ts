@@ -3,6 +3,7 @@ import type { Locator, Page } from '@playwright/test'
 import { enterFromToday, gotoToday, grassToStart, insertSession, tapWaybookLine, todayRow } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
+import { mockWeather } from './support/weather'
 
 /**
  * Page 61 (approved 2026-10-19, all items): one way out of every board (tap
@@ -18,11 +19,12 @@ test.beforeAll(async ({ request }) => {
 })
 test.describe.configure({ mode: 'serial' })
 
-async function openAdd(page: Page): Promise<Locator> {
-  await page.getByRole('button', { name: '+ add session' }).tap()
-  const picker = page.getByRole('dialog', { name: 'Add Session' })
-  await expect(picker).toBeVisible()
-  return picker
+/** The weather board on Today (page 72): + add opens a command window now, so the board under test is this one. */
+async function openWeather(page: Page): Promise<Locator> {
+  await page.getByRole('button', { name: /^Weather:/ }).tap()
+  const board = page.getByRole('dialog', { name: 'The weather, the next hours' })
+  await expect(board).toBeVisible()
+  return board
 }
 
 /** The iOS edge swipe: a touch from the left edge, travelling right. */
@@ -40,26 +42,26 @@ async function edgeSwipe(page: Page) {
   })
 }
 
-test('Every board closes the same ways: CLOSE, tap outside, pull it down, Escape, the edge swipe', async ({ page }) => {
+test('Every board closes the same ways: CLOSE, tap outside, pull it down, Escape, the edge swipe', async ({ page, context }) => {
+  await mockWeather(page, context)
   await gotoToday(page)
+  await expect(page.getByRole('button', { name: /^Weather:/ })).toBeVisible({ timeout: 20_000 })
 
   // CLOSE: one gold word, top right. No Cancel.
-  let picker = await openAdd(page)
-  await expect(picker.getByRole('button', { name: 'Cancel' })).toHaveCount(0)
-  await expect(picker.locator('.wm-grab')).toBeVisible()
-  await expect(picker.locator('.wm-board-head')).toHaveScreenshot('close-head.png')
-  await picker.getByRole('button', { name: 'Close', exact: true }).tap()
-  await expect(picker).toBeHidden()
+  let board = await openWeather(page)
+  await expect(board.getByRole('button', { name: 'Cancel' })).toHaveCount(0)
+  await board.getByRole('button', { name: 'CLOSE', exact: true }).tap()
+  await expect(board).toBeHidden()
 
   // A tap on the dim forest around it.
-  picker = await openAdd(page)
+  board = await openWeather(page)
   await page.mouse.click(8, 8)
-  await expect(picker).toBeHidden()
+  await expect(board).toBeHidden()
 
-  // Pulled down by its brass line, past 70 px: closed. Less: it settles back.
-  picker = await openAdd(page)
+  // Pulled down, past 70 px: closed. Less: it settles back.
+  board = await openWeather(page)
   const pull = async (dy: number) => {
-    const b = (await picker.locator('.wm-grab').boundingBox())!
+    const b = (await board.locator('.nowr').boundingBox())!
     const x = b.x + b.width / 2
     const y = b.y + b.height / 2
     await page.mouse.move(x, y)
@@ -68,22 +70,20 @@ test('Every board closes the same ways: CLOSE, tap outside, pull it down, Escape
     await page.mouse.up()
   }
   await pull(40)
-  await expect(picker).toBeVisible()
-  await expect(picker).not.toHaveAttribute('style', /translateY/)
-  // it glides back (0.28 s): measure the grabber once it has settled
-  await expect.poll(() => picker.evaluate(el => getComputedStyle(el).transform)).toBe('none')
+  await expect(board).toBeVisible()
+  await expect(board).not.toHaveAttribute('style', /translateY/)
   await pull(130)
-  await expect(picker).toBeHidden()
+  await expect(board).toBeHidden()
 
   // Escape on the web.
-  picker = await openAdd(page)
+  board = await openWeather(page)
   await page.keyboard.press('Escape')
-  await expect(picker).toBeHidden()
+  await expect(board).toBeHidden()
 
   // The swipe in from the left edge.
-  picker = await openAdd(page)
+  board = await openWeather(page)
   await edgeSwipe(page)
-  await expect(picker).toBeHidden()
+  await expect(board).toBeHidden()
 })
 
 test('A page you went into goes back with the edge swipe (a Library group)', async ({ page }) => {

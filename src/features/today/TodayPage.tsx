@@ -6,9 +6,7 @@ import { getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
 import { clearResume, loadResume } from '@/lib/sessionResume'
 import { clearLiveSession, readLiveSession, takeLaunch } from '@/lib/liveSession'
 import { localActiveSession } from '@/lib/workoutCache'
-import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
-import { notePollResult } from '@/lib/stravaHealth'
 import { endAllLiveActivities } from '@/lib/liveActivity'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
@@ -84,8 +82,6 @@ interface WeekPayload { week: WeekPlanRow; sessions: Array<StripSession & { labe
 
 // Session types that have a dedicated workout engine
 const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
-
-const MAX_HR_LS_KEY = 'waymark_last_seen_max_hr'
 
 export function TodayPage() {
   const navigate = useNavigate()
@@ -308,47 +304,6 @@ export function TodayPage() {
     }
     return () => { cancelled = true }
   }, [block?.id, block?.currentWeek, block?.trainingWeek?.leadIn, block?.blockType, block?.startedAt, todayEpoch, weekVersion])
-
-  // Silent Strava poll on mount. Refreshes Today once ingestion completes so
-  // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
-  // one-time pop-up.
-  useEffect(() => {
-    async function poll() {
-      try {
-        const result = await apiFetch<{ ingested: number; connected: boolean; error?: string }>('/api/strava/poll-recent', { method: 'POST' })
-        // a 401 / 403 / failed refresh: Settings' Strava row says it needs reconnecting
-        notePollResult(result)
-        if (result.connected && result.ingested > 0) {
-          await refreshSessions()
-        }
-        if (result.connected) {
-          await checkMaxHrBump()
-        }
-        if (result.connected && result.error) {
-          logger.warn('system', 'strava poll returned error', { error: result.error }, 'Strava poll returned error. Activity match skipped this tick.')
-        }
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        logger.warn('system', 'strava poll threw', { message }, 'Strava poll threw. Network or auth issue.')
-      }
-    }
-    async function checkMaxHrBump() {
-      try {
-        const profile = await apiFetch<{ maxHr: number | null } | null>('/api/user-profile')
-        if (!profile || profile.maxHr == null) return
-        const lastSeen = Number(storageGet(MAX_HR_LS_KEY) ?? '0')
-        if (profile.maxHr > lastSeen) {
-          storageSet(MAX_HR_LS_KEY, String(profile.maxHr))
-          if (lastSeen > 0) {
-            showToast(`Max HR now ${profile.maxHr}. Zones updated.`, 'info')
-          }
-        }
-      } catch {
-        // profile fetch failed; skip bump notice.
-      }
-    }
-    poll()
-  }, [refreshSessions, showToast])
 
   // ── what Today shows, and the world behind it ──
   const weekSessions = week === undefined ? null : (week?.sessions ?? null)

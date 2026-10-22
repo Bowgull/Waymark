@@ -1,13 +1,12 @@
 # Handoff: mockups 72 (weather on Today) and 73 (Program planner)
 
-Branch `today-program` (worktree C:\Users\Shadow\Waymark-tp, from 96eea12). Not pushed, not deployed.
-WIP commit: b7e4be2 (this file is committed after it).
+Branch `today-program` (from 96eea12). Not pushed, not deployed.
+Commits: b7e4be2 (the pages), c5f9302 (these notes), then the finishing commit (specs, row minutes, Strava poll removed).
 
 ## State
-- `npx tsc -b`: passes. `npm run test:lib`: passes (two new suites added: `src/lib/brain/picks.test.ts`, `src/features/weather/weatherData.test.ts`).
-- `tests/e2e/20-planner.spec.ts` (new, 9 tests): all pass locally against the running servers.
-- Updated, NOT yet run: `01-today`, `08-units`, `09-coach` (rewritten for the new gestures).
-- NOT yet updated (will fail): `13-way-out`, `16-start-day`, `18-dead-ends`, `19-class-days`, `19-tap-grass` (details below).
+- `npx tsc -b`: passes. `npm run test:lib`: passes (suites added: `src/lib/brain/picks.test.ts`, `src/features/weather/weatherData.test.ts`; row-minutes cases in `src/features/dayboard/rowState.test.ts`).
+- `tests/e2e/20-planner.spec.ts` (9 tests): passed locally on Windows against the running servers.
+- Updated for pages 72/73 but NOT run (Playwright can't launch a browser on the Mac; they run on GitHub): `01-today`, `08-units`, `09-coach`, `13-way-out`, `16-start-day`, `18-dead-ends`, `19-class-days`, `19-tap-grass`. The spec files also typecheck.
 - Full Playwright suite not run yet.
 
 ## What's done
@@ -39,18 +38,19 @@ WIP commit: b7e4be2 (this file is committed after it).
 - `PATCH /api/changes/:id/reason` accepts `swap` changes too (updates original's skipReason + "Replaced:" note, created session's `replaced.userSkipReason`, the why).
 - `departures.ts`: `REPLACE_WHY_TILES` (TIME→schedule, BODY→too_sore, JUST BECAUSE→variety), `SKIP_WHY_TILES` (TIME→schedule, BODY→too_sore, SICK→sick, PAIN→injury, place unspecified). Test added.
 
-## What's left, in order
-1. Run `01-today`, `08-units`, `09-coach` and fix.
-2. `13-way-out.spec.ts` first test used Today's "+ add session" Add Session board. + add now opens COACH PICKS (a command window). Suggest: switch that test to the weather board (`mockWeather` in `tests/e2e/support/weather.ts`; it closes by CLOSE / tap outside / pull / Escape / edge swipe) and drop the `close-head.png` assertion, or keep it on another board.
-3. `16-start-day.spec.ts`: replace tablist/day-board checks with `.pg-dr[data-day]` rows (start day row `aria-expanded=true`, board contains Foundation; today row `is-before`, opening it shows "Before the start. Nothing planned." and no + add); remove the Today `.td-t7` strip checks; replace `group 'Weeks of the block'` waits with `getByRole('tablist', { name: 'Weeks' })` (and `toHaveCount(0)` case → no tabs in the waiting view).
-4. `18-dead-ends.spec.ts`: #4 Program part: Program rows have no ENTER now (mockup) — assert the missed row opens its lines on Program, ENTER on Today only. #5: skip via `holdRow` → Skip; put back via `holdRow` → "Undo skip" (no day's back any more).
-5. `19-class-days.spec.ts` (~line 106): the class rune is on Program's day row: `dayRow(page, epoch)` aria-label /The coach changed it/, tap its "What the coach changed" button, dialog shows /Of your class days/, Undo (add kind: no REDO, the window shows the put-back line).
-6. `19-tap-grass.spec.ts` (~line 142): Program: open today's day (`openDay`), row `.pl-row[data-sid=bag]`, open its lines, no RESUME/ENTER; wait for `tablist 'Weeks'` instead of 'Weeks of the block'.
-7. Full suite `npx playwright test --retries=1`; delete `test-results/` and `playwright-report/` after.
-8. Commit (drop "WIP").
+## What's left
+1. Full suite on GitHub (`npx playwright test --retries=1`); fix what the run shows; delete `test-results/` and `playwright-report/` after any local run.
+2. The max-HR bump pop-up (`checkMaxHrBump` in `src/lib/maxHrBump.ts`) has no trigger now (Today's Strava poll is gone); it is to fire after a recorded run is saved (run-ui's files, after the merge).
+
+## Finishing commit (after c5f9302)
+- Today no longer POSTs `/api/strava/poll-recent` (Strava removed). The max-HR pop-up's logic moved unchanged to `src/lib/maxHrBump.ts` (exported, not called).
+- Row minutes (Josh, 2026-10-22: must match the coach's dose): `src/lib/brain/doseMinutes.ts` (`doseMinutes`, `doseJsonMinutes`) is the one source; `plannedRowMinutes` uses the row's `dose_json` first (Program and Today rows, Program's day line), and the coach picks' preview minutes (`coachPicks.ts minutesFor`) use the same function. Without a dose the old estimate stays.
+- `plan.css`: let go early, the row's darkening eases back with `--ease-in` (motion table), not plain `ease`.
+- Specs: `09-coach` row names match case-insensitively (the icon's alt is the upper-case flap name); `13-way-out` first test now runs on the weather board (no `close-head.png`); `16-start-day` uses the day list and the `Weeks` tablist, no `.td-t7`; `18-dead-ends` #4 Program has lines and no ENTER (ENTER from Today), #5 skip and UNDO SKIP by the hold; `19-class-days` reads the class's rune on Program's day row (UNDO, no REDO); `19-tap-grass` opens today's day on Program and the running session's lines (no RESUME/ENTER; the "under way" line is gone with the old board).
+- Removed unused baselines: `09-coach/replace-why-rough-day.png`, `13-way-out/close-head.png` (linux and win32).
 
 ## Linux screenshot baselines that will legitimately change (do not regenerate on Windows)
-- Anything showing Today's top (week strip removed) or Program (new list), e.g. in `12-motion`, `17-scroll-reveals`; `13-way-out/close-head.png` if the test moves off the Add Session board; `09-coach/replace-why-rough-day.png` is no longer used (old picker). Check the full run's diff list.
+- None of the remaining `toHaveScreenshot` calls frames Today's top or Program (checked: 01 morning-report is the row alone; 12-motion and 17 have no Today/Program baselines). `13-way-out/close-head.png` and `09-coach/replace-why-rough-day.png` are deleted. `01-today/morning-report.png` only if the row's width moved. Check the full run's diff list.
 
 ## Decisions / deviations from the mockups (for Josh)
 - Coach line speaks for runs only (bag and class are indoors; "Indoor works too" makes no sense for them).
@@ -63,4 +63,4 @@ WIP commit: b7e4be2 (this file is committed after it).
 - No SWAPPED/ADDED pop after SWAP IN/ADD (mockup goes straight to WHY?).
 - Lift labels use the existing short names (e.g. "BENT OVER ROW", truncated in the 78 px column).
 - Gold plates already measure ≥4.5:1 with the app's dark ink (#1c1608 on #a0823c ≈ 4.9:1); colours unchanged.
-- Program row minutes (~Nmin) still come from the existing plannedRowMinutes, which can differ from the brain dose shown in the lines/preview.
+- ~~Program row minutes from the old estimate~~: not approved; fixed (rows read the brain's dose, see the finishing commit).

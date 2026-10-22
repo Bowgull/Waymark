@@ -14,10 +14,8 @@ import { estimatedMinutes } from '../lib/coach/sessions'
 import { KEY_TYPES } from '../lib/keyTypes'
 import { mondayOf } from '../lib/dates'
 import { foundationLevel } from '../lib/foundation'
-import { plannedStrengthMinutes } from '../lib/plannedLength'
-import { getStrengthTemplate } from '../lib/strengthTemplates'
 import { kgToLbs } from '../lib/units'
-import { templateFromDose } from '../lib/brain/doses'
+import { doseMinutes } from '../lib/brain/doseMinutes'
 import { rankPicks, type PickOption, type PickWeather } from '../lib/brain/picks'
 import type { OutlineSession } from '../lib/brain/outline'
 import { shortLift } from '../features/dayboard/rowState'
@@ -99,12 +97,9 @@ export function previewLines(type: string, dose: StoredDose | null, opts: { week
 
 /** The minutes a preview stands for. */
 function minutesFor(type: string, dose: StoredDose | null, row: SessionRow, week: number, kind: 'block_zero' | 'fighter'): number | null {
-  if (dose?.run) return Math.round(dose.run.totalSec / 60)
-  if (dose?.bag) return dose.bag.rounds * 4
-  if (dose?.strength && row.scheduledDate != null) {
-    const t = templateFromDose(getStrengthTemplate(new Date(row.scheduledDate * 86400000).getUTCDay(), row.blockWeek ?? 1, kind, row.label), dose.strength)
-    return plannedStrengthMinutes(t.exercises.flatMap(e => e.sets.map(s => ({ isWarmup: s.isWarmup, restSec: s.restSec }))))
-  }
+  // The same minutes a row with this dose shows (page 73).
+  const fromDose = doseMinutes({ ...row, blockType: kind }, dose)
+  if (fromDose != null) return fromDose
   if (type === 'mobility') return 12
   if (type === 'skip_rope') return 20
   if (type === 'mt_class') return 60

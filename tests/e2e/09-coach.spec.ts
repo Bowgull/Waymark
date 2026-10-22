@@ -17,13 +17,14 @@ import { GOOD_MORNING, setMorning } from './support/data'
 test.describe.configure({ mode: 'serial', retries: 0 })
 
 type Row = { id: string; type: string; source: string | null; status: string; skipReason: string | null }
+// A row's name: its icon's alt (the flap name), the flap, the minutes ("FOUNDATION FOUNDATION ~12min").
 const row = (page: Page, name: RegExp) => page.locator('.td-row').filter({ has: page.getByRole('button', { name }) })
 const sessionsToday = (api: { get<T>(p: string): Promise<T> }) => api.get<Row[]>(`/api/sessions/today?date=${todayISO()}`)
 
 test('REPLACE: hold, COACH PICKS, SWAP IN, then BODY', async ({ page, api }) => {
   await gotoToday(page)
   // Foundation is on every day of Block Zero.
-  const foundation = row(page, /^Foundation FOUNDATION ~\d+min$/).first()
+  const foundation = row(page, /^Foundation FOUNDATION ~\d+min$/i).first()
   const sid = await foundation.getAttribute('data-sid')
   const cmd = await holdRow(page, foundation)
   await cmd.getByRole('button', { name: 'Replace' }).tap()
@@ -41,7 +42,7 @@ test('REPLACE: hold, COACH PICKS, SWAP IN, then BODY', async ({ page, api }) => 
   await expect(why).toBeVisible()
   await why.getByRole('button', { name: 'BODY', exact: true }).tap()
   await expect(why).toBeHidden()
-  await expect(page.getByRole('button', { name: /^Bag Work BAG WORK ~\d+min$/ }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Bag Work BAG WORK ~\d+min$/i }).first()).toBeVisible()
   // The replaced session leaves the board (it stays in the week's changes), with his reason.
   await expect(page.locator(`.td-row[data-sid="${sid}"]`)).toHaveCount(0)
   await expect.poll(async () => (await sessionsToday(api)).find(r => r.id === sid)?.skipReason).toBe('too_sore')
@@ -65,7 +66,7 @@ test('SKIP is instant, then offers TIME / BODY / SICK / PAIN', async ({ page, ap
 test('+ Add always adds, MT Class included', async ({ page }) => {
   await gotoToday(page)
   const rows = page.locator('.td-row')
-  const ropesBefore = await page.getByRole('button', { name: /^Skip Rope SKIP ROPE/ }).count()
+  const ropesBefore = await page.getByRole('button', { name: /^Skip Rope SKIP ROPE/i }).count()
   for (const name of ['MT Class', 'Skip Rope', 'Skip Rope']) {
     const before = await rows.count()
     await page.getByRole('button', { name: '+ add session' }).tap()
@@ -77,8 +78,8 @@ test('+ Add always adds, MT Class included', async ({ page }) => {
     await expect(picks).toBeHidden()
     await expect(rows).toHaveCount(before + 1)
   }
-  await expect(page.getByRole('button', { name: /^MT Class MT CLASS/ }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Skip Rope SKIP ROPE/ })).toHaveCount(ropesBefore + 2)
+  await expect(page.getByRole('button', { name: /^MT Class MT CLASS/i }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Skip Rope SKIP ROPE/i })).toHaveCount(ropesBefore + 2)
 })
 
 test('a Dagaz day on Program: the why-line, KEEP and UNDO, then REDO', async ({ page, api }) => {
