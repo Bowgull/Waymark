@@ -33,7 +33,7 @@ This file is the **roadmap snapshot** the setup guide §18 describes. **Update i
 - [x] `MASTER_PLAN_PROMPT.md` saved  
 - [x] `IMPLEMENTATION_PLAN.md` (this file)  
 - [x] Testing / troubleshooting docs  
-- [x] **Deploy** — Worker live at `https://waymark.bocas-joshua.workers.dev`; smoke **`/api/health`** (see §4)  
+- [x] **Deploy** — Worker live at `https://<your-worker>.workers.dev`; smoke **`/api/health`** (see §4)  
 - [x] **Remote D1** — **`npm run db:migrate:remote`** applied; prod **`/api/sessions`** returns `[]` / HTTP 200  
 - [ ] **Physical device** — optional; Simulator verified separately; real iPhone when you need that gate  
 

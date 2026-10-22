@@ -30,3 +30,6 @@ dist-ssr
 
 # Claude worktree staging
 .claude/worktrees/
+
+# His personal training journal (kept on disk, never public)
+*CONDITIONING JOURNAL*.xlsx

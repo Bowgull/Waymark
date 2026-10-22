@@ -24,9 +24,15 @@ type Bindings = {
   STRAVA_CLIENT_ID: string
   STRAVA_CLIENT_SECRET: string
   STRAVA_WEBHOOK_VERIFY_TOKEN: string
+  /** Optional public origin of this Worker (e.g. https://<name>.<subdomain>.workers.dev). Unset: the origin the request came in on. */
+  PUBLIC_ORIGIN?: string
 }
 
-const REDIRECT_URI = 'https://waymark.bocas-joshua.workers.dev/api/strava/callback'
+/** This Worker's public origin, so no deploy address is hard-coded in the repo. */
+function publicOrigin(c: { env: Bindings; req: { url: string } }): string {
+  return (c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin).replace(/\/+$/, '')
+}
+
 const SCOPES = 'read,activity:read_all'
 const AUTH_URL = 'https://www.strava.com/oauth/authorize'
 const TOKEN_URL = 'https://www.strava.com/oauth/token'
@@ -42,7 +48,7 @@ strava.get('/authorize', (c) => {
   if (!clientId) return c.json({ error: 'STRAVA_CLIENT_ID not configured' }, 500)
   const url = new URL(AUTH_URL)
   url.searchParams.set('client_id', clientId)
-  url.searchParams.set('redirect_uri', REDIRECT_URI)
+  url.searchParams.set('redirect_uri', `${publicOrigin(c)}/api/strava/callback`)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('approval_prompt', 'auto')
   url.searchParams.set('scope', SCOPES)
@@ -319,7 +325,6 @@ strava.post('/activity/:activityId/dismiss', async (c) => {
 // env. Called manually (once per environment) to wire up real-time webhook
 // delivery. Without this, we fall back to /poll-recent, which is fine but
 // slower.
-const WEBHOOK_CALLBACK_URL = 'https://waymark.bocas-joshua.workers.dev/api/strava/webhook'
 const SUBSCRIPTIONS_URL = 'https://www.strava.com/api/v3/push_subscriptions'
 
 strava.get('/subscription', async (c) => {
@@ -333,7 +338,7 @@ strava.post('/subscription', async (c) => {
   const body = new URLSearchParams({
     client_id: c.env.STRAVA_CLIENT_ID,
     client_secret: c.env.STRAVA_CLIENT_SECRET,
-    callback_url: WEBHOOK_CALLBACK_URL,
+    callback_url: `${publicOrigin(c)}/api/strava/webhook`,
     verify_token: c.env.STRAVA_WEBHOOK_VERIFY_TOKEN,
   })
   const res = await fetch(SUBSCRIPTIONS_URL, { method: 'POST', body })

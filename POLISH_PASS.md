@@ -10,7 +10,7 @@ Read this file every session. Read the Hard Rules and Voice Canon in `BUILD_PLAN
 
 - v2 steps 1-5 merged to main. HEAD: `993a0f3 feat: v2 step 5 today target HR line`.
 - This polish pass started from user feedback on Today/indoor/settings UX and alarm UX.
-- Aesthetic canon (see `~/.claude/projects/-Users-you-Developer-Waymark/memory/user_aesthetic.md`): lofi + fantasy book, Cinzel display, Geist body, forest+gold palette, dark-dry copy, quiet-by-default.
+- Aesthetic canon (see `the local Claude memory file `user_aesthetic.md``): lofi + fantasy book, Cinzel display, Geist body, forest+gold palette, dark-dry copy, quiet-by-default.
 - User sideloads on personal dev cert — iOS entitlements can be self-granted.
 - User shares a bed — alarms must not be jarring.
 - User's phone typically on silent — morning + nuclear alarms must bypass via Critical Alerts entitlement.

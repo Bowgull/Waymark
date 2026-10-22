@@ -9,7 +9,7 @@ This is a talking guide, not locked narration — use the bullets as cues and ri
 
 ## Before you hit record
 
-1. Remote D1 is already seeded. The test iPhone is hitting `https://waymark.bocas-joshua.workers.dev`.
+1. Remote D1 is already seeded. The test iPhone is hitting `https://<your-worker>.workers.dev`.
 2. Open the app → you'll land on **Today** — Saturday, April 18.
 3. Make sure you're on the **Today** tab. Confirm you see:
    - A completed morning mobility session ✓
@@ -110,7 +110,7 @@ That's the frame. Keep coming back to it.
 When you're ready to start using the app for real, wipe the demo data:
 
 ```bash
-cd /Users/you/Developer/Waymark
+cd ~/Developer/Waymark
 npm run db:demo:wipe:remote
 ```
 

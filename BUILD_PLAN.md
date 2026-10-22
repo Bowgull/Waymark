@@ -85,8 +85,8 @@ Zone mapping (computed dynamically from max_hr, not stored):
 
 - **Client ID**: `226927` (public, safe in code or env).
 - **Client Secret**: set via `wrangler secret put STRAVA_CLIENT_SECRET` before step 1 runs. Never in repo.
-- **Authorization callback domain**: `waymark.bocas-joshua.workers.dev`.
-- **Callback URL**: `https://waymark.bocas-joshua.workers.dev/api/strava/callback`.
+- **Authorization callback domain**: `<your-worker>.workers.dev`.
+- **Callback URL**: `https://<your-worker>.workers.dev/api/strava/callback`.
 - **Rate limits**: 200 req / 15 min, 2000 / day. Well under for single-user app.
 - **Scopes**: `read,activity:read_all`. Read-only. No write scopes ever.
 - **Token refresh**: access tokens expire every 6 hours, refresh tokens are long-lived. Store both, refresh on 401.
