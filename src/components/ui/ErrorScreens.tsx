@@ -96,7 +96,6 @@ const PAGE_NAMES: Record<string, string> = {
   '/settings': 'SETTINGS',
   '/settings/logs': 'THE LOGS',
   '/metrics': 'BODY METRICS',
-  '/block-zero/gate': 'THE GATE',
 }
 
 function pageNameFor(pathname: string): string {

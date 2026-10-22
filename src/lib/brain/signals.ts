@@ -103,7 +103,7 @@ export function athleteSignals(model: AthleteModel, events: ModelEvents, today: 
   // His own eases still holding (idea 12): that domain's next session holds, no push.
   const own = new Map(model.ownEases.map(e => [e.domain, e]))
   for (const e of own.values()) facts.push({ id: `f.own.${e.domain}`, value: e.kind, day: e.day })
-  for (const [d, n] of Object.entries(model.klass.nights)) if (n.n > 0) facts.push({ id: `f.class.night.${d}.p`, value: n.p })
+  for (const [d, n] of Object.entries(model.klass.days)) if (n.n > 0) facts.push({ id: `f.class.day.${d}.p`, value: n.p })
   for (const [cell, c] of Object.entries(model.adherence.cells)) facts.push({ id: `f.when.${cell}.p`, value: c.p }, { id: `f.when.${cell}.n`, value: c.n })
   for (const [t, s] of Object.entries(model.adherence.usualStart)) facts.push({ id: `f.when.start.${t}`, value: s.minute, unit: 'min' })
   facts.push({ id: 'f.when.restDays', value: model.adherence.preferredRestDays.join(',') || null }, { id: 'f.when.scheduleSkips28', value: model.adherence.scheduleSkips.recent.length })

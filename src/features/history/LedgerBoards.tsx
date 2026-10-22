@@ -1,7 +1,8 @@
-import { useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 
 import { FlapLabel, SessionIcon, useOutsideClose } from '@/design'
 import type { ConsistencyView, TileState } from '@/lib/ledgerConsistency'
+import type { ReadinessReport } from '@/lib/brain/readinessParts'
 import { RING_COLOUR, linePoints, paceDelta, paceFlap, spanWeeks, weightDelta, type LedgerRing, type LiftSeries, type RingState, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
 
 // The Ledger's boards, drawn as page 32 draws them ("The Ledger · together").
@@ -252,7 +253,12 @@ const MOON_MARK = (
  * next block, when you train, what gets done, why missed. It closes the
  * page 61 ways: tap it again, tap outside, pull it down, or CLOSE.
  */
-export function ConsistencyBoard({ view }: { view: ConsistencyView }) {
+/**
+ * A Ledger board that opens in place (page 63; page 61's dismiss rules): a tap
+ * opens it (it grows, then the detail fades in) and scrolls it up under the
+ * header; it closes on a tap again, a tap outside, a pull down, Escape or CLOSE.
+ */
+function useOpenBoard() {
   const [open, setOpen] = useState(false)
   const [press, setPress] = useState(false)
   const [pull, setPull] = useState(0)
@@ -276,40 +282,50 @@ export function ConsistencyBoard({ view }: { view: ConsistencyView }) {
     } else scroller.scrollTo({ top: 0, behavior: 'smooth' })
   }
   useOutsideClose(ref, open, () => toggle(false))
+  const className = `${open ? ' is-open' : ''}${press ? ' is-press' : ''}${pull ? ' is-drag' : ''}`
+  const props = {
+    ref,
+    role: 'button',
+    tabIndex: 0,
+    'aria-expanded': open,
+    style: pull ? { transform: `translateY(${Math.min(pull, 120) * 0.6}px)` } : undefined,
+    onPointerDown: (e: React.PointerEvent) => { drag.current = { y: e.clientY, moved: false }; setPress(true) },
+    onPointerMove: (e: React.PointerEvent) => {
+      const d = drag.current
+      if (!d || !open) return
+      const dy = Math.max(0, e.clientY - d.y)
+      if (dy > 6) { d.moved = true; setPress(false); setPull(dy) }
+    },
+    onPointerUp: () => {
+      const d = drag.current
+      drag.current = null
+      dragged.current = Boolean(d?.moved)
+      setPress(false)
+      if (d?.moved) { const dy = pull; setPull(0); if (dy > 50) toggle(false) }
+    },
+    onPointerLeave: () => { setPress(false) },
+    onPointerCancel: () => { drag.current = null; setPress(false); setPull(0) },
+    onClick: (e: React.MouseEvent) => {
+      if (dragged.current) { dragged.current = false; return }
+      if (open && (e.target as HTMLElement).closest('.lg-cdet')) return
+      toggle(!open)
+    },
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(!open) } },
+  }
+  return { open, toggle, className, props }
+}
 
+const CHEV = <span className="lg-chev" aria-hidden><svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="#c9b27a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
+
+export function ConsistencyBoard({ view }: { view: ConsistencyView }) {
+  const { open, toggle, className, props } = useOpenBoard()
   const total = view.done + view.toCome + view.missed
   const x = view.nextAt != null && total > 0 ? (view.nextAt / total) * 100 : null
   return (
     <section
-      ref={ref}
-      className={`lg-glass lg-cb${open ? ' is-open' : ''}${press ? ' is-press' : ''}${pull ? ' is-drag' : ''}`}
-      role="button"
-      tabIndex={0}
-      aria-expanded={open}
+      {...props}
+      className={`lg-glass lg-cb${className}`}
       aria-label={`Consistency, ${view.flap.toLowerCase()}. ${view.done} done, ${view.toCome} to come, ${view.missed} missed.`}
-      style={pull ? { transform: `translateY(${Math.min(pull, 120) * 0.6}px)` } : undefined}
-      onPointerDown={e => { drag.current = { y: e.clientY, moved: false }; setPress(true) }}
-      onPointerMove={e => {
-        const d = drag.current
-        if (!d || !open) return
-        const dy = Math.max(0, e.clientY - d.y)
-        if (dy > 6) { d.moved = true; setPress(false); setPull(dy) }
-      }}
-      onPointerUp={() => {
-        const d = drag.current
-        drag.current = null
-        dragged.current = Boolean(d?.moved)
-        setPress(false)
-        if (d?.moved) { const dy = pull; setPull(0); if (dy > 50) toggle(false) }
-      }}
-      onPointerLeave={() => { setPress(false) }}
-      onPointerCancel={() => { drag.current = null; setPress(false); setPull(0) }}
-      onClick={e => {
-        if (dragged.current) { dragged.current = false; return }
-        if (open && (e.target as HTMLElement).closest('.lg-cdet')) return
-        toggle(!open)
-      }}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(!open) } }}
     >
       <div className="lg-head">
         <span>Consistency</span>
@@ -317,7 +333,7 @@ export function ConsistencyBoard({ view }: { view: ConsistencyView }) {
           <FlapLabel text={view.flap} size="xs" tone={view.tone} animate={false} />
           {open
             ? <button type="button" className="lg-closeb" onClick={e => { e.stopPropagation(); toggle(false) }}>Close</button>
-            : <span className="lg-chev" aria-hidden><svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="#c9b27a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg></span>}
+            : CHEV}
         </span>
       </div>
       <div className="lg-bar">
@@ -355,6 +371,84 @@ export function ConsistencyBoard({ view }: { view: ConsistencyView }) {
               {view.after && <div className="lg-aft">After a miss, back at the next session {view.after.back} of {view.after.of} times.</div>}
             </div>
           )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** One run of 6 flap tiles: brass as a part builds, teal when it's in (page 69 §5). */
+function PartTiles({ n, met, className }: { n: number; met: boolean; className: string }) {
+  return (
+    <span className={className}>
+      {Array.from({ length: 6 }, (_, i) => <span key={i} className={`lg-tl${i < n ? (met ? ' met' : ' lit') : ' todo'}`} />)}
+    </span>
+  )
+}
+
+const METER_SEEN = 'wm.ledger.meter'
+
+/** Which parts moved since he last saw the meter (their tiles flip once). Per phone; nothing breaks without it. */
+function usePartFlips(parts: ReadonlyArray<{ key: string; tiles: number; in: boolean }>): Set<string> {
+  const [flips] = useState(() => {
+    const out = new Set<string>()
+    try {
+      const seen = JSON.parse(window.localStorage.getItem(METER_SEEN) ?? 'null') as Record<string, number> | null
+      if (seen) for (const p of parts) if (seen[p.key] !== undefined && seen[p.key] !== p.tiles + (p.in ? 10 : 0)) out.add(p.key)
+    } catch { /* no storage: no flips */ }
+    return out
+  })
+  useEffect(() => {
+    try { window.localStorage.setItem(METER_SEEN, JSON.stringify(Object.fromEntries(parts.map(p => [p.key, p.tiles + (p.in ? 10 : 0)])))) } catch { /* no storage */ }
+  }, [parts])
+  return flips
+}
+
+/**
+ * NEXT BLOCK (page 69 §5, option A, approved 2026-10-20): page 63's board,
+ * evolved in place on the Ledger's first screen. Closed: the header, a flap
+ * (BUILDING / N OF 4 IN / READY / N DAY BREAK), one bar of 4 × 6 flap tiles
+ * (brass as a part builds, teal when it's in), the part names under it and one
+ * line naming what's left. Open: one group per part with its tiles and one
+ * plain line of real numbers; page 63's details sit inside Habit. It opens and
+ * closes as page 63 does (page 61's rules).
+ */
+export function ReadinessMeter({ view }: { view: ReadinessReport }) {
+  const { open, toggle, className, props } = useOpenBoard()
+  const flips = usePartFlips(view.parts)
+  return (
+    <section
+      {...props}
+      className={`lg-glass lg-cb lg-meter${className}`}
+      aria-label={`Next block, ${view.flap.toLowerCase()}. ${view.parts.map(p => `${p.name} ${p.in ? 'in' : `${p.tiles} of 6`}`).join(', ')}. ${view.line}.`}
+    >
+      <div className="lg-head">
+        <span>Next block</span>
+        <span className="rt">
+          <FlapLabel text={view.flap} size="xs" tone={view.tone} />
+          {open
+            ? <button type="button" className="lg-closeb" onClick={e => { e.stopPropagation(); toggle(false) }}>Close</button>
+            : CHEV}
+        </span>
+      </div>
+      <div className="lg-bar">
+        <div className="track lanes">
+          {view.parts.map(p => <PartTiles key={p.key} n={p.tiles} met={p.in} className={`lane${flips.has(p.key) ? ' is-flip' : ''}`} />)}
+        </div>
+      </div>
+      <div className="lg-lanek">
+        {view.parts.map(p => <span key={p.key} className={p.in ? 'ok' : undefined}>{p.name.toUpperCase()}</span>)}
+      </div>
+      <div className="lg-bark one">{view.line}</div>
+      <div className="lg-cdet" aria-hidden={!open}>
+        <div className="in">
+          {view.parts.map(p => (
+            <div key={p.key} className="lg-grp" data-part={p.key}>
+              <div className="gh"><span>{p.name}</span><PartTiles n={p.tiles} met={p.in} className="mini" /></div>
+              <div className="nb">{p.in && <span className="ok">In. </span>}{p.line}{p.small && <small>{p.small}</small>}</div>
+            </div>
+          ))}
+          <div className="lg-grp"><div className="nb lg-foot">{view.foot}</div></div>
         </div>
       </div>
     </section>

@@ -41,6 +41,13 @@
 .st-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 9px; }
 .st-day { display: block; padding: 6px 0; border: 0; border-radius: 7px; text-align: center; line-height: normal; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
 .st-day.is-on { background: rgba(95, 160, 140, 0.22); box-shadow: inset 0 0 0 1px rgba(143, 212, 184, 0.55); }
+/* page 70 A: the slot flap under each lit day (AM sun · PM moon · ANY both, gold) */
+.st-slots { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 4px; min-height: 30px; }
+.st-slot { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 3px; border: 0; border-radius: 7px; line-height: normal; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
+.st-slot.is-off { visibility: hidden; }
+.st-slot .st-mk { width: 13px; height: 13px; }
+.st-slot .two { display: flex; gap: 1px; }
+.st-slot:active { transform: scale(0.97); }
 .st-techs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 9px; }
 .st-tech { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 7px; line-height: normal; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
 .st-day:active, .st-tech:active { transform: scale(0.97); }
@@ -118,7 +125,7 @@
 .st-lt .x { margin: 6px 0 0; font: 600 12px/1.5 var(--font-mono); color: #9fb2a8; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: reduce) {
-  .st-chip:active, .st-day:active, .st-tech:active { transform: none; }
+  .st-chip:active, .st-day:active, .st-slot:active, .st-tech:active { transform: none; }
 }
 .st-valtxt { display: flex; flex: 0 1 auto; min-width: 0; }
 .st-fld .st-fnum { max-width: 100%; }

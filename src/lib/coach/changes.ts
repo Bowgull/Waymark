@@ -13,7 +13,7 @@
 import { DAY_NAMES } from './sessions'
 
 export type ChangeActor = 'you' | 'coach' | 'check_in' | 'weekly_pass' | 'class_tonight'
-export type ChangeRecordKind = 'swap' | 'skip' | 'add' | 'pull_forward' | 'move' | 'ease' | 'shorten' | 'missed' | 'push' | 'make_regular' | 'tm'
+export type ChangeRecordKind = 'swap' | 'skip' | 'add' | 'pull_forward' | 'move' | 'ease' | 'shorten' | 'missed' | 'push' | 'make_regular' | 'tm' | 'block'
 
 /** Session columns a change can set and an undo puts back. */
 export interface SessionFields {
@@ -94,7 +94,7 @@ export function isCoachActor(actor: ChangeActor): boolean {
 // ─── Reading stored rows ─────────────────────────────────────
 
 const ACTORS: ReadonlySet<string> = new Set(['you', 'coach', 'check_in', 'weekly_pass', 'class_tonight'])
-const KINDS: ReadonlySet<string> = new Set(['swap', 'skip', 'add', 'pull_forward', 'move', 'ease', 'shorten', 'missed', 'push', 'make_regular', 'tm'])
+const KINDS: ReadonlySet<string> = new Set(['swap', 'skip', 'add', 'pull_forward', 'move', 'ease', 'shorten', 'missed', 'push', 'make_regular', 'tm', 'block'])
 
 function parseState(raw: string | null | undefined): ChangeState | null {
   if (!raw) return null
@@ -213,6 +213,8 @@ export type ChangeLock = 'open' | 'undone' | 'started' | 'done' | 'missed' | 'pa
  */
 export function changeLock(c: Pick<ChangeRowLike, 'before' | 'after' | 'undoneAt' | 'kind'> & { undoUntil?: number | null }, sessions: ReadonlyMap<string, SessionNow>, todayDay: number): ChangeLock {
   if (c.undoneAt != null) return 'undone'
+  // The move to the next block (coach-brain §8): UNDO until that Monday starts.
+  if (c.kind === 'block') return c.after.day <= todayDay ? 'passed' : 'open'
   const ids = [...touchedSessions(c), ...(c.after.watch ?? [])]
   let passed = false
   let missed = false

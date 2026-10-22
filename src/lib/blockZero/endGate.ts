@@ -1,20 +1,12 @@
-// Block Zero end gate and transition plan. Rules set the limits; the AI
-// decision can only be more cautious inside them, never override them.
-//
-// Proceed needs: key-session completion >= ~70%, no 7+ day gap recently, the
-// back stable or better, and the week-6 numbers in. Otherwise extend, at most
-// 2 extensions (8 weeks). At the limit it proceeds with conservative loads.
-//
-// No test week (2026-10-18): the "retest" is two numbers only. The front squat
-// estimate comes silently from logged sets (week 5 and 6 sets, extension weeks
-// too); the talk-test HR comes from the run log on the first easy run-walk of
-// week 6. Either one counts as the retest being in. The other lifts' training
-// maxes still come from their logged sets.
+// Block Zero history helpers (completion, gaps, back trend, e1RMs from sets)
+// and the hand-off constants. The end gate itself (evaluateEndGate, its 1-2
+// week extensions and the transition plan) is gone: readiness for the next
+// block is four parts with no fixed length (coach-brain.md §8,
+// lib/brain/readinessParts.ts), and the move is set by the nightly pass
+// (server/readiness.ts) as a Monday rune with UNDO.
 
 import { e1rmFromRir, epley } from './e1rm'
-import { isFighterMainLift } from './lifts'
-import { BLOCK_ZERO_BASE_WEEKS, BLOCK_ZERO_MAX_EXTENSIONS } from './weeks'
-import { transitionTmWrites } from '../coach/tm'
+import { BLOCK_ZERO_BASE_WEEKS } from './weeks'
 import { KEY_TYPES } from '../keyTypes'
 
 export const MIN_COMPLETION_RATE = 0.7
@@ -26,52 +18,6 @@ export const MAX_RECENT_GAP_DAYS = 7
 export const RECENT_GAP_WINDOW_DAYS = 21
 
 export type BackTrend = 'better' | 'stable' | 'worse' | 'unknown'
-
-export interface EndGateInput {
-  /** 0-1, key sessions only. Null = nothing due yet. */
-  completionRate: number | null
-  longestRecentGapDays: number
-  backTrend: BackTrend
-  retestDone: boolean
-  extensionsUsed: number
-}
-
-export interface EndGateResult {
-  decision: 'proceed' | 'extend'
-  /** Weeks to add. 0 on proceed. */
-  extendWeeks: number
-  /** True when proceeding only because extensions ran out. */
-  forced: boolean
-  reasons: string[]
-}
-
-export function evaluateEndGate(input: EndGateInput): EndGateResult {
-  const remaining = Math.max(0, BLOCK_ZERO_MAX_EXTENSIONS - input.extensionsUsed)
-  const reasons: string[] = []
-  let severe = false
-
-  if (input.completionRate == null) {
-    reasons.push('No sessions logged yet.')
-    severe = true
-  } else if (input.completionRate < MIN_COMPLETION_RATE) {
-    reasons.push(`${Math.round(input.completionRate * 100)}% of sessions done. The floor is ${Math.round(MIN_COMPLETION_RATE * 100)}%.`)
-    if (input.completionRate < 0.5) severe = true
-  }
-  if (input.longestRecentGapDays >= MAX_RECENT_GAP_DAYS) {
-    reasons.push(`A ${input.longestRecentGapDays}-day gap in the last ${RECENT_GAP_WINDOW_DAYS / 7} weeks.`)
-    if (input.longestRecentGapDays >= 14) severe = true
-  }
-  if (input.backTrend === 'worse') reasons.push('The back is trending worse.')
-  if (!input.retestDone) reasons.push('No week-6 talk test yet. Log it on an easy run.')
-
-  if (reasons.length === 0) {
-    return { decision: 'proceed', extendWeeks: 0, forced: false, reasons: ['Consistency, back and the week-6 numbers are in. Move on.'] }
-  }
-  if (remaining === 0) {
-    return { decision: 'proceed', extendWeeks: 0, forced: true, reasons: [...reasons, 'Two extensions used. Moving on with conservative loads.'] }
-  }
-  return { decision: 'extend', extendWeeks: Math.min(severe ? 2 : 1, remaining), forced: false, reasons }
-}
 
 // ─── Gate inputs from raw history (pure) ──────────────────────
 
@@ -144,15 +90,6 @@ export function isRetestSetWeek(blockWeek: number | null | undefined): boolean {
   return blockWeek != null && blockWeek >= BLOCK_ZERO_BASE_WEEKS - 1
 }
 
-/**
- * "Retest done": the week-6 (or later) talk-test HR from the run log. The
- * front squat estimate always exists from logged sets, so it never gates
- * (owner decision, design-decisions.md "Block Zero tests").
- */
-export function retestDoneFrom(_e1rms: ReadonlyMap<string, number>, talkTestWeeks: readonly number[]): boolean {
-  return talkTestWeeks.some(w => w >= BLOCK_ZERO_BASE_WEEKS)
-}
-
 export interface RetestSet {
   exerciseId: string
   weightKg: number | null
@@ -184,123 +121,8 @@ export function retestE1rms(sets: RetestSet[]): Map<string, number> {
 export const TM_FROM_E1RM = 0.9
 export const TM_FROM_E1RM_ADJUST = 0.85
 
-function roundHalf(kg: number): number {
-  return Math.round(kg * 2) / 2
-}
-
-// ─── Transition plan ──────────────────────────────────────────
-
-export type AiDecision = 'proceed' | 'hold' | 'adjust'
-
-export interface TransitionInput {
-  gate: EndGateInput
-  aiDecision: AiDecision | null
-  aiTargets: Array<{ exerciseId: string; estimatedMaxKg: number }>
-  retestE1rms: Map<string, number>
-  totalWeeks: number
-  /** False before the block's last week: nothing is extended early. */
-  atEndBoundary: boolean
-  /** Current training maxes. A lift without a retest keeps its max (map #8). */
-  currentTms?: ReadonlyMap<string, number>
-}
-
-export interface CalibrationWrite {
-  exerciseId: string
-  weightKg: number
-  source: 'ai' | 'retest'
-}
-
-export interface NextBlockSpec {
-  name: string
-  blockType: 'fighter'
-  totalWeeks: number
-}
+// ─── The hand-off ─────────────────────────────────────────────
 
 /** Fighter default length, as POST /api/blocks creates it. */
 export const FIGHTER_DEFAULT_TOTAL_WEEKS = 12
 export const NEXT_BLOCK_NAME = 'Fighter Block 1'
-
-export interface TransitionPlan {
-  decision: 'proceed' | 'adjust' | 'extend' | 'not_yet'
-  /** What the stored output reports (the UI reads proceed | hold | adjust). */
-  reportedDecision: AiDecision
-  extendWeeks: number
-  newTotalWeeks: number
-  nextBlock: NextBlockSpec | null
-  calibration: CalibrationWrite[]
-  gate: EndGateResult
-  reasons: string[]
-}
-
-/**
- * Combine the gate and the AI. The gate's extend always wins. On a gate
- * proceed the AI may still hold (more cautious) while extensions remain, or
- * turn proceed into adjust. Forced proceed after 2 extensions is an adjust.
- */
-export function planTransition(input: TransitionInput): TransitionPlan {
-  const gate = evaluateEndGate(input.gate)
-  const remaining = Math.max(0, BLOCK_ZERO_MAX_EXTENSIONS - input.gate.extensionsUsed)
-
-  let decision: TransitionPlan['decision']
-  let extendWeeks = 0
-  const reasons = [...gate.reasons]
-  if (gate.decision === 'extend') {
-    decision = 'extend'
-    extendWeeks = gate.extendWeeks
-    if (input.aiDecision === 'proceed' || input.aiDecision === 'adjust') reasons.push('The coach said move on. The rules hold the line.')
-  } else if (gate.forced) {
-    decision = 'adjust'
-  } else if (input.aiDecision === 'hold' && remaining > 0) {
-    decision = 'extend'
-    extendWeeks = 1
-    reasons.push('The coach wants one more week.')
-  } else if (input.aiDecision === 'adjust') {
-    decision = 'adjust'
-  } else {
-    decision = 'proceed'
-  }
-
-  if (decision === 'extend' && !input.atEndBoundary) {
-    decision = 'not_yet'
-    extendWeeks = 0
-    reasons.push('Not at the end of the block yet. Nothing changes.')
-  }
-
-  // Training maxes are written only when moving on (map #8): never on extend
-  // or not_yet. AI targets for a retested lift are capped later by the retest
-  // rule; a lift without a retest keeps its current max (capped at it, dropped
-  // when there is none). Retest-derived maxes fill the lifts the AI left out.
-  const movingOn = decision === 'proceed' || decision === 'adjust'
-  const calibration: CalibrationWrite[] = []
-  const covered = new Set<string>()
-  const aiWrites = transitionTmWrites(
-    decision,
-    input.aiTargets.filter(t => t.exerciseId).map(t => ({ exerciseId: t.exerciseId, weightKg: t.estimatedMaxKg, source: 'ai' as const })),
-    new Set(input.retestE1rms.keys()),
-    input.currentTms ?? new Map(),
-  )
-  for (const w of aiWrites) {
-    calibration.push(w)
-    covered.add(w.exerciseId)
-  }
-  for (const t of input.aiTargets) if (t.exerciseId) covered.add(t.exerciseId)
-  if (movingOn) {
-    const factor = decision === 'adjust' ? TM_FROM_E1RM_ADJUST : TM_FROM_E1RM
-    for (const [exerciseId, e1rm] of input.retestE1rms) {
-      if (covered.has(exerciseId) || !isFighterMainLift(exerciseId)) continue
-      calibration.push({ exerciseId, weightKg: roundHalf(e1rm * factor), source: 'retest' })
-    }
-  }
-
-  const reportedDecision: AiDecision = decision === 'extend' || decision === 'not_yet' ? 'hold' : decision
-  return {
-    decision,
-    reportedDecision,
-    extendWeeks,
-    newTotalWeeks: input.totalWeeks + extendWeeks,
-    nextBlock: movingOn ? { name: NEXT_BLOCK_NAME, blockType: 'fighter', totalWeeks: FIGHTER_DEFAULT_TOTAL_WEEKS } : null,
-    calibration,
-    gate,
-    reasons,
-  }
-}

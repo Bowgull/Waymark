@@ -20,9 +20,13 @@
 import { and, desc, eq, gte, inArray, isNull, lt, lte } from 'drizzle-orm'
 import { bodyAlerts, dailyLogs, exercises, runSessions, sessions, settings, trainingMaxes, userProfile, type sessions as SessionsTable } from '../db/schema'
 import type { createDB } from '../db/client'
-import { buildAthleteModel, modelSummary } from '../lib/brain/athleteModel'
-import { bagDose, runDose, strengthDose, tweakBag, tweakRun, tweakStrength, CEILING, LEVELS, levelAbove, type BagDose, type DoseCtx, type Level, type RunDose, type StrengthDose, type Tweak } from '../lib/brain/doses'
-import { score as outlineScore, solveOutline, violations as outlineViolations, type OutlineChange, type OutlineIn, type OutlineSession } from '../lib/brain/outline'
+import { buildAthleteModel, modelSummary, usualStartOf } from '../lib/brain/athleteModel'
+import { activeMove, blockReadinessFor } from './readiness'
+import { inLighter, lighterBag, lighterRun, lighterStrength } from '../lib/brain/blockMove'
+import { candidateClassDays, classLadder, classLean, classSlotChoices, learnedClassSlots } from '../lib/brain/classPicker'
+import { classDaySlots } from '../lib/classSlots'
+import { bagDose, runDose, strengthDose, tweakBag, tweakRun, tweakStrength, CEILING, LEVELS, levelAbove, minLevel, type BagDose, type DoseCtx, type Level, type RunDose, type StrengthDose, type Tweak } from '../lib/brain/doses'
+import { hoursAfter, score as outlineScore, solveOutline, violations as outlineViolations, type OutlineChange, type OutlineIn, type OutlineSession } from '../lib/brain/outline'
 import { athleteSignals } from '../lib/brain/signals'
 import { pushRoom, rangeFor, tweakedWords, type PushRoom } from '../lib/brain/candidates'
 import { arbitrate, DAILY_CALL_CAP, DAY_KEYS, doseWords, MAX_WEEK_ACTIONS, packetFacts, rulesDecision, type AiWeekAction, type Candidate, type DecisionPacket, type FinalDecision, type SolverChange, type WeekScorer, type WeekSession } from '../lib/brain/decision'
@@ -34,6 +38,7 @@ import { tempStates, type TempState } from '../lib/brain/tempStates'
 import type { AthleteModel, ModelCheckIn, ModelEvents } from '../lib/brain/types'
 import { KEY_TYPES } from '../lib/keyTypes'
 import { getRunWalkWeek, type WeeklyRunContext } from '../lib/blockZero'
+import { isHardRun, isHeavyLegs } from '../lib/coach/sessions'
 import { applyContext, coachEaseFrom, injuryActionFor, isoOf, mondayOf, runAllowanceBaseSec, slotStart, withMergedLifts, type InjuryFlag } from '../lib/coach'
 import { getStrengthTemplate, getWaveLoadingSetsReps, getWeekPercentage } from '../lib/strengthTemplates'
 import { loadEquipment, type LoadEquipment } from '../lib/strengthLoads'
@@ -119,6 +124,8 @@ export interface BrainInputs {
   equipment: Record<string, LoadEquipment>
   /** Short states from his notes and sick skips (sick, away, busy), each with its own end. */
   temp: TempState[]
+  /** The move to the next block in force (coach-brain §8): its lighter days are dosed lighter. */
+  move: { lighterFrom: number; monday: number } | null
 }
 
 export async function loadBrainInputs(db: DB, today: number): Promise<BrainInputs> {
@@ -148,6 +155,7 @@ export async function loadBrainInputs(db: DB, today: number): Promise<BrainInput
     openPlans: alerts.filter(a => a.appliedOn != null).map(a => ({ region: a.region })),
     tmKg: Object.fromEntries(tms.map(t => [t.exerciseId, t.weightKg])),
     equipment: Object.fromEntries(exRows.map(e => [e.id, loadEquipment(e.equipment)])),
+    move: await activeMove(db),
   }
 }
 
@@ -298,10 +306,24 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
   const inj = injuryFrom(s, flag)
   const backToday = inj.action.action === 'back_swap' ? 1 : (inputs.backByDay.get(day) ?? null)
   const plan = bodyPlanMark(s.contextJson)
-  const ctx: DoseCtx = { day, state: effective.state, stateWhy: effective.why, model: inputs.model, backToday: plan?.op === 'back' ? 1 : backToday, openPlans: inputs.openPlans, levelCap, levelFloor }
+  const lighter = inLighter(day, inputs.move)
+  // The morning after a class (by its real slot): heavy legs or a hard run only on a green morning, else eased (§5.2).
+  let capAfterClass: Level | null = levelCap
+  let afterClassWhy: string | null = null
+  if ((effective.state === 'AMBER' || effective.state === 'RED') && ((s.type === 'strength' && isHeavyLegs(s, s.blockType === 'block_zero' ? 'block_zero' : 'fighter')) || isHardRun({ type: s.type, notes: s.notes, estimatedMin: null }))) {
+    const cls = (await db.select({ day: sessions.scheduledDate, slot: sessions.timeSlot, status: sessions.status }).from(sessions)
+      .where(and(eq(sessions.type, 'mt_class'), gte(sessions.scheduledDate, day - 1), lte(sessions.scheduledDate, day))))
+      .filter(c => c.day != null && c.status !== 'skipped' && c.status !== 'missed')
+    const me = { day, slot: s.timeSlot === 'pm' ? 'pm' as const : 'am' as const }
+    if (cls.some(c => { const h = hoursAfter({ day: c.day as number, slot: c.slot === 'am' ? 'am' : 'pm' }, me); return h > 0 && h < 24 })) {
+      capAfterClass = levelCap ? minLevel(levelCap, 'EASE') : 'EASE'
+      afterClassWhy = 'A class in the last 24 hours and not a green morning: easier today.'
+    }
+  }
+  const ctx: DoseCtx = { day, state: effective.state, stateWhy: afterClassWhy && effective.why ? `${effective.why} ${afterClassWhy}` : (afterClassWhy ?? effective.why), model: inputs.model, backToday: plan?.op === 'back' ? 1 : backToday, openPlans: inputs.openPlans, levelCap: capAfterClass, levelFloor }
   const base = {
     v: DOSE_VERSION, sessionId: s.id, day, type: s.type, state: effective.state, stateWhy: effective.why,
-    stamp: doseStamp(s, cap, ctx.backToday), at: Math.floor(Date.now() / 1000),
+    stamp: doseStamp(s, cap, ctx.backToday, inLighter(day, inputs.move)), at: Math.floor(Date.now() / 1000),
     flags: {
       back: (ctx.backToday != null && ctx.backToday <= 2) || inputs.model.back.openPlans > 0 || inj.action.action === 'back_swap',
       injury: inj.action.action !== 'none' || inj.ravenOneSet != null || plan != null || inputs.openPlans.length > 0,
@@ -325,6 +347,10 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
       steppedThisWeek: await steppedThisWeek(db, s), lastFeltHard: await lastFeltHard(db, s, inputs),
     })
     const u = dose.lifts.length ? Math.round((dose.lifts.reduce((n, l) => n + l.u, 0) / dose.lifts.length) * 100) / 100 : null
+    if (lighter) {
+      const light = lighterStrength(dose)
+      return { ...base, level: light.level, strength: light, facts: { u, modelState: light.lifts[0]?.state ?? null }, why: light.why }
+    }
     return { ...base, level: dose.level, strength: dose, facts: { u, modelState: dose.lifts[0]?.state ?? null }, why: dose.why }
   }
 
@@ -344,21 +370,26 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
       maxRungSec: plan?.shapeWeek != null ? getRunWalkWeek(plan.shapeWeek).runSec : null, bike, plannedSec,
       lastRunSec: hist.lastRunSec, riseThisWeek: hist.riseThisWeek,
     })
+    if (lighter) {
+      const light = lighterRun(dose)
+      return { ...base, level: light.level, run: light, facts: { u: inputs.model.run.u, modelState: inputs.model.run.state }, why: light.why }
+    }
     return { ...base, level: dose.level, run: dose, facts: { u: inputs.model.run.u, modelState: inputs.model.run.state }, why: dose.why }
   }
 
   if (s.type === 'bag_work') {
     const early = s.blockType === 'block_zero'
-    const dose = bagDose(ctx, { maxRounds: early ? 6 : 8, injuryWhy: inj.action.action === 'technical' ? inj.action.note : null })
+    const raw = bagDose(ctx, { maxRounds: early ? 6 : 8, injuryWhy: inj.action.action === 'technical' ? inj.action.note : null })
+    const dose = lighter ? lighterBag(raw) : raw
     return { ...base, level: dose.level, bag: dose, facts: { u: inputs.model.bag.u, modelState: inputs.model.bag.state }, why: dose.why }
   }
   return null
 }
 
-function doseStamp(s: Pick<SessionRow, 'type' | 'label' | 'scheduledDate' | 'contextJson'>, cap: BrainCap | null, backToday: number | null): string {
+function doseStamp(s: Pick<SessionRow, 'type' | 'label' | 'scheduledDate' | 'contextJson'>, cap: BrainCap | null, backToday: number | null, lighter = false): string {
   const plan = bodyPlanMark(s.contextJson)
   const ease = coachEaseFrom(s.contextJson)
-  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null])
+  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null, ...(lighter ? ['lighter'] : [])])
 }
 
 /**
@@ -376,7 +407,7 @@ export async function doseFor(db: DB, s: SessionRow, today: number): Promise<Sto
     const flag = await loadInjuryFlag(db, day)
     const backToday = injuryActionFor(s.type, flag).action === 'back_swap' ? 1 : (inp.backByDay.get(day) ?? null)
     const back = bodyPlanMark(s.contextJson)?.op === 'back' ? 1 : backToday
-    if (stored.stamp === doseStamp(s, cap, back) && stored.day === day) return stored
+    if (stored.stamp === doseStamp(s, cap, back, inLighter(day, inp.move)) && stored.day === day) return stored
     const fresh = await computeDose(db, s, today, inp)
     if (fresh) await db.update(sessions).set({ doseJson: JSON.stringify(fresh) }).where(eq(sessions.id, s.id))
     return fresh
@@ -480,10 +511,24 @@ export interface NightResult {
   decision?: string
 }
 
+/** His usual class start per slot (from the classes he did), or null: the slot's own start. */
+export interface ClassTimes { am: string | null; pm: string | null }
+
+const minutesOf = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return (h || 0) * 60 + (m || 0) }
+
+async function classStartTimes(_db: DB, inp: BrainInputs): Promise<ClassTimes> {
+  const starts = inp.events.sessions.filter(s => s.type === 'mt_class' && s.status === 'completed' && s.startMin != null).map(s => s.startMin as number)
+  const pick = (list: number[]) => {
+    const u = usualStartOf(list)
+    return u && u.inCluster >= 2 ? `${Math.floor(u.minute / 60)}:${String(u.minute % 60).padStart(2, '0')}` : null
+  }
+  return { am: pick(starts.filter(m => m < 720)), pm: pick(starts.filter(m => m >= 720)) }
+}
+
 /** Session rows of a week as the outline reads them. */
 function outlineRows(rows: SessionRow[], today: number, held: Set<string>, mine: Set<string>): OutlineSession[] {
   return rows.filter(r => r.scheduledDate != null).map(r => ({
-    id: r.id, type: r.type, label: r.label, notes: r.notes, day: r.scheduledDate as number, slot: r.timeSlot === 'pm' ? 'pm' : 'am', status: r.status, source: r.source,
+    id: r.id, type: r.type, label: r.label, notes: r.notes, day: r.scheduledDate as number, slot: r.timeSlot === 'pm' ? 'pm' : 'am', status: r.status, source: r.source, rpe: r.rpe,
     locked: r.status !== 'planned' || (r.scheduledDate as number) < today || held.has(r.id) || mine.has(r.id) || r.source === 'ad_hoc' || r.source === 'replace',
   }))
 }
@@ -504,7 +549,7 @@ const DAY3 = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const NAME: Record<string, string> = { strength: 'Strength', foundation_run: 'Run-Walk', running: 'Run', bag_work: 'Bag Work', mt_class: 'MT Class', skip_rope: 'Skip Rope' }
 
 /** Apply the outline's changes: each a coach change row with its rune and UNDO. */
-async function applyOutline(db: DB, changes: OutlineChange[], rows: SessionRow[], blockId: string, nowSec: number, classTime = '18:30'): Promise<number> {
+async function applyOutline(db: DB, changes: OutlineChange[], rows: SessionRow[], blockId: string, nowSec: number, classTimes: ClassTimes = { am: null, pm: null }): Promise<number> {
   if (changes.length === 0) return 0
   const pm = await pmStart(db)
   const setId = crypto.randomUUID()
@@ -516,11 +561,12 @@ async function applyOutline(db: DB, changes: OutlineChange[], rows: SessionRow[]
       const tw = await trainingWeekFor(db, block, c.day, Math.floor(nowSec / 86400))
       const weekPlanId = await resolveWeekPlan(db, block.id, weekStamps(block, tw).weekNumber, mondayOf(c.day), nowSec)
       const id = crypto.randomUUID()
-      await db.insert(sessions).values({ id, type: 'mt_class', label: 'MT Class', weekPlanId, scheduledDate: c.day, timeSlot: 'pm', blockWeek: null, blockType: block.blockType, status: 'planned', notes: null, source: 'coach', contextJson: JSON.stringify({ suggested: { at: nowSec, time: classTime } }), createdAt: nowSec })
+      const time = classTimes[c.slot]
+      await db.insert(sessions).values({ id, type: 'mt_class', label: 'MT Class', weekPlanId, scheduledDate: c.day, timeSlot: c.slot, blockWeek: null, blockType: block.blockType, status: 'planned', notes: null, source: 'coach', contextJson: JSON.stringify({ suggested: { at: nowSec, time } }), createdAt: nowSec })
       records.push({
         setId, actor: 'coach', kind: 'add', targetSessionId: id, sessionType: 'mt_class', weekPlanId,
         before: emptyState(c.day), after: { ...emptyState(c.day, '+ MT CLASS'), created: [id], put: { line: 'The class is off the week.', dim: 'The coach leaves this week as it is.' } },
-        why: c.why, detail: 'A class is an hour of hard work; what is taught is the gym\'s call. Skip or replace it like anything else.', undoUntil: slotStart(c.day, 'pm', classTime), extraSource: { rule: 'class_night', time: classTime },
+        why: c.why, detail: 'A class is an hour of hard work; what is taught is the gym\'s call. Skip or replace it like anything else.', undoUntil: time ? c.day * 86400 + minutesOf(time) * 60 : slotStart(c.day, c.slot, pm), extraSource: { rule: 'class_day', slot: c.slot, time },
       })
     } else if (c.kind === 'move') {
       const s = rows.find(r => r.id === c.sessionId)
@@ -543,8 +589,8 @@ async function applyOutline(db: DB, changes: OutlineChange[], rows: SessionRow[]
       records.push({
         setId, actor: 'coach', kind: 'skip', targetSessionId: s.id, sessionType: s.type,
         before: { show: (s.label ?? NAME[s.type] ?? s.type).toUpperCase(), day: s.scheduledDate, sessions: [before] },
-        after: { show: 'REST', day: s.scheduledDate, sessions: [{ id: s.id, f: { status: 'skipped', skipReason: 'coach_rest' } }], put: { line: `${s.label ?? NAME[s.type] ?? s.type} is back on.`, dim: 'The coach leaves it as you set it this week.' } },
-        why: c.why, detail: 'Nothing is made up later.', undoUntil: slotStart(s.scheduledDate, s.timeSlot, pm), extraSource: { rule: 'rest_day' },
+        after: { show: s.type === 'mt_class' ? 'OFF' : 'REST', day: s.scheduledDate, sessions: [{ id: s.id, f: { status: 'skipped', skipReason: 'coach_rest' } }], put: { line: `${s.label ?? NAME[s.type] ?? s.type} is back on.`, dim: 'The coach leaves it as you set it this week.' } },
+        why: c.why, detail: s.type === 'mt_class' ? 'UNDO if you want both.' : 'Nothing is made up later.', undoUntil: slotStart(s.scheduledDate, s.timeSlot, pm), extraSource: { rule: s.type === 'mt_class' ? 'class_off' : 'rest_day' },
       })
     }
   }
@@ -595,13 +641,16 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
   const inp = await loadBrainInputs(db, today)
   const kind = blockKind(block.blockType)
   const [profile] = await db.select({ cap: userProfile.mtCapPerWeek }).from(userProfile).where(eq(userProfile.id, 'default'))
-  // Class nights: the days he set in Settings win; none set, the coach suggests from any night but Sunday.
-  const [st] = await db.select({ mt: settings.mtClassDays }).from(settings).limit(1)
+  // Class days (§9): the days he set in Settings; none set, the coach suggests from every day.
+  // The slot per day is learned from the classes he did, else weekday evenings and weekend mornings.
+  const [st] = await db.select({ mt: settings.mtClassDays, slots: settings.mtClassSlots }).from(settings).limit(1)
   const setDays = (st?.mt ?? '').split(',').filter(Boolean).map(Number).filter(d => d >= 0 && d <= 6)
-  const classNights = setDays.length > 0 ? setDays : [1, 2, 3, 4, 5, 6]
-  // Class time: 6:30 PM until his logged class starts say otherwise. Nothing to set.
-  const classMin = inp.model.adherence.usualStart.mt_class?.minute ?? 18 * 60 + 30
-  const classTime = `${Math.floor(classMin / 60)}:${String(classMin % 60).padStart(2, '0')}`
+  const classDays = candidateClassDays(setDays)
+  // His Settings slot per lit day wins (page 70); the learned slot only leans an ANY day.
+  const classSlots = classSlotChoices(inp.events.sessions, today, classDaySlots(setDays, st?.slots))
+  const learnedSlots = learnedClassSlots(inp.events.sessions, today)
+  const classLeanByDay = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(d => [d, classLean(d, learnedSlots)]))
+  const classTimes = await classStartTimes(db, inp)
   const restDue = await restDueFor(db, inp, today)
   // At most 2 visible coach changes a night, missed-session records written tonight included.
   let budget = Math.max(0, MAX_WEEK_ACTIONS - (opts.used ?? 0))
@@ -612,14 +661,12 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
     const held = await loadHeld(db, w)
     const mine = await hisSessions(db, w)
     const weekChanges = await loadWeekChanges(db, w)
-    const suggested = (await db.select({ status: sessions.status, day: sessions.scheduledDate }).from(sessions)
-      .where(and(eq(sessions.type, 'mt_class'), eq(sessions.source, 'coach'), lt(sessions.scheduledDate, today), gte(sessions.scheduledDate, today - 28))))
-      .sort((x, y) => (y.day ?? 0) - (x.day ?? 0)).slice(0, 2)
-    const classPaused = suggested.length === 2 && suggested.every(x => x.status !== 'completed') && w <= mondayOf(suggested[0].day ?? 0) + 7
+    // The ladder (1 → 2 → 3), learned from every class so far (§9).
+    const ladder = classLadder(inp.events.sessions, inp.checkIns, today, w)
     const classHeld = weekChanges.some(({ change }) => change.actor !== 'you' && change.kind === 'add' && change.sessionType === 'mt_class' && change.undoneAt != null)
     const outlineIn: OutlineIn = {
-      today, monday: w, blockType: kind, blockStart: start, sessions: outlineRows(rows, today, held, mine), classNights,
-      classCap: profile?.cap ?? null, classHeld, classPaused, model: inp.model, state: nightState(inp, today).state, restDue: w === monday ? restDue : null,
+      today, monday: w, blockType: kind, blockStart: start, sessions: outlineRows(rows, today, held, mine), classDays, classDaysSet: setDays.length > 0, classSlots, classLean: classLeanByDay,
+      classCap: profile?.cap ?? null, classHeld, ladder, model: inp.model, state: nightState(inp, today).state, restDue: w === monday ? restDue : null,
     }
     const result = solveOutline(outlineIn)
     let chosen = result.changes.slice(0, budget)
@@ -628,7 +675,7 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
       chosen = decision.outline
     }
     chosen = chosen.slice(0, budget)
-    const n = await applyOutline(db, chosen, rows, block.id, nowSec, classTime)
+    const n = await applyOutline(db, chosen, rows, block.id, nowSec, classTimes)
     budget -= chosen.length
     changes += n
   }
@@ -758,6 +805,13 @@ export async function decideNight(db: DB, x: DecideIn): Promise<NightDecision> {
   }))
   const facts = packetFacts(athleteSignals(inp.model, inp.events, today).filter(f => !f.id.startsWith('f.note.')))
   facts.unshift({ id: 'f.state', value: night.state })
+  // Block readiness (§8): how many parts are in, and after week 10 the part that lags (the week leans on it).
+  const ready = await blockReadinessFor(db, today).catch(() => null)
+  if (ready) {
+    facts.push({ id: 'f.readiness.in', value: ready.inCount })
+    if (ready.lagging) facts.push({ id: 'f.readiness.lagging', value: ready.lagging })
+    if (ready.move) facts.push({ id: 'f.readiness.lighterWeek', value: inLighter(today, ready.move) })
+  }
   const notes = await loadRecentNotes(db, today, inp.temp)
   // The notebook (item 1), rebuilt from its evidence before the AI reads it.
   const index = await loadEvidenceIndex(db, today)

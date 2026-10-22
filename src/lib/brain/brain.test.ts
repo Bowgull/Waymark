@@ -253,7 +253,7 @@ const bzWeek = (monday: number): OutlineSession[] => [
   os('c', 'strength', monday + 4, { label: 'Strength C' }), os('r3', 'foundation_run', monday + 5),
 ]
 const outlineIn = (over: Partial<OutlineIn> = {}): OutlineIn => ({
-  today: MON + 7, monday: MON + 7, blockType: 'block_zero', blockStart: MON, sessions: bzWeek(MON + 7), classNights: [1, 3, 5], classCap: 3, classHeld: false,
+  today: MON + 7, monday: MON + 7, blockType: 'block_zero', blockStart: MON, sessions: bzWeek(MON + 7), classDays: [1, 3, 5], classCap: 3, classHeld: false,
   model: buildAthleteModel(events(), MON + 7), state: 'GREEN', restDue: null, ...over,
 })
 {
@@ -264,9 +264,10 @@ const outlineIn = (over: Partial<OutlineIn> = {}): OutlineIn => ({
   assert.ok(add && add.day === MON + 7 + 4, 'week 2: a class on Friday (Strength C, no heavy legs)')
   assert.ok(r.changes.length <= 2, 'at most 2 changes')
   assert.equal(r.violationsAfter.length, 0, 'every limit kept')
-  assert.ok(add && /Friday/.test(add.why), `why names the night: ${add?.why}`)
+  assert.ok(add && /Friday/.test(add.why), `why names the day: ${add?.why}`)
+  assert.ok(add && add.slot === 'pm' && !/night/i.test(add.why), `a weekday class in the evening, and never called a night: ${add?.why}`)
   assert.equal(solveOutline(outlineIn({ classHeld: true })).changes.filter(c => c.kind === 'add').length, 0, 'a class he took off with UNDO is not offered again that week')
-  assert.equal(solveOutline(outlineIn({ classPaused: true })).changes.filter(c => c.kind === 'add').length, 0, 'two suggested classes not done: the ladder steps down a week')
+  assert.equal(solveOutline(outlineIn({ ladder: { level: 1, paused: true, avoidDays: [], step: null } })).changes.filter(c => c.kind === 'add').length, 0, 'two suggested classes not done: the ladder steps down a week')
   // A class already there (his own or skipped for time) fills the week: nothing crammed.
   const skipped = solveOutline(outlineIn({ sessions: [...bzWeek(MON + 7), os('k', 'mt_class', MON + 9, { slot: 'pm', status: 'skipped', locked: true })] }))
   assert.equal(skipped.changes.filter(c => c.kind === 'add').length, 0, 'a skipped class is never made up')
@@ -277,9 +278,10 @@ const outlineIn = (over: Partial<OutlineIn> = {}): OutlineIn => ({
   // Locked sessions never move.
   const locked = solveOutline(outlineIn({ sessions: bzWeek(MON + 7).map(s => ({ ...s, locked: true })) }))
   assert.ok(locked.changes.every(c => c.kind === 'add'), 'held or done sessions stay')
-  // No class nights set: the coach suggests one, never on a heavy-legs day.
-  const open = solveOutline(outlineIn({ classNights: [1, 2, 3, 4, 5, 6] })).changes.find(c => c.kind === 'add')
-  assert.ok(open && ![MON + 7, MON + 9].includes(open.day), `no nights set: a night that fits (${open?.day})`)
+  // No class days set: the coach suggests one, never on a heavy-legs day.
+  const open = solveOutline(outlineIn({ classDays: [0, 1, 2, 3, 4, 5, 6], classDaysSet: false })).changes.find(c => c.kind === 'add')
+  assert.ok(open && ![MON + 7, MON + 9].includes(open.day), `no days set: a day that fits (${open?.day})`)
+  assert.ok(open && /No class days set/.test(open.why), open?.why)
   // A second rest day when it is due.
   const rest = solveOutline(outlineIn({ restDue: 'Soreness 4 then 5. A rest day.' }))
   assert.ok(rest.changes.some(c => c.kind === 'rest' && c.day <= MON + 8), 'a rest day lands tomorrow-ish')

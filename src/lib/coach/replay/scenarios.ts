@@ -460,7 +460,55 @@ const pushNoteOnly: Scenario = {
   check: r => pushLines(r, false),
 }
 
-export const SCENARIOS: Scenario[] = [great, bad, injury, travel, classes, lapse, sandbag, syco, fighterStack, progressRules, progressCareful, pushNumbers, pushNoteOnly]
+// ─── Block readiness (coach brain P4, §8; §13.6 P4 gate: readiness in 4-10 weeks) ─
+
+/** The coach's block change (the Monday rune) and when it was set. */
+const blockMoves = (r: ReplayResult) => r.changes.filter(c => c.kind === 'block')
+const fighterFrom = (r: ReplayResult) => Math.min(...r.sessions.filter(s => s.blockType === 'fighter' && s.day != null).map(s => s.day as number))
+
+const readySteady: Scenario = {
+  id: 'readiness-steady',
+  title: 'A steady athlete: ready for Fighter Block 1 between weeks 4 and 10',
+  script: script('readiness-steady', 12, day => steadyDay(day)),
+  check: r => {
+    const moves = blockMoves(r)
+    const set = moves[0]
+    const setWeek = set ? weekOf(set.day) : null
+    const monday = set?.targetDay ?? (set ? null : null)
+    const firstFighter = fighterFrom(r)
+    const readyDay = r.days.find(d => d.block?.ready)?.day ?? null
+    // The lighter week: strength sets after the move was set, before Fighter Block 1, against the week before.
+    const lighter = set && Number.isFinite(firstFighter) ? strengthDoses(r).filter(d => d.day > set.day && d.day < firstFighter) : []
+    const before = set ? strengthDoses(r).filter(d => d.day <= set.day && d.day > set.day - 7) : []
+    const avg = (xs: DoseRecord[]) => xs.length ? xs.reduce((n, d) => n + (d.prescribedMainSets ?? 0), 0) / xs.length : null
+    const lightRatio = avg(lighter) != null && avg(before) ? (avg(lighter) as number) / (avg(before) as number) : null
+    const heavier = lighter.some(d => d.loads.some(l => l.change === 'increase'))
+    void monday
+    return [
+      line('R1', 'Readiness lands between weeks 4 and 10', readyDay != null && readyDay >= SIM_START + 28 && readyDay < SIM_START + 70,
+        readyDay != null ? `all four parts in on day ${readyDay - SIM_START} (week ${weekOf(readyDay)}); parts that day: ${r.days.find(d => d.day === readyDay)?.block?.parts}.` : `never ready in 12 weeks; last: ${r.days[r.days.length - 1]?.block?.parts} (${r.days[r.days.length - 1]?.block?.line}).`),
+      line('R2', 'The move is one coach change: a Monday rune, set once', moves.length === 1 && setWeek != null, `${moves.length} block changes${set ? `, set in week ${setWeek}: "${set.why}"` : ''}.`),
+      line('R3', 'The lighter week before it: fewer sets, no new steps', lightRatio != null && lightRatio <= 0.75 && !heavier,
+        lightRatio != null ? `main sets ${(avg(lighter) as number).toFixed(1)} vs ${(avg(before) as number).toFixed(1)} the week before (×${lightRatio.toFixed(2)}); new steps: ${heavier ? 'yes' : 'none'}.` : 'no lighter week measured.', set != null),
+      line('R4', 'Fighter Block 1 starts on a Monday', Number.isFinite(firstFighter) && new Date(firstFighter * 86400000).getUTCDay() === 1, Number.isFinite(firstFighter) ? `first Fighter session ${isoDay(firstFighter)}.` : 'no Fighter sessions.', set != null),
+    ]
+  },
+}
+
+const readyFlaky: Scenario = {
+  id: 'readiness-flaky',
+  title: 'Half the sessions skipped: no move, nothing "fails", the lagging part named after week 10',
+  script: script('readiness-flaky', 11, (day, _week, dow) => (dow % 2 === 0 ? { day, actions: [{ kind: 'checkin', at: 6 * 60 + 15, log: STEADY }] } : steadyDay(day))),
+  check: r => {
+    const last = r.days[r.days.length - 1]?.block
+    return [
+      line('R5', 'No move when habit is not in', blockMoves(r).length === 0, `${blockMoves(r).length} block changes; last day: ${last?.parts} (${last?.flap}: "${last?.line}").`),
+      line('R6', 'No maximum: still Block Zero in week 11, the meter names what is left', !!last && last.week >= 11 && !/fail/i.test(last.line) && last.line.length > 0, `week ${last?.week}: "${last?.line}".`),
+    ]
+  },
+}
+
+export const SCENARIOS: Scenario[] = [great, bad, injury, travel, classes, lapse, sandbag, syco, fighterStack, progressRules, progressCareful, pushNumbers, pushNoteOnly, readySteady, readyFlaky]
 
 /** Y3: an AI that says yes to "push me" is refused by verify every time, and nothing above the rules' pick is applied. */
 function sycophancyLine(r: ReplayResult): PassLine {

@@ -114,3 +114,29 @@
 .lg-chip { display: inline-flex; align-items: center; gap: 6px; font: 700 12px var(--font-body); letter-spacing: 0.1em; color: #cfd9d2; text-transform: uppercase; }
 .lg-aft { margin-top: 8px; font: 500 14.5px/1.4 var(--font-body); color: #dfe7e2; }
 @media (prefers-reduced-motion: reduce) { .lg-cdet, .lg-cdet > .in, .lg-cb { transition: none !important; } }
+
+/* NEXT BLOCK (page 69 §5 option A): page 63's board in place; one bar of 4 × 6 tiles, one per part */
+.lg-tl.lit { --c: #c9a656; }
+.lg-tl.met { --c: #4f8a78; }
+.lg-bar .track.lanes { gap: 0; }
+.lg-bar .track.lanes .lane { flex: 1; display: flex; gap: 2px; }
+.lg-bar .track.lanes .lane + .lane { margin-left: 7px; }
+.lg-bar .track.lanes .lane .lg-tl { flex: 1; }
+.lg-lanek { display: flex; margin-top: 5px; }
+.lg-lanek span { flex: 1; text-align: center; font: 700 10.5px/normal var(--font-body); letter-spacing: 0.14em; color: #8ea89c; }
+.lg-lanek span.ok { color: #8fd4b8; }
+.lg-lanek span + span { margin-left: 7px; }
+.lg-bark.one { justify-content: flex-start; font: 600 13.5px/normal var(--font-body); color: #c9d6cf; }
+.lg-meter .lg-grp .gh { display: flex; align-items: center; justify-content: space-between; }
+.lg-meter .lg-grp .gh .mini { display: flex; gap: 2px; width: 92px; height: 9px; }
+.lg-meter .lg-grp .gh .mini .lg-tl { flex: 1; }
+.lg-meter .lg-grp .nb .ok { color: #8fd4b8; }
+.lg-meter .lg-grp .nb.lg-foot { font-size: 15px; color: #c9d6cf; }
+/* a part that moved since he last looked: its tiles flip once (the ring segments' flip, laid flat) */
+.lg-bar .track.lanes .lane.is-flip .lg-tl { animation: lg-segin 0.35s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+.lg-bar .track.lanes .lane.is-flip .lg-tl:nth-child(2) { animation-delay: 0.05s; }
+.lg-bar .track.lanes .lane.is-flip .lg-tl:nth-child(3) { animation-delay: 0.1s; }
+.lg-bar .track.lanes .lane.is-flip .lg-tl:nth-child(4) { animation-delay: 0.15s; }
+.lg-bar .track.lanes .lane.is-flip .lg-tl:nth-child(5) { animation-delay: 0.2s; }
+.lg-bar .track.lanes .lane.is-flip .lg-tl:nth-child(6) { animation-delay: 0.25s; }
+@media (prefers-reduced-motion: reduce) { .lg-bar .track.lanes .lane.is-flip .lg-tl { animation: none; } }

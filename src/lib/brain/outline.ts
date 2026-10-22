@@ -6,11 +6,14 @@
 // - limits (never broken): no heavy legs in the 24 h before a class, no 3
 //   hard days in a row, never two non-class key sessions on one day (no
 //   cramming), at least one full rest day in the week;
-// - class nights SUGGESTED from Settings' class nights, a 1 → 2 → 3 ladder
-//   (the athlete model's class tolerance), never before the block's second
-//   week, on the night his history says works (class-night fit × evening
-//   adherence); a skipped class (any reason) is never made up that week, and
-//   a class he took off with UNDO is not offered again that week;
+// - class days SUGGESTED from Settings' class days (none set: any day), on a
+//   1 → 2 → 3 ladder (classPicker.ts), never before the block's second week,
+//   on the day and slot his history says works (the day's class fit × his
+//   adherence in that slot; the slot learned per weekday, else weekday
+//   evenings and weekend mornings); a skipped class (any reason) is never made
+//   up that week, a class he took off with UNDO is not offered again that
+//   week, and a planned class comes off when one he added himself leaves no
+//   day between (page 69 §3);
 // - rest days are the coach's call: rest lands where he likes to rest (his
 //   moves teach it), and a second rest day comes when he needs one;
 // - sessions sit where he actually trains (AM vs PM adherence).
@@ -24,6 +27,7 @@ import { isHard, isHardRun, isHeavyHinge, isHeavyLegs, type BlockKind } from '..
 import { KEY_TYPES } from '../keyTypes'
 import { cellOf } from './athleteModel'
 import type { AthleteModel } from './types'
+import { classOffWhy, classSlotScore, classWhy, slotsOf, type ClassLadder, type ClassSlotChoice } from './classPicker'
 import type { ReadinessState } from './readiness'
 
 export const MAX_CHANGES = 2
@@ -44,6 +48,8 @@ export interface OutlineSession {
   locked: boolean
   /** Run category ('tempo', 'progression', ...) for the spacing costs. */
   notes?: string | null
+  /** Effort he logged (a done class: the why when a planned one comes off). */
+  rpe?: number | null
 }
 
 export interface OutlineIn {
@@ -55,14 +61,20 @@ export interface OutlineIn {
   /** First day of the block (classes from its second week). */
   blockStart: number
   sessions: OutlineSession[]
-  /** Settings' class nights (0 = Sunday). */
-  classNights: readonly number[]
+  /** Candidate class days (0 = Sunday): Settings' days, else every day. */
+  classDays: readonly number[]
+  /** Settings has class days (the why says so when it doesn't). */
+  classDaysSet?: boolean
+  /** The slot for a class on each weekday (classPicker.slotForClassDay). Missing: weekday PM, weekend AM. */
+  classSlots?: Readonly<Record<number, ClassSlotChoice>>
+  /** On an ANY day, the slot he has used there more often (classPicker.classLean). */
+  classLean?: Readonly<Record<number, 'am' | 'pm' | null>>
   /** Profile cap on classes a week (null: none). */
   classCap: number | null
   /** A class the coach added was taken off with UNDO this week: no more class suggestions this week. */
   classHeld: boolean
-  /** The last two classes the coach suggested were both not done: the ladder steps down a week (§9). */
-  classPaused?: boolean
+  /** The class ladder (§9): classes a week, a week off, days not suggested for now. Missing: one a week. */
+  ladder?: ClassLadder | null
   model: AthleteModel
   state: ReadinessState
   /** A second rest day is due (RED, soreness 4+ two mornings, 5+ training days running with energy falling). */
@@ -70,7 +82,7 @@ export interface OutlineIn {
 }
 
 export type OutlineChange =
-  | { kind: 'add'; type: 'mt_class'; day: number; slot: 'pm'; why: string; tempId: string }
+  | { kind: 'add'; type: 'mt_class'; day: number; slot: 'am' | 'pm'; why: string; tempId: string }
   | { kind: 'move'; sessionId: string; type: string; label: string | null; fromDay: number; fromSlot: 'am' | 'pm'; day: number; slot: 'am' | 'pm'; why: string }
   | { kind: 'rest'; sessionId: string; type: string; label: string | null; day: number; why: string }
 
@@ -81,12 +93,18 @@ const dow = (day: number) => ((day % 7) + 11) % 7
 const DAY_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const like = (s: OutlineSession) => ({ type: s.type, label: s.label, notes: null, estimatedMin: null })
 
-/** Classes the week aims for: none before week 2 of Block Zero, then the model's tolerance (1 → 2 → 3), under the profile cap. */
-export function classTarget(inp: Pick<OutlineIn, 'blockType' | 'blockStart' | 'monday' | 'model' | 'classCap' | 'classNights' | 'classPaused'>): number {
-  if (inp.blockType !== 'block_zero' || inp.classNights.length === 0) return 0
+/** Classes the week aims for: none before week 2 of Block Zero, then the ladder (1 → 2 → 3), under the profile cap. */
+export function classTarget(inp: Pick<OutlineIn, 'blockType' | 'blockStart' | 'monday' | 'classCap' | 'classDays' | 'ladder'>): number {
+  if (inp.blockType !== 'block_zero' || inp.classDays.length === 0) return 0
   if (inp.monday + 6 < inp.blockStart + 7) return 0
-  if ((inp as { classPaused?: boolean }).classPaused) return 0
-  return Math.max(0, Math.min(inp.model.klass.perWeekTolerated, inp.classCap ?? 3, inp.classNights.length))
+  if (inp.ladder?.paused) return 0
+  const days = inp.classDays.filter(d => !(inp.ladder?.avoidDays ?? []).includes(d)).length
+  return Math.max(0, Math.min(inp.ladder?.level ?? 1, inp.classCap ?? 3, days))
+}
+
+/** The slot choice for a class on weekday `dow` (default: weekday evening, weekend morning). */
+export function classSlotChoice(inp: Pick<OutlineIn, 'classSlots'>, dow: number): ClassSlotChoice {
+  return inp.classSlots?.[dow] ?? (dow === 0 || dow === 6 ? 'am' : 'pm')
 }
 
 const SLOT_HOUR = { am: 8, pm: 18 } as const
@@ -115,6 +133,17 @@ export function spacingCosts(sessions: readonly OutlineSession[], blockType: Blo
     const run = week.find(s => s.day === lift.day && (s.type === 'running' || s.type === 'foundation_run') && hoursAfter(s, lift) > 0)
     if (run) out.push({ cost: 0.4, why: `${DAY_NAME[dow(lift.day)]}: lift first, run later` })
   }
+  // A class is hard interval work: a hard run within 24 h either side of it, by its real slot.
+  const classes = week.filter(s => s.type === 'mt_class')
+  for (const c of classes) {
+    for (const run of week.filter(s => isHardRun({ type: s.type, notes: s.notes ?? null, estimatedMin: null }))) {
+      if (Math.abs(hoursAfter(c, run)) < 24) out.push({ cost: 0.6, why: `hard run within 24 h of ${DAY_NAME[dow(c.day)]}'s class` })
+    }
+  }
+  // Two classes inside 24 h of each other: no day between.
+  for (let i = 0; i < classes.length; i++) for (let j = i + 1; j < classes.length; j++) {
+    if (Math.abs(hoursAfter(classes[i], classes[j])) <= 24) out.push({ cost: 0.8, why: `classes ${DAY_NAME[dow(classes[i].day)]} and ${DAY_NAME[dow(classes[j].day)]} with no day between` })
+  }
   return out
 }
 
@@ -124,8 +153,9 @@ export function violations(sessions: readonly OutlineSession[], blockType: Block
   const days = Array.from({ length: 9 }, (_, i) => monday - 1 + i)
   const on = (d: number) => sessions.filter(s => s.day === d && live(s))
   for (const d of days) {
+    // No heavy legs in the 24 h before a class, by the class's real slot (a weekend morning class too).
     const cls = on(d).filter(s => s.type === 'mt_class')
-    if (cls.length && (on(d).some(s => isHeavyLegs(s, blockType) && !(s.slot === 'pm' && cls.every(c => c.slot === 'am'))) || on(d - 1).some(s => isHeavyLegs(s, blockType) && s.slot === 'pm'))) out.push(`heavy legs before ${DAY_NAME[dow(d)]}'s class`)
+    if (cls.some(c => [...on(d - 1), ...on(d)].some(s => isHeavyLegs(s, blockType) && hoursAfter(s, c) >= 0 && hoursAfter(s, c) < 24))) out.push(`heavy legs before ${DAY_NAME[dow(d)]}'s class`)
     const key = on(d).filter(s => KEY_TYPES.has(s.type) && s.type !== 'mt_class')
     if (key.length > 1 && d >= monday && d <= monday + 6) out.push(`${DAY_NAME[dow(d)]} holds ${key.length} sessions`)
   }
@@ -159,13 +189,13 @@ export function score(plan: Plan, inp: OutlineIn): number {
   // Classes: up to the target, each worth its night's fit and the evening's chance.
   const target = classTarget(inp)
   const classes = week.filter(x => x.type === 'mt_class')
-  const counted = classes.filter(x => x.status !== 'missed') // a skipped one still fills its slot: never made up
-  const nightScore = (x: OutlineSession) => inp.model.klass.nights[dow(x.day)].p * 0.5 + cells[cellOf(x.day, 'pm', null)].p * 0.5
-  const ranked = counted.map(nightScore).sort((a, b) => b - a)
+  // A skipped one still fills its slot (never made up); one the coach takes off tonight does not.
+  const counted = classes.filter(x => x.status !== 'missed' && !plan.changes.some(c => c.kind === 'rest' && c.sessionId === x.id))
+  const ranked = counted.map(x => classSlotScore(inp.model, x.day, x.slot, inp.classLean?.[dow(x.day)] ?? null)).sort((a, b) => b - a)
   for (let i = 0; i < Math.min(target, ranked.length); i++) v += 1.5 + ranked[i]
   if (counted.length > Math.max(target, classes.filter(c => c.locked).length)) v -= 2 * (counted.length - target)
-  // A class pairs best with an easy run-walk that morning.
-  for (const c of classes.filter(live)) if (s.some(x => x.day === c.day && x.slot === 'am' && (x.type === 'foundation_run' || x.type === 'running') && live(x))) v += 0.2
+  // An evening class pairs best with an easy run-walk that morning.
+  for (const c of classes.filter(live)) if (c.slot === 'pm' && s.some(x => x.day === c.day && x.slot === 'am' && (x.type === 'foundation_run' || x.type === 'running') && !isHardRun({ type: x.type, notes: x.notes ?? null, estimatedMin: null }) && live(x))) v += 0.2
   // Rest where he likes it.
   const keyOn = (d: number) => s.some(x => x.day === d && live(x) && KEY_TYPES.has(x.type))
   for (const d of inp.model.adherence.preferredRestDays) {
@@ -190,13 +220,6 @@ function changeDay(c: OutlineChange): number {
   return c.kind === 'move' ? Math.min(c.fromDay, c.day) : c.day
 }
 
-function nightWhy(inp: OutlineIn, day: number): string {
-  const n = inp.model.klass.nights[dow(day)]
-  const name = DAY_NAME[dow(day)]
-  if (n.attended > 0) return `Of your class nights, ${name} fits: ${n.attended} of ${n.attended + n.scheduleSkips + n.unexplained} done there.`
-  return `Of your class nights, ${name} fits the week: no heavy legs that day or the night before.`
-}
-
 /** Single edits from a plan. */
 function edits(plan: Plan, inp: OutlineIn): Plan[] {
   const out: Plan[] = []
@@ -208,11 +231,15 @@ function edits(plan: Plan, inp: OutlineIn): Plan[] {
   const target = classTarget(inp)
   const weekClasses = s.filter(x => x.type === 'mt_class' && x.day >= inp.monday && x.day <= inp.monday + 6 && x.status !== 'missed')
   if (!inp.classHeld && weekClasses.length < target && inp.state !== 'RED') {
-    for (const d of days) {
-      // A class never before the block's eighth day (§7: week 2 at the earliest).
-      if (d < inp.blockStart + 7 || !inp.classNights.includes(dow(d)) || s.some(x => x.day === d && x.type === 'mt_class')) continue
+    for (const d of days) for (const slot of slotsOf(classSlotChoice(inp, dow(d)))) {
+      // A class never before the block's eighth day (§7: week 2 at the earliest); none on a day
+      // skipped twice lately; no new class today on an amber morning; never on a slot that holds a session.
+      if (d < inp.blockStart + 7 || !inp.classDays.includes(dow(d)) || (inp.ladder?.avoidDays ?? []).includes(dow(d)) || s.some(x => x.day === d && x.type === 'mt_class')) continue
+      if (d === inp.today && inp.state === 'AMBER') continue
+      if (s.some(x => x.day === d && x.slot === slot && live(x) && KEY_TYPES.has(x.type))) continue
       const tempId = `class-${d}`
-      const added: Plan = { sessions: [...s, { id: tempId, type: 'mt_class', label: 'MT Class', day: d, slot: 'pm', status: 'planned', source: 'coach', locked: false }], changes: [...plan.changes, { kind: 'add', type: 'mt_class', day: d, slot: 'pm', why: nightWhy(inp, d), tempId }] }
+      const why = classWhy(inp.model, d, slot, { setDays: inp.classDaysSet !== false, ladder: inp.ladder ?? null, nth: weekClasses.length + 1 })
+      const added: Plan = { sessions: [...s, { id: tempId, type: 'mt_class', label: 'MT Class', day: d, slot, status: 'planned', source: 'coach', locked: false }], changes: [...plan.changes, { kind: 'add', type: 'mt_class', day: d, slot, why, tempId }] }
       out.push(added)
       // The class clashes with a lift (heavy legs before it, a heavy hinge after it): the lift moves, never the class (idea 2).
       const before = violations(plan.sessions, inp.blockType, inp.monday).length
@@ -228,6 +255,16 @@ function edits(plan: Plan, inp: OutlineIn): Plan[] {
           }
         }
       }
+    }
+  }
+  // A planned class comes off when one he added himself leaves no day between, or the week holds more than the ladder (page 69 §3).
+  const liveClasses = s.filter(x => x.type === 'mt_class' && x.day >= inp.monday && x.day <= inp.monday + 6 && live(x))
+  if (liveClasses.length > 1) {
+    for (const x of liveClasses.filter(free)) {
+      const his = liveClasses.filter(c => c.id !== x.id && c.locked).sort((a, b) => Math.abs(hoursAfter(a, x)) - Math.abs(hoursAfter(b, x)))[0]
+      if (!his) continue
+      const kept = liveClasses.find(c => c.id !== x.id && c.id !== his.id) ?? null
+      out.push({ sessions: s.map(y => (y.id === x.id ? { ...y, status: 'skipped' } : y)), changes: [...plan.changes, { kind: 'rest', sessionId: x.id, type: x.type, label: x.label, day: x.day, why: classOffWhy(x, { day: his.day, rpe: his.rpe ?? null }, kept) }] })
     }
   }
   // Move a key session to another day (alone there), or swap two.

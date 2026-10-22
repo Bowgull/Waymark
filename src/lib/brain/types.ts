@@ -275,12 +275,12 @@ export interface BetaCell {
 }
 
 /**
- * One weekday's class-night fit. Attended and his own adds count for the night;
+ * One weekday's class-day fit. Attended and his own adds count for the day;
  * skips for time / schedule and unexplained misses count against it; skips for
- * a recovery reason (tired, sore, sick) are kept out: they say nothing about the night.
+ * a recovery reason (tired, sore, sick) are kept out: they say nothing about the day.
  */
-export interface ClassNight extends BetaCell {
-  /** Classes the coach (or template) put on this night. */
+export interface ClassDay extends BetaCell {
+  /** Classes the coach (or template) put on this day. */
   suggested: number
   attended: number
   scheduleSkips: number
@@ -296,10 +296,10 @@ export interface ClassEstimate extends Confidence {
   classes: number
   learnedNotes: number
   /**
-   * Class-night fit per weekday (0 = Sunday): suggested vs attended vs skipped
+   * Class-day fit per weekday (0 = Sunday): suggested vs attended vs skipped
    * for schedule. Its own signal, never fatigue (Josh, 2026-10-20).
    */
-  nights: Record<number, ClassNight>
+  days: Record<number, ClassDay>
 }
 
 export interface RecoveryItemBaseline {

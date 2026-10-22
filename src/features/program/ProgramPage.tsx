@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import { Board, CloseWord, Crest, FlapButton, FlapLabel, SceneWindow, showPop } from '@/design'
@@ -13,7 +13,6 @@ import { strengthBlockWeek } from '@/lib/weeklyTemplate'
 import { setWorldWeeks } from '@/world/worldStore'
 import { isPendingStart, startDayOf } from '@/lib/coach/startDay'
 
-import { BlockZeroExtras } from './BlockZeroExtras'
 import { StartDayBoard, StartWaitBoard } from './StartDay'
 import { moveStartDay, prepareStartWeek } from './startDayApi'
 import { WeekView } from './WeekView'
@@ -169,7 +168,6 @@ function Frame({ children }: { children: ReactNode; road?: boolean }) {
 }
 
 export function ProgramPage() {
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const dayParam = parseDayParam(searchParams.get('day'))
   const [block, setBlock] = useState<Block | null | undefined>(undefined)
@@ -700,16 +698,6 @@ export function ProgramPage() {
         {ravenLine ? <p className="pg-weekl is-w">{ravenLine}</p> : read.why && <p className="pg-weekl">{read.why}</p>}
         {changesLine && <button type="button" className="pg-loglink" onClick={() => setLogOpen(true)}>{changesLine}</button>}
       </div>
-
-      {isBlockZero && (
-        <BlockZeroExtras
-          blockId={block.id}
-          viewWeek={weekNumber}
-          currentWeek={currentWeek}
-          totalWeeks={block.totalWeeks}
-          onOpenGate={() => navigate('/block-zero/gate')}
-        />
-      )}
 
       {!weekData ? (
         <div className="db-glass">

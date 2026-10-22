@@ -244,15 +244,15 @@ assert.equal(bagRoundsFromU(6, 0.5, 5), 5, 'never above the cap')
   assert.equal(skipped.bag.roundsTolerated, null, 'a time skip says nothing about tolerance')
 }
 
-// ─── MT class: tolerance and class-night fit ─────────────────
+// ─── MT class: tolerance and class-day fit ─────────────────
 {
   const wk1 = [session(MON + 2, 'mt_class', { slot: 'pm', startMin: 18 * 60 + 30, source: 'coach' })]
   const wk2 = [session(MON + 9, 'mt_class', { slot: 'pm', startMin: 18 * 60 + 30, source: 'coach' }), session(MON + 11, 'mt_class', { slot: 'pm', status: 'skipped', skipReason: 'schedule', source: 'coach' })]
   const wk3 = [session(MON + 16, 'mt_class', { slot: 'pm', status: 'skipped', skipReason: 'too_sore', source: 'coach' }), session(MON + 18, 'mt_class', { slot: 'pm', status: 'skipped', skipReason: 'schedule', source: 'coach' })]
   const checkIns = [MON + 3, MON + 10].map(d => ci(d, { soreness: 2 }))
   const m = buildAthleteModel(events({ sessions: [...wk1, ...wk2, ...wk3], checkIns }), MON + 20)
-  const wed = m.klass.nights[3]
-  const fri = m.klass.nights[5]
+  const wed = m.klass.days[3]
+  const fri = m.klass.days[5]
   assert.equal(wed.attended, 2)
   assert.equal(wed.recoverySkips, 1, 'a sore skip is kept apart')
   assert.equal(wed.n, 2, '...and out of the fit')
@@ -323,7 +323,7 @@ assert.equal(bagRoundsFromU(6, 0.5, 5), 5, 'never above the cap')
   const rows = modelRows(m)
   const keys = rows.map(r => `${r.kind}:${r.key}`)
   assert.equal(new Set(keys).size, keys.length, 'one row per kind and key')
-  for (const k of ['lift:ex-db-rdl', 'run:line', 'run:tolerance', 'bag:main', 'class:main', 'class:nights', 'recovery:main', 'back:main', 'adherence:am-weekday', 'adherence:pm-weekend', 'adherence:start-times', 'adherence:rest-days', 'adherence:schedule']) {
+  for (const k of ['lift:ex-db-rdl', 'run:line', 'run:tolerance', 'bag:main', 'class:main', 'class:days', 'recovery:main', 'back:main', 'adherence:am-weekday', 'adherence:pm-weekend', 'adherence:start-times', 'adherence:rest-days', 'adherence:schedule']) {
     assert.ok(keys.includes(k), k)
   }
   for (const r of rows) {
