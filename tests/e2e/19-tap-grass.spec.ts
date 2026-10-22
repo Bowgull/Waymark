@@ -171,12 +171,12 @@ test('Items 4-5: a running session is only the strip; Today opens the next to-do
 })
 
 test.describe('Item 6: the row and the strip move into each other (motion on)', () => {
-  test.use({ reducedMotion: 'no-preference' })
-
   test('‹ TODAY: the row flies into the strip and leaves the list; finished, it lands back with ✓; nothing jumps', async ({ page, api }) => {
     const bag = await insertSession(api, 'bag_work', 'pm')
     await intoRound(page, bag.id)
-    await page.getByRole('button', { name: '‹ TODAY' }).tap({ force: true })
+    // the way in with Reduce Motion (steady taps), then motion on for the handoff itself
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.getByRole('button', { name: '‹ TODAY' }).tap()
     await expect(page).toHaveURL(/\/today/)
     const strip = page.locator('button.wm-live')
     const tabs = page.locator('nav.wm-tabs')
@@ -184,6 +184,8 @@ test.describe('Item 6: the row and the strip move into each other (motion on)', 
     const tabsAt = await tabs.boundingBox()
     // While the row flies the strip keeps its place, unseen; then it shows and the copy is gone.
     const stripAt = await strip.boundingBox()
+    // the flight happens: a copy of the row is in the air while the strip waits unseen
+    await expect(page.locator('.td-ghost')).toHaveCount(1, { timeout: 5000 })
     await expect(strip).not.toHaveClass(/is-awaiting/, { timeout: 8000 })
     await expect(page.locator('.td-ghost')).toHaveCount(0, { timeout: 3000 })
     await expect.poll(() => strip.evaluate(el => getComputedStyle(el).opacity)).toBe('1')
@@ -193,6 +195,7 @@ test.describe('Item 6: the row and the strip move into each other (motion on)', 
     expect(await tabs.boundingBox()).toEqual(tabsAt)
 
     // Finished: back on Today, the row lands in the list, done, with its ✓; no strip, no copy left.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await strip.tap()
     await expect(page).toHaveURL(new RegExp(`/session/${bag.id}`))
     const x = page.getByRole('button', { name: 'End. Hold for 1.5 seconds.' })
@@ -200,12 +203,21 @@ test.describe('Item 6: the row and the strip move into each other (motion on)', 
     await page.keyboard.press('Enter')
     const close = page.getByRole('button', { name: 'CLOSE SESSION' })
     await expect(close).toBeVisible({ timeout: 10_000 })
+    // motion on again for the landing (the moment, then Today)
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
     await expect(async () => {
       if (await close.isVisible()) await close.tap({ force: true })
       await expect(page).toHaveURL(/\/today/, { timeout: 3000 })
     }).toPass({ timeout: 30_000 })
     const row = todayRow(page, bag.id)
-    await expect(row).toHaveClass(/is-done/, { timeout: 15_000 })
+    // the moment plays first (motion on); a tap goes on, as a thumb would
+    const moment = page.getByRole('button', { name: /Tap to go on\.$/ })
+    await expect(async () => {
+      if (await moment.isVisible()) await moment.tap({ force: true })
+      await expect(row).toBeAttached({ timeout: 2000 })
+    }).toPass({ timeout: 30_000 })
+    await expect(row).toHaveClass(/is-done/)
+    // (the landing's copy flies within the first second; it is gone once the row shows)
     await expect(page.locator('.td-ghost')).toHaveCount(0, { timeout: 5000 })
     await expect.poll(() => row.evaluate(el => getComputedStyle(el).visibility)).toBe('visible')
     await expect(strip).toHaveCount(0)
