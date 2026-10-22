@@ -60,15 +60,15 @@ test('Every board closes the same ways: CLOSE, tap outside, pull it down, Escape
 
   // Pulled down, past 70 px: closed. Less: it settles back.
   board = await openWeather(page)
+  // a finger's pointer events (a mouse drag on WebKit starts a text selection instead of a pull)
   const pull = async (dy: number) => {
-    // by its top edge, left of CLOSE: no text under the finger (a mouse drag on words selects them instead)
-    const b = (await board.locator('.top').boundingBox())!
-    const x = b.x + 24
+    const top = board.locator('.top')
+    const b = (await top.boundingBox())!
+    const at = (y: number) => ({ pointerId: 7, pointerType: 'touch', isPrimary: true, button: 0, clientX: b.x + 24, clientY: y })
     const y = b.y + b.height / 2
-    await page.mouse.move(x, y)
-    await page.mouse.down()
-    for (let i = 1; i <= 8; i++) await page.mouse.move(x, y + (dy * i) / 8)
-    await page.mouse.up()
+    await top.dispatchEvent('pointerdown', at(y))
+    for (let i = 1; i <= 8; i++) await board.dispatchEvent('pointermove', at(y + (dy * i) / 8))
+    await board.dispatchEvent('pointerup', at(y + dy))
   }
   await pull(40)
   await expect(board).toBeVisible()

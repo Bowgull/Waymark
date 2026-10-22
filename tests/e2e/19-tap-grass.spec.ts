@@ -195,6 +195,8 @@ test('Items 4-5: a running session is only the strip; Today opens the next to-do
 
 test.describe('Item 6: the row and the strip move into each other (motion on)', () => {
   test('‹ TODAY: the row flies into the strip and leaves the list; finished, it lands back with ✓; nothing jumps', async ({ page, api }) => {
+    // motion on, on the runner's software WebGL: the session, the moment and Today each take their time
+    test.slow()
     const bag = await insertSession(api, 'bag_work', 'pm')
     await intoRound(page, bag.id)
     // the way in with Reduce Motion (steady taps), then motion on for the handoff itself

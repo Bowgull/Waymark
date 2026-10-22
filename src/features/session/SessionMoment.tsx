@@ -62,6 +62,8 @@ export function SessionMoment({ line, onDone }: { line: string; onDone: () => vo
     const t0 = performance.now()
     let raf = 0, dust: Dust[] = []
     const frame = (now: number) => {
+      // once it has moved on, it stops: a state update every frame would keep restarting Today's render (a transition) under it
+      if (finished.current) return
       raf = requestAnimationFrame(frame)
       const kk = (now - t0) / DUR_MS
       setK(kk)

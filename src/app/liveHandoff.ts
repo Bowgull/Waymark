@@ -139,6 +139,8 @@ export function whenSettled(el: HTMLElement, go: () => void): () => void {
     const moving = typeof document.getAnimations === 'function'
       ? document.getAnimations().filter(a => {
           const target = (a.effect as KeyframeEffect | null)?.target as Element | null | undefined
+          // a loop (the pixel cursor's bob) never finishes: it is not part of the arrival
+          if (a.effect?.getTiming().iterations === Infinity) return false
           return !!target && (target.contains(el) || (board?.contains(target) ?? false))
         })
       : []
