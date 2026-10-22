@@ -1,4 +1,12 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "codex/roadtrip-coach": true,
+      "claude/*": false,
+      "injury-weather": false
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
