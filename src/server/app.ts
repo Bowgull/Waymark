@@ -35,7 +35,7 @@ import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessio
 import { allBoardRows, boardSuggestions, computeSuggestions, withBlockLabels } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, weekLineFor } from './weeklyPass'
 import { applyTmUpdate } from './coachAsks'
-import { addedWhy, applyPendingMerges, emptyState, lineChanges, markSeen, pmStart, reasonWords, recordChanges, rolloverAndFix, snap, undoChange, weekChangeViews } from './changes'
+import { addedWhy, applyPendingMerges, emptyState, lineChanges, markSeen, pmStart, reasonWords, recordChanges, redoChange, rolloverAndFix, snap, undoChange, weekChangeViews } from './changes'
 import { loadEasyHrCeiling } from '../lib/hrAnalysis'
 import { isZone2Run, stravaPlanLine } from '../lib/stravaMatch'
 import { runSessionReview } from '../lib/sessionReviewAI'
@@ -66,6 +66,9 @@ import {
   weekStamps,
 } from './coachData'
 import { capToday, doseFor, replanWeek, type StoredDose } from './brain'
+import { coachPicksFor } from './coachPicks'
+import { loadModelEvents } from './athleteModel'
+import { usualStartOf } from '../lib/brain/athleteModel'
 import { athleteTimeZone, localDayIn, noteAppOpen } from './timeZone'
 import { templateFromDose } from '../lib/brain/doses'
 
@@ -713,6 +716,44 @@ app.get('/api/sessions/suggestions', async (c) => {
   return c.json({ ...result, suggestions: withBlockLabels(rows, blockType) })
 })
 
+// The coach picks for REPLACE and + add (page 73), from the new brain: 1-3
+// picks with one short reason each, then everything else, every option with
+// the preview of exactly what it would be that day (the brain's own dose).
+// ?mode=replace&sessionId=… or ?mode=add&date=…; &wx=rain|cold|heat|storm&wxHour=6 PM
+// when the phone's weather crosses a line at the session's hour (today only).
+app.get('/api/sessions/coach-picks', async (c) => {
+  const mode = c.req.query('mode') === 'replace' ? 'replace' : 'add'
+  const date = c.req.query('date')
+  const sessionId = c.req.query('sessionId') ?? null
+  if (mode === 'add' && (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))) return c.json({ error: 'date (YYYY-MM-DD) required' }, 400)
+  if (mode === 'replace' && !sessionId) return c.json({ error: 'sessionId required' }, 400)
+  const db = createDB(c.env)
+  const day = date ? isoToEpochDay(date) : athleteDay(c, c.req.query('today'))
+  const today = athleteDay(c, c.req.query('today'), day)
+  const wx = c.req.query('wx')
+  const weather = wx === 'rain' || wx === 'cold' || wx === 'heat' || wx === 'storm' ? { kind: wx, hour: (c.req.query('wxHour') ?? '').slice(0, 8) || 'your hour' } as const : null
+  const out = await coachPicksFor(db, { day, today, mode, sessionId, pmOnly: c.req.query('pm') === '1', weather })
+  if (!out) return c.json({ error: 'session not found' }, 404)
+  return c.json(out)
+})
+
+// The hours he usually starts each kind of session (local minutes, from his
+// logs; no setup), and the PM time from Settings: the weather line reads the
+// planned hour from these (page 72).
+app.get('/api/coach/hours', async (c) => {
+  const db = createDB(c.env)
+  const today = athleteDay(c, c.req.query('today'))
+  const events = await loadModelEvents(db, today - 60, today)
+  const byType: Record<string, number[]> = {}
+  for (const s of events.sessions) if (s.status === 'completed' && s.startMin != null) (byType[s.type] ??= []).push(s.startMin)
+  const usual: Record<string, { am: number | null; pm: number | null }> = {}
+  for (const [type, list] of Object.entries(byType)) {
+    const pick = (xs: number[]) => { const u = usualStartOf(xs); return u && u.inCluster >= 2 ? u.minute : null }
+    usual[type] = { am: pick(list.filter(m => m < 720)), pm: pick(list.filter(m => m >= 720)) }
+  }
+  return c.json({ usual, pmStart: await pmStart(db) })
+})
+
 // ─── Ad-hoc session insertion ────────────────────────────────
 
 // "+ Add session always adds" (page 56 item 4): nothing is refused. The
@@ -912,7 +953,8 @@ app.post('/api/sessions/:id/replace', async (c) => {
 
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
   const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
-  return c.json({ original: replaced, replacement: created })
+  // The swap's change id: the optional WHY? tiles after SWAP IN land on it (page 73).
+  return c.json({ original: replaced, replacement: created, changeId: swapIds[0] ?? null })
 })
 
 /** Plain names for a session type, for the change flaps ("BAG WORK"). */
@@ -1030,6 +1072,15 @@ app.post('/api/changes/:id/undo', async (c) => {
   return c.json(out)
 })
 
+// REDO (page 73): a coach change he undid from the rune's window comes back.
+app.post('/api/changes/:id/redo', async (c) => {
+  const body = await c.req.json<{ today?: string }>().catch(() => ({} as { today?: string }))
+  const db = createDB(c.env)
+  const out = await redoChange(db, c.req.param('id'), athleteDay(c, body.today), Math.floor(Date.now() / 1000))
+  if (!out.ok) return c.json({ error: out.error, lock: out.lock ?? null }, out.status)
+  return c.json(out)
+})
+
 // A reason tile on an instant SKIP (page 56 item 3): the reason goes onto his
 // change and the session; a stress reason (ROUGH DAY) lets the coach ease the
 // next hard day (R8).
@@ -1038,17 +1089,31 @@ app.patch('/api/changes/:id/reason', async (c) => {
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
   const [row] = await db.select().from(weekAdjustments).where(eq(weekAdjustments.id, c.req.param('id')))
-  if (!row || row.kind !== 'skip' || row.actor !== 'you' || !row.targetSessionId) return c.json({ error: 'change not found' }, 404)
+  // Page 73: the WHY? tiles follow a SKIP and a SWAP IN (REPLACE) alike.
+  if (!row || (row.kind !== 'skip' && row.kind !== 'swap') || row.actor !== 'you' || !row.targetSessionId) return c.json({ error: 'change not found' }, 404)
   const reason = typeof body.reason === 'string' && body.reason ? body.reason : null
   const detail = typeof body.detail === 'string' && body.detail ? body.detail.slice(0, 200) : null
   const [session] = await db.select().from(sessions).where(eq(sessions.id, row.targetSessionId))
   if (!session || session.status !== 'skipped') return c.json({ error: 'session is not skipped' }, 409)
-  await db.update(sessions).set({ skipReason: reason, skipReasonDetail: detail }).where(eq(sessions.id, session.id))
   const words = reasonWords(reason)
+  const swap = row.kind === 'swap'
+  // A swap's original keeps its "Replaced: ..." note line in step with the reason.
+  const notes = swap ? [words ? `Replaced: ${words.toLowerCase()}` : 'Replaced', ...(session.notes ?? '').split('\n').filter(l => l.trim() && !/^Replaced\b/.test(l))].join('\n') : session.notes
+  await db.update(sessions).set({ skipReason: reason, skipReasonDetail: detail, ...(swap ? { notes } : {}) }).where(eq(sessions.id, session.id))
   const after = parseJson<Record<string, unknown>>(row.afterJson, {})
   const snaps = (after.sessions as Array<{ id: string; f: Record<string, unknown> }> | undefined) ?? []
-  const fixed = snaps.map(s => (s.id === session.id ? { ...s, f: { ...s.f, skipReason: reason, skipReasonDetail: detail } } : s))
-  const why = words ? `Skipped. ${words}${detail ? `: ${detail}` : ''}.` : 'Skipped.'
+  const fixed = snaps.map(s => (s.id === session.id ? { ...s, f: { ...s.f, skipReason: reason, skipReasonDetail: detail, ...(swap ? { notes } : {}) } } : s))
+  if (swap) {
+    // The swapped-in session carries the reason too (context_json.replaced.userSkipReason).
+    for (const createdId of (after.created as string[] | undefined) ?? []) {
+      const [made] = await db.select().from(sessions).where(eq(sessions.id, createdId))
+      if (!made) continue
+      const ctx = parseJson<Record<string, unknown>>(made.contextJson, {})
+      const replaced = (ctx.replaced as Record<string, unknown> | undefined) ?? {}
+      await db.update(sessions).set({ contextJson: JSON.stringify({ ...ctx, replaced: { ...replaced, userSkipReason: reason } }) }).where(eq(sessions.id, made.id))
+    }
+  }
+  const why = swap ? (words ? `${words}.` : 'Your call.') : words ? `Skipped. ${words}${detail ? `: ${detail}` : ''}.` : 'Skipped.'
   await db.update(weekAdjustments).set({ why, reason: why, afterJson: JSON.stringify({ ...after, sessions: fixed }) }).where(eq(weekAdjustments.id, row.id))
   void nowSec
   // Tonight's pass reads the reason (a schedule reason never counts as too hard).

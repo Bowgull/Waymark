@@ -7,6 +7,8 @@ import {
   flipSlot,
   pickerOptions,
   REPLACE_REASONS,
+  REPLACE_WHY_TILES,
+  SKIP_WHY_TILES,
   selectionFor,
   SKIP_PLACES,
   SKIP_REASONS,
@@ -115,6 +117,12 @@ const base = pickerOptions(TRAINING_TARGETS)
   const knee = boardSuggestions(allBoardRows(), { mode: 'replace', replacing: 'foundation_run', dayTypes: [], kneeSafe: true })
   const kneePicks = knee.filter(s => s.priority === 'suggested')
   assert.deepEqual(kneePicks.map(s => s.type), ['active_recovery'], 'b: the knee-safe pick is Reset, rope is not a pick')
+}
+
+// Page 73: the WHY? tiles map to the reason codes the brain reads.
+{
+  assert.deepEqual(REPLACE_WHY_TILES.map(t => [t.label, t.value]), [['TIME', 'schedule'], ['BODY', 'too_sore'], ['JUST BECAUSE', 'variety']])
+  assert.deepEqual(SKIP_WHY_TILES.map(t => [t.label, t.value]), [['TIME', 'schedule'], ['BODY', 'too_sore'], ['SICK', 'sick'], ['PAIN', 'injury']])
 }
 
 console.log('departures tests passed')

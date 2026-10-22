@@ -3,7 +3,8 @@
 // relative imports only so the day board tests run it under node.
 
 import type { WeekPost } from '../../world/worldStore'
-import { iconFor, rowStatus, type DayBoardSession } from '../dayboard/rowState'
+import { iconFor, plannedRowMinutes, rowStatus, sessionDisplayName, shortLift, type DayBoardSession } from '../dayboard/rowState'
+import { getStrengthTemplate } from '../../lib/strengthTemplates'
 import type { SessionIconKey } from '../../design/sessionIconKeys'
 
 export { cycleWeeks } from '../../lib/programWeeks'
@@ -95,4 +96,47 @@ export function readWeekAnalysis(analysisJson: string | null | undefined, whyLin
 export function splitWhy(why: string): { lead: string; rest: string } {
   const m = why.match(/^(.+?[.!?])(\s+)(.+)$/)
   return m ? { lead: m[1], rest: m[3] } : { lead: '', rest: why }
+}
+
+// ─── The planner's day list (page 73, approved 2026-10-22) ───────
+
+/** "Easy Run" → "Easy run", "Run-Walk" → "Run-walk". */
+function sentenceCase(s: string): string {
+  const t = s.trim()
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()
+}
+
+/** The strength day's lifts in a few words: "RDL · row · press". */
+function liftsLine(s: Pick<DayBoardSession, 'scheduledDate' | 'blockWeek' | 'blockType' | 'label'>): string {
+  if (s.scheduledDate == null) return 'Strength'
+  const kind = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
+  const main = getStrengthTemplate(new Date(s.scheduledDate * 86400000).getUTCDay(), s.blockWeek ?? 1, kind, s.label ?? null).exercises.filter(e => e.section === 'main')
+  if (main.length === 0) return 'Strength'
+  return main.slice(0, 3).map((e, i) => (i === 0 ? shortLift(e.label) : (shortLift(e.label).split(' ').pop() ?? '').toLowerCase())).join(' · ')
+}
+
+function bagRounds(doseJson: string | null | undefined): number | null {
+  if (!doseJson) return null
+  try { const r = (JSON.parse(doseJson) as { bag?: { rounds?: unknown } }).bag?.rounds; return typeof r === 'number' ? r : null } catch { return null }
+}
+
+/**
+ * A day's one line (page 73): the day's main session in a few words. "RDL ·
+ * row · press", "Easy run · 20 min", "Bag · 4 × 3 min", "MT class", "Rest".
+ */
+export function dayLine(list: ReadonlyArray<DayBoardSession>, weekNumber: number): string {
+  const live = list.filter(s => rowStatus(s.status) !== 'skipped')
+  if (live.length === 0) return list.length > 0 ? 'Skipped' : 'Rest'
+  const main = [...live].reverse().find(s => s.type !== 'mobility') ?? live[0]
+  switch (main.type) {
+    case 'strength': return liftsLine(main)
+    case 'running':
+    case 'foundation_run': return `${sentenceCase(sessionDisplayName(main))} · ${plannedRowMinutes(main, weekNumber)} min`
+    case 'bag_work': { const r = bagRounds(main.doseJson); return r ? `Bag · ${r} × 3 min` : `Bag · ~${plannedRowMinutes(main, weekNumber)} min` }
+    case 'mt_class': return 'MT class'
+    case 'active_recovery': return `${sentenceCase(sessionDisplayName(main))} · walk or bike`
+    case 'skip_rope': return 'Skip rope · 5 × 3 min'
+    case 'mobility': return `Foundation · ~${plannedRowMinutes(main, weekNumber)} min`
+    default: return sentenceCase(sessionDisplayName(main))
+  }
 }

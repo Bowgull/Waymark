@@ -1,0 +1,95 @@
+/* The planner's shared pieces (page 73, approved 2026-10-22), ported from the
+   mockup: the session rows (the same on Program and Today), the pixel cursor,
+   the hold, and the command window. All motion is page 59's (design.css
+   tokens). No boxes or glows: the cursor and the gold name are the highlight. */
+
+/* ── the session row: Today's own row (icon, name on a flap, minutes) ── */
+.pl-row { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: pan-y; transition: background-color var(--t-quick) ease; -webkit-tap-highlight-color: transparent; }
+.pl-rows { display: flex; flex-direction: column; }
+.pl-rows > .pl-row + .pl-row, .pl-rows > .wm-swap + .wm-swap > .pl-row, .pl-rows > * + * > .pl-row { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
+.pl-hit { display: flex; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; outline: none; }
+.pl-nm { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pl-nm .nmw { position: relative; display: inline-block; align-self: flex-start; }
+.pl-mins { font: 700 15px/1 var(--font-mono); color: rgba(240, 230, 192, 0.8); flex: none; white-space: nowrap; }
+.pl-row.is-done { padding-left: 8px; box-shadow: inset 3px 0 0 var(--sf-good-edge), 0 -1px 0 rgba(255, 255, 255, 0.04); }
+.pl-row > .pl-cur { top: 26px; }
+/* a skipped session: struck, its icon dim */
+.pl-row.is-skip .wm-flap .wm-cell { color: rgba(240, 230, 192, 0.66) !important; }
+.pl-row.is-skip .wm-sicon { opacity: 0.4; filter: grayscale(1); }
+.pl-row.is-skip .nmw::after { content: ''; position: absolute; left: -2px; right: -2px; top: 50%; height: 2px; background: #9c5a40; box-shadow: 0 0 4px rgba(156, 90, 64, 0.5); }
+/* the hold: the row darkens a little and a thin gold line traces its foot over 500 ms; let go early and both ease back */
+.pl-row::after { content: ''; position: absolute; left: 0; bottom: 0; height: 1.5px; width: 0; background: #e8c878; opacity: 0.9; transition: width var(--t-quick) var(--ease-in); pointer-events: none; }
+.pl-row.is-press { background-color: rgba(0, 0, 0, 0.28); transition: background-color var(--t-tap) ease-out; }
+.pl-row.is-press::after { width: 100%; transition: width 500ms linear; }
+/* the game-menu highlight: the name turns gold */
+.pl-row.is-on .nmw .wm-flap .wm-cell { color: #e8c878 !important; }
+
+/* the opened session: its real lines, small, under the row */
+.pl-ols { flex-basis: 100%; padding-left: 48px; }
+.pl-lines { display: flex; flex-direction: column; gap: 3px; cursor: default; }
+.pl-ol { display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: baseline; min-width: 0; }
+.pl-lines > .pl-ol:first-child { margin-top: 3px; }
+.pl-lines > :last-child { margin-bottom: 3px; }
+.pl-ol .lb { font: 700 10.5px/1.3 var(--font-body); letter-spacing: 0.14em; color: rgba(240, 230, 192, 0.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-ol .v { font: 500 14px/1.3 var(--font-body); color: #dfe6df; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-ol .v.is-dim { color: rgba(223, 230, 223, 0.6); }
+.pl-ol .v b.ck { color: #8fd4b8; font-weight: 800; }
+.pl-ol .v b.up { color: #8fd4b8; font: 800 13px var(--font-mono); }
+.pl-ol .v b.dn { color: #d98a68; font: 800 13px var(--font-mono); }
+.pl-ol.is-why { display: flex; gap: 7px; align-items: center; font: 600 14px/1.3 var(--font-body); color: #e6efe9; }
+.pl-ol.is-why .wm-rmk { margin-right: 0; }
+.pl-ol.is-why s, .pl-say s { color: rgba(230, 239, 233, 0.7); text-decoration-color: #c4623f; }
+.pl-row.is-done .pl-ol .v { color: rgba(223, 230, 223, 0.75); }
+.pl-enter { border: 0; background: none; font: 800 12px/1 var(--font-body); letter-spacing: 0.16em; color: #e8c878; cursor: pointer; padding: 6px 0; display: inline-block; min-height: 32px; }
+
+/* the cursor: a crisp pixel arrow at the left; it jumps, then a 2 px bob */
+.pl-cur { position: absolute; left: -13px; top: 50%; margin-top: -7px; width: 10px; height: 14px; pointer-events: none; filter: drop-shadow(1px 1px 0 #000); animation: pl-bob 0.9s steps(2) infinite; z-index: 1; }
+@keyframes pl-bob { 50% { transform: translateX(2px); } }
+
+/* ── the command window (FFX-like): dark plate, thin gold rule, crisp pixel corners ── */
+.pl-veil { position: fixed; inset: 0; z-index: 62; }
+.pl-cmd { position: fixed; z-index: 63; padding: 8px 12px 8px 22px; background: #070c0a; box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.55), inset 0 0 0 3px rgba(0, 0, 0, 0.55), 0 10px 26px rgba(0, 0, 0, 0.65); transform-origin: right center; animation: pl-pop var(--t-quick) var(--ease-out) both; max-width: calc(100vw - 20px); }
+.pl-cmd.is-out { animation: pl-unpop 120ms var(--ease-in) both; pointer-events: none; }
+@keyframes pl-pop { from { opacity: 0; transform: scale(0.94); } }
+@keyframes pl-unpop { to { opacity: 0; transform: scale(0.97); } }
+.pl-cmd .pc { position: absolute; width: 3px; height: 3px; background: #e8c878; }
+.pl-cmd .pc.a { left: -1px; top: -1px; } .pl-cmd .pc.b { right: -1px; top: -1px; } .pl-cmd .pc.c { left: -1px; bottom: -1px; } .pl-cmd .pc.d { right: -1px; bottom: -1px; }
+.pl-cl { position: relative; display: flex; align-items: center; gap: 9px; min-height: 44px; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+.pl-cl + .pl-cl { margin-top: 6px; }
+.pl-cl .pl-cur { left: -16px; }
+.pl-cl .grow { flex: 1; min-width: 0; }
+.pl-cl.is-on .wm-flap:not(.is-gold) .wm-cell { color: #e8c878 !important; }
+.pl-cl.is-ember .wm-cell { color: #d98a68 !important; }
+.pl-cl.is-teal .wm-cell { color: #8fd4b8 !important; }
+.pl-cl.is-more .wm-cell { color: rgba(240, 230, 192, 0.62) !important; }
+.pl-cl .gt { font: 800 15px var(--font-mono); color: #c9b27a; }
+.pl-cl .why2 { display: block; margin-top: 4px; font: 500 13px/1.25 var(--font-body); color: #c9b27a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-hdr { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 2px 0 6px -10px; }
+.pl-hdr small { font: 500 12.5px var(--font-body); color: rgba(240, 230, 192, 0.55); }
+.pl-say { margin: 2px 0 6px -10px; font: 600 14.5px/1.3 var(--font-body); color: #e6efe9; max-width: 230px; }
+.pl-say.is-dim { color: rgba(230, 239, 233, 0.6); font-weight: 500; }
+.pl-grid2 { display: grid; grid-template-columns: auto auto; gap: 2px 18px; }
+.pl-grid2 .pl-cl { min-height: 36px; }
+.pl-grid2 .pl-cl + .pl-cl { margin-top: 0; }
+.pl-grid2.is-one { grid-template-columns: auto; }
+.pl-grid2.is-one .pl-cl { min-height: 44px; }
+.pl-take { display: inline-flex; align-items: center; min-height: 44px; margin-top: 2px; padding: 0 2px; cursor: pointer; }
+.pl-inn { display: flex; flex-direction: column; gap: 2px; margin-top: 5px; }
+.pl-inn .pl-ol { grid-template-columns: 62px 1fr; }
+.pl-inn .pl-ol .v { font-size: 13px; color: #c9d6cf; }
+.pl-inn .pl-ol .lb { font-size: 9.5px; }
+/* the coach picks: low over the tab bar, full width */
+.pl-cmd.is-pickw { left: 22px; right: 22px; bottom: calc(81px + max(calc(env(safe-area-inset-bottom) - 4px), 10px) + 20px); transform-origin: center bottom; max-height: calc(100dvh - 200px); overflow-y: auto; scrollbar-width: none; }
+.pl-cmd.is-pickw::-webkit-scrollbar { display: none; }
+.pl-cmd.is-pickw .pl-cl { min-height: 46px; }
+.pl-cmd.is-pickw .pl-cl.is-on { align-items: flex-start; padding: 6px 0; }
+.pl-cmd.is-pickw .pl-cl.is-on .pl-cur { top: 20px; }
+.pl-cmd.is-pickw .pl-cl.is-on > .wm-sicon { margin-top: 2px; }
+.pl-cmd.is-pickw .pl-cl.is-on .pl-mins { margin-top: 6px; align-self: flex-start; }
+body.pl-pickopen .pl-row > .pl-cur, body.pl-pickopen .pl-dr > .pl-cur { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pl-cur { animation: none; }
+  .pl-cmd, .pl-cmd.is-out { animation: none; }
+  .pl-row, .pl-row::after, .pl-row.is-press, .pl-row.is-press::after { transition: none; }
+}
