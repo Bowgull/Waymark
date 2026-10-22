@@ -16,7 +16,11 @@
 //   day between (page 69 §3);
 // - rest days are the coach's call: rest lands where he likes to rest (his
 //   moves teach it), and a second rest day comes when he needs one;
-// - sessions sit where he actually trains (AM vs PM adherence).
+// - sessions sit where he actually trains (AM vs PM adherence);
+// - a week with no strength in it at all (a block started mid-week from an
+//   older plan) gets one strength session on the first free day, when the
+//   caller names one (OutlineIn.strengthStart): strength starts this week,
+//   not next Monday (Josh, 2026-10-21).
 //
 // His own changes and anything held by an UNDO are fixed. Every change costs
 // a little (stability), more for days 4+ out, so a day only moves for a clear
@@ -35,6 +39,8 @@ export const CHANGE_COST = 0.35
 export const FAR_CHANGE_COST = 0.7
 export const FAR_DAYS = 4
 const VIOLATION = 100
+/** The worth of a week's first strength session when the week has none (OutlineIn.strengthStart). */
+export const STRENGTH_START_VALUE = 3
 
 export interface OutlineSession {
   id: string
@@ -79,10 +85,19 @@ export interface OutlineIn {
   state: ReadinessState
   /** A second rest day is due (RED, soreness 4+ two mornings, 5+ training days running with energy falling). */
   restDue: string | null
+  /**
+   * The strength session a week with none gets (its label and the why after the
+   * day), or null/absent: no add. The add only goes in a week with no strength
+   * session at all (done, planned, skipped or missed).
+   */
+  strengthStart?: { label: string; why: string } | null
+  /** First day an add may land (default: today). A re-plan during the day starts tomorrow. */
+  firstAddDay?: number
 }
 
 export type OutlineChange =
   | { kind: 'add'; type: 'mt_class'; day: number; slot: 'am' | 'pm'; why: string; tempId: string }
+  | { kind: 'add'; type: 'strength'; label: string; day: number; slot: 'am'; why: string; tempId: string }
   | { kind: 'move'; sessionId: string; type: string; label: string | null; fromDay: number; fromSlot: 'am' | 'pm'; day: number; slot: 'am' | 'pm'; why: string }
   | { kind: 'rest'; sessionId: string; type: string; label: string | null; day: number; why: string }
 
@@ -194,6 +209,8 @@ export function score(plan: Plan, inp: OutlineIn): number {
   const ranked = counted.map(x => classSlotScore(inp.model, x.day, x.slot, inp.classLean?.[dow(x.day)] ?? null)).sort((a, b) => b - a)
   for (let i = 0; i < Math.min(target, ranked.length); i++) v += 1.5 + ranked[i]
   if (counted.length > Math.max(target, classes.filter(c => c.locked).length)) v -= 2 * (counted.length - target)
+  // Strength this week (strengthStart): the first session is worth more than any move.
+  if (inp.strengthStart && week.some(x => x.type === 'strength' && live(x) && plan.changes.some(c => c.kind === 'add' && c.type === 'strength' && c.tempId === x.id))) v += STRENGTH_START_VALUE
   // An evening class pairs best with an easy run-walk that morning.
   for (const c of classes.filter(live)) if (c.slot === 'pm' && s.some(x => x.day === c.day && x.slot === 'am' && (x.type === 'foundation_run' || x.type === 'running') && !isHardRun({ type: x.type, notes: x.notes ?? null, estimatedMin: null }) && live(x))) v += 0.2
   // Rest where he likes it.
@@ -226,7 +243,7 @@ function edits(plan: Plan, inp: OutlineIn): Plan[] {
   const s = plan.sessions
   const days = Array.from({ length: 7 }, (_, i) => inp.monday + i).filter(d => d >= inp.today)
   // Only this week's own sessions move, and only to this week's days.
-  const free = (x: OutlineSession) => !x.locked && x.status === 'planned' && x.day >= inp.today && x.day >= inp.monday && x.day <= inp.monday + 6 && plan.changes.every(c => !('sessionId' in c) || c.sessionId !== x.id)
+  const free = (x: OutlineSession) => !x.locked && x.status === 'planned' && x.day >= inp.today && x.day >= inp.monday && x.day <= inp.monday + 6 && plan.changes.every(c => ('sessionId' in c ? c.sessionId !== x.id : c.tempId !== x.id))
   // Add a class.
   const target = classTarget(inp)
   const weekClasses = s.filter(x => x.type === 'mt_class' && x.day >= inp.monday && x.day <= inp.monday + 6 && x.status !== 'missed')
@@ -265,6 +282,19 @@ function edits(plan: Plan, inp: OutlineIn): Plan[] {
       if (!his) continue
       const kept = liveClasses.find(c => c.id !== x.id && c.id !== his.id) ?? null
       out.push({ sessions: s.map(y => (y.id === x.id ? { ...y, status: 'skipped' } : y)), changes: [...plan.changes, { kind: 'rest', sessionId: x.id, type: x.type, label: x.label, day: x.day, why: classOffWhy(x, { day: his.day, rpe: his.rpe ?? null, slot: his.slot }, kept, Math.max(1, target)) }] })
+    }
+  }
+  // Strength this week: a week with no strength session at all gets one, alone on a free day.
+  const strengthWeek = s.filter(x => x.type === 'strength' && x.day >= inp.monday && x.day <= inp.monday + 6)
+  if (inp.strengthStart && strengthWeek.length === 0 && inp.state !== 'RED') {
+    for (const d of days.filter(e => e >= (inp.firstAddDay ?? inp.today))) {
+      if (s.some(x => x.day === d && live(x) && KEY_TYPES.has(x.type))) continue
+      const tempId = `strength-${d}`
+      const label = inp.strengthStart.label
+      out.push({
+        sessions: [...s, { id: tempId, type: 'strength', label, day: d, slot: 'am', status: 'planned', source: 'coach', locked: false }],
+        changes: [...plan.changes, { kind: 'add', type: 'strength', label, day: d, slot: 'am', why: `${label} on ${DAY_NAME[dow(d)]}: ${inp.strengthStart.why}`, tempId }],
+      })
     }
   }
   // Move a key session to another day (alone there), or swap two.

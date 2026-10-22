@@ -53,6 +53,8 @@ export interface DayBoardSession {
   skipReason?: string | null
   /** Today attaches the run row (Strava or manual). */
   runSession?: RunActuals | null
+  /** The coach's dose for the session (sessions.dose_json), when the row carries it. */
+  doseJson?: string | null
 }
 
 // ─── Small helpers ─────────────────────────────────────────────
@@ -173,9 +175,25 @@ function mmss(sec: number): string {
  * Page 56's Program detail for a Block Zero run-walk: "4 rounds · run 3:30,
  * walk 1:00 · 23 min", the coach's rounds when it eased the session.
  */
-export function runWalkDetail(session: Pick<DayBoardSession, 'contextJson'>, weekNumber: number): string {
+export function runWalkDetail(session: Pick<DayBoardSession, 'contextJson' | 'doseJson'>, weekNumber: number): string {
+  const easy = continuousRunMin(session)
+  if (easy != null) return `easy run, no walk breaks · ${easy} min`
   const w = runWalkShapeFor(session, weekNumber)
   return `${w.rounds} rounds · run ${mmss(w.runSec)}, walk ${mmss(w.walkSec)} · ${Math.round(runWalkTotalSec(w) / 60)} min`
+}
+
+/**
+ * A Block Zero run the coach planned as one continuous easy run (its dose:
+ * one round, no walk): its minutes. Null for a run-walk or no dose on the row.
+ */
+export function continuousRunMin(session: Pick<DayBoardSession, 'doseJson'>): number | null {
+  if (!session.doseJson) return null
+  try {
+    const r = (JSON.parse(session.doseJson) as { run?: { rounds?: number; walkSec?: number; runSec?: number; walkOnly?: boolean } }).run
+    return r && !r.walkOnly && r.rounds === 1 && r.walkSec === 0 && (r.runSec ?? 0) > 0 ? Math.round((r.runSec as number) / 60) : null
+  } catch {
+    return null
+  }
 }
 
 /** A Block Zero run-walk's shape for its week, with the coach's eased rounds. */
@@ -472,7 +490,7 @@ const word = (n: number) => NUM_WORDS[n] ?? String(n)
  * from its template's sets and rests, everything else from the plan's own
  * numbers (run-walk week, Foundation's routine).
  */
-export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'label' | 'scheduledDate' | 'blockWeek' | 'blockType'> & { contextJson?: string | null }, weekNumber?: number | null): number {
+export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'label' | 'scheduledDate' | 'blockWeek' | 'blockType'> & { contextJson?: string | null; doseJson?: string | null }, weekNumber?: number | null): number {
   const kind = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
   const week = s.blockWeek ?? weekNumber ?? 1
   if (s.type === 'strength' && s.scheduledDate != null) {
@@ -481,7 +499,7 @@ export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'l
     if (min != null) return min
   }
   // A run-walk carries no block week: the week's own shape, with eased rounds (X3: ~28 in week 4).
-  if (s.type === 'foundation_run' && kind === 'block_zero') return Math.round(runWalkTotalSec(runWalkShapeFor(s, weekNumber ?? week)) / 60)
+  if (s.type === 'foundation_run' && kind === 'block_zero') return continuousRunMin(s) ?? Math.round(runWalkTotalSec(runWalkShapeFor(s, weekNumber ?? week)) / 60)
   return estimatedMinutes({ type: s.type, notes: s.notes ?? null, estimatedMin: null }, kind, weekNumber ?? week)
 }
 

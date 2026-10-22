@@ -20,6 +20,7 @@ import { workingWeight, RUNG_LADDER } from './athleteModel'
 import { backDaySwap, chooseSlot, ravenSwap, slotOf, type MainSlot } from './progression'
 import type { ReadinessState } from './readiness'
 import type { AthleteModel, LiftEstimate } from './types'
+import { CONTINUOUS_FROM_SEC, gapWords, monthOf } from './history'
 
 export type Level = 'REST' | 'RECOVER' | 'EASE' | 'HOLD' | 'PROGRESS' | 'PUSH'
 export const LEVELS: readonly Level[] = ['REST', 'RECOVER', 'EASE', 'HOLD', 'PROGRESS', 'PUSH']
@@ -255,6 +256,13 @@ function blockZeroLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCe
   if (levelAbove(level, 'HOLD') && inp.lastFeltHard) level = 'HOLD'
   if (levelAbove(level, 'HOLD') && inp.steppedThisWeek.includes(exerciseId)) level = 'HOLD'
   if (sig.why && level === sig.level) whys.push(named(sig.why, lift.exerciseId, label) as string)
+  // Started from his history (no exposure in the block yet): where the weight comes from, in lb.
+  if (lift.workingSource === 'history' && lift.seed && level === 'HOLD' && lift.workingKg != null) {
+    const lb = (kg: number) => Math.round(kg * 2.20462)
+    whys.push(lift.seed.discount > 0
+      ? `${label}: ${lb(lift.workingKg)} lb, down from your ${lb(lift.seed.lastKg)} lb in ${monthOf(lift.seed.lastDay)} after ${gapWords(lift.seed.daysOff)} off.`
+      : `${label}: ${lb(lift.workingKg)} lb, where you left off.`)
+  }
 
   let sets = t.sets
   let weight: number | null
@@ -464,6 +472,12 @@ export function runDose(ctx: DoseCtx, inp: RunIn): RunDose {
     return { kind: 'run', level, rungSec: m.rungSec, runSec: sec, walkSec: 0, rounds: 1, warmupSec: 0, totalSec: sec, walkOnly: false, holdRunSec: Math.min(planned, cap.capSec), runTotalSec: sec, hrCeilingBpm: inp.hrCeilingBpm, talkTestDue, capped, why }
   }
 
+  // He runs 10 min or more straight (his runs, or his history before the block): easy continuous runs, no walk breaks.
+  if (m.rungSec >= CONTINUOUS_FROM_SEC && inp.maxRungSec == null) {
+    const easy = easyContinuous(ctx, inp, level, sig.level, why)
+    if (easy) return easy
+  }
+
   // The rung the dose aims at: one up on PROGRESS; the model has already stepped it back after a struggle.
   let rung = level === 'PROGRESS' ? nextRung(m.rungSec) : rungAtOrBelow(m.rungSec)
   if (inp.maxRungSec != null) rung = Math.min(rung, rungAtOrBelow(inp.maxRungSec))
@@ -508,6 +522,48 @@ export function runDose(ctx: DoseCtx, inp: RunIn): RunDose {
     kind: 'run', level, rungSec: rung, runSec: shape.runSec, walkSec: shape.walkSec, rounds: shape.rounds, warmupSec: shape.warmupSec,
     totalSec: runWalkTotalSec(shape), walkOnly: shape.rounds === 0, holdRunSec: holdTotal, runTotalSec: runTotal,
     hrCeilingBpm: inp.hrCeilingBpm, talkTestDue, capped, why: [...(ctx.state === 'AMBER' ? [ctx.stateWhy ?? 'One round fewer today.'] : []), ...why],
+  }
+}
+
+/** The next continuous run: 10% longer, to the minute, at least a minute more. */
+export function nextContinuous(sec: number): number {
+  return Math.max(sec + 60, Math.round((sec * 1.1) / 60) * 60)
+}
+
+/**
+ * An easy continuous run at the HR line (Block Zero, once he runs 10 min or
+ * more straight). The same rules as the run-walk: one rise a week on PROGRESS
+ * (10% longer), 20% shorter after a struggle, 10% off on an AMBER morning, the
+ * single-run and weekly caps, never more than last time after a struggle.
+ * Null when the caps leave less than 10 min: the run-walk takes over.
+ */
+function easyContinuous(ctx: DoseCtx, inp: RunIn, level: Level, signal: Level, why: string[]): RunDose | null {
+  const m = ctx.model.run
+  const base = Math.max(CONTINUOUS_FROM_SEC, Math.round(m.rungSec / 60) * 60)
+  let sec = level === 'PROGRESS' && !inp.riseThisWeek ? nextContinuous(base) : base
+  // An ease the decision chose (no struggle on file): 10% shorter; the model already shortened it after a struggle.
+  if (level === 'EASE' && signal !== 'EASE') sec = Math.round((sec * 0.9) / 60) * 60
+  if (ctx.state === 'AMBER') sec = Math.round((sec * 0.9) / 60) * 60
+  if (inp.lastRunSec != null && (level === 'EASE' || inp.riseThisWeek)) sec = Math.min(sec, Math.max(inp.lastRunSec, level === 'EASE' ? 0 : base))
+  const capOf = (x: number) => {
+    const single = singleRunCap(x, inp.longestLast30Sec)
+    const singleCap = Math.max(single.capSec, Math.min(x, RESTART_SESSION_SEC))
+    const weekly = weeklyRunCap(x, inp.weekly)
+    return { capSec: Math.min(singleCap, weekly.capSec), reason: singleCap <= weekly.capSec ? single.reason : weekly.reason }
+  }
+  const cap = capOf(sec)
+  const capped = cap.capSec < sec
+  if (capped) sec = Math.floor(cap.capSec / 60) * 60
+  if (sec < CONTINUOUS_FROM_SEC) return null
+  if (capped && cap.reason) why.push(cap.reason)
+  const hold = Math.min(base, Math.floor(capOf(base).capSec / 60) * 60)
+  if (m.rungSource === 'history' && level === 'HOLD' && m.seed) {
+    why.push(`${Math.round(sec / 60)} min easy, no walk breaks: your usual run before this block was ${Math.round(m.seed.medianSec / 60)} min.`)
+  }
+  return {
+    kind: 'run', level, rungSec: sec, runSec: sec, walkSec: 0, rounds: 1, warmupSec: 0, totalSec: sec, walkOnly: false,
+    holdRunSec: hold, runTotalSec: sec, hrCeilingBpm: inp.hrCeilingBpm, talkTestDue: m.recheckDue, capped,
+    why: [...(ctx.state === 'AMBER' ? [ctx.stateWhy ?? 'A little shorter today.'] : []), ...why],
   }
 }
 

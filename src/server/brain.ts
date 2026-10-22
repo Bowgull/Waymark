@@ -46,7 +46,8 @@ import { loadEasyHrCeiling } from '../lib/hrAnalysis'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getActiveBlock } from './blockZeroData'
 import { blockKind, blockStartDay, bodyPlanMark, dayHasPlan, generateDaySessions, loadInjuryFlag, resolveWeekPlan, trainingWeekFor, weekStamps } from './coachData'
-import { loadModelEvents, modelFromDay } from './athleteModel'
+import { loadHistorySeed, loadModelEvents, modelFromDay } from './athleteModel'
+import { CONTINUOUS_FROM_SEC, firstStrengthPick, type HistorySeed } from '../lib/brain/history'
 import { emptyState, loadHeld, loadWeekChanges, pmStart, recordChanges, snap, type NewChange } from './changes'
 
 type DB = ReturnType<typeof createDB>
@@ -126,12 +127,15 @@ export interface BrainInputs {
   temp: TempState[]
   /** The move to the next block in force (coach-brain §8): its lighter days are dosed lighter. */
   move: { lighterFrom: number; monday: number } | null
+  /** His history before the block, the model's starting point (lib/brain/history.ts). */
+  seed?: HistorySeed | null
 }
 
 export async function loadBrainInputs(db: DB, today: number): Promise<BrainInputs> {
   const fromDay = await modelFromDay(db, today)
   const events = await loadModelEvents(db, Math.min(fromDay, today), today)
-  const model = buildAthleteModel(events, today, { fromDay: Math.min(fromDay, today) })
+  const seed = await loadHistorySeed(db, Math.min(fromDay, today), today)
+  const model = buildAthleteModel(events, today, { fromDay: Math.min(fromDay, today), seed })
   // Check-ins for readiness: the 40 days before, whatever the block (the baseline is his).
   const logs = await db.select().from(dailyLogs).where(and(gte(dailyLogs.logDate, today - 40), lte(dailyLogs.logDate, today + 7)))
   const checkIns: ModelCheckIn[] = logs.map(l => ({ day: l.logDate, sleepHours: l.sleepHours, sleepQuality: l.sleepQuality, energy: l.energy, soreness: l.soreness, stress: l.stress, mood: l.mood, backToday: l.backToday }))
@@ -156,6 +160,7 @@ export async function loadBrainInputs(db: DB, today: number): Promise<BrainInput
     tmKg: Object.fromEntries(tms.map(t => [t.exerciseId, t.weightKg])),
     equipment: Object.fromEntries(exRows.map(e => [e.id, loadEquipment(e.equipment)])),
     move: await activeMove(db),
+    seed,
   }
 }
 
@@ -425,7 +430,8 @@ export async function refreshDoses(db: DB, from: number, to: number, today: numb
   for (const s of rows) {
     const d = await computeDose(db, s, today, inputs)
     if (!d) continue
-    await db.update(sessions).set({ doseJson: JSON.stringify(d) }).where(eq(sessions.id, s.id))
+    const label = runLabelFor(s, d)
+    await db.update(sessions).set({ doseJson: JSON.stringify(d), ...(label !== s.label ? { label } : {}) }).where(eq(sessions.id, s.id))
     n++
   }
   return n
@@ -555,6 +561,22 @@ async function applyOutline(db: DB, changes: OutlineChange[], rows: SessionRow[]
   const setId = crypto.randomUUID()
   const records: NewChange[] = []
   for (const c of changes) {
+    if (c.kind === 'add' && c.type === 'strength') {
+      // The week's first strength session (one creation path's shape: the template row the day would carry).
+      const block = await getActiveBlock(db)
+      if (!block || block.id !== blockId) continue
+      const tw = await trainingWeekFor(db, block, c.day, Math.floor(nowSec / 86400))
+      const stamps = weekStamps(block, tw)
+      const weekPlanId = await resolveWeekPlan(db, block.id, stamps.weekNumber, mondayOf(c.day), nowSec)
+      const id = crypto.randomUUID()
+      await db.insert(sessions).values({ id, type: 'strength', label: c.label, weekPlanId, scheduledDate: c.day, timeSlot: 'am', blockWeek: stamps.strengthWeek, blockType: block.blockType, status: 'planned', notes: null, source: 'coach', createdAt: nowSec })
+      records.push({
+        setId, actor: 'coach', kind: 'add', targetSessionId: id, sessionType: 'strength', weekPlanId,
+        before: emptyState(c.day), after: { ...emptyState(c.day, `+ ${c.label.toUpperCase()}`), created: [id], put: { line: `${c.label} is off the week.`, dim: 'The coach leaves this week as it is.' } },
+        why: c.why, detail: null, undoUntil: slotStart(c.day, 'am', pm), extraSource: { rule: 'strength_start' },
+      })
+      continue
+    }
     if (c.kind === 'add') {
       const block = await getActiveBlock(db)
       if (!block || block.id !== blockId) continue
@@ -614,6 +636,99 @@ export async function restDueFor(db: DB, inp: BrainInputs, today: number): Promi
   return null
 }
 
+interface WeekContext {
+  classDays: number[]; classDaysSet: boolean; classSlots: OutlineIn['classSlots']; classLean: OutlineIn['classLean']
+  classCap: number | null; classTimes: ClassTimes; restDue: string | null
+}
+
+/** What every week's outline reads beyond its sessions: class days and slots, the class cap and times, a rest day due. */
+async function weekContext(db: DB, inp: BrainInputs, today: number): Promise<WeekContext> {
+  const [profile] = await db.select({ cap: userProfile.mtCapPerWeek }).from(userProfile).where(eq(userProfile.id, 'default'))
+  // Class days (§9): the days he set in Settings; none set, the coach suggests from every day.
+  // The slot per day is learned from the classes he did, else weekday evenings and weekend mornings.
+  const [st] = await db.select({ mt: settings.mtClassDays, slots: settings.mtClassSlots }).from(settings).limit(1)
+  const setDays = (st?.mt ?? '').split(',').filter(Boolean).map(Number).filter(d => d >= 0 && d <= 6)
+  // His Settings slot per lit day wins (page 70); the learned slot only leans an ANY day.
+  const learnedSlots = learnedClassSlots(inp.events.sessions, today)
+  return {
+    classDays: candidateClassDays(setDays),
+    classDaysSet: setDays.length > 0,
+    classSlots: classSlotChoices(inp.events.sessions, today, classDaySlots(setDays, st?.slots)),
+    classLean: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(d => [d, classLean(d, learnedSlots)])),
+    classCap: profile?.cap ?? null,
+    classTimes: await classStartTimes(db, inp),
+    restDue: await restDueFor(db, inp, today),
+  }
+}
+
+type ActiveBlock = NonNullable<Awaited<ReturnType<typeof getActiveBlock>>>
+
+/** One week's sessions and the outline solver's input. */
+async function weekOutline(db: DB, block: ActiveBlock, w: number, today: number, inp: BrainInputs, ctx: WeekContext, opts: { restDue: string | null; firstAddDay?: number }) {
+  const kind = blockKind(block.blockType)
+  const rows = await db.select().from(sessions).where(and(gte(sessions.scheduledDate, w - 1), lte(sessions.scheduledDate, w + 7)))
+  const held = await loadHeld(db, w)
+  const mine = await hisSessions(db, w)
+  const weekChanges = await loadWeekChanges(db, w)
+  // The ladder (1 → 2 → 3), learned from every class so far (§9).
+  const ladder = classLadder(inp.events.sessions, inp.checkIns, today, w)
+  const classHeld = weekChanges.some(({ change }) => change.actor !== 'you' && change.kind === 'add' && change.sessionType === 'mt_class' && change.undoneAt != null)
+  // Strength this week (Josh, 2026-10-21): a Block Zero week with no strength session gets its first one.
+  // One he took off with UNDO is not offered again that week.
+  const strengthHeld = weekChanges.some(({ change }) => change.actor !== 'you' && change.kind === 'add' && change.sessionType === 'strength' && change.undoneAt != null)
+  let strengthStart: OutlineIn['strengthStart'] = null
+  if (kind === 'block_zero' && !strengthHeld) {
+    const tw = await trainingWeekFor(db, block, Math.max(w, today), today)
+    strengthStart = firstStrengthPick(inp.model, weekStamps(block, tw).strengthWeek)
+  }
+  const outlineIn: OutlineIn = {
+    today, monday: w, blockType: kind, blockStart: blockStartDay(block), sessions: outlineRows(rows, today, held, mine),
+    classDays: ctx.classDays, classDaysSet: ctx.classDaysSet, classSlots: ctx.classSlots, classLean: ctx.classLean,
+    classCap: ctx.classCap, classHeld, ladder, model: inp.model, state: nightState(inp, today).state, restDue: opts.restDue,
+    strengthStart, ...(opts.firstAddDay != null ? { firstAddDay: opts.firstAddDay } : {}),
+  }
+  return { rows, held, mine, weekChanges, outlineIn }
+}
+
+/**
+ * A Block Zero run's label follows its dose: "Easy Run" when it is one
+ * continuous easy run, "Run-Walk" when it has walk breaks. Other labels stay.
+ */
+export function runLabelFor(s: Pick<SessionRow, 'type' | 'blockType' | 'label'>, dose: StoredDose | null): string | null {
+  if (s.type !== 'foundation_run' || s.blockType !== 'block_zero' || !dose?.run || dose.run.walkOnly) return s.label
+  if (s.label != null && s.label !== 'Run-Walk' && s.label !== 'Easy Run') return s.label
+  const r = dose.run
+  return r.rounds === 1 && r.walkSec === 0 && r.runSec >= CONTINUOUS_FROM_SEC ? 'Easy Run' : 'Run-Walk'
+}
+
+export interface ReplanResult { ran: boolean; reason?: string; changes: number; doses: number; summary: string[] }
+
+/**
+ * Re-plan the rest of this week now, rules only (no AI call): the same outline
+ * solver and change rows (runes and UNDO) as the night, then every planned
+ * session's dose and run label for 7 days. Nothing he did is touched; today's
+ * sessions stay where they are (an add lands tomorrow at the earliest).
+ * Safe to run twice: the second run finds nothing to add.
+ */
+export async function replanWeek(db: DB, today: number, nowSec: number): Promise<ReplanResult> {
+  const block = await getActiveBlock(db)
+  if (!block) return { ran: false, reason: 'no active block', changes: 0, doses: 0, summary: [] }
+  const monday = mondayOf(today)
+  for (let d = Math.max(today, blockStartDay(block)); d <= monday + 6; d++) {
+    if (await dayHasPlan(db, block.id, d)) continue
+    await generateDaySessions(db, d, today, nowSec)
+  }
+  const inp = await loadBrainInputs(db, today)
+  const ctx = await weekContext(db, inp, today)
+  const { rows, outlineIn } = await weekOutline(db, block, monday, today + 1, inp, ctx, { restDue: null, firstAddDay: today + 1 })
+  const result = solveOutline(outlineIn)
+  const changes = await applyOutline(db, result.changes.slice(0, MAX_WEEK_ACTIONS), rows, block.id, nowSec, ctx.classTimes)
+  const fresh = await loadBrainInputs(db, today)
+  const doses = await refreshDoses(db, today, today + 6, today, fresh)
+  console.log(`[brain] re-plan ${isoOf(today)}: changes=${changes} doses=${doses}`)
+  return { ran: true, changes, doses, summary: modelSummary(fresh.model) }
+}
+
 /**
  * The nightly re-plan for `today` (the athlete's local day). Skipped when
  * nothing was logged and the app wasn't opened in the last 2 days.
@@ -639,35 +754,13 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
   }
 
   const inp = await loadBrainInputs(db, today)
-  const kind = blockKind(block.blockType)
-  const [profile] = await db.select({ cap: userProfile.mtCapPerWeek }).from(userProfile).where(eq(userProfile.id, 'default'))
-  // Class days (§9): the days he set in Settings; none set, the coach suggests from every day.
-  // The slot per day is learned from the classes he did, else weekday evenings and weekend mornings.
-  const [st] = await db.select({ mt: settings.mtClassDays, slots: settings.mtClassSlots }).from(settings).limit(1)
-  const setDays = (st?.mt ?? '').split(',').filter(Boolean).map(Number).filter(d => d >= 0 && d <= 6)
-  const classDays = candidateClassDays(setDays)
-  // His Settings slot per lit day wins (page 70); the learned slot only leans an ANY day.
-  const classSlots = classSlotChoices(inp.events.sessions, today, classDaySlots(setDays, st?.slots))
-  const learnedSlots = learnedClassSlots(inp.events.sessions, today)
-  const classLeanByDay = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(d => [d, classLean(d, learnedSlots)]))
-  const classTimes = await classStartTimes(db, inp)
-  const restDue = await restDueFor(db, inp, today)
+  const ctx = await weekContext(db, inp, today)
   // At most 2 visible coach changes a night, missed-session records written tonight included.
   let budget = Math.max(0, MAX_WEEK_ACTIONS - (opts.used ?? 0))
   let changes = 0
   let decision: NightDecision | null = null
   for (const w of weeks) {
-    const rows = await db.select().from(sessions).where(and(gte(sessions.scheduledDate, w - 1), lte(sessions.scheduledDate, w + 7)))
-    const held = await loadHeld(db, w)
-    const mine = await hisSessions(db, w)
-    const weekChanges = await loadWeekChanges(db, w)
-    // The ladder (1 → 2 → 3), learned from every class so far (§9).
-    const ladder = classLadder(inp.events.sessions, inp.checkIns, today, w)
-    const classHeld = weekChanges.some(({ change }) => change.actor !== 'you' && change.kind === 'add' && change.sessionType === 'mt_class' && change.undoneAt != null)
-    const outlineIn: OutlineIn = {
-      today, monday: w, blockType: kind, blockStart: start, sessions: outlineRows(rows, today, held, mine), classDays, classDaysSet: setDays.length > 0, classSlots, classLean: classLeanByDay,
-      classCap: profile?.cap ?? null, classHeld, ladder, model: inp.model, state: nightState(inp, today).state, restDue: w === monday ? restDue : null,
-    }
+    const { rows, held, mine, weekChanges, outlineIn } = await weekOutline(db, block, w, today, inp, ctx, { restDue: w === monday ? ctx.restDue : null })
     const result = solveOutline(outlineIn)
     let chosen = result.changes.slice(0, budget)
     if (w === monday) {
@@ -675,7 +768,7 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
       chosen = decision.outline
     }
     chosen = chosen.slice(0, budget)
-    const n = await applyOutline(db, chosen, rows, block.id, nowSec, classTimes)
+    const n = await applyOutline(db, chosen, rows, block.id, nowSec, ctx.classTimes)
     budget -= chosen.length
     changes += n
   }
@@ -801,7 +894,7 @@ export async function decideNight(db: DB, x: DecideIn): Promise<NightDecision> {
   const refOf = (id: string) => weekSessions.find(w => w.sessionId === id)?.ref ?? null
   const solver: SolverChange[] = x.solverChanges.map((c, i) => ({
     ref: `w${i + 1}`, kind: c.kind, session: c.kind === 'add' ? null : refOf(c.sessionId),
-    to: c.kind === 'add' ? { day: dayKey(c.day), slot: 'pm' } : c.kind === 'move' ? { day: dayKey(c.day), slot: c.slot } : null, why: c.why,
+    to: c.kind === 'add' ? { day: dayKey(c.day), slot: c.slot } : c.kind === 'move' ? { day: dayKey(c.day), slot: c.slot } : null, why: c.why,
   }))
   const facts = packetFacts(athleteSignals(inp.model, inp.events, today).filter(f => !f.id.startsWith('f.note.')))
   facts.unshift({ id: 'f.state', value: night.state })

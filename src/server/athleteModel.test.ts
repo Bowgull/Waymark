@@ -45,7 +45,11 @@ assert.ok(rows.every(r => r.state === 'GUESS' && r.uncertainty === 1), 'all prio
 // Block Zero starts; three sessions with RIR in week 1, plus June still on file.
 await createTrainingBlock(db, { name: 'Block Zero', blockType: 'block_zero', totalWeeks: 6, nowSec: nowSec(START), startedAt: startedAtForLocalDay(START) })
 model = await refreshAthleteModel(db, START, nowSec(START))
-assert.deepEqual(Object.keys(model.lifts), [], 'June is ignored at the block start')
+// June only seeds the lift (2026-10-21: start at his real level), 4+ months off: 50 lb less ~15%, snapped.
+const seededSq = model.lifts['ex-goblet-squat']
+assert.deepEqual([seededSq.workingSource, seededSq.exposures, seededSq.state, seededSq.u], ['history', 0, 'LEARNING', 0.4], 'June seeds the lift at the block start')
+assert.equal(Math.round((seededSq.workingKg ?? 0) * 2.20462), 40, '50 lb in June starts at 40 lb')
+assert.equal(model.run.rungSource, 'prior', 'no runs in the history: the run starts from the prior')
 await strength('w1a', START, 2)
 await strength('w1b', START + 2, 2)
 await strength('w1c', START + 4, 2)
