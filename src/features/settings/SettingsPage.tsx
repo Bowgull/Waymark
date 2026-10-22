@@ -19,12 +19,15 @@ import { isGateEnabled, setGateEnabled } from '@/lib/waybookGate'
 import { WorldTimeBoard } from './WorldTimeBoard'
 import { BodyProfileBoard } from './BodyProfileBoard'
 import { ArcCard, NumberCard, TimeCard } from './SettingsCards'
-import { ChevValue, SBlock, SRow, SettingsScreen, TimeValue } from './settingsParts'
+import { ChevValue, MOON_MARK, SBlock, SRow, SettingsScreen, SUN_MARK, TimeValue } from './settingsParts'
+import { defaultClassSlot, formatClassSlots, nextClassSlot, parseClassSlots, type ClassDaySlot } from '@/lib/classSlots'
 import { goBack } from '@/lib/goBack'
 import { daysUntilRedeploy, leadFlap, splitTime, timeFlap } from './settingsModel'
 
 interface Settings {
   mtClassDays: string | null
+  /** Page 70: "mon:pm,sat:any". */
+  mtClassSlots?: string | null
   amReminder: string | null
   pmLeadMin: number | null
   pmSessionTime: string | null
@@ -36,7 +39,7 @@ interface Settings {
   enabledTechniques: string | null
   amEnabled: number | null
   pmEnabled: number | null
-  cascade?: { removed: number; freedDays?: string[] } | null
+  cascade?: { removed: number; freedDays?: string[]; freed?: Array<{ day: string; slot: 'AM' | 'PM' }> } | null
 }
 
 interface StravaStatus {
@@ -84,6 +87,7 @@ export function SettingsPage() {
   const [card, setCard] = useState<Card>(null)
 
   const [mtDays, setMtDays] = useState<Set<string>>(new Set())
+  const [mtSlots, setMtSlots] = useState<Partial<Record<number, ClassDaySlot>>>({})
   const [amReminder, setAmReminder] = useState('06:30')
   const [amEnabled, setAmEnabled] = useState(true)
   const [pmLeadMin, setPmLeadMin] = useState(60)
@@ -119,6 +123,7 @@ export function SettingsPage() {
         const s = await apiFetch<Settings | null>('/api/settings')
         if (s) {
           setMtDays(new Set((s.mtClassDays ?? '').split(',').filter(Boolean)))
+          setMtSlots(parseClassSlots(s.mtClassSlots))
           setAmReminder(s.amReminder ?? '06:30')
           setAmEnabled(s.amEnabled !== 0)
           setPmLeadMin(s.pmLeadMin ?? 60)
@@ -242,6 +247,7 @@ export function SettingsPage() {
           method: 'PATCH',
           body: JSON.stringify({
             mtClassDays: Array.from(mtDays).join(','),
+            mtClassSlots: formatClassSlots(Array.from(mtDays).map(Number), mtSlots),
             amReminder,
             pmLeadMin,
             pmSessionTime,
@@ -262,9 +268,11 @@ export function SettingsPage() {
           .then(line => scheduleAlarms(amReminder, pmSessionTime, pmLeadMin, { amEnabled, pmEnabled, coachLine: line }))
           .catch(() => {})
 
-        if (updated.cascade && updated.cascade.removed > 0) {
-          const days = updated.cascade.freedDays?.join(', ') ?? ''
-          showToast(`${days} PM slot${updated.cascade.removed > 1 ? 's' : ''} freed up`, 'info')
+        // The slot each day freed (page 70): AM or PM as he chose it; ANY frees nothing until a placed class goes.
+        const freed = updated.cascade?.freed ?? (updated.cascade?.freedDays ?? []).map(day => ({ day, slot: 'PM' as const }))
+        if (updated.cascade && updated.cascade.removed > 0 && freed.length > 0) {
+          const bySlot = (['AM', 'PM'] as const).map(slot => ({ slot, days: freed.filter(f => f.slot === slot).map(f => f.day) })).filter(g => g.days.length > 0)
+          showToast(bySlot.map(g => `${g.days.join(', ')} ${g.slot} slot${g.days.length > 1 ? 's' : ''}`).join(', ') + ' freed up', 'info')
           setShowReplacementPicker(true)
         }
       } catch (e: unknown) {
@@ -277,15 +285,27 @@ export function SettingsPage() {
     const t = setTimeout(() => { void run() }, 800)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mtDays, amReminder, amEnabled, pmLeadMin, pmSessionTime, pmEnabled, onePaceArc, onePaceEp, narutoArc, narutoEp, enabledTechniques])
+  }, [mtDays, mtSlots, amReminder, amEnabled, pmLeadMin, pmSessionTime, pmEnabled, onePaceArc, onePaceEp, narutoArc, narutoEp, enabledTechniques])
   // Leaving with a change still waiting: send it now.
   useEffect(() => () => { flushSettings.current?.() }, [])
 
   function toggleDay(day: string) {
     const next = new Set(mtDays)
     if (next.has(day)) next.delete(day)
-    else next.add(day)
+    else {
+      next.add(day)
+      // A newly lit day starts at its default (page 70: PM on weekdays, ANY on the weekend).
+      const rest = { ...mtSlots }
+      delete rest[Number(day)]
+      setMtSlots(rest)
+    }
     setMtDays(next)
+  }
+
+  /** The slot flap under a lit day: AM → PM → ANY. */
+  function flipSlot(day: string) {
+    const d = Number(day)
+    setMtSlots({ ...mtSlots, [d]: nextClassSlot(mtSlots[d] ?? defaultClassSlot(d)) })
   }
 
   function setTechnique(tech: string, on: boolean) {
@@ -324,7 +344,7 @@ export function SettingsPage() {
       )}
 
       <Board head="Training" solid className="st-board">
-        <SBlock label="MT class days" sub="Classes are booked outside the app. The plan works around these.">
+        <SBlock label="MT class days" sub="Classes are booked outside the app. Pick the days, and morning, evening or either.">
           <div className="st-days" role="group" aria-label="MT class days">
             {DAYS.map(({ key, label }) => {
               const on = mtDays.has(key)
@@ -333,6 +353,20 @@ export function SettingsPage() {
                   <FlapLabel text={label} size="xs" tone={on ? 'teal' : 'ink'} />
                 </button>
               )
+            })}
+          </div>
+          {/* page 70 A: a slot flap under each lit day; tap flips AM → PM → ANY. Unlit days show nothing. */}
+          <div className="st-slots" role="group" aria-label="MT class slots">
+            {DAYS.map(({ key }) => {
+              const on = mtDays.has(key)
+              const slot = mtSlots[Number(key)] ?? defaultClassSlot(Number(key))
+              const word = slot === 'am' ? 'morning' : slot === 'pm' ? 'evening' : 'either'
+              return on ? (
+                <button key={key} type="button" className="st-slot" data-slot={slot} aria-label={`${DAY_NAMES[key]} class: ${word}. Change`} onClick={() => flipSlot(key)}>
+                  {slot === 'am' ? SUN_MARK : slot === 'pm' ? MOON_MARK : <span className="two">{SUN_MARK}{MOON_MARK}</span>}
+                  <FlapLabel text={slot === 'any' ? 'ANY' : slot.toUpperCase()} size="xs" tone={slot === 'am' ? 'teal' : slot === 'pm' ? 'clay' : 'gold'} />
+                </button>
+              ) : <span key={key} className="st-slot is-off" aria-hidden />
             })}
           </div>
         </SBlock>

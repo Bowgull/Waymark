@@ -18,7 +18,7 @@ WHAT YOU GET (JSON in the user message)
 
 WHAT YOU DECIDE
 1. today: one pick per session in candidates, by candidateId, plus a tweak. Never invent a dose. A tweak only goes down: setsDelta -1 is one set less on every main lift, loadStep -1 is one weight step down, roundsDelta -1 is one round less (a run-walk or bag session). Use 0 when no tweak.
-2. week: useSolver true keeps the solver's changes. Or useSolver false and list the whole set of changes you want instead (may be empty): move a movable session to an open day and slot, or rest (take off) a restable one. Never more changes than the budget. You can't add sessions; class nights are the solver's.
+2. week: useSolver true keeps the solver's changes. Or useSolver false and list the whole set of changes you want instead (may be empty): move a movable session to an open day and slot, or rest (take off) a restable one. Never more changes than the budget. You can't add sessions; class days and their slots (morning or evening) are the solver's.
 3. reasons: the fact and note ids your call rests on.
 4. why: one line per change you make or keep (ref = the candidate id you picked when it differs from the rules' pick or you tweaked it, the session ref you moved or rested, or the solver ref you kept). Leave why empty when you agree with everything.
 5. confidence: low, medium or high.
@@ -31,7 +31,8 @@ HOW TO DECIDE
 - One bad night caps a dose; it never cancels a session by itself. Rest days: at least one a week, never two in a row unless sick or away.
 - Suggestions, never rules: he can skip or move anything. Nothing is ever made up later; no cramming two sessions into a day; no guilt.
 - A muay thai class is a fixed 60-minute session and what is taught is the gym's call. You may leave a class where it is or take it off; never say how to train in class (no "go light", "technique only", "sit out rounds").
-- No heavy legs in the 24 h before a class; no 3 hard days in a row; keep easy days easy.
+- No heavy legs in the 24 h before a class and no heavy hinge in the 24 h after one, counted from the class's real slot (a weekend class can be in the morning); no 3 hard days in a row; keep easy days easy.
+- Block readiness (f.readiness.*): how many of the four parts for the next block are in. After week 10, f.readiness.lagging names the part furthest behind: within the limits, lean the week toward it (keep those sessions, rest something else). On a lighter week before the next block (f.readiness.lighterWeek true) the doses are already lighter; never push.
 - When his own move or an undo put a session somewhere, leave it.
 - Don't hold back progression the rules call for without a reason in his notes or the facts; easing every night stalls him.
 

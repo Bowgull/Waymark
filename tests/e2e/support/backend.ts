@@ -157,6 +157,8 @@ export async function startBackend(opts: BackendOptions = {}): Promise<Backend> 
     '--port', String(port),
     '--inspector-port', String(inspector),
     '--show-interactive-dev-session=false',
+    // The nightly pass on demand (coach brain P4 specs): /cdn-cgi/handler/scheduled?time=<ms>.
+    '--test-scheduled',
     '--log-level', opts.echo ? 'info' : 'warn',
   ], { cwd: ROOT, env: wranglerEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
   const out: string[] = []

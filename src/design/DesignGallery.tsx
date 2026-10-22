@@ -5,7 +5,6 @@ import { PageErrorScreen, SessionInterruptedScreen } from '@/components/ui/Error
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
 import { MtClassLogCard } from '@/features/blockZero/ClassTypeCard'
 import { EffortCard } from '@/features/blockZero/EffortCard'
-import { EndGateView } from '@/features/blockZero/EndGate'
 import { MorningReportRow } from '@/features/blockZero/TodayPieces'
 import { BodyProfileBoard } from '@/features/settings/BodyProfileBoard'
 
@@ -31,13 +30,6 @@ import {
 
 const noop = () => {}
 const ICONS: SessionIconKey[] = ['strength', 'bag', 'mt', 'zone2', 'run', 'rope', 'foundation', 'reset', 'core', 'mobility', 'waybook']
-
-const TEST_ROWS = [
-  { week: 1, testKey: 'talk_test_hr', value: 142, unit: 'bpm' },
-  { week: 1, testKey: 'e1rm:ex-front-squat', value: 77, unit: 'kg' },
-  { week: 6, testKey: 'talk_test_hr', value: 146, unit: 'bpm' },
-  { week: 6, testKey: 'e1rm:ex-front-squat', value: 88.5, unit: 'kg' },
-]
 
 const READY_EASE = { checkedIn: true, ease: true, worseItems: ['sleepHours', 'backToday'], reason: 'Sleep and your back are off your 7-day trend for 2 days.', items: [] }
 
@@ -133,30 +125,6 @@ function Gallery({ screen }: { screen: string }) {
       return <Phone><EffortCard setLabel="Set 2 of 3" onPick={noop} onSkip={noop} /></Phone>
     case 'class':
       return <Phone><MtClassLogCard classType="general" note="" error={null} saving={false} onType={noop} onNote={noop} onSave={noop} /></Phone>
-    case 'gate':
-      return (
-        <EndGateView
-          rows={TEST_ROWS}
-          result={{ decision: 'proceed', rationale: 'Consistency held, the back is steadier, the numbers are in. Fighter Block 1 starts from the new maxes.', rules: { decision: 'proceed', reasons: ['Key sessions done: 84%.', 'Back: steadier than week 1.'], extendWeeks: 0, totalWeeks: 6 }, nextBlockId: 'b2' }}
-          checking={false}
-          onCheck={noop}
-          onPrimary={noop}
-          onBack={noop}
-        />
-      )
-    case 'gate-extend':
-      return (
-        <EndGateView
-          rows={TEST_ROWS}
-          result={{ decision: 'hold', rationale: 'Extend one week. Two gaps in weeks 4–5 and the back dipped last week. Training stays at week-5 levels.', rules: { decision: 'extend', reasons: ['A 9-day gap in the last 3 weeks.'], extendWeeks: 1, totalWeeks: 7 }, nextBlockId: null }}
-          checking={false}
-          onCheck={noop}
-          onPrimary={noop}
-          onBack={noop}
-        />
-      )
-    case 'gate-check':
-      return <EndGateView rows={TEST_ROWS} result={null} checking={false} onCheck={noop} onPrimary={noop} onBack={noop} />
     case 'error-session':
       return <SessionInterruptedScreen sessionId="demo" onResume={noop} onBack={noop} preview={[{ name: 'Front Squat', detail: '2×8 · 140' }, { name: 'RDL', detail: '2×7 · 115' }, { name: 'Split Squat', detail: '1 of 2 sets' }]} />
     case 'error-page':
@@ -167,7 +135,7 @@ function Gallery({ screen }: { screen: string }) {
       return (
         <Phone>
           <Board head="Design gallery">
-            <p className="wm-prose">?screen= foundation, checkin, checkin-back, checkin-done, today, effort, class, gate, gate-extend, gate-check, error-session, error-page, settings</p>
+            <p className="wm-prose">?screen= foundation, checkin, checkin-back, checkin-done, today, effort, class, error-session, error-page, settings</p>
           </Board>
         </Phone>
       )

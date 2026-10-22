@@ -9,7 +9,6 @@ import { WorkoutPage } from '../features/session/WorkoutPage'
 import { BodyMetricsPage } from '../features/metrics/BodyMetricsPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { LogsPage } from '../features/settings/LogsPage'
-import { EndGatePage } from '../features/blockZero/EndGate'
 
 /**
  * The screens page 17 cascades as they open (Today, Program, Library, Ledger and
@@ -177,7 +176,6 @@ export function AppRoutes() {
       {/* Settings and Body metrics: full screen on the solid dark, no tab bar (page 37 A) */}
       <Route path="/settings" element={<ErrorBoundary level="page"><SettingsPage /></ErrorBoundary>} />
       <Route path="/metrics" element={<ErrorBoundary level="page"><BodyMetricsPage /></ErrorBoundary>} />
-      <Route path="/block-zero/gate" element={<ErrorBoundary level="page"><EndGatePage /></ErrorBoundary>} />
       {DesignGallery && <Route path="/design" element={<Suspense fallback={null}><DesignGallery /></Suspense>} />}
 
       <Route element={<ShellLayout />}>

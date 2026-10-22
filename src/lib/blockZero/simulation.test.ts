@@ -17,20 +17,14 @@ import {
   BACK_FRIENDLY_SWAPS,
   RESTART_SESSION_SEC,
   backFriendlyVariation,
-  backTrend,
   defaultMainLift,
   easeSession,
   evaluateClassRequest,
   evaluateReadiness,
   getBlockZeroWeekTemplate,
   getStrengthWeekTarget,
-  keySessionCompletionRate,
   latestReadiness,
-  longestGapInWindow,
   nextLoad,
-  planTransition,
-  retestDoneFrom,
-  GATE_SQUAT_ID,
   prescribeRunWalk,
   rebalanceDayForClass,
   weeklyLoadFlag,
@@ -38,9 +32,7 @@ import {
   type CheckIn,
   type MainLiftSlot,
   type PlannedSession,
-  type TransitionPlan,
 } from './index'
-import { extensionsUsed } from './weeks'
 import { blockZeroWorkingLoad, checkInFromDailyLog, readinessReport, type DailyLogFields, type LoggedWorkingSet } from './index'
 import { guardReactiveReplan, guardWeekPlan, type Clamp, type GuardSession } from './guardrails'
 import { weeklyRunAllowanceSec } from './running'
@@ -104,7 +96,8 @@ function simulate(script: Script) {
   const flare = new Set((script.backFlare ?? []).map(o => START + o))
   const classByDay = new Map((script.classes ?? []).map(c => [START + c.offset, c.type]))
 
-  let totalWeeks = 6
+  // No fixed length now (coach-brain §8): every athlete runs 8 weeks of the rules.
+  const totalWeeks = 8
   const checkIns: CheckIn[] = []
   const runs: RunLog[] = []
   const loadSteps: LoadStep[] = []
@@ -114,7 +107,6 @@ function simulate(script: Script) {
   const gateSessions: Array<{ type: string; status: string; scheduledDate: number }> = []
   const loadEntries: Array<{ epochDay: number; rpe: number; minutes: number }> = []
   const weights = new Map<string, number>()
-  const plans: Array<{ week: number; plan: TransitionPlan }> = []
   const guardWeeks: GuardWeek[] = []
   const guardDays: GuardDay[] = []
   let firstClassDay: number | null = null
@@ -246,34 +238,10 @@ function simulate(script: Script) {
       }
     }
 
-    // End gate at the block's last week.
-    if (week === totalWeeks) {
-      const today = START + week * 7 - 1
-      const completedDays = gateSessions.filter(s => s.status === 'completed').map(s => s.scheduledDate)
-      // No test week: the front squat estimate comes from week 5/6 strength sets, the talk test from a week-6 run-walk.
-      const squatSets = gateSessions.some(s => s.type === 'strength' && s.status === 'completed' && weekOf(s.scheduledDate) >= 5)
-      const talkWeeks = gateSessions.some(s => s.type === 'foundation_run' && s.status === 'completed' && weekOf(s.scheduledDate) >= 6) ? [6] : []
-      const retestDone = retestDoneFrom(squatSets ? new Map([[GATE_SQUAT_ID, 100]]) : new Map(), talkWeeks)
-      const plan = planTransition({
-        gate: {
-          completionRate: keySessionCompletionRate(gateSessions, today + 1),
-          longestRecentGapDays: longestGapInWindow(completedDays, today, START),
-          backTrend: backTrend(checkIns, START, today),
-          retestDone,
-          extensionsUsed: extensionsUsed(totalWeeks),
-        },
-        aiDecision: null,
-        aiTargets: [],
-        retestE1rms: new Map(),
-        totalWeeks,
-        atEndBoundary: true,
-      })
-      plans.push({ week, plan })
-      totalWeeks = plan.newTotalWeeks
-    }
+    // The end gate is gone (coach-brain §8): readiness is four parts with no fixed length (lib/brain/readinessParts.test.ts).
   }
 
-  return { checkIns, runs, loadSteps, backPicks, classes, easeDays, plans, totalWeeks, loadEntries, guardWeeks, guardDays }
+  return { checkIns, runs, loadSteps, backPicks, classes, easeDays, totalWeeks, loadEntries, guardWeeks, guardDays }
 }
 
 /** Phase D: the fake planner and coach never get a rule past the guardrails. */
@@ -368,12 +336,6 @@ assert(scripted.classes.every(c => !/techni|pads|clinch|sparring|light/i.test(c.
 const weeklyLoad = weeklyLoadTotals(scripted.loadEntries, START, 8)
 assert(weeklyLoad[3] === 0 && weeklyLoadFlag(weeklyLoad[3], weeklyLoad[4]).flagged, 'week 5 load after a zero week 4: soft flag')
 
-// Gate: the missed week extends, then the block moves on.
-assert(scripted.plans[0].week === 6 && scripted.plans[0].plan.decision === 'extend', 'missed-week athlete: gate extends at week 6')
-assert(scripted.plans[0].plan.reasons.some(r => r.includes('gap')), 'extension reason names the gap')
-assert(scripted.plans[scripted.plans.length - 1].plan.decision === 'proceed', 'after the extension week the gate proceeds')
-assert(scripted.plans[scripted.plans.length - 1].plan.nextBlock?.blockType === 'fighter', 'proceed hands over to a Fighter block')
-assert(scripted.totalWeeks - 6 <= 2, `extensions used: ${scripted.totalWeeks - 6} (max 2)`)
 // Extension week strength = week-5 levels, not week 1.
 assert(getStrengthWeekTarget(7).loadPct === getStrengthWeekTarget(5).loadPct, 'extension week loads at week-5 levels')
 
@@ -381,23 +343,12 @@ assert(getStrengthWeekTarget(7).loadPct === getStrengthWeekTarget(5).loadPct, 'e
 
 const clean = simulate({ name: 'clean' })
 assertGuarded('clean', clean)
-assert(clean.plans.length === 1 && clean.plans[0].plan.decision === 'proceed' && clean.totalWeeks === 6, 'clean athlete: proceed at week 6, no extension')
 assert(clean.easeDays.length === 0, 'clean athlete: no ease days')
 for (let w = 2; w <= 6; w++) {
   const run = (wk: number) => clean.runs.filter(r => weekOf(r.day) === wk).reduce((n, r) => n + r.sec, 0)
   assert(run(w) <= run(w - 1) * 1.3, `clean week ${w}: run time within +30%`)
 }
 assert(clean.runs.every(r => r.longest30 === 0 || r.sec <= r.longest30 * 1.1), 'clean athlete: no run over 110%')
-
-// ─── Inconsistent athlete: extensions cap at 2 ─────────────────
-
-const flaky = simulate({ name: 'flaky', skipEveryOther: true })
-assert(flaky.plans[0].plan.decision === 'extend', 'half the sessions skipped: extend')
-assert(flaky.totalWeeks === 8, 'extended to 8 weeks at most')
-const last = flaky.plans[flaky.plans.length - 1].plan
-assert(last.decision === 'adjust' && last.gate.forced && last.nextBlock != null, 'at 8 weeks: forced move-on with conservative loads')
-assert(flaky.plans.every(p => p.plan.newTotalWeeks <= 8), 'no plan ever goes past 8 weeks')
-
 
 // ─── Phase B: readiness from daily_logs rows, loads from logged RIR ──
 //

@@ -1,62 +1,35 @@
-// Block Zero entry assessment and transition readiness check. Sonnet with extended thinking.
-// Assessment: called when Block Zero starts, and again once the week-1 tests are in.
-// Its starting maxes (capped by the tests) and MT cap are saved.
-// Transition: called at the end of Block Zero. The rules gate (lib/blockZero/endGate)
-// sets the limits; the AI decision only moves inside them. Proceed creates Fighter Block 1.
-// Prompts live in lib/prompts/blockZero; outputs go through lib/blockZero/guardrails.
+// Block Zero entry assessment. Sonnet with extended thinking. Called when
+// Block Zero starts, and again once the week-1 tests are in. Its starting
+// maxes (capped by the tests) and MT cap are saved. Prompts live in
+// lib/prompts/blockZero; outputs go through lib/blockZero/guardrails.
+// The end-of-block check is gone (coach-brain §8, server/readiness.ts).
 
-import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm'
-import { blockTests, coachingOutputs, dailyLogs, exercises, sessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekPlans } from '../../db/schema'
+import { desc, eq } from 'drizzle-orm'
+import { coachingOutputs, exercises, trainingMaxes, userProfile } from '../../db/schema'
 import { anthropicCall, getStructuredOutput, jsonFormatFor } from '../../lib/anthropic'
 import { MODELS } from '../../lib/models'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
 import { getLatestBodyweightKg } from '../../lib/bodyMetrics'
-import { TOOL_BLOCK_TRANSITION, transitionFromModel, type BlockTransitionModelOutput, type BlockTransitionOutput } from '../../lib/prompts/tools'
 import {
   BLOCK_ZERO_TOOL,
   assessmentFromModel,
   buildAssessmentPrompt,
-  buildTransitionPrompt,
   type AssessmentTestData,
   type BlockZeroAssessmentModelOutput,
   type BlockZeroAssessmentOutput,
-  type TransitionPromptData,
   type TransitionTestData,
-  type TransitionWeekSummary,
 } from '../../lib/prompts/blockZero'
-import { computeBlockAdherence, deriveGuidance } from '../../lib/adherence'
-import { computeHrSnapshot, loadEasyHrCeiling, loadProfileMaxHrForHr, loadRecentRunsForHr, serializeHrForPrompt } from '../../lib/hrAnalysis'
-import { rolloverStaleSessions } from '../../lib/sessionRollover'
-import { getEpochDay, serverRolloverDay } from '../../lib/dates'
 import {
-  backTrend,
   clampsForStorage,
-  e1rmsFromTests,
-  extensionsUsed,
   fixedResults,
   guardCalibrationStarts,
-  guardCalibrationWrites,
   guardMtCap,
   houseVoice,
-  keySessionCompletionRate,
   logClamps,
-  longestGapInWindow,
-  planTransition,
   resolveLiftId,
-  retestCeilingKg,
-  retestDoneFrom,
-  retestE1rms,
-  isRetestSetWeek,
-  selectMainLifts,
   type Clamp,
-  BLOCK_ZERO_BASE_WEEKS,
-  KEY_SESSION_TYPES,
-  type EndGateInput,
-  type TransitionPlan,
 } from '../../lib/blockZero'
-import { createTrainingBlock, endActiveBlocks } from '../blocks'
-import { loadBackScores, loadBlockTestData, transitionTestSummary, type BlockTestData } from '../blockZeroData'
-import { blockCountsFrom, trainingWeekFor } from '../coachData'
+import { loadBlockTestData, transitionTestSummary, type BlockTestData } from '../blockZeroData'
 import type { createDB } from '../../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -236,354 +209,14 @@ export async function getStoredBlockZeroAssessment(
   }
 }
 
-// ─── Block Zero Transition ─────────────────────────────────────
-
-async function gatherTransitionData(db: DB, blockId: string): Promise<TransitionPromptData & {
-  block: { startedAt: number | null; totalWeeks: number }
-}> {
-  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
-  const blockStartSec = block?.startedAt ?? 0
-
-  const blockWeeks = await db
-    .select()
-    .from(weekPlans)
-    .where(eq(weekPlans.blockId, blockId))
-
-  const weekPlanIds = blockWeeks.map(w => w.id)
-
-  const allSessions = weekPlanIds.length > 0
-    ? await db.select().from(sessions).where(inArray(sessions.weekPlanId, weekPlanIds))
-    : []
-
-  const weeks: TransitionWeekSummary[] = []
-
-  for (const wk of blockWeeks.sort((a, b) => a.weekNumber - b.weekNumber)) {
-    const wkSessions = allSessions.filter(s => s.weekPlanId === wk.id)
-    const planned = wkSessions.length
-    const completedSessions = wkSessions.filter(s => s.status === 'completed')
-    const completed = completedSessions.length
-
-    const rpeValues = completedSessions.filter(s => s.rpe != null).map(s => s.rpe!)
-    const diffValues = completedSessions.filter(s => s.difficulty != null).map(s => s.difficulty!)
-    const avgRpe = rpeValues.length > 0 ? rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length : null
-    const avgDifficulty = diffValues.length > 0 ? diffValues.reduce((a, b) => a + b, 0) / diffValues.length : null
-
-    // Daily logs during this week (epoch days)
-    const weekStartDay = Math.floor((blockStartSec + (wk.weekNumber - 1) * 7 * 86400) / 86400)
-    const weekEndDay = weekStartDay + 6
-    const wellnessRows = await db
-      .select({ sleepHours: dailyLogs.sleepHours, soreness: dailyLogs.soreness })
-      .from(dailyLogs)
-      .where(and(gte(dailyLogs.logDate, weekStartDay), lte(dailyLogs.logDate, weekEndDay)))
-
-    const sleepVals = wellnessRows.filter(r => r.sleepHours != null).map(r => r.sleepHours!)
-    const sorenessVals = wellnessRows.filter(r => r.soreness != null).map(r => r.soreness!)
-    const avgSleepHours = sleepVals.length > 0 ? sleepVals.reduce((a, b) => a + b, 0) / sleepVals.length : null
-    const avgSoreness = sorenessVals.length > 0 ? sorenessVals.reduce((a, b) => a + b, 0) / sorenessVals.length : null
-
-    weeks.push({ weekNumber: wk.weekNumber, planned, completed, avgRpe, avgDifficulty, avgSleepHours, avgSoreness })
-  }
-
-  // Main compound lifts with current training maxes
-  const tmRows = await db
-    .select({ weightKg: trainingMaxes.weightKg, exerciseId: trainingMaxes.exerciseId })
-    .from(trainingMaxes)
-  const tmMap = new Map(tmRows.map(t => [t.exerciseId, t.weightKg]))
-
-  // Match by id. Seed names are 'Front Squat', 'Conventional Deadlift',
-  // 'Bent Over Row', so a name list only ever found 2 of the 5 lifts.
-  const allExercises = await db.select({ id: exercises.id, name: exercises.name }).from(exercises)
-  const mainLifts = selectMainLifts(allExercises)
-    .map(e => ({ id: e.id, name: e.name, currentMaxKg: tmMap.get(e.id) ?? null }))
-
-  // Adherence snapshot — feeds silent progression decisions. Roll stale
-  // planned sessions to 'missed' first so the math reflects reality.
-  const todayEpochDay = getEpochDay(new Date())
-  // No local date here: roll over only days that have ended everywhere.
-  await rolloverStaleSessions(db, serverRolloverDay())
-  const adherence = await computeBlockAdherence(db, blockId, todayEpochDay)
-  const guidance = deriveGuidance(adherence)
-
-  const recentRuns = await loadRecentRunsForHr(db, todayEpochDay)
-  const maxHr = await loadProfileMaxHrForHr(db)
-  const hrSnapshot = computeHrSnapshot(recentRuns, todayEpochDay, { maxHr, ceilingBpm: (await loadEasyHrCeiling(db, todayEpochDay)).bpm })
-  const hrBlock = serializeHrForPrompt(hrSnapshot)
-
-  return {
-    block: { startedAt: block?.startedAt ?? null, totalWeeks: block?.totalWeeks ?? 6 },
-    weeks,
-    mainLifts,
-    adherence,
-    guidance,
-    hrBlock,
-  }
-}
-
-// Gate inputs from the block's own sessions, the daily "back today" score
-// (first week vs last week; 'unknown' with under 3 scores each) and block_tests.
-async function gatherGateData(db: DB, blockId: string, todayEpochDay: number) {
-  const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
-  const weeks = await db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, blockId))
-  const weekIds = weeks.map(w => w.id)
-  const blockSessions = weekIds.length > 0
-    ? await db.select().from(sessions).where(inArray(sessions.weekPlanId, weekIds))
-    : []
-
-  const startEpochDay = Math.floor((block?.startedAt ?? 0) / 86400)
-  const completedDays = blockSessions
-    .filter(s => s.status === 'completed' && KEY_SESSION_TYPES.has(s.type) && s.scheduledDate != null)
-    .map(s => s.scheduledDate as number)
-
-  // Retest = main-lift sets logged in completed week-5 and week-6 strength
-  // sessions (and the extension weeks): no test week, the numbers come from training.
-  const retestSessionIds = blockSessions
-    .filter(s => s.type === 'strength' && s.status === 'completed' && isRetestSetWeek(s.blockWeek))
-    .map(s => s.id)
-  const retestExercises = retestSessionIds.length > 0
-    ? await db.select().from(strengthSessionExercises).where(inArray(strengthSessionExercises.sessionId, retestSessionIds))
-    : []
-  const mainSse = retestExercises.filter(e => e.section === 'main')
-  const retestSetRows = mainSse.length > 0
-    ? await db.select().from(strengthSets).where(inArray(strengthSets.sessionExerciseId, mainSse.map(e => e.id)))
-    : []
-  const exerciseBySse = new Map(mainSse.map(e => [e.id, e.exerciseId]))
-  const setE1rms = retestE1rms(retestSetRows
-    .filter(r => r.isWarmup === 0 && r.completedAt != null)
-    .map(r => ({ exerciseId: exerciseBySse.get(r.sessionExerciseId) ?? '', weightKg: r.weightKg, reps: r.reps, rir: r.rir })))
-  // Retest rows (week 6 and extension weeks) win per lift: they come from the
-  // RIR-adjusted check set or the athlete's own entry. Sets fill the rest.
-  const testRows = await db.select().from(blockTests).where(eq(blockTests.blockId, blockId))
-  const e1rms = new Map([...setE1rms, ...e1rmsFromTests(testRows, w => w >= BLOCK_ZERO_BASE_WEEKS)])
-
-  const totalWeeks = block?.totalWeeks ?? BLOCK_ZERO_BASE_WEEKS
-  // The training week, paused through gaps: a holiday doesn't reach the end gate early.
-  const currentWeekNumber = block ? (await trainingWeekFor(db, block, todayEpochDay, todayEpochDay)).week : 1
-
-  // Consistency counts from week 1's Monday: pre-start and lead-in sessions are optional (D14, Part B).
-  const countsFrom = block ? blockCountsFrom(block) : startEpochDay
-  const gateSessions = blockSessions.filter(s => s.scheduledDate != null && s.scheduledDate >= countsFrom)
-  const gate: EndGateInput = {
-    completionRate: keySessionCompletionRate(gateSessions, todayEpochDay),
-    longestRecentGapDays: longestGapInWindow(completedDays, todayEpochDay, startEpochDay),
-    backTrend: backTrend(await loadBackScores(db, startEpochDay, todayEpochDay), startEpochDay, todayEpochDay),
-    // The two numbers (2026-10-18): the front squat estimate and/or the week-6 talk test.
-    retestDone: retestDoneFrom(e1rms, testRows.filter(r => r.testKey === 'talk_test_hr').map(r => r.week)),
-    extensionsUsed: extensionsUsed(totalWeeks),
-  }
-  return { gate, e1rms, totalWeeks, atEndBoundary: currentWeekNumber >= totalWeeks }
-}
-
-export interface BlockZeroTransitionResult extends BlockTransitionOutput {
-  /** What the rules decided and why; the decision field above is the final one. */
-  rules: {
-    decision: TransitionPlan['decision']
-    aiDecision: BlockTransitionOutput['decision'] | null
-    reasons: string[]
-    extendWeeks: number
-    totalWeeks: number
-  }
-  nextBlockId: string | null
-  /**
-   * The check only reads (e2e major 5): the plan is stored with the verdict and
-   * applied when the athlete taps START FIGHTER BLOCK 1 / KEEP BUILDING.
-   */
-  applied?: boolean
-  /** The plan the verdict will apply (server-side; the UI ignores it). */
-  plan?: TransitionPlan
-  /** The block the verdict is for. */
-  blockId?: string
-  /** Clamps the rules applied to the AI's targets, for audit. */
-  guardrails?: { applied: boolean; clamps: Clamp[] }
-}
+// ─── The transition ────────────────────────────────────────────
+// The end gate's check, its extensions and START FIGHTER BLOCK 1 are gone
+// (coach-brain §8): the nightly pass sets the move when the four readiness
+// parts are in (server/readiness.ts). The prompt helper stays for its tests.
 
 /** Week 1 vs retest for the transition prompt. Null when no test data exists. */
 export function transitionTestData(data: BlockTestData, retest: Map<string, number>, trend: TransitionTestData['backTrend']): TransitionTestData | null {
   const summary = transitionTestSummary(data, retest)
   if (summary.deltas.length === 0 && summary.ceilings.length === 0) return null
   return { ...summary, backTrend: trend }
-}
-
-export async function runBlockZeroTransition(
-  db: DB,
-  apiKey: string,
-  blockId: string,
-): Promise<BlockZeroTransitionResult | null> {
-  const [profileRow] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
-
-  const tmRows = await db
-    .select({ weightKg: trainingMaxes.weightKg, name: exercises.name })
-    .from(trainingMaxes)
-    .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id))
-
-  const latestBodyweightKg = await getLatestBodyweightKg(db)
-
-  const profile: UserProfileContext = {
-    goals: profileRow?.goals ?? null,
-    injuries: profileRow?.injuries ?? null,
-    postureIssues: profileRow?.postureIssues ?? null,
-    trainingHistory: profileRow?.trainingHistory ?? null,
-    mtGymAccessDays: profileRow?.mtGymAccessDays ?? null,
-    mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
-    weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
-    constraints: profileRow?.constraints ?? null,
-    trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
-    latestBodyweightKg,
-  }
-
-  const systemBlocks = buildSystemPrompt(profile, null)
-  const transitionData = await gatherTransitionData(db, blockId)
-  // Gate inputs first: the retest e1RMs set the ceilings the prompt states.
-  const todayEpochDay = getEpochDay(new Date())
-  const gateData = await gatherGateData(db, blockId, todayEpochDay)
-  const tests = transitionTestData(await loadBlockTestData(db, blockId), gateData.e1rms, gateData.gate.backTrend)
-  const userPrompt = buildTransitionPrompt(transitionData, tests)
-
-  const result = await anthropicCall(apiKey, {
-    model: MODELS.reasoning,
-    max_tokens: 16000,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'high', format: jsonFormatFor(TOOL_BLOCK_TRANSITION) },
-    fallbacks: 'default',
-    system: systemBlocks,
-    messages: [{ role: 'user', content: userPrompt }],
-  }, { timeoutMs: 150_000 })
-
-  // Offline or unparseable: the rules still decide. The AI is a second opinion.
-  let output: BlockTransitionOutput | null = null
-  if (result.offline) {
-    console.warn('[blockZero] offline during transition check, rules decide alone')
-  } else {
-    // The model answers in lb; the rules and guards read kg.
-    const reply = getStructuredOutput<BlockTransitionModelOutput>(result)
-    output = reply ? transitionFromModel(reply) : null
-    if (!output) console.warn('[blockZero] no structured output from transition check, rules decide alone')
-  }
-
-  const planned = planTransition({
-    gate: gateData.gate,
-    aiDecision: output?.decision ?? null,
-    aiTargets: output?.calibrationTargets ?? [],
-    retestE1rms: gateData.e1rms,
-    totalWeeks: gateData.totalWeeks,
-    atEndBoundary: gateData.atEndBoundary,
-    currentTms: new Map((await db.select({ exerciseId: trainingMaxes.exerciseId, weightKg: trainingMaxes.weightKg }).from(trainingMaxes)).map(t => [t.exerciseId, t.weightKg])),
-  })
-  // AI targets never above the retest rule (90% of e1RM, 85% on adjust).
-  const calibration = guardCalibrationWrites(planned.calibration, gateData.e1rms, planned.decision, retestCeilingKg)
-  logClamps('block_zero_transition', calibration.clamps)
-  const plan: TransitionPlan = { ...planned, calibration: calibration.output }
-  const aiWeight = new Map(plan.calibration.filter(c => c.source === 'ai').map(c => [c.exerciseId, c.weightKg]))
-
-  const nowSec = Math.floor(Date.now() / 1000)
-
-  const combined: BlockZeroTransitionResult = {
-    decision: plan.reportedDecision,
-    rationale: output?.rationale ? houseVoice(output.rationale) : plan.reasons.join(' '),
-    calibrationTargets: (output?.calibrationTargets ?? []).map(t => ({ ...t, estimatedMaxKg: aiWeight.get(t.exerciseId) ?? t.estimatedMaxKg })),
-    ...(output?.nextBlockNotes ? { nextBlockNotes: houseVoice(output.nextBlockNotes) } : {}),
-    rules: {
-      decision: plan.decision,
-      aiDecision: output?.decision ?? null,
-      reasons: plan.reasons,
-      extendWeeks: plan.extendWeeks,
-      totalWeeks: plan.newTotalWeeks,
-    },
-    nextBlockId: null,
-    applied: false,
-    plan,
-    blockId,
-    ...(calibration.clamps.length > 0 ? { guardrails: clampsForStorage(calibration.clamps) } : {}),
-  }
-  // When the rules overrode the AI, the athlete-facing line is the rules' reason.
-  if (output && output.decision !== plan.reportedDecision) combined.rationale = plan.reasons.join(' ')
-
-  const usage = result.offline ? null : result.usage
-  await db.insert(coachingOutputs).values({
-    id: crypto.randomUUID(),
-    kind: 'block_zero_transition',
-    model: !result.offline && output ? result.model : 'rules',
-    scopeWeekPlanId: null,
-    scopeSessionId: null,
-    inputHash: blockId,
-    outputJson: JSON.stringify(combined),
-    tokensIn: usage?.input_tokens ?? 0,
-    tokensOut: usage?.output_tokens ?? 0,
-    cachedTokensIn: usage?.cache_read_input_tokens ?? 0,
-    createdAt: nowSec,
-  })
-
-  console.log(`[blockZero] transition for block ${blockId}: rules=${plan.decision} ai=${output?.decision ?? 'none'}`)
-  return combined
-}
-
-/**
- * Apply a transition plan. Calibration first, so the next block starts on the
- * new maxes. Extend lengthens the block (the week after repeats week 5).
- * Proceed/adjust ends Block Zero and creates the Fighter block through the
- * same path as POST /api/blocks. Returns the new block id, if any.
- */
-export async function applyTransitionPlan(db: DB, blockId: string, plan: TransitionPlan, nowSec: number): Promise<string | null> {
-  await upsertTrainingMaxes(db, plan.calibration, nowSec)
-
-  if (plan.decision === 'extend' && plan.extendWeeks > 0) {
-    await db.update(trainingBlocks).set({ totalWeeks: plan.newTotalWeeks }).where(eq(trainingBlocks.id, blockId))
-    console.log(`[blockZero] extend: block ${blockId} now ${plan.newTotalWeeks} weeks`)
-    return null
-  }
-
-  if (plan.nextBlock) {
-    await endActiveBlocks(db, nowSec)
-    const next = await createTrainingBlock(db, { ...plan.nextBlock, nowSec })
-    console.log(`[blockZero] ${plan.decision}: ended ${blockId}, created ${next?.id}`)
-    return next?.id ?? null
-  }
-  return null
-}
-
-/**
- * START FIGHTER BLOCK 1 / KEEP BUILDING: apply the stored verdict's plan for
- * this block, once. Null when there is no unapplied verdict for it (the check
- * has to run first). An already-applied verdict comes back as it is.
- */
-export async function applyStoredBlockZeroTransition(db: DB, blockId: string): Promise<BlockZeroTransitionResult | null> {
-  const [row] = await db
-    .select({ id: coachingOutputs.id, outputJson: coachingOutputs.outputJson })
-    .from(coachingOutputs)
-    .where(and(eq(coachingOutputs.kind, 'block_zero_transition'), eq(coachingOutputs.inputHash, blockId)))
-    .orderBy(desc(coachingOutputs.createdAt))
-    .limit(1)
-  if (!row) return null
-  let stored: BlockZeroTransitionResult
-  try {
-    stored = JSON.parse(row.outputJson) as BlockZeroTransitionResult
-  } catch {
-    return null
-  }
-  // Rows from before the split were applied by the check itself.
-  if (stored.applied !== false || !stored.plan) return { ...stored, applied: true }
-  const nowSec = Math.floor(Date.now() / 1000)
-  const nextBlockId = await applyTransitionPlan(db, blockId, stored.plan, nowSec)
-  const done: BlockZeroTransitionResult = { ...stored, applied: true, nextBlockId }
-  await db.update(coachingOutputs).set({ outputJson: JSON.stringify(done) }).where(eq(coachingOutputs.id, row.id))
-  return done
-}
-
-export async function getStoredBlockZeroTransition(
-  db: DB,
-): Promise<BlockTransitionOutput | BlockZeroTransitionResult | null> {
-  const [row] = await db
-    .select({ outputJson: coachingOutputs.outputJson })
-    .from(coachingOutputs)
-    .where(eq(coachingOutputs.kind, 'block_zero_transition'))
-    .orderBy(desc(coachingOutputs.createdAt))
-    .limit(1)
-
-  if (!row) return null
-
-  try {
-    return JSON.parse(row.outputJson) as BlockTransitionOutput
-  } catch {
-    console.warn('[blockZero] malformed stored transition')
-    return null
-  }
 }

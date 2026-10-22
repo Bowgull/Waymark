@@ -19,6 +19,8 @@ import { modelSummary, readAthleteEstimates, refreshAthleteModel } from '../athl
 import { loadSessionCoachState } from '../coachData'
 import { brainCapFrom, parseDose } from '../brain'
 import { loadRunHistory, readinessFor } from '../blockZeroData'
+import { blockReadinessFor } from '../readiness'
+import { readinessSummary } from '../../lib/brain/readinessParts'
 import { getStrengthTemplate, getWeekPercentage } from '../../lib/strengthTemplates'
 import { getRunWalkWeek } from '../../lib/blockZero/running'
 import { isoOf, withMergedLifts } from '../../lib/coach'
@@ -424,7 +426,8 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
       }
       collectChanges('day', day)
       // Readiness as the day stood (after his check-in).
-      days.push({ day, active, planned, did, readiness: await readinessSnapshot(day) })
+      const br = await blockReadinessFor(db, day)
+      days.push({ day, active, planned, did, readiness: await readinessSnapshot(day), block: br ? { parts: readinessSummary(br), flap: br.flap, line: br.line, ready: br.ready, week: br.week } : null })
     }
     // The model after the last day's sessions (what the next night would store).
     setClock(utcMs(script.toDay, 23 * 60))
@@ -452,7 +455,7 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     doses,
     changes,
     aiCalls,
-    sessions: finalRows.map(r => ({ id: r.id, day: r.scheduledDate, type: r.type, label: r.label, slot: r.timeSlot, status: r.status, source: r.source, contextJson: r.contextJson, rpe: r.rpe, durationSec: r.durationSec })),
+    sessions: finalRows.map(r => ({ id: r.id, day: r.scheduledDate, type: r.type, label: r.label, slot: r.timeSlot, status: r.status, source: r.source, contextJson: r.contextJson, rpe: r.rpe, durationSec: r.durationSec, blockType: r.blockType })),
     errors,
     model: modelFinal,
   }

@@ -61,5 +61,6 @@ test('Ledger: the week, month and season boards', async ({ page }) => {
     await expect(range.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true')
   }
   await expect(page.getByText('Aerobic base', { exact: true })).toBeVisible()
-  await expect(page.getByText('Consistency')).toBeVisible()
+  // Block Zero: page 63's board is now the NEXT BLOCK meter (page 69 §5 A).
+  await expect(page.locator('section.lg-meter').getByText('Next block', { exact: true })).toBeVisible()
 })

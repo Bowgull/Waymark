@@ -4,15 +4,11 @@ import {
   FIGHTER_DEFAULT_TOTAL_WEEKS,
   NEXT_BLOCK_NAME,
   backTrend,
-  evaluateEndGate,
   keySessionCompletionRate,
   longestGapInWindow,
-  planTransition,
   retestE1rms,
-  retestDoneFrom,
   isRetestSetWeek,
   GATE_SQUAT_ID,
-  type EndGateInput,
 } from './endGate'
 import { FIGHTER_MAIN_LIFT_IDS, resolveCalibrationStarts, resolveLiftId, selectMainLifts } from './lifts'
 
@@ -21,26 +17,8 @@ function assert(cond: unknown, msg: string): void {
   console.log(`ok: ${msg}`)
 }
 
-const clean: EndGateInput = { completionRate: 0.85, longestRecentGapDays: 1, backTrend: 'stable', retestDone: true, extensionsUsed: 0 }
-
-// ─── Gate ───────────────────────────────────────────────────────
-
-assert(evaluateEndGate(clean).decision === 'proceed', 'clean block: proceed')
-assert(evaluateEndGate({ ...clean, backTrend: 'unknown' }).decision === 'proceed', 'no back data yet: does not block')
-assert(evaluateEndGate({ ...clean, backTrend: 'better' }).decision === 'proceed', 'back better: proceed')
-const low = evaluateEndGate({ ...clean, completionRate: 0.65 })
-assert(low.decision === 'extend' && low.extendWeeks === 1 && low.reasons[0] === '65% of sessions done. The floor is 70%.', 'completion 65%: extend 1 with reason')
-assert(evaluateEndGate({ ...clean, completionRate: 0.7 }).decision === 'proceed', 'completion exactly 70%: proceed')
-assert(evaluateEndGate({ ...clean, completionRate: 0.4 }).extendWeeks === 2, 'completion under 50%: extend 2')
-assert(evaluateEndGate({ ...clean, completionRate: 0.4, extensionsUsed: 1 }).extendWeeks === 1, 'extend never past the 2-extension limit')
-assert(evaluateEndGate({ ...clean, longestRecentGapDays: 7 }).decision === 'extend', '7-day recent gap: extend')
-assert(evaluateEndGate({ ...clean, longestRecentGapDays: 6 }).decision === 'proceed', '6-day gap: proceed')
-assert(evaluateEndGate({ ...clean, backTrend: 'worse' }).decision === 'extend', 'back worse: extend')
-assert(evaluateEndGate({ ...clean, retestDone: false }).decision === 'extend', 'no retest: extend')
-assert(evaluateEndGate({ ...clean, completionRate: null }).decision === 'extend' && evaluateEndGate({ ...clean, completionRate: null }).reasons[0] === 'No sessions logged yet.', 'no data at all: extend, says so')
-const forced = evaluateEndGate({ ...clean, completionRate: 0.3, extensionsUsed: 2 })
-assert(forced.decision === 'proceed' && forced.forced && forced.reasons.some(r => r.includes('Two extensions used')), 'two extensions used: forced proceed')
-assert([low, forced].every(g => g.reasons.every(r => !r.includes('!') && !r.includes('—'))), 'gate reasons in house voice')
+// The end gate and its extensions are gone (coach-brain §8): lib/brain/readinessParts.test.ts covers readiness.
+assert(NEXT_BLOCK_NAME === 'Fighter Block 1' && FIGHTER_DEFAULT_TOTAL_WEEKS === 12, 'the hand-off: Fighter Block 1, 12 weeks')
 
 // ─── Gate inputs ────────────────────────────────────────────────
 
@@ -83,44 +61,7 @@ assert(retestE1rms([{ exerciseId: 'ex-front-squat', weightKg: 60, reps: 8, rir: 
 
 // ─── "Retest done" with no test week (2026-10-18) ──────────────
 assert(GATE_SQUAT_ID === 'ex-front-squat', 'the gate reads the front squat')
-assert(!retestDoneFrom(new Map([['ex-front-squat', 88]]), []), 'the squat estimate alone does not open the gate')
-assert(retestDoneFrom(new Map(), [1, 6]), 'the week-6 talk test is enough')
-assert(retestDoneFrom(new Map(), [7]), 'an extension-week talk test counts')
-assert(!retestDoneFrom(new Map([['ex-bench-press', 70]]), [1]), 'bench only and a week-1 talk test: not done')
 assert(isRetestSetWeek(5) && isRetestSetWeek(6) && !isRetestSetWeek(4) && !isRetestSetWeek(null), 'week 5 and 6 sets (and extension weeks, stamped 5) feed the estimates')
-assert(evaluateEndGate({ ...clean, retestDone: false }).reasons.includes('No week-6 talk test yet. Log it on an easy run.'), 'missing numbers: the reason names them')
-assert(evaluateEndGate(clean).reasons[0] === 'Consistency, back and the week-6 numbers are in. Move on.', 'proceed reason')
-
-// ─── Transition plan (bug 1e) ───────────────────────────────────
-
-const retest = new Map([['ex-bench-press', 70], ['ex-front-squat', 90], ['ex-goblet-squat', 40]])
-const go = planTransition({ gate: clean, aiDecision: 'proceed', aiTargets: [], retestE1rms: retest, totalWeeks: 6, atEndBoundary: true })
-assert(go.decision === 'proceed' && go.reportedDecision === 'proceed', 'gate + AI proceed: proceed')
-assert(go.nextBlock?.blockType === 'fighter' && go.nextBlock.name === NEXT_BLOCK_NAME && go.nextBlock.totalWeeks === FIGHTER_DEFAULT_TOTAL_WEEKS, 'proceed creates Fighter Block 1 at the Fighter default length')
-assert(go.calibration.find(c => c.exerciseId === 'ex-bench-press')?.weightKg === 63 && go.calibration.find(c => c.exerciseId === 'ex-front-squat')?.weightKg === 81, 'retest e1RMs become maxes at 90%')
-assert(!go.calibration.some(c => c.exerciseId === 'ex-goblet-squat'), 'only Fighter main lifts are recalibrated from the retest')
-const offline = planTransition({ gate: clean, aiDecision: null, aiTargets: [], retestE1rms: retest, totalWeeks: 6, atEndBoundary: true })
-assert(offline.decision === 'proceed' && offline.nextBlock != null, 'AI offline: rules alone still proceed')
-const withAi = planTransition({ gate: clean, aiDecision: 'adjust', aiTargets: [{ exerciseId: 'ex-bench-press', estimatedMaxKg: 60 }], retestE1rms: retest, totalWeeks: 6, atEndBoundary: true })
-assert(withAi.decision === 'adjust' && withAi.nextBlock != null, 'AI adjust: moves on with modified loads')
-assert(withAi.calibration.find(c => c.exerciseId === 'ex-bench-press')?.source === 'ai' && withAi.calibration.filter(c => c.exerciseId === 'ex-bench-press').length === 1, 'AI target wins for a lift it covered')
-assert(withAi.calibration.find(c => c.exerciseId === 'ex-front-squat')?.weightKg === 76.5, 'adjust uses 85% for retest-derived maxes')
-const aiOver = planTransition({ gate: { ...clean, completionRate: 0.6 }, aiDecision: 'proceed', aiTargets: [], retestE1rms: retest, totalWeeks: 6, atEndBoundary: true })
-assert(aiOver.decision === 'extend' && aiOver.reportedDecision === 'hold' && aiOver.newTotalWeeks === 7 && aiOver.nextBlock === null, 'AI says proceed at 60% completion: rules extend, no next block')
-assert(aiOver.reasons.some(r => r.includes('rules hold the line')), 'override is explained')
-assert(aiOver.calibration.length === 0, 'no retest recalibration while extending')
-const aiHold = planTransition({ gate: clean, aiDecision: 'hold', aiTargets: [], retestE1rms: retest, totalWeeks: 6, atEndBoundary: true })
-assert(aiHold.decision === 'extend' && aiHold.extendWeeks === 1, 'AI may be more cautious: hold extends 1 week')
-const aiHoldMax = planTransition({ gate: { ...clean, extensionsUsed: 2 }, aiDecision: 'hold', aiTargets: [], retestE1rms: retest, totalWeeks: 8, atEndBoundary: true })
-assert(aiHoldMax.decision === 'proceed' && aiHoldMax.nextBlock != null, 'AI hold after 2 extensions: proceeds anyway')
-const forcedPlan = planTransition({ gate: { ...clean, completionRate: 0.5, extensionsUsed: 2 }, aiDecision: 'hold', aiTargets: [], retestE1rms: retest, totalWeeks: 8, atEndBoundary: true })
-assert(forcedPlan.decision === 'adjust' && forcedPlan.newTotalWeeks === 8 && forcedPlan.nextBlock != null, 'gate fails at 8 weeks: forced proceed with adjust semantics')
-const early = planTransition({ gate: { ...clean, retestDone: false }, aiDecision: 'hold', aiTargets: [], retestE1rms: new Map(), totalWeeks: 6, atEndBoundary: false })
-assert(early.decision === 'not_yet' && early.extendWeeks === 0 && early.newTotalWeeks === 6, 'checked mid-block: nothing extends early')
-for (let used = 0; used <= 2; used++) {
-  const p = planTransition({ gate: { ...clean, completionRate: 0.2, extensionsUsed: used }, aiDecision: 'hold', aiTargets: [], retestE1rms: retest, totalWeeks: 6 + used, atEndBoundary: true })
-  assert(p.newTotalWeeks <= 8, `extensions used ${used}: total never past 8 weeks (${p.newTotalWeeks})`)
-}
 
 // ─── Lift matching (bug 1c) ─────────────────────────────────────
 

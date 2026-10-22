@@ -8,9 +8,10 @@ import { getTodayISO } from '@/lib/dates'
 import { logger } from '@/lib/logger'
 import { pondReaction, type LedgerRange, type LedgerRing, type LiftSeries, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
 import type { ConsistencyView } from '@/lib/ledgerConsistency'
+import type { ReadinessReport } from '@/lib/brain/readinessParts'
 import { setWorldPond } from '@/world/worldStore'
 
-import { AerobicBoard, ConsistencyBoard, HerbBoard, RingBoard, SleepBoard, StrengthBoard } from './LedgerBoards'
+import { AerobicBoard, ConsistencyBoard, HerbBoard, ReadinessMeter, RingBoard, SleepBoard, StrengthBoard } from './LedgerBoards'
 import { PondRings } from './PondRings'
 import './ledger.css'
 
@@ -32,6 +33,8 @@ export interface LedgerData {
   weight: { points: WeeklyPoint[]; weighIns: number }
   /** Page 63: the Consistency board (the block bar, or the last weeks after Block Zero). */
   consistencyBoard?: ConsistencyView
+  /** Page 69 §5 A: in Block Zero, the NEXT BLOCK meter (four readiness parts) in page 63's place. */
+  readinessMeter?: ReadinessReport | null
   /** The pond's reaction (the range's sessions); older servers leave it out. */
   pond?: number | null
 }
@@ -111,7 +114,7 @@ export function HistoryPage() {
             <RingBoard rings={data.rings} title={title} sub={range === 'week' ? undefined : 'done / planned'} />
             {spanLine && <p className="lg-span">{spanLine}</p>}
             {/* page 63: between the week rings and Aerobic base */}
-            {data.consistencyBoard && <ConsistencyBoard view={data.consistencyBoard} />}
+            {data.readinessMeter ? <ReadinessMeter view={data.readinessMeter} /> : data.consistencyBoard && <ConsistencyBoard view={data.consistencyBoard} />}
             <AerobicBoard points={data.aerobic.points} runs={data.aerobic.runs} />
             <StrengthBoard lifts={data.strength.lifts} sets={data.strength.sets} />
             <SleepBoard days={data.sleep.days} avg={data.sleep.avg} />

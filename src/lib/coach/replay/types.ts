@@ -200,6 +200,8 @@ export interface DayRecord {
   planned: Array<{ id: string; type: string; label: string | null; slot: string | null; status: string; eased: boolean }>
   did: string[]
   readiness: { ease: boolean; fresh: boolean; flaggedItems: number; loadFlag: boolean; state?: string } | null
+  /** Block readiness at the end of the day (coach brain P4): the four parts, the flap, the line. */
+  block?: { parts: string; flap: string; line: string; ready: boolean; week: number } | null
 }
 
 export interface ReplayResult {
@@ -211,7 +213,7 @@ export interface ReplayResult {
   changes: ChangeRecord[]
   aiCalls: AiCallRecord[]
   /** Every session at the end, for checks over the plan. */
-  sessions: Array<{ id: string; day: number | null; type: string; label: string | null; slot: string | null; status: string; source: string | null; contextJson: string | null; rpe: number | null; durationSec: number | null }>
+  sessions: Array<{ id: string; day: number | null; type: string; label: string | null; slot: string | null; status: string; source: string | null; contextJson: string | null; rpe: number | null; durationSec: number | null; blockType?: string | null }>
   errors: string[]
   /** The nightly decisions (coach brain P3, coach_decisions rows). */
   decisions?: Array<{

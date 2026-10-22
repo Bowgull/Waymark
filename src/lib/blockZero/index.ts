@@ -97,18 +97,12 @@ export {
   NEXT_BLOCK_NAME,
   RECENT_GAP_WINDOW_DAYS,
   backTrend,
-  evaluateEndGate,
   keySessionCompletionRate,
   longestGapInWindow,
-  planTransition,
   retestE1rms,
-  retestDoneFrom,
   isRetestSetWeek,
   GATE_SQUAT_ID,
   type BackTrend,
-  type EndGateInput,
-  type EndGateResult,
-  type TransitionPlan,
 } from './endGate'
 
 export { FIGHTER_MAIN_LIFT_IDS, isFighterMainLift, resolveCalibrationStarts, resolveLiftId, selectMainLifts } from './lifts'

@@ -13,6 +13,8 @@ import { getActiveBlock } from './blockZeroData'
 import { rebuildNotebook } from './notebook'
 import { blockStartDay } from './coachData'
 import { athleteTimeZone, localDayIn } from './timeZone'
+import { finishBlockMove, runBlockMove } from './readiness'
+import { readinessSummary } from '../lib/brain/readinessParts'
 
 export interface NightlyEnv {
   DB: D1Database
@@ -25,6 +27,9 @@ export interface NightlyEnv {
 // any failure), then the writes.
 // 1. Skipped (but for the model and housekeeping) when nothing was logged and
 //    the app wasn't opened in the last 2 days: no narration through a lapse.
+// 1b. The block (coach-brain §8): the four readiness parts, the move to
+//    Fighter Block 1 (a lighter week, then a Monday rune with UNDO), Block
+//    Zero's runway (no maximum).
 // 2. Days of this week never opened get their template sessions, stale planned
 //    sessions roll over to missed, each missed session gets the coach's fix.
 // 3. The weekly pass on Sunday/Monday: next week's sessions (one creation
@@ -42,6 +47,14 @@ export async function runNightlyReplan(env: NightlyEnv, nowMs: number = Date.now
   const inactive = block != null && blockStartDay(block) < todayEpochDay - 2 && (last == null || last < todayEpochDay - 2)
   let used = 0
   if (!inactive) {
+    try {
+      // The block first (coach-brain §8): readiness, the move to Fighter Block 1 on its Monday, Block Zero's runway.
+      const moved = await runBlockMove(db, todayEpochDay, nowSec)
+      used += moved.changes
+      console.log(`[cron] block: ${moved.action}${moved.report ? ` (${readinessSummary(moved.report)})` : ''}`)
+    } catch (err) {
+      console.warn('[cron] block readiness failed', err)
+    }
     try {
       const backfilled = await backfillCurrentWeek(db, todayEpochDay, nowSec)
       const rolled = await rolloverStaleSessionIds(db, todayEpochDay)
@@ -63,6 +76,11 @@ export async function runNightlyReplan(env: NightlyEnv, nowMs: number = Date.now
       console.log(`[cron] brain ran=${night.ran} ${night.reason ?? ''} decision=${night.decision ?? '-'} changes=${night.changes} doses=${night.doses}`)
     } catch (err) {
       console.warn('[cron] brain night failed', err)
+    }
+    try {
+      await finishBlockMove(db, todayEpochDay)
+    } catch (err) {
+      console.warn('[cron] block move finish failed', err)
     }
   } else {
     console.log('[cron] quiet: nothing logged and the app not opened in 2 days; no re-plan')

@@ -1,15 +1,17 @@
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lte } from 'drizzle-orm'
 import { summarizeOldWeeks } from '../lib/prompts/summarizer'
-import { applyStoredBlockZeroTransition, getStoredBlockZeroAssessment, getStoredBlockZeroTransition, runBlockZeroAssessment, runBlockZeroTransition } from './routes/blockZero'
+import { getStoredBlockZeroAssessment, runBlockZeroAssessment } from './routes/blockZero'
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { cors } from 'hono/cors'
 
 import { createDB } from '../db/client'
-import { CONSISTENCY_SPAN, blockConsistency, weeksConsistency } from '../lib/ledgerConsistency'
+import { CONSISTENCY_SPAN, weeksConsistency } from '../lib/ledgerConsistency'
+import { blockReadinessFor } from './readiness'
 import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, runTypes, techniques, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { athleteDayFrom, isoToEpochDay, mondayOf, TODAY_HEADER, TZ_HEADER } from '../lib/dates'
 import { cycleWeeks } from '../lib/programWeeks'
+import { classDaySlots } from '../lib/classSlots'
 import { loggedAtSec } from '../lib/units'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
@@ -2699,6 +2701,7 @@ app.get('/api/journal/history', async (c) => {
 app.patch('/api/settings', async (c) => {
   const body = await c.req.json<{
     mtClassDays?: string
+    mtClassSlots?: string
     amReminder?: string
     pmLeadMin?: number
     pmSessionTime?: string
@@ -2724,6 +2727,7 @@ app.patch('/api/settings', async (c) => {
   const oldMtDays = oldSettings?.mtClassDays ?? '1,3,5'
 
   if (body.mtClassDays !== undefined) updates.mtClassDays = body.mtClassDays
+  if (body.mtClassSlots !== undefined) updates.mtClassSlots = body.mtClassSlots
   if (body.amReminder !== undefined) updates.amReminder = body.amReminder
   if (body.pmLeadMin !== undefined) updates.pmLeadMin = body.pmLeadMin
   if (body.pmSessionTime !== undefined) updates.pmSessionTime = body.pmSessionTime
@@ -2737,8 +2741,21 @@ app.patch('/api/settings', async (c) => {
   await db.update(settings).set(updates).where(eq(settings.id, 'default'))
   const [row] = await db.select().from(settings).where(eq(settings.id, 'default'))
 
+  // A class day's slot changed (page 70): its planned classes from tomorrow sit in the new slot. ANY leaves them.
+  const oldSlots = classDaySlots(oldMtDays.split(',').filter(Boolean).map(Number), oldSettings?.mtClassSlots)
+  const newSlots = classDaySlots((row?.mtClassDays ?? '').split(',').filter(Boolean).map(Number), row?.mtClassSlots)
+  const moved = Object.entries(newSlots).filter(([d, s]) => s !== 'any' && oldSlots[Number(d)] !== undefined && oldSlots[Number(d)] !== s).map(([d, s]) => [Number(d), s] as const)
+  if (moved.length > 0) {
+    const todayEpochDay = athleteDay(c)
+    const future = await db.select().from(sessions).where(and(eq(sessions.type, 'mt_class'), eq(sessions.status, 'planned'), gt(sessions.scheduledDate, todayEpochDay)))
+    for (const s of future) {
+      const m = moved.find(([d]) => s.scheduledDate != null && new Date(s.scheduledDate * 86400000).getUTCDay() === d)
+      if (m && s.timeSlot !== m[1]) await db.update(sessions).set({ timeSlot: m[1] }).where(eq(sessions.id, s.id))
+    }
+  }
+
   // Cascade: if MT class days changed, clean up future planned sessions
-  let cascade: { removed: number; freedDays?: string[] } | null = null
+  let cascade: { removed: number; freedDays?: string[]; freed?: Array<{ day: string; slot: 'AM' | 'PM' }> } | null = null
   if (body.mtClassDays !== undefined && body.mtClassDays !== oldMtDays) {
     const newMtDays = new Set(body.mtClassDays.split(',').filter(Boolean).map(Number))
     const removedDays = oldMtDays.split(',').filter(Boolean).map(Number).filter(d => !newMtDays.has(d))
@@ -2767,7 +2784,15 @@ app.patch('/api/settings', async (c) => {
       }
 
       const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-      cascade = { removed: toDelete.length, freedDays: removedDays.map(d => DAY_NAMES[d]) }
+      // The slot each day frees (page 70): its chosen slot; ANY frees nothing until a placed class goes.
+      const freed: Array<{ day: string; slot: 'AM' | 'PM' }> = []
+      for (const d of removedDays) {
+        const chosen = oldSlots[d]
+        const gone = toDelete.find(s => new Date((s.scheduledDate ?? 0) * 86400000).getUTCDay() === d)
+        const slot = chosen === 'am' || chosen === 'pm' ? chosen : gone ? (gone.timeSlot === 'am' ? 'am' : 'pm') : null
+        if (slot) freed.push({ day: DAY_NAMES[d], slot: slot === 'am' ? 'AM' : 'PM' })
+      }
+      cascade = { removed: toDelete.length, freedDays: freed.map(f => f.day), freed }
     }
   }
 
@@ -3490,7 +3515,8 @@ app.get('/api/history/ledger', async (c) => {
     .filter(m => m.weightKg != null)
     .map(m => ({ epochDay: Math.floor(loggedAtSec(m.loggedAt) / 86400), weightLbs: Math.round(m.weightKg! * 2.20462 * 10) / 10 }))
 
-  // Page 63: Consistency on the first screen. In Block Zero, the block; after it, the last 4 / 8 / 13 weeks.
+  // Page 69 §5 A: in Block Zero the NEXT BLOCK meter (the four readiness parts) takes page 63's place;
+  // after it, page 63's board over the last 4 / 8 / 13 weeks.
   const tzRaw = Number(c.req.query('tz'))
   const tzOffsetMin = Number.isFinite(tzRaw) && Math.abs(tzRaw) <= 900 ? tzRaw : 0
   const activeBlock = await getActiveBlock(db)
@@ -3498,15 +3524,15 @@ app.get('/api/history/ledger', async (c) => {
   const foundationFrom = activeBlock?.blockType === 'block_zero' ? blockStartDay(activeBlock) : mondayOf(today) - (CONSISTENCY_SPAN[range] - 1) * 7
   const foundationDays = new Set(allSessions.filter(s => s.type === 'mobility' && s.status === 'completed' && s.scheduledDate != null && s.scheduledDate >= foundationFrom && s.scheduledDate <= today).map(s => s.scheduledDate))
   const foundation = { done: foundationDays.size, of: Math.max(foundationDays.size, today - foundationFrom + (foundationDays.has(today) ? 1 : 0)) }
-  const consistencyBoard = activeBlock?.blockType === 'block_zero'
-    ? blockConsistency(consistencyRows, { blockType: 'block_zero', startDay: blockStartDay(activeBlock), totalWeeks: activeBlock.totalWeeks }, today, { tzOffsetMin, foundation })
-    : weeksConsistency(consistencyRows, CONSISTENCY_SPAN[range], today, mondayOf, { tzOffsetMin, foundation })
+  const readinessMeter = activeBlock?.blockType === 'block_zero' ? await blockReadinessFor(db, today) : null
+  const consistencyBoard = readinessMeter ? undefined : weeksConsistency(consistencyRows, CONSISTENCY_SPAN[range], today, mondayOf, { tzOffsetMin, foundation })
 
   return c.json({
     range,
     today,
     weeks,
     consistencyBoard,
+    readinessMeter,
     rings: buildRings(allSessions, range, today),
     aerobic: aerobicWeekly(runs, weeks, today),
     strength: strengthWeekly(setRows, weeks, today),
@@ -3796,41 +3822,6 @@ app.get('/api/ai/block-zero-assessment', async (c) => {
   return c.json(output ?? null)
 })
 
-app.post('/api/ai/block-zero-transition', async (c) => {
-  const db = createDB(c.env)
-  const [block] = await db
-    .select()
-    .from(trainingBlocks)
-    .where(eq(trainingBlocks.status, 'active'))
-
-  if (!block || block.blockType !== 'block_zero') {
-    return c.json({ error: 'no active block zero' }, 404)
-  }
-
-  const output = await runBlockZeroTransition(db, c.env.ANTHROPIC_API_KEY, block.id)
-  if (!output) return c.json({ error: 'transition check unavailable' }, 503)
-  return c.json(output)
-})
-
-// START FIGHTER BLOCK 1 / KEEP BUILDING: the verdict CHECK READINESS stored is applied
-// only now (move on ends Block Zero and starts Fighter Block 1; extend lengthens it).
-app.post('/api/ai/block-zero-transition/apply', async (c) => {
-  const db = createDB(c.env)
-  const [block] = await db
-    .select()
-    .from(trainingBlocks)
-    .where(eq(trainingBlocks.status, 'active'))
-  if (!block || block.blockType !== 'block_zero') return c.json({ error: 'no active block zero' }, 404)
-  const output = await applyStoredBlockZeroTransition(db, block.id)
-  if (!output) return c.json({ error: 'check readiness first' }, 409)
-  return c.json(output)
-})
-
-app.get('/api/ai/block-zero-transition', async (c) => {
-  const db = createDB(c.env)
-  const output = await getStoredBlockZeroTransition(db)
-  return c.json(output ?? null)
-})
 
 app.post('/api/ai/ledger-insights', async (c) => {
   const db = createDB(c.env)

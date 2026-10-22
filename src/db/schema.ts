@@ -491,7 +491,7 @@ export const weekAdjustments = sqliteTable('week_adjustments', {
   // legacy row (never a rune, never in the week log). See lib/coach/changes.ts.
   changeSetId: text('change_set_id'),
   actor: text('actor'), // 'you' | 'coach' | 'check_in' | 'weekly_pass' | 'class_tonight'
-  kind: text('kind'), // 'swap' | 'skip' | 'add' | 'pull_forward' | 'move' | 'ease' | 'shorten' | 'missed' | 'push' | 'make_regular' | 'tm'
+  kind: text('kind'), // 'swap' | 'skip' | 'add' | 'pull_forward' | 'move' | 'ease' | 'shorten' | 'missed' | 'push' | 'make_regular' | 'tm' | 'block'
   beforeJson: text('before_json'),
   afterJson: text('after_json'),
   why: text('why'),
@@ -537,6 +537,8 @@ export const settings = sqliteTable('settings', {
   narutoEp: integer('naruto_ep'),
   // 0044: the phone's IANA time zone.
   timeZone: text('time_zone'),
+  // 0047: a slot per MT class day, "mon:pm,sat:any" (page 70). Missing: weekday PM, weekend ANY.
+  mtClassSlots: text('mt_class_slots'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 })

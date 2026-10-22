@@ -8,7 +8,7 @@
 //
 // Areas: each main lift (e1RM, working weight, RIR bias, what he actually did),
 // the run (talk-test line, U, drift, rung, longest run, easy pace), the bag,
-// MT classes (tolerance, class-night fit), recovery baselines and responses,
+// MT classes (tolerance, class-day fit), recovery baselines and responses,
 // the back, and when he trains (Beta per slot, usual start, rest days, schedule
 // skips). Each carries a Confidence (state, n, last day, u) from uncertainty.ts.
 //
@@ -22,7 +22,7 @@ import { RIR_THREE_PLUS_AS } from '../blockZero/strength'
 import { RUN_WALK_WEEKS, ageFromDob, tanakaMaxHr } from '../blockZero/running'
 import { isScheduleReason } from './types'
 import type {
-  AdherenceEstimate, AthleteModel, BackEstimate, BagEstimate, BetaCell, ClassEstimate, ClassNight, EstimateRow, EstimateState,
+  AdherenceEstimate, AthleteModel, BackEstimate, BagEstimate, BetaCell, ClassEstimate, ClassDay, EstimateRow, EstimateState,
   LiftEstimate, LiftExposure, ModelCheckIn, ModelEvents, ModelSet, RecoveryEstimate, RecoveryItemBaseline,
   RunEstimate, RunObservation, SlotCellKey,
 } from './types'
@@ -609,23 +609,26 @@ const RECOVERY_REASONS: ReadonlySet<string> = new Set(['tired', 'too_sore', 'sic
 const OWN_SOURCES: ReadonlySet<string> = new Set(['ad_hoc', 'replace'])
 const mondayOf = (day: number) => day - ((dowOf(day) + 6) % 7)
 
-function emptyNight(): ClassNight {
+function emptyDay(): ClassDay {
   return { ...betaCell(1, 1), n: 0, suggested: 0, attended: 0, scheduleSkips: 0, unexplained: 0, recoverySkips: 0 }
 }
 
 function buildClass(events: ModelEvents, today: number, worseItemsOn: (day: number) => number | null): ClassEstimate {
   const classes = events.sessions.filter(s => s.type === 'mt_class' && s.day <= today).sort((a, b) => a.day - b.day)
-  const nights: Record<number, ClassNight> = {}
-  for (let d = 0; d < 7; d++) nights[d] = emptyNight()
+  const days: Record<number, ClassDay> = {}
+  for (let d = 0; d < 7; d++) days[d] = emptyDay()
   const byDay = new Map(events.checkIns.map(c => [c.day, c]))
   const attendedDays: number[] = []
   for (const c of classes) {
-    const n = nights[dowOf(c.day)]
+    const n = days[dowOf(c.day)]
     const suggested = !OWN_SOURCES.has(c.source ?? '')
     if (suggested) n.suggested++
     let a = n.alpha
     let b = n.beta
-    if (c.status === 'completed') { n.attended++; a++; attendedDays.push(c.day) } else if (c.status === 'skipped' || c.status === 'missed') {
+    if (c.status === 'completed') { n.attended++; a++; attendedDays.push(c.day) } else if (c.skipReason === 'coach_rest') {
+      // The coach took it off: it says nothing about the day.
+      continue
+    } else if (c.status === 'skipped' || c.status === 'missed') {
       if (isScheduleReason(c.skipReason)) { n.scheduleSkips++; b++ } else if (c.skipReason && RECOVERY_REASONS.has(c.skipReason)) n.recoverySkips++
       else if (c.day < today) { n.unexplained++; b++ }
     } else continue
@@ -650,7 +653,7 @@ function buildClass(events: ModelEvents, today: number, worseItemsOn: (day: numb
     perWeekTolerated: tol,
     classes: attendedDays.length,
     learnedNotes: learned,
-    nights,
+    days,
   }
 }
 
@@ -846,9 +849,9 @@ export function modelRows(m: AthleteModel): EstimateRow[] {
   rows.push(row('run', 'line', m.run, { lineBpm: m.run.lineBpm, lineSource: m.run.lineSource, linePriorBpm: m.run.linePriorBpm, talkTests: m.run.talkTests, lastTalkTestDay: m.run.lastTalkTestDay, recheckDue: m.run.recheckDue, recheckWhy: m.run.recheckWhy, evidence: m.run.evidence, lastDay: m.run.lastDay }))
   rows.push(row('run', 'tolerance', m.run, { ...runRest, recent }))
   rows.push(row('bag', 'main', m.bag, m.bag))
-  const { nights, ...klass } = m.klass
+  const { days, ...klass } = m.klass
   rows.push(row('class', 'main', m.klass, klass))
-  rows.push(row('class', 'nights', m.klass, { nights }))
+  rows.push(row('class', 'days', m.klass, { days }))
   rows.push(row('recovery', 'main', m.recovery, m.recovery))
   rows.push(row('back', 'main', m.back, m.back))
   const a = m.adherence
@@ -872,8 +875,8 @@ export function modelSummary(m: AthleteModel): string[] {
   const r = m.run
   lines.push(`run: ${r.state} u=${r.u} line=${r.lineBpm} (${r.lineSource}; age prior ${r.linePriorBpm}) U=${r.uShare ?? '-'} drift=${r.driftBpm ?? '-'} rung=${r.rungSec}s longest30=${r.longestLast30Sec ?? '-'}s easyPace=${r.easyPaceSecKm ?? '-'}s/km runs=${r.runs} withHr=${r.runsWithHr} recheck=${r.recheckWhy ?? 'no'}`)
   lines.push(`bag: ${m.bag.state} u=${m.bag.u} rounds=${m.bag.roundsTolerated ?? '-'} finishers=${m.bag.finishersAllowed} sessions=${m.bag.sessions} scheduleCuts=${m.bag.scheduleCuts}`)
-  const nights = Object.entries(m.klass.nights).filter(([, n]) => n.n > 0 || n.recoverySkips > 0).map(([d, n]) => `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][Number(d)]} ${n.attended}/${n.suggested} sched-skip ${n.scheduleSkips} p=${n.p}`).join('; ')
-  lines.push(`class: ${m.klass.state} u=${m.klass.u} perWeek=${m.klass.perWeekTolerated} classes=${m.klass.classes} nights: ${nights || '-'}`)
+  const classDays = Object.entries(m.klass.days).filter(([, n]) => n.n > 0 || n.recoverySkips > 0).map(([d, n]) => `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][Number(d)]} ${n.attended}/${n.suggested} sched-skip ${n.scheduleSkips} p=${n.p}`).join('; ')
+  lines.push(`class: ${m.klass.state} u=${m.klass.u} perWeek=${m.klass.perWeekTolerated} classes=${m.klass.classes} days: ${classDays || '-'}`)
   const base = Object.entries(m.recovery.baseline).map(([k, b]) => `${k} ${b?.mean}±${b?.sd}`).join(', ')
   lines.push(`recovery: ${m.recovery.state} u=${m.recovery.u} check-ins=${m.recovery.checkIns} baseline: ${base || 'not live'}`)
   lines.push(`back: ${m.back.state} u=${m.back.u} level=${m.back.level ?? '-'} trend=${m.back.trend ?? '-'} scores=${m.back.scores} notes=${m.back.backNotes} openPlans=${m.back.openPlans}`)
