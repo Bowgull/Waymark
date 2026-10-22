@@ -19,6 +19,8 @@ import {
   zone2PlanLine,
   runDiffLines,
   sessionDisplayName,
+  slotRows,
+  NO_ROW_SLOTS,
   strengthDiffLines,
   type DayBoardSession,
   type WorkoutExercise,
@@ -258,6 +260,37 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
     ['ROUND 3', '2:10', `${MINUS}0:50`, 'down'],
   ])
   assert.deepEqual(roundDiffLines([178], [180]).map(l => l.band), [null], 'within 10 s is as planned')
+}
+
+{
+  // Page 73: a swap, its undo or redo keeps the row (its name flips); rows keep their places.
+  type R = { id: string; contextJson?: string | null }
+  const swapOf = (id: string, orig: string): R => ({ id, contextJson: JSON.stringify({ replaced: { originalSessionId: orig } }) })
+  const keys = (out: ReturnType<typeof slotRows<R>>) => out.list.map(s => `${s.id}=${out.keyOf(s)}`)
+  const first = slotRows<R>([{ id: 'a' }, { id: 'x' }], NO_ROW_SLOTS)
+  assert.deepEqual(keys(first), ['a=a', 'x=x'], 'first draw: own keys, list order')
+  // A replaced by B: B lands at the end of the list, but takes A's row and place.
+  const swapped = slotRows<R>([{ id: 'x' }, swapOf('b', 'a')], first.next)
+  assert.deepEqual(keys(swapped), ['b=a', 'x=x'], 'the replacement takes its original row')
+  // B replaced by C: still the first row.
+  const again = slotRows<R>([{ id: 'x' }, swapOf('c', 'b')], swapped.next)
+  assert.deepEqual(keys(again), ['c=a', 'x=x'], 'a swap of a swap keeps the row')
+  // UNDO: B comes back into the same row; then A.
+  const undone = slotRows<R>([{ id: 'x' }, swapOf('b', 'a')], again.next)
+  assert.deepEqual(keys(undone), ['b=a', 'x=x'], 'undo keeps the row')
+  const back = slotRows<R>([{ id: 'x' }, { id: 'a' }], undone.next)
+  assert.deepEqual(keys(back), ['a=a', 'x=x'], 'the original back in its row')
+  // An ADD is a new row where the list puts it; a removal just goes.
+  const added = slotRows<R>([{ id: 'a' }, { id: 'n' }, { id: 'x' }], back.next)
+  assert.deepEqual(keys(added), ['a=a', 'n=n', 'x=x'], 'an added row is its own, in the list order')
+  assert.deepEqual(keys(slotRows<R>([{ id: 'x' }], added.next)), ['x=x'], 'a removed row goes')
+  // Opened on a swap already made: the replacement keys by its original; UNDO keeps it.
+  const cold = slotRows<R>([swapOf('c', 'b')], NO_ROW_SLOTS)
+  assert.deepEqual(keys(cold), ['c=b'])
+  assert.deepEqual(keys(slotRows<R>([swapOf('b', 'a')], cold.next)), ['b=b'], 'undo on a fresh board keeps the row')
+  // Both on the board at once: no shared key.
+  const both = slotRows<R>([{ id: 'a' }, swapOf('b', 'a')], first.next)
+  assert.deepEqual(keys(both), ['a=a', 'b=b'], 'two rows never share a key')
 }
 
 console.log('dayboard tests passed')

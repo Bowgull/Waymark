@@ -26,6 +26,8 @@ test('REPLACE: hold, COACH PICKS, SWAP IN, then BODY', async ({ page, api }) => 
   // Foundation is on every day of Block Zero.
   const foundation = row(page, /^Foundation FOUNDATION ~\d+min$/i).first()
   const sid = await foundation.getAttribute('data-sid')
+  // Page 73's motion: a swap keeps the row (its flaps flip), so mark the element.
+  await foundation.evaluate(el => el.setAttribute('data-e2e-row', 'kept'))
   const cmd = await holdRow(page, foundation)
   await cmd.getByRole('button', { name: 'Replace' }).tap()
 
@@ -43,6 +45,7 @@ test('REPLACE: hold, COACH PICKS, SWAP IN, then BODY', async ({ page, api }) => 
   await why.getByRole('button', { name: 'BODY', exact: true }).tap()
   await expect(why).toBeHidden()
   await expect(page.getByRole('button', { name: /^Bag Work BAG WORK ~\d+min$/i }).first()).toBeVisible()
+  await expect(page.locator('.td-row[data-e2e-row="kept"]').getByRole('button', { name: /^Bag Work BAG WORK ~\d+min$/i })).toBeVisible()
   // The replaced session leaves the board (it stays in the week's changes), with his reason.
   await expect(page.locator(`.td-row[data-sid="${sid}"]`)).toHaveCount(0)
   await expect.poll(async () => (await sessionsToday(api)).find(r => r.id === sid)?.skipReason).toBe('too_sore')

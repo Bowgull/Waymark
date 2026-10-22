@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon, useOutsideClose } from '@/design'
 import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
 import { PlanRow, type RowChange } from '@/features/plan/PlanRow'
+import { useRowSlots } from '@/features/plan/useRowSlots'
 import { apiFetch } from '@/lib/api'
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
 import { overCapBpm, stravaReadouts } from '@/lib/stravaMatch'
@@ -87,8 +88,11 @@ export function TodayDay(props: TodayDayProps) {
   const setOpenId = (id: string | null) => { if (props.onOpenChange) props.onOpenChange(id); else setOwnOpen(id) }
   const day = props.sessions.filter(s => !stravaOrphan(s))
   const unplanned = props.sessions.filter(stravaOrphan)
-  // A REPLACE (page 59 §5.3 Swap): the old row is struck and collapses, the new one opens in.
-  const rows = useSwapList(day, s => s.id)
+  // Page 73: a swap, its undo or redo keeps the row and its name flaps flip
+  // (the replacement takes its original's row key). An added row still opens
+  // in; a row that goes is struck and collapses (page 59 §5.3).
+  const slots = useRowSlots(day)
+  const rows = useSwapList(slots.list, slots.keyOf)
   const groups: Array<['am' | 'pm' | null, typeof rows]> = [
     ['am', rows.filter(r => r.item.timeSlot === 'am')],
     ['pm', rows.filter(r => r.item.timeSlot === 'pm')],

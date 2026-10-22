@@ -598,3 +598,43 @@ export function withoutReplaced<T extends { id: string; status: string; contextJ
   }
   return list.filter(s => !(s.status === 'skipped' && gone.has(s.id)))
 }
+
+/** The rows' identity as last drawn: each session's row key, and the keys in order. */
+export interface RowSlots {
+  keyOf: ReadonlyMap<string, string>
+  order: ReadonlyArray<string>
+}
+
+export const NO_ROW_SLOTS: RowSlots = { keyOf: new Map(), order: [] }
+
+/**
+ * Page 73's motion, "a swap, undo or redo: the row's flap letters flip". A
+ * swap's replacement (context_json.replaced.originalSessionId) takes the row
+ * of the session it replaced, and an UNDO gives it back, so the row stays
+ * where it was and only its name flips. Rows already drawn keep their order;
+ * new ones follow in the list's own order. Pure: `prev` is what was drawn.
+ */
+export function slotRows<T extends { id: string; contextJson?: string | null }>(list: ReadonlyArray<T>, prev: RowSlots): { list: T[]; keyOf: (s: T) => string; next: RowSlots } {
+  const keyOf = new Map(prev.keyOf)
+  const used = new Set<string>()
+  const keys = new Map<string, string>()
+  for (const s of list) {
+    const r = parseContext(s.contextJson).replaced as { originalSessionId?: unknown } | undefined
+    const orig = r && typeof r.originalSessionId === 'string' ? r.originalSessionId : null
+    let key = keyOf.get(s.id) ?? (orig ? keyOf.get(orig) ?? orig : s.id)
+    // Both on the board at once (never after a swap lands): the second gets its own row.
+    if (used.has(key)) key = s.id
+    else {
+      keyOf.set(s.id, key)
+      if (orig && !keyOf.has(orig)) keyOf.set(orig, key)
+    }
+    used.add(key)
+    keys.set(s.id, key)
+  }
+  const at = new Map(prev.order.map((k, i) => [k, i]))
+  const sorted = list.map((s, i) => ({ s, i, was: at.get(keys.get(s.id) as string) }))
+  // Drawn rows keep their places among themselves; new rows keep the list's places.
+  const old = sorted.filter(x => x.was != null).sort((a, b) => (a.was as number) - (b.was as number))
+  const out = sorted.map(x => (x.was != null ? (old.shift() as typeof x) : x)).map(x => x.s)
+  return { list: out, keyOf: (s: T) => keys.get(s.id) ?? s.id, next: { keyOf, order: out.map(s => keys.get(s.id) as string) } }
+}

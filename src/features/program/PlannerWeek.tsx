@@ -7,6 +7,7 @@ import { runeSay, rowChange } from '@/features/plan/changeLines'
 import { iconFor, plannedRowMinutes, rowStatus, type DayBoardSession } from '@/features/dayboard/rowState'
 import { PixelCursor } from '@/features/plan/PixelCursor'
 import { PlanRow } from '@/features/plan/PlanRow'
+import { useRowSlots } from '@/features/plan/useRowSlots'
 
 import { dayLine } from './weekModel'
 import './program.css'
@@ -86,7 +87,8 @@ export function PlannerWeek(p: PlannerWeekProps) {
     const t = window.setTimeout(() => reveal(rowEls.current.get(p.openDay as number)), prefersReducedMotion() ? 0 : 340)
     return () => window.clearTimeout(t)
   }, [p.openDay])
-  const list = p.sessions ?? []
+  // A swap, its undo or redo keeps the row: its name flaps flip (page 73's motion).
+  const { list, keyOf } = useRowSlots(p.sessions ?? [])
   const marks = p.week === 'this'
   const before = (d: number) => p.startsOn != null && d < p.startsOn
   return (
@@ -166,7 +168,7 @@ export function PlannerWeek(p: PlannerWeekProps) {
                             const holdable = d >= p.todayEpochDay && (s.status === 'planned' || st === 'skipped')
                             return (
                               <PlanRow
-                                key={s.id}
+                                key={keyOf(s)}
                                 session={s}
                                 on={p.cursor === `s:${s.id}`}
                                 open={p.det.has(s.id)}

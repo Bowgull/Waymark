@@ -148,7 +148,8 @@ test('REPLACE: COACH PICKS from the brain, a tap only previews, SWAP IN swaps, t
   await expect(picks).toBeHidden()
   expect((await api.get<Row[]>(`/api/sessions/today?date=${todayISO()}`)).find(r => r.id === s.id)?.status).toBe('planned')
 
-  // Again, and SWAP IN.
+  // Again, and SWAP IN. Page 73's motion: the row stays and its flaps flip (the same element, now the new session).
+  await row.evaluate(el => el.setAttribute('data-e2e-row', 'kept'))
   cmd = await holdRow(page, row)
   await cmd.getByRole('button', { name: 'Replace' }).tap()
   await expect(lines.first()).toBeVisible({ timeout: 20_000 })
@@ -164,6 +165,7 @@ test('REPLACE: COACH PICKS from the brain, a tap only previews, SWAP IN swaps, t
   const all = await api.get<Row[]>(`/api/sessions/today?date=${todayISO()}`)
   const swapped = all.find(r => r.source === 'replace' && (r.contextJson ?? '').includes(s.id))
   expect(swapped, `the ${name} swapped in`).toBeTruthy()
+  await expect(page.locator('.pl-row[data-e2e-row="kept"]')).toHaveAttribute('data-sid', swapped!.id)
   await expect(page.locator(`.pl-row[data-sid="${swapped!.id}"] .pl-ol`).filter({ hasText: 'WHY' })).toContainText('time')
 })
 
