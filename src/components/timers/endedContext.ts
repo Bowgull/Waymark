@@ -8,11 +8,11 @@ export const SessionEndedContext = createContext(false)
 
 /**
  * The open session's two ways off a screen (page 61, 3A): ‹ TODAY steps out
- * without ending (`leave`), holding × ends it (`end`). WorkoutPage sets them;
+ * without ending (`leave`); holding × opens END AND LOG (`end`) or DISCARD (`discard`). WorkoutPage sets them;
  * every SessionFrame reads them at the tap. Without them (a gallery) the
  * screen's own onEnd does both.
  */
-export interface SessionNav { leave: () => void; end: () => void }
+export interface SessionNav { leave: () => void; end: () => void; /** DISCARD (page 74): back to planned, nothing kept. */ discard: () => void }
 let currentNav: SessionNav | null = null
 export function setSessionNav(nav: SessionNav | null): void { currentNav = nav }
 export function getSessionNav(): SessionNav | null { return currentNav }

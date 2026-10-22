@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 
 import { useEdgeBack } from '@/design'
+import { EndControl, sentenceCase } from '@/components/timers'
 import '@/components/timers/timers.css'
 import { SessionBackground } from '@/components/backgrounds/SessionBackground'
 import { GoldDivider } from '@/components/ui/GoldDivider'
@@ -121,11 +122,15 @@ export function SessionShell({
         >
           {resolvedTitle}
         </h1>
-        <span
-          className="min-w-[3rem] text-right font-cinzel text-xs uppercase tracking-[0.18em]"
-          style={{ color: accent, opacity: counter ? 0.7 : 0 }}
-        >
-          {counter ?? '\u00a0'}
+        <span className="inline-flex items-center gap-2">
+          <span
+            className="min-w-[3rem] text-right font-cinzel text-xs uppercase tracking-[0.18em]"
+            style={{ color: accent, opacity: counter ? 0.7 : 0 }}
+          >
+            {counter ?? ' '}
+          </span>
+          {/* page 74: the × on every session, a 3 s hold to END AND LOG or DISCARD */}
+          {!hideExit && onExit && <EndControl head={sentenceCase(resolvedTitle)} onEnd={onExit} />}
         </span>
       </header>
 

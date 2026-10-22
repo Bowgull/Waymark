@@ -101,8 +101,28 @@ export function releaseAction(pull: number, dy: number): 'skip' | 'none' | 'tap'
   return 'tap'
 }
 
-/** The × end button: held this long, it ends (a clay bar fills along its foot). */
-export const END_HOLD_MS = 1500
+/**
+ * The × (page 74, every session): held this long, a fill rising through the
+ * plate, it opens the close window (END AND LOG · DISCARD). Let go early and
+ * the fill eases back over HOLD_RELEASE_MS.
+ */
+export const END_HOLD_MS = 3000
+
+/** A run's finish (page 74): hold the grass this long; the grass bends flat from the thumb. */
+export const GRASS_HOLD_MS = 3000
+/** FINISHING replaces HOLD · FINISH once the hold has lasted this long. */
+export const FINISHING_AFTER_MS = 1000
+/** Let go early (the grass, or the ×): it eases back over this long. */
+export const HOLD_RELEASE_MS = 450
+/** At full, the light haptic, then Log your run this much later. */
+export const HOLD_LOG_DELAY_MS = 250
+
+/** The grass bend's eased return after an early let-go (0..1 of the bend left), ease-out cubic. */
+export function holdReleaseLeft(from: number, sinceMs: number, reduced = false): number {
+  if (reduced || sinceMs >= HOLD_RELEASE_MS) return 0
+  const q = Math.max(0, sinceMs) / HOLD_RELEASE_MS
+  return from * Math.pow(1 - q, 3)
+}
 
 /**
  * After the hold, the phase word flips to ENDED in place (page 19 `.xbtn`) and
