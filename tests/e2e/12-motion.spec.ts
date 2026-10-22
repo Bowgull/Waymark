@@ -70,7 +70,7 @@ test('tabs stay alive: Program opens in one request, comes back at once, the pro
   await quiet()
   reads.length = 0
   await tabs.getByRole('link', { name: 'program' }).tap()
-  await expect(page.getByRole('img', { name: /^WEEK \d+$/ }).first()).toBeVisible()
+  await expect(page.getByRole('tablist', { name: 'Weeks' })).toBeVisible()
   // one read for the block, its week and the road (it may already be in hand from the prefetch)
   expect(reads.filter(p => p === '/api/program').length).toBeLessThanOrEqual(1)
   // never the old chain: /blocks/current, then /weeks/current, then one per past week
@@ -83,10 +83,10 @@ test('tabs stay alive: Program opens in one request, comes back at once, the pro
   reads.length = 0
   await tabs.getByRole('link', { name: 'program' }).tap()
   // the same page, kept: its boards are there at once (never "Reading the plan."); it refreshes behind them
-  await expect(page.getByRole('img', { name: /^WEEK \d+$/ }).first()).toBeAttached()
+  await expect(page.getByRole('tablist', { name: 'Weeks' })).toBeAttached()
   await expect(page.getByText('Reading the plan.')).toHaveCount(0)
   expect(await page.evaluate(() => (document.querySelector('[data-tab-pane="program"]') as HTMLElement & { __kept?: boolean }).__kept)).toBe(true)
-  await expect(page.getByRole('img', { name: /^WEEK \d+$/ }).first()).toBeVisible()
+  await expect(page.getByRole('tablist', { name: 'Weeks' })).toBeVisible()
   expect(reads.filter(p => p === '/api/program').length).toBeLessThanOrEqual(1)
   // the onboarding check is never read again on a tab tap (Today, kept, may still refresh its own week behind)
   expect(reads.filter(p => p === '/api/user-profile')).toEqual([])

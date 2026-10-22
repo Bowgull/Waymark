@@ -81,17 +81,19 @@ test('A start tomorrow: the countdown, and under it the planned week (a day list
   const startRow = days.locator(`.pg-dr[data-day="${startEpoch}"]`)
   await expect(startRow).toHaveAttribute('aria-expanded', 'true')
   await expect(startRow).not.toHaveAccessibleName(/: Rest$/)
-  const dayBoard = (row: typeof startRow) => page.locator('.pg-dayw').filter({ has: row }).locator('.pg-board')
-  await expect(dayBoard(startRow).getByRole('img', { name: 'FOUNDATION' }).first()).toBeVisible()
+  // the board under a date row (a has: locator is relative to the .pg-dayw it filters)
+  const dayBoard = (day: number) => days.locator('.pg-dayw').filter({ has: page.locator(`.pg-dr[data-day="${day}"]`) }).locator('.pg-board')
+  await expect(dayBoard(startEpoch).getByRole('img', { name: 'FOUNDATION' }).first()).toBeVisible()
   if (sameWeek) {
     // the days before the start: empty and dim, nothing to add
     const todayRow = days.locator(`.pg-dr[data-day="${epoch(today)}"]`)
     await expect(todayRow).toHaveClass(/is-before/)
-    await expect(todayRow).toHaveAccessibleName(/: Rest$/)
+    // the old block's runes may still mark the calendar day (". A missed session."): the line itself is Rest
+    await expect(todayRow).toHaveAccessibleName(/: Rest(\. .*)?$/)
     await todayRow.tap()
     await expect(todayRow).toHaveAttribute('aria-expanded', 'true')
-    await expect(dayBoard(todayRow)).toContainText('Before the start. Nothing planned.')
-    await expect(dayBoard(todayRow).getByRole('button', { name: '+ add session' })).toHaveCount(0)
+    await expect(dayBoard(epoch(today))).toContainText('Before the start. Nothing planned.')
+    await expect(dayBoard(epoch(today)).getByRole('button', { name: '+ add session' })).toHaveCount(0)
   }
 
   // Today: the same board, and under it the start day's sessions as page 43's Tomorrow row

@@ -61,8 +61,9 @@ test('Every board closes the same ways: CLOSE, tap outside, pull it down, Escape
   // Pulled down, past 70 px: closed. Less: it settles back.
   board = await openWeather(page)
   const pull = async (dy: number) => {
-    const b = (await board.locator('.nowr').boundingBox())!
-    const x = b.x + b.width / 2
+    // by its top edge, left of CLOSE: no text under the finger (a mouse drag on words selects them instead)
+    const b = (await board.locator('.top').boundingBox())!
+    const x = b.x + 24
     const y = b.y + b.height / 2
     await page.mouse.move(x, y)
     await page.mouse.down()
