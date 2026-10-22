@@ -26,6 +26,8 @@ type Bindings = {
   STRAVA_WEBHOOK_VERIFY_TOKEN: string
   /** Optional public origin of this Worker (e.g. https://<name>.<subdomain>.workers.dev). Unset: the origin the request came in on. */
   PUBLIC_ORIGIN?: string
+  /** 'true' on the public demo Worker only (wrangler.demo.jsonc). */
+  DEMO_MODE?: string
 }
 
 /** This Worker's public origin, so no deploy address is hard-coded in the repo. */
