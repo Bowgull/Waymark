@@ -44,6 +44,9 @@ import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 import { waybookEntries } from '../lib/waybook'
 import { strava } from './routes/strava'
+import { discardSession } from './discardSession'
+import { ingestRecording } from './runRecordingIngest'
+import { isRecording } from '../lib/runRecording'
 import { clearCollectedTrainingData } from './trainingReset'
 import { getActiveBlock, loadMtRamp, listBlockTests, readinessFor, recordCheckSetE1rm, upsertBlockTest } from './blockZeroData'
 import { logs } from './routes/logs'
@@ -135,6 +138,8 @@ app.route('/api/logs', logs)
 for (const path of [
   '/api/strength-sets/:id',
   '/api/sessions/:id/complete',
+  '/api/sessions/:id/discard',
+  '/api/run-sessions/:id/recording',
   '/api/sessions/:id/rate-combos',
   '/api/sessions/insert-ad-hoc',
   '/api/body-metrics',
@@ -1414,6 +1419,13 @@ app.post('/api/sessions/:id/abandon', async (c) => {
   return c.json({ ok: true })
 })
 
+// Page 74: the × held 3 s, then DISCARD. Back to planned; nothing of it kept for the coach.
+app.post('/api/sessions/:id/discard', async (c) => {
+  const result = await discardSession(createDB(c.env), c.req.param('id'))
+  if (!result.ok) return c.json({ error: result.status }, result.status === 'not_found' ? 404 : 409)
+  return c.json(result)
+})
+
 // ─── Zone 2 (dynamic warmup + easy run) ──────────────────────
 
 app.post('/api/sessions/:id/start-foundation-run', async (c) => {
@@ -1945,6 +1957,16 @@ app.patch('/api/run-sessions/:id', async (c) => {
 
   const [row] = await db.select().from(runSessions).where(eq(runSessions.id, runId))
   return c.json(row)
+})
+
+// Page 74: a run recorded by Waymark (the strap and GPS), uploaded once from the
+// phone's outbox. The server sums it with the Strava ingest's hrZones functions.
+app.post('/api/run-sessions/:id/recording', async (c) => {
+  const raw = await c.req.json().catch(() => null)
+  if (!isRecording(raw)) return c.json({ error: 'Invalid recording' }, 400)
+  const result = await ingestRecording(createDB(c.env), c.req.param('id'), raw, Math.floor(Date.now() / 1000))
+  if (!result) return c.json({ error: 'run session not found' }, 404)
+  return c.json(result)
 })
 
 // ─── Skip Rope Workout ─────────────────────────────────────────

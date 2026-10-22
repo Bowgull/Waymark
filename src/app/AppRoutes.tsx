@@ -23,8 +23,6 @@ function cascadeScreen(pathname: string): string | null {
 
 // Dev only: every new screen with sample data, for screenshots (never in a build).
 const DesignGallery = import.meta.env.DEV ? lazy(() => import('../design/DesignGallery')) : null
-// Phase 1 run-recorder spike (throwaway, in the phone build): hold the crest on Logs.
-const RecorderSpikePage = lazy(() => import('../features/settings/RecorderSpikePage').then(m => ({ default: m.RecorderSpikePage })))
 import {
   initNotificationListeners,
   handleForegroundAlarmCheck,
@@ -37,6 +35,7 @@ import { apiFetch } from '../lib/api'
 import { getTodayISO } from '../lib/dates'
 import { coachLine, nextAlarmDay } from '../lib/coachLine'
 import { startOutboxSync } from '../lib/outboxSync'
+import { resumeRecordingUploads } from '../lib/runRecordingUpload'
 import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
@@ -73,6 +72,8 @@ export function AppRoutes() {
 
   // Queued set saves and finishes retry on reconnect, foreground and resume.
   useEffect(() => startOutboxSync(), [])
+  // Page 74: a recorded run that never reached the server goes out again.
+  useEffect(() => { void resumeRecordingUploads() }, [])
 
   // Page 61 (M6): tapping the Live Activity or the Dynamic Island (waymark://session/live,
   // or waymark://session/<id>) opens the running session, not wherever the app last was.
@@ -172,7 +173,6 @@ export function AppRoutes() {
       <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/session/:id" element={<ErrorBoundary level="session"><WorkoutPage /></ErrorBoundary>} />
       <Route path="/settings/logs" element={<ErrorBoundary level="page"><LogsPage /></ErrorBoundary>} />
-      <Route path="/dev/recorder" element={<ErrorBoundary level="page"><Suspense fallback={null}><RecorderSpikePage /></Suspense></ErrorBoundary>} />
       {/* Settings and Body metrics: full screen on the solid dark, no tab bar (page 37 A) */}
       <Route path="/settings" element={<ErrorBoundary level="page"><SettingsPage /></ErrorBoundary>} />
       <Route path="/metrics" element={<ErrorBoundary level="page"><BodyMetricsPage /></ErrorBoundary>} />

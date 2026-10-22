@@ -112,7 +112,7 @@ export function LogsPage() {
   const now = Date.now()
 
   return (
-    <SettingsScreen title="LOGS" onBack={() => goBack(navigate, '/settings')} onHold={() => navigate('/dev/recorder')} holdLabel="the recorder test">
+    <SettingsScreen title="LOGS" onBack={() => goBack(navigate, '/settings')}>
       <Board solid className="st-board">
         <div className="st-pills" role="radiogroup" aria-label="Filter">
           {filterFlaps(entries.length, counts).map(f => {

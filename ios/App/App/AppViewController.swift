@@ -12,9 +12,8 @@ class AppViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(WaymarkAudioPlugin())
         bridge?.registerPluginInstance(WaymarkLiveActivityPlugin())
-        // Phase 1 run-recorder spike (throwaway; /dev/recorder).
-        bridge?.registerPluginInstance(WaymarkRecorderSpikePlugin())
-        // Page 61 item 6: the app-switcher cover while the Waybook is open.
+        // Page 74: the run recorder (the strap, GPS, the 1 Hz journal, the lock screen's heart rate).
+        bridge?.registerPluginInstance(WaymarkRunRecorderPlugin())        // Page 61 item 6: the app-switcher cover while the Waybook is open.
         bridge?.registerPluginInstance(WaymarkPrivacyPlugin())
     }
 }

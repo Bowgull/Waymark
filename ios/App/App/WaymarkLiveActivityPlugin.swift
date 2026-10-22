@@ -377,7 +377,12 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             combo: Self.strikes(dict["combo"]),
             nextCombo: Self.strikes(dict["nextCombo"]),
             fromClass: dict["fromClass"] as? Bool,
-            comboSize: (dict["comboSize"] as? NSNumber)?.doubleValue
+            comboSize: (dict["comboSize"] as? NSNumber)?.doubleValue,
+            hr: Self.intValue(dict["hr"]),
+            hrZone: dict["hrZone"] as? String,
+            hrSeq: Self.intValue(dict["hrSeq"]),
+            distanceKm: (dict["distanceKm"] as? NSNumber)?.doubleValue,
+            runKind: dict["runKind"] as? String
         )
     }
 
