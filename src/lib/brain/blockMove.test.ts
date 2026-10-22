@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict'
 import { e1rmsFromSets, inLighter, lighterBag, lighterRun, lighterStrength, moveDates, startingMaxes, LIGHTER_WHY } from './blockMove'
 import type { BagDose, LiftDose, RunDose, StrengthDose } from './doses'
+import { morningLine } from '../coach/summary'
 
 const MON = 20822 // Monday 2027-01-04
 
@@ -57,6 +58,12 @@ const MON = 20822 // Monday 2027-01-04
   assert.equal(by.get('ex-ohp')?.kg, 36, 'the model fills a lift the week did not touch')
   assert.ok(!by.has('ex-db-row'), 'only lifts the Fighter templates load')
   for (const m of maxes) assert.ok(m.kg <= m.e1rmKg * 0.9 + 1e-9, `${m.exerciseId}: ${m.kg} ≤ 90% of ${m.e1rmKg}`)
+}
+
+// ─── The alarm's one line names the move ─────────────────────
+{
+  const c = { actor: 'coach' as const, kind: 'block' as const, undoneAt: null, seenAt: null, after: { show: 'FIGHTER BLOCK 1', day: MON + 7, sessions: [] }, createdAt: 1, name: 'strength', day: MON + 7, open: true }
+  assert.equal(morningLine([c], MON + 3), 'Fighter Block 1 starts Monday. Tap to see.')
 }
 
 console.log('block move tests passed')

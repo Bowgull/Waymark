@@ -264,7 +264,7 @@ function edits(plan: Plan, inp: OutlineIn): Plan[] {
       const his = liveClasses.filter(c => c.id !== x.id && c.locked).sort((a, b) => Math.abs(hoursAfter(a, x)) - Math.abs(hoursAfter(b, x)))[0]
       if (!his) continue
       const kept = liveClasses.find(c => c.id !== x.id && c.id !== his.id) ?? null
-      out.push({ sessions: s.map(y => (y.id === x.id ? { ...y, status: 'skipped' } : y)), changes: [...plan.changes, { kind: 'rest', sessionId: x.id, type: x.type, label: x.label, day: x.day, why: classOffWhy(x, { day: his.day, rpe: his.rpe ?? null }, kept) }] })
+      out.push({ sessions: s.map(y => (y.id === x.id ? { ...y, status: 'skipped' } : y)), changes: [...plan.changes, { kind: 'rest', sessionId: x.id, type: x.type, label: x.label, day: x.day, why: classOffWhy(x, { day: his.day, rpe: his.rpe ?? null, slot: his.slot }, kept, Math.max(1, target)) }] })
     }
   }
   // Move a key session to another day (alone there), or swap two.

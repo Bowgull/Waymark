@@ -275,7 +275,9 @@ function strengthPart(inp: ReadinessIn): ReadinessPart {
 
 function backPart(inp: ReadinessIn): ReadinessPart {
   const scores = inp.checkIns.filter(c => c.backToday != null && c.day >= inp.blockStart && c.day <= inp.today)
-  const first = scores.filter(c => c.day < inp.blockStart + 7).map(c => c.backToday as number)
+  // Week 1's mean; when week 1 has fewer than 3 scores, the block's first 7 scores stand in for it.
+  const wk1 = scores.filter(c => c.day < inp.blockStart + 7).map(c => c.backToday as number)
+  const first = wk1.length >= 3 ? wk1 : [...scores].sort((a, b) => a.day - b.day).slice(0, 7).map(c => c.backToday as number)
   const last = scores.filter(c => c.day > inp.today - 21).map(c => c.backToday as number)
   const data = first.length >= 3 && last.length >= 3
   const fm = mean(first)
@@ -294,7 +296,7 @@ function backPart(inp: ReadinessIn): ReadinessPart {
   else if (!planOk) line = 'The raven\'s plan for your back is still open.'
   else if (data && !meanOk) line = `Back averages ${r1(lm as number)} over 3 weeks, under ${r1(fm as number)} in week 1.`
   else if (!easeOk) line = `${word(BACK_CLEAN_DAYS - clean)} more ${BACK_CLEAN_DAYS - clean === 1 ? 'day' : 'days'} without a back ease.`
-  else line = 'A few more mornings of back scores from the check-in.'
+  else line = `${plural(Math.min(first.length, last.length), 'back score')} so far; it takes 3 to read.`
   const bits: string[] = []
   if (data) bits.push(`Back averages ${r1(lm as number)} over 3 weeks, ${(lm as number) > (fm as number) + 0.05 ? 'up from' : (lm as number) < (fm as number) - 0.05 ? 'down from' : 'level with'} ${r1(fm as number)} in week 1.`)
   if (lastEase != null) bits.push(`Last ease: ${dayLabel(lastEase)}.`)

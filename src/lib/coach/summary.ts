@@ -5,7 +5,7 @@
 // only name changes known when the app was last open. Pure: the server passes
 // the week's change records.
 
-import { isCoachActor, midName, nameOnDay, type ChangeRowLike } from './changes'
+import { isCoachActor, midName, nameOnDay, relativeDay, type ChangeRowLike } from './changes'
 
 export type LineChange = Pick<ChangeRowLike, 'actor' | 'kind' | 'undoneAt' | 'seenAt' | 'after' | 'createdAt'> & {
   /** The changed session's name ("Strength B", "Run-Walk"). */
@@ -35,6 +35,8 @@ function sentence(c: LineChange, refDay: number): string {
     const lead = `${own.charAt(0).toUpperCase()}${own.slice(1)}'s main lifts are in`
     return c.into.day === refDay ? `${lead} ${midName(c.into.name)} today.` : `${lead} ${nameOnDay(c.into.name, c.into.day, refDay)}.`
   }
+  // The move to the next block (coach-brain §8): "Fighter Block 1 starts Monday."
+  if (c.kind === 'block') return `Fighter Block 1 starts ${relativeDay(c.day, refDay)}.`
   const after = c.after.show.toLowerCase()
   const own = midName(c.name)
   return c.day === refDay ? `${own.charAt(0).toUpperCase()}${own.slice(1)} is ${after} today.` : `${nameOnDay(c.name, c.day, refDay)}: ${after}.`

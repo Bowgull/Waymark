@@ -182,9 +182,17 @@ export function classWhy(model: AthleteModel, day: number, slot: ClassSlot, opts
   return `Of your class days, ${name} ${SLOT_WORD[slot]} fits the week: no heavy legs in the 24 h before.`
 }
 
-/** The why on a planned class that comes off after one he added himself (page 69 §3). */
-export function classOffWhy(off: { day: number }, his: { day: number; rpe: number | null }, kept: { day: number } | null): string {
-  const when = his.day === off.day - 1 ? 'Class last night' : his.day === off.day + 1 ? `Class ${DAY_NAME[dowOf(his.day)]}` : `Your class ${DAY_NAME[dowOf(his.day)]}`
-  const effort = his.rpe != null ? `: an hour at effort ${his.rpe}` : ': an hour of hard work'
-  return `${when}${effort}. ${DAY_NAME[dowOf(off.day)]}'s class comes off so you get a day between${kept ? `; ${DAY_NAME[dowOf(kept.day)]}'s stays` : ''}.`
+/**
+ * The why on a planned class that comes off after one he did (page 69 §3): no
+ * day between the two, or the week already holds what the ladder aims for.
+ */
+export function classOffWhy(off: { day: number; slot?: ClassSlot }, his: { day: number; rpe: number | null; slot?: ClassSlot }, kept: { day: number } | null, perWeek = 1): string {
+  const name = DAY_NAME[dowOf(off.day)]
+  const hoursApart = Math.abs((off.day - his.day) * 24 + ((off.slot === 'am' ? 8 : 18) - (his.slot === 'am' ? 8 : 18)))
+  if (hoursApart <= 30) {
+    const when = his.day === off.day - 1 ? (his.slot === 'am' ? 'Class yesterday morning' : 'Class last night') : his.day === off.day + 1 ? `Class ${DAY_NAME[dowOf(his.day)]}` : 'Class today'
+    const effort = his.rpe != null ? `: an hour at effort ${his.rpe}` : ': an hour of hard work'
+    return `${when}${effort}. ${name}'s class comes off so you get a day between${kept ? `; ${DAY_NAME[dowOf(kept.day)]}'s stays` : ''}.`
+  }
+  return `${DAY_NAME[dowOf(his.day)]}'s class${his.rpe != null ? ` at effort ${his.rpe}` : ''} fills this week: ${perWeek === 1 ? 'one class a week' : `${perWeek} a week`} for now. ${name}'s comes off.`
 }

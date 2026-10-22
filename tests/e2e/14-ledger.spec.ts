@@ -8,9 +8,11 @@ import { makeApiFor } from './support/api'
  * - page 62 B, Herb: the last 28 mornings as bars in one neutral tone, the
  *   dashed brass 28-day average, the 7-day average on the flap, and the one
  *   sleep line from his own check-ins; right after Sleep + soreness.
- * - page 63 final, Consistency: on the first screen between the week rings
- *   and Aerobic base; closed, a flap and one bar with the NEXT BLOCK line;
- *   a tap opens it in place (four groups); it closes the page 61 ways.
+ * - page 69 §5 option A, NEXT BLOCK (coach brain P4): page 63's board evolved in
+ *   place, on the first screen between the week rings and Aerobic base;
+ *   closed, a flap and one bar of 4 x 6 tiles (habit, engine, strength, back)
+ *   with one line; a tap opens it in place (a group per part); it closes the
+ *   page 61 ways.
  */
 test.describe.configure({ mode: 'serial' })
 
@@ -54,34 +56,64 @@ test('Herb: 28 mornings, the averages, and the sleep line (page 62 B)', async ({
   expect(at('body weight')).toBe(-1)
 })
 
-test('Consistency: on the first screen; closed a flap and the bar; open in place; closes the page 61 ways (page 63)', async ({ page }) => {
+test('Next block: in the place of page 63; closed a flap, 4 x 6 tiles and one line; open one group per part; closes the page 61 ways (page 69 §5 A)', async ({ page }) => {
   await openLedger(page)
-  const board = page.locator('section.lg-cb')
+  const board = page.locator('section.lg-meter')
   await expect(board).toBeVisible()
 
-  // between the week rings and Aerobic base; the day streak and the week bars are gone
-  const heads = await page.locator('section.lg-glass .lg-head > span:first-child, section.lg-glass .lg-label').allTextContents()
-  expect(heads.map(h => h.trim().toLowerCase()).indexOf('consistency')).toBeLessThan(heads.map(h => h.trim().toLowerCase()).indexOf('aerobic base'))
+  // Page 63's place: between the week rings and Aerobic base; page 63's own board and the old marks are gone.
+  const heads = (await page.locator('section.lg-glass .lg-head > span:first-child, section.lg-glass .lg-label').allTextContents()).map(h => h.trim().toLowerCase())
+  expect(heads.indexOf('next block')).toBeGreaterThan(-1)
+  expect(heads.indexOf('next block')).toBeLessThan(heads.indexOf('aerobic base'))
+  expect(heads).not.toContain('consistency')
   await expect(page.getByText(/D STREAK$/)).toHaveCount(0)
   await expect(page.locator('.lg-wbar')).toHaveCount(0)
 
-  // closed: the flap (one of the states), one bar of tiles, the counts
-  await expect(board.getByRole('img', { name: /^(ON TRACK|AT RISK|\d+ DAY BREAK|ONE MORE WEEK|TWO MORE WEEKS|\d+ OF \d+ WKS)$/ })).toBeVisible()
-  const label = (await board.getAttribute('aria-label'))!
-  const [, done, toCome, missed] = /(\d+) done, (\d+) to come, (\d+) missed/.exec(label)!.map(Number)
-  await expect(board.locator('.track .lg-tl')).toHaveCount(done + toCome + missed)
+  // Closed: one of the flap states; one bar of 4 x 6 flap tiles; the small part names; one line of what's left.
+  await expect(board.getByRole('img', { name: /^(BUILDING|[1-4] OF 4 IN|READY|\d+ DAY BREAK)$/ })).toBeVisible()
+  await expect(board.locator('.track.lanes .lane')).toHaveCount(4)
+  await expect(board.locator('.track.lanes .lg-tl')).toHaveCount(24)
+  await expect(board.locator('.lg-lanek span')).toHaveText(['HABIT', 'ENGINE', 'STRENGTH', 'BACK'])
+  const line = board.locator('.lg-bark.one')
+  await expect(line).toHaveText(/\w/)
+  // Copy rules (page 63): no percentages, "gate" or "pass line" on the closed board; no separate marks row.
+  const closed = (await board.locator('.lg-head, .lg-bar, .lg-lanek, .lg-bark').allInnerTexts()).join(' ')
+  expect(closed).not.toMatch(/%|gate|pass line/i)
   await expect(board.locator('.lg-cdet')).toHaveAttribute('aria-hidden', 'true')
+  // About page 63's height closed (one more short row for the part names).
+  expect((await board.boundingBox())!.height).toBeLessThan(160)
+  // Lit tiles agree with the parts: teal only for a part that is in (all six), brass while it builds.
+  for (const lane of await board.locator('.track.lanes .lane').all()) {
+    const met = await lane.locator('.lg-tl.met').count()
+    expect(met === 0 || met === 6).toBe(true)
+  }
 
-  // a tap opens it in place: the four groups
+  if (process.env.P4_SHOTS) {
+    await board.evaluate(el => el.scrollIntoView({ block: 'center' }))
+    await page.waitForTimeout(800)
+    await page.screenshot({ path: `${process.env.P4_SHOTS}/app-ledger-closed.png` })
+  }
+  // A tap opens it in place: one group per part with its tiles and one plain line; page 63's details inside Habit.
   await board.tap()
   await expect(board).toHaveAttribute('aria-expanded', 'true')
-  for (const g of ['When you train', 'What gets done']) await expect(board.getByText(g, { exact: true })).toBeVisible()
-  await expect(board.getByText(/^(Next block|Last weeks)$/)).toBeVisible()
-  await expect(board.getByRole('button', { name: 'Close', exact: true })).toBeVisible()
+  for (const g of ['Habit', 'Engine', 'Strength', 'Back']) await expect(board.locator(`.lg-grp[data-part="${g.toLowerCase()}"] .gh`)).toContainText(g)
+  await expect(board.locator('.lg-grp .gh .mini')).toHaveCount(4)
+  await expect(board.locator('.lg-grp[data-part="habit"] .nb small')).toContainText(/Mornings \d+ of \d+, evenings \d+ of \d+/)
+  await expect(board.getByText(/Fighter Block 1 starts/)).toBeVisible()
+  // His units only.
+  expect((await board.innerText())).not.toMatch(/\bkg\b|\bmiles?\b/)
+  if (process.env.P4_SHOTS) {
+    await page.waitForTimeout(600)
+    await board.screenshot({ path: `${process.env.P4_SHOTS}/meter-open.png` })
+  }
 
   // CLOSE
   await board.getByRole('button', { name: 'Close', exact: true }).tap()
   await expect(board).toHaveAttribute('aria-expanded', 'false')
+  if (process.env.P4_SHOTS) {
+    await page.waitForTimeout(800)
+    await board.screenshot({ path: `${process.env.P4_SHOTS}/meter-closed.png` })
+  }
   // tap again
   await board.tap()
   await expect(board).toHaveAttribute('aria-expanded', 'true')
@@ -90,7 +122,6 @@ test('Consistency: on the first screen; closed a flap and the bar; open in place
   // tap outside
   await board.tap()
   await expect(board).toHaveAttribute('aria-expanded', 'true')
-  // (opened, it has scrolled up under the header, page 67: the header's right side is outside it)
   const hd = (await page.locator('.lg-hd').boundingBox())!
   await page.touchscreen.tap(hd.x + hd.width - 8, hd.y + hd.height / 2)
   await expect(board).toHaveAttribute('aria-expanded', 'false')

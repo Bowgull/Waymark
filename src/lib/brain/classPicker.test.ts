@@ -13,7 +13,7 @@ const MON = 20822 // Monday 2027-01-04
 let sid = 0
 const cls = (day: number, over: Partial<ModelSession> = {}): ModelSession => ({ id: `c${++sid}`, type: 'mt_class', status: 'completed', day, slot: 'pm', startMin: 18 * 60 + 30, durationSec: 3600, rpe: 7, skipReason: null, source: 'coach', blockType: 'block_zero', notes: null, ...over })
 const ci = (day: number, soreness: number): ModelCheckIn => ({ day, sleepHours: 7.5, sleepQuality: 3, energy: 3, soreness, stress: 2, mood: 3, backToday: 3 })
-const events = (over: Partial<ModelEvents> = {}): ModelEvents => ({ profile: { dob: '1990-06-01', maxHr: null, backSensitive: true }, sessions: [], sets: [], runs: [], talkTests: [], bag: [], checkIns: [], notes: [], moves: [], classLogs: [], trainingMaxes: [], openBodyAlerts: [], ...over })
+function events(over: Partial<ModelEvents> = {}): ModelEvents { return { profile: { dob: '1990-06-01', maxHr: null, backSensitive: true }, sessions: [], sets: [], runs: [], talkTests: [], bag: [], checkIns: [], notes: [], moves: [], classLogs: [], trainingMaxes: [], openBodyAlerts: [], ...over } }
 
 // ─── Settings: the stored slots (page 70) ────────────────────
 {
@@ -80,6 +80,7 @@ const events = (over: Partial<ModelEvents> = {}): ModelEvents => ({ profile: { d
   assert.equal(a, 'Of your class days, Saturday morning fits the week: no heavy legs in the 24 h before.')
   assert.ok(/No class days set, so the coach picked Wednesday evening/.test(classWhy(m, MON + 2, 'pm', { setDays: false })))
   assert.equal(classOffWhy({ day: MON + 2 }, { day: MON + 1, rpe: 7 }, { day: MON + 4 }), 'Class last night: an hour at effort 7. Wednesday\'s class comes off so you get a day between; Friday\'s stays.', 'page 69 §3')
+  assert.equal(classOffWhy({ day: MON + 4 }, { day: MON + 1, rpe: 6 }, null, 1), 'Tuesday\'s class at effort 6 fills this week: one class a week for now. Friday\'s comes off.', 'days apart: the ladder is the why, not "a day between"')
   for (const w of [a, classOffWhy({ day: MON + 2 }, { day: MON + 1, rpe: 7 }, null)]) assert.ok(w.length <= 120 && !/night/i.test(w.replace('last night', '')), w)
 }
 
