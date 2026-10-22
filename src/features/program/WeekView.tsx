@@ -13,6 +13,7 @@ import { Rune } from '@/features/coach/Rune'
 import { backChanges, runeForDay, runeForSession, type WeekChangesIn } from '@/features/coach/changeView'
 import { pickToast } from '@/features/coach/pickToast'
 import { apiFetch } from '@/lib/api'
+import { useStripSessionId } from '@/app/useStripSession'
 import { isStartableOnBoard, startSession } from '@/lib/startSession'
 import { getTodayISO } from '@/lib/dates'
 import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
@@ -185,6 +186,8 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
 
   const dayDate = new Date(openDay * 86400000)
   const isToday = openDay === todayEpochDay
+  // Page 71: today's running session reads "under way" with no RESUME: the live strip is the way back in.
+  const stripId = useStripSessionId()
   const beforeStart = (d: number) => startsOn != null && d < startsOn
 
   return (
@@ -241,7 +244,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
         {daySessions.map(s => {
           const sk = s.status === 'skipped' ? skips[s.id] : undefined
           return (
-            <div key={s.id} ref={el => { rowEls.current.set(s.id, el) }}>
+            <div key={s.id} data-sid={s.id} ref={el => { rowEls.current.set(s.id, el) }}>
               <DayBoardRow
                 session={s}
                 context={{ planDetail: planDetail(s, weekNumber), rune: runeForSession(changes, s.id) }}
@@ -250,7 +253,7 @@ export function WeekView({ sessions, weekNumber, days, todayEpochDay, openDay, o
                 onSkip={x => { void skip(x) }}
                 open={openRow === s.id}
                 onToggle={() => setOpenRow(prev => (prev === s.id ? null : s.id))}
-                summaryActions={isStartableOnBoard(s.status, s.scheduledDate ?? null, todayEpochDay) ? (
+                summaryActions={s.id !== stripId && isStartableOnBoard(s.status, s.scheduledDate ?? null, todayEpochDay) ? (
                   <FlapButton
                     label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'}
                     primary

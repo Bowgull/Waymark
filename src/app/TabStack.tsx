@@ -87,15 +87,24 @@ export function TabStack() {
   }, [shown])
 
   // The splash lifting: Today's boards rise again into it (they rose unseen behind the crest).
+  // Not once he has touched the app outside the splash (the check-in deck over it, a row): the
+  // boards are already in use, and a rise then slid the rows 14 px under his finger, so a tap made
+  // during it (or the jump when a touch lands it) hit the wrong row.
   useEffect(() => {
+    let touched = false
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element | null
+      if (t && !t.closest('.wm-splash')) touched = true
+    }
+    window.addEventListener('pointerdown', onDown, true)
     const onSplash = () => {
       const pane = shown ? panes.current.get(shown) : null
-      if (!pane) return
+      if (!pane || touched) return
       land.current?.()
       land.current = arrivePane(pane, { riseAt: performance.now() + AFTER_SPLASH_RISE_MS, reduced: reducedRef.current, replay: true })
     }
     window.addEventListener(SPLASH_LEAVING_EVENT, onSplash)
-    return () => window.removeEventListener(SPLASH_LEAVING_EVENT, onSplash)
+    return () => { window.removeEventListener(SPLASH_LEAVING_EVENT, onSplash); window.removeEventListener('pointerdown', onDown, true) }
   }, [shown])
 
   // Once the first tab has settled, fetch the others' first reads in the background.

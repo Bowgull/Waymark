@@ -68,9 +68,10 @@ interface MobilityExerciseViewProps {
 /**
  * A Foundation hold (page 31 "Foundation · per side", page 19 "Mobility hold"):
  * FOUNDATION and n OF m on flaps; the exercise board (the icon, its name, the
- * set and side, its cue); the teal clock with READY / HOLD / HOLD COMPLETE; the
- * button START LEFT SIDE, then END EARLY while it runs, DONE at the target; the
- * calm teal grass (tap pauses, swipe up ends the hold early).
+ * set and side, its cue); the teal clock with READY / HOLD / HOLD COMPLETE; no
+ * start button (page 71): the calm teal grass starts the hold (TAP TO START),
+ * pauses it (tap) and ends it early (swipe up); END EARLY while it runs, DONE
+ * at the target.
  */
 export function MobilityExerciseView({
   title = 'FOUNDATION',
@@ -306,11 +307,13 @@ export function MobilityExerciseView({
   const showComplete = done || (!running && afterComplete)
   const shown = running ? holdTimer.secondsRemaining : holdSec
   const label = showComplete ? (warmUp ? 'DONE' : 'HOLD COMPLETE') : running ? (warmUp ? 'GO' : 'HOLD') : 'READY'
-  const startLabel = step.side && step.rep == null ? `START ${step.side.toUpperCase()} SIDE` : step.rep != null && step.rep > 1 ? 'START NEXT REP' : warmUp ? 'START' : 'START HOLD'
   const track: TimerTrack = running
     ? { durationSec: holdSec, endsAtMs: holdTimer.isPaused || done ? null : holdTimer.endsAtMs, remainingMs: done ? 0 : holdTimer.secondsRemaining * 1000 }
     : { durationSec: holdSec, endsAtMs: null, remainingMs: afterComplete ? 0 : holdSec * 1000 }
-  const start = () => { setAfterComplete(false); holdTimer.start() }
+  const start = () => { setAutoStartNext(false); setAfterComplete(false); holdTimer.start() }
+  // Page 71: the grass is the control. Ready: tap starts. Running: tap pauses / goes on.
+  const grassState = !running ? 'ready' : holdTimer.isPaused ? 'paused' : 'running'
+  const onGrassTap = !running ? start : !done ? () => (holdTimer.isPaused ? holdTimer.resume() : holdTimer.pause()) : undefined
 
   return (
     <SessionFrame
@@ -322,20 +325,21 @@ export function MobilityExerciseView({
         <GrassZone
           track={track}
           kind="hold"
-          onTap={running && !done ? () => (holdTimer.isPaused ? holdTimer.resume() : holdTimer.pause()) : undefined}
+          state={grassState}
+          onTap={onGrassTap}
           onSkip={running ? advanceStep : undefined}
         />
       }
     >
       {board}
       <TimerFace seconds={shown} kind="hold" tone="teal" label={label} labelTone="teal" track={running ? track : undefined} compact />
-      <div className="tm-wide">
-        {!running
-          ? <SessionButton label={startLabel} primary onClick={start} />
-          : done
+      {running && (
+        <div className="tm-wide">
+          {done
             ? <SessionButton label="DONE" primary onClick={advanceStep} />
             : <SessionButton label="END EARLY" onClick={advanceStep} />}
-      </div>
+        </div>
+      )}
     </SessionFrame>
   )
 }

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { enterFromToday, insertSession, timerSeconds } from './support/helpers'
+import { enterFromToday, grass, grassPaused, grassToStart, insertSession, timerSeconds } from './support/helpers'
 
 /**
  * The bag round (page 55 layout 1) on a test clock: READY, then the round in
@@ -8,6 +8,7 @@ import { enterFromToday, insertSession, timerSeconds } from './support/helpers'
  * digits can be a second apart run to run, so they are masked with the combos.
  */
 test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
+  test.setTimeout(120_000)
   const bag = await insertSession(api, 'bag_work')
   await enterFromToday(page, bag.id)
 
@@ -16,10 +17,13 @@ test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
   const digits = page.getByRole('timer')
   const phase = (name: string) => page.getByRole('img', { name, exact: true })
 
-  // A session may open on its preview / skip-rope warm-up first.
+  // A session may open on its preview / skip-rope warm-up first (the warm-up starts on the grass, page 71).
   const begin = page.getByRole('button', { name: /^(BEGIN|START BAG WORK|SKIP WARM UP)$/ })
-  for (let i = 0; i < 3 && !(await page.getByRole('button', { name: 'START ROUND' }).isVisible()); i++) {
+  const round1 = page.getByRole('img', { name: /^Round 1 of \d+$/ })
+  const warmUp = page.getByRole('img', { name: 'SKIP ROPE', exact: true })
+  for (let i = 0; i < 6 && !(await round1.isVisible()); i++) {
     if (await begin.first().isVisible()) await begin.first().tap()
+    else if (await warmUp.isVisible() && await grassToStart(page).isVisible()) await grassToStart(page).tap()
     else await page.waitForTimeout(500)
   }
 
@@ -27,7 +31,10 @@ test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
   await expect(page.getByRole('img', { name: /^Round 1 of \d+$/ })).toBeVisible()
   await expect(page).toHaveScreenshot('bag-ready.png', { mask: [combos, digits] })
 
-  await page.getByRole('button', { name: 'START ROUND' }).tap()
+  // Page 71: no START ROUND; the grass says TAP THE GRASS TO START (boxed, the first time) and starts it.
+  await expect(page.getByRole('button', { name: 'START ROUND' })).toHaveCount(0)
+  await expect(page.locator('.tm-ghint')).toHaveText('TAP THE GRASS TO START')
+  await grassToStart(page).tap()
   await expect(phase('FIGHT')).toBeVisible()
   const roundSec = await timerSeconds(page)
   expect(roundSec).toBeGreaterThanOrEqual(60)
@@ -47,16 +54,18 @@ test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
   expect(restSec).toBeGreaterThan(10)
   await expect(page).toHaveScreenshot('bag-rest.png', { mask: [combos, digits] })
 
-  // Tap the grass: paused. Tap again: running.
-  await page.getByRole('button', { name: /^Timer\. Tap to pause/ }).tap()
+  // Tap the grass: paused (PAUSED · TAP TO GO ON). Tap again: running.
+  await grass(page).tap()
   await expect(page.getByRole('status').getByRole('img', { name: 'PAUSED' })).toBeAttached()
-  await page.getByRole('button', { name: /^Timer\. Tap to pause/ }).tap()
+  await expect(page.locator('.tm-ghint')).toHaveText('PAUSED · TAP TO GO ON')
+  await grassPaused(page).tap()
   await expect(page.getByRole('status').getByRole('img', { name: 'PAUSED' })).toHaveCount(0)
 
-  // Rest runs out: round 2 stands READY, START ROUND puts it in work.
+  // Rest runs out: round 2 stands READY; the grass (now the quiet TAP TO START line) puts it in work.
   await page.clock.fastForward((restSec + 1) * 1000)
   await expect(phase('READY')).toBeVisible()
   await expect(page.getByRole('img', { name: /^Round 2 of \d+$/ })).toBeVisible()
-  await page.getByRole('button', { name: 'START ROUND' }).tap()
+  await expect(page.locator('.tm-ghint:not(.is-mid)')).toHaveText('TAP TO START')
+  await grassToStart(page).tap()
   await expect(phase('FIGHT')).toBeVisible()
 })

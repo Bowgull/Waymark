@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
-import { enterFromToday, gotoToday, insertSession, tapWaybookLine, todayRow } from './support/helpers'
+import { enterFromToday, gotoToday, grassToStart, insertSession, tapWaybookLine, todayRow } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -8,8 +8,8 @@ import { makeApiFor } from './support/api'
  * Page 61 (approved 2026-10-19, all items): one way out of every board (tap
  * outside, pull it down by its brass line, CLOSE, Escape, the edge swipe),
  * typed words kept as a draft, and stepping out of a session and back
- * (‹ TODAY, the live strip, the LIVE row; a reload lands on BACK IN YOUR
- * SESSION, paused where it was).
+ * (‹ TODAY, the live strip; a reload lands on BACK IN YOUR SESSION, paused
+ * where it was). Page 71: the running session shows once, as the strip.
  */
 
 // A morning already checked in: otherwise the check-in cards open first (they come back until all nine are in).
@@ -130,15 +130,19 @@ test('The Waybook box: CLOSE and tap outside fold it; the words are kept as a DR
 async function intoRound(page: Page, id: string) {
   await enterFromToday(page, id)
   const begin = page.getByRole('button', { name: /^(BEGIN SESSION|BEGIN|START BAG WORK|SKIP WARM UP)$/ })
-  for (let i = 0; i < 4 && !(await page.getByRole('button', { name: 'START ROUND' }).isVisible()); i++) {
+  const round1 = page.getByRole('img', { name: /^Round 1 of \d+$/ })
+  const warmUp = page.getByRole('img', { name: 'SKIP ROPE', exact: true })
+  // the skip-rope warm-up and the round both start on the grass (page 71)
+  for (let i = 0; i < 6 && !(await round1.isVisible()); i++) {
     if (await begin.first().isVisible()) await begin.first().tap()
+    else if (await warmUp.isVisible() && await grassToStart(page).isVisible()) await grassToStart(page).tap()
     else await page.waitForTimeout(500)
   }
-  await page.getByRole('button', { name: 'START ROUND' }).tap()
+  await grassToStart(page).tap()
   await expect(page.getByRole('img', { name: 'FIGHT', exact: true })).toBeVisible()
 }
 
-test('Step out with ‹ TODAY: the live strip and the LIVE row; Today never pulls you back; one tap back in', async ({ page, api }) => {
+test('Step out with ‹ TODAY: the live strip, not a row; Today never pulls you back; one tap back in', async ({ page, api }) => {
   const bag = await insertSession(api, 'bag_work')
   await intoRound(page, bag.id)
   // The bag preview's tap outside never leaves a session (checked by getting here).
@@ -154,10 +158,8 @@ test('Step out with ‹ TODAY: the live strip and the LIVE row; Today never pull
   await page.clock.fastForward(5_000)
   await expect(strip).not.toHaveAttribute('aria-label', before!)
 
-  // The row on Today is lit and reads LIVE.
-  const row = todayRow(page, bag.id)
-  await expect(row).toHaveClass(/is-live/)
-  await expect(row.getByRole('img', { name: 'LIVE' })).toBeVisible()
+  // Page 71: the running session is not a row on Today; the strip is the way back.
+  await expect(todayRow(page, bag.id)).toHaveCount(0)
 
   // Today stays put, minutes later too.
   await page.clock.fastForward(130_000)

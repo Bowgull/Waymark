@@ -92,22 +92,29 @@ export function useEdgeBack(back: (() => void) | null | undefined): void {
  * An opened row closes on a tap anywhere outside it (page 61 rule 1), and with
  * Escape, the edge swipe or a re-tap on the tab. Taps inside a board, the tabs
  * or a pop-up don't count; tapping another row opens that one instead.
+ *
+ * `on: 'click'` (the day lists, page 71): close on the tap itself, not on the
+ * finger going down. Closing on pointerdown collapsed the open row while the
+ * finger was still on the glass, so the rows below slid up and the click
+ * landed on whatever moved under it; on the click, the tap has already landed
+ * on what was under the finger. A scroll (no click) leaves the row open.
  */
-export function useOutsideClose(ref: RefObject<HTMLElement | null>, open: boolean, close: () => void) {
+export function useOutsideClose(ref: RefObject<HTMLElement | null>, open: boolean, close: () => void, opts: { on?: 'pointerdown' | 'click' } = {}) {
+  const on = opts.on ?? 'pointerdown'
   const closeRef = useRef(close)
   useEffect(() => { closeRef.current = close })
   useDismissLayer(open, () => closeRef.current())
   useEffect(() => {
     if (!open) return
-    const onDown = (e: PointerEvent) => {
+    const onDown = (e: Event) => {
       const t = e.target as HTMLElement | null
       if (!t || ref.current?.contains(t)) return
       if (t.closest('[role="dialog"], .wm-scrim, .wm-tabs, .wm-pop-host, .wm-live')) return
       closeRef.current()
     }
-    document.addEventListener('pointerdown', onDown, true)
-    return () => document.removeEventListener('pointerdown', onDown, true)
-  }, [open, ref])
+    document.addEventListener(on, onDown, true)
+    return () => document.removeEventListener(on, onDown, true)
+  }, [open, ref, on])
 }
 
 // ─── the gestures, wired once ─────────────────────────────────

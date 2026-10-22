@@ -43,7 +43,6 @@
 .wm-flap.bw-digit { font-size: 64px; gap: 3px; }
 .tm-rclock { display: flex; justify-content: center; align-items: center; transition: transform 0.4s ease; }
 .tm-rclock .wm-flap { font-size: inherit; gap: 4px; }
-.bw-start { min-width: 210px; }
 
 @media (prefers-reduced-motion: reduce) {
   .bw-stack, .tm-rclock { transition: none; }

@@ -123,9 +123,27 @@ export async function metricOffenders(page: Page): Promise<string[]> {
   return (await visibleWords(page)).filter(w => WRONG_UNIT.test(w))
 }
 
-/** The grass under a timer (tap: pause; swipe up: skip). */
+/** The grass under a running timer (tap: pause; swipe up: skip). */
 export function grass(page: Page): Locator {
   return page.getByRole('button', { name: /^Timer\. Tap to pause/ })
+}
+
+/** The grass under a timer that hasn't started (page 71: no START button; the grass starts it). */
+export function grassToStart(page: Page): Locator {
+  return page.getByRole('button', { name: 'Timer. Tap to start.', exact: true })
+}
+
+/** The grass while paused (page 71: PAUSED · TAP TO GO ON). */
+export function grassPaused(page: Page): Locator {
+  return page.getByRole('button', { name: /^Timer paused\. Tap to go on/ })
+}
+
+/** Page 71: tap the grass to start a timed step (holds, rounds, the warm-up). */
+export async function tapGrassToStart(page: Page) {
+  const g = grassToStart(page)
+  await expect(g).toBeVisible()
+  await g.tap()
+  await expect(grass(page)).toBeVisible()
 }
 
 /** A finger drag up the grass, far enough to pull it all the way: skips the phase. */
@@ -141,17 +159,17 @@ export async function swipeUpGrass(page: Page) {
 }
 
 /**
- * Through a mobility / Zone 2 warm-up: START a timed hold then swipe the grass
- * up to skip it, DONE a rep exercise, wait out the BREATHE beat. Stops when
- * `done()` says so.
+ * Through a mobility / Zone 2 warm-up: tap the grass to start a timed hold
+ * (page 71) then swipe it up to skip it, DONE a rep exercise, wait out the
+ * BREATHE beat. Stops when `done()` says so.
  */
 export async function throughWarmup(page: Page, done: () => Promise<boolean>, max = 40) {
   for (let i = 0; i < max; i++) {
     if (await done()) return
     if (await page.getByRole('status', { name: /^Breathe/ }).isVisible()) { await page.clock.fastForward(3500); continue }
-    const start = page.getByRole('button', { name: 'START', exact: true })
+    const start = grassToStart(page)
     const finished = page.getByRole('button', { name: 'DONE', exact: true })
-    if (await start.isVisible()) { await start.tap(); await swipeUpGrass(page); continue }
+    if (await start.isVisible()) { await start.tap(); await expect(grass(page)).toBeVisible(); await swipeUpGrass(page); continue }
     if (await finished.isVisible()) { await finished.tap(); continue }
     if (await grass(page).isVisible()) { await swipeUpGrass(page); continue }
     await page.waitForTimeout(250)

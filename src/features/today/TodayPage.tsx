@@ -29,6 +29,8 @@ import { CrestLoading } from '@/world/CrestLoading'
 import { setWorldLantern, setWorldPlace } from '@/world/worldStore'
 
 import { ClassLearnedFlow } from '@/features/session/ClassLearnedFlow'
+import { useStripSessionId } from '@/app/useStripSession'
+import { endHandoff, hasHandoff } from '@/app/liveHandoff'
 import { ReassignRunSheet } from './ReassignRunSheet'
 import { AllDoneBoard, EmptyDayBoard, NextDayBoard, NoBlockBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip } from './TodayBoards'
 import { TodayDay, type TodaySession } from './TodayDay'
@@ -137,13 +139,27 @@ export function TodayPage() {
   // Bumped when the app comes back to the front on a new day: today is read again and the day reloads.
   const [, setDayTick] = useState(0)
   const today = getTodayISO()
+  // Page 71: a running session shows once, as the live strip; it leaves the day's list until it is done.
+  const stripId = useStripSessionId()
+  // Page 71 item 6: the row that is flying (down into the strip, or back up into the list).
+  const [flying, setFlying] = useState<{ id: string; kind: 'lift' | 'land' } | null>(null)
+  if (!flying && sessions.length > 0) {
+    if (stripId && hasHandoff('lift', stripId) && sessions.some(s => s.id === stripId)) setFlying({ id: stripId, kind: 'lift' })
+    else {
+      const landed = sessions.find(s => s.status === 'completed' && hasHandoff('land', s.id))
+      if (landed) setFlying({ id: landed.id, kind: 'land' })
+    }
+  }
   useEffect(() => {
+    // The first row still to do (the running one is not in the list).
+    const first = sessions.find(s => (s.status === 'planned' || s.status === 'in_progress') && s.id !== stripId)
+    // The open row went live (ENTER, then back out): the next one to do opens in its place.
+    if (openRow != null && openRow === stripId) { setOpenRow(first?.id ?? null); return }
     if (defaultOpened.current === today) return
-    const first = sessions.find(s => s.status === 'planned' || s.status === 'in_progress')
     if (!first) return
     defaultOpened.current = today
     setOpenRow(prev => prev ?? first.id)
-  }, [sessions, today])
+  }, [sessions, today, stripId, openRow])
   const todayEpoch = isoToEpochDay(today)
   const todayDate = new Date(`${today}T12:00:00`)
 
@@ -776,7 +792,9 @@ export function TodayPage() {
           {/* page 64 §3: the start day's morning, one line on top (day 1 only) */}
           {dayOne && <DayOneLine flap={dayOne.flap} line={dayOne.line} />}
           <TodayDay
-            sessions={withoutReplaced(sessions)}
+            sessions={withoutReplaced(sessions).filter(s => s.id !== stripId || (flying?.kind === 'lift' && flying.id === s.id))}
+            flying={flying}
+            onFlown={() => { if (flying) endHandoff(flying.kind, flying.id); setFlying(null) }}
             weekNumber={block?.currentWeek ?? null}
             onStart={handleStart}
             onSkip={id => { void handleSkip(id) }}
