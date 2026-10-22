@@ -8,7 +8,7 @@ import { estimatedMinutes } from '@/lib/coach/sessions'
 import { getTodayISO } from '@/lib/dates'
 import { ApiError, apiFetch, newIdempotencyKey } from '@/lib/api'
 import { loadWithCopy, writeWorkoutCache } from '@/lib/workoutCache'
-import { flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
+import { dropSessionWrites, flushOutbox, pendingWrites, queueWrite } from '@/lib/outboxSync'
 import { EffortCard } from '@/features/blockZero/EffortCard'
 import { asksEffort, effortWrite } from '@/features/blockZero/effort'
 import { setPlace } from '@/lib/setPlace'
@@ -16,7 +16,7 @@ import { typicalRpe } from '@/lib/coach/sessions'
 import { kgToLbs } from '@/lib/units'
 import { carryKey, editedStartKg, parseCarry, withLogged, type LiftCarry } from '@/lib/timers/setWeight'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd, cancelAllCues } from '@/lib/notifications'
-import { loadOutbox, saveOutbox } from '@/lib/outbox'
+import { loadOutbox } from '@/lib/outbox'
 import { rollStepSecs } from '@/lib/activeRecoveryTemplate'
 import { soundRoundStart } from '@/lib/sounds'
 import { useWakeLock } from '@/lib/wakeLock'
@@ -548,10 +548,7 @@ export function WorkoutPage() {
     if (sessionType === 'running' || sessionType === 'foundation_run') void runRecorder().discard().catch(() => {})
     void endAllLiveActivities()
     // Writes this session queued (set logs, a recorded run) stay on the phone, unsent; then the discard itself.
-    const os = s
-    const q = loadOutbox(os)
-    const kept = q.filter(e => e.sessionId !== id)
-    if (kept.length !== q.length) saveOutbox(os, kept)
+    dropSessionWrites(id)
     void queueWrite({ method: 'POST', path: `/api/sessions/${id}/discard`, body: {}, sessionId: null, kind: 'session_discard', key: `discard-${id}-${finishKeyRef.current}` })
       .then(r => { if (r === 'rejected') logger.warn('session', 'session discard refused', { sessionId: id }, 'POST /sessions/:id/discard was refused (finished already?).') })
     logger.sessionEvent('session discarded', { sessionId: id })

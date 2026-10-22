@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { App as CapacitorApp } from '@capacitor/app'
-import { Browser } from '@capacitor/browser'
-import { Capacitor } from '@capacitor/core'
 
-import { Board, FlapButton, FlapLabel, FlapSwitch } from '@/design'
+import { Board, FlapLabel, FlapSwitch } from '@/design'
 import { apiFetch } from '@/lib/api'
-import { stravaNeedsReconnect } from '@/lib/stravaHealth'
 import { scheduleAlarms } from '@/lib/notifications'
 import { coachLine, nextAlarmDay } from '@/lib/coachLine'
 import { getTodayISO } from '@/lib/dates'
@@ -18,6 +14,7 @@ import { useToast } from '@/components/ui/Toast'
 import { isGateEnabled, setGateEnabled } from '@/lib/waybookGate'
 import { WorldTimeBoard } from './WorldTimeBoard'
 import { BodyProfileBoard } from './BodyProfileBoard'
+import { StrapBoard } from './StrapBoard'
 import { ArcCard, NumberCard, TimeCard } from './SettingsCards'
 import { ChevValue, MOON_MARK, SBlock, SRow, SettingsScreen, SUN_MARK, TimeValue } from './settingsParts'
 import { defaultClassSlot, formatClassSlots, nextClassSlot, parseClassSlots, type ClassDaySlot } from '@/lib/classSlots'
@@ -40,19 +37,6 @@ interface Settings {
   amEnabled: number | null
   pmEnabled: number | null
   cascade?: { removed: number; freedDays?: string[]; freed?: Array<{ day: string; slot: 'AM' | 'PM' }> } | null
-}
-
-interface StravaStatus {
-  connected: boolean
-  athleteId?: number
-  athleteName?: string | null
-  scope?: string
-  connectedAt?: number
-  expiresAt?: number
-  clientConfigured?: boolean
-  requiredScopesGranted?: boolean
-  missingScopes?: string[]
-  syncStatus?: 'ready' | 'refresh_failed'
 }
 
 const TECHNIQUES = [
@@ -99,10 +83,6 @@ export function SettingsPage() {
   const [narutoEp, setNarutoEp] = useState('')
   const [enabledTechniques, setEnabledTechniques] = useState<Set<string>>(new Set(['boxing', 'kicks', 'defensive']))
 
-  const [strava, setStrava] = useState<StravaStatus | null>(null)
-  const [disconnecting, setDisconnecting] = useState(false)
-  const [connecting, setConnecting] = useState(false)
-
   const [waybookAuth, setWaybookAuth] = useState<boolean>(() => isGateEnabled())
   const [hapticsOn, setHapticsOn] = useState<boolean>(() => isHapticsEnabled())
 
@@ -145,92 +125,6 @@ export function SettingsPage() {
     }
     load()
   }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    async function loadStrava() {
-      try {
-        const s = await apiFetch<StravaStatus>('/api/strava/status')
-        if (!cancelled) setStrava(s)
-      } catch (e) {
-        console.error('Failed to load Strava status:', e)
-        if (!cancelled) setStrava({ connected: false })
-      }
-    }
-    loadStrava()
-
-    // Legacy query-param handling (old callback flow may still leave these).
-    const params = new URLSearchParams(window.location.search)
-    const result = params.get('strava')
-    if (result === 'connected') {
-      showToast('Strava connected', 'success')
-      window.history.replaceState({}, '', window.location.pathname)
-    } else if (result === 'denied') {
-      showToast('Strava access denied', 'info')
-      window.history.replaceState({}, '', window.location.pathname)
-    } else if (result && result.startsWith('token')) {
-      showToast('Strava connection failed, try again', 'info')
-      window.history.replaceState({}, '', window.location.pathname)
-    }
-
-    // Re-check status when the app comes back to the foreground (e.g. after
-    // returning from SFSafariViewController OAuth, or from Mac Safari auth).
-    let removeResume: (() => void) | null = null
-    if (Capacitor.isNativePlatform()) {
-      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) loadStrava()
-      }).then((handle) => { removeResume = () => handle.remove() })
-    } else {
-      const onVis = () => { if (document.visibilityState === 'visible') loadStrava() }
-      document.addEventListener('visibilitychange', onVis)
-      removeResume = () => document.removeEventListener('visibilitychange', onVis)
-    }
-    return () => {
-      cancelled = true
-      if (removeResume) removeResume()
-    }
-  }, [showToast])
-
-  async function handleConnectStrava() {
-    if (connecting) return
-    setConnecting(true)
-    const isDemo = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env.VITE_DEMO_MODE === 'true'
-    try {
-      if (isDemo) {
-        // Demo mode: skip Strava OAuth entirely. Server stamps a fake
-        // connected athlete and pre-attaches matched runs to recent sessions.
-        const data = await apiFetch<{ athleteName?: string }>('/api/strava/demo-connect', { method: 'POST' })
-        setStrava({ connected: true, athleteName: data.athleteName ?? 'Demo Athlete', athleteId: 999000001 } as StravaStatus)
-        showToast('Strava connected (demo). Recent runs attached.', 'success')
-        return
-      }
-
-      const { url } = await apiFetch<{ url: string }>('/api/strava/link-start', { method: 'POST' })
-      if (Capacitor.isNativePlatform()) {
-        await Browser.open({ url, presentationStyle: 'popover' })
-      } else {
-        window.location.href = url
-      }
-    } catch (e) {
-      console.error('Failed to open Strava authorize:', e)
-      showToast('Could not open Strava. Try again.', 'warning')
-    } finally {
-      setConnecting(false)
-    }
-  }
-
-  async function handleDisconnectStrava() {
-    setDisconnecting(true)
-    try {
-      await apiFetch('/api/strava/disconnect', { method: 'POST' })
-      setStrava({ connected: false })
-      showToast('Strava disconnected', 'info')
-    } catch (e) {
-      console.error('Failed to disconnect Strava:', e)
-    } finally {
-      setDisconnecting(false)
-    }
-  }
 
   // Saved 0.8 s after the last change, and on leave (page 61: ‹ TODAY right after DONE keeps it).
   const flushSettings = useRef<(() => void) | null>(null)
@@ -325,15 +219,6 @@ export function SettingsPage() {
   const daysLeft = daysUntilRedeploy(Number(import.meta.env.VITE_BUILD_TIME), Date.now())
   const am = splitTime(amReminder)
   const pm = splitTime(pmSessionTime)
-  // Today's poll got a 401 / 403 / failed refresh since the last connect: only a reconnect fixes it.
-  const stravaBroken = !!strava?.connected && stravaNeedsReconnect(strava.connectedAt)
-  const stravaLine = !strava?.connected ? 'Not connected.'
-    : strava.clientConfigured === false ? 'Add Strava client credentials locally.'
-    : strava.requiredScopesGranted === false ? `Reconnect Strava with ${strava.missingScopes?.join(', ') ?? 'required scopes'}.`
-    : strava.syncStatus === 'refresh_failed' || stravaBroken ? 'Strava needs reconnecting. Runs are not coming in.'
-    : 'Connected. Runs log themselves.'
-  const stravaOk = !!strava?.connected && stravaLine.startsWith('Connected')
-
   return (
     <SettingsScreen title="SETTINGS" backLabel="TODAY" onBack={back} onHold={hold}>
       {daysLeft !== null && (
@@ -383,6 +268,18 @@ export function SettingsPage() {
             })}
           </div>
         </SBlock>
+        <SRow label="One Pace arc" sub="Indoor runs." onClick={() => setCard('opArc')} ariaLabel={`One Pace arc, ${onePaceArc || 'not set'}. Change`}>
+          <ChevValue text={onePaceArc.toUpperCase()} emptyCells={4} />
+        </SRow>
+        <SRow label="Episode" onClick={() => setCard('opEp')} ariaLabel={`One Pace episode, ${onePaceEp || 'not set'}. Change`}>
+          <ChevValue text={onePaceEp} />
+        </SRow>
+        <SRow label="Naruto arc" sub="Indoor runs. Opens Netflix on this episode." onClick={() => setCard('nArc')} ariaLabel={`Naruto arc, ${narutoArc || 'not set'}. Change`}>
+          <ChevValue text={narutoArc.toUpperCase()} emptyCells={4} />
+        </SRow>
+        <SRow label="Episode" onClick={() => setCard('nEp')} ariaLabel={`Naruto episode, ${narutoEp || 'not set'}. Change`}>
+          <ChevValue text={narutoEp} />
+        </SRow>
       </Board>
 
       <Board head="Alarms" solid className="st-board">
@@ -415,31 +312,7 @@ export function SettingsPage() {
         </SRow>
       </WorldTimeBoard>
 
-      <Board head="Connections" solid className="st-board">
-        <div className="st-row">
-          <div className="st-sl">
-            <b className="st-strava">Strava{stravaOk && <span className="st-dot" aria-hidden />}</b>
-            <small>{stravaLine}</small>
-          </div>
-          {strava?.connected && !stravaBroken && strava.syncStatus !== 'refresh_failed' ? (
-            <FlapButton label={disconnecting ? 'DISCONNECTING' : 'DISCONNECT'} size="xs" className="st-sbtn" disabled={disconnecting} onClick={() => void handleDisconnectStrava()} />
-          ) : (
-            <FlapButton label={connecting ? 'OPENING' : 'CONNECT'} size="xs" className="st-sbtn" disabled={connecting || strava == null} onClick={() => void handleConnectStrava()} />
-          )}
-        </div>
-        <SRow label="One Pace arc" sub="Indoor runs." onClick={() => setCard('opArc')} ariaLabel={`One Pace arc, ${onePaceArc || 'not set'}. Change`}>
-          <ChevValue text={onePaceArc.toUpperCase()} emptyCells={4} />
-        </SRow>
-        <SRow label="Episode" onClick={() => setCard('opEp')} ariaLabel={`One Pace episode, ${onePaceEp || 'not set'}. Change`}>
-          <ChevValue text={onePaceEp} />
-        </SRow>
-        <SRow label="Naruto arc" sub="Indoor runs. Opens Netflix on this episode." onClick={() => setCard('nArc')} ariaLabel={`Naruto arc, ${narutoArc || 'not set'}. Change`}>
-          <ChevValue text={narutoArc.toUpperCase()} emptyCells={4} />
-        </SRow>
-        <SRow label="Episode" onClick={() => setCard('nEp')} ariaLabel={`Naruto episode, ${narutoEp || 'not set'}. Change`}>
-          <ChevValue text={narutoEp} />
-        </SRow>
-      </Board>
+      <StrapBoard />
 
       {card === 'am' && <TimeCard title="Morning alarm" value={amReminder} onCancel={() => setCard(null)} onDone={v => { setAmReminder(v); setCard(null) }} />}
       {card === 'pm' && <TimeCard title="Evening session" value={pmSessionTime} onCancel={() => setCard(null)} onDone={v => { setPmSessionTime(v); setCard(null) }} />}

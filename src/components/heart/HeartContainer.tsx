@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 
 import { useReducedMotion } from '@/design'
 
@@ -13,44 +13,10 @@ import { useReducedMotion } from '@/design'
 // dim when there's no strap; each change eases over about 1 s. Search shimmers.
 // Reduce Motion: a steady heart, colour changes instant.
 
-export type HeartState = 'under' | 'gold' | 'over' | 'idle' | 'search'
+export type { HeartState } from './heartPixels'
+import type { HeartState } from './heartPixels'
 
-type RGB = [number, number, number]
-const hex = (h: string): RGB => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
-const css = (c: RGB, a = 1) => `rgba(${c.map(v => Math.round(v)).join(',')},${a})`
-const lerp = (a: RGB, b: RGB, k: number): RGB => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]
-const easeOut = (k: number) => 1 - Math.pow(1 - k, 3)
-
-type Pal = { lit: RGB; mid: RGB; rim: RGB; pip: RGB; out: RGB; glow: RGB }
-const P = (lit: string, mid: string, rim: string, pip: string, out: string, glow: string): Pal => ({ lit: hex(lit), mid: hex(mid), rim: hex(rim), pip: hex(pip), out: hex(out), glow: hex(glow) })
-/** heart-family.js PAL (lit, mid, rim, pip, outline, glow). */
-export const HEART_PAL: Record<Exclude<HeartState, 'search'>, Pal> = {
-  under: P('#5ac8aa', '#2a8a6c', '#9ee0c6', '#e8f8f4', '#04140f', '#4acaaa'),
-  gold: P('#eac860', '#c8a030', '#f6e2a0', '#fff6dc', '#1c1304', '#e8c860'),
-  over: P('#ec8a5e', '#b0583a', '#ffc7aa', '#fff0e6', '#1e0904', '#ec8a5e'),
-  idle: P('#6b7d77', '#495a54', '#87918c', '#a9b4b0', '#0a100e', '#000000'),
-}
-
-/** The heart container's pixels (heart-family.js GI): O outline, R rim, W pip, B body, D shade. */
-export const HEART_GRID = ['..OOO...OOO..', '.ORRRO.ORRRO.', 'ORWWBBOBBBBRO', 'ORWBBBBBBBBDO', 'ORBBBBBBBBBDO', '.OBBBBBBBBDO.', '..OBBBBBBDO..', '...OBBBBDO...', '....OBBDO....', '.....ODO.....', '......O......']
-
-/** The calm beat (heart-family.js calm): 0..1 at `nowMs` for `bpm`. */
-export function calmBeat(nowMs: number, bpm: number): number {
-  const per = 60 / bpm, ph = ((nowMs / 1000) % per) / per, amp = Math.min(1, Math.pow(90 / bpm, 2))
-  return ph < 0.55 ? amp * Math.pow(Math.sin((Math.PI * ph) / 0.55), 2) : 0
-}
-
-function drawPix(g: CanvasRenderingContext2D, W: number, p: Pal, lift: number) {
-  const w = HEART_GRID[0].length, h = HEART_GRID.length
-  const sc = Math.max(1, Math.floor(W / (w + 1))), ox = Math.round((W - w * sc) / 2), oy = Math.round((W - h * sc) / 2)
-  const C: Record<string, RGB> = { O: p.out, R: lerp(p.rim, p.pip, lift * 0.5), W: p.pip, B: lerp(p.lit, p.rim, lift * 0.5), D: lerp(p.mid, p.lit, lift * 0.4) }
-  g.imageSmoothingEnabled = false
-  HEART_GRID.forEach((row, y) => [...row].forEach((c, x) => {
-    if (c === '.') return
-    g.fillStyle = css(C[c])
-    g.fillRect(ox + x * sc, oy + y * sc, sc, sc)
-  }))
-}
+import { calmBeat, css, drawHeartPixels, easeOut, HEART_PAL, lerp, type HeartPal } from './heartPixels'
 
 interface Props {
   size: number
@@ -65,7 +31,7 @@ export function HeartContainer({ size, bpm, state, className = '', label }: Prop
   const reduced = useReducedMotion()
   const ref = useRef<HTMLCanvasElement>(null)
   const live = useRef({ bpm: bpm ?? 70, state, reduced })
-  live.current = { bpm: bpm && bpm > 0 ? bpm : 70, state, reduced }
+  useLayoutEffect(() => { live.current = { bpm: bpm && bpm > 0 ? bpm : 70, state, reduced } })
   const pal = useRef<{ from: Exclude<HeartState, 'search'>; to: Exclude<HeartState, 'search'>; t0: number } | null>(null)
 
   useEffect(() => {
@@ -88,11 +54,11 @@ export function HeartContainer({ size, bpm, state, className = '', label }: Prop
       if (pp.to !== st) { pp.from = pp.to; pp.to = st; pp.t0 = now }
       const k = red ? 1 : easeOut(Math.min(1, (now - pp.t0) / 1000))
       const A = HEART_PAL[pp.from], B = HEART_PAL[pp.to]
-      const p: Pal = { lit: lerp(A.lit, B.lit, k), mid: lerp(A.mid, B.mid, k), rim: lerp(A.rim, B.rim, k), pip: lerp(A.pip, B.pip, k), out: lerp(A.out, B.out, k), glow: lerp(A.glow, B.glow, k) }
+      const p: HeartPal = { lit: lerp(A.lit, B.lit, k), mid: lerp(A.mid, B.mid, k), rim: lerp(A.rim, B.rim, k), pip: lerp(A.pip, B.pip, k), out: lerp(A.out, B.out, k), glow: lerp(A.glow, B.glow, k) }
       const beating = st0 !== 'idle' && st0 !== 'search' && !red
       const e = beating ? calmBeat(now, b) : 0
       q.clearRect(0, 0, S, S)
-      drawPix(q, S, p, e)
+      drawHeartPixels(q, S, p, e)
       g.clearRect(0, 0, W, W)
       g.save()
       if (e > 0.01) { g.shadowColor = css(p.glow, (size <= 24 ? 0.25 : 0.55) * e); g.shadowBlur = W * (0.04 + 0.06 * e) }
@@ -103,7 +69,8 @@ export function HeartContainer({ size, bpm, state, className = '', label }: Prop
       if (beating || st0 === 'search' || k < 1) raf = requestAnimationFrame(frame)
       else raf = 0
     }
-    raf = requestAnimationFrame(frame)
+    // The first frame now (a heart is never blank, even before the page paints again).
+    frame(performance.now())
     return () => cancelAnimationFrame(raf)
   }, [size, state, reduced])
 

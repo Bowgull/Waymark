@@ -118,3 +118,15 @@ export function startOutboxSync(): () => void {
     if (timer) clearTimeout(timer)
   }
 }
+
+/**
+ * DISCARD (page 74): the session's queued writes (set logs, a recorded run)
+ * leave the outbox unsent, so nothing of it reaches the coach later.
+ */
+export function dropSessionWrites(sessionId: string): number {
+  const s = storage()
+  const q = loadOutbox(s)
+  const kept = q.filter(e => e.sessionId !== sessionId)
+  if (kept.length !== q.length) { saveOutbox(s, kept); notify(); scheduleNext() }
+  return q.length - kept.length
+}

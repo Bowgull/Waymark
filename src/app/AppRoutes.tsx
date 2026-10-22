@@ -35,6 +35,7 @@ import { apiFetch } from '../lib/api'
 import { getTodayISO } from '../lib/dates'
 import { coachLine, nextAlarmDay } from '../lib/coachLine'
 import { startOutboxSync } from '../lib/outboxSync'
+import { resumeRecordingUploads } from '../lib/runRecordingUpload'
 import { getItem as storageGet, setItem as storageSet } from '../lib/safeStorage'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
@@ -71,6 +72,8 @@ export function AppRoutes() {
 
   // Queued set saves and finishes retry on reconnect, foreground and resume.
   useEffect(() => startOutboxSync(), [])
+  // Page 74: a recorded run that never reached the server goes out again.
+  useEffect(() => { void resumeRecordingUploads() }, [])
 
   // Page 61 (M6): tapping the Live Activity or the Dynamic Island (waymark://session/live,
   // or waymark://session/<id>) opens the running session, not wherever the app last was.
