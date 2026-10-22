@@ -160,5 +160,8 @@ function stateKey(s: ActivityState): string {
     s.nextCombo?.join('›') ?? '',
     s.fromClass ? '1' : '',
     s.comboSize ?? '',
+    // the zone and the run's kind redraw the card; the number itself is the recorder's to send
+    s.hrZone ?? '',
+    s.runKind ?? '',
   ].join('|')
 }

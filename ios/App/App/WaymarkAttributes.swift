@@ -97,6 +97,21 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
         // The session's one combo size on the card (pt, 14-19), fitted in the
         // app to the session's longest combo.
         public var comboSize: Double?
+        // Page 74 (the run with the strap, approved 2026-10-22). Optional, so an
+        // older state still decodes; without them the run's card is today's.
+        // The heart rate now (nil: no strap, a drop, silent).
+        public var hr: Int?
+        // The zone against the run's line: "in" (teal), "gold", "over" (ember,
+        // EASE OFF), "none" (a dim heart and "--"). Nil: not a strap run.
+        public var hrZone: String?
+        // Bumped on every heart-rate update the recorder sends, so the heart's
+        // soft glow plays once per update (Live Activities can't loop a beat).
+        public var hrSeq: Int?
+        // GPS distance so far (outdoor runs).
+        public var distanceKm: Double?
+        // "easy" (one continuous run: pause / play only, never skip) or
+        // "runwalk" (skip = the next piece, run <-> walk). Nil: not a run.
+        public var runKind: String?
 
         public init(
             phase: String,
@@ -119,7 +134,12 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             combo: [String]? = nil,
             nextCombo: [String]? = nil,
             fromClass: Bool? = nil,
-            comboSize: Double? = nil
+            comboSize: Double? = nil,
+            hr: Int? = nil,
+            hrZone: String? = nil,
+            hrSeq: Int? = nil,
+            distanceKm: Double? = nil,
+            runKind: String? = nil
         ) {
             self.phase = phase
             self.label = label
@@ -142,6 +162,11 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             self.nextCombo = nextCombo
             self.fromClass = fromClass
             self.comboSize = comboSize
+            self.hr = hr
+            self.hrZone = hrZone
+            self.hrSeq = hrSeq
+            self.distanceKm = distanceKm
+            self.runKind = runKind
         }
     }
 

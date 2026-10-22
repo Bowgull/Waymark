@@ -41,9 +41,7 @@ const SCOPES = 'read,activity:read_all'
 const AUTH_URL = 'https://www.strava.com/oauth/authorize'
 const TOKEN_URL = 'https://www.strava.com/oauth/token'
 const DEAUTH_URL = 'https://www.strava.com/oauth/deauthorize'
-const ACTIVITIES_URL = 'https://www.strava.com/api/v3/athlete/activities'
 const ACTIVITY_URL = 'https://www.strava.com/api/v3/activities'
-const POLL_WINDOW_SEC = 14 * 24 * 60 * 60 // 14 days — webhook is the real-time path, poll is the backfill for missed days
 
 const strava = new Hono<{ Bindings: Bindings }>()
 
@@ -216,68 +214,14 @@ strava.get('/webhook', (c) => {
   return c.json({ 'hub.challenge': challenge })
 })
 
-// Activity events from Strava. Must respond 200 within 2s, so we ack immediately
-// and ingest via c.executionCtx.waitUntil so the platform keeps the worker alive
-// past the response without blocking Strava's retry clock.
-strava.post('/webhook', async (c) => {
-  let body: StravaWebhookEvent | null = null
-  try {
-    body = await c.req.json<StravaWebhookEvent>()
-  } catch {
-    // Ping or malformed — ack so Strava doesn't retry.
-  }
-  // Only act on events for our linked athlete (and our subscription, once
-  // STRAVA_SUBSCRIPTION_ID is set). Anything else is acked and ignored.
-  if (body && !(await isOurWebhookEvent(body, c.env))) {
-    console.warn('[strava-webhook] ignored event for unknown owner/subscription')
-    return c.json({ ok: true })
-  }
-  if (body && body.object_type === 'activity' && body.aspect_type === 'create') {
-    c.executionCtx.waitUntil(
-      ingestStravaActivity(body.object_id, c.env).catch(err => {
-        console.error('[strava-webhook] ingest failed', body!.object_id, err)
-      }),
-    )
-  }
-  return c.json({ ok: true })
-})
+// Page 74 (approved 2026-10-22): runs are recorded in Waymark itself now
+// (the strap and GPS, POST /api/run-sessions/:id/recording), so the app no
+// longer calls Strava. The webhook acks and ignores every event, and the
+// Today poll answers "not connected" without a call to Strava. The ingest code
+// below stays (its tests run, older Strava rows still read), unused.
+strava.post('/webhook', (c) => c.json({ ok: true, retired: true }))
 
-// Safety net. Called silently on Today mount. Ingests any recent activity
-// not yet linked in run_sessions. Bounded to last 48h.
-strava.post('/poll-recent', async (c) => {
-  // Distinguish "no token row" from "refresh failed" so a transient network
-  // blip during refresh doesn't make the app show "not connected" when the
-  // user really is connected.
-  const db = createDB(c.env)
-  const [row] = await db.select().from(stravaTokens).where(eq(stravaTokens.id, 'default'))
-  if (!row) return c.json({ ingested: 0, connected: false })
-
-  const token = await getStravaAccessToken(c.env)
-  if (!token) {
-    console.error('[strava-poll] token refresh failed for connected athlete', row.athleteId)
-    return c.json({ ingested: 0, connected: true, error: 'refresh_failed' })
-  }
-
-  const after = Math.floor(Date.now() / 1000) - POLL_WINDOW_SEC
-  const url = `${ACTIVITIES_URL}?after=${after}&per_page=30`
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-  if (!res.ok) {
-    console.error('[strava-poll] list failed', res.status, await res.text().catch(() => ''))
-    return c.json({ ingested: 0, connected: true, error: `strava_${res.status}` })
-  }
-
-  const list = await res.json() as Array<{ id: number; type: string; sport_type?: string }>
-  const runs = list.filter(a => a.type === 'Run' || a.sport_type === 'Run')
-  let ingested = 0
-  for (const act of runs) {
-    const result = await ingestStravaActivity(act.id, c.env)
-    if (result.status === 'ingested') ingested += 1
-    else if (result.status === 'fetch_failed' || result.status === 'no_token') {
-      console.error('[strava-poll] ingest non-ok', { activityId: act.id, result })
-    }
-  }
-  return c.json({ ingested, connected: true })
-})
+strava.post('/poll-recent', (c) => c.json({ ingested: 0, connected: false, retired: true }))
 
 // User taps Confirm on an auto_pending match. Locks the link and marks the
 // parent session completed with activity totals.
@@ -543,13 +487,6 @@ async function verifyOAuthState(state: string, secret: string | undefined): Prom
   return Number.isFinite(expSec) && expSec >= Math.floor(Date.now() / 1000)
 }
 
-async function isOurWebhookEvent(event: StravaWebhookEvent, env: Bindings): Promise<boolean> {
-  if (env.STRAVA_SUBSCRIPTION_ID && String(event.subscription_id) !== env.STRAVA_SUBSCRIPTION_ID) return false
-  const db = createDB(env)
-  const [row] = await db.select({ athleteId: stravaTokens.athleteId }).from(stravaTokens).where(eq(stravaTokens.id, 'default'))
-  return Boolean(row) && event.owner_id === row.athleteId
-}
-
 function safeParseJson(text: string): unknown {
   try { return JSON.parse(text) } catch { return text }
 }
@@ -653,15 +590,6 @@ export async function getStravaAccessToken(env: Bindings): Promise<string | null
 }
 
 // ─── Ingestion ─────────────────────────────────────────────────
-
-type StravaWebhookEvent = {
-  object_type: 'activity' | 'athlete'
-  object_id: number
-  aspect_type: 'create' | 'update' | 'delete'
-  owner_id: number
-  subscription_id?: number
-  updates?: Record<string, string>
-}
 
 export type StravaActivity = {
   id: number

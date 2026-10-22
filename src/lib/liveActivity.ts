@@ -56,6 +56,18 @@ export interface ActivityState {
   fromClass?: boolean
   /** The session's one combo size on the card (pt, 14–19; lib/timers/bagRound lockComboSize). */
   comboSize?: number
+  // Page 74 (the run with the strap). All optional: the widget draws today's
+  // card without them. While the phone is locked the native recorder sends
+  // these itself (WaymarkRunRecorderPlugin); the app sends the latest with
+  // every other update so they never blink out.
+  /** Heart rate now; absent with no strap. */
+  hr?: number | null
+  /** The zone against the run's line: in (teal), gold, over (ember, EASE OFF), none (dim, "--"). */
+  hrZone?: 'in' | 'gold' | 'over' | 'none'
+  /** GPS distance so far (outdoor). */
+  distanceKm?: number
+  /** easy: pause / play only, never skip. runwalk: skip = the next piece. */
+  runKind?: 'easy' | 'runwalk'
 }
 
 /** Default painted icon for a Live Activity session type. */
