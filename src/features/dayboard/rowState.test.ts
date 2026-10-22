@@ -1,5 +1,6 @@
 import { getWeekLabel } from '../../lib/strengthTemplates'
 import assert from 'node:assert/strict'
+import { doseJsonMinutes } from '../../lib/brain/doseMinutes'
 
 import { cycleWeeks, dayStrip, readWeekAnalysis, splitWhy, weekDays, weekForDay, worldWeekPosts } from '../program/weekModel'
 import {
@@ -237,6 +238,14 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   assert.ok(plannedRowMinutes({ ...wedB, contextJson: '{"coachEase":{"kind":"one_set"}}' }) < 60, 'm6: one set fewer, fewer minutes')
   assert.ok(plannedRowMinutes({ ...wedB, blockWeek: 1 }) < 60, 'm6: 2x8 in week 1 is shorter than 3x8 in week 4')
   assert.equal(plannedRowMinutes({ type: 'mobility', label: 'Foundation', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null }), 12)
+  // Page 73 (approved 2026-10-22): a row with the brain's dose reads the dose's minutes, the same the coach picks' preview shows.
+  assert.equal(plannedRowMinutes({ type: 'foundation_run', label: 'Run-walk', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null, doseJson: JSON.stringify({ run: { totalSec: 26 * 60, runSec: 90, walkSec: 60, rounds: 8, walkOnly: false } }) }), 26, 'run row: the dose total')
+  assert.equal(plannedRowMinutes({ type: 'bag_work', label: 'Bag Work', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null, doseJson: JSON.stringify({ bag: { rounds: 5 } }) }), 20, 'bag row: the dose rounds with their rests')
+  const strengthDoseRow = { ...wedB, doseJson: JSON.stringify({ strength: { kind: 'strength', level: 'HOLD', accessorySets: null, holdSets: 2, sets: 2, why: [], lifts: [{ exerciseId: 'a', label: 'DB RDL', slot: null, sets: 2, reps: 8, targetRir: 3, weightKg: 14, workUp: false, change: 'hold', fromKg: 14, level: 'HOLD', u: 0 }] } }) }
+  const fromDose = doseJsonMinutes(strengthDoseRow)
+  assert.ok(fromDose != null && fromDose > 0, `strength dose minutes: ${fromDose}`)
+  assert.equal(plannedRowMinutes(strengthDoseRow), fromDose, 'strength row: the dose minutes, not the template estimate')
+  assert.equal(plannedRowMinutes({ ...wedB, doseJson: 'not json' }), 60, 'a bad dose falls back to the template')
   // done headline: Today says "effort 7" (page 35), Program "RPE 7" (page 33)
   assert.equal(doneHeadline(52, 45, { rpe: 7, effortWord: 'effort' }).parts.map(p => p.text).join(''), 'Done · 52 min · effort 7')
   assert.equal(doneHeadline(52, 45, { rpe: 7 }).chip, '+7 min')

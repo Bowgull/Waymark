@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Api } from './fixtures'
-import { gotoToday } from './support/helpers'
+import { dayRow } from './support/helpers'
 import { GOOD_MORNING } from './support/data'
 
 /**
@@ -77,7 +77,7 @@ async function weekChanges(api: Api, monday: string) {
   return (await api.get<{ changes: Array<{ id: string; day: number; actor: string; kind: string; session: { id: string | null; type: string }; why: string; lock: string }> }>(`/api/weeks/${monday}/changes?today=${monday}`)).changes
 }
 
-test('the coach places a class on a class day: a Dagaz rune, one plain why, UNDO takes it off', async ({ page, api, request }) => {
+test('the coach places a class on a class day: a Dagaz rune on Program, one plain why, UNDO takes it off', async ({ page, api, request }) => {
   await api.patch('/api/settings', { mtClassDays: '1,3,5', mtClassSlots: 'mon:pm,wed:pm,fri:pm' })
   // A Monday two weeks ahead: nothing planned there yet. He checked in the day before (he's active).
   const now = new Date()
@@ -96,26 +96,27 @@ test('the coach places a class on a class day: a Dagaz rune, one plain why, UNDO
   expect(add!.lock).toBe('open')
   const dayIso = iso(new Date(add!.day * 86400000))
 
-  // That Monday on Today (the phone's clock moved there): the class day carries the Dagaz rune;
-  // its back shows before → after, the why, and UNDO.
+  // That Monday (the phone's clock moved there), on Program (page 73): the class day's row carries
+  // the Dagaz rune; the rune opens the why-line with KEEP and UNDO; UNDO puts it back (an added
+  // session: no REDO, the window shows the put-back line).
   // All nine check-in answers for that morning, so the deck stays closed.
   await api.post('/api/daily-logs', { date: iso(monday), ...GOOD_MORNING })
   const [y, m, d] = iso(monday).split('-').map(Number)
   await page.clock.setSystemTime(new Date(y, m - 1, d, 10, 0, 0))
-  await gotoToday(page)
-  const strip = page.getByRole('list', { name: 'This week' })
-  const tile = strip.getByRole('listitem', { name: new RegExp(`^${dayIso}.*The coach changed this day[.]`) })
-  await expect(tile).toBeVisible({ timeout: 20_000 })
-  await expect(tile.locator('.wm-rune')).toBeAttached()
-  await tile.tap()
-  const back = page.getByRole('dialog', { name: 'What changed this day' })
-  await expect(back).toBeVisible()
-  const change = back.locator('.wm-tchange').filter({ has: page.getByRole('button', { name: 'UNDO' }) }).first()
-  await expect(change.getByText(/^COACH/)).toBeVisible()
-  await expect(change.getByRole('img', { name: '+ MT CLASS' })).toBeAttached()
-  await expect(change.locator('.voice').first()).toHaveText(/Of your class days/)
-  await change.getByRole('button', { name: 'UNDO' }).tap()
-  await expect(back.getByRole('img', { name: 'PUT BACK' }).first()).toBeVisible()
+  await page.goto('/program')
+  const row = dayRow(page, add!.day)
+  await expect(row).toBeVisible({ timeout: 20_000 })
+  await expect(row).toHaveAttribute('aria-label', /The coach changed it\./)
+  await expect(row.locator('.wm-rune')).toBeAttached()
+  await row.getByRole('button', { name: 'What the coach changed' }).tap()
+  const win = page.getByRole('dialog', { name: 'What the coach changed' })
+  await expect(win).toBeVisible()
+  await expect(win.locator('.pl-say')).toHaveText(/Of your class days/)
+  await expect(win.getByRole('button', { name: 'Keep' })).toBeVisible()
+  await win.getByRole('button', { name: 'Undo' }).tap()
+  await expect(win.locator('.pl-say')).not.toHaveText(/Of your class days/)
+  await expect(win.locator('.pl-say')).toHaveText(/\w/)
+  await expect(win.getByRole('button', { name: 'Redo' })).toHaveCount(0)
 
   // UNDO took the class off the week, and the coach leaves the week as it is.
   await expect.poll(async () => (await weekChanges(api, iso(monday))).find(c => c.id === add!.id)?.lock).toBe('undone')

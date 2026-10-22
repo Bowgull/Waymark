@@ -21,14 +21,15 @@ test('Units: Today', async ({ page }) => {
 
 test('Units: Program, every day of the week', async ({ page }) => {
   await page.goto('/program')
-  const days = page.getByRole('tablist', { name: 'Days of the week' }).getByRole('tab')
-  await expect(days).toHaveCount(7)
+  const days = page.locator('.pg-dr')
+  await expect(days).toHaveCount(7, { timeout: 20_000 })
   for (let i = 0; i < 7; i++) {
     await days.nth(i).tap()
+    await expect(days.nth(i)).toHaveAttribute('aria-expanded', 'true')
+    // every session on the day opened to its lines
+    const rows = page.locator('.pg-dayw').nth(i).locator('.pl-row .pl-hit')
+    for (let r = 0; r < await rows.count(); r++) await rows.nth(r).tap()
     await expectNoMetric(page)
-    // A day with a rune opens its back under the strip (with its own words, checked above): close it.
-    const veil = page.locator('.wm-veil3')
-    if (await veil.isVisible()) await veil.click({ position: { x: 5, y: 5 } })
   }
 })
 

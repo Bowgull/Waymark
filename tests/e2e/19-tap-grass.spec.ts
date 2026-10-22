@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { enterFromToday, gotoToday, grass, grassPaused, grassToStart, insertSession, todayRow } from './support/helpers'
+import { enterFromToday, epochOf, gotoToday, grass, grassPaused, grassToStart, insertSession, openDay, todayISO, todayRow } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -10,8 +10,8 @@ import { makeApiFor } from './support/api'
  * time on this phone, then the quiet TAP TO START line; TAP · PAUSE; PAUSED ·
  * TAP TO GO ON); rep steps keep DONE and have no grass; the × still only ends
  * on a hold. A running session shows once: as the live strip, not a row on
- * Today (the first row still to do opens instead), and on Program's day board
- * it reads "under way" with no RESUME. Done, it is back in Today's list with ✓.
+ * Today (the first row still to do opens instead), and on Program its row
+ * opens to its lines with no RESUME (page 73). Done, it is back in Today's list with ✓.
  */
 
 test.beforeAll(async ({ request }) => {
@@ -126,7 +126,7 @@ async function intoRound(page: Page, id: string) {
   await expect(page.getByRole('img', { name: 'FIGHT', exact: true })).toBeVisible()
 }
 
-test('Items 4-5: a running session is only the strip; Today opens the next to-do; Program says under way, no RESUME; done, back with ✓', async ({ page, api }) => {
+test('Items 4-5: a running session is only the strip; Today opens the next to-do; Program opens its lines, no RESUME; done, back with ✓', async ({ page, api }) => {
   const other = await insertSession(api, 'active_recovery', 'pm')
   const bag = await insertSession(api, 'bag_work', 'pm')
   await intoRound(page, bag.id)
@@ -148,16 +148,16 @@ test('Items 4-5: a running session is only the strip; Today opens the next to-do
   await expect(todayRow(page, bag.id)).toHaveCount(0)
   await expect(page.locator('.td-row:not(.is-done):not(.is-skip)').first().locator('.td-rowhit')).toHaveAttribute('aria-expanded', 'true')
 
-  // Program's day board: the running session reads "under way", and its summary has no RESUME.
+  // Program (page 73): today's day opens; the running session's row opens to its lines, with no RESUME or ENTER.
   await page.getByRole('link', { name: 'program' }).tap()
-  await expect(page.getByRole('group', { name: 'Weeks of the block' })).toBeVisible({ timeout: 20_000 })
-  const prow = page.locator(`[data-sid="${bag.id}"] .db-row`)
+  await expect(page.getByRole('tablist', { name: 'Weeks' })).toBeVisible({ timeout: 20_000 })
+  await openDay(page, epochOf(todayISO()))
+  const prow = page.locator(`.pl-row[data-sid="${bag.id}"]`)
   await expect(prow).toBeVisible()
-  await expect(prow.locator('.db-det')).toContainText('under way')
-  await prow.locator('.db-face').tap()
-  await expect(prow).toHaveClass(/is-open/)
-  await expect(prow.getByRole('button', { name: 'RESUME' })).toHaveCount(0)
-  await expect(prow.getByRole('button', { name: 'ENTER' })).toHaveCount(0)
+  await prow.locator('.pl-hit').tap()
+  await expect(prow.locator('.pl-hit')).toHaveAttribute('aria-expanded', 'true')
+  await expect(prow.locator('.pl-ol').first()).toBeVisible()
+  await expect(prow.getByRole('button', { name: /RESUME|ENTER/ })).toHaveCount(0)
   // Still in Program: opening the row never jumped into the session.
   await expect(page).toHaveURL(/\/program/)
 

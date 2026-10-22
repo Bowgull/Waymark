@@ -1,136 +1,111 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { addDaysISO, gotoToday, insertSession, openRow, todayISO, todayRow } from './support/helpers'
+import { addDaysISO, dayRow, epochOf, gotoToday, holdRow, insertSession, todayISO, todayRow } from './support/helpers'
 import { GOOD_MORNING, setMorning } from './support/data'
 
 /**
- * The page 56 coach model on Today: REPLACE (with the optional ROUGH DAY tile)
- * swaps at once; SKIP is instant and then offers its reason tiles; + Add
- * always adds, MT Class included; the coach's own changes put a Dagaz rune on
- * their day, a missed session an Algiz; a rune day opens its back (before ->
- * after, why, UNDO), UNDO puts it back; Program's week log lists it all.
+ * The coach model on Today with page 73's gestures (approved 2026-10-22):
+ * hold a row → REPLACE → COACH PICKS (preview, then SWAP IN) → the optional
+ * WHY? tiles; SKIP is instant and then offers TIME / BODY / SICK / PAIN; + add
+ * opens the coach picks and always adds, MT Class included; the coach's own
+ * changes put a Dagaz rune on their day (Program), a missed session an Algiz;
+ * the rune opens the why-line with KEEP and UNDO, then REDO.
  *
- * Runs last: it rolls today's sessions over to "missed" at the end. No
- * retries: each test builds on the one before in the shared scratch DB, so a
- * serial retry (from the first test) would only fail on the state left behind.
+ * It rolls today's sessions over to "missed" at the end. No retries: each
+ * test builds on the one before in the shared scratch DB.
  */
 test.describe.configure({ mode: 'serial', retries: 0 })
 
-const strip = (page: Page) => page.getByRole('list', { name: 'This week' })
+type Row = { id: string; type: string; source: string | null; status: string; skipReason: string | null }
+// A row's name: its icon's alt (the flap name), the flap, the minutes ("FOUNDATION FOUNDATION ~12min").
 const row = (page: Page, name: RegExp) => page.locator('.td-row').filter({ has: page.getByRole('button', { name }) })
+const sessionsToday = (api: { get<T>(p: string): Promise<T> }) => api.get<Row[]>(`/api/sessions/today?date=${todayISO()}`)
 
-test('REPLACE with ROUGH DAY swaps at once', async ({ page }) => {
+test('REPLACE: hold, COACH PICKS, SWAP IN, then BODY', async ({ page, api }) => {
   await gotoToday(page)
   // Foundation is on every day of Block Zero.
-  const foundation = row(page, /^Foundation FOUNDATION ~\d+min$/).first()
+  const foundation = row(page, /^Foundation FOUNDATION ~\d+min$/i).first()
   const sid = await foundation.getAttribute('data-sid')
-  await openRow(foundation)
-  await foundation.getByRole('button', { name: 'REPLACE' }).tap()
+  const cmd = await holdRow(page, foundation)
+  await cmd.getByRole('button', { name: 'Replace' }).tap()
 
-  const picker = page.getByRole('dialog', { name: 'Replace foundation' })
-  await expect(picker).toBeVisible()
-  const why = picker.getByRole('radiogroup', { name: 'Why, optional' })
-  await why.getByRole('radio', { name: 'ROUGH DAY' }).tap()
-  await expect(why.getByRole('radio', { name: 'ROUGH DAY' })).toHaveAttribute('aria-checked', 'true')
-  await expect(why).toHaveScreenshot('replace-why-rough-day.png')
-  // Foundation itself isn't offered as its own replacement; MT Class is.
-  await expect(picker.getByRole('button', { name: /^Pick (Coach pick: )?Foundation/ })).toHaveCount(0)
-  await expect(picker.getByRole('button', { name: /^Pick (Coach pick: )?MT Class/ })).toBeVisible()
-
-  await picker.getByRole('button', { name: /^Pick (Coach pick: )?Bag Work/ }).tap()
-  // No confirm step: the picker closes and the swap is on the board.
-  await expect(picker).toBeHidden()
-  await expect(page.getByRole('button', { name: /^Bag Work BAG WORK ~\d+min$/ }).first()).toBeVisible()
-  // The replaced session leaves the board (it stays in the week log).
+  const picks = page.getByRole('dialog', { name: 'Coach picks: replace' })
+  const first = picks.locator('.pl-cl:not(.is-more)').first()
+  await expect(first).toBeVisible({ timeout: 20_000 })
+  // Foundation itself isn't offered as its own replacement; MT Class is (everything else).
+  await picks.getByRole('button', { name: 'Everything else' }).tap()
+  await expect(picks.getByRole('button', { name: 'Foundation', exact: true })).toHaveCount(0)
+  await expect(picks.getByRole('button', { name: 'MT Class', exact: true })).toBeVisible()
+  await picks.getByRole('button', { name: 'Bag Work', exact: true }).tap()
+  await picks.getByRole('button', { name: 'Swap in' }).tap()
+  const why = page.getByRole('dialog', { name: 'Why, optional' })
+  await expect(why).toBeVisible()
+  await why.getByRole('button', { name: 'BODY', exact: true }).tap()
+  await expect(why).toBeHidden()
+  await expect(page.getByRole('button', { name: /^Bag Work BAG WORK ~\d+min$/i }).first()).toBeVisible()
+  // The replaced session leaves the board (it stays in the week's changes), with his reason.
   await expect(page.locator(`.td-row[data-sid="${sid}"]`)).toHaveCount(0)
+  await expect.poll(async () => (await sessionsToday(api)).find(r => r.id === sid)?.skipReason).toBe('too_sore')
 })
 
-test('SKIP is instant, then offers the reason tiles', async ({ page, api }) => {
-  // The Bag Work that REPLACE just put on the day (other specs leave theirs in progress).
-  const today = await api.get<Array<{ id: string; type: string; source: string | null; status: string }>>(`/api/sessions/today?date=${todayISO()}`)
-  const swapped = today.find(s => s.type === 'bag_work' && s.source === 'replace' && s.status === 'planned')
+test('SKIP is instant, then offers TIME / BODY / SICK / PAIN', async ({ page, api }) => {
+  // The Bag Work that REPLACE just put on the day.
+  const swapped = (await sessionsToday(api)).find(s => s.type === 'bag_work' && s.source === 'replace' && s.status === 'planned')
   expect(swapped, 'the replacement session').toBeTruthy()
   await gotoToday(page)
   const bag = todayRow(page, swapped!.id)
-  await openRow(bag)
-  await bag.getByRole('button', { name: 'SKIP' }).tap()
-  await expect(bag.getByText('SKIPPED')).toBeVisible()
-  const why = bag.getByRole('radiogroup', { name: 'Why, optional' })
-  await expect(why.getByRole('radio')).toHaveCount(8)
-  await why.getByRole('radio', { name: 'TIRED' }).tap()
-  await expect(why.getByRole('radio', { name: 'TIRED' })).toHaveAttribute('aria-checked', 'true')
+  const cmd = await holdRow(page, bag)
+  await cmd.getByRole('button', { name: 'Skip' }).tap()
+  await expect(bag).toHaveClass(/is-skip/)
+  const why = page.getByRole('dialog', { name: 'Why, optional' })
+  await expect(why.getByRole('button')).toHaveCount(4)
+  await why.getByRole('button', { name: 'TIME', exact: true }).tap()
+  await expect.poll(async () => (await sessionsToday(api)).find(r => r.id === swapped!.id)?.skipReason).toBe('schedule')
 })
 
 test('+ Add always adds, MT Class included', async ({ page }) => {
   await gotoToday(page)
   const rows = page.locator('.td-row')
-  const ropesBefore = await page.getByRole('button', { name: /^Skip Rope SKIP ROPE/ }).count()
-  for (const pick of [/^Pick (Coach pick: )?MT Class/, /^Pick (Coach pick: )?Skip Rope/, /^Pick (Coach pick: )?Skip Rope/]) {
+  const ropesBefore = await page.getByRole('button', { name: /^Skip Rope SKIP ROPE/i }).count()
+  for (const name of ['MT Class', 'Skip Rope', 'Skip Rope']) {
     const before = await rows.count()
     await page.getByRole('button', { name: '+ add session' }).tap()
-    const picker = page.getByRole('dialog', { name: 'Add Session' })
-    await picker.getByRole('button', { name: pick }).tap()
-    await expect(picker).toBeHidden()
+    const picks = page.getByRole('dialog', { name: 'Coach picks: add' })
+    await expect(picks.locator('.pl-cl:not(.is-more)').first()).toBeVisible({ timeout: 20_000 })
+    await picks.getByRole('button', { name: 'Everything else' }).tap()
+    await picks.getByRole('button', { name, exact: true }).tap()
+    await picks.getByRole('button', { name: 'Add', exact: true }).tap()
+    await expect(picks).toBeHidden()
     await expect(rows).toHaveCount(before + 1)
   }
-  await expect(page.getByRole('button', { name: /^MT Class MT CLASS/ }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Skip Rope SKIP ROPE/ })).toHaveCount(ropesBefore + 2)
+  await expect(page.getByRole('button', { name: /^MT Class MT CLASS/i }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Skip Rope SKIP ROPE/i })).toHaveCount(ropesBefore + 2)
 })
 
-test('a Dagaz day opens its back: before -> after, why, UNDO; UNDO puts it back', async ({ page, api }) => {
-  // Coach brain P2: the coach re-plans only at night; in the day only a rough morning
-  // caps today's dose. A strength session tonight and a 4 h, energy-1 morning: a coach rune.
+test('a Dagaz day on Program: the why-line, KEEP and UNDO, then REDO', async ({ page, api }) => {
+  // Coach brain P2: in the day only a rough morning caps today's dose. A strength session
+  // tonight and a 4 h, energy-1 morning: a coach rune.
   await insertSession(api, 'strength', 'pm')
   await setMorning(api, { ...GOOD_MORNING, sleepHours: 4, energy: 1 })
-  await gotoToday(page)
-  const dagaz = strip(page).getByRole('listitem', { name: /The coach changed this day\./ })
-  // The week's changes arrive after the board: wait for a rune day before counting
-  // (none may come on a Sunday, so a timeout here is not the failure).
-  await dagaz.first().waitFor({ state: 'attached', timeout: 10_000 }).catch(() => {})
-  const n = await dagaz.count()
-  test.skip(n === 0 && new Date().getDay() === 0, 'Sunday: the coach rebalances into next week, no rune this week')
-  expect(n).toBeGreaterThan(0)
-  await expect(dagaz.first().locator('.wm-rune')).toBeAttached()
-
-  // The first rune day whose change can still be undone.
-  const back = page.getByRole('dialog', { name: 'What changed this day' })
-  let opened = false
-  for (let i = 0; i < n && !opened; i++) {
-    await dagaz.nth(i).tap()
-    await expect(back).toBeVisible()
-    if (await back.getByRole('button', { name: 'UNDO' }).count()) opened = true
-    else await page.locator('.wm-veil3').click({ position: { x: 5, y: 5 } })
-  }
-  expect(opened).toBe(true)
-
-  const change = back.locator('.wm-tchange').filter({ has: page.getByRole('button', { name: 'UNDO' }) }).first()
-  await expect(change.getByText(/^COACH/)).toBeVisible()
-  await expect(change.locator('.ba2')).toContainText('→')
-  await expect(change.locator('.ba2 .old [role=img]').first()).toHaveAttribute('aria-label', /.+/)
-  await expect(change.locator('.voice').first()).toHaveText(/\w.*\./)
-  await expect(change.getByText(/^Until it starts/)).toBeVisible()
-
-  await change.getByRole('button', { name: 'UNDO' }).tap()
-  await expect(back.getByRole('img', { name: 'PUT BACK' }).first()).toBeVisible()
-  await setMorning(api, GOOD_MORNING)
-})
-
-test('the week log in Program lists his changes and the coach ones', async ({ page }) => {
   await page.goto('/program')
-  const open = page.getByRole('button', { name: /^\d+ changes? ›$/ })
-  await expect(open).toBeVisible({ timeout: 20_000 })
-  await open.tap()
-  const log = page.getByRole('dialog', { name: /^Week \d+ changes$/ })
-  await expect(log).toBeVisible()
-  // His REPLACE with its reason, his SKIP and his adds.
-  await expect(log.getByText('Rough day.').first()).toBeVisible()
-  await expect(log.getByRole('img', { name: 'BAG WORK' }).first()).toBeVisible()
-  await expect(log.getByText(/^Skipped|^Tired/).first()).toBeVisible()
-  await expect(log.getByRole('img', { name: /MT TECHNIQUE|MT CLASS/ }).first()).toBeVisible()
-  // The coach change undone above reads "put back".
-  await expect(log.getByText('put back').first()).toBeVisible()
-  await log.getByRole('button', { name: 'Close' }).tap()
-  await expect(log).toBeHidden()
+  const today = dayRow(page, epochOf(todayISO()))
+  await expect(today).toBeVisible({ timeout: 20_000 })
+  const rune = today.getByRole('button', { name: 'What the coach changed' })
+  await rune.waitFor({ state: 'attached', timeout: 10_000 }).catch(() => {})
+  test.skip((await rune.count()) === 0 && new Date().getDay() === 0, 'Sunday: the coach rebalances into next week, no rune this week')
+  await expect(today).toHaveAttribute('aria-label', /The coach changed it\./)
+  await rune.tap()
+  const win = page.getByRole('dialog', { name: 'What the coach changed' })
+  await expect(win).toBeVisible()
+  await expect(win.locator('.pl-say')).toHaveText(/\w.*\./)
+  await expect(win.getByRole('button', { name: 'Keep' })).toBeVisible()
+  await win.getByRole('button', { name: 'Undo' }).tap()
+  await expect(win.getByRole('button', { name: 'Redo' })).toBeVisible()
+  await win.getByRole('button', { name: 'Redo' }).tap()
+  await expect(win).toBeHidden()
+  // Back in place: the rune and its row's why-line.
+  await expect(rune).toBeVisible()
+  await setMorning(api, GOOD_MORNING)
 })
 
 test('a missed session puts an Algiz on its day', async ({ page, api }) => {
@@ -139,11 +114,10 @@ test('a missed session puts an Algiz on its day', async ({ page, api }) => {
   await insertSession(api, 'strength', 'pm')
   await api.get(`/api/sessions/today?date=${addDaysISO(todayISO(), 1)}`)
 
-  await gotoToday(page)
-  const todayTile = strip(page).getByRole('listitem', { name: new RegExp(`^${todayISO()}, today`) })
-  await expect(todayTile).toHaveAttribute('aria-label', /A missed session\./)
-  await expect(todayTile.locator('.wm-rune.is-miss, .wm-rune.is-missseen')).toBeAttached()
-  await todayTile.tap()
-  const back = page.getByRole('dialog', { name: 'What changed this day' })
-  await expect(back.getByText(/^MISSED/).first()).toBeVisible()
+  await page.goto('/program')
+  const today = dayRow(page, epochOf(todayISO()))
+  await expect(today).toHaveAttribute('aria-label', /A missed session\./, { timeout: 20_000 })
+  await expect(today.locator('.wm-rune.is-miss, .wm-rune.is-missseen')).toBeAttached()
+  await today.getByRole('button', { name: 'What the coach changed' }).tap()
+  await expect(page.getByRole('dialog', { name: 'What the coach changed' })).toBeVisible()
 })

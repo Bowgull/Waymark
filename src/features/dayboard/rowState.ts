@@ -18,6 +18,7 @@ import { getStrengthTemplate } from '../../lib/strengthTemplates'
 import { getStrengthWeekTarget } from '../../lib/blockZero/strength'
 import { estimatedMinutes } from '../../lib/coach/sessions'
 import { plannedRowStrengthMinutes } from '../../lib/plannedLength'
+import { doseJsonMinutes } from '../../lib/brain/doseMinutes'
 import type { RuneState } from '../../lib/coach/changes'
 import { getRunWalkWeek, runWalkTotalSec } from '../../lib/blockZero/running'
 
@@ -491,6 +492,9 @@ const word = (n: number) => NUM_WORDS[n] ?? String(n)
  * numbers (run-walk week, Foundation's routine).
  */
 export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'label' | 'scheduledDate' | 'blockWeek' | 'blockType'> & { contextJson?: string | null; doseJson?: string | null }, weekNumber?: number | null): number {
+  // Page 73: the coach's dose when the row carries one (the same minutes its lines and the coach picks show).
+  const fromDose = doseJsonMinutes(s)
+  if (fromDose != null) return fromDose
   const kind = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
   const week = s.blockWeek ?? weekNumber ?? 1
   if (s.type === 'strength' && s.scheduledDate != null) {

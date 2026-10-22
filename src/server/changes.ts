@@ -348,6 +348,40 @@ export async function undoChange(db: DB, id: string, todayDay: number, nowSec: n
   return { ok: true, undone: plan.steps.map(s => s.changeId) }
 }
 
+/**
+ * REDO (page 73): a coach change he undid comes back as the coach made it,
+ * while its session is still planned and its day has not passed. Only a
+ * change that wrote fields on existing sessions can come back (an added
+ * session was deleted by the UNDO). The hold the UNDO set goes with it.
+ */
+export async function redoChange(db: DB, id: string, todayDay: number, nowSec: number): Promise<UndoResult> {
+  const [row] = await db.select().from(weekAdjustments).where(eq(weekAdjustments.id, id))
+  const target = row ? readChangeRow(row) : null
+  if (!row || !target) return { ok: false, status: 404, error: 'change not found' }
+  if (target.undoneAt == null) return { ok: false, status: 409, error: 'It is still in place.' }
+  if ((target.after.created ?? []).length > 0 || (target.before.effects ?? []).length > 0) return { ok: false, status: 409, error: "It can't come back." }
+  if (target.after.day < todayDay) return { ok: false, status: 409, error: 'Its day has passed. It stays.', lock: 'passed' }
+  const now = await sessionsNow(db, target.after.sessions.map(s => s.id))
+  for (const a of target.after.sessions) {
+    const s = now.get(a.id)?.row
+    if (!s || s.status === 'in_progress' || s.status === 'completed') return { ok: false, status: 409, error: 'It has started. It stays.', lock: 'started' }
+  }
+  for (const a of target.after.sessions) {
+    const s = now.get(a.id)?.row
+    if (!s) continue
+    const fields: Record<string, unknown> = {}
+    for (const k of RESTORABLE_FIELDS) if (k in a.f) fields[k] = (a.f as Record<string, unknown>)[k] ?? null
+    const b = target.before.sessions.find(x => x.id === a.id)
+    const ctx: Record<string, unknown> = {}
+    for (const k of Object.keys(b?.ctx ?? {})) ctx[k] = null
+    Object.assign(ctx, a.ctx ?? {})
+    const ctxJson = Object.keys(ctx).length > 0 ? applyContext(s.contextJson, ctx) : s.contextJson
+    await db.update(sessions).set({ ...fields, contextJson: ctxJson }).where(eq(sessions.id, a.id))
+  }
+  await db.update(weekAdjustments).set({ undoneAt: null, held: 0, seenAt: nowSec }).where(eq(weekAdjustments.id, target.id))
+  return { ok: true, undone: [] }
+}
+
 // ─── The rebalance after his change ──────────────────────────
 
 /** The week around `day` as the rebalance reads it (eased flags, run-walk rounds). */

@@ -1,16 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { AmPmHeader, Board, CentredCard, FlapButton, FlapLabel, SessionIcon, useOutsideClose } from '@/design'
-import { CLASS_SKIP_REASONS, SKIP_PLACES, SKIP_REASONS } from '@/components/ui/departures'
-import { ReasonTiles } from '@/features/coach/ReasonTiles'
-import { Rune } from '@/features/coach/Rune'
-import type { RuneState } from '@/lib/coach/changes'
-import { SessionSummary } from '@/features/dayboard/SessionSummary'
 import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
+import { PlanRow, type RowChange } from '@/features/plan/PlanRow'
+import { apiFetch } from '@/lib/api'
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
 import { overCapBpm, stravaReadouts } from '@/lib/stravaMatch'
 import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
-import { Expand, Strike, SwapRow, Tick } from '@/design/MotionPrimitives'
+import { SwapRow, Tick } from '@/design/MotionPrimitives'
 import { useSwapList } from '@/design/motionKit'
 import { bringIntoSight, endHandoff, flyRowToStrip, flyStripToRow, holdHandoff, whenSettled } from '@/app/liveHandoff'
 
@@ -32,12 +29,12 @@ export interface RunSessionSummary {
   planLine?: string | null
 }
 
-// Today's day board (pages 20, 35, 40): the AM / PM groups (sun / moon mark and
-// flap), a row per session (painted icon, name on a flap, minutes or ✓). Tap a
-// row: a session to do opens its plan with ENTER / REPLACE / SKIP; a finished
-// one shows the same summary as Program (bands, lifted values, chips). Page 56:
-// a row the coach changed carries the small rune by its minutes; SKIP is
-// instant and the open row then offers the optional reason tiles.
+// Today's day board (pages 20, 35, 40; page 73): the AM / PM groups (sun /
+// moon mark and flap), a row per session (painted icon, name on a flap,
+// minutes or ✓), the same rows as Program. Tap a row: its real lines open
+// under it, then ENTER ›. Hold a row (500 ms): the command window with
+// REPLACE and SKIP (UNDO SKIP on a skipped one). A row the coach changed
+// opens with its why-line first. The cursor is the highlight.
 
 export interface TodaySession extends DayBoardSession {
   runSession?: (RunSessionSummary & DayBoardSession['runSession']) | null
@@ -46,20 +43,21 @@ export interface TodaySession extends DayBoardSession {
 export interface TodayDayProps {
   sessions: TodaySession[]
   onStart: (id: string) => void
-  onSkip: (id: string) => void
-  onReplace: (id: string) => void
   onEndEarly: (id: string, action: 'completed' | 'reset') => void
+  /** Hold a row: the command window (REPLACE / SKIP, or UNDO SKIP). */
+  onHold: (s: TodaySession, row: HTMLElement) => void
   /** CONFIRM on a matched run: the session it lands on, and the card (it glows clay on a failure). */
   onConfirmMatch: (activityId: number, sessionId: string, card: HTMLElement | null) => void
   onReassignMatch: (activityId: number) => void
   onDismissMatch: (activityId: number) => void
   onAdd: () => void
-  /** The rune on each changed row (page 56 item 7). */
-  runes?: Readonly<Record<string, RuneState | null>>
-  /** A skip made here: its reason tiles in the open row (page 56 item 3). */
-  skipReasons?: Readonly<Record<string, { reason: string | null; detail: string | null }>>
-  onSkipReason?: (id: string, reason: string | null, detail: string | null) => void
-  /** The row to open (a skip just made opens its row for the tiles). */
+  /** The coach change on each changed row (page 73: the rune, the why with the old value struck). */
+  changeFor?: (s: TodaySession) => RowChange | null
+  /** The weather at a run's hour, for its lines ("6 PM: 2° and rain"). */
+  weatherFor?: (s: TodaySession) => string | null
+  /** The cursor's row (session id). */
+  cursorId?: string | null
+  /** The row to open (a skip just made opens its row). */
   openId?: string | null
   onOpenChange?: (id: string | null) => void
   /** The block's training week (a run-walk's rounds and minutes come from it). */
@@ -102,7 +100,7 @@ export function TodayDay(props: TodayDayProps) {
         {groups.map(([slot, list]) => list.length === 0 ? null : (
           <div key={slot ?? 'any'}>
             {slot && <AmPmHeader slot={slot} />}
-            <div className="td-rows">
+            <div className="td-rows pl-rows">
               {list.map(({ item: s, key, state, afterExit }) => (
                 <SwapRow key={key} state={state} afterExit={afterExit}>
                   {stravaPending(s) ? (
@@ -123,14 +121,14 @@ export function TodayDay(props: TodayDayProps) {
   )
 }
 
-function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, runes, skipReasons, onSkipReason, weekNumber, onLearned, learnedSaved, flying, onFlown }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
+function TodayRow({ s, open, onToggle, onStart, onHold, onEndEarly, changeFor, weatherFor, cursorId, weekNumber, onLearned, learnedSaved, flying, onFlown }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
   const rowRef = useRef<HTMLDivElement>(null)
   // Page 71 item 6: this row flies (once its place is drawn and Today has risen).
   const fly = flying?.id === s.id ? flying.kind : null
   const flownRef = useRef(onFlown)
   useEffect(() => { flownRef.current = onFlown })
   useLayoutEffect(() => {
-    const el = rowRef.current
+    const el = rowRef.current?.querySelector<HTMLElement>('.td-row') ?? rowRef.current
     if (!fly || !el) return
     if (fly === 'land') el.style.visibility = 'hidden'
     // the row is drawn: the strip stays unseen until the flight lands, however long Today took
@@ -151,58 +149,36 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
   const done = s.status === 'completed'
   // Approved 2026-10-21: only his own SKIP is struck; a missed row opens with ENTER, so it can still be done.
   const skipped = s.status === 'skipped'
-  const name = sessionDisplayName(s).toUpperCase()
-  // Page 35: a done row reads ✓ in the minutes' place (a teal tick once opened); a to-do its planned length.
+  // Page 35: a done row reads ✓ in the minutes' place; a to-do its planned length.
   // Page 40: a run confirmed from Strava reads its minutes and ✓ ("35min ✓").
-  const mins = skipped ? '—' : `~${plannedRowMinutes(s, weekNumber)}min`
   const stravaMin = done && s.runSession?.stravaActivityId != null ? stravaMinutes(s) : null
-  const rune = !skipped ? runes?.[s.id] ?? null : null
-  const skip = skipped ? skipReasons?.[s.id] ?? null : null
-  const tiles = open && skip != null && onSkipReason != null
+  const mins = stravaMin != null ? <>{stravaMin}min <Tick className="td-stick" /></> : done ? <Tick className="td-tick" /> : skipped ? '—' : `~${plannedRowMinutes(s, weekNumber)}min`
   // Page 71 / the layout-shift fix: close on the tap, so the rows don't move under the finger before it lands.
   useOutsideClose(rowRef, open, onToggle, { on: 'click' })
-  // Page 71: the running session is not in this list (TodayPage leaves it out); the live strip is the way back in.
-  const tap = onToggle
+  const holdable = skipped || canReplaceOrSkipTodaySession(s.status)
+  const learnedLink = Boolean(onLearned && done && s.type === 'mt_class' && !learnedSaved?.has(s.id))
 
   return (
-    <div ref={rowRef} data-sid={s.id} className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${tiles ? ' is-openx' : ''}`}>
-      <div role="button" tabIndex={0} aria-expanded={open} className="td-rowhit" onClick={tap} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tap() } }}>
-        <SessionIcon kind={iconFor(s)} size={40} />
-        <span className="td-nm"><FlapLabel text={name} size="md" len={11} fit /><Strike on={skipped} /></span>
-        {stravaMin != null ? (
-          <><span className="td-mins">{stravaMin}min</span><Tick className="td-stick" /></>
-        ) : done ? <>{rune && <Rune state={rune} size="row" />}<Tick className={open ? 'td-tick' : 'td-mins'} /></>
-          : tiles ? <span className="td-skd">SKIPPED</span>
-          : <>{rune && <Rune state={rune} size="row" />}<span className="td-mins">{mins}</span></>}
-      </div>
-      <Expand open={tiles}>
-        {skip && onSkipReason && (
-          <div className="td-more2" onClick={e => e.stopPropagation()}>
-            <ReasonTiles tiles={s.type === 'mt_class' ? CLASS_SKIP_REASONS : SKIP_REASONS} value={skip.reason} onChange={r => onSkipReason(s.id, r, null)} />
-            {skip.reason === 'injury' && (
-              <ReasonTiles label={false} tiles={SKIP_PLACES.map(p => ({ value: p, label: p.toUpperCase() }))} value={skip.detail} onChange={d => onSkipReason(s.id, 'injury', d)} />
-            )}
-          </div>
-        )}
-      </Expand>
-      <Expand open={open && !skipped}>
-        <div className="td-sum" onClick={e => e.stopPropagation()}>
-          <SessionSummary
-            session={s}
-            weekNumber={weekNumber}
-            variant="today"
-            onLearned={onLearned && done && s.type === 'mt_class' && !learnedSaved?.has(s.id) ? mtLogId => onLearned(s.id, mtLogId) : undefined}
-            actions={actionable ? (
-              <>
-                <FlapButton label={s.status === 'in_progress' ? 'RESUME' : 'ENTER'} primary onClick={() => onStart(s.id)} />
-                {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="REPLACE" onClick={() => onReplace(s.id)} />}
-                {canReplaceOrSkipTodaySession(s.status) && <FlapButton label="SKIP" onClick={() => onSkip(s.id)} />}
-                {s.status === 'in_progress' && <EndHold onHeld={() => { mediumHaptic(); setEndOpen(true) }} />}
-              </>
-            ) : undefined}
-          />
-        </div>
-      </Expand>
+    <div ref={rowRef} className="td-roww">
+      <PlanRow
+        session={s}
+        className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}`}
+        hitClassName="td-rowhit"
+        on={cursorId === s.id}
+        open={open}
+        onTap={onToggle}
+        onHold={holdable ? el => onHold(s, el) : undefined}
+        mins={mins}
+        change={changeFor?.(s) ?? null}
+        linesOpts={{ weekNumber, weather: weatherFor?.(s) ?? null }}
+        extra={(actionable && !skipped) || learnedLink ? (
+          <div className="pl-ol"><span className="lb" /><span className="v">
+            {actionable && !skipped && <button type="button" className="pl-enter" onClick={e => { e.stopPropagation(); onStart(s.id) }}>{s.status === 'in_progress' ? 'RESUME ›' : 'ENTER ›'}</button>}
+            {s.status === 'in_progress' && <EndHold onHeld={() => { mediumHaptic(); setEndOpen(true) }} />}
+            {learnedLink && onLearned && <LearnedLink s={s} onLearned={onLearned} />}
+          </span></div>
+        ) : undefined}
+      />
       {endOpen && (
         <CentredCard label="End early" head="End early" onDismiss={() => setEndOpen(false)}>
           <p className="wm-prose">Mark this session done or wipe the start and put it back to planned.</p>
@@ -212,6 +188,20 @@ function TodayRow({ s, open, onToggle, onStart, onSkip, onReplace, onEndEarly, r
       )}
     </div>
   )
+}
+
+/** + What you learned on tonight's class row (page 49, if skipped): opens the box. */
+function LearnedLink({ s, onLearned }: { s: TodaySession; onLearned: (sessionId: string, mtLogId: string) => void }) {
+  const [mtLogId, setMtLogId] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<{ mtLog: { id: string; learnedNote?: string | null } | null }>(`/api/sessions/${s.id}/mt-class-workout`)
+      .then(r => { if (!cancelled && r.mtLog && !r.mtLog.learnedNote) setMtLogId(r.mtLog.id) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [s.id])
+  if (!mtLogId) return null
+  return <button type="button" className="db-learned-lnk" onClick={e => { e.stopPropagation(); onLearned(s.id, mtLogId) }}>+ What you learned</button>
 }
 
 /** The run's own minutes (the confirmed session's, else Strava's). */

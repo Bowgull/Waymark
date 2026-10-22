@@ -42,3 +42,11 @@ export function lbsToKgStored(lbs: number): number {
 export function loggedAtSec(loggedAt: number): number {
   return loggedAt > 1e11 ? Math.floor(loggedAt / 1000) : Math.floor(loggedAt)
 }
+
+/**
+ * The temperature unit (page 72: °C with km, °F with miles). Settings has no
+ * miles choice: Josh reads km, so °C. One place to change when it does.
+ */
+export function temperatureUnit(): 'C' | 'F' {
+  return 'C'
+}

@@ -3,28 +3,27 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 import { ApiError, apiFetch, idempotencyHeaders } from '@/lib/api'
 import { getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
-import { submitBoardPick, submitReplace, submitSkip, submitSkipReason } from '@/lib/boardPick'
 import { clearResume, loadResume } from '@/lib/sessionResume'
 import { clearLiveSession, readLiveSession, takeLaunch } from '@/lib/liveSession'
 import { localActiveSession } from '@/lib/workoutCache'
-import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { logger } from '@/lib/logger'
-import { notePollResult } from '@/lib/stravaHealth'
 import { endAllLiveActivities } from '@/lib/liveActivity'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 
 import { AutoHeight, FlapLabel, glowRow, SCENE, SceneWindow, showPop } from '@/design'
-import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
-import { REPLACE_REASONS, pmOnlyFor, replaceKeeps } from '@/components/ui/departures'
+import { pmOnlyFor } from '@/components/ui/departures'
 import { useToast } from '@/components/ui/Toast'
 import { PageErrorScreen } from '@/components/ui/ErrorScreens'
-import { iconFor, sessionDisplayName, withoutReplaced } from '@/features/dayboard/rowState'
-import type { SuggestionsResponse } from '@/lib/sessionSuggestions'
-import { DayBack } from '@/features/coach/DayBack'
-import { backChanges, runeForDay, runeForSession } from '@/features/coach/changeView'
+import { iconFor, sessionDisplayName, withoutReplaced, type DayBoardSession } from '@/features/dayboard/rowState'
 import { useWeekChanges } from '@/features/coach/useWeekChanges'
-import { pickToast } from '@/features/coach/pickToast'
+import { rowChange } from '@/features/plan/changeLines'
+import { usePlanMenu } from '@/features/plan/usePlanMenu'
+import { WeatherStrip } from '@/features/weather/WeatherStrip'
+import { useWeather } from '@/features/weather/useWeather'
+import { coachLine, degText, hourWord } from '@/features/weather/weatherData'
+import { plannedMinute, plannedRuns, type CoachHours } from '@/features/weather/plannedHours'
+import { temperatureUnit } from '@/lib/units'
 import { CrestLoading } from '@/world/CrestLoading'
 import { setWorldLantern, setWorldPlace } from '@/world/worldStore'
 
@@ -32,9 +31,9 @@ import { ClassLearnedFlow } from '@/features/session/ClassLearnedFlow'
 import { useStripSessionId } from '@/app/useStripSession'
 import { endHandoff, hasHandoff } from '@/app/liveHandoff'
 import { ReassignRunSheet } from './ReassignRunSheet'
-import { AllDoneBoard, EmptyDayBoard, NextDayBoard, NoBlockBoard, RestDayBoards, TodayHeader, WaybookLine, WeekStrip } from './TodayBoards'
+import { AllDoneBoard, EmptyDayBoard, NextDayBoard, NoBlockBoard, RestDayBoards, TodayHeader, WaybookLine } from './TodayBoards'
 import { TodayDay, type TodaySession } from './TodayDay'
-import { ALL_DONE_AFTER_CONFIRM_MS, fadesToAllDone, lanternFor, showsHome, todayMode, tomorrowLine, weekStripDays, type StripSession } from './weekStrip'
+import { ALL_DONE_AFTER_CONFIRM_MS, fadesToAllDone, lanternFor, showsHome, todayMode, tomorrowLine, type StripSession } from './weekStrip'
 import { CheckInDeck } from '@/features/blockZero/CheckInDeck'
 import { answeredCount, answersFromLog, isCheckInComplete, mergeAnswers, shouldOpenCheckIn, type CheckInAnswers, type CheckInKey } from '@/features/blockZero/checkInFlow'
 import { CHECK_IN_EVENT, clearCheckInDraft, loadCheckInDraft, saveCheckInDraft, takeCheckInRequest } from '@/features/blockZero/checkInTrigger'
@@ -84,8 +83,6 @@ interface WeekPayload { week: WeekPlanRow; sessions: Array<StripSession & { labe
 // Session types that have a dedicated workout engine
 const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
 
-const MAX_HR_LS_KEY = 'waymark_last_seen_max_hr'
-
 export function TodayPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -97,17 +94,11 @@ export function TodayPage() {
   // The day couldn't be read (API unreachable): page 38's page error, not an empty day.
   const [loadFailed, setLoadFailed] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const [showPicker, setShowPicker] = useState(false)
-  const [pickerSuggestions, setPickerSuggestions] = useState<SuggestionsResponse | null>(null)
-  // REPLACE (page 56 item 1): the Add Session list with optional reason tiles; a pick swaps at once.
-  const [replaceFor, setReplaceFor] = useState<{ sessionId: string; reason: string | null } | null>(null)
-  // SKIP (page 56 item 3): instant; the open row then offers the reason tiles.
-  const [skips, setSkips] = useState<Record<string, { changeId: string | null; reason: string | null; detail: string | null }>>({})
   const [openRow, setOpenRow] = useState<string | null>(null)
+  // Page 73: the pixel cursor on a row (it follows the row opened or held).
+  const [cursorRow, setCursorRow] = useState<string | null>(null)
   // The first session to do opens by itself (once per day), so ENTER is right there.
   const defaultOpened = useRef<string | null>(null)
-  // The day's back (page 56 item 8): the day open under the strip.
-  const [backDay, setBackDay] = useState<number | null>(null)
   const [changesVersion, setChangesVersion] = useState(0)
   // The week strip read again when the raven's plan changes the week (page 58).
   const [weekVersion, setWeekVersion] = useState(0)
@@ -314,47 +305,6 @@ export function TodayPage() {
     return () => { cancelled = true }
   }, [block?.id, block?.currentWeek, block?.trainingWeek?.leadIn, block?.blockType, block?.startedAt, todayEpoch, weekVersion])
 
-  // Silent Strava poll on mount. Refreshes Today once ingestion completes so
-  // new matches / orphans appear without a reload. Surfaces max-HR bumps as a
-  // one-time pop-up.
-  useEffect(() => {
-    async function poll() {
-      try {
-        const result = await apiFetch<{ ingested: number; connected: boolean; error?: string }>('/api/strava/poll-recent', { method: 'POST' })
-        // a 401 / 403 / failed refresh: Settings' Strava row says it needs reconnecting
-        notePollResult(result)
-        if (result.connected && result.ingested > 0) {
-          await refreshSessions()
-        }
-        if (result.connected) {
-          await checkMaxHrBump()
-        }
-        if (result.connected && result.error) {
-          logger.warn('system', 'strava poll returned error', { error: result.error }, 'Strava poll returned error. Activity match skipped this tick.')
-        }
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        logger.warn('system', 'strava poll threw', { message }, 'Strava poll threw. Network or auth issue.')
-      }
-    }
-    async function checkMaxHrBump() {
-      try {
-        const profile = await apiFetch<{ maxHr: number | null } | null>('/api/user-profile')
-        if (!profile || profile.maxHr == null) return
-        const lastSeen = Number(storageGet(MAX_HR_LS_KEY) ?? '0')
-        if (profile.maxHr > lastSeen) {
-          storageSet(MAX_HR_LS_KEY, String(profile.maxHr))
-          if (lastSeen > 0) {
-            showToast(`Max HR now ${profile.maxHr}. Zones updated.`, 'info')
-          }
-        }
-      } catch {
-        // profile fetch failed; skip bump notice.
-      }
-    }
-    poll()
-  }, [refreshSessions, showToast])
-
   // ── what Today shows, and the world behind it ──
   const weekSessions = week === undefined ? null : (week?.sessions ?? null)
   // Page 64: a Block Zero waiting for its start day: nothing planned, the waiting board instead of the day.
@@ -370,14 +320,18 @@ export function TodayPage() {
 
   // The week's changes and runes (page 56): Dagaz where the coach changed a day, Algiz where a session was missed.
   const { week: changes, markSeen, undo } = useWeekChanges(block ? mondayOf(todayEpoch) : null, changesVersion)
-  const strip = useMemo(() => {
-    if (!week?.sessions) return null
-    const days = weekStripDays(withoutReplaced(week.sessions), mondayOf(todayEpoch), todayEpoch, d => runeForDay(changes, d))
-    // page 64: a start still ahead: the days before it are empty, not rest days
-    return waitingFor != null ? days.map(d => (d.epochDay < waitingFor ? { ...d, rest: false } : d)) : days
-  }, [week, todayEpoch, changes, waitingFor])
-  const rowRunes = useMemo(() => Object.fromEntries(sessions.map(s => [s.id, runeForSession(changes, s.id)])), [sessions, changes])
-  const backList = useMemo(() => (backDay != null ? backChanges(changes, backDay, todayEpoch) : []), [changes, backDay, todayEpoch])
+  // Page 72: the weather in the week strip's place (no location or no signal: it hides).
+  const weather = useWeather(true)
+  const unit = temperatureUnit()
+  const [coachHours, setCoachHours] = useState<CoachHours | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<CoachHours>(`/api/coach/hours?today=${today}`).then(h => { if (!cancelled) setCoachHours(h) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [today])
+  const midnight = useMemo(() => new Date(`${today}T00:00:00`).getTime(), [today])
+  const runs = useMemo(() => plannedRuns(sessions, coachHours, midnight), [sessions, coachHours, midnight])
+  const wxLine = weather ? coachLine(weather, runs, Date.now(), unit) : null
   // The raven (page 58): on the Morning Report, its boards, and the return's question on top.
   const bodyWatch = useBodyWatch()
   const { raven, overlay: ravenOverlay } = useRavenOnToday(() => { void refreshSessions(); setChangesVersion(v => v + 1); setWeekVersion(v => v + 1) })
@@ -464,39 +418,6 @@ export function TodayPage() {
     }
   }
 
-  // SKIP is instant (page 56 item 3): the row stays open with the optional reason tiles.
-  async function handleSkip(id: string) {
-    const prevSessions = sessions
-    setSessions(prev => prev.map(s => (s.id === id ? { ...s, status: 'skipped' } : s)))
-    setSkips(prev => ({ ...prev, [id]: { changeId: null, reason: null, detail: null } }))
-    setOpenRow(id)
-    try {
-      const out = await submitSkip<Session>(id, getTodayISO())
-      setSkips(prev => ({ ...prev, [id]: { ...(prev[id] ?? { reason: null, detail: null }), changeId: out.changeId } }))
-      setChangesVersion(v => v + 1)
-    } catch (e) {
-      setSessions(prevSessions)
-      setSkips(prev => { const next = { ...prev }; delete next[id]; return next })
-      console.error('Failed to skip session:', e)
-      showToast("Couldn't save. Check your connection.", 'warning')
-    }
-  }
-
-  async function handleSkipReason(id: string, reason: string | null, detail: string | null) {
-    const cur = skips[id]
-    if (!cur) return
-    setSkips(prev => ({ ...prev, [id]: { ...cur, reason, detail } }))
-    // INJURY / PAIN waits for its place.
-    if (!cur.changeId || (reason === 'injury' && !detail)) return
-    try {
-      await submitSkipReason(cur.changeId, reason, detail, getTodayISO())
-      setSessions(prev => prev.map(s => (s.id === id ? { ...s, skipReason: reason } : s)))
-      setChangesVersion(v => v + 1)
-    } catch (e) {
-      console.warn('Failed to save the skip reason:', e)
-    }
-  }
-
   async function handleEndEarly(id: string, action: 'completed' | 'reset') {
     // MARK COMPLETED on a session with a runner: its own close (effort, notes), not a status-only save (dead end #16).
     const ending = sessions.find(s => s.id === id)
@@ -536,68 +457,6 @@ export function TodayPage() {
         console.error('Failed to end session early (reset):', e)
         showToast("Couldn't save. Check your connection.", 'warning')
       }
-    }
-  }
-
-  // REPLACE (page 56 item 1): the same list as + add session, with the reason tiles on top.
-  function handleReplaceStart(id: string) {
-    setReplaceFor({ sessionId: id, reason: null })
-    setPickerSuggestions(null)
-    apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}&today=${getTodayISO()}&mode=replace&replacing=${sessions.find(s => s.id === id)?.type ?? ''}`)
-      .then(setPickerSuggestions)
-      .catch(() => setPickerSuggestions(null))
-  }
-
-  async function handleReplaceSelect(option: SessionOption) {
-    const r = replaceFor
-    setReplaceFor(null)
-    setPickerSuggestions(null)
-    if (!r) return
-    try {
-      const result = await submitReplace<Session>(r.sessionId, option, r.reason, getTodayISO())
-      setSessions(prev => [...prev.map(s => (s.id === result.original.id ? result.original : s)), result.replacement]
-        .sort((a, b) => (a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)))
-      setOpenRow(null)
-      // The approved pop-up and the row glow; his own change gets no rune.
-      const t = pickToast('SWAPPED', result.replacement, todayEpoch)
-      showPop(t.text, 'good', { title: t.title })
-      requestAnimationFrame(() => glowRow(document.querySelector(`.td-row[data-sid="${CSS.escape(result.replacement.id)}"]`), 'good'))
-      setChangesVersion(v => v + 1)
-    } catch (e) {
-      console.error('Failed to replace session:', e)
-      showToast("Couldn't replace. Check your connection.", 'warning')
-    }
-  }
-
-  function openAddPicker() {
-    setShowPicker(true)
-    apiFetch<SuggestionsResponse>(`/api/sessions/suggestions?date=${today}&today=${getTodayISO()}`)
-      .then(setPickerSuggestions)
-      .catch(() => setPickerSuggestions(null))
-  }
-
-  // + Add session always adds (page 56 item 4); the coach rebalances the rest.
-  async function handleAddSession(option: SessionOption) {
-    setShowPicker(false)
-    try {
-      const out = await submitBoardPick<Session>(option, getTodayISO(), getTodayISO())
-      const created = out.session
-      if (out.kind === 'added') {
-        setSessions(prev => [...prev, created].sort((a, b) =>
-          (a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)
-        ))
-      } else {
-        await refreshSessions()
-      }
-      const t = pickToast(out.kind === 'added' ? 'ADDED' : 'MOVED', created, todayEpoch)
-      showPop(t.text, 'good', { title: t.title })
-      requestAnimationFrame(() => glowRow(document.querySelector(`.td-row[data-sid="${CSS.escape(created.id)}"]`), 'good'))
-      setChangesVersion(v => v + 1)
-      // MT Class tonight moves things around the day: read the day again.
-      if (option.type === 'mt_class') void refreshSessions()
-    } catch (e) {
-      console.error('Failed to add session:', e)
-      showToast("Couldn't add. Check your connection.", 'warning')
     }
   }
 
@@ -712,6 +571,29 @@ export function TodayPage() {
 
   const handleCheckInClose = useCallback(() => setDeck(null), [])
 
+  // Page 73: the hold's command window, COACH PICKS and the WHY? tiles (the same as Program's).
+  const menu = usePlanMenu({
+    onSessionUpdate: (id, patch) => setSessions(prev => prev.map(x => (x.id === id ? { ...x, ...patch } as Session : x))),
+    onSessionAdded: s => {
+      if (s.scheduledDate !== todayEpoch) return
+      setSessions(prev => [...prev.filter(x => x.id !== s.id), s as Session].sort((a, b) => (a.timeSlot === 'am' ? 0 : 1) - (b.timeSlot === 'am' ? 0 : 1)))
+      requestAnimationFrame(() => glowRow(document.querySelector(`.td-row[data-sid="${CSS.escape(s.id)}"]`), 'good'))
+    },
+    onChanged: () => setChangesVersion(v => v + 1),
+    reload: () => { void refreshSessions() },
+    undo,
+    markSeen,
+    skipChangeFor: id => changes?.changes.find(c => c.actor === 'you' && c.kind === 'skip' && c.session.id === id && c.lock === 'open')?.id ?? null,
+    focus: id => { setOpenRow(id); setCursorRow(id) },
+    weatherFor: s => {
+      if (!weather || s.scheduledDate !== todayEpoch || (s.type !== 'running' && s.type !== 'foundation_run')) return null
+      const line = coachLine(weather, [{ name: 'Run', at: midnight + plannedMinute(s, coachHours) * 60000 }], Date.now(), unit)
+      return line ? { kind: line.kind, hour: hourWord(midnight + plannedMinute(s, coachHours) * 60000) } : null
+    },
+    pmOnly: date => pmOnlyFor(date, getTodayISO(), new Date().getHours()),
+  })
+  const openAdd = () => menu.openAdd(today)
+
   // CHANGE DAY → SAVE (page 64): the waiting block moves; TODAY starts it now.
   async function saveStartDay(day: number) {
     if (!block) return
@@ -739,7 +621,6 @@ export function TodayPage() {
   // E2E minor 10: an unreachable API showed NOTHING TODAY. Page 38 "A page": what didn't load, nothing lost, RELOAD.
   if (loadFailed) return <PageErrorScreen pathname="/today" onReload={() => window.location.reload()} />
 
-  const replaceTarget = replaceFor ? sessions.find(s => s.id === replaceFor.sessionId) : null
   const doneIcons = sessions.filter(s => s.status === 'completed').map(s => iconFor(s))
   const tomorrowIcons = tomorrow.map(s => iconFor({ type: s.type, notes: s.notes ?? null }))
   const newWeekTomorrow = todayEpoch + 1 > mondayOf(todayEpoch) + 6 ? nextWeek?.week?.weekNumber ?? null : null
@@ -759,36 +640,8 @@ export function TodayPage() {
       <TodayHeader date={todayDate} />
       {/* page 67: the clearing in the top 40%, the boards start under it and scroll up over it */}
       {mode === 'day' && <SceneWindow at={SCENE.boardsAtToday} />}
-      {strip && (
-        <div className="wm-backwrap">
-          <WeekStrip
-            days={strip}
-            home={showsHome(mode)}
-            openDay={backDay}
-            onRune={d => {
-              // tapping the open day again closes it (page 61)
-              if (backDay === d) { setBackDay(null); return }
-              setBackDay(d)
-              markSeen(backChanges(changes, d, todayEpoch).map(c => c.id))
-            }}
-            hasBack={d => backChanges(changes, d, todayEpoch).length > 0}
-          />
-          {backDay != null && backList.length > 0 && (
-            <DayBack
-              day={backDay}
-              changes={backList}
-              todayDay={todayEpoch}
-              onUndo={async id => {
-                const ok = await undo(id)
-                if (ok) await refreshSessions()
-                else showPop("Couldn't put it back. It may have started.", 'bad')
-                return ok
-              }}
-              onClose={() => setBackDay(null)}
-            />
-          )}
-        </div>
-      )}
+      {/* page 72: the weather in the week strip's place; it hides with no location or no signal */}
+      {weather && waitingFor == null && <WeatherStrip weather={weather} unit={unit} line={wxLine} marks={runs.map(r => ({ at: r.at, icon: r.icon }))} />}
 
       {mode === 'day' && (
         <>
@@ -802,20 +655,24 @@ export function TodayPage() {
             onFlown={() => { if (flying) endHandoff(flying.kind, flying.id); setFlying(null) }}
             weekNumber={block?.currentWeek ?? null}
             onStart={handleStart}
-            onSkip={id => { void handleSkip(id) }}
-            onReplace={handleReplaceStart}
+            onHold={(s, el) => { setCursorRow(s.id); menu.openAct(s as DayBoardSession, el) }}
             onEndEarly={handleEndEarly}
             onLearned={(sessionId, mtLogId) => setLearned({ sessionId, mtLogId })}
             learnedSaved={learnedDone}
             onConfirmMatch={handleConfirmMatch}
             onReassignMatch={handleReassignStart}
             onDismissMatch={handleDismissMatch}
-            onAdd={openAddPicker}
-            runes={rowRunes}
-            skipReasons={skips}
-            onSkipReason={(id, reason, detail) => { void handleSkipReason(id, reason, detail) }}
+            onAdd={openAdd}
+            changeFor={s => rowChange(changes, s, todayEpoch)}
+            weatherFor={s => {
+              if (!weather || (s.type !== 'running' && s.type !== 'foundation_run') || s.status === 'completed') return null
+              const at = midnight + plannedMinute(s, coachHours) * 60000
+              const h = weather.hours.find(x => at >= x.at && at < x.at + 3600000)
+              return h ? `${hourWord(at)}: ${degText(h.t, unit)}° ${h.pop >= 60 || h.mm >= 1 ? 'and rain' : `· ${h.sky === 'sun' || h.sky === 'moon' ? 'clear' : h.sky === 'part' || h.sky === 'partn' ? 'some cloud' : h.sky === 'cloud' ? 'cloudy' : h.sky}`}` : null
+            }}
+            cursorId={cursorRow ?? openRow}
             openId={openRow}
-            onOpenChange={setOpenRow}
+            onOpenChange={id => { setOpenRow(id); if (id) setCursorRow(id) }}
           />
           {/* the line grows into its box (page 59 §5.3 Expand) */}
           <AutoHeight><WaybookLine today={today} /></AutoHeight>
@@ -826,7 +683,7 @@ export function TodayPage() {
         <>
           {/* page 43: the hobbit home fills the screen behind; the boards sit low, the Waybook last */}
           <div className="td-spacer" />
-          {mode === 'rest' && <RestDayBoards tomorrow={tomorrowIcons} tomorrowLine={tomorrowText} onAdd={openAddPicker} />}
+          {mode === 'rest' && <RestDayBoards tomorrow={tomorrowIcons} tomorrowLine={tomorrowText} onAdd={openAdd} />}
           {mode === 'unprepared' && (waitingFor != null
             ? (
               <>
@@ -843,7 +700,7 @@ export function TodayPage() {
             )
             : blockChecked && !block
             ? <NoBlockBoard onStart={() => navigate('/program')} />
-            : <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} onAdd={openAddPicker} />)}
+            : <EmptyDayBoard onPrepare={handleGenerate} preparing={generating} onAdd={openAdd} />)}
           {mode === 'allDone' && <AllDoneBoard icons={doneIcons} onShowDay={() => setShowDayAnyway(true)} />}
           <AutoHeight><WaybookLine today={today} variant="home" /></AutoHeight>
         </>
@@ -862,27 +719,6 @@ export function TodayPage() {
           busy={savingStart}
           onPick={day => { void saveStartDay(day) }}
           onDismiss={() => setChangeStart(false)}
-        />
-      )}
-
-      {showPicker && (
-        <SessionPicker
-          onSelect={handleAddSession}
-          onClose={() => { setShowPicker(false); setPickerSuggestions(null) }}
-          suggestions={pickerSuggestions}
-          pmOnly={pmOnlyFor(today, getTodayISO(), new Date().getHours())}
-        />
-      )}
-
-      {replaceFor && (
-        <SessionPicker
-          onSelect={option => { void handleReplaceSelect(option) }}
-          onClose={() => { setReplaceFor(null); setPickerSuggestions(null) }}
-          suggestions={pickerSuggestions}
-          title={replaceTarget ? `Replace ${sessionDisplayName(replaceTarget).toLowerCase()}` : 'Replace'}
-          filter={opt => !replaceTarget || replaceKeeps(replaceTarget, opt)}
-          pmOnly={pmOnlyFor(today, getTodayISO(), new Date().getHours())}
-          reasons={{ tiles: REPLACE_REASONS, value: replaceFor.reason, onChange: reason => setReplaceFor(r => (r ? { ...r, reason } : r)) }}
         />
       )}
 
@@ -924,6 +760,8 @@ export function TodayPage() {
           }}
         />
       )}
+
+      {menu.node}
 
       {ravenOverlay}
 

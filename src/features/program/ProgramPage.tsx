@@ -8,18 +8,17 @@ import type { DayBoardSession } from '@/features/dayboard/rowState'
 import { apiFetch } from '@/lib/api'
 import { lbText } from '@/lib/units'
 import { epochDayToISO, getTodayISO, isoToEpochDay, mondayOf } from '@/lib/dates'
-import { getWeekLabel } from '@/lib/strengthTemplates'
-import { strengthBlockWeek } from '@/lib/weeklyTemplate'
 import { setWorldWeeks } from '@/world/worldStore'
 import { isPendingStart, startDayOf } from '@/lib/coach/startDay'
 
 import { StartDayBoard, StartWaitBoard } from './StartDay'
 import { moveStartDay, prepareStartWeek } from './startDayApi'
-import { WeekView } from './WeekView'
+import { PlannerWeek } from './PlannerWeek'
 import { programPath } from '@/lib/programWeeks'
-import { cycleWeeks, readWeekAnalysis, weekDays, weekForDay, weekState, worldWeekPosts } from './weekModel'
-import { WeekLog } from '@/features/coach/WeekLog'
-import { weekChangesLine } from '@/features/coach/changeView'
+import { cycleWeeks, weekDays, weekForDay, worldWeekPosts } from './weekModel'
+import { withoutReplaced } from '@/features/dayboard/rowState'
+import { usePlanMenu } from '@/features/plan/usePlanMenu'
+import { pmOnlyFor } from '@/components/ui/departures'
 import { useWeekChanges } from '@/features/coach/useWeekChanges'
 import { useBodyWatch } from '@/features/raven/bodyWatch'
 import './program.css'
@@ -27,12 +26,12 @@ import '@/features/raven/raven.css'
 import '@/features/dayboard/dayboard.css'
 import '@/features/coach/coach.css'
 
-// Program (page 33, approved): the road with the week wayposts is the world
-// behind this page (top band left clear), then boards on glass: the week
-// nav with six week flap tiles, the week line in plain words and one quiet
-// "N changes ›" line that opens the week log (page 56), the seven-day strip
-// with its runes and the open day board (WeekView). Weeks are prepared and
-// simply shown: no draft, no approval step.
+// Program (page 33; page 73, the planner, approved 2026-10-22): the road with
+// the week wayposts is the world behind this page (top band left clear), then
+// one board: THIS WEEK / NEXT WEEK, one quiet line, and the week as a day list
+// (PlannerWeek), one day open at a time. This week shows the coach's changes;
+// next week is fully planned with no marks; nothing past it. Weeks are
+// prepared and simply shown: no draft, no approval step.
 
 interface Block {
   id: string
@@ -134,6 +133,11 @@ function pastKeyFor(b: Block, currentWeek: number, viewWeek: number): string {
   return `${b.id}:${currentWeek}:${cycleWeeks(Math.max(1, viewWeek), b.totalWeeks, b.blockType).join(',')}`
 }
 
+/** The first day a week's sessions fall on. */
+function weekFirstDayOf(list: ReadonlyArray<{ scheduledDate?: number | null }>): number | null {
+  return list.reduce<number | null>((m, s) => (s.scheduledDate != null && (m == null || s.scheduledDate < m) ? s.scheduledDate : m), null)
+}
+
 function parseDayParam(v: string | null): number | null {
   return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? isoToEpochDay(v) : null
 }
@@ -183,8 +187,12 @@ export function ProgramPage() {
   const [assessmentLoading, setAssessmentLoading] = useState(false)
   const [openDay, setOpenDay] = useState<number | null>(dayParam)
   const [pastDone, setPastDone] = useState<{ key: string; counts: Map<number, number> } | null>(null)
-  const [logOpen, setLogOpen] = useState(false)
   const [changesVersion, setChangesVersion] = useState(0)
+  // The planner (page 73): this week or next, the cursor, the sessions opened to their lines.
+  const [viewWeek, setViewWeek] = useState<'this' | 'next'>('this')
+  const [nextData, setNextData] = useState<WeekData | null>(null)
+  const [cursor, setCursor] = useState<string | null>(null)
+  const [det, setDet] = useState<ReadonlySet<string>>(() => new Set())
   // Page 64: START WHEN? from the prompt (fresh: clears history), and CHANGE DAY while it waits.
   const [startPick, setStartPick] = useState(false)
   const [changeOpen, setChangeOpen] = useState(false)
@@ -195,14 +203,55 @@ export function ProgramPage() {
   // The viewed week's changes and runes (page 56): its Monday from its sessions, else the calendar.
   const weekFirstDay = (weekData?.sessions ?? []).reduce<number | null>((m, s) => (s.scheduledDate != null && (m == null || s.scheduledDate < m) ? s.scheduledDate : m), null)
   const changesMonday = block && weekData ? (weekFirstDay != null ? mondayOf(weekFirstDay) : mondayOf(todayEpochDay) + (weekNumber - currentWeekOf(block)) * 7) : null
-  const { week: changes, markSeen, undo, refresh: refreshChanges } = useWeekChanges(changesMonday, changesVersion)
+  const { week: changes, markSeen, undo } = useWeekChanges(changesMonday, changesVersion)
+
+  /** Next week, planned in full (one creation path; the same week the night fine-tunes). */
+  const loadNext = useCallback(async (b: Block) => {
+    const wd = await apiFetch<WeekData>('/api/weeks/generate', {
+      method: 'POST',
+      body: JSON.stringify({ blockId: b.id, weekNumber: currentWeekOf(b) + 1, startDate: getMonday(1), today: getTodayISO() }),
+    })
+    setNextData(wd)
+  }, [])
+
+  const patchSession = (id: string, patch: Partial<DayBoardSession>) => {
+    const fix = (prev: WeekData | null) => (prev && prev.sessions.some(x => x.id === id) ? { ...prev, sessions: prev.sessions.map(x => (x.id === id ? { ...x, ...patch } : x)) } : prev)
+    setWeekData(fix)
+    setNextData(fix)
+  }
+  const addSession = (session: DayBoardSession) => {
+    const into = (prev: WeekData | null, days: number[]) => (prev && session.scheduledDate != null && days.includes(session.scheduledDate) ? { ...prev, sessions: [...prev.sessions.filter(x => x.id !== session.id), session] } : prev)
+    const thisMonday = mondayOf(weekFirstDayOf(weekData?.sessions ?? []) ?? todayEpochDay)
+    setWeekData(prev => into(prev, weekDays(thisMonday)))
+    setNextData(prev => into(prev, weekDays(thisMonday + 7)))
+  }
+  const menu = usePlanMenu({
+    onSessionUpdate: patchSession,
+    onSessionAdded: addSession,
+    onChanged: () => setChangesVersion(v => v + 1),
+    reload: () => {
+      if (!block) return
+      void loadWeek(block, weekNumber).catch(() => {})
+      if (nextData) void loadNext(block).catch(() => {})
+    },
+    undo,
+    markSeen,
+    skipChangeFor: id => changes?.changes.find(c => c.actor === 'you' && c.kind === 'skip' && c.session.id === id && c.lock === 'open')?.id ?? null,
+    focus: id => {
+      const s = [...(weekData?.sessions ?? []), ...(nextData?.sessions ?? [])].find(x => x.id === id)
+      if (s?.scheduledDate != null) setOpenDay(s.scheduledDate)
+      setCursor(`s:${id}`)
+      setDet(prev => new Set(prev).add(id))
+    },
+    pmOnly: date => pmOnlyFor(date, getTodayISO(), new Date().getHours()),
+  })
 
   const loadWeek = useCallback(async (b: Block, wn: number, given?: WeekData | null) => {
     let wd = given !== undefined ? given : await apiFetch<WeekData | null>(wn === LEAD_IN_WEEK
       ? `/api/weeks/current?blockId=${b.id}&weekNumber=1&leadIn=1`
       : `/api/weeks/current?blockId=${b.id}&weekNumber=${wn}`)
     // The current week is prepared on open if it has no plan (the same path
-    // as the Sunday weekly pass). Later weeks say "Not prepared yet".
+    // as the Sunday weekly pass).
     if (!wd && wn === currentWeekOf(b)) {
       wd = await apiFetch<WeekData>('/api/weeks/auto-generate', {
         method: 'POST',
@@ -311,8 +360,12 @@ export function ProgramPage() {
     const wn = weekForDay(dayParam, todayEpochDay, currentWeekOf(block), block.totalWeeks, firstWeekOf(block))
     void (async () => {
       // a start still ahead shows only its own week
-      if (wn !== weekNumber && waitingStart(block) == null) await loadWeek(block, wn).catch(() => {})
-      if (!cancelled) setOpenDay(dayParam)
+      // a day next week opens there (nothing past next week)
+      if (wn === currentWeekOf(block) + 1 && waitingStart(block) == null) {
+        if (!nextData) await loadNext(block).catch(() => {})
+        if (!cancelled) setViewWeek('next')
+      } else if (!cancelled) setViewWeek('this')
+      if (!cancelled) { setOpenDay(dayParam); setCursor(`d:${dayParam}`) }
     })()
     return () => { cancelled = true }
     // Only a new link moves the page; paging weeks by hand must not snap back.
@@ -432,27 +485,15 @@ export function ProgramPage() {
     }
   }
 
-  async function handleGenerateWeek() {
-    if (!block) return
-    setGenerating(true)
-    try {
-      const weekOffset = weekNumber - currentWeekOf(block)
-      const wd = await apiFetch<WeekData>('/api/weeks/auto-generate', {
-        method: 'POST',
-        body: JSON.stringify({ blockId: block.id, startDate: getMonday(weekOffset), today: getTodayISO() }),
-      })
-      setWeekData(wd)
-    } catch (e) {
-      console.error('Failed to prepare week:', e)
-    } finally {
-      setGenerating(false)
-    }
-  }
-
-  function goToWeek(w: number) {
-    if (!block || w < firstWeekOf(block) || w > block.totalWeeks || w === weekNumber) return
-    setOpenDay(null)
-    void loadWeek(block, w).catch(e => console.error('Failed to load week:', e))
+  /** Tap a session: its lines open (tap it again while the cursor is on it: they close). */
+  function toggleDet(id: string) {
+    setDet(prev => {
+      const n = new Set(prev)
+      if (n.has(id) && cursor === `s:${id}`) n.delete(id)
+      else n.add(id)
+      return n
+    })
+    setCursor(`s:${id}`)
   }
 
   if (loading) {
@@ -590,39 +631,32 @@ export function ProgramPage() {
     }
   }
   if (ahead != null) {
-    // Below the board, the start's planned week as usual: the days before the start are empty and dim.
+    // Below the board, the start's planned week as a day list: the days before the start are empty and dim.
     const startDays = weekDays(mondayOf(ahead))
-    const startOpen = openDay != null && startDays.includes(openDay) ? openDay : ahead
     return (
       <Frame>
         <div className="sd-gap" />
         <StartWaitBoard startDay={ahead} todayDay={todayEpochDay} onChange={() => setChangeOpen(true)} />
         {weekData && (
-          <WeekView
-            key={weekData.week.id}
-            sessions={viewedSessions}
-            changes={changes}
-            markSeen={markSeen}
-            onUndo={async id => {
-              const ok = await undo(id)
-              if (ok) reload()
-              return ok
-            }}
-            onChanged={() => setChangesVersion(v => v + 1)}
-            weekNumber={Math.max(1, weekNumber)}
+          <PlannerWeek
+            week="this"
+            sub={weekNumber === LEAD_IN_WEEK ? 'Block Zero · lead-in' : 'Block Zero · week 1'}
             days={startDays}
+            sessions={withoutReplaced(viewedSessions)}
             todayEpochDay={todayEpochDay}
-            openDay={startOpen}
-            onOpenDay={setOpenDay}
+            weekNumber={Math.max(1, weekNumber)}
+            changes={changes}
             startsOn={ahead}
-            onSessionUpdate={(id, patch) => {
-              setWeekData(prev => prev ? { ...prev, sessions: prev.sessions.map(s => (s.id === id ? { ...s, ...patch } : s)) } : null)
-            }}
-            onSessionAdded={session => {
-              setWeekData(prev => prev ? { ...prev, sessions: [...prev.sessions.filter(s => s.id !== session.id), session] } : null)
-            }}
+            openDay={openDay != null && startDays.includes(openDay) ? openDay : openDay === -1 ? null : ahead}
+            onOpenDay={setOpenDay}
+            cursor={cursor ?? `d:${ahead}`}
+            onCursor={setCursor}
+            det={det}
+            onDet={toggleDet}
+            menu={menu}
           />
         )}
+        {menu.node}
         {changeOpen && (
           <StartDayBoard todayDay={todayEpochDay} selected={ahead} change busy={savingStart} onPick={day => { void saveStart(day) }} onDismiss={() => setChangeOpen(false)} />
         )}
@@ -631,112 +665,58 @@ export function ProgramPage() {
   }
 
   const isBlockZero = block.blockType === 'block_zero'
-  // Block Zero extension weeks hold week-5 levels; Fighter cycles every 6 weeks.
   const leadInView = weekNumber === LEAD_IN_WEEK
-  const blockWeek = strengthBlockWeek(block.blockType, Math.max(1, weekNumber))
-  const weekInfo = getWeekLabel(blockWeek, isBlockZero ? 'block_zero' : 'fighter')
-  const blkLine = leadInView
-    ? `Lead-in · week 1 starts Monday`
-    : isBlockZero
-    ? `${weekInfo} · week ${weekNumber} of ${block.totalWeeks}`
-    : `Fighter · ${weekInfo} · block week ${blockWeek} of 6`
-  const read = readWeekAnalysis(weekData?.week.analysisJson, weekData?.week.whyLine)
+  // Page 73's copy: "Block Zero · week 4"; no "of 6", no RPE (Block Zero has no set length).
+  const thisSub = leadInView ? 'Block Zero · lead-in' : isBlockZero ? `Block Zero · week ${weekNumber}` : `${block.name} · week ${weekNumber}`
   const blockStart = startDayOf(block.startedAt)
   const canMoveStart = isBlockZero && blockStart != null && weekNumber === currentWeek && currentWeek <= 1
     && blockStart >= mondayOf(todayEpochDay) && !viewedSessions.some(s => s.status === 'completed' || s.status === 'in_progress')
-  const changesLine = weekChangesLine(changes)
 
-  // Monday to Sunday of the viewed week: from its sessions, else the calendar.
-  const firstDay = viewedSessions.reduce<number | null>((m, s) => (s.scheduledDate != null && (m == null || s.scheduledDate < m) ? s.scheduledDate : m), null)
-  const monday = firstDay != null ? mondayOf(firstDay) : mondayOf(todayEpochDay) + (weekNumber - currentWeek) * 7
+  // Monday to Sunday of this week: from its sessions, else the calendar; next week follows it.
+  const firstDay = weekFirstDayOf(viewedSessions)
+  const monday = firstDay != null ? mondayOf(firstDay) : mondayOf(todayEpochDay)
+  const shownMonday = viewWeek === 'next' ? monday + 7 : monday
   const plan = bodyWatch?.alert?.planDays ?? null
-  const ravenLine = plan && bodyWatch?.alert?.programLine && monday <= plan[1] && monday + 6 >= plan[0] ? bodyWatch.alert.programLine : null
-  const days = weekDays(monday)
-  const shownDay = openDay != null && days.includes(openDay)
-    ? openDay
-    : days.includes(todayEpochDay) ? todayEpochDay : days.find(d => viewedSessions.some(s => s.scheduledDate === d)) ?? days[0]
+  const ravenLine = plan && bodyWatch?.alert?.programLine && shownMonday <= plan[1] && shownMonday + 6 >= plan[0] ? bodyWatch.alert.programLine : null
+  const days = weekDays(shownMonday)
+  const shownSessions = viewWeek === 'next' ? (nextData ? withoutReplaced(nextData.sessions) : null) : weekData ? withoutReplaced(viewedSessions) : null
+  const switchWeek = (w: 'this' | 'next') => {
+    if (w === viewWeek) return
+    setViewWeek(w)
+    setOpenDay(null)
+    setDet(new Set())
+    setCursor(`d:${w === 'this' ? todayEpochDay : monday + 7}`)
+    if (w === 'next' && !nextData) void loadNext(block).catch(e => console.error('Failed to plan next week:', e))
+  }
 
   return (
     <Frame>
-      {/* the week: nav, six week flap tiles, why this week */}
-      <div className="db-glass">
-        <div className="pg-nav">
-          <button type="button" className="pg-lnk" onClick={() => goToWeek(weekNumber - 1)} disabled={weekNumber <= firstWeekOf(block)} aria-label="Previous week">‹ Prev</button>
-          <FlapLabel text={leadInView ? 'LEAD-IN' : `WEEK ${weekNumber}`} size="md" tone={weekNumber === currentWeek ? 'gold' : 'ink'} />
-          <button type="button" className="pg-lnk" onClick={() => goToWeek(weekNumber + 1)} disabled={weekNumber >= block.totalWeeks} aria-label="Next week">Next ›</button>
-        </div>
-        <p className="pg-blk">{blkLine}</p>
-        {/* dead end #12: the start day can still move while nothing in the block is started or done (the server checks the whole block) */}
-        {canMoveStart && <button type="button" className="sd-lnk" onClick={() => setChangeOpen(true)}>CHANGE DAY</button>}
-        <div className="pg-six" role="group" aria-label="Weeks of the block">
-          {windowWeeks.map(w => {
-            const st = weekState(w, currentWeek)
-            return (
-              <button
-                key={w}
-                type="button"
-                className={`pg-wk${w === weekNumber ? ' is-viewed' : ''}${st === 'now' ? ' is-now' : ''}`}
-                aria-label={`Week ${w}${st === 'now' ? ', this week' : st === 'done' ? ', done' : ''}`}
-                aria-current={w === weekNumber ? 'true' : undefined}
-                onClick={() => goToWeek(w)}
-              >
-                <FlapLabel text={String(w)} size="md" tone={st === 'done' ? 'teal' : st === 'now' ? 'gold' : 'ink'} />
-              </button>
-            )
-          })}
-        </div>
-        {/* page 56 item 16: the week line, plain text, no frame; then one quiet line that opens the week log */}
-        {/* page 58 4B: while the raven's plan is on, its line (brass) is the week's line */}
-        {ravenLine ? <p className="pg-weekl is-w">{ravenLine}</p> : read.why && <p className="pg-weekl">{read.why}</p>}
-        {changesLine && <button type="button" className="pg-loglink" onClick={() => setLogOpen(true)}>{changesLine}</button>}
-      </div>
-
-      {!weekData ? (
-        <div className="db-glass">
-          <p className="wm-prose">Not prepared yet.</p>
-          <button type="button" className="db-add" onClick={handleGenerateWeek} disabled={generating}>
-            {generating ? 'Preparing...' : `Prepare week ${weekNumber} now`}
-          </button>
-        </div>
-      ) : (
-        <WeekView
-          key={weekData.week.id}
-          sessions={viewedSessions}
-          changes={changes}
-          markSeen={markSeen}
-          onUndo={async id => {
-            const ok = await undo(id)
-            if (ok && block) await loadWeek(block, weekNumber).catch(() => {})
-            return ok
-          }}
-          onChanged={() => setChangesVersion(v => v + 1)}
-          weekNumber={Math.max(1, weekNumber)}
-          days={days}
-          todayEpochDay={todayEpochDay}
-          openDay={shownDay}
-          onOpenDay={setOpenDay}
-          onSessionUpdate={(id, patch) => {
-            setWeekData(prev => prev ? { ...prev, sessions: prev.sessions.map(s => (s.id === id ? { ...s, ...patch } : s)) } : null)
-          }}
-          onSessionAdded={session => {
-            setWeekData(prev => prev ? { ...prev, sessions: [...prev.sessions.filter(s => s.id !== session.id), session] } : null)
-          }}
-        />
-      )}
-
-      {logOpen && (
-        <WeekLog
-          week={changes}
-          weekNumber={weekNumber}
-          onUndo={async id => {
-            const ok = await undo(id)
-            if (ok && block) await loadWeek(block, weekNumber).catch(() => {})
-            refreshChanges()
-            return ok
-          }}
-          onClose={() => setLogOpen(false)}
-        />
-      )}
+      <PlannerWeek
+        week={viewWeek}
+        onWeek={switchWeek}
+        sub={viewWeek === 'next' ? 'Planned. Fine-tuned the night before.' : thisSub}
+        under={(
+          <>
+            {/* page 58 4B: while the raven's plan is on, its line (brass) leads the weeks it covers */}
+            {ravenLine && <p className="pg-weekl is-w">{ravenLine}</p>}
+            {/* dead end #12: the start day can still move while nothing in the block is started or done (the server checks the whole block) */}
+            {canMoveStart && viewWeek === 'this' && <button type="button" className="sd-lnk" onClick={() => setChangeOpen(true)}>CHANGE DAY</button>}
+          </>
+        )}
+        days={days}
+        sessions={shownSessions}
+        todayEpochDay={todayEpochDay}
+        weekNumber={Math.max(1, viewWeek === 'next' ? weekNumber + 1 : weekNumber)}
+        changes={viewWeek === 'this' ? changes : null}
+        openDay={openDay != null && days.includes(openDay) ? openDay : null}
+        onOpenDay={setOpenDay}
+        cursor={cursor ?? (viewWeek === 'this' && days.includes(todayEpochDay) ? `d:${todayEpochDay}` : `d:${days[0]}`)}
+        onCursor={setCursor}
+        det={det}
+        onDet={toggleDet}
+        menu={menu}
+      />
+      {menu.node}
 
       {changeOpen && canMoveStart && (
         <StartDayBoard todayDay={todayEpochDay} selected={todayEpochDay} change busy={savingStart} onPick={day => { void saveStart(day) }} onDismiss={() => setChangeOpen(false)} />

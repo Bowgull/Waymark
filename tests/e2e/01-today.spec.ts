@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { gotoToday, todayISO } from './support/helpers'
+import { gotoToday } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -8,16 +8,12 @@ test.beforeAll(async ({ request }) => {
   await setMorning(makeApiFor(request))
 })
 
-test('Today: the week strip, the Morning Report row with readiness, no Coach board', async ({ page }) => {
+test('Today: no week strip (page 72), the Morning Report row with readiness, no Coach board', async ({ page }) => {
   await gotoToday(page)
 
-  // Week strip: seven day tiles, Monday to Sunday, today marked.
-  const strip = page.getByRole('list', { name: 'This week' })
-  const tiles = strip.getByRole('listitem')
-  await expect(tiles).toHaveCount(7)
-  await expect(strip.getByRole('listitem', { name: new RegExp(`^${todayISO()}, today`) })).toHaveCount(1)
-  const days = await tiles.evaluateAll(els => els.map(e => (e.textContent ?? '').trim().charAt(0)))
-  expect(days).toEqual(['M', 'T', 'W', 'T', 'F', 'S', 'S'])
+  // Page 72: the week strip is gone (Program has the week); with no location the weather hides too.
+  await expect(page.getByRole('list', { name: 'This week' })).toHaveCount(0)
+  await expect(page.locator('.wx-wrap')).toHaveCount(0)
 
   // Morning Report: one row, LOGGED and the readiness line.
   const report = page.getByRole('button', { name: /^Morning Report, logged\./ })
@@ -34,14 +30,4 @@ test('Today: the week strip, the Morning Report row with readiness, no Coach boa
   // The day board and the tab bar are there.
   await expect(page.getByRole('button', { name: '+ add session' })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link')).toHaveCount(4)
-})
-
-test('Today: a tap on a day tile opens that day in Program', async ({ page }) => {
-  await gotoToday(page)
-  const plain = page.getByRole('list', { name: 'This week' }).getByRole('listitem', { name: /Open in Program\.$/ }).first()
-  const label = (await plain.getAttribute('aria-label')) ?? ''
-  const iso = label.slice(0, 10)
-  await plain.tap()
-  await expect(page).toHaveURL(new RegExp(`/program\\?day=${iso}`))
-  await expect(page.getByRole('tablist', { name: 'Days of the week' })).toBeVisible()
 })

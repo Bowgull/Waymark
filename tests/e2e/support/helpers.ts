@@ -176,3 +176,35 @@ export async function throughWarmup(page: Page, done: () => Promise<boolean>, ma
   }
   throw new Error('warm-up never finished')
 }
+
+/** Hold a session row for the command window (page 73: 500 ms; the click after a hold is eaten). */
+export async function holdRow(page: Page, row: Locator) {
+  const hit = row.locator('[role=button]').first()
+  await hit.scrollIntoViewIfNeeded()
+  const b = (await hit.boundingBox())!
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2)
+  await page.mouse.down()
+  await page.waitForTimeout(700)
+  await page.mouse.up()
+  const cmd = page.locator('.pl-cmd')
+  await expect(cmd).toBeVisible()
+  return cmd
+}
+
+/** Program's day row for an epoch day (the planner, page 73). */
+export function dayRow(page: Page, epochDay: number): Locator {
+  return page.locator(`.pg-dr[data-day="${epochDay}"]`)
+}
+
+/** Opens a day on Program (one at a time). */
+export async function openDay(page: Page, epochDay: number) {
+  const row = dayRow(page, epochDay)
+  await expect(row).toBeVisible({ timeout: 20_000 })
+  if ((await row.getAttribute('aria-expanded')) !== 'true') await row.tap()
+  await expect(row).toHaveAttribute('aria-expanded', 'true')
+}
+
+/** The athlete's local day as an epoch day. */
+export function epochOf(iso: string): number {
+  return Math.round(Date.parse(`${iso}T00:00:00Z`) / 86400000)
+}

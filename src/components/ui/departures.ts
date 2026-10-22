@@ -162,6 +162,26 @@ export const SKIP_REASONS: ReadonlyArray<ReasonTile> = [
 ]
 
 /**
+ * Page 73 (approved 2026-10-22): the WHY? window after a SWAP IN offers three
+ * optional tiles, after a SKIP four. Each maps to a reason code the brain
+ * already reads: TIME → schedule (never "too hard"), BODY → too_sore (a
+ * recovery reason: that domain holds), SICK → sick (the sick state), PAIN →
+ * injury (the injury flag, place unspecified), JUST BECAUSE → variety
+ * (neutral).
+ */
+export const REPLACE_WHY_TILES: ReadonlyArray<ReasonTile> = [
+  { value: 'schedule', label: 'TIME' },
+  { value: 'too_sore', label: 'BODY' },
+  { value: 'variety', label: 'JUST BECAUSE' },
+]
+export const SKIP_WHY_TILES: ReadonlyArray<ReasonTile> = [
+  { value: 'schedule', label: 'TIME' },
+  { value: 'too_sore', label: 'BODY' },
+  { value: 'sick', label: 'SICK' },
+  { value: 'injury', label: 'PAIN' },
+]
+
+/**
  * Ending a run or bag session early (coach brain P2): one optional tap, the
  * same tiles as SKIP. NO TIME holds the next dose; it never reads as too hard.
  */
