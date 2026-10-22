@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { PluginListenerHandle } from '@capacitor/core'
+import { Capacitor, type PluginListenerHandle } from '@capacitor/core'
 
 import {
   startLiveActivity,
@@ -84,6 +84,8 @@ export function useSessionLiveActivity(
       ? config.state
       : { ...config.state, iconKey: LIVE_ACTIVITY_ICON[config.sessionType] }
     const key = stateKey(state)
+    // Off the phone the bridge is a no-op; the web keeps the last state for the e2e suite to read.
+    if (!Capacitor.isNativePlatform() && typeof window !== 'undefined') (window as unknown as { __wmActivity?: ActivityState }).__wmActivity = state
 
     if (!startedRef.current) {
       startedRef.current = true

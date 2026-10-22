@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 
 import { CentredCard, FlapLabel, SessionIcon, useEdgeBack, type FlapTone, type SessionIconKey } from '@/design'
 import { tapHaptic } from '@/lib/haptics'
-import { comboStrikes, END_HOLD_MS, ENDED_SHOW_MS } from '@/lib/timers/timerLook'
+import { BOARD_OUT_MS, comboStrikes, END_HOLD_MS, ENDED_SHOW_MS } from '@/lib/timers/timerLook'
 import { setWorldBackdrop } from '@/world/worldStore'
 
 import { SessionEndedContext, getSessionNav } from './endedContext'
@@ -55,8 +55,9 @@ export function EndButton({ onHeld, label = 'End. Hold for 3 seconds.' }: { onHe
  * exactly as it was.
  */
 export function CloseWindow({ head, onEndAndLog, onDiscard, onBack }: { head: string; onEndAndLog: () => void; onDiscard: () => void; onBack: () => void }) {
+  const [leaving, away] = useEaseAway()
   return (
-    <CentredCard label={`${head}: end`} head={head} onDismiss={onBack} className="tm-closewin">
+    <CentredCard label={`${head}: end`} head={head} onDismiss={() => away(onBack)} className={`tm-closewin${leaving ? ' is-leaving' : ''}`}>
       <div className="tm-closeb">
         <SessionButton label="END AND LOG" primary onClick={onEndAndLog} />
         <button type="button" className="wm-btn tm-discard" aria-label="DISCARD" onClick={onDiscard}>
@@ -65,6 +66,19 @@ export function CloseWindow({ head, onEndAndLog, onDiscard, onBack }: { head: st
       </div>
     </CentredCard>
   )
+}
+
+/** A board leaving on a tap outside (page 74): it fades away over 180 ms, then `then` runs. */
+export function useEaseAway(): [boolean, (then: () => void) => void] {
+  const [leaving, setLeaving] = useState(false)
+  const timer = useRef<number | null>(null)
+  useEffect(() => () => { if (timer.current != null) window.clearTimeout(timer.current) }, [])
+  const away = (then: () => void) => {
+    if (timer.current != null) return
+    setLeaving(true)
+    timer.current = window.setTimeout(() => { timer.current = null; setLeaving(false); then() }, BOARD_OUT_MS)
+  }
+  return [leaving, away]
 }
 
 /** "BAG WORK" → "Bag work" for the close window's head. */

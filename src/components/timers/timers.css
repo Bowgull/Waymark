@@ -78,3 +78,20 @@
 .tm-back { position: relative; appearance: none; border: 0; background: none; padding: 10px 2px; cursor: pointer; font: 700 15px var(--font-body); letter-spacing: 0.08em; color: #e8c878; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
 .tm-back::before { content: ''; position: absolute; inset: -6px -8px; }
 .tm-stop-r { display: inline-flex; align-items: center; gap: 8px; }
+
+/* page 74: a run's finish hold. HOLD · FINISH on the right of the hint; after 1 s FINISHING (gold) takes its place;
+   let go early and it fades back (180 ms out, 320 ms in, page 59) */
+.tm-fin { position: relative; display: inline-block; }
+.tm-fin-h { transition: opacity 180ms var(--ease-in, cubic-bezier(0.4, 0, 1, 1)); }
+.tm-fin-h.is-gone { opacity: 0; }
+.tm-fin-w { position: absolute; right: 0; bottom: -4px; opacity: 0; transform: translateY(3px); pointer-events: none; transition: opacity 180ms cubic-bezier(0.4, 0, 1, 1), transform 180ms cubic-bezier(0.4, 0, 1, 1); }
+.tm-fin-w.is-on { opacity: 1; transform: none; transition: opacity 320ms cubic-bezier(0.16, 1, 0.3, 1), transform 320ms cubic-bezier(0.16, 1, 0.3, 1); }
+/* a board closing on a tap outside fades away (180 ms, ease-in) */
+.wm-card.is-leaving { animation: tm-board-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards; }
+.wm-scrim:has(.wm-card.is-leaving) { animation: tm-scrim-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
+@keyframes tm-board-out { to { opacity: 0; transform: translateY(6px); } }
+@keyframes tm-scrim-out { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .tm-fin-h, .tm-fin-w, .tm-fin-w.is-on { transition: none; }
+  .wm-card.is-leaving, .wm-scrim:has(.wm-card.is-leaving) { animation-duration: 1ms; }
+}
