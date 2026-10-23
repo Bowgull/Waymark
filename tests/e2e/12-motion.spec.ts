@@ -125,7 +125,8 @@ test('the splash under Reduce Motion: the title is up at once, so one tap lifts 
   // while the page settles, so the tap goes in at once (raw, as the hold test does)
   const box = await splash.boundingBox()
   await page.mouse.click((box?.width ?? 390) / 2, 300)
-  await expect(splash).toHaveCount(0, { timeout: 6000 })
+  // a tap while the crest is still loading lifts it once the crest is up (software WebGL: seconds)
+  await expect(splash).toHaveCount(0, { timeout: 10_000 })
   await expect(page.getByRole('button', { name: '+ add session' })).toBeVisible()
 })
 

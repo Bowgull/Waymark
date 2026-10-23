@@ -22,6 +22,8 @@ export async function gotoToday(page: Page) {
   await expect(add.or(deck).first()).toBeVisible({ timeout: 20_000 })
   if (await deck.isVisible()) await deck.getByRole('button', { name: 'Close', exact: true }).tap()
   await expect(add).toBeVisible({ timeout: 20_000 })
+  // the splash lies over the app until it ends: a raw mouse press (a hold) would land on it, not on a row
+  await expect(page.locator('.wm-splash')).toHaveCount(0, { timeout: 20_000 })
 }
 
 /** A row on Today's board by session id. */
@@ -180,6 +182,8 @@ export async function throughWarmup(page: Page, done: () => Promise<boolean>, ma
 /** Hold a session row for the command window (page 73: 500 ms; the click after a hold is eaten). */
 export async function holdRow(page: Page, row: Locator) {
   const hit = row.locator('[role=button]').first()
+  // nothing over the row: the splash takes a raw press for its own hold
+  await expect(page.locator('.wm-splash')).toHaveCount(0, { timeout: 20_000 })
   await hit.scrollIntoViewIfNeeded()
   const b = (await hit.boundingBox())!
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2)
