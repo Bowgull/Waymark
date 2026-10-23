@@ -7,6 +7,7 @@ import { iconFor, plannedRowMinutes, rowStatus, sessionDisplayName, shortLift, t
 import { getStrengthTemplate } from '../../lib/strengthTemplates'
 import { ROPE_ROUNDS } from '../../lib/plannedLength'
 import type { SessionIconKey } from '../../design/sessionIconKeys'
+import { fiveKText, hardKindOf } from '../../lib/brain/hardRuns'
 
 export { cycleWeeks } from '../../lib/programWeeks'
 
@@ -116,6 +117,11 @@ function liftsLine(s: Pick<DayBoardSession, 'scheduledDate' | 'blockWeek' | 'blo
   return main.slice(0, 3).map((e, i) => (i === 0 ? shortLift(e.label) : (shortLift(e.label).split(' ').pop() ?? '').toLowerCase())).join(' · ')
 }
 
+function hardReps(doseJson: string | null | undefined): number | null {
+  if (!doseJson) return null
+  try { const r = (JSON.parse(doseJson) as { run?: { hard?: { reps?: unknown } } }).run?.hard?.reps; return typeof r === 'number' ? r : null } catch { return null }
+}
+
 function bagRounds(doseJson: string | null | undefined): number | null {
   if (!doseJson) return null
   try { const r = (JSON.parse(doseJson) as { bag?: { rounds?: unknown } }).bag?.rounds; return typeof r === 'number' ? r : null } catch { return null }
@@ -132,7 +138,13 @@ export function dayLine(list: ReadonlyArray<DayBoardSession>, weekNumber: number
   switch (main.type) {
     case 'strength': return liftsLine(main)
     case 'running':
-    case 'foundation_run': return `${sentenceCase(sessionDisplayName(main))} · ${plannedRowMinutes(main, weekNumber)} min`
+    case 'foundation_run': {
+      // Page 76: "Steady hard · 30 min", "Run hard 2 min × 6", "5K test", "5K test · 27:48".
+      const hard = hardKindOf(main)
+      if (hard === 'test') return main.runSession?.fiveKSec ? `5K test · ${fiveKText(main.runSession.fiveKSec)}` : '5K test'
+      if (hard === 'intervals') { const reps = hardReps(main.doseJson); if (reps) return `Run hard 2 min × ${reps}` }
+      return `${sentenceCase(sessionDisplayName(main))} · ${plannedRowMinutes(main, weekNumber)} min`
+    }
     case 'bag_work': { const r = bagRounds(main.doseJson); return r ? `Bag · ${r} × 3 min` : `Bag · ~${plannedRowMinutes(main, weekNumber)} min` }
     case 'mt_class': return 'MT class'
     case 'active_recovery': return `${sentenceCase(sessionDisplayName(main))} · ~${plannedRowMinutes(main, weekNumber)} min`

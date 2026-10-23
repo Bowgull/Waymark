@@ -646,9 +646,9 @@ private struct LAInfo {
     var actions: [RuneAction] {
         if isComplete || isExercise { return [] }
         if isReady { return [.startHold] }
-        if isEasyRun || isRunWalk {
+        if isEasyRun || isRunWalk || isHardRun {
             let first: RuneAction = state.isPaused ? .resume : .pause
-            return isRunWalk ? [first, .skip] : [first]
+            return isRunWalk || isHardRun ? [first, .skip] : [first]
         }
         if timeUp { return [.skip] }
         let skips = isRound || isRest
@@ -663,6 +663,8 @@ private struct LAInfo {
 
     var isEasyRun: Bool { state.runKind == "easy" }
     var isRunWalk: Bool { state.runKind == "runwalk" }
+    // Page 76: a hard run (run hard / jog, steady hard, the 5K test): skip = the next piece.
+    var isHardRun: Bool { state.runKind == "hard" }
 
     // The zone, on a run only (nil: not a strap run, today's card).
     var zone: HRZone? { isRun ? HRZone(state.hrZone) : nil }
@@ -713,12 +715,14 @@ private struct LAInfo {
         if zone == .over { return ("EASE OFF", .clay) }
         if timeUp { return ("TIME", .clay) }
         if isRunWalk && isRest { return ("WALK", .teal) }
+        if isHardRun, let p = state.runPhase, !p.isEmpty { return (p, isRest ? .teal : .gold) }
         return ("RUNNING", .gold)
     }
 
     // The run-walk's piece count on the island ("RUN 3 OF 6"), when the
     // app sends one.
     var runPieceFlap: String? {
+        if isHardRun, let p = state.runPhase, let i = state.stepIndex, let t = state.stepTotal, i > 0, t > 0 { return "\(p) \(min(i, t)) OF \(t)" }
         guard isRunWalk, let i = state.stepIndex, let t = state.stepTotal, i > 0, t > 0 else { return nil }
         return "\(isRest ? "WALK" : "RUN") \(min(i, t)) OF \(t)"
     }

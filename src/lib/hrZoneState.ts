@@ -24,11 +24,15 @@ export interface ZoneTracker {
 
 export const ZONE_START: ZoneTracker = { zone: 'none', overSinceMs: null }
 
-/** The zone after one heart-rate sample at `nowMs`. No line: always teal. */
-export function nextZone(prev: ZoneTracker, hr: number | null | undefined, ceiling: number | null | undefined, nowMs: number): ZoneTracker {
+/**
+ * The zone after one heart-rate sample at `nowMs`. No line: always teal.
+ * `overBy` (a hard run's range, page 76): over the top is still gold; ember
+ * only `overBy` bpm past it for 30 s. An easy run's line has 0.
+ */
+export function nextZone(prev: ZoneTracker, hr: number | null | undefined, ceiling: number | null | undefined, nowMs: number, overBy = 0): ZoneTracker {
   if (hr == null || !(hr > 0)) return { zone: 'none', overSinceMs: null }
   if (ceiling == null || !(ceiling > 0)) return { zone: 'in', overSinceMs: null }
-  if (hr > ceiling) {
+  if (hr > ceiling + overBy) {
     const since = prev.overSinceMs ?? nowMs
     return { zone: nowMs - since >= OVER_SEC * 1000 ? 'over' : 'gold', overSinceMs: since }
   }

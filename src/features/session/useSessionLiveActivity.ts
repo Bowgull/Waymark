@@ -165,5 +165,6 @@ function stateKey(s: ActivityState): string {
     // the zone and the run's kind redraw the card; the number itself is the recorder's to send
     s.hrZone ?? '',
     s.runKind ?? '',
+    s.runPhase ?? '',
   ].join('|')
 }

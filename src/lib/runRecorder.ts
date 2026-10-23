@@ -12,6 +12,10 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 
 import type { HrZone } from './hrZoneState'
 import type { RunRecording } from './runRecording'
+import { dueCue, NUDGE_START, nudgeClips, stepNudge, type Cue, type Nudge, type NudgeState } from './runCues'
+import { playClips } from './cuePlayer'
+import { mediumHaptic } from './haptics'
+import type { TreadmillUnit } from './runSpeed'
 
 /**
  * The strap, as Settings and the run screen show it.
@@ -45,6 +49,25 @@ export interface RunTick {
   link: StrapLink
   /** The native recorder's zone (the run screen also steps its own). */
   zone?: HrZone
+  /** Page 76: a pace nudge just played (outside, hard pieces): the screen shows it for a few seconds. */
+  nudge?: Nudge | null
+  /** The pace the nudge named, km/h. */
+  nudgeKmh?: number | null
+}
+
+/**
+ * A hard run's cues (page 76 §5) for the recorder to play by itself on the
+ * run clock, locked or not: the piece changes (a chime, then the words), and
+ * outside the pace nudges on the hard pieces.
+ */
+export interface RecorderCues {
+  cues: Cue[]
+  /** The run clock now (seconds, pauses left out): the recorder counts on from here. */
+  clockSec: number
+  outdoor: boolean
+  unit: TreadmillUnit
+  /** Outside: the hard pieces' paces (a piece still open ends at 1e9). */
+  nudge: Array<{ fromSec: number; toSec: number; kmh: number }>
 }
 
 export interface RecorderStart {
@@ -54,6 +77,8 @@ export interface RecorderStart {
   outdoor: boolean
   /** The run's line (HR ceiling), for the lock screen's zone colour. */
   ceilingBpm: number | null
+  /** A hard run's range (page 76): ember only this far over the top for 30 s. */
+  overBy?: number
   /** The run clock's start (epoch ms), so a resumed recorder lines up. */
   startedAtMs: number
 }
@@ -78,6 +103,8 @@ export interface RunRecorderApi {
   ackUploaded(runId: string): Promise<void>
   /** Stop and throw the recording away (DISCARD). */
   discard(runId?: string): Promise<void>
+  /** A hard run's cues from the clock now on (sent again after a skip, the test's 5 km, a relaunch). Empty: none. */
+  cues(c: RecorderCues): Promise<void>
   onTick(cb: (tick: RunTick) => void): () => void
   onStrap(cb: (status: StrapStatus) => void): () => void
 }
@@ -96,6 +123,7 @@ interface NativePlugin {
   unfinished(): Promise<{ recording?: RunRecording | null; active?: boolean }>
   ackUploaded(opts: { runId: string }): Promise<void>
   discard(opts: { runId?: string }): Promise<void>
+  cues(opts: RecorderCues): Promise<void>
   addListener(event: 'tick', cb: (t: RunTick) => void): Promise<PluginListenerHandle>
   addListener(event: 'strap', cb: (s: StrapStatus) => void): Promise<PluginListenerHandle>
 }
@@ -121,6 +149,8 @@ function nativeRecorder(): RunRecorderApi {
     unfinished: async () => { const r = await p.unfinished(); return { recording: r.recording ?? null, active: !!r.active } },
     ackUploaded: runId => p.ackUploaded({ runId }),
     discard: runId => p.discard({ runId }),
+    // Infinity does not cross the bridge: an open piece ends at 1e9.
+    cues: c => p.cues({ ...c, nudge: c.nudge.map(n => ({ ...n, toSec: Number.isFinite(n.toSec) ? n.toSec : 1e9 })) }),
     onTick: cb => listen('tick', cb),
     onStrap: cb => listen('strap', cb),
   }
@@ -158,6 +188,12 @@ function mockRecorder(): RunRecorderApi {
   let absent = false
   let run: (RecorderStart & { paused: boolean; series: RunRecording['series']; timer: ReturnType<typeof setInterval> | null }) | null = null
   let finished: RunRecording | null = null
+  // Page 76: the cue clock (as the native recorder keeps it), the cues played, the pace nudge.
+  let cueSet: RecorderCues | null = null
+  let cueClock = 0
+  let played = new Set<number>()
+  let nudgeState: NudgeState = NUDGE_START
+  let lastNudge: { nudge: Nudge; kmh: number } | null = null
 
   const status = (): StrapStatus => ({ link, name: readMockStrap(), hr: link === 'connected' ? hr : null })
   const emitStrap = () => { const s = status(); for (const cb of straps) cb(s) }
@@ -180,8 +216,30 @@ function mockRecorder(): RunRecorderApi {
   function emitTick() {
     if (!run) return
     const now = Date.now()
-    const tick: RunTick = { t: now, elapsedSec: Math.max(0, Math.round((now - run.startedAtMs) / 1000)), movingSec: run.series.moving.reduce<number>((a, m) => a + m, 0), hr: liveHr(), distanceM: run.outdoor ? distM : 0, link }
+    const tick: RunTick = { t: now, elapsedSec: Math.max(0, Math.round((now - run.startedAtMs) / 1000)), movingSec: run.series.moving.reduce<number>((a, m) => a + m, 0), hr: liveHr(), distanceM: run.outdoor ? distM : 0, link, ...(lastNudge ? { nudge: lastNudge.nudge, nudgeKmh: lastNudge.kmh } : {}) }
+    lastNudge = null
     for (const cb of ticks) cb(tick)
+  }
+  /** One second of the cue clock: the due cue plays; outside, the nudge watches the hard pieces. */
+  function stepCues() {
+    if (!run || run.paused || !cueSet) return
+    cueClock += 1
+    const due = dueCue(cueSet.cues, played, cueClock)
+    if (due) {
+      played.add(due.index)
+      void playClips(due.cue.clips)
+      if (due.cue.buzz) void mediumHaptic()
+    }
+    if (cueSet.outdoor && cueSet.nudge.length > 0) {
+      const t = cueSet.nudge.find(n => cueClock >= n.fromSec && cueClock < n.toSec) ?? null
+      const seg = t ? { kind: 'hard' as const, round: 0, startSec: t.fromSec, sec: t.toSec - t.fromSec, kmh: t.kmh, open: false } : null
+      const r = stepNudge(nudgeState, { clockSec: cueClock, distM, segment: seg, outdoor: true })
+      nudgeState = r.state
+      if (r.nudge && t) {
+        void playClips(nudgeClips(r.nudge, t.kmh, cueSet.unit))
+        lastNudge = { nudge: r.nudge, kmh: t.kmh }
+      }
+    }
   }
   function sample() {
     if (!run) return
@@ -190,6 +248,7 @@ function mockRecorder(): RunRecorderApi {
     s.hr.push(liveHr())
     s.moving.push(run.paused ? 0 : 1)
     s.distM.push(run.outdoor ? distM : 0)
+    stepCues()
     emitTick()
   }
   function recording(): RunRecording | null {
@@ -229,13 +288,23 @@ function mockRecorder(): RunRecorderApi {
       const r = recording()
       if (run?.timer) clearInterval(run.timer)
       run = null
+      cueSet = null
       finished = r
       if (link === 'connected' || link === 'silent') setLink('saved')
       return r
     },
     async unfinished() { return { recording: run ? recording() : finished, active: !!run } },
     async ackUploaded(runId) { if (finished?.runId === runId) finished = null },
-    async discard() { if (run?.timer) clearInterval(run.timer); run = null; finished = null; if (link === 'connected' || link === 'silent') setLink('saved') },
+    async discard() { if (run?.timer) clearInterval(run.timer); run = null; finished = null; cueSet = null; if (link === 'connected' || link === 'silent') setLink('saved') },
+    async cues(c) {
+      cueSet = c.cues.length > 0 || c.nudge.length > 0 ? c : null
+      cueClock = Math.max(0, Math.round(c.clockSec))
+      // The cue at this very second still plays; the ones before it are past.
+      played = new Set(c.cues.map((q, i) => (q.atSec < cueClock ? i : -1)).filter(i => i >= 0))
+      nudgeState = NUDGE_START
+      const now = dueCue(c.cues, played, cueClock)
+      if (now && run && !run.paused) { played.add(now.index); void playClips(now.cue.clips) }
+    },
     onTick(cb) { ticks.add(cb); return () => { ticks.delete(cb) } },
     onStrap(cb) { straps.add(cb); return () => { straps.delete(cb) } },
   }

@@ -2,6 +2,8 @@
 // fetch per session from the existing per-type endpoints.
 
 import { apiFetch } from '@/lib/api'
+import type { HardPlan } from '@/lib/brain/hardRuns'
+import type { PostRunFacts } from '@/lib/postRun'
 
 import { rowStatus, type DayBoardSession, type RunActuals, type RunPlan, type WorkoutExercise } from './rowState'
 
@@ -9,11 +11,15 @@ export interface RunPrescription extends RunPlan {
   targetDesc?: string | null
   /** A Block Zero run-walk as prescribed (caps included). */
   runWalk?: { runSec: number; walkSec: number; rounds: number; warmupSec: number } | null
+  /** A hard run (page 76): its pieces, speeds and heart range. */
+  hard?: HardPlan | null
+  /** An easy run's treadmill speed (page 76), km/h. */
+  easyKmh?: number | null
 }
 
 export type SummaryData =
   | { kind: 'strength'; exercises: WorkoutExercise[]; notes: string[]; plannedMin: number | null; brainLifts?: Array<{ exerciseId: string; change: string }> }
-  | { kind: 'run'; plan: RunPrescription | null; run: RunActuals | null }
+  | { kind: 'run'; plan: RunPrescription | null; run: RunActuals | null; post?: PostRunFacts | null }
   | { kind: 'mobility'; moves: Array<{ name: string; completed: boolean }>; plannedMin: number | null }
   | { kind: 'bag'; rounds: number; plannedMin: number | null; plannedSecs: number[]; roundSecs: number[] | null; restSec?: number | null; firstCombo?: string | null }
   | { kind: 'rope'; rounds: number | null; roundSec: number | null; plannedMin: number | null; roundSecs: number[] | null }
@@ -56,8 +62,8 @@ export async function loadSummary(s: DayBoardSession): Promise<SummaryData> {
     case 'running':
     case 'foundation_run': {
       const path = s.type === 'foundation_run' ? 'foundation-run-workout' : 'run-workout'
-      const res = await apiFetch<{ runSession: RunActuals | null; prescription: RunPrescription | null }>(`/api/sessions/${s.id}/${path}`)
-      return { kind: 'run', plan: res.prescription ?? null, run: res.runSession ?? s.runSession ?? null }
+      const res = await apiFetch<{ runSession: RunActuals | null; prescription: RunPrescription | null; post?: PostRunFacts | null }>(`/api/sessions/${s.id}/${path}`)
+      return { kind: 'run', plan: res.prescription ?? null, run: res.runSession ?? s.runSession ?? null, post: res.post ?? null }
     }
     case 'mobility': {
       const res = await apiFetch<{ exercises?: Array<{ completed?: number | boolean; exercise?: { name: string } | null }>; plannedMin?: number | null }>(`/api/sessions/${s.id}/mobility-workout`)

@@ -74,6 +74,9 @@ import { loadModelEvents } from './athleteModel'
 import { usualStartOf } from '../lib/brain/athleteModel'
 import { athleteTimeZone, localDayIn, noteAppOpen } from './timeZone'
 import { templateFromDose } from '../lib/brain/doses'
+import { GOAL_5K_SEC, HARD_NOTES, hardLabel, parseFiveK } from '../lib/brain/hardRuns'
+import { parseUnit } from '../lib/runSpeed'
+import { fiveKTests, postRunFacts } from './fiveK'
 
 type Bindings = {
   DB: D1Database
@@ -473,6 +476,17 @@ async function getRunPrescription(db: DrizzleDB, session: RunSessionInput, today
   const ceiling = `Keep HR at or below ${dose.hrCeilingBpm} bpm.`
   // One name for the run (audit #14): the dose's shape names it on the row, the ready board and the lock screen.
   const base = { weekNumber: row.blockType === 'block_zero' ? blockZeroTrainingWeek(weekNumber) : weekNumber, targetDistKm: null, z2CeilingBpm: dose.hrCeilingBpm, talkTestDue: dose.talkTestDue, brain: { level: dose.level, rungSec: dose.rungSec, why: dose.why }, ...(isBlockZeroModelRun(row) || dose.walkOnly ? { name: runShapeLabel(dose) } : {}) }
+  // Page 76: a hard run carries its pieces, speeds and heart range; the run screen and the cues read them.
+  if (dose.hard) {
+    const h = dose.hard
+    return {
+      ...base, runType: HARD_NOTES[h.kind], name: hardLabel(h), z2CeilingBpm: null, hard: h,
+      targetDurSec: dose.totalSec, targetDistKm: h.kind === 'test' ? 5 : null,
+      targetDesc: `${hardLabel(h)}.${why ? ` ${why}` : ''}`,
+      autoEase: { eased: dose.level === 'EASE', reason: dose.level === 'EASE' ? why || null : null }, coach: { eased: dose.level === 'EASE', reasons: dose.why },
+    }
+  }
+  if (dose.easyKmh) Object.assign(base, { easyKmh: dose.easyKmh })
   if (dose.walkOnly) {
     const min = Math.round(dose.totalSec / 60)
     // An easy walk or bike (a RED morning, an injury, the raven): never a run on the screen (audit #8).
@@ -1585,8 +1599,9 @@ app.get('/api/sessions/:id/foundation-run-workout', async (c) => {
   const [run] = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
   const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' }, athleteDay(c))
   const mobilityResponse = await buildMobilityWorkoutResponse(db, sessionId)
+  const post = session.status === 'completed' ? await postRunFacts(db, run) : null
 
-  return c.json({ session, runSession: run ?? null, prescription, postureExercises: mobilityResponse.exercises })
+  return c.json({ session, runSession: run ?? null, prescription, postureExercises: mobilityResponse.exercises, post })
 })
 
 // ─── Mobility Workout ──────────────────────────────────────────
@@ -2002,7 +2017,8 @@ app.get('/api/sessions/:id/run-workout', async (c) => {
 
   const [run] = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
   const prescription = await getRunPrescription(db, session, athleteDay(c))
-  return c.json({ session, runSession: run ?? null, prescription })
+  const post = session.status === 'completed' ? await postRunFacts(db, run) : null
+  return c.json({ session, runSession: run ?? null, prescription, post })
 })
 
 app.patch('/api/run-sessions/:id', async (c) => {
@@ -2019,6 +2035,8 @@ app.patch('/api/run-sessions/:id', async (c) => {
     maxHr?: number
     elevationGainM?: number
     shortReason?: string | null
+    /** A 5K test's time for the 5 km, seconds (page 76). */
+    fiveKSec?: number | null
   }>()
 
   const db = createDB(c.env)
@@ -2036,6 +2054,7 @@ app.patch('/api/run-sessions/:id', async (c) => {
   if (body.avgHr !== undefined) updates.avgHr = body.avgHr
   if (body.maxHr !== undefined) updates.maxHr = body.maxHr
   if (body.elevationGainM !== undefined) updates.elevationGainM = body.elevationGainM
+  if (body.fiveKSec !== undefined) updates.fiveKSec = parseFiveK(body.fiveKSec)
 
   const [current] = await db.select().from(runSessions).where(eq(runSessions.id, runId))
   if (!current) return c.json({ error: 'run session not found' }, 404)
@@ -2050,7 +2069,14 @@ app.patch('/api/run-sessions/:id', async (c) => {
   await db.update(runSessions).set(updates).where(eq(runSessions.id, runId))
 
   const [row] = await db.select().from(runSessions).where(eq(runSessions.id, runId))
-  return c.json(row)
+  // Page 76 §4b: the one line after SAVE RUN, from this run and the ones before it.
+  return c.json({ ...row, post: await postRunFacts(db, row) })
+})
+
+// Page 76: the 5K tests so far and the goal (Ledger reads these; src/server/fiveK.ts).
+app.get('/api/five-k-tests', async (c) => {
+  const db = createDB(c.env)
+  return c.json({ goalSec: GOAL_5K_SEC, tests: await fiveKTests(db) })
 })
 
 // Page 74: a run recorded by Waymark (the strap and GPS), uploaded once from the
@@ -2854,6 +2880,8 @@ app.patch('/api/settings', async (c) => {
     enabledTechniques?: string
     amEnabled?: boolean
     pmEnabled?: boolean
+    /** Treadmill speed (page 76): 'kmh' | 'mph', or null (none picked: both units show). */
+    treadmillUnit?: string | null
   }>()
 
   const naruto = validateNarutoPatch(body)
@@ -2879,6 +2907,7 @@ app.patch('/api/settings', async (c) => {
   if (body.enabledTechniques !== undefined) updates.enabledTechniques = body.enabledTechniques
   if (body.amEnabled !== undefined) updates.amEnabled = body.amEnabled ? 1 : 0
   if (body.pmEnabled !== undefined) updates.pmEnabled = body.pmEnabled ? 1 : 0
+  if (body.treadmillUnit !== undefined) updates.treadmillUnit = parseUnit(body.treadmillUnit)
 
   await db.update(settings).set(updates).where(eq(settings.id, 'default'))
   const [row] = await db.select().from(settings).where(eq(settings.id, 'default'))

@@ -23,6 +23,7 @@ import { WeatherStrip } from '@/features/weather/WeatherStrip'
 import { useWeather } from '@/features/weather/useWeather'
 import { coachLine, degText, hourWord } from '@/features/weather/weatherData'
 import { plannedMinute, plannedRuns, plannedWord, type CoachHours } from '@/features/weather/plannedHours'
+import { whereForRun } from '@/features/weather/runPlace'
 import { temperatureUnit } from '@/lib/units'
 import { CrestLoading } from '@/world/CrestLoading'
 import { setWorldLantern, setWorldPlace } from '@/world/worldStore'
@@ -332,6 +333,8 @@ export function TodayPage() {
   const midnight = useMemo(() => new Date(`${today}T00:00:00`).getTime(), [today])
   const runs = useMemo(() => plannedRuns(sessions, coachHours, midnight), [sessions, coachHours, midnight])
   const wxLine = weather ? coachLine(weather, runs, Date.now(), unit) : null
+  // Page 76: inside or outside for each run at its hour (its WHERE line).
+  const whereFor = useMemo(() => whereForRun(weather, coachHours, unit), [weather, coachHours, unit])
   // The raven (page 58): on the Morning Report, its boards, and the return's question on top.
   const bodyWatch = useBodyWatch()
   const { raven, overlay: ravenOverlay } = useRavenOnToday(() => { void refreshSessions(); setChangesVersion(v => v + 1); setWeekVersion(v => v + 1) })
@@ -665,6 +668,7 @@ export function TodayPage() {
             onDismissMatch={handleDismissMatch}
             onAdd={openAdd}
             changeFor={s => rowChange(changes, s, todayEpoch)}
+            whereFor={whereFor}
             weatherFor={s => {
               if (!weather || (s.type !== 'running' && s.type !== 'foundation_run') || s.status === 'completed') return null
               const at = midnight + plannedMinute(s, coachHours) * 60000

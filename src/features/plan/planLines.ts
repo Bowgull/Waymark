@@ -10,6 +10,10 @@
 import { foundationLevel, foundationMinutes } from '../../lib/foundation'
 import { RESET_WALK_MIN, resetMinutes } from '../../lib/activeRecoveryTemplate'
 import type { SummaryData } from '../dayboard/summaryData'
+import type { RunPlace } from '../weather/runPlace'
+import { fiveKText, hardKindOf, speedsFrom, toGoalText, GOAL_5K_SEC, type HardPlan } from '../../lib/brain/hardRuns'
+import { BASE_INCLINE, paceText, speedText, type TreadmillUnit } from '../../lib/runSpeed'
+import { postRunLine } from '../../lib/postRun'
 import { actualMinutes, continuousRunMin, liftLoad, plannedRowMinutes, rowStatus, runWalkShapeFor, shortLift, strengthDiffLines, type DayBoardSession, type WorkoutExercise } from '../dayboard/rowState'
 
 export interface PlanLine {
@@ -27,6 +31,10 @@ export interface LinesOpts {
   weather?: string | null
   /** A class's start ("7 PM"). */
   classTime?: string | null
+  /** Page 76: inside or outside at the run's hour, and why ("inside: 3° and sleet at 6"). */
+  where?: RunPlace | null
+  /** Page 76: the treadmill speed unit picked in Settings (null: both show). */
+  unit?: TreadmillUnit
 }
 
 const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`
@@ -109,8 +117,65 @@ function runPlan(s: DayBoardSession, data: SummaryData | null, opts: LinesOpts):
       out.push({ label: 'RUN', value: `${min != null ? `${min} min` : 'easy'}${hr}` }, { label: 'SHAPE', value: 'one steady run' })
     }
   }
+  // Page 76: every piece has a speed; an easy run inside shows the one to set.
+  const easyKmh = plan?.easyKmh ?? null
+  if (easyKmh && !dose?.walkOnly && opts.where?.place !== 'outside') out.push({ label: 'SET', value: `speed about ${speedText(easyKmh, opts.unit ?? null)} · incline ${BASE_INCLINE}` })
   if (opts.weather) out.push({ label: 'WEATHER', value: opts.weather })
   return out
+}
+
+const min = (sec: number) => `${Math.round(sec / 60)} min`
+
+/** A piece's numbers: inside "speed 10.8 km/h · incline 1", outside "pace 5:33 /km". */
+function setWords(kmh: number, outside: boolean, unit: TreadmillUnit): string {
+  return outside ? `pace ${paceText(kmh, unit)}` : `speed ${speedText(kmh, unit)} · incline ${BASE_INCLINE}`
+}
+
+/** Page 76 §2: a hard run's lines. What to do, the numbers to set (or the pace outside), the heart range, and where. */
+function hardTodo(h: HardPlan, opts: LinesOpts): PlanLine[] {
+  const unit = opts.unit ?? null
+  const out = opts.where?.place === 'outside'
+  const where = opts.where ? [{ label: 'WHERE', value: opts.where.line }] : []
+  const p = h.pieces
+  const warm = p[0]?.sec ?? 600
+  const cool = p[p.length - 1]?.sec ?? 300
+  if (h.kind === 'steady') {
+    const st = p.find(x => x.kind === 'steady')
+    return [
+      { label: 'WHAT', value: `easy ${min(warm)}, steady hard ${min(st?.sec ?? 900)}, easy ${min(cool)}` },
+      { label: 'HARD', value: setWords(h.speeds.steady, out, unit) },
+      { label: 'EASY', value: setWords(h.speeds.easy, out, unit) },
+      { label: 'HEART', value: h.heart.low != null ? `stay ${h.heart.low}–${h.heart.top}` : `up to ${h.heart.top}` },
+      ...where,
+    ]
+  }
+  if (h.kind === 'test') {
+    return [
+      { label: 'WHAT', value: `easy ${min(warm)}, then 5 km as fast as you can, easy ${min(cool)}` },
+      { label: 'START', value: setWords(h.speeds.test, out, unit) },
+      { label: 'THEN', value: 'a little faster each km if you can' },
+      ...where,
+    ]
+  }
+  const hard = p.find(x => x.kind === 'hard')
+  const jog = p.find(x => x.kind === 'jog')
+  return [
+    { label: 'WHAT', value: `RUN HARD ${min(hard?.sec ?? 120)}, then EASY JOG ${min(jog?.sec ?? 120)} · ${h.reps} times` },
+    { label: 'HARD', value: setWords(h.speeds.hard, out, unit) },
+    { label: 'JOG', value: setWords(h.speeds.jog, out, unit) },
+    { label: 'HEART', value: `hard: up to ${h.heart.top}${h.heart.jogTop ? ` · jog: under ${h.heart.jogTop}` : ''}` },
+    ...where,
+  ]
+}
+
+/** Page 76 §6: the test's result on its row: the time, how far from 22:00, the new speeds it set. */
+function testDone(sec: number, unit: TreadmillUnit): PlanLine[] {
+  const sp = speedsFrom(sec)
+  return [
+    { label: '5K', value: fiveKText(sec), tick: true },
+    { label: 'GOAL', value: `${fiveKText(GOAL_5K_SEC)} · ${toGoalText(sec)}` },
+    { label: 'NEW', value: `steady hard ${speedText(sp.steady, unit)} · run hard ${speedText(sp.hard, unit)}` },
+  ]
 }
 
 /** The lines an opened row shows. */
@@ -129,6 +194,17 @@ export function planLines(s: DayBoardSession, data: SummaryData | null, opts: Li
       break
     case 'running':
     case 'foundation_run': {
+      const run = data?.kind === 'run' ? data : null
+      const fiveK = run?.run?.fiveKSec ?? s.runSession?.fiveKSec ?? null
+      if (done && hardKindOf(s) === 'test' && fiveK) {
+        out.push(...testDone(fiveK, opts.unit ?? null))
+        doneLine(null)
+        break
+      }
+      // Page 76 §4b: a done run's one line (outside from GPS, inside from the speed).
+      const post = done && run?.post ? postRunLine(run.post, opts.unit ?? null) : null
+      if (post) { out.push({ label: 'RUN', value: post }); break }
+      if (!done && run?.plan?.hard) { out.push(...hardTodo(run.plan.hard, opts)); break }
       if (done) {
         const run = data?.kind === 'run' ? data.run ?? s.runSession ?? null : s.runSession ?? null
         const rm = run?.durationSec ? Math.round(run.durationSec / 60) : min

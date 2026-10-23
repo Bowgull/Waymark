@@ -184,7 +184,11 @@ export function guardWeekPlan(plan: WeekPlanOutput, input: WeekPlanGuardInput): 
         clamps.push({ code: 'mt_class_dropped', detail: `dow=${dow} label=${s.label ?? ''}`, reason: 'No muay thai in the plan. Classes are yours to add.' })
         continue
       }
-      if (s.type === 'running' && slots.some(x => !x.used && RUN_TYPES.has(x.t.type))) {
+      // Page 76: from week 4 the template's hard runs are 'running' with their kind; the planner never picks the kind.
+      const hardSlot = s.type === 'running' ? slots.find(x => !x.used && x.t.type === 'running') : undefined
+      if (hardSlot) {
+        s = { ...s, label: hardSlot.t.label, ...(hardSlot.t.runCategory ? { runCategory: hardSlot.t.runCategory } : {}) }
+      } else if (s.type === 'running' && slots.some(x => !x.used && RUN_TYPES.has(x.t.type))) {
         clamps.push({ code: 'run_type', detail: `dow=${dow}`, reason: 'Runs in Block Zero are run-walks.' })
         s = { ...s, type: 'foundation_run', label: 'Run-Walk' }
         delete s.runCategory

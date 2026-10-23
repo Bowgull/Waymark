@@ -53,6 +53,16 @@ export function groupOf(region: BodyRegion): PlanGroup {
 
 const RUNS = new Set(['foundation_run', 'running'])
 
+/** A Block Zero run the plan shapes: the run-walk, and from week 4 the hard runs (page 76: they come back as run-walks too). */
+export function isPlanRun(s: Pick<PlanSession, 'type' | 'notes' | 'blockZero'>): boolean {
+  return s.blockZero && (s.type === 'foundation_run' || (s.type === 'running' && (s.notes === 'tempo' || s.notes === 'intervals' || s.notes === '5k_test')))
+}
+
+/** A hard run's flap (page 76): its own name, "STEADY HARD", "HARD RUN", "5K TEST". */
+function hardFlap(s: Pick<PlanSession, 'type' | 'notes' | 'label'>): string | null {
+  return s.type === 'running' && (s.notes === 'tempo' || s.notes === 'intervals' || s.notes === '5k_test') ? (s.label?.trim() || 'Hard Run').toUpperCase() : null
+}
+
 /**
  * What the coach leaves out of its picks while a place is on watch (page 57
  * §5). His picks of these are recorded quietly (T4), never refused.
@@ -560,7 +570,7 @@ export function setsFlap(week: number, minus = 0): string {
 export function sessionFlap(s: Pick<PlanSession, 'type' | 'label' | 'notes'>): string {
   switch (s.type) {
     case 'foundation_run': return 'RUN-WALK'
-    case 'running': return 'RUN'
+    case 'running': return hardFlap(s) ?? 'RUN'
     case 'skip_rope': return 'SKIP ROPE'
     case 'bag_work': return 'BAG WORK'
     case 'mt_class': return 'MT CLASS'
@@ -587,7 +597,7 @@ function changeFor(s: PlanSession, op: PlanOp): PlanChange {
     case 'reset': return { ...base, before: sessionFlap(s), after: 'RESET', afterType: 'active_recovery', was: sessionWords(s) }
     case 'shape': {
       const w = shapeOf({ week: s.week, plan: null })
-      return { ...base, before: runFlap(s.week), after: runFlap(op.week), afterType: s.type, was: `${mmss(w.runSec)} × ${w.rounds}` }
+      return { ...base, before: hardFlap(s) ?? runFlap(s.week), after: runFlap(op.week), afterType: s.type, was: `${mmss(w.runSec)} × ${w.rounds}` }
     }
     case 'technique': return { ...base, before: sessionFlap(s), after: 'TECHNIQUE', afterType: s.type, was: sessionWords(s) }
     case 'one_set': return { ...base, before: setsFlap(s.week), after: setsFlap(s.week, 1), afterType: s.type, was: setsFlap(s.week) }
@@ -663,8 +673,8 @@ export function planFor(region: BodyRegion, round: 1 | 2, today: number, session
   }
   // Plan 1, knee / ankle / shin: the next two runs after it come back at 2:00 segments.
   if (group === 'lower' && round === 1) {
-    const after = sessions.filter(s => s.day > end && live(s) && s.type === 'foundation_run' && s.blockZero).sort((a, b) => a.day - b.day).slice(0, 2)
-    for (const s of after) if (getRunWalkWeek(s.week).runSec > getRunWalkWeek(3).runSec) add(s, { kind: 'shape', week: 3 })
+    const after = sessions.filter(s => s.day > end && live(s) && isPlanRun(s)).sort((a, b) => a.day - b.day).slice(0, 2)
+    for (const s of after) if (hardFlap(s) || getRunWalkWeek(s.week).runSec > getRunWalkWeek(3).runSec) add(s, { kind: 'shape', week: 3 })
   }
 
   const lines = planLines(group, round, start, end, W)
@@ -755,11 +765,11 @@ export function stepUp(region: BodyRegion, from: number, sessions: ReadonlyArray
   const STEPS = [3, 4]
   let runIdx = 0
   for (const s of ahead) {
-    const isRun = (s.type === 'foundation_run' && s.blockZero) || (s.plan?.op === 'bike' && lower)
+    const isRun = isPlanRun(s) || (s.plan?.op === 'bike' && lower)
     if (lower && isRun && s.blockZero && runIdx < STEPS.length) {
       const step = STEPS[runIdx++]
       const own = getRunWalkWeek(s.week)
-      const target = own.runSec > getRunWalkWeek(step).runSec ? step : null
+      const target = hardFlap(s) || own.runSec > getRunWalkWeek(step).runSec ? step : null
       const nowWeek = s.plan?.op === 'shape' ? s.plan.shapeWeek ?? null : null
       if (s.plan?.op !== 'bike' && nowWeek === target) {
         if (target != null) out.push({ sessionId: s.id, day: s.day, revert: false, shapeWeek: target, before: runFlap(target), after: runFlap(target), same: true })
@@ -767,7 +777,7 @@ export function stepUp(region: BodyRegion, from: number, sessions: ReadonlyArray
       }
       out.push({
         sessionId: s.id, day: s.day, revert: s.plan != null, shapeWeek: target,
-        before: s.plan?.op === 'bike' ? 'EASY BIKE' : nowWeek ? runFlap(nowWeek) : runFlap(s.week),
+        before: s.plan?.op === 'bike' ? 'EASY BIKE' : nowWeek ? runFlap(nowWeek) : hardFlap(s) ?? runFlap(s.week),
         after: target ? runFlap(target) : runFlap(s.week),
       })
       continue
@@ -969,7 +979,7 @@ export function stepLinesFor(steps: ReadonlyArray<StepUpChange>, sessions: Reado
   })
   // Then the plan: the first run after the step-up runs, as planned.
   const lastStep = shaped.length ? shaped[shaped.length - 1].day : from - 1
-  const next = sessions.filter(s => s.day > lastStep && s.type === 'foundation_run' && s.blockZero && !steps.some(st => st.sessionId === s.id && st.shapeWeek != null)).sort((a, b) => a.day - b.day)[0]
+  const next = sessions.filter(s => s.day > lastStep && isPlanRun(s) && !steps.some(st => st.sessionId === s.id && st.shapeWeek != null)).sort((a, b) => a.day - b.day)[0]
   if (next) {
     const w = getRunWalkWeek(next.week)
     const label = mondayOf(next.day) > mondayOf(lastStep) ? 'NEXT WEEK' : dayShort(next.day)

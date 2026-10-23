@@ -66,8 +66,10 @@ export interface ActivityState {
   hrZone?: 'in' | 'gold' | 'over' | 'none'
   /** GPS distance so far (outdoor). */
   distanceKm?: number
-  /** easy: pause / play only, never skip. runwalk: skip = the next piece. */
-  runKind?: 'easy' | 'runwalk'
+  /** easy: pause / play only, never skip. runwalk: skip = the next piece. hard (page 76): skip = the next piece too. */
+  runKind?: 'easy' | 'runwalk' | 'hard'
+  /** A hard run's piece word on the lock card (page 76): RUN HARD, EASY JOG, STEADY HARD, 5K, EASY. */
+  runPhase?: string
 }
 
 /** Default painted icon for a Live Activity session type. */

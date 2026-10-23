@@ -21,6 +21,7 @@ import { backDaySwap, chooseSlot, ravenSwap, slotOf, type MainSlot } from './pro
 import type { ReadinessState } from './readiness'
 import type { AthleteModel, LiftEstimate } from './types'
 import { CONTINUOUS_FROM_SEC, gapWords, monthOf } from './history'
+import { piecesFor, totalOf, type HardPlan } from './hardRuns'
 
 export type Level = 'REST' | 'RECOVER' | 'EASE' | 'HOLD' | 'PROGRESS' | 'PUSH'
 export const LEVELS: readonly Level[] = ['REST', 'RECOVER', 'EASE', 'HOLD', 'PROGRESS', 'PUSH']
@@ -499,6 +500,10 @@ export interface RunDose {
   talkTestDue: boolean
   capped: boolean
   why: string[]
+  /** A hard run (page 76): its pieces, speeds and heart range. Absent on an easy run. */
+  hard?: HardPlan
+  /** An easy run's treadmill speed (page 76: every piece has one), km/h. */
+  easyKmh?: number
 }
 
 export function runSignal(model: AthleteModel, day: number): { level: Level; why: string | null } {
@@ -784,6 +789,17 @@ export function tweakStrength(d: StrengthDose, t: Tweak, equipment: Readonly<Rec
 
 export function tweakRun(d: RunDose, t: Tweak): RunDose {
   if (isNoTweak(t) || t.roundsDelta >= 0 || d.walkOnly) return d
+  // A hard run (page 76): one rep fewer, or 3 min less steady; the 5K test stays 5 km.
+  if (d.hard) {
+    const h = d.hard
+    if (h.kind === 'test') return d
+    const main = h.pieces.find(p => p.kind === 'steady')
+    const reps = h.kind === 'intervals' ? Math.max(3, h.reps + t.roundsDelta) : 1
+    const steadyMin = main ? Math.max(8, Math.round(main.sec / 60) - 3) : 0
+    const pieces = piecesFor(h.kind, h.speeds, reps, steadyMin, h.pieces[0]?.sec)
+    const total = totalOf(pieces)
+    return { ...d, rounds: reps, totalSec: total, runTotalSec: total, holdRunSec: total, runSec: h.kind === 'steady' ? steadyMin * 60 : d.runSec, rungSec: h.kind === 'steady' ? steadyMin * 60 : d.rungSec, hard: { ...h, reps, pieces }, level: minLevel(d.level, 'EASE') }
+  }
   if (d.rounds <= 1) {
     const sec = Math.round((d.runSec * 0.9) / 30) * 30
     return { ...d, runSec: sec, totalSec: sec, runTotalSec: sec, level: minLevel(d.level, 'EASE') }

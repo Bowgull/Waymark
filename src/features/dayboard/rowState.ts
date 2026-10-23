@@ -34,6 +34,8 @@ export interface RunActuals {
   avgHr?: number | null
   maxHr?: number | null
   source?: string | null
+  /** A 5K test's time for the 5 km, seconds (page 76). */
+  fiveKSec?: number | null
 }
 
 /** A session row as /api/weeks/current and /api/sessions/today return it. */

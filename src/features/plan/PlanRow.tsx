@@ -6,6 +6,7 @@ import { loadSummary, type SummaryData } from '@/features/dayboard/summaryData'
 import { iconFor, rowStatus, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
 import type { RuneState } from '@/lib/coach/changes'
 import { tapHaptic } from '@/lib/haptics'
+import { useTreadmillUnit } from '@/lib/treadmillUnit'
 
 import { PixelCursor } from './PixelCursor'
 import { planLines, type LinesOpts } from './planLines'
@@ -106,7 +107,9 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
   }
 
   const ready = data?.key === key
-  const lines = ready ? planLines(s, data.data, linesOpts) : []
+  // Page 76: every speed and pace follows the treadmill unit in Settings.
+  const unit = useTreadmillUnit()
+  const lines = ready ? planLines(s, data.data, { ...linesOpts, unit }) : []
 
   return (
     <div

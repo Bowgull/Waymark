@@ -28,7 +28,8 @@ async function day(db: TestDB, d: number) {
   return db.select().from(sessions).where(eq(sessions.scheduledDate, d))
 }
 async function one(db: TestDB, d: number, type: string) {
-  const s = (await day(db, d)).find(x => x.type === type)
+  // A run is a run-walk or, from page 76, a hard run made from the template (week 5 on).
+  const s = (await day(db, d)).find(x => x.type === type || (type === 'foundation_run' && x.type === 'running'))
   assert.ok(s, `a ${type} on day ${d}`)
   return s
 }
@@ -40,6 +41,9 @@ async function setup(): Promise<{ db: TestDB; blockId: string }> {
   for (let w = 0; w < 4; w++) {
     const monday = START + w * 7
     await prepareWeek(db, '', { blockId: block.id, monday, todayDay: monday, nowSec: at(monday - 1, 18), useAi: false })
+    // This story is the week-4 run-walk jump (2:00 to 3:30); from page 76 week 4 holds two hard runs.
+    // The story keeps its three run-walks a week.
+    await db.update(sessions).set({ type: 'foundation_run', notes: null, label: 'Run-Walk' }).where(and(eq(sessions.type, 'running'), gte(sessions.scheduledDate, monday), lte(sessions.scheduledDate, monday + 6)))
     // The week is done before the next is made (the counter only moves on done key sessions).
     for (const s of await db.select().from(sessions).where(and(gte(sessions.scheduledDate, monday), lte(sessions.scheduledDate, Math.min(monday + 6, THU22 - 1))))) {
       await db.update(sessions).set({ status: 'completed', completedAt: at(s.scheduledDate as number, 8), durationSec: 1500 }).where(eq(sessions.id, s.id))
@@ -71,7 +75,8 @@ assert.deepEqual(p22.weather, { level: 1, quiet: false, clearing: false }, 'gree
 assert.equal(p22.alert.board?.key, 'plan1')
 assert.equal(p22.alert.board?.head, 'KNEE · 4 IN 17 DAYS')
 assert.equal(p22.alert.board?.ctx, 'The last two came the week each run went from 2:00 to 3:30 at a time.', 'the load-jump line, from his real runs')
-assert.deepEqual(p22.alert.board?.chg.map(c => [c.days, c.before, c.after]), [['SAT 24 · TUE 27', 'RUN-WALK', 'EASY BIKE'], ['THU 29 · SAT 31', 'RUN 4:00 × 5', 'RUN 2:00 × 7']], 'the plan on the week, from the made week and the template')
+// Page 76: next week is not made yet, so its runs come from the template: Tuesday's steady hard and Saturday's run hard / jog.
+assert.deepEqual(p22.alert.board?.chg.map(c => [c.days, c.before, c.after]), [['SAT 24', 'RUN-WALK', 'EASY BIKE'], ['TUE 27', 'STEADY HARD', 'EASY BIKE'], ['THU 29', 'RUN 4:00 × 5', 'RUN 2:00 × 7'], ['SAT 31', 'HARD RUN', 'RUN 2:00 × 7']], 'the plan on the week, from the made week and the template')
 assert.deepEqual(p22.checkIn, [{ region: 'knee', label: 'KNEE TODAY' }], 'Knee today joins the check-in')
 assert.equal(await ravenLineFor(db, THU22 + 1, THU22, at(THU22)), 'Knee: 4 times in 17 days. Tap to see.', 'the alarm names it once if unread')
 const again = await bodyWatchPayload(db, THU22, at(THU22, 9))
@@ -180,7 +185,7 @@ await db.update(bodyAlerts).set({ askOn: WED28 }).where(eq(bodyAlerts.id, id))
   assert.equal(p2.alert?.line?.text, 'Knee: still sore.')
   assert.equal(p2.weather.quiet, false, 'green rain again until he answers it')
   assert.equal(p2.alert?.board?.key, 'plan2')
-  assert.deepEqual(p2.alert?.board?.chg.map(c => [c.days, c.before, c.after]), [['THU 29 · SAT 31 · TUE 3', 'RUN-WALK', 'EASY BIKE'], ['THU 29', 'BAG WORK', 'TECHNIQUE'], ['FRI 30', '3 × 8', '2 × 8']], 'plan 2 on the week')
+  assert.deepEqual(p2.alert?.board?.chg.map(c => [c.days, c.before, c.after]), [['THU 29', 'RUN-WALK', 'EASY BIKE'], ['THU 29', 'BAG WORK', 'TECHNIQUE'], ['FRI 30', '3 × 8', '2 × 8'], ['SAT 31', 'HARD RUN', 'EASY BIKE'], ['TUE 3', 'STEADY HARD', 'EASY BIKE']], 'plan 2 on the week (page 76: the hard runs go to the bike too)')
   const ap2 = await applyBodyPlan(dbB, a.id, WED28, at(WED28, 8))
   assert.ok(ap2.ok && ap2.toast?.text === '7 more days of bike, to Tue 3 Nov.')
   const thu29 = await one(dbB, D('2026-10-29'), 'active_recovery')

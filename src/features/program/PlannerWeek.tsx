@@ -10,6 +10,7 @@ import { PlanRow } from '@/features/plan/PlanRow'
 import { useRowSlots } from '@/features/plan/useRowSlots'
 
 import { dayLine } from './weekModel'
+import { useRunWhere } from '@/features/weather/useRunWhere'
 import './program.css'
 
 // Program as a day list (page 73, layout B, approved 2026-10-22): THIS WEEK /
@@ -81,6 +82,8 @@ function reveal(row: HTMLElement | null | undefined) {
 }
 
 export function PlannerWeek(p: PlannerWeekProps) {
+  // Page 76 §2: a run's WHERE line, from the weather at its planned hour.
+  const whereFor = useRunWhere()
   const rowEls = useRef(new Map<number, HTMLElement | null>())
   useEffect(() => {
     if (p.openDay == null) return
@@ -176,7 +179,7 @@ export function PlannerWeek(p: PlannerWeekProps) {
                                 onHold={holdable ? el => { p.onCursor(`s:${s.id}`); p.menu.openAct(s, el) } : undefined}
                                 mins={st === 'done' ? '✓' : st === 'skipped' ? '—' : `~${plannedRowMinutes(s, p.weekNumber)}min`}
                                 change={marks ? rowChange(p.changes, s, p.todayEpochDay) : null}
-                                linesOpts={{ weekNumber: p.weekNumber }}
+                                linesOpts={{ weekNumber: p.weekNumber, where: whereFor(s) }}
                               />
                             )
                           })}
