@@ -5,11 +5,14 @@ import { Board, Crest, FlapLabel, SceneWindow, SessionIcon, showPop, useEdgeBack
 import { apiFetch } from '@/lib/api'
 import type { LibraryHintData } from '@/lib/libraryHints'
 import { markWaybookOpen, requireUnlock, setWaybookShown } from '@/lib/waybookGate'
+import { comboLevel, type ComboLevel } from '@/lib/classCombos'
+import { ComboLine, LevelFlap } from '@/features/combos/ComboPieces'
+import { NewComboWindow, type NewCombo } from '@/features/combos/NewComboWindow'
+import { refreshBagLibrary } from '@/features/combos/combosClient'
 
 import {
   EXERCISE_GROUPS,
   GROUPS,
-  MASTERY_MAX,
   bagCount,
   bookPages,
   comboStrikes,
@@ -19,9 +22,7 @@ import {
   equipmentName,
   exerciseCounts,
   isGroupKey,
-  isMastered,
   isMorningNote,
-  masteryDots,
   combosUsing,
   listed,
   matchCombo,
@@ -84,53 +85,25 @@ function LibraryHeader({ onBack }: { onBack?: () => void }) {
 
 // ─── pieces ───────────────────────────────────────────────────
 
-function Dots({ score }: { score: number }) {
-  const n = masteryDots(score)
-  return (
-    <span className="lib-dots" aria-label={`Mastery ${score} of ${MASTERY_MAX}`}>
-      {'●'.repeat(n)}<i>{'●'.repeat(5 - n)}</i>
-    </span>
-  )
-}
-
-function Anvil({ combo, onToggle }: { combo: LibraryCombo; onToggle: () => void }) {
-  const fav = combo.isFavourite === 1
-  const cls = ['lib-anvil', fav ? 'is-fav' : '', isMastered(combo) ? 'is-mastered' : ''].filter(Boolean).join(' ')
-  return (
-    <button
-      type="button"
-      className={cls}
-      aria-pressed={fav}
-      aria-label={fav ? 'Favourite' : 'Make favourite'}
-      onClick={e => { e.stopPropagation(); onToggle() }}
-    >
-      <svg viewBox="0 0 26 20" aria-hidden><path d="M2 5h16c0 3 2 4 6 4v1c-4 0-6 1-7 3l1 3H7l1-3c-1-2-3-3-6-3z" /></svg>
-    </button>
-  )
-}
-
-/** A combo in its tier (mastery A): the strikes, the dots, the anvil; a tap opens its page (page 52). */
-function ComboRow({ combo, onOpen, onFavourite }: { combo: LibraryCombo; onOpen: () => void; onFavourite: () => void }) {
-  const glove = combo.source === 'class'
+/**
+ * A combo in its tier (page 80): only the strikes and the difficulty in plain
+ * words on one flap. How close he is to mastering it, the favourite and where
+ * it came from stay on the combo's own page. A tap opens that page (page 52).
+ */
+function ComboRow({ combo, onOpen }: { combo: LibraryCombo; onOpen: () => void }) {
+  const keys = (e: { key: string; preventDefault: () => void }) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }
   if (!combo.unlocked) {
     return (
-      <div className="lib-combo is-locked" role="button" tabIndex={0} onClick={onOpen} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}>
-        <Strikes text={combo.text} glove={glove} />
+      <div className="lib-combo is-locked" role="button" tabIndex={0} onClick={onOpen} onKeyDown={keys}>
+        <Strikes text={combo.text} />
         <span className="lib-lock" aria-label="Locked">⚿</span>
       </div>
     )
   }
   return (
-    <div
-      className="lib-combo"
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
-    >
-      <Strikes text={combo.text} glove={glove} />
-      <Dots score={combo.masteryScore} />
-      <Anvil combo={combo} onToggle={onFavourite} />
+    <div className="lib-combo" role="button" tabIndex={0} onClick={onOpen} onKeyDown={keys}>
+      <Strikes text={combo.text} />
+      <LevelFlap level={comboLevel(combo)} />
     </div>
   )
 }
@@ -254,6 +227,20 @@ export function LibraryPage() {
   // undefined: Bagwork opens on the current tier (the highest with an unlocked combo)
   const [openTier, setOpenTier] = useState<string | null | undefined>(undefined)
   const unlocked = useWaybookUnlocked()
+  // page 80: + COMBO's window, and the combos he just added (NEW, at the top, easing in)
+  const [adding, setAdding] = useState(false)
+  const [fresh, setFresh] = useState<Array<{ key: string; id: string | null; text: string; level: ComboLevel }>>([])
+  const freshIds = useMemo(() => new Set(fresh.map(f => f.id).filter(Boolean)), [fresh])
+
+  // the bag's techniques for reading a typed combo, read ahead (nothing loads after a tap)
+  useEffect(() => { void refreshBagLibrary() }, [])
+
+  function added(c: NewCombo) {
+    setFresh(list => [{ key: `${Date.now()}`, id: c.combo?.id ?? null, text: c.text, level: c.level }, ...list])
+    const row = c.combo
+    // the server's row is the whole combo: it joins its tier (shown up top as NEW while he's here)
+    if (row) setCombos(list => [...list.filter(x => x.id !== row.id), row as unknown as LibraryCombo])
+  }
 
   useEffect(() => {
     let live = true
@@ -287,7 +274,7 @@ export function LibraryPage() {
     return () => { live = false }
   }, [unlocked, entriesLoaded])
 
-  const tiers = useMemo(() => tierViews(combos), [combos])
+  const tiers = useMemo(() => tierViews(combos.filter(c => !freshIds.has(c.id))), [combos, freshIds])
   const counts = useMemo(() => exerciseCounts(exercises), [exercises])
   // page 52: each technique with how many combos use it, most used first
   const techRows = useMemo(() => techniques
@@ -414,6 +401,15 @@ export function LibraryPage() {
         <BackHeader onBack={back} />
         <div className="lib-body">
           <Board className="lib-bd is-open">
+            <button type="button" className="cmb-addline lib-addcombo" aria-label="+ Combo" onClick={() => setAdding(true)}>
+              <FlapLabel text="+ COMBO" size="sm" animate={false} />
+            </button>
+            {fresh.map((f, i) => (
+              <div key={f.key} className={`cmb-row${i === 0 ? ' cmb-landin' : ''}`} role={f.id ? 'button' : undefined} tabIndex={f.id ? 0 : undefined} onClick={f.id ? () => openItem('bag', f.id!) : undefined}>
+                <div className="meta"><FlapLabel text="NEW" size="xs" tone="teal" animate={false} /></div>
+                <ComboLine text={f.text} level={f.level} />
+              </div>
+            ))}
             {tiers.map(t => {
               const isOpen = !t.locked && shownTier === t.tier
               return (
@@ -428,16 +424,14 @@ export function LibraryPage() {
                     onClick={t.locked ? undefined : () => setOpenTier(isOpen ? null : t.tier)}
                   />
                   {isOpen && t.combos.map(c => (
-                    <ComboRow key={c.id} combo={c} onOpen={() => openItem('bag', c.id)} onFavourite={() => void toggleFavourite(c.id)} />
+                    <ComboRow key={c.id} combo={c} onOpen={() => openItem('bag', c.id)} />
                   ))}
                 </Fragment>
               )
             })}
           </Board>
-          {combos.some(c => c.source === 'class') && (
-            <p className="lib-classkey"><SessionIcon kind="mt" size={16} label="" /> found in class</p>
-          )}
         </div>
+        {adding && <NewComboWindow source="mine" onAdded={added} onClose={() => setAdding(false)} />}
       </div>
     )
   }
@@ -499,7 +493,7 @@ export function LibraryPage() {
     // combos: by their text, or by a technique the search names
     const named = new Set(hits.map(h => h.technique.id))
     const foundCombos = combos.filter(c => matchCombo(c, q) || comboStrikes(c.text).some(s => { const t = techniqueFor(s, techniques); return t != null && named.has(t.id) && s.toLowerCase().includes(q.toLowerCase()) }))
-    if (foundCombos.length) groups.push({ key: 'bag', name: 'COMBOS', rows: foundCombos.map(c => <ComboRow key={c.id} combo={c} onOpen={() => openItem('bag', c.id)} onFavourite={() => void toggleFavourite(c.id)} />) })
+    if (foundCombos.length) groups.push({ key: 'bag', name: 'COMBOS', rows: foundCombos.map(c => <ComboRow key={c.id} combo={c} onOpen={() => openItem('bag', c.id)} />) })
     else zero.push('COMBOS')
     const foundRuns = runs.filter(r => matchRun(r, q))
     if (foundRuns.length) groups.push({ key: 'runs', name: 'RUNS', rows: foundRuns.map(r => <PlainRow key={r.id} name={r.name} sub={`Run · ${r.sub ?? ''}`} onOpen={() => openItem('runs', r.id)} />) })

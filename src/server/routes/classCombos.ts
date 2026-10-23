@@ -2,7 +2,8 @@
 //
 //   GET  /api/class-combos/library    the bag, the switched-on techniques and the NOT NOWs (the phone keeps a copy for offline)
 //   POST /api/class-combos/learned    { mtLogId, note }: saves "What you learned" with the class, returns the found lines
-//   POST /api/class-combos/add        { strikes, sessionId }: ADD TO BAG (new, or unlocks a locked one), marked from class
+//   POST /api/class-combos/add        { strikes, sessionId, source?, difficulty? }: ADD TO BAG (new, or unlocks a locked one),
+//                                     marked from class; or a combo he typed (page 80: source 'mine', his nudged grade)
 //   POST /api/class-combos/decline    { strikes, sessionId }: NOT NOW, so it isn't offered again
 //
 // The extraction is the deterministic parser (lib/classCombos.ts) plus, when
@@ -27,6 +28,8 @@ import {
   parseCombos,
   splitComboText,
   tierFor,
+  LEVEL_KEYS,
+  type LevelKey,
   type Technique,
 } from '../../lib/classCombos'
 import { extractClassCombosAI } from '../../lib/classComboAI'
@@ -40,7 +43,7 @@ const DEFAULT_TECHNIQUES = 'boxing,kicks,defensive'
 
 async function loadBag(db: DB) {
   const [rows, [userSettings], declines] = await Promise.all([
-    db.select({ id: combos.id, text: combos.text, tier: combos.tier, unlocked: combos.unlocked, source: combos.source }).from(combos),
+    db.select({ id: combos.id, text: combos.text, tier: combos.tier, unlocked: combos.unlocked, source: combos.source, difficultyOverride: combos.difficultyOverride }).from(combos),
     db.select().from(settings).limit(1),
     db.select({ key: comboDeclines.strikesKey }).from(comboDeclines),
   ])
@@ -91,6 +94,15 @@ const strikesSchema = z.object({
   sessionId: z.string().max(80).nullable().optional(),
 })
 
+// Page 80: a combo he typed (+ COMBO, in the Library, after class or in the bag builder) may be one strike;
+// it carries where it came from and his grade after a nudge.
+const addSchema = z.object({
+  strikes: z.array(z.string().min(1).max(40)).min(1).max(8),
+  sessionId: z.string().max(80).nullable().optional(),
+  source: z.enum(['class', 'mine']).optional(),
+  difficulty: z.enum(LEVEL_KEYS).nullable().optional(),
+})
+
 /** Every strike known and switched on, as the techniques name them; or the first that isn't. */
 function knownStrikes(strikes: string[], techniques: Technique[], enabled: Set<string>): { ok: true; names: string[] } | { ok: false; strike: string } {
   const names: string[] = []
@@ -110,28 +122,43 @@ async function classDay(db: DB, sessionId: string | null | undefined, todayDay: 
   return todayDay
 }
 
-/** ADD TO BAG: a new combo in the library, or a locked one unlocked; both carry the glove. */
-export async function addToBag(db: DB, strikes: string[], sessionId: string | null | undefined, todayDay: number = athleteDayFrom({ nowMs: Date.now() })) {
+export interface AddOptions {
+  /** 'class' (the default, the glove) or 'mine' (he typed it, page 80). */
+  source?: 'class' | 'mine'
+  /** His grade after a nudge; null: the tier's. */
+  difficulty?: LevelKey | null
+}
+
+/**
+ * ADD TO BAG: a new combo in the library, or a locked one unlocked; from class
+ * both carry the glove. A combo he typed (page 80) is marked his ('mine') and
+ * keeps his nudged grade. Either way it joins his pool and tracks to mastery.
+ */
+export async function addToBag(db: DB, strikes: string[], sessionId: string | null | undefined, todayDay: number = athleteDayFrom({ nowMs: Date.now() }), opts: AddOptions = {}) {
   const bag = await loadBag(db)
   const known = knownStrikes(strikes, bag.techniques, bag.enabled)
   if (!known.ok) return { error: `"${known.strike}" isn't a technique the app knows.` }
   const key = matchKey(known.names)
-  const day = await classDay(db, sessionId, todayDay)
+  const mine = opts.source === 'mine'
+  const day = mine ? null : await classDay(db, sessionId, todayDay)
+  const marks = { source: mine ? 'mine' : 'class', classDate: day, ...(opts.difficulty !== undefined ? { difficultyOverride: opts.difficulty } : {}) }
 
   const same = bag.rows.filter(r => matchKey(splitComboText(r.text)) === key)
   const inBag = same.find(r => r.unlocked)
   if (inBag) {
+    // already his: a typed one only carries his nudged grade over
+    if (mine && opts.difficulty) await db.update(combos).set({ difficultyOverride: opts.difficulty }).where(eq(combos.id, inBag.id))
     const [row] = await db.select().from(combos).where(eq(combos.id, inBag.id))
     return { combo: row, status: 'in_bag' as const }
   }
   if (same[0]) {
     // LOCKED: ADD TO BAG unlocks it, and it carries the glove from now on.
-    await db.update(combos).set({ unlocked: 1, source: 'class', classDate: day }).where(eq(combos.id, same[0].id))
+    await db.update(combos).set({ unlocked: 1, ...marks }).where(eq(combos.id, same[0].id))
     const [row] = await db.select().from(combos).where(eq(combos.id, same[0].id))
     return { combo: row, status: 'unlocked' as const }
   }
   const tier = tierFor(known.names)
-  const id = `combo-c-${crypto.randomUUID().slice(0, 8)}`
+  const id = `combo-${mine ? 'm' : 'c'}-${crypto.randomUUID().slice(0, 8)}`
   await db.insert(combos).values({
     id,
     text: comboTextFor(known.names),
@@ -144,17 +171,16 @@ export async function addToBag(db: DB, strikes: string[], sessionId: string | nu
     isFavourite: 0,
     timesSharp: 0,
     createdAt: Math.floor(Date.now() / 1000),
-    source: 'class',
-    classDate: day,
+    ...marks,
   })
   const [row] = await db.select().from(combos).where(eq(combos.id, id))
   return { combo: row, status: 'added' as const }
 }
 
 classCombos.post('/add', async (c) => {
-  const parsed = strikesSchema.safeParse(await c.req.json().catch(() => null))
+  const parsed = addSchema.safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400)
-  const out = await addToBag(createDB(c.env), parsed.data.strikes, parsed.data.sessionId, athleteDayFrom({ header: c.req.header(TODAY_HEADER), nowMs: Date.now() }))
+  const out = await addToBag(createDB(c.env), parsed.data.strikes, parsed.data.sessionId, athleteDayFrom({ header: c.req.header(TODAY_HEADER), nowMs: Date.now() }), { source: parsed.data.source, difficulty: parsed.data.difficulty })
   if ('error' in out) return c.json(out, 400)
   return c.json(out)
 })

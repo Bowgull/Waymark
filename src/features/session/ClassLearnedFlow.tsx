@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 
 import { CentredCard, FlapButton, FlapLabel, SessionIcon, showPop } from '@/design'
-import { comboLine, unknownLine, type FoundLine } from '@/lib/classCombos'
+import { comboLine, unknownLine, type ComboLevel, type FoundLine } from '@/lib/classCombos'
+import { classDayLabel } from '@/features/library/libraryModel'
+import { ComboLine } from '@/features/combos/ComboPieces'
+import { NewComboWindow, type NewCombo } from '@/features/combos/NewComboWindow'
 import { getItem, removeItem, setItem } from '@/lib/safeStorage'
 import { setWorldBackdrop } from '@/world/worldStore'
 
@@ -38,6 +41,9 @@ export function ClassLearnedFlow({ sessionId, mtLogId, onDone, backdrop = true }
   const [result, setResult] = useState<FoundResult | null>(null)
   const [lines, setLines] = useState<LineState[]>([])
   const [busy, setBusy] = useState<number | null>(null)
+  // page 80: + COMBO beside the notes (the notes unchanged): the same window, the combo marked from class
+  const [adding, setAdding] = useState(false)
+  const [typedIn, setTypedIn] = useState<Array<{ key: string; text: string; level: ComboLevel; day: number | null }>>([])
 
   // a fresh copy of the bag for the offline parser
   useEffect(() => { void refreshBagLibrary() }, [])
@@ -92,11 +98,20 @@ export function ClassLearnedFlow({ sessionId, mtLogId, onDone, backdrop = true }
           autoFocus
         />
         <div className="wm-btns cl-btns">
-          <FlapButton label={phase === 'finding' ? 'FINDING' : 'FIND COMBOS'} primary size="sm" onClick={() => void find()} disabled={phase === 'finding' || !note.trim()} />
+          <FlapButton label={phase === 'finding' ? 'FINDING' : 'FIND COMBOS'} size="sm" onClick={() => void find()} disabled={phase === 'finding' || !note.trim()} />
+          <FlapButton label="+ COMBO" primary size="sm" onClick={() => setAdding(true)} />
         </div>
+        {typedIn.map((r, i) => (
+          <div key={r.key} className={`cmb-row${i === typedIn.length - 1 ? ' cmb-landin' : ''}`}>
+            <div className="meta"><FlapLabel text="IN YOUR BAG" size="xs" tone="teal" animate={false} /></div>
+            <ComboLine text={r.text} level={r.level} />
+            {r.day != null && <span className="cmb-from">from class · {classDayLabel(r.day)}</span>}
+          </div>
+        ))}
         <div className="cl-skip">
           <button type="button" className="cl-lnk" onClick={() => onDone('skipped')}>Skip ›</button>
         </div>
+        {adding && <NewComboWindow source="class" sessionId={sessionId} noTabs={backdrop} onAdded={(c: NewCombo) => setTypedIn(list => [...list, { key: `${Date.now()}`, text: c.text, level: c.level, day: c.combo?.classDate ?? null }])} onClose={() => setAdding(false)} />}
       </CentredCard>
     )
   }

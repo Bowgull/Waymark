@@ -36,8 +36,9 @@ test('After class: write it, find the combos, ADD TO BAG and NOT NOW', async ({ 
   const cls = await insertSession(api, 'mt_class', 'pm')
   const box = await finishClass(page, cls.id)
 
-  // Section 1, phone 3: one box, FIND COMBOS, a quiet Skip ›.
+  // Section 1, phone 3: one box, FIND COMBOS, a quiet Skip ›; page 80's + COMBO beside FIND COMBOS.
   await expect(box.getByText('A note, a combo, or both. The coach pulls out the combos.')).toBeVisible()
+  await expect(box.getByRole('button', { name: '+ COMBO' })).toBeVisible()
   await expect(box.getByRole('button', { name: 'Skip ›' })).toBeVisible()
   await box.getByRole('textbox', { name: 'What you learned' }).fill(NOTE)
   await expect(box).toHaveScreenshot('class-what-you-learned.png')
@@ -89,12 +90,16 @@ test('After class: write it, find the combos, ADD TO BAG and NOT NOW', async ({ 
   const lib = await api.get<{ declined: string[] }>('/api/class-combos/library')
   expect(lib.declined).toContain('jab > jab > teep')
 
-  // Section 3: the glove on the class combo in the Library (Weapons, with its mastery dots).
+  // Section 3 (page 80): in the Library list a combo row is only its strikes and its difficulty
+  // (Weapons reads MEDIUM); where it came from shows on the combo's own page.
   await page.goto('/library?open=bag')
   await page.getByRole('button', { name: /WEAPONS/ }).first().tap()
-  const row = page.getByLabel('DOUBLE JAB, CROSS, LOW KICK, from class')
+  const row = page.locator('.lib-combo').filter({ has: page.getByLabel('DOUBLE JAB, CROSS, LOW KICK', { exact: true }) })
   await expect(row).toBeVisible()
-  await expect(row.locator('img.lib-glove')).toBeVisible()
+  await expect(row.getByRole('img', { name: 'MEDIUM' })).toBeVisible()
+  await expect(row.locator('.lib-dots, .lib-glove, .lib-anvil')).toHaveCount(0)
+  await row.tap()
+  await expect(page.locator('.lib-from')).toContainText('From your class')
 })
 
 test('The same note again: NOT NOW is not offered again; nothing found says so', async ({ page, api }) => {

@@ -7,6 +7,7 @@
 
 import { apiFetch, idempotencyHeaders } from './api'
 import type { SessionSuggestion } from './sessionSuggestions'
+import type { BagSpec } from './coach/bagArc'
 
 export interface BoardPick {
   type: string
@@ -14,6 +15,8 @@ export interface BoardPick {
   timeSlot: 'am' | 'pm'
   runCategory?: string
   action?: SessionSuggestion['action']
+  /** Bag Work (page 80): COACH / HYBRID / CUSTOM and his rounds. */
+  bag?: BagSpec
 }
 
 export type BoardPickResult<S> =
@@ -41,6 +44,7 @@ export async function submitBoardPick<S>(pick: BoardPick, date: string, today: s
       ...(pick.type === 'mt_class' ? { label: pick.label } : {}),
       timeSlot: pick.timeSlot,
       runCategory: pick.runCategory,
+      ...(pick.bag ? { bag: pick.bag } : {}),
       today,
     }),
   })
@@ -48,10 +52,10 @@ export async function submitBoardPick<S>(pick: BoardPick, date: string, today: s
 }
 
 /** A pick on the REPLACE board: the swap, at once, with the optional reason code. */
-export async function submitReplace<S>(sessionId: string, pick: Pick<BoardPick, 'type' | 'label' | 'timeSlot' | 'runCategory'>, reason: string | null, today: string): Promise<{ original: S; replacement: S }> {
+export async function submitReplace<S>(sessionId: string, pick: Pick<BoardPick, 'type' | 'label' | 'timeSlot' | 'runCategory' | 'bag'>, reason: string | null, today: string): Promise<{ original: S; replacement: S }> {
   return apiFetch<{ original: S; replacement: S }>(`/api/sessions/${sessionId}/replace`, {
     method: 'POST',
-    body: JSON.stringify({ reason, type: pick.type, label: pick.type === 'strength' && !/Strength [ABC]\b/.test(pick.label) ? undefined : pick.label, timeSlot: pick.timeSlot, runCategory: pick.runCategory, today }),
+    body: JSON.stringify({ reason, type: pick.type, label: pick.type === 'strength' && !/Strength [ABC]\b/.test(pick.label) ? undefined : pick.label, timeSlot: pick.timeSlot, runCategory: pick.runCategory, ...(pick.bag ? { bag: pick.bag } : {}), today }),
   })
 }
 

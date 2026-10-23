@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures'
+import type { Page } from '@playwright/test'
 import { addDaysISO, dayRow, epochOf, gotoToday, holdRow, insertSession, openDay, todayISO, todayRow } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
@@ -115,6 +116,15 @@ test('Hold: the command window (REPLACE / SKIP, 44 pt lines); a tap outside clos
   expect(rows.find(r => r.id === s.id)?.status).toBe('planned')
 })
 
+/** Page 80: a Bag Work pick asks COACH / HYBRID / CUSTOM first; COACH, then its own ADD / SWAP IN. Anything else lands at once. */
+async function throughBagModes(page: Page) {
+  const modes = page.getByRole('dialog', { name: 'Bag work', exact: true })
+  if (!(await modes.isVisible().catch(() => false))) return
+  await modes.getByRole('button', { name: 'Coach' }).tap()
+  const board = page.getByRole('dialog', { name: 'Bag work: coach' })
+  await board.getByRole('button', { name: /^(Add|Swap in)$/ }).tap()
+}
+
 test('REPLACE: COACH PICKS from the brain, a tap only previews, SWAP IN swaps, then the WHY? tiles', async ({ page, api }) => {
   const s = await insertSession(api, 'bag_work', 'pm')
   await page.goto('/program')
@@ -170,6 +180,8 @@ test('REPLACE: COACH PICKS from the brain, a tap only previews, SWAP IN swaps, t
   await expect(lines.first()).toBeVisible({ timeout: 20_000 })
   const name = (await lines.first().getAttribute('aria-label')) ?? ''
   await lines.first().getByRole('button', { name: 'Swap in' }).tap()
+  await page.waitForTimeout(250)
+  await throughBagModes(page)
   const why = page.getByRole('dialog', { name: 'Why, optional' })
   await expect(why).toBeVisible()
   await expect(why.getByRole('button')).toHaveCount(3)
@@ -215,6 +227,8 @@ test('+ add: COACH PICKS, ADD puts it on the day', async ({ page, api }) => {
   const picks = page.getByRole('dialog', { name: 'Coach picks: add' })
   await expect(picks.locator('.pl-cl:not(.is-more)').first()).toBeVisible({ timeout: 20_000 })
   await picks.getByRole('button', { name: 'Add', exact: true }).tap()
+  await page.waitForTimeout(250)
+  await throughBagModes(page)
   await expect(picks).toBeHidden()
   await expect.poll(async () => (await api.get<Row[]>(`/api/sessions/today?date=${todayISO()}`)).length).toBe(before + 1)
 })

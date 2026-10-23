@@ -27,7 +27,10 @@ export interface BagCombo {
   text: string
   tier: string
   unlocked: number
+  /** 'class' (the glove), 'mine' (he typed it, page 80) or NULL (the library's own). */
   source?: string | null
+  /** 0049: his own grade after a nudge ('easy' … 'expert'). */
+  difficultyOverride?: string | null
 }
 
 /** One combo pulled out of the note: the techniques' names in order. */
@@ -379,13 +382,171 @@ export function categoriesFor(strikes: ReadonlyArray<string>): string {
   return CATEGORY_ORDER.filter(c => set.has(c)).join(',')
 }
 
+/** A feint, or a defensive move that isn't a teep (slip, check, parry, step, reset, exit…): the Library's Deception and Mastery. */
+const TRICK = /\b(feint|fake|slip|parry|check|catch|sweep|block|step|pivot|reset|exit|roll)\b/
+
 /**
- * Where a new class combo sits in the library: hands only in Fundamentals,
- * kicks, teeps, knees or elbows in Weapons, five strikes or more in Flow.
+ * Where a new combo sits in the library (a class combo, or one he typed, page
+ * 80): hands only in Fundamentals, kicks, teeps, knees or elbows in Weapons,
+ * five strikes or more in Flow; a feint or a defensive move makes it
+ * Deception, Mastery at five strikes or more (the Library's own tiers read
+ * that way: Feint Jab → Cross → Left Kick → Step Out is Deception,
+ * Jab → Cross → Hook → Check → Teep is Mastery).
  */
 export function tierFor(strikes: ReadonlyArray<string>): string {
-  if (strikes.flatMap(expandStrike).length >= 5) return 'flow'
+  const n = strikes.flatMap(expandStrike).length
+  if (strikes.some(s => TRICK.test(norm(s)))) return n >= 5 ? 'mastery' : 'deception'
+  if (n >= 5) return 'flow'
   return strikes.every(s => categoryOf(s) === 'boxing') ? 'foundation' : 'weapons'
+}
+
+// ─── difficulty in plain words (page 80) ──────────────────────
+
+/** The Library's tiers in plain words, one flap word each: EASY, MEDIUM, HARD, EXPERT. */
+export const LEVELS = ['EASY', 'MEDIUM', 'HARD', 'EXPERT'] as const
+export type ComboLevel = 0 | 1 | 2 | 3
+/** As stored in combos.difficulty_override. */
+export const LEVEL_KEYS = ['easy', 'medium', 'hard', 'expert'] as const
+export type LevelKey = typeof LEVEL_KEYS[number]
+
+/** FUNDAMENTALS → EASY, WEAPONS → MEDIUM, FLOW and DECEPTION → HARD, MASTERY → EXPERT. */
+const TIER_LEVEL: Readonly<Record<string, ComboLevel>> = { foundation: 0, weapons: 1, flow: 2, deception: 2, mastery: 3 }
+
+export function levelOfTier(tier: string | null | undefined): ComboLevel {
+  return TIER_LEVEL[tier ?? ''] ?? 1
+}
+
+/** "hard" → 2; anything else → null. */
+export function parseLevel(key: string | null | undefined): ComboLevel | null {
+  const i = LEVEL_KEYS.indexOf((key ?? '') as LevelKey)
+  return i < 0 ? null : (i as ComboLevel)
+}
+
+/** A combo's difficulty: his own when he nudged it, else its tier's. */
+export function comboLevel(c: { tier: string; difficultyOverride?: string | null }): ComboLevel {
+  return parseLevel(c.difficultyOverride) ?? levelOfTier(c.tier)
+}
+
+/** A new combo's grade, by the same rules as the Library's tiers. */
+export function gradeLevel(strikes: ReadonlyArray<string>): ComboLevel {
+  return levelOfTier(tierFor(strikes))
+}
+
+/** ▲ / ▼: one level, never past EASY or EXPERT. */
+export function nudgeLevel(level: ComboLevel, dir: 1 | -1): ComboLevel {
+  return Math.max(0, Math.min(3, level + dir)) as ComboLevel
+}
+
+// ─── a combo typed in words (page 80) ─────────────────────────
+
+/** A strike read from the typed words. */
+export interface ReadStrike { kind: 'strike'; name: string }
+/** A word it doesn't know (or a strike switched off in Settings): clay, one tap offers fixes. */
+export interface ReadUnknown { kind: 'unknown'; raw: string; off: boolean; fixes: ReadFix[] }
+/** A likely fix: the strike's name and how many read pieces (from this one) it stands for. */
+export interface ReadFix { name: string; span: number }
+export type ReadToken = ReadStrike | ReadUnknown
+
+/** Little words between strikes. */
+const FILLER = new Set(['then', 'and', 'into', 'to', 'a', 'an', 'the', 'with', 'plus', 'combo'])
+/** A side word on its own ("lead teep" when the app knows "teep"). */
+const SIDE = new Set(['lead', 'rear', 'left', 'right', 'front', 'back'])
+
+/** Edits between two strings (Levenshtein). */
+export function editDistance(a: string, b: string): number {
+  if (a === b) return 0
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0]
+    prev[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const up = prev[j]
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1))
+      diag = up
+    }
+  }
+  return prev[b.length]
+}
+
+/**
+ * The words he typed as strikes, the longest known name first ("lead hook"
+ * before "hook"), little words ("then", "and") skipped. A word it doesn't know
+ * stays in place as an unknown piece with its likely fixes; a known strike
+ * switched off in Settings is an unknown piece too (no fixes, only LEAVE IT
+ * OUT). The same technique list and lookup as the class parser.
+ */
+export function readTypedCombo(text: string, techniques: ReadonlyArray<Technique>, enabled?: ReadonlySet<string>): ReadToken[] {
+  const w = norm(text.replace(/[,→›>+/|·]/g, ' ')).split(' ').filter(Boolean)
+  const pieces: Array<{ token: ReadToken; words: string[] }> = []
+  let i = 0
+  while (i < w.length) {
+    let hit: { t: Technique; n: number } | null = null
+    for (let n = Math.min(4, w.length - i); n >= 1 && !hit; n--) {
+      if (n === 1 && FILLER.has(w[i])) break
+      const t = lookupTechnique(w.slice(i, i + n).join(' '), techniques)
+      if (t) hit = { t, n }
+    }
+    if (hit) {
+      const off = enabled != null && !enabled.has(hit.t.category)
+      pieces.push({ token: off ? { kind: 'unknown', raw: hit.t.name, off: true, fixes: [] } : { kind: 'strike', name: hit.t.name }, words: w.slice(i, i + hit.n) })
+      i += hit.n
+      continue
+    }
+    if (FILLER.has(w[i])) { i++; continue }
+    pieces.push({ token: { kind: 'unknown', raw: w[i], off: false, fixes: [] }, words: [w[i]] })
+    i++
+  }
+  const usable = techniques.filter(t => enabled == null || enabled.has(t.category))
+  return pieces.map((p, k) => (p.token.kind === 'unknown' && !p.token.off ? { ...p.token, fixes: fixesFor(pieces.map(x => x.words), k, usable) } : p.token))
+}
+
+/** Up to three likely strikes for the unknown piece at `k` (it and the pieces after it, as one phrase). */
+function fixesFor(words: string[][], k: number, techniques: ReadonlyArray<Technique>): ReadFix[] {
+  const scored: Array<{ name: string; span: number; d: number }> = []
+  const raw = words[k].join(' ')
+  // "lead teep" when the app knows only "teep": the strike after the side word
+  if (SIDE.has(raw) && k + 1 < words.length) {
+    const t = lookupTechnique(words[k + 1].join(' '), techniques)
+    if (t) scored.push({ name: t.name, span: 2, d: 0 })
+  }
+  for (let span = 1; span <= 3 && k + span <= words.length; span++) {
+    const phrase = words.slice(k, k + span).flat().join(' ')
+    for (const t of techniques) {
+      const d = editDistance(phrase, t.key)
+      const room = Math.max(1, Math.floor(t.key.length / 4))
+      if (d <= room) scored.push({ name: t.name, span, d })
+      else if (span === 1 && raw.length >= 3 && t.key.startsWith(raw)) scored.push({ name: t.name, span, d: t.key.length - raw.length })
+    }
+  }
+  scored.sort((a, b) => a.d - b.d || b.span - a.span)
+  const seen = new Set<string>()
+  const out: ReadFix[] = []
+  for (const s of scored) {
+    const key = s.name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ name: s.name, span: s.span })
+    if (out.length === 3) break
+  }
+  return out
+}
+
+/** A fix tapped: the unknown piece (and the pieces its fix stands for) become that strike. */
+export function applyFix(tokens: ReadonlyArray<ReadToken>, at: number, fix: ReadFix): ReadToken[] {
+  const out = [...tokens]
+  out.splice(at, Math.max(1, Math.min(fix.span, tokens.length - at)), { kind: 'strike', name: fix.name })
+  return out
+}
+
+/** LEAVE IT OUT: the piece goes. */
+export function leaveOut(tokens: ReadonlyArray<ReadToken>, at: number): ReadToken[] {
+  return tokens.filter((_, i) => i !== at)
+}
+
+/** The strikes, once nothing unknown is left (ADD waits until then). */
+export function readStrikes(tokens: ReadonlyArray<ReadToken>): string[] | null {
+  if (tokens.length === 0 || tokens.some(t => t.kind === 'unknown')) return null
+  return tokens.map(t => (t as ReadStrike).name)
 }
 
 /** The note's text for the NO COMBOS FOUND board's second line (page 49 section 2). */

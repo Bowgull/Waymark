@@ -1,0 +1,51 @@
+/* Bag Work: COACH / HYBRID / CUSTOM and the rounds (page 80, approved by
+   Josh 2026-10-23). The mode menu and the pickers are page 73's command
+   window; the rounds are a board over the scene. Motion is page 59's. */
+
+/* the mode menu's lines */
+.bb-modes .pl-cl .wm-sicon { flex: none; }
+.bb-sub { display: block; margin-top: 3px; font: 500 13px/1.25 var(--font-body); color: #c9b27a; }
+.bb-grp { margin: 10px 0 2px -10px; }
+
+/* the rounds: a board over the scene, scrolling inside itself */
+.bb-veil { position: fixed; inset: 0; z-index: 60; background: rgba(2, 8, 6, 0.5); animation: wm-fade-in var(--t-quick) var(--ease-out) both; }
+.bb-sheet { position: fixed; z-index: 61; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + 72px); max-height: calc(100dvh - env(safe-area-inset-top) - 72px - 81px - max(calc(env(safe-area-inset-bottom) - 4px), 10px) - 20px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; animation: cmb-swapin var(--t-quick) var(--ease-out) both; }
+.bb-sheet::-webkit-scrollbar { display: none; }
+.bb-sheet.is-out { animation: bb-out 120ms var(--ease-in) both; pointer-events: none; }
+@keyframes bb-out { to { opacity: 0; transform: scale(0.97); } }
+.bb-sheet .wm-board { margin: 0; }
+.bb-setup { margin: -2px 0 6px; font: 500 13px var(--font-body); color: #9fb3a8; }
+
+/* custom's − / + */
+.bb-step { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; min-height: 48px; border-top: 1px solid rgba(0, 0, 0, 0.6); }
+.bb-step .lb { font: 700 11px var(--font-body); letter-spacing: 0.14em; color: rgba(240, 230, 192, 0.66); }
+.bb-step .val { min-width: 54px; display: flex; justify-content: center; }
+
+/* a round: its label (and stage), then its combos */
+.bb-rnd { position: relative; display: grid; grid-template-columns: 74px 1fr; gap: 10px; align-items: start; padding: 9px 0; border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); transition: background-color var(--t-tap) ease-out; -webkit-tap-highlight-color: transparent; }
+.bb-rnd.is-tap { cursor: pointer; }
+.bb-rnd.is-tap:active { background-color: rgba(0, 0, 0, 0.24); }
+.bb-rnd .rl { display: flex; flex-direction: column; gap: 5px; }
+.bb-rnd .stage { font: 700 9.5px/1 var(--font-body); letter-spacing: 0.16em; color: rgba(240, 230, 192, 0.66); }
+.bb-rnd .cs { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.bb-rnd .fill { font: 500 13.5px var(--font-body); color: #9fb3a8; }
+.bb-rnd .note { font: 500 13px var(--font-body); color: #c9b27a; }
+/* a round he filled: the gold edge */
+.bb-rnd.is-mine { box-shadow: -10px 0 0 -8px #e8c878, 0 -1px 0 rgba(255, 255, 255, 0.04); }
+.bb-btns { display: flex; gap: 10px; margin-top: 12px; }
+.bb-btns .wm-btn { flex: 1; min-height: 46px; }
+
+/* the picker: search, then his combos sorted for him */
+.bb-pickl { max-height: min(360px, calc(100dvh - 330px)); overflow-y: auto; scrollbar-width: none; margin-left: -10px; padding-left: 10px; }
+.bb-pickl::-webkit-scrollbar { display: none; }
+.bb-pkrow { position: relative; display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid rgba(0, 0, 0, 0.6); cursor: pointer; transition: background-color var(--t-tap) ease-out; -webkit-tap-highlight-color: transparent; }
+.bb-pkrow:active { background-color: rgba(0, 0, 0, 0.28); }
+.bb-pkrow .pkc { flex: 1; min-width: 0; }
+.bb-pkrow .tick { width: 22px; flex: none; font: 900 15px var(--font-mono); color: #8fd4b8; text-align: center; }
+.bb-done { appearance: none; border: 0; background: none; padding: 6px 0 6px 10px; cursor: pointer; }
+.pl-cmd.bb-win { bottom: calc(81px + max(calc(env(safe-area-inset-bottom) - 4px), 10px) + 20px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-veil, .bb-sheet, .bb-sheet.is-out { animation: none !important; }
+  .bb-rnd, .bb-pkrow { transition: none !important; }
+}

@@ -306,7 +306,7 @@ export const combos = sqliteTable('combos', {
   isFavourite: integer('is_favourite').notNull().default(0),
   timesSharp: integer('times_sharp').notNull().default(0),
   createdAt: integer('created_at').notNull(),
-  // 0037: 'class' when added or unlocked from an MT class (the glove); NULL = the library's own.
+  // 0037: 'class' when added or unlocked from an MT class (the glove); 'mine' when he typed it (page 80); NULL = the library's own.
   source: text('source'),
   // 0037: the class's local epoch day.
   classDate: integer('class_date'),
@@ -324,8 +324,26 @@ export const combos = sqliteTable('combos', {
   altVideoSource: text('alt_video_source'),
   altVideoStatus: text('alt_video_status'),
   tiktokUrl: text('tiktok_url'),
+  // 0049 (page 80): his grade after a nudge: 'easy' | 'medium' | 'hard' | 'expert'. NULL = from the tier.
+  difficultyOverride: text('difficulty_override'),
 }, (t) => [
   index('idx_combos_tier').on(t.tier, t.level),
+])
+
+// 0049 (page 80): a Hybrid or Custom bag session saved with his name.
+export const bagRoutines = sqliteTable('bag_routines', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  /** 'hybrid' | 'custom'. */
+  mode: text('mode').notNull(),
+  /** One entry per round: its combo ids, JSON. */
+  roundsJson: text('rounds_json').notNull(),
+  roundSec: integer('round_sec').notNull().default(180),
+  restSec: integer('rest_sec').notNull().default(60),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [
+  index('idx_bag_routines_updated').on(t.updatedAt),
 ])
 
 // 0038: Techniques (page 52/60, new kind): the 23 strikes behind the combos' names.
