@@ -25,11 +25,15 @@ test('5K test contract: run_type 5k_test with its time; GPS distance scales to 5
   assert.equal(fiveKTestSec({ runType: '5k_test', durationSec: 0, distanceKm: null }), null)
 })
 
-test('5K before any test: first test week 4, honest words', () => {
+test('5K before any test: from week 4 when ready, never a promised week; a planned test is named', () => {
   const v = fiveKBoard([], START, START)
   assert.equal(v.nextWeek, 4)
-  assert.equal(v.flap, '5K FIRST TEST WK 4')
-  assert.match(v.line, /^Your first 5K test is in week 4\./)
+  assert.equal(v.flap, '5K FIRST TEST WK 4+')
+  assert.match(v.line, /^Your first 5K test comes from week 4, when the coach sees you're ready/)
+  assert.equal(fiveKBoard([], START, START + 5 * 7).flap, '5K TEST WHEN READY')
+  const p = fiveKBoard([], START, START + 3 * 7 + 1, START + 3 * 7 + 3)
+  assert.equal(p.flap, '5K FIRST TEST WK 4')
+  assert.match(p.line, /^Your first 5K test is planned for week 4\./)
   assert.equal(fiveKChart(v).steps.length, 0)
   assert.equal(fiveKChart(v).next, null)
 })
@@ -38,7 +42,7 @@ test('5K tests: latest headline, time to go, next test 4 weeks on; up is better 
   const v = fiveKBoard([{ day: START + 3 * 7 + 5, sec: 1668 }, { day: START + 7 * 7 + 5, sec: 1552 }], START, START + 7 * 7 + 6)
   assert.deepEqual(v.tests, [{ week: 4, sec: 1668 }, { week: 8, sec: 1552 }])
   assert.equal(v.flap, '5K 25:52')
-  assert.equal(v.line, '3:52 to go. Next test in week 12.')
+  assert.equal(v.line, "3:52 to go. Next test when you're ready.")
   assert.equal(v.nextWeek, 12)
   assert.equal(v.axisWeeks, 12)
   const ch = fiveKChart(v)
@@ -50,7 +54,8 @@ test('5K tests: latest headline, time to go, next test 4 weeks on; up is better 
   assert.equal(fiveKY(FIVE_K_GOAL_SEC, 1668), 24, 'the goal is the top line')
   const slow = fiveKBoard([{ day: START + 25, sec: 2400 }], START, START + 26)
   assert.ok(fiveKY(2400, 2400) <= 114, 'a slow first test still fits')
-  assert.equal(fiveKBoard([{ day: START + 25, sec: 1300 }], START, START + 26).line, 'Under 22:00. Next test in week 8.')
+  assert.equal(fiveKBoard([{ day: START + 25, sec: 1300 }], START, START + 26).line, "Under 22:00. Next test when you're ready.")
+  assert.equal(fiveKBoard([{ day: START + 25, sec: 1600 }], START, START + 40, START + 44).line, '4:40 to go. Next test is planned for week 7.')
   assert.equal(slow.nextWeek, 8, 'a test in week 4 moves the next to week 8')
 })
 

@@ -411,7 +411,7 @@ export function RunningBoard({ fiveK, easy }: { fiveK: FiveKView; easy: EasyRuns
   return (
     <section className="lg-glass lg-chart">
       <BoardHead name="Running"><RunningFlap fiveK={fiveK} /></BoardHead>
-      <svg viewBox={`0 0 ${w} ${h}`} aria-label={fiveK.tests.length ? fiveK.tests.map(t => `week ${t.week} ${mmss(t.sec)}`).join(', ') : `first test in week ${fiveK.nextWeek}`}>
+      <svg viewBox={`0 0 ${w} ${h}`} aria-label={fiveK.tests.length ? fiveK.tests.map(t => `week ${t.week} ${mmss(t.sec)}`).join(', ') : fiveK.flap.toLowerCase()}>
         <GRID w={w} h={h} />
         <line x1="0" x2={w} y1={goalY} y2={goalY} stroke="#000" strokeWidth="4" opacity=".45" />
         <line x1="0" x2={w} y1={goalY} y2={goalY} stroke={BRASS} strokeWidth="1.6" strokeDasharray="5 3" />
@@ -424,7 +424,7 @@ export function RunningBoard({ fiveK, easy }: { fiveK: FiveKView; easy: EasyRuns
             <circle cx={ch.next.x} cy={ch.next.y} r="3.6" fill="none" stroke={GOLD} strokeWidth="1.4" />
           </>
         )}
-        {fiveK.tests.length === 0 && <text x={fiveKX(fiveK.nextWeek, fiveK.axisWeeks) + 8} y="97.6" className="lg-hbv">FIRST TEST · WEEK {fiveK.nextWeek}</text>}
+        {fiveK.tests.length === 0 && <text x={fiveKX(fiveK.nextWeek, fiveK.axisWeeks) + 8} y="97.6" className="lg-hbv">FIRST TEST</text>}
         {ch.ticks.map(t => <text key={t.text} x={t.x} y="128" textAnchor={t.anchor} className="lg-hbd">{t.text}</text>)}
       </svg>
       <div className="lg-legend is-wrap">

@@ -151,8 +151,10 @@ export function plainNextBlock(r: ReadinessReport, opts: { firstRunMin?: number 
 
 /** His goal: 5 km under 22 minutes. */
 export const FIVE_K_GOAL_SEC = 22 * 60
-/** A 5K test every 4 weeks, from week 4 (page 76 §6). */
+/** Chart spacing for test weeks. Tests come when he's ready (from week 4, about 4–6 weeks apart; Josh 2026-10-23), so this only lays out the axis. */
 export const FIVE_K_EVERY = 4
+/** No test before this week. */
+export const FIVE_K_FROM_WEEK = 4
 
 /**
  * The contract with the run builder (page 76): a completed run whose
@@ -163,12 +165,15 @@ export const FIVE_K_EVERY = 4
  */
 export interface FiveKSource {
   runType: string | null
+  /** run_sessions.five_k_sec: the 5 km's own time (no warm-up), what the run builder saves. Wins. */
+  fiveKSec?: number | null
   durationSec: number | null
   distanceKm: number | null
   contextJson?: string | null
 }
 
 export function fiveKTestSec(row: FiveKSource): number | null {
+  if (row.runType === '5k_test' && row.fiveKSec != null && row.fiveKSec > 0) return Math.round(row.fiveKSec)
   const ctx = parseJson(row.contextJson)
   const own = ctx && typeof ctx.test5kSec === 'number' && ctx.test5kSec > 0 ? ctx.test5kSec : null
   if (own != null) return Math.round(own)
@@ -192,7 +197,7 @@ export interface FiveKView {
 }
 
 /** The 5K tests by week (the latest of a week counts), the next test's week and the words. */
-export function fiveKBoard(tests: ReadonlyArray<{ day: number; sec: number }>, start: number, today: number): FiveKView {
+export function fiveKBoard(tests: ReadonlyArray<{ day: number; sec: number }>, start: number, today: number, plannedDay: number | null = null): FiveKView {
   const byWeek = new Map<number, { day: number; sec: number }>()
   for (const t of tests) {
     if (t.day > today || !(t.sec > 0)) continue
@@ -203,19 +208,23 @@ export function fiveKBoard(tests: ReadonlyArray<{ day: number; sec: number }>, s
   const list = [...byWeek.entries()].sort((a, b) => a[0] - b[0]).map(([week, t]) => ({ week, sec: t.sec }))
   const currentWeek = Math.max(1, weekOf(today, start))
   const lastWeek = list.length ? list[list.length - 1].week : 0
-  let nextWeek = Math.max(FIVE_K_EVERY, Math.ceil(currentWeek / FIVE_K_EVERY) * FIVE_K_EVERY)
-  while (nextWeek <= lastWeek) nextWeek += FIVE_K_EVERY
+  // The next test: the one the coach (or he) planned; else a guess for the chart only, never promised in words.
+  const planned = plannedDay != null && plannedDay >= today ? Math.max(1, weekOf(plannedDay, start)) : null
+  let nextWeek = planned ?? Math.max(FIVE_K_FROM_WEEK, currentWeek, lastWeek ? lastWeek + FIVE_K_EVERY : 0)
   const axisWeeks = Math.max(12, Math.ceil(nextWeek / FIVE_K_EVERY) * FIVE_K_EVERY)
   const latest = list[list.length - 1]
   let flap: string
   let line: string
+  const when = planned != null ? (planned === currentWeek ? 'Next test is this week.' : `Next test is planned for week ${planned}.`) : "Next test when you're ready."
   if (!latest) {
-    flap = `5K FIRST TEST WK ${nextWeek}`
-    line = `Your first 5K test is in week ${nextWeek}. It sets your speeds, then every test shows how far you are from ${mmss(FIVE_K_GOAL_SEC)}.`
+    flap = planned != null ? `5K FIRST TEST WK ${planned}` : currentWeek < FIVE_K_FROM_WEEK ? `5K FIRST TEST WK ${FIVE_K_FROM_WEEK}+` : '5K TEST WHEN READY'
+    line = planned != null
+      ? `Your first 5K test is planned for week ${planned}. It sets your speeds, then every test shows how far you are from ${mmss(FIVE_K_GOAL_SEC)}.`
+      : `Your first 5K test comes from week ${FIVE_K_FROM_WEEK}, when the coach sees you're ready (or add one yourself). It sets your speeds, then every test shows how far you are from ${mmss(FIVE_K_GOAL_SEC)}.`
   } else {
     flap = `5K ${mmss(latest.sec)}`
     const left = latest.sec - FIVE_K_GOAL_SEC
-    line = left > 0 ? `${mmss(left)} to go. Next test in week ${nextWeek}.` : `Under ${mmss(FIVE_K_GOAL_SEC)}. Next test in week ${nextWeek}.`
+    line = left > 0 ? `${mmss(left)} to go. ${when}` : `Under ${mmss(FIVE_K_GOAL_SEC)}. ${when}`
   }
   return { tests: list, goalSec: FIVE_K_GOAL_SEC, currentWeek, nextWeek, axisWeeks, flap, line }
 }

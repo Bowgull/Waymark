@@ -77,7 +77,7 @@ export async function ledgerGoalBoards(db: DB, inp: {
     const s = byId.get(r.sessionId)
     if (!done(s)) continue
     const day = dayOf(s)
-    const sec = fiveKTestSec({ runType: r.runType, durationSec: r.durationSec, distanceKm: r.distanceKm, contextJson: s.contextJson })
+    const sec = fiveKTestSec({ runType: r.runType, fiveKSec: r.fiveKSec, durationSec: r.durationSec, distanceKm: r.distanceKm, contextJson: s.contextJson })
     if (sec != null) tests.push({ day, sec })
     easyRows.push({ epochDay: day, avgHr: r.avgHr, completed: true, runType: r.runType, paceSecKm: r.paceSecKm, distanceKm: r.distanceKm, durationSec: r.durationSec, speedKmh: setSpeedKmh(s.doseJson, s.contextJson) })
     if (day <= today) {
@@ -132,7 +132,9 @@ export async function ledgerGoalBoards(db: DB, inp: {
 
   return {
     running: {
-      fiveK: fiveKBoard(tests, start, today),
+      fiveK: fiveKBoard(tests, start, today, allSessions
+        .filter(s => s.type === 'running' && s.notes === '5k_test' && s.status === 'planned' && s.scheduledDate != null && s.scheduledDate >= today)
+        .reduce<number | null>((m, s) => (m == null || s.scheduledDate! < m ? s.scheduledDate! : m), null)),
       easy: { ...easy, empty: easy.points.length ? null : easyRunsEmptyLine(lastRunDay, nextRun?.scheduledDate ?? null, runsSinceStart === 0, today) },
     },
     fight,

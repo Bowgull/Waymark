@@ -110,7 +110,7 @@ test('Lines (page 77 A): closed each visit; one open at a time; tap again, outsi
 test('Goal boards (page 79): Running leads with the 5K and the 22:00 goal; Fight and Strength say where he is, honestly', async ({ page }) => {
   await openLedger(page)
   // Running: the 5K headline (a test time, or when the first test is)
-  await expect(line(page, 'running').getByRole('img', { name: /^5K (\d+:\d\d|FIRST TEST WK \d+)$/ })).toBeVisible()
+  await expect(line(page, 'running').getByRole('img', { name: /^5K (\d+:\d\d|FIRST TEST WK \d+\+?|TEST WHEN READY)$/ })).toBeVisible()
   await openLine(page, 'running')
   const run = page.locator('.cl-panel[aria-hidden="false"] section')
   await expect(run.getByText('22:00 GOAL')).toBeVisible()
