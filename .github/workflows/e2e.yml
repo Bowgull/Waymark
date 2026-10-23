@@ -29,6 +29,11 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Playwright's own image: WebKit and its system libraries come installed, so a
+    # slow Ubuntu mirror can't eat the run (it took 11-15 of the 30 min on 2026-10-23).
+    # Keep the tag in step with @playwright/test in package.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
     steps:
       - uses: actions/checkout@v4
 
@@ -39,9 +44,6 @@ jobs:
 
       - name: Install
         run: npm ci
-
-      - name: Install WebKit
-        run: npx playwright install --with-deps webkit
 
       - name: Run Playwright
         env:
