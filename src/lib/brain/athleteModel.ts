@@ -19,7 +19,7 @@
 import { KEY_TYPES } from '../keyTypes'
 import { snapLoadKg } from '../strengthLoads'
 import { RIR_THREE_PLUS_AS } from '../blockZero/strength'
-import { RUN_WALK_WEEKS, ageFromDob, tanakaMaxHr } from '../blockZero/running'
+import { LINE_DEFAULT_AGE, LINE_KNOWN_TOLERANCE_BPM, RUN_WALK_WEEKS, easyHrLine } from '../blockZero/running'
 import { isScheduleReason } from './types'
 import type {
   AdherenceEstimate, AthleteModel, BackEstimate, BagEstimate, BetaCell, ClassEstimate, ClassDay, EstimateRow, EstimateState,
@@ -302,10 +302,10 @@ function buildLifts(events: ModelEvents, today: number, sink?: Array<{ exerciseI
 
 /** Prior line: 0.78 × Tanaka HRmax (a rule of thumb, UNVERIFIED in the doc). */
 export const LINE_PRIOR_FRACTION = 0.78
-export const DEFAULT_AGE = 35
+export const DEFAULT_AGE = LINE_DEFAULT_AGE
 /** Assumed spread of HR around its average during a run, for U from an average (bpm). */
 export const HR_SPREAD_BPM = 6
-export const LINE_KNOWN_TOLERANCE = 4
+export const LINE_KNOWN_TOLERANCE = LINE_KNOWN_TOLERANCE_BPM
 export const RUN_KNOWN_HR_RUNS = 3
 export const RECHECK_DAYS = 21
 /** The run-walk ladder's run pieces (sec): the rung steps back one of these. */
@@ -317,9 +317,7 @@ const MAX_RUN_SEC = 4 * 3600
 
 export function linePrior(dob: string | null, today: number, maxHr: number | null = null): number {
   // His measured max HR from the profile first, else his age (birth date): nothing new to ask.
-  if (maxHr != null && maxHr > 0) return Math.round(LINE_PRIOR_FRACTION * maxHr)
-  const age = ageFromDob(dob, today) ?? DEFAULT_AGE
-  return Math.round(LINE_PRIOR_FRACTION * tanakaMaxHr(age))
+  return easyHrLine({ tests: [], day: today, dob, maxHr }).bpm
 }
 
 /** Share of running time under the line: splits when there are, else from the average HR. */
@@ -360,11 +358,10 @@ export function rungAfterStruggle(pieceSec: number): number {
 function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<NoteFlag>>, sink?: RunObservation[], seed?: HistorySeed | null): RunEstimate {
   const prior = linePrior(events.profile.dob, today, events.profile.maxHr)
   const tests = events.talkTests.filter(t => t.day <= today).sort((a, b) => a.day - b.day)
+  // The one HR-line calculation (blockZero/running easyHrLine), as the dose and the AI context read it.
   const lineOn = (day: number): { bpm: number; source: 'talk_test' | 'prior' } => {
-    const upTo = tests.filter(t => t.day <= day)
-    if (upTo.length === 0) return { bpm: linePrior(events.profile.dob, day, events.profile.maxHr), source: 'prior' }
-    const [a, b] = upTo.slice(-2).reverse()
-    return { bpm: b && Math.abs(a.bpm - b.bpm) <= LINE_KNOWN_TOLERANCE ? Math.round((a.bpm + b.bpm) / 2) : a.bpm, source: 'talk_test' }
+    const line = easyHrLine({ tests, day, dob: events.profile.dob, maxHr: events.profile.maxHr })
+    return { bpm: line.bpm, source: line.source === 'talk_test' ? 'talk_test' : 'prior' }
   }
   const runs = events.runs.filter(r => r.day <= today).sort((a, b) => a.day - b.day)
   const rpeBySession = new Map(events.sessions.map(s => [s.id, s.rpe]))
@@ -379,7 +376,8 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
   for (const r of runs) {
     const dur = r.durationSec != null && r.durationSec >= MIN_RUN_SEC && r.durationSec <= MAX_RUN_SEC ? r.durationSec : null
     const stub = r.durationSec != null && r.durationSec < MIN_RUN_SEC && r.splits.length < 2
-    if (stub) continue
+    // An easy walk or bike in a run's place (walk-only dose): no running, so no rung, struggle or decay from it.
+    if (stub || r.walkOnly) continue
     const line = lineOn(r.day).bpm
     const { u, source } = runUnderLine(r, line)
     const drift = runDrift(r.splits)

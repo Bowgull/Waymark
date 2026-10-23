@@ -9,18 +9,20 @@ import { and, eq, gte, lte } from 'drizzle-orm'
 import type { createDB } from '../db/client'
 import { sessions, type sessions as SessionsTable } from '../db/schema'
 import { allBoardRows, withBlockLabels } from '../lib/sessionSuggestions'
-import { kneeSafeOnly, pickDayOption, strengthLetterFor, type PickAction } from '../lib/coach'
+import { injuryActionFor, kneeSafeOnly, pickDayOption, strengthLetterFor, type PickAction } from '../lib/coach'
 import { estimatedMinutes } from '../lib/coach/sessions'
 import { KEY_TYPES } from '../lib/keyTypes'
 import { mondayOf } from '../lib/dates'
-import { foundationLevel } from '../lib/foundation'
+import { foundationLevel, foundationMinutes } from '../lib/foundation'
+import { RESET_WALK_MIN, resetMinutes } from '../lib/activeRecoveryTemplate'
+import { ropeMinutes, ropeRounds } from '../lib/plannedLength'
 import { kgToLbs } from '../lib/units'
 import { doseMinutes } from '../lib/brain/doseMinutes'
 import { rankPicks, type PickOption, type PickWeather } from '../lib/brain/picks'
 import { dowOf } from '../lib/brain/classPicker'
 import type { OutlineSession } from '../lib/brain/outline'
 import { shortLift } from '../features/dayboard/rowState'
-import { computeDose, loadBrainInputs, morningState, nightState, type StoredDose } from './brain'
+import { computeDose, loadBrainInputs, morningState, nightState, runLabelFor, type StoredDose } from './brain'
 import { getActiveBlock } from './blockZeroData'
 import { blockKind, loadInjuryFlag, loadPlacementContext, mtClassDays, trainingWeekFor, weekStamps } from './coachData'
 import { lowerLegOnWatch } from './bodyWatch'
@@ -72,7 +74,7 @@ const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec %
 const lb = (kg: number | null | undefined) => (kg != null && kg > 0 ? `${kgToLbs(kg)} lb` : 'BW')
 
 /** The preview lines from a dose (or the session's fixed shape when it has none). */
-export function previewLines(type: string, dose: StoredDose | null, opts: { week: number; slot: 'am' | 'pm'; rope?: { rounds: number } }): PreviewLine[] {
+export function previewLines(type: string, dose: StoredDose | null, opts: { week: number; slot: 'am' | 'pm'; rope?: { rounds: number }; foundationMin?: number }): PreviewLine[] {
   if (dose?.strength) {
     return dose.strength.lifts.slice(0, 4).map(l => {
       const name = shortLift(l.label).toUpperCase()
@@ -88,8 +90,8 @@ export function previewLines(type: string, dose: StoredDose | null, opts: { week
   }
   if (dose?.bag) return [['ROUNDS', `${dose.bag.rounds} × 3 min · 1 min rest`], ...(dose.bag.finishers ? [['FINISH', 'one hard round'] as PreviewLine] : [])]
   switch (type) {
-    case 'mobility': return [['BLOCKS', 'back, then neck and shoulder'], ['LEVEL', `${foundationLevel(opts.week)} · ~12 min`]]
-    case 'active_recovery': return [['EASY', 'walk or bike · ~25 min'], ['THEN', 'hips and foam roller']]
+    case 'mobility': return [['BLOCKS', 'back, then neck and shoulder'], ['LEVEL', `${foundationLevel(opts.week)} · ~${opts.foundationMin ?? foundationMinutes({ week: opts.week })} min`]]
+    case 'active_recovery': return [['EASY', `walk or bike · ${RESET_WALK_MIN} min`], ['THEN', `hips and foam roller · ~${resetMinutes()} min in all`]]
     case 'skip_rope': return [['ROUNDS', `${opts.rope?.rounds ?? 5} × 3 min · 1 min rest`]]
     case 'mt_class': return [['CLASS', `${opts.slot === 'am' ? 'morning' : 'evening'} · 60 min`], ['AFTER', 'easier morning after']]
     default: return []
@@ -97,12 +99,12 @@ export function previewLines(type: string, dose: StoredDose | null, opts: { week
 }
 
 /** The minutes a preview stands for. */
-function minutesFor(type: string, dose: StoredDose | null, row: SessionRow, week: number, kind: 'block_zero' | 'fighter'): number | null {
+function minutesFor(type: string, dose: StoredDose | null, row: SessionRow, week: number, kind: 'block_zero' | 'fighter', opts: { ropeRounds: number; foundationMin: number }): number | null {
   // The same minutes a row with this dose shows (page 73).
   const fromDose = doseMinutes({ ...row, blockType: kind }, dose)
   if (fromDose != null) return fromDose
-  if (type === 'mobility') return 12
-  if (type === 'skip_rope') return 20
+  if (type === 'mobility') return opts.foundationMin
+  if (type === 'skip_rope') return ropeMinutes(opts.ropeRounds)
   if (type === 'mt_class') return 60
   return estimatedMinutes({ type, notes: null, estimatedMin: null }, kind, week)
 }
@@ -138,6 +140,12 @@ export async function coachPicksFor(db: DB, q: CoachPicksQuery): Promise<CoachPi
   const weekLike = rows.filter(r => r.scheduledDate != null && r.scheduledDate >= monday && r.scheduledDate <= monday + 6)
     .map(r => ({ id: r.id, type: r.type, label: r.label, notes: r.notes, epochDay: r.scheduledDate as number, timeSlot: r.timeSlot === 'pm' ? 'pm' as const : 'am' as const, status: r.status }))
 
+  // Rope rounds from the same read and injury flag the rope's start uses (one number, audit #23).
+  const injury = await loadInjuryFlag(db, day)
+  const rope = ropeRounds(read.state, injuryActionFor('skip_rope', injury).action === 'walk_or_bike')
+  // Foundation's minutes for that day's routine (its level and day), not a flat 12 (audit #24).
+  const foundationMin = foundationMinutes({ week: kind === 'block_zero' ? stamps.weekNumber : null, dayOfWeek: new Date(day * 86400000).getUTCDay() })
+
   // The preview: the session as it would land that day, dosed by the brain.
   const out = new Map<string, CoachPick>()
   for (const o of options) {
@@ -155,17 +163,19 @@ export async function coachPicksFor(db: DB, q: CoachPicksQuery): Promise<CoachPi
     } as SessionRow
     const dose = KEY_TYPES.has(o.type) ? await computeDose(db, row, q.today, inp, { decision: null }).catch(() => null) : null
     const action = placement ? pickDayOption({ type: o.type, label: null, notes: o.type === 'running' ? o.runCategory ?? null : null, timeSlot: slot }, day, placement).action : undefined
+    // A run reads the name its dose gives it (Easy Run, Run-Walk, Easy Walk or Bike), as its row will (audit #14).
+    const runName = (o.type === 'foundation_run' || o.type === 'running') && dose ? runLabelFor(row, dose) : null
     out.set(keyOf(o), {
-      key: keyOf(o), type: o.type, label: action?.label && o.type === 'strength' ? action.label : o.label, ...(o.runCategory ? { runCategory: o.runCategory } : {}),
+      key: keyOf(o), type: o.type, label: action?.label && o.type === 'strength' ? action.label : runName ?? o.label, ...(o.runCategory ? { runCategory: o.runCategory } : {}),
       timeSlot: slot, flexibleTimeSlot: action && action.kind !== 'add' ? false : o.flexibleTimeSlot,
       reason: null,
-      minutes: minutesFor(o.type, dose, row, stamps.weekNumber, kind),
-      lines: previewLines(o.type, dose, { week: stamps.weekNumber, slot, rope: { rounds: read.state === 'AMBER' || read.state === 'RED' ? 3 : 5 } }),
+      minutes: minutesFor(o.type, dose, row, stamps.weekNumber, kind, { ropeRounds: rope, foundationMin }),
+      lines: previewLines(o.type, dose, { week: stamps.weekNumber, slot, rope: { rounds: rope }, foundationMin }),
       ...(action ? { action } : {}),
     })
   }
 
-  const kneeFlag = kneeSafeOnly(await loadInjuryFlag(db, day)) || await lowerLegOnWatch(db)
+  const kneeFlag = kneeSafeOnly(injury) || await lowerLegOnWatch(db)
   const week: OutlineSession[] = rows.filter(r => r.scheduledDate != null).map(r => ({
     id: r.id, type: r.type, label: r.label, notes: r.notes, day: r.scheduledDate as number, slot: r.timeSlot === 'pm' ? 'pm' : 'am', status: r.status, source: r.source, locked: true,
   }))

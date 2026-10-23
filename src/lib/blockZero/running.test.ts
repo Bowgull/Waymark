@@ -6,7 +6,9 @@ import {
   weeklyRunAllowanceSec,
   ageFromDob,
   getRunWalkWeek,
+  easyHrLine,
   hrCeiling,
+  isBlockZeroModelRun,
   prescribeRunWalk,
   runWalkTotalSec,
   singleRunCap,
@@ -112,5 +114,25 @@ const hi = weeklyLoadFlag(400, 500)
 assert(hi.flagged && hi.reason === 'Load is up 25% on last week.', '+25%: soft flag with reason')
 assert(weeklyLoadFlag(0, 300).flagged, 'load after a zero week: flag')
 assert(!weeklyLoadFlag(0, 0).flagged, 'nothing either week: no flag')
+
+// ─── The one HR line (audit #32) ─────────────────────────────
+{
+  const day = 20700
+  const base = { tests: [] as Array<{ day: number; bpm: number }>, day, dob: '1990-06-01', maxHr: null as number | null }
+  const prior = easyHrLine(base)
+  assert(prior.source === 'tanaka' && prior.bpm === Math.round(0.78 * tanakaMaxHr(ageFromDob('1990-06-01', day) as number)), `no talk test: 0.78 × Tanaka from his birth date (${prior.bpm})`)
+  assert(easyHrLine({ ...base, maxHr: 190 }).bpm === 148 && easyHrLine({ ...base, maxHr: 190 }).source === 'measured_max', 'a measured max HR first: 0.78 × 190 = 148')
+  assert(easyHrLine({ ...base, dob: null }).bpm === Math.round(0.78 * tanakaMaxHr(35)), 'nothing known: Tanaka at 35')
+  assert(easyHrLine({ ...base, tests: [{ day: day - 3, bpm: 150 }] }).bpm === 150, 'one talk test: its number')
+  assert(easyHrLine({ ...base, tests: [{ day: day - 10, bpm: 150 }, { day: day - 3, bpm: 153 }] }).bpm === 152, 'two that agree within 4 bpm: their average')
+  assert(easyHrLine({ ...base, tests: [{ day: day - 10, bpm: 140 }, { day: day - 3, bpm: 152 }] }).bpm === 152, 'two that disagree: the latest')
+  assert(easyHrLine({ ...base, tests: [{ day: day + 1, bpm: 160 }] }).source !== 'talk_test', 'a test after the day does not count yet')
+}
+
+// ─── Block Zero's model runs (the "running" Zone 2 run follows the rung) ──
+assert(isBlockZeroModelRun({ type: 'foundation_run', blockType: 'block_zero' }), 'the run-walk')
+assert(isBlockZeroModelRun({ type: 'running', blockType: 'block_zero', notes: 'zone2' }), 'a Zone 2 run added in Block Zero')
+assert(!isBlockZeroModelRun({ type: 'running', blockType: 'block_zero', notes: 'tempo' }), 'a hard run keeps its plan')
+assert(!isBlockZeroModelRun({ type: 'running', blockType: 'fighter', notes: 'zone2' }), 'outside Block Zero: the running plan')
 
 console.log('\nAll Block Zero running and load tests passed')

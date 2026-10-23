@@ -5,6 +5,7 @@
 import type { WeekPost } from '../../world/worldStore'
 import { iconFor, plannedRowMinutes, rowStatus, sessionDisplayName, shortLift, type DayBoardSession } from '../dayboard/rowState'
 import { getStrengthTemplate } from '../../lib/strengthTemplates'
+import { ROPE_ROUNDS } from '../../lib/plannedLength'
 import type { SessionIconKey } from '../../design/sessionIconKeys'
 
 export { cycleWeeks } from '../../lib/programWeeks'
@@ -134,8 +135,8 @@ export function dayLine(list: ReadonlyArray<DayBoardSession>, weekNumber: number
     case 'foundation_run': return `${sentenceCase(sessionDisplayName(main))} · ${plannedRowMinutes(main, weekNumber)} min`
     case 'bag_work': { const r = bagRounds(main.doseJson); return r ? `Bag · ${r} × 3 min` : `Bag · ~${plannedRowMinutes(main, weekNumber)} min` }
     case 'mt_class': return 'MT class'
-    case 'active_recovery': return `${sentenceCase(sessionDisplayName(main))} · walk or bike`
-    case 'skip_rope': return 'Skip rope · 5 × 3 min'
+    case 'active_recovery': return `${sentenceCase(sessionDisplayName(main))} · ~${plannedRowMinutes(main, weekNumber)} min`
+    case 'skip_rope': return `Skip rope · ${ROPE_ROUNDS} × 3 min`
     case 'mobility': return `Foundation · ~${plannedRowMinutes(main, weekNumber)} min`
     default: return sentenceCase(sessionDisplayName(main))
   }

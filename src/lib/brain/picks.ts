@@ -167,7 +167,7 @@ export function rankPicks(inp: PicksIn): PicksOut {
     if (w) {
       const word = w.kind === 'rain' ? 'Rain' : w.kind === 'storm' ? 'Storms' : w.kind === 'cold' ? 'Bitter cold' : 'Humidex high'
       if (OUTDOOR.has(o.type) && w.kind !== 'heat') factors.push({ v: -2 })
-      else if (INDOOR.has(o.type) && (!inp.replacing || OUTDOOR.has(inp.replacing.type))) factors.push({ v: 1.5, why: `${word} at ${w.hour}: ${e === effortOf(inp.replacing?.type ?? '') ? 'same work, indoors' : 'indoors works'}.` })
+      else if (INDOOR.has(o.type) && (!inp.replacing || OUTDOOR.has(inp.replacing.type))) factors.push({ v: 1.5, why: `${word} ${/^this /.test(w.hour) ? '' : 'at '}${w.hour}: ${e === effortOf(inp.replacing?.type ?? '') ? 'same work, indoors' : 'indoors works'}.` })
       if (w.kind === 'heat' && e >= 2) factors.push({ v: -1 })
     }
     if (inp.kneeFlag) {

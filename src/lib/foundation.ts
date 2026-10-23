@@ -31,7 +31,7 @@
 // Pure.
 
 import { blockZeroTrainingWeek } from './blockZero/weeks'
-import type { MobilityExerciseTemplate, MobilitySection } from './mobilityTemplate'
+import { FR_WARMUP_TEMPLATE, type MobilityExerciseTemplate, type MobilitySection } from './mobilityTemplate'
 
 export const FOUNDATION_LABEL = 'Foundation'
 /** Labels the daily session carried before the rename; still read as Foundation. */
@@ -331,4 +331,18 @@ export function estimateRoutineSec(rows: MobilityExerciseTemplate[]): number {
     sec += perSet * row.sets + (row.sets - 1) * 20 + 15
   }
   return sec
+}
+
+/**
+ * Foundation's minutes for a day (audit #24): the routine foundationTemplate builds for it, as its
+ * own estimate times it (11 to 16 min by level and day), never a flat 12. The one number the plan
+ * lines, the coach picks, the week and the session all show.
+ */
+export function foundationMinutes(input: FoundationInput): number {
+  return Math.max(1, Math.round(estimateRoutineSec(foundationTemplate(input)) / 60))
+}
+
+/** The run-walk's dynamic warm-up before the run (FR_WARMUP_TEMPLATE), seconds: about 6.5 min. */
+export function runWarmupSec(): number {
+  return estimateRoutineSec(FR_WARMUP_TEMPLATE)
 }

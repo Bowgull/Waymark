@@ -274,6 +274,8 @@ export interface PlannedOutdoor {
   name: string
   /** Epoch ms of the planned hour. */
   at: number
+  /** "Morning" / "Evening" when the hour is only a fallback (none learned yet): the line names that, not a clock hour. */
+  when?: string | null
 }
 
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -296,10 +298,10 @@ export function coachLine(w: Weather, planned: ReadonlyArray<PlannedOutdoor>, no
     // Rain in about N min (radar), and he's about to start.
     if (w.rainInMin != null && p.at - now <= 60 * 60000) return { text: `Rain in about ${Math.max(5, Math.round(w.rainInMin / 5) * 5)} min. Go now or wait it out.`, sky: 'rain', kind: 'rain' }
     if (!hr) continue
-    const at = hourWord(p.at)
-    if (hr.pop >= 60 || hr.mm >= 1) return { text: `${p.name} at ${at}: ${degText(hr.t, unit)}° and rain. Indoor works too.`, sky: 'rain', kind: 'rain' }
-    if (hr.feels <= -15) return { text: `${p.name} at ${at}: feels ${degText(hr.feels, unit)}°. Cover your face, or go indoor.`, sky: hr.sky, kind: 'cold' }
-    if (hr.humidex != null && hr.humidex >= 32) return { text: `${p.name} at ${at}: humidex ${Math.round(hr.humidex)}. Go easy and take water.`, sky: 'sun', kind: 'heat' }
+    const head = p.when ? `${p.name} this ${p.when.toLowerCase()}` : `${p.name} at ${hourWord(p.at)}`
+    if (hr.pop >= 60 || hr.mm >= 1) return { text: `${head}: ${degText(hr.t, unit)}° and rain. Indoor works too.`, sky: 'rain', kind: 'rain' }
+    if (hr.feels <= -15) return { text: `${head}: feels ${degText(hr.feels, unit)}°. Cover your face, or go indoor.`, sky: hr.sky, kind: 'cold' }
+    if (hr.humidex != null && hr.humidex >= 32) return { text: `${head}: humidex ${Math.round(hr.humidex)}. Go easy and take water.`, sky: 'sun', kind: 'heat' }
   }
   return null
 }

@@ -34,7 +34,7 @@ export type StopwatchSnap =
   | { state: 'paused'; elapsedMs: number }
 
 export type RoundSub = 'ready' | 'fighting' | 'rest'
-export type RecoveryPhase = 'intro' | 'hip' | 'roll-intro' | 'roll' | 'done'
+export type RecoveryPhase = 'intro' | 'walk' | 'hip' | 'roll-intro' | 'roll' | 'done'
 export type RunSub = 'ready' | 'running' | 'logging'
 
 export type EngineState =
@@ -57,10 +57,12 @@ export type EngineState =
       /** Page 74: the recorder's id for this run; the same id rejoins the recording after a relaunch. */
       runId?: string
     }
-  /** Reset: hip block then foam rolling, each with its own timer. */
+  /** Reset: the easy walk or bike, the hip block, then foam rolling, each with its own timer. */
   | {
       kind: 'recovery'
       phase: RecoveryPhase
+      /** The walk-or-bike step's clock (absent in an older save). */
+      walkTimer?: TimerSnap | null
       hipIdx: number
       hipTimer: TimerSnap | null
       rollIdx: number
@@ -230,10 +232,11 @@ function sanitizeEngineState(es: unknown): EngineState | null {
       return run
     }
     case 'recovery': {
-      const phases: RecoveryPhase[] = ['intro', 'hip', 'roll-intro', 'roll', 'done']
+      const phases: RecoveryPhase[] = ['intro', 'walk', 'hip', 'roll-intro', 'roll', 'done']
       return {
         kind: 'recovery',
         phase: phases.includes(e.phase as RecoveryPhase) ? e.phase as RecoveryPhase : 'intro',
+        ...(validTimerOrNull(e.walkTimer) ? { walkTimer: validTimerOrNull(e.walkTimer) } : {}),
         hipIdx: Number.isInteger(e.hipIdx) ? e.hipIdx as number : 0,
         hipTimer: validTimerOrNull(e.hipTimer),
         rollIdx: Number.isInteger(e.rollIdx) ? e.rollIdx as number : 0,

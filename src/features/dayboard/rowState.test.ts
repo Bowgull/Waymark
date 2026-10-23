@@ -239,10 +239,11 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   assert.equal(plannedRowMinutes(wedB), 60, 'X5: Strength B at 3x8 is ~60 min')
   assert.ok(plannedRowMinutes({ ...wedB, contextJson: '{"coachEase":{"kind":"one_set"}}' }) < 60, 'm6: one set fewer, fewer minutes')
   assert.ok(plannedRowMinutes({ ...wedB, blockWeek: 1 }) < 60, 'm6: 2x8 in week 1 is shorter than 3x8 in week 4')
-  assert.equal(plannedRowMinutes({ type: 'mobility', label: 'Foundation', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null }), 12)
+  // Audit #24: Foundation's own routine for its level (week 3: level 2, about 16 min), not a flat 12.
+  assert.equal(plannedRowMinutes({ type: 'mobility', label: 'Foundation', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null }), 16)
   // Page 73 (approved 2026-10-22): a row with the brain's dose reads the dose's minutes, the same the coach picks' preview shows.
-  assert.equal(plannedRowMinutes({ type: 'foundation_run', label: 'Run-walk', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null, doseJson: JSON.stringify({ run: { totalSec: 26 * 60, runSec: 90, walkSec: 60, rounds: 8, walkOnly: false } }) }), 26, 'run row: the dose total')
-  assert.equal(plannedRowMinutes({ type: 'bag_work', label: 'Bag Work', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null, doseJson: JSON.stringify({ bag: { rounds: 5 } }) }), 20, 'bag row: the dose rounds with their rests')
+  assert.equal(plannedRowMinutes({ type: 'foundation_run', label: 'Run-walk', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null, doseJson: JSON.stringify({ run: { totalSec: 26 * 60, runSec: 90, walkSec: 60, rounds: 8, walkOnly: false } }) }), 33, 'run row: the dose total with the ~6.5 min run-walk warm-up (audit #24)')
+  assert.equal(plannedRowMinutes({ type: 'bag_work', label: 'Bag Work', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null, doseJson: JSON.stringify({ bag: { rounds: 5 } }) }), 24, 'bag row: the 5 min rope warm-up, the dose rounds and the rests between them (audit #23)')
   const strengthDoseRow = { ...wedB, doseJson: JSON.stringify({ strength: { kind: 'strength', level: 'HOLD', accessorySets: null, holdSets: 2, sets: 2, why: [], lifts: [{ exerciseId: 'a', label: 'DB RDL', slot: null, sets: 2, reps: 8, targetRir: 3, weightKg: 14, workUp: false, change: 'hold', fromKg: 14, level: 'HOLD', u: 0 }] } }) }
   const fromDose = doseJsonMinutes(strengthDoseRow)
   assert.ok(fromDose != null && fromDose > 0, `strength dose minutes: ${fromDose}`)

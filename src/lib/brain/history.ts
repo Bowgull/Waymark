@@ -9,7 +9,8 @@
 //   Snapped to what can be loaded, and always at least one step under the old
 //   weight once there is a discount.
 // - Run: his typical continuous run (the median of runs of 8 min to 2 h),
-//   rounded to 5 min and never over his longest less the same discount. Ten
+//   less the same discount, rounded down to 5 min (never under 10 min when
+//   it was 10 or more), and never over his longest less the discount. Ten
 //   minutes or more means easy continuous runs; less, a run-walk piece.
 // - Uncertainty starts moderate (SEED_U, a little careful the first week),
 //   not at GUESS, and his own sessions take over from the first one.
@@ -92,6 +93,16 @@ export function discountedKg(lastKg: number, discount: number, equipment: LoadEq
   return round(down < old - 0.01 ? down : snapped, 2)
 }
 
+/**
+ * The continuous run to start from (audit #9): his usual run less the time-off discount, rounded
+ * DOWN to 5 min (never up after time off), and never under 10 min when his usual run was 10 min or
+ * more. 18 min after 4.5 months off: 15 min. Under 10 min usual: the run-walk pieces take over.
+ */
+export function seedRunRungSec(medianSec: number, discount: number): number {
+  const sec = Math.floor((medianSec * (1 - discount)) / 300) * 300
+  return medianSec >= CONTINUOUS_FROM_SEC ? Math.max(CONTINUOUS_FROM_SEC, sec) : sec
+}
+
 const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
@@ -143,7 +154,7 @@ export function seedFromHistory(prior: ModelEvents, fromDay: number): HistorySee
     const med = median(secs)
     const longest = Math.max(...secs)
     const cap = longest * (1 - discount)
-    let rung = Math.min(Math.round(med / 300) * 300, Math.floor(cap / 60) * 60)
+    let rung = Math.min(seedRunRungSec(med, discount), Math.floor(cap / 60) * 60)
     if (rung < CONTINUOUS_FROM_SEC) rung = [...RUN_WALK_PIECES].reverse().find(p => p <= Math.min(med, cap)) ?? RUN_WALK_PIECES[0]
     const hrs = runs.map(r => r.avgHr).filter((h): h is number => h != null && h > 0)
     run = {

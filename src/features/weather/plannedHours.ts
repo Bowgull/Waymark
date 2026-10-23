@@ -2,7 +2,9 @@
 // has AM and PM, not clock times, so the coach uses the hour he usually starts
 // that kind of session in that half of the day, from his logs (no setup). A
 // class uses its real start time when one is set. Otherwise the PM start in
-// Settings, or 7 AM. Pure; relative imports only.
+// Settings, or 7 AM, placed on the hours row but never named as a clock hour:
+// the line says "Morning" / "Evening" until an hour is learned (audit #16).
+// Pure; relative imports only.
 
 import { sessionIconFor, type SessionIconKey } from '../../design/sessionIconKeys'
 
@@ -48,10 +50,21 @@ export function plannedMinute(s: PlannedIn, hours: CoachHours | null): number {
   return 7 * 60
 }
 
+/**
+ * The word for the planned time when no hour is known yet (no usual start from his logs, no class
+ * time): "Morning" or "Evening". Null when the hour is real, so the line names the clock hour.
+ */
+export function plannedWord(s: PlannedIn, hours: CoachHours | null): 'Morning' | 'Evening' | null {
+  const pm = s.timeSlot === 'pm'
+  if (s.type === 'mt_class' && classTime(s.contextJson) != null) return null
+  if ((hours?.usual[s.type]?.[pm ? 'pm' : 'am'] ?? null) != null) return null
+  return pm ? 'Evening' : 'Morning'
+}
+
 /** Today's runs still to do, at their planned hour (epoch ms), for the coach line and the hour marks. */
-export function plannedRuns(sessions: readonly PlannedIn[], hours: CoachHours | null, todayMidnightMs: number): Array<{ name: string; at: number; icon: SessionIconKey }> {
+export function plannedRuns(sessions: readonly PlannedIn[], hours: CoachHours | null, todayMidnightMs: number): Array<{ name: string; at: number; icon: SessionIconKey; when: 'Morning' | 'Evening' | null }> {
   return sessions
     .filter(s => RUN_TYPES.has(s.type) && (s.status === 'planned' || s.status === 'in_progress'))
-    .map(s => ({ name: 'Run', at: todayMidnightMs + plannedMinute(s, hours) * 60000, icon: sessionIconFor(s.type, s.type === 'running' ? s.notes ?? null : null) }))
+    .map(s => ({ name: 'Run', at: todayMidnightMs + plannedMinute(s, hours) * 60000, icon: sessionIconFor(s.type, s.type === 'running' ? s.notes ?? null : null), when: plannedWord(s, hours) }))
     .sort((a, b) => a.at - b.at)
 }

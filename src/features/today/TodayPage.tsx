@@ -22,7 +22,7 @@ import { usePlanMenu } from '@/features/plan/usePlanMenu'
 import { WeatherStrip } from '@/features/weather/WeatherStrip'
 import { useWeather } from '@/features/weather/useWeather'
 import { coachLine, degText, hourWord } from '@/features/weather/weatherData'
-import { plannedMinute, plannedRuns, type CoachHours } from '@/features/weather/plannedHours'
+import { plannedMinute, plannedRuns, plannedWord, type CoachHours } from '@/features/weather/plannedHours'
 import { temperatureUnit } from '@/lib/units'
 import { CrestLoading } from '@/world/CrestLoading'
 import { setWorldLantern, setWorldPlace } from '@/world/worldStore'
@@ -587,8 +587,9 @@ export function TodayPage() {
     focus: id => { setOpenRow(id); setCursorRow(id) },
     weatherFor: s => {
       if (!weather || s.scheduledDate !== todayEpoch || (s.type !== 'running' && s.type !== 'foundation_run')) return null
-      const line = coachLine(weather, [{ name: 'Run', at: midnight + plannedMinute(s, coachHours) * 60000 }], Date.now(), unit)
-      return line ? { kind: line.kind, hour: hourWord(midnight + plannedMinute(s, coachHours) * 60000) } : null
+      const word = plannedWord(s, coachHours)
+      const line = coachLine(weather, [{ name: 'Run', at: midnight + plannedMinute(s, coachHours) * 60000, when: word }], Date.now(), unit)
+      return line ? { kind: line.kind, hour: word ? `this ${word.toLowerCase()}` : hourWord(midnight + plannedMinute(s, coachHours) * 60000) } : null
     },
     pmOnly: date => pmOnlyFor(date, getTodayISO(), new Date().getHours()),
   })
@@ -668,7 +669,7 @@ export function TodayPage() {
               if (!weather || (s.type !== 'running' && s.type !== 'foundation_run') || s.status === 'completed') return null
               const at = midnight + plannedMinute(s, coachHours) * 60000
               const h = weather.hours.find(x => at >= x.at && at < x.at + 3600000)
-              return h ? `${hourWord(at)}: ${degText(h.t, unit)}° ${h.pop >= 60 || h.mm >= 1 ? 'and rain' : `· ${h.sky === 'sun' || h.sky === 'moon' ? 'clear' : h.sky === 'part' || h.sky === 'partn' ? 'some cloud' : h.sky === 'cloud' ? 'cloudy' : h.sky}`}` : null
+              return h ? `${plannedWord(s, coachHours) ?? hourWord(at)}: ${degText(h.t, unit)}° ${h.pop >= 60 || h.mm >= 1 ? 'and rain' : `· ${h.sky === 'sun' || h.sky === 'moon' ? 'clear' : h.sky === 'part' || h.sky === 'partn' ? 'some cloud' : h.sky === 'cloud' ? 'cloudy' : h.sky}`}` : null
             }}
             cursorId={cursorRow ?? openRow}
             openId={openRow}

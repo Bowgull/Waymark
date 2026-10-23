@@ -46,6 +46,14 @@ export function talkTestStart(avgHr: number | null | undefined): number {
   return avgHr != null && avgHr >= TALK_TEST_RANGE.min && avgHr <= TALK_TEST_RANGE.max ? Math.round(avgHr) : TALK_TEST_RANGE.start
 }
 
+/**
+ * What SAVE RUN posts (audit #1): the talk test only when he set the drum himself. An untouched
+ * drum saves nothing (the week stays "not tested"), so a seeded 140 never becomes his cap.
+ */
+export function talkTestToSave(week: number, bpm: number, touched: boolean): ReturnType<typeof talkTestBody> | null {
+  return touched ? talkTestBody(week, bpm) : null
+}
+
 /** The body for POST /api/blocks/:id/tests. */
 export function talkTestBody(week: number, bpm: number): { week: number; testKey: string; value: number; unit: 'bpm' } {
   return { week, testKey: TALK_TEST_KEY, value: clampTalkHr(bpm), unit: 'bpm' }

@@ -6,6 +6,7 @@
 
 export type ActiveRecoveryPhase =
   | 'intro'
+  | 'walk'
   | 'hip-ready'
   | 'hip-holding'
   | 'hip-holding-finish'
@@ -17,6 +18,7 @@ export type ActiveRecoveryPhase =
 
 interface ActiveRecoveryMicroCopy {
   intro: string
+  walk: string
   hipReady: string
   hipHolding: string
   hipHoldingFinish: string
@@ -28,7 +30,8 @@ interface ActiveRecoveryMicroCopy {
 }
 
 export const ACTIVE_RECOVERY_GENERIC: ActiveRecoveryMicroCopy = {
-  intro: 'Two blocks. Hips first, rolling second.',
+  intro: 'Three blocks. A walk, then hips, then rolling.',
+  walk: 'Easy pace. Nothing to prove.',
   hipReady: 'Slow into position. The stretch is not the goal.',
   hipHolding: 'Breathe into the tight spot. Do not fight it.',
   hipHoldingFinish: 'Last breath on this side.',
@@ -52,6 +55,7 @@ export function resolveActiveRecoveryMoment(
 
   if (phase === 'complete') return ACTIVE_RECOVERY_GENERIC.complete
   if (phase === 'intro') return ACTIVE_RECOVERY_GENERIC.intro
+  if (phase === 'walk') return ACTIVE_RECOVERY_GENERIC.walk
   if (phase === 'roll-intro') return ACTIVE_RECOVERY_GENERIC.rollIntro
 
   if (phase === 'hip-ready') return ACTIVE_RECOVERY_GENERIC.hipReady

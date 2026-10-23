@@ -16,7 +16,7 @@ import { buildAthleteModel, modelRows, modelSummary } from '../lib/brain/athlete
 import type { AthleteModel, ModelEvents, ModelMove } from '../lib/brain/types'
 import { SEED_LOOKBACK_DAYS, seedFromHistory, type HistorySeed } from '../lib/brain/history'
 import { loadEquipment } from '../lib/strengthLoads'
-import { getRunWalkWeek } from '../lib/blockZero/running'
+import { getRunWalkWeek, isBlockZeroModelRun } from '../lib/blockZero/running'
 import { TALK_TEST_KEY } from '../lib/blockZero/talkTest'
 import { getActiveBlock } from './blockZeroData'
 import { blockStartDay } from './coachData'
@@ -120,17 +120,21 @@ export async function loadModelEvents(db: DB, fromDay: number, today: number): P
     })),
     runs: runRows.map(({ run: r, weekNumber }) => {
       const s = sess.find(x => x.id === r.sessionId)
-      const runWalk = s?.type === 'foundation_run' && s.blockType === 'block_zero'
+      const runWalk = !!s && isBlockZeroModelRun(s)
       // The coach brain's dose (P2): the piece it prescribed and the rung it aimed at.
-      const dosed = (() => { try { const d = JSON.parse(s?.doseJson ?? 'null') as { run?: { runSec?: number; rungSec?: number; walkOnly?: boolean } } | null; return d?.run && !d.run.walkOnly ? { runSec: d.run.runSec ?? null, rungSec: d.run.rungSec ?? null } : null } catch { return null } })()
+      const doseRun = (() => { try { return (JSON.parse(s?.doseJson ?? 'null') as { run?: { runSec?: number; rungSec?: number; walkOnly?: boolean } } | null)?.run ?? null } catch { return null } })()
+      // A walk-only dose (an easy walk or bike): no piece, no rung, so it can never reset his run (audit #8).
+      const walkOnly = doseRun?.walkOnly === true
+      const dosed = doseRun && !walkOnly ? { runSec: doseRun.runSec ?? null, rungSec: doseRun.rungSec ?? null } : null
       return {
         sessionId: r.sessionId, day: dayOf.get(r.sessionId) as number, type: s?.type ?? 'running',
         durationSec: r.durationSec, plannedDurationSec: r.plannedDurationSec, distanceKm: r.distanceKm, avgHr: r.avgHr, maxHr: r.maxHr,
         splits: splits.filter(sp => sp.runSessionId === r.id).sort((a, b) => a.kmIndex - b.kmIndex).map(sp => ({ durationSec: sp.durationSec, avgHr: sp.avgHr })),
         isIndoor: r.isIndoor === 1, completionStatus: r.completionStatus, shortReason: r.shortReason, rpe: s?.rpe ?? null,
-        // A Block Zero run-walk's piece is its week's run interval; any other run is one piece.
-        pieceSec: runWalk ? dosed?.runSec ?? getRunWalkWeek(Math.max(1, weekNumber ?? 1)).runSec : null,
-        rungSec: runWalk ? dosed?.rungSec ?? null : null,
+        // A Block Zero run's piece is its dose's (a run-walk without one: its week's run interval); any other run is one piece.
+        pieceSec: walkOnly ? null : runWalk ? dosed?.runSec ?? (s?.type === 'foundation_run' ? getRunWalkWeek(Math.max(1, weekNumber ?? 1)).runSec : null) : null,
+        rungSec: runWalk && !walkOnly ? dosed?.rungSec ?? null : null,
+        ...(walkOnly ? { walkOnly: true } : {}),
       }
     }),
     talkTests: tests.map(t => ({ day: localDayOf(t.recordedAt, tz), bpm: t.value })).filter(t => t.day >= fromDay && t.day <= today),

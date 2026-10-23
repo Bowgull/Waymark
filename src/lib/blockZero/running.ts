@@ -43,6 +43,17 @@ export function runWalkTotalSec(w: Pick<RunWalkWeek, 'runSec' | 'walkSec' | 'rou
   return w.warmupSec + w.rounds * (w.runSec + w.walkSec)
 }
 
+/**
+ * A Block Zero easy run the run model doses (the rung: run-walk pieces or an easy continuous
+ * run): the run-walk, and a plain easy / Zone 2 run added in Block Zero (it used to sit at a
+ * fixed 20 min, ignoring the rung). A hard run (tempo, intervals) keeps its own plan.
+ */
+export function isBlockZeroModelRun(s: { type: string; blockType?: string | null; notes?: string | null }): boolean {
+  if (s.blockType !== 'block_zero') return false
+  if (s.type === 'foundation_run') return true
+  return s.type === 'running' && (s.notes === 'zone2' || s.notes === 'easy' || s.notes === 'progression')
+}
+
 /** Run-walk shape for a Block Zero week. Extension weeks repeat week 5. */
 export function getRunWalkWeek(week: number): RunWalkWeek {
   const w = blockZeroTrainingWeek(week)
@@ -243,4 +254,33 @@ export function hrCeiling(input: {
     return { bpm: Math.round(tanakaMaxHr(input.ageYears) * Z2_CEILING_FRACTION_OF_MAX), source: 'tanaka' }
   }
   return { bpm: input.defaultBpm, source: 'default' }
+}
+
+// ─── The run's HR line: one calculation (audit #32) ───────────
+
+/** Two talk tests within this many bpm agree: the line is their average. */
+export const LINE_KNOWN_TOLERANCE_BPM = 4
+/** The age the line assumes with no birth date and no max HR. */
+export const LINE_DEFAULT_AGE = 35
+
+/**
+ * His easy-run HR line on `day`, the one number every screen and the coach use (the dose's cap,
+ * the model's line, the AI context): the talk tests up to that day (the last two averaged when
+ * they agree within 4 bpm, else the latest), else 0.78 × his measured max HR, else 0.78 × Tanaka
+ * from his birth date, else 0.78 × Tanaka at 35. Pure.
+ */
+export function easyHrLine(input: {
+  tests: ReadonlyArray<{ day: number; bpm: number }>
+  day: number
+  dob: string | null | undefined
+  maxHr: number | null | undefined
+}): { bpm: number; source: HrCeilingSource } {
+  const upTo = input.tests.filter(t => t.day <= input.day && t.bpm > 0).sort((a, b) => a.day - b.day)
+  if (upTo.length > 0) {
+    const [a, b] = upTo.slice(-2).reverse()
+    return { bpm: b && Math.abs(a.bpm - b.bpm) <= LINE_KNOWN_TOLERANCE_BPM ? Math.round((a.bpm + b.bpm) / 2) : Math.round(a.bpm), source: 'talk_test' }
+  }
+  const age = ageFromDob(input.dob ?? null, input.day)
+  const prior = hrCeiling({ measuredMaxHr: input.maxHr ?? null, ageYears: age, defaultBpm: Math.round(tanakaMaxHr(LINE_DEFAULT_AGE) * Z2_CEILING_FRACTION_OF_MAX) })
+  return prior
 }

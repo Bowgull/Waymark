@@ -438,7 +438,9 @@ function capRounds(shape: { runSec: number; walkSec: number; rounds: number; war
   return { ...shape, rounds }
 }
 
-export function runDose(ctx: DoseCtx, inp: RunIn): RunDose {
+export function runDose(ctx: DoseCtx, input: RunIn): RunDose {
+  // A walk-only day (0 s of running) is not a "last run": it never caps or resets the next one (audit #8).
+  const inp: RunIn = { ...input, lastRunSec: input.lastRunSec != null && input.lastRunSec > 0 ? input.lastRunSec : null }
   const m = ctx.model.run
   const ceiling = ceilingFor(ctx)
   const why: string[] = []
@@ -525,6 +527,18 @@ export function runDose(ctx: DoseCtx, inp: RunIn): RunDose {
   }
 }
 
+/**
+ * The why-line of a first run seeded from his history (audit #9, #19): the month of that evidence,
+ * and the time off when the run is shorter than his usual. "15 min easy, no walk breaks: your usual
+ * run in June was 18 min, less for 4 months off."
+ */
+export function seedRunWhy(sec: number, seed: { medianSec: number; lastDay: number; daysOff: number }): string {
+  const usual = Math.round(seed.medianSec / 60)
+  const min = Math.round(sec / 60)
+  const off = min < usual && seed.daysOff > 14 ? `, less for ${gapWords(seed.daysOff)} off` : ''
+  return `${min} min easy, no walk breaks: your usual run in ${monthOf(seed.lastDay)} was ${usual} min${off}.`
+}
+
 /** The next continuous run: 10% longer, to the minute, at least a minute more. */
 export function nextContinuous(sec: number): number {
   return Math.max(sec + 60, Math.round((sec * 1.1) / 60) * 60)
@@ -558,7 +572,7 @@ function easyContinuous(ctx: DoseCtx, inp: RunIn, level: Level, signal: Level, w
   if (capped && cap.reason) why.push(cap.reason)
   const hold = Math.min(base, Math.floor(capOf(base).capSec / 60) * 60)
   if (m.rungSource === 'history' && level === 'HOLD' && m.seed) {
-    why.push(`${Math.round(sec / 60)} min easy, no walk breaks: your usual run before this block was ${Math.round(m.seed.medianSec / 60)} min.`)
+    why.push(seedRunWhy(sec, m.seed))
   }
   return {
     kind: 'run', level, rungSec: sec, runSec: sec, walkSec: 0, rounds: 1, warmupSec: 0, totalSec: sec, walkOnly: false,

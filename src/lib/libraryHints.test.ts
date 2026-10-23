@@ -53,5 +53,10 @@ assert.equal(runHint({ runType: 'tempo', coachHint: 'Later.' }, { week: 3, runSe
 assert.equal(runWalkShape({ week: 1, runSec: 60, walkSec: 120, rounds: 6, warmupSec: 300 }), '6 × 1 min run, 2 min walk')
 assert.equal(runWalkTotal({ week: 1, runSec: 60, walkSec: 120, rounds: 6, warmupSec: 300 }), '23 min in all.')
 assert.equal(runWalkTotal({ week: 3, runSec: 120, walkSec: 60, rounds: 7, warmupSec: 300 }), '26 min in all.')
+// Audit #17: the coach's dosed run, not the week's template.
+assert.equal(runWalkShape({ week: 1, runSec: 1200, walkSec: 0, rounds: 1, warmupSec: 0 }), '20 min easy, no walk breaks')
+assert.equal(runWalkTotal({ week: 1, runSec: 1200, walkSec: 0, rounds: 1, warmupSec: 0 }), '20 min in all.')
+assert.equal(runWalkShape({ week: 1, runSec: 0, walkSec: 0, rounds: 0, warmupSec: 1500, walkOnly: true }), 'easy walk or bike, 25 min')
+assert.equal(runHint({ runType: 'run_walk' }, { week: 1, runSec: 900, walkSec: 0, rounds: 1, warmupSec: 0 }), 'Every Block Zero run: Tue, Thu, Sat. Next: 15 min easy, no walk breaks.')
 
 console.log('libraryHints tests passed')

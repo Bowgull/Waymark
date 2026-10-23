@@ -21,12 +21,12 @@ import { validateNarutoPatch } from '../lib/naruto'
 import { isLoggedWorkSet } from '../lib/loggedSets'
 import { lastWorkingSets, type LibraryHintData } from '../lib/libraryHints'
 import { notesOnComplete } from '../lib/sessionNotes'
-import { parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes } from '../lib/plannedLength'
+import { bagMinutes, parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes, ROPE_ROUND_SEC, ROPE_ROUNDS, ropeRounds } from '../lib/plannedLength'
 import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
 import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
-import { BLOCK_ZERO_BASE_WEEKS, CLASS_EASE_LINE, blockZeroTrainingWeek, getRunWalkWeek, mtRampWeek, strengthDayFor, validateTestResult } from '../lib/blockZero'
+import { BLOCK_ZERO_BASE_WEEKS, CLASS_EASE_LINE, blockZeroTrainingWeek, getRunWalkWeek, isBlockZeroModelRun, mtRampWeek, strengthDayFor, validateTestResult } from '../lib/blockZero'
 import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, gotBodyNote, lowerLegOnWatch, markAgainstFlag, ravenLineFor, seenBodyNote } from './bodyWatch'
 import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, isoOf } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
@@ -68,7 +68,7 @@ import {
   trainingWeekFor,
   weekStamps,
 } from './coachData'
-import { capToday, doseFor, replanWeek, type StoredDose } from './brain'
+import { capToday, doseFor, loadBrainInputs, morningState, nightState, parseDose, replanWeek, runShapeLabel, type StoredDose } from './brain'
 import { coachPicksFor } from './coachPicks'
 import { loadModelEvents } from './athleteModel'
 import { usualStartOf } from '../lib/brain/athleteModel'
@@ -422,7 +422,8 @@ async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
   }
 
   // What was planned and, once done, each round as it went (seconds per round, from the finish).
-  const plannedMin = plannedRoundMinutes(rounds)
+  // The rope warm-up and the rounds (audit #23): the same minutes as the row's.
+  const plannedMin = rounds.length > 0 ? bagMinutes(rounds) : null
   const roundSecs = parseRoundSecs(JSON.stringify(parseJson<{ roundSecs?: unknown }>(session?.contextJson ?? null, {}).roundSecs ?? null))
   return { session, rounds: result, plannedMin, roundSecs }
 }
@@ -456,12 +457,14 @@ async function getRunPrescription(db: DrizzleDB, session: RunSessionInput, today
   if (!dose) return null
   const why = dose.why.join(' ')
   const ceiling = `Keep HR at or below ${dose.hrCeilingBpm} bpm.`
-  const base = { weekNumber: row.blockType === 'block_zero' ? blockZeroTrainingWeek(weekNumber) : weekNumber, targetDistKm: null, z2CeilingBpm: dose.hrCeilingBpm, talkTestDue: dose.talkTestDue, brain: { level: dose.level, rungSec: dose.rungSec, why: dose.why } }
+  // One name for the run (audit #14): the dose's shape names it on the row, the ready board and the lock screen.
+  const base = { weekNumber: row.blockType === 'block_zero' ? blockZeroTrainingWeek(weekNumber) : weekNumber, targetDistKm: null, z2CeilingBpm: dose.hrCeilingBpm, talkTestDue: dose.talkTestDue, brain: { level: dose.level, rungSec: dose.rungSec, why: dose.why }, ...(isBlockZeroModelRun(row) || dose.walkOnly ? { name: runShapeLabel(dose) } : {}) }
   if (dose.walkOnly) {
     const min = Math.round(dose.totalSec / 60)
+    // An easy walk or bike (a RED morning, an injury, the raven): never a run on the screen (audit #8).
     return {
-      ...base, runType: 'zone2', targetDesc: `Easy walk or bike, ${min} min. ${ceiling} ${why}`.trim(), targetDurSec: dose.totalSec,
-      runWalk: row.blockType === 'block_zero' && row.type === 'foundation_run' ? { runSec: 0, walkSec: 0, rounds: 0, warmupSec: dose.totalSec, capped: dose.capped } : undefined,
+      ...base, runType: 'zone2', walkOnly: true, targetDesc: `Easy walk or bike, ${min} min. ${why}`.trim(), targetDurSec: dose.totalSec,
+      runWalk: isBlockZeroModelRun(row) ? { runSec: 0, walkSec: 0, rounds: 0, warmupSec: dose.totalSec, capped: dose.capped } : undefined,
       autoEase: { eased: true, reason: why || null }, coach: { eased: true, reasons: dose.why },
     }
   }
@@ -474,7 +477,7 @@ async function getRunPrescription(db: DrizzleDB, session: RunSessionInput, today
     }
   }
   // A Block Zero run he can hold straight (his runs or his history): one easy continuous run.
-  if (row.blockType === 'block_zero' && row.type === 'foundation_run' && dose.rounds === 1 && dose.walkSec === 0) {
+  if (isBlockZeroModelRun(row) && dose.rounds === 1 && dose.walkSec === 0) {
     return {
       ...base, runType: 'zone2', targetDurSec: dose.totalSec,
       targetDesc: `Easy run, ${Math.round(dose.totalSec / 60)} min, no walk breaks. Talk-test pace: you can speak in full sentences. ${ceiling}${why ? ` ${why}` : ''}`,
@@ -736,7 +739,7 @@ app.get('/api/sessions/coach-picks', async (c) => {
   const day = date ? isoToEpochDay(date) : athleteDay(c, c.req.query('today'))
   const today = athleteDay(c, c.req.query('today'), day)
   const wx = c.req.query('wx')
-  const weather = wx === 'rain' || wx === 'cold' || wx === 'heat' || wx === 'storm' ? { kind: wx, hour: (c.req.query('wxHour') ?? '').slice(0, 8) || 'your hour' } as const : null
+  const weather = wx === 'rain' || wx === 'cold' || wx === 'heat' || wx === 'storm' ? { kind: wx, hour: (c.req.query('wxHour') ?? '').slice(0, 12) || 'your hour' } as const : null
   const out = await coachPicksFor(db, { day, today, mode, sessionId, pmOnly: c.req.query('pm') === '1', weather })
   if (!out) return c.json({ error: 'session not found' }, 404)
   return c.json(out)
@@ -833,6 +836,8 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
   // Page 58 / 57 T4: a pick of what the coach leaves out for a place on watch is noted quietly. Never refused.
   await markAgainstFlag(db, addIds, body.type, runTag, epochDay)
   // His add applies at once; tonight's pass absorbs it (coach brain: the nightly re-plan only).
+  // Its dose now (audit #31), so the row shows its real length and shape before tonight.
+  await storeNewDose(db, id, todayDay)
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
   return c.json(notes.length > 0 ? { ...row, coach: { notes } } : row)
@@ -954,13 +959,21 @@ app.post('/api/sessions/:id/replace', async (c) => {
     extraSource: { reason: reasonCode },
   }], nowSec)
   await markAgainstFlag(db, swapIds, body.type, runTag, scheduledDate)
-  void todayDay
+  // The swapped-in session's dose now (audit #31): its row's length and shape are right at once.
+  await storeNewDose(db, newId, todayDay)
 
   const [replaced] = await db.select().from(sessions).where(eq(sessions.id, id))
   const [created] = await db.select().from(sessions).where(eq(sessions.id, newId))
   // The swap's change id: the optional WHY? tiles after SWAP IN land on it (page 73).
   return c.json({ original: replaced, replacement: created, changeId: swapIds[0] ?? null })
 })
+
+/** Dose a session just added or swapped in (doseFor stores it, and a run's name from its shape). Never fails the add. */
+async function storeNewDose(db: DrizzleDB, id: string, today: number): Promise<void> {
+  const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
+  if (!row) return
+  await doseFor(db, row, today).catch(e => console.warn('[dose] add/replace dose failed', e instanceof Error ? e.message : String(e)))
+}
 
 /** Plain names for a session type, for the change flaps ("BAG WORK"). */
 const TYPE_WORDS: Record<string, string> = {
@@ -2049,16 +2062,20 @@ app.post('/api/sessions/:id/start-skip-rope', async (c) => {
     return c.json({ session, skipSession: existing[0] })
   }
 
-  // Rope is lower-leg load (F11): fewer rounds on a rough morning or an injury flag.
-  const state = await loadSessionCoachState(db, session, athleteDay(c))
-  const report = await readinessFor(db, session.scheduledDate ?? athleteDay(c))
-  const eased = report.readinessEase || state.injuryAction.action === 'walk_or_bike'
-  const roundCount = eased ? 3 : 5
-  const ropeNote = eased ? (state.injuryAction.note ?? report.reason ?? 'Easy day.') : null
+  // Rope is lower-leg load (F11): fewer rounds on a rough morning or an injury flag. The brain's
+  // read for the day (the one the coach picks preview), so the rounds never disagree (audit #23).
+  const today = athleteDay(c)
+  const ropeDay = session.scheduledDate ?? today
+  const state = await loadSessionCoachState(db, session, today)
+  const inp = await loadBrainInputs(db, today)
+  const read = ropeDay === today ? morningState(inp, ropeDay) ?? nightState(inp, ropeDay) : nightState(inp, ropeDay)
+  const injuryEased = state.injuryAction.action === 'walk_or_bike'
+  const roundCount = ropeRounds(read.state, injuryEased)
+  const ropeNote = roundCount < ROPE_ROUNDS ? (injuryEased ? state.injuryAction.note : null) ?? read.why ?? 'Easy day.' : null
   if (ropeNote) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: ropeNote, roundCount } }) }).where(eq(sessions.id, sessionId))
 
   const skipId = crypto.randomUUID()
-  await db.insert(skipRopeSessions).values({ id: skipId, sessionId, roundCount, roundDurSec: 180 })
+  await db.insert(skipRopeSessions).values({ id: skipId, sessionId, roundCount, roundDurSec: ROPE_ROUND_SEC })
   await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
@@ -3124,8 +3141,14 @@ app.get('/api/library/hints', async (c) => {
   if (block?.blockType === 'block_zero') {
     const today = athleteDay(c, c.req.query('today'))
     const week = (await trainingWeekFor(db, block, today, today)).week
-    const shape = getRunWalkWeek(week)
-    runWalk = { week, runSec: shape.runSec, walkSec: shape.walkSec, rounds: shape.rounds, warmupSec: shape.warmupSec }
+    // This week's next planned run, as the coach dosed it (audit #17); the week's template only without a dose.
+    const ahead = (await db.select().from(sessions).where(and(
+      inArray(sessions.type, ['foundation_run', 'running']), eq(sessions.status, 'planned'),
+      gte(sessions.scheduledDate, today), lte(sessions.scheduledDate, mondayOf(today) + 6),
+    ))).filter(s => isBlockZeroModelRun(s)).sort((a, b) => (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0) || (a.timeSlot === 'pm' ? 1 : 0) - (b.timeSlot === 'pm' ? 1 : 0))
+    const dosed = ahead.length > 0 ? parseDose(ahead[0].doseJson)?.run ?? null : null
+    const shape = dosed ?? getRunWalkWeek(week)
+    runWalk = { week, runSec: shape.runSec, walkSec: shape.walkSec, rounds: shape.rounds, warmupSec: shape.warmupSec, ...(dosed?.walkOnly ? { walkOnly: true } : {}) }
   }
   const body: LibraryHintData = { lastSets: lastWorkingSets(rows), runWalk }
   return c.json(body)

@@ -4,7 +4,11 @@
 import assert from 'node:assert/strict'
 import { getStrengthTemplate } from './strengthTemplates'
 import { estimateRoutineSec, foundationTemplate } from './foundation'
-import { entranceLine, parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes, roundSecsKey, withRoundSec, WORK_SET_SEC } from './plannedLength'
+import { bagMinutes, entranceLine, parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes, ropeMinutes, ropeRounds, roundSecsKey, withRoundSec, WORK_SET_SEC } from './plannedLength'
+import { foundationMinutes, runWarmupSec } from './foundation'
+import { RESET_WALK_MIN, resetMinutes } from './activeRecoveryTemplate'
+import { doseMinutes } from './brain/doseMinutes'
+import { estimatedMinutes } from './coach/sessions'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; console.log(`ok: ${name}`) }
@@ -55,6 +59,47 @@ test('entrance line: the length under the session name (page 19)', () => {
   assert.equal(entranceLine({ type: 'running', week: 2, minutes: 34.6 }), '35 MIN', 'only strength leads with its week')
   assert.equal(entranceLine({ type: 'bag_work', rounds: 6 }), '6 ROUNDS')
   assert.equal(entranceLine({ type: 'strength', week: null, minutes: 0 }), null)
+})
+
+// Audit #23 / #24 / #15: one calculation per session kind, warm-ups included.
+test('rope: one rounds rule and one minutes number (5 rounds 19 min, eased 3 rounds 11 min)', () => {
+  assert.equal(ropeRounds('GREEN'), 5)
+  assert.equal(ropeRounds('AMBER'), 3)
+  assert.equal(ropeRounds('RED'), 3)
+  assert.equal(ropeRounds('GREEN', true), 3, 'a walk-or-bike injury flag eases it too')
+  assert.equal(ropeMinutes(5), 19)
+  assert.equal(ropeMinutes(3), 11)
+  assert.equal(estimatedMinutes({ type: 'skip_rope', notes: null, estimatedMin: null }, 'block_zero', 1), 19, 'the row estimate is the same number')
+})
+
+test('bag: the 5 min rope warm-up, the rounds and the rests between them', () => {
+  assert.equal(bagMinutes(4), 20, 'first bag session: 4 rounds is about 20 min, not 16')
+  assert.equal(bagMinutes(6), 28)
+  assert.equal(bagMinutes([{ durationSec: 180, restSec: 60 }, { durationSec: 180, restSec: 60 }]), 12)
+  assert.equal(doseMinutes({ type: 'bag_work' }, { bag: { rounds: 4 } }), 20, 'the dose minutes agree')
+})
+
+test('Foundation: its routine for the level and day, not a flat 12', () => {
+  const w1 = foundationMinutes({ week: 1 })
+  const w3 = foundationMinutes({ week: 3 })
+  assert.equal(w1, Math.round(estimateRoutineSec(foundationTemplate({ week: 1 })) / 60))
+  assert.ok(w1 >= 11 && w1 <= 16 && w3 >= 11 && w3 <= 16, `11 to 16 min (${w1}, ${w3})`)
+  assert.notEqual(w1, w3, 'the level changes the length')
+  assert.equal(estimatedMinutes({ type: 'mobility', notes: null, estimatedMin: null }, 'block_zero', 3), w3)
+})
+
+test('run-walk: the dose minutes carry the ~6.5 min dynamic warm-up; a plain run has none', () => {
+  assert.ok(runWarmupSec() >= 360 && runWarmupSec() <= 420, `about 6.5 min (${runWarmupSec()} s)`)
+  assert.equal(doseMinutes({ type: 'foundation_run' }, { run: { totalSec: 1200 } }), Math.round((1200 + runWarmupSec()) / 60))
+  assert.equal(doseMinutes({ type: 'running' }, { run: { totalSec: 1200 } }), 20)
+})
+
+test('Reset: the walk or bike first, then hips and the roller; one length everywhere', () => {
+  assert.equal(RESET_WALK_MIN, 12)
+  const all = resetMinutes()
+  assert.ok(all > RESET_WALK_MIN + 10 && all < 30, `walk + hips + roller (${all} min)`)
+  assert.equal(resetMinutes(15) - resetMinutes(12), 3, 'the walk minutes count in full')
+  assert.equal(estimatedMinutes({ type: 'active_recovery', notes: null, estimatedMin: null }, 'block_zero', 1), all, 'the row estimate is the same number')
 })
 
 console.log(`plannedLength: ${passed} passed`)

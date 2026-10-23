@@ -7,8 +7,8 @@
 // strength session in the outline.
 import assert from 'node:assert/strict'
 import { buildAthleteModel } from './athleteModel'
-import { runDose, strengthDose, nextContinuous, type DoseCtx, type RunIn } from './doses'
-import { CONTINUOUS_FROM_SEC, SEED_U, discountedKg, firstStrengthPick, seedFromHistory, timeOffDiscount } from './history'
+import { runDose, seedRunWhy, strengthDose, nextContinuous, type DoseCtx, type RunIn } from './doses'
+import { CONTINUOUS_FROM_SEC, SEED_U, discountedKg, firstStrengthPick, seedFromHistory, seedRunRungSec, timeOffDiscount } from './history'
 import { solveOutline, type OutlineIn, type OutlineSession } from './outline'
 import type { ModelEvents, ModelRun, ModelSession, ModelSet } from './types'
 
@@ -89,7 +89,7 @@ const history = events({
   assert.equal(lbOf(seed.lifts['ex-db-ohp'].workingKg), 15)
   assert.ok(seed.run, 'a run seed')
   assert.equal(seed.run?.runs, 4, 'stubs and typos are not runs')
-  assert.equal(seed.run?.rungSec, 1200, `his usual run (~18 min) rounds to 20 min continuous: ${seed.run?.rungSec}`)
+  assert.equal(seed.run?.rungSec, 900, `his usual run (~18 min) after 4 months off rounds DOWN to 15 min continuous (audit #9): ${seed.run?.rungSec}`)
   assert.equal(seed.run?.avgHr, 146, 'average HR over the runs that had one')
 
   // Only short pieces in the history: a run-walk piece, not a continuous run.
@@ -113,7 +113,7 @@ const block = (over: Partial<ModelEvents> = {}) => events({ ...over, sessions: [
   const m = buildAthleteModel(block(), START, { fromDay: START, seed })
   const rdl = m.lifts['ex-db-rdl']
   assert.deepEqual([rdl.workingSource, rdl.state, rdl.u, lbOf(rdl.workingKg), rdl.exposures], ['history', 'LEARNING', 0.4, 30, 0], 'the RDL starts at 30 lb, LEARNING at u 0.4')
-  assert.deepEqual([m.run.rungSec, m.run.rungSource, m.run.state, m.run.u], [1200, 'history', 'LEARNING', 0.4], 'the run starts at 20 min continuous')
+  assert.deepEqual([m.run.rungSec, m.run.rungSource, m.run.state, m.run.u], [900, 'history', 'LEARNING', 0.4], 'the run starts at 15 min continuous')
   assert.equal(m.bag.state, 'GUESS', 'areas with no history still start from nothing')
   const unseeded = buildAthleteModel(block(), START, { fromDay: START })
   assert.deepEqual([Object.keys(unseeded.lifts).length, unseeded.run.rungSec], [0, 60], 'without a seed: from scratch, as before')
@@ -128,13 +128,15 @@ const block = (over: Partial<ModelEvents> = {}) => events({ ...over, sessions: [
   assert.ok(hinge.why && /30 lb/.test(hinge.why) && /35 lb/.test(hinge.why) && /months off/.test(hinge.why), `plain why in lb: ${hinge.why}`)
   assert.ok(press.workUp && lbOf(press.weightKg) === 45, 'the barbell press: find your weight from the empty bar')
 
-  // The run: 20 min continuous at the line, no walk breaks.
+  // The run: 15 min continuous at the line, no walk breaks (his usual 18, less the time off).
   const easy = runDose(ctx(block(), START + 1), runIn())
-  assert.deepEqual([easy.runSec, easy.walkSec, easy.rounds, easy.walkOnly, easy.level], [1200, 0, 1, false, 'HOLD'], '20 min continuous')
+  assert.deepEqual([easy.runSec, easy.walkSec, easy.rounds, easy.walkOnly, easy.level], [900, 0, 1, false, 'HOLD'], '15 min continuous')
   assert.ok(easy.talkTestDue, 'the talk test is still asked')
-  assert.ok(easy.why.some(w => /20 min easy, no walk breaks/.test(w)), `why: ${easy.why}`)
+  // Audit #9 / #19: the why agrees with the number and names the month of the evidence.
+  const month = new Date(LAST * 86400000).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })
+  assert.ok(easy.why.includes(`15 min easy, no walk breaks: your usual run in ${month} was 18 min, less for 4 months off.`), `why: ${easy.why}`)
   const amber = runDose(ctx(block(), START + 1, { state: 'AMBER', stateWhy: 'Slept 5 h.' }), runIn())
-  assert.equal(amber.runSec, 1080, 'an AMBER morning: 10% shorter')
+  assert.equal(amber.runSec, 840, 'an AMBER morning: 10% shorter, to the minute')
   assert.equal(nextContinuous(1200), 1320, 'the next step: 10% longer, to the minute')
 }
 
@@ -191,6 +193,35 @@ const block = (over: Partial<ModelEvents> = {}) => events({ ...over, sessions: [
   const skipped = [...week, os('s1', 'strength', START, { status: 'skipped', locked: true, label: 'Strength A' })]
   assert.equal(solveOutline(inp({ sessions: skipped })).changes.filter(c => c.kind === 'add').length, 0, 'a week that had strength (even skipped) gets none made up')
   assert.equal(solveOutline(inp({ state: 'RED' })).changes.filter(c => c.kind === 'add').length, 0, 'a RED night adds nothing')
+}
+
+// ─── Audit #9: the first run rounds down after time off ──────
+{
+  assert.equal(seedRunRungSec(1080, timeOffDiscount(135)), 900, '18 min usual, 4.5 months off: 15 min')
+  assert.equal(seedRunRungSec(1080, 0), 900, 'no discount: still rounded down to 5 min (never up to 20)')
+  assert.equal(seedRunRungSec(1500, 0.05), 1200, '25 min less 5%: 20 min')
+  assert.equal(seedRunRungSec(660, 0.2), 600, 'never under 10 min when his usual was 10 or more')
+  assert.equal(seedRunRungSec(500, 0), 300, 'under 10 min usual: no floor (the run-walk pieces take over)')
+  assert.equal(seedRunWhy(900, { medianSec: 1080, lastDay: 20620, daysOff: 125 }), '15 min easy, no walk breaks: your usual run in June was 18 min, less for 4 months off.')
+  assert.equal(seedRunWhy(1200, { medianSec: 1200, lastDay: 20620, daysOff: 5 }), '20 min easy, no walk breaks: your usual run in June was 20 min.')
+}
+
+// ─── Audit #8: a walk-only day is never a run ────────────────
+{
+  // A walk-only dose ran 0 s: "last run 0" never caps the next run (it is no run at all).
+  const zero = runDose(ctx(block(), START + 3), runIn({ lastRunSec: 0, riseThisWeek: true }))
+  const none = runDose(ctx(block(), START + 3), runIn({ lastRunSec: null, riseThisWeek: true }))
+  assert.deepEqual([zero.runSec, zero.rounds, zero.walkOnly], [none.runSec, none.rounds, none.walkOnly], 'last run 0 s reads as no last run')
+  assert.ok(zero.runSec >= CONTINUOUS_FROM_SEC && !zero.walkOnly, `still his run (${zero.runSec} s)`)
+  // A walk logged on a walk-only day (a long, easy, HR-low "run") moves nothing on the rung.
+  const w = session(START + 1, 'foundation_run', { blockType: 'block_zero', rpe: 2 })
+  const walked = block({ sessions: [w], runs: [run(w, 1500, { type: 'foundation_run', avgHr: 105, maxHr: 112, rpe: 2, pieceSec: null, rungSec: null, walkOnly: true })] })
+  const before = buildAthleteModel(block(), START + 3, { fromDay: START, seed })
+  const after = buildAthleteModel(walked, START + 3, { fromDay: START, seed })
+  assert.deepEqual([after.run.rungSec, after.run.rungSource, after.run.runs], [before.run.rungSec, before.run.rungSource, before.run.runs], 'the rung, its source and the run count are as before the walk')
+  // The same walk without the mark would have read as a 25 min run and raised the rung: the mark is what keeps it out.
+  const unmarked = block({ sessions: [w], runs: [run(w, 1500, { type: 'foundation_run', avgHr: 105, maxHr: 112, rpe: 2, pieceSec: null, rungSec: null })] })
+  assert.notEqual(buildAthleteModel(unmarked, START + 3, { fromDay: START, seed }).run.rungSec, before.run.rungSec, 'unmarked, the walk would move the rung')
 }
 
 console.log('history seed tests passed')

@@ -29,7 +29,7 @@ import {
   type EngineState,
   type StopwatchSnap,
 } from '@/lib/sessionResume'
-import { clampTalkHr, talkTestBody, talkTestStart, TALK_TEST_RANGE } from '@/lib/blockZero/talkTest'
+import { clampTalkHr, talkTestStart, talkTestToSave, TALK_TEST_RANGE } from '@/lib/blockZero/talkTest'
 import { heatFor, workLabel } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
 import { setWorldBackdrop } from '@/world/worldStore'
@@ -65,6 +65,10 @@ interface RunPrescription {
   z2CeilingBpm?: number | null
   /** Block Zero run-walk: warm-up walk, then rounds of run / walk (the server's shape). */
   runWalk?: RunWalkShape | null
+  /** An easy walk or bike in the run's place (a rough morning, an injury): no running at all. */
+  walkOnly?: boolean
+  /** The run's one name from its dose ("Easy Run", "Run-Walk", "Easy Walk or Bike"), as on its row. */
+  name?: string | null
 }
 
 type RunPhase = 'ready' | 'running' | 'logging'
@@ -74,6 +78,13 @@ const INDOOR_MEDIA_KEY = 'waymark_indoor_media'
 
 function storedIndoorMedia(): IndoorMedia {
   return storageGet(INDOOR_MEDIA_KEY) === 'naruto' ? 'naruto' : 'one_pace'
+}
+
+const WALK_ONLY_NAME = 'Easy Walk or Bike'
+
+/** The dose is an easy walk or bike, no running (the server's walkOnly, or a run-walk of 0 rounds). */
+function isWalkOnly(p: RunPrescription | null | undefined): boolean {
+  return !!p && (p.walkOnly === true || (p.runWalk != null && !(p.runWalk.rounds > 0)))
 }
 
 const RUN_TYPE_LABELS: Record<string, string> = {
@@ -143,7 +154,10 @@ export function RunSessionView({
   const [onePaceEp, setOnePaceEp] = useState(draft.onePaceEp ?? runSession.onePaceEp ?? '')
   const [saving, setSaving] = useState(false)
   const [endReason, setEndReason] = useState<string | null>(null)
-  const [talkHr, setTalkHr] = useState(() => talkTestStart(Number(draft.avgHr ?? runSession.avgHr ?? NaN)))
+  const [talkHr, setTalkHr] = useState(() => draft.talkHr ? clampTalkHr(Number(draft.talkHr)) : talkTestStart(Number(draft.avgHr ?? runSession.avgHr ?? NaN)))
+  // The talk test is saved only once he sets the drum himself (audit #1); untouched, nothing is saved.
+  const [talkTouched, setTalkTouched] = useState(() => !!draft.talkHr)
+  const stepTalkHr = (delta: number) => { setTalkTouched(true); setTalkHr(v => clampTalkHr(v + delta)) }
   // Naruto: the saved next episode (settings), and the after-run confirm.
   const [narutoEp, setNarutoEp] = useState<number | null>(null)
   const [narutoConfirm, setNarutoConfirm] = useState<
@@ -188,10 +202,10 @@ export function RunSessionView({
       stopwatch,
       isIndoor,
       media,
-      draft: { distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, ...(resumeOnClose ? { resumeOnClose: '1' } : {}) },
+      draft: { distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, ...(resumeOnClose ? { resumeOnClose: '1' } : {}), ...(talkTouched ? { talkHr: String(talkHr) } : {}) },
       ...(runId ? { runId } : {}),
     })
-  }, [onPersist, phase, stopwatch, isIndoor, media, distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, runId, resumeOnClose])
+  }, [onPersist, phase, stopwatch, isIndoor, media, distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, runId, resumeOnClose, talkTouched, talkHr])
 
   useWakeLock(ticking)
 
@@ -298,6 +312,8 @@ export function RunSessionView({
     const sum = summarizeRecording(rec)
     if (sum.distanceKm != null) setDistance(sum.distanceKm.toFixed(2))
     if (sum.avgHr != null) setAvgHr(String(sum.avgHr))
+    // The talk-test drum starts at the strap's average once it is in (never a made-up 140 he did not set).
+    if (sum.avgHr != null && !talkTouched) setTalkHr(talkTestStart(sum.avgHr))
     if (sum.maxHr != null) setMaxHr(String(sum.maxHr))
   }
   const [logLeaving, logAway] = useEaseAway()
@@ -360,10 +376,11 @@ export function RunSessionView({
       const maxHrBumped = recorded ? await checkMaxHrBump(showToast) : false
 
       // The talk test (Block Zero week 1 / 6): that week's talk_test_hr, which sets the Zone 2 cap.
-      if (talkTest) {
+      const talkBody = talkTest ? talkTestToSave(talkTest.week, talkHr, talkTouched) : null
+      if (talkTest && talkBody) {
         await apiFetch(`/api/blocks/${talkTest.blockId}/tests`, {
           method: 'POST',
-          body: JSON.stringify(talkTestBody(talkTest.week, talkHr)),
+          body: JSON.stringify(talkBody),
         }).catch((err) => {
           logger.warn('session', 'talk test save failed', {
             message: err instanceof Error ? err.message : String(err),
@@ -439,10 +456,11 @@ export function RunSessionView({
   }
 
 
-  const isZone2 = prescription?.runType === 'zone2'
-  const runTypeLabel = prescription
-    ? (RUN_TYPE_LABELS[prescription.runType] ?? 'Run')
-    : 'Easy Run'
+  // A walk-only dose (audit #8): EASY WALK OR BIKE everywhere, never RUN, RUNNING or an HR cap.
+  const walkOnly = isWalkOnly(prescription)
+  const isZone2 = prescription?.runType === 'zone2' && !walkOnly
+  // One name (audit #14): the dose's, as on its row; else the run's kind.
+  const runTypeLabel = walkOnly ? WALK_ONLY_NAME : prescription?.name ?? (prescription ? (RUN_TYPE_LABELS[prescription.runType] ?? 'Run') : 'Easy Run')
   const timerEstimate = prescription?.targetDurSec ?? 3600
 
   const remaining = Math.max(0, timerEstimate - elapsed)
@@ -523,7 +541,7 @@ export function RunSessionView({
     phase === 'running' && runStartedAtMs > 0
       ? {
           sessionType: 'run',
-          sessionLabel: isIndoor ? indoorLabel : 'Run',
+          sessionLabel: isIndoor ? indoorLabel : walkOnly ? WALK_ONLY_NAME : 'Run',
           state: {
             phase: rwWalking ? 'rest' : 'active',
             iconKey: runIconKey,
@@ -541,7 +559,7 @@ export function RunSessionView({
       : phase === 'logging' && runStartedAtMs > 0
         ? {
             sessionType: 'run',
-            sessionLabel: isIndoor ? indoorLabel : 'Run',
+            sessionLabel: isIndoor ? indoorLabel : walkOnly ? WALK_ONLY_NAME : 'Run',
             state: {
               phase: 'complete',
               iconKey: runIconKey,
@@ -581,15 +599,15 @@ export function RunSessionView({
   }, [phase, narutoConfirm])
 
   // A Block Zero run-walk is RUN-WALK here too, as on its row (m9).
-  const runTitle = prescription?.runWalk ? 'RUN-WALK' : (prescription ? RUN_TITLES[prescription.runType] : null) ?? 'RUN'
+  const runTitle = walkOnly ? 'WALK OR BIKE' : prescription?.runWalk ? 'RUN-WALK' : prescription?.name === 'Easy Run' ? RUN_TITLES.easy : (prescription ? RUN_TITLES[prescription.runType] : null) ?? 'RUN'
   const icon = isZone2 || runSession.runType === 'zone2' ? 'zone2' as const : 'run' as const
   const targetMin = prescription?.targetDurSec ? Math.round(prescription.targetDurSec / 60) : null
 
   // ─── Ready (page 31 "Zone 2 · ready, indoor" / "Progression · ready, outdoor"; page 74: the plan lives here) ───
   if (phase === 'ready') {
-    const eyebrow = isZone2 ? 'Morning Run' : prescription ? `Week ${prescription.weekNumber}` : 'Run'
+    const eyebrow = walkOnly ? 'Easy day' : isZone2 ? 'Morning Run' : prescription ? `Week ${prescription.weekNumber}` : 'Run'
     const onePaceWhy = [onePaceArc, onePaceEp ? `Ep ${onePaceEp}` : ''].filter(Boolean).join(' · ') || 'onepace.net'
-    const hrLine = isZone2 || ceiling != null
+    const hrLine = !walkOnly && (isZone2 || ceiling != null)
     const shape = runShape(prescription)
     return (
       <>
@@ -608,7 +626,7 @@ export function RunSessionView({
           </div>
           {isIndoor ? (
             <>
-              <div className="wm-mlabel" style={{ marginTop: 10 }}>WATCH WHILE YOU RUN</div>
+              <div className="wm-mlabel" style={{ marginTop: 10 }}>{walkOnly ? 'WATCH WHILE YOU GO' : 'WATCH WHILE YOU RUN'}</div>
               <div className="wm-deps" role="radiogroup" aria-label="Watch while you run">
                 <div className={`wm-dep${media === 'one_pace' ? ' is-pick' : ''}`}>
                   <button type="button" role="radio" aria-checked={media === 'one_pace'} className="wm-dep-main" onClick={() => chooseMedia('one_pace')}>
@@ -624,7 +642,7 @@ export function RunSessionView({
             </>
           ) : null}
           <div className="wm-btns" style={{ marginTop: 12 }}>
-            <SessionButton label="START RUN" primary onClick={startRun} />
+            <SessionButton label={walkOnly ? 'START' : 'START RUN'} primary onClick={startRun} />
           </div>
         </CentredCard>
         <ToastContainer />
@@ -667,7 +685,7 @@ export function RunSessionView({
   const rounds = prescription?.runWalk?.rounds ?? 0
   // Ember after ~30 s over the line: EASE OFF takes RUNNING's (or RUN's) place.
   const over = zone === 'over'
-  const word = seg ? (walking ? runWalkWord(seg.kind) : workLabel(runWalkWord(seg.kind), shown)) : workLabel('RUNNING', remaining > 0 ? shown : 99)
+  const word = seg ? (walking ? runWalkWord(seg.kind) : workLabel(runWalkWord(seg.kind), shown)) : workLabel(walkOnly ? 'EASY' : 'RUNNING', remaining > 0 ? shown : 99)
   const label = over ? 'EASE OFF' : word
   const labelTone = over ? 'clay' as const : walking ? 'teal' as const : 'gold' as const
   // The heart and the number: teal in the zone, gold at the top, ember over; dim with dashes without the strap.
@@ -677,10 +695,10 @@ export function RunSessionView({
     <>
       <SessionFrame
         title={runTitle}
-        count={seg ? runWalkCount(seg, rounds) : 'RUN'}
+        count={seg ? runWalkCount(seg, rounds) : walkOnly ? 'EASY' : 'RUN'}
         onEnd={onExit}
         onEndAndLog={openLog}
-        closeHead={prescription?.runWalk ? 'Run-walk' : sentenceCase(runTypeLabel)}
+        closeHead={walkOnly ? sentenceCase(WALK_ONLY_NAME) : prescription?.runWalk ? 'Run-walk' : sentenceCase(runTypeLabel)}
         paused={runPaused && !logging}
         grass={<GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} zone={zone} hold={{ onHeld: openLog, held: logging }} />}
       >
@@ -718,9 +736,9 @@ export function RunSessionView({
               <FlapLabel text="TALK TEST" size="sm" tone="gold" />
               <p className="ss-q">Heart rate when full sentences got hard?</p>
               <div className="ss-drum2" role="group" aria-label="Talk-test heart rate, bpm">
-                <button type="button" className="ss-ar" aria-label="Lower" disabled={talkHr <= TALK_TEST_RANGE.min} onClick={() => setTalkHr(v => clampTalkHr(v - TALK_TEST_RANGE.step))}>▼</button>
+                <button type="button" className="ss-ar" aria-label="Lower" disabled={talkHr <= TALK_TEST_RANGE.min} onClick={() => stepTalkHr(-TALK_TEST_RANGE.step)}>▼</button>
                 <span className="ss-v" aria-live="polite"><FlapLabel text={String(talkHr)} size="xl" tone="gold" /><span className="ss-u">bpm</span></span>
-                <button type="button" className="ss-ar" aria-label="Higher" disabled={talkHr >= TALK_TEST_RANGE.max} onClick={() => setTalkHr(v => clampTalkHr(v + TALK_TEST_RANGE.step))}>▲</button>
+                <button type="button" className="ss-ar" aria-label="Higher" disabled={talkHr >= TALK_TEST_RANGE.max} onClick={() => stepTalkHr(TALK_TEST_RANGE.step)}>▲</button>
               </div>
             </div>
           )}
@@ -746,6 +764,7 @@ export function RunSessionView({
 /** The ready board's Shape row (page 74): a run-walk's pieces, or one steady run for an easy / Zone 2 run. */
 function runShape(p: RunPrescription | null | undefined): string | null {
   const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+  if (isWalkOnly(p)) return 'EASY WALK OR BIKE'
   if (p?.runWalk && p.runWalk.rounds > 0 && p.runWalk.runSec > 0) return `RUN ${mmss(p.runWalk.runSec)} · WALK ${mmss(p.runWalk.walkSec)}`
   if (!p || p.runType === 'zone2' || p.runType === 'easy') return 'ONE STEADY RUN'
   return null

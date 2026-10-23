@@ -6,12 +6,10 @@ import { and, asc, eq, gte, inArray, isNotNull, lte,} from 'drizzle-orm'
 import { blockTests, dailyLogs, exercises, runSessions, sessions, strengthSessionExercises, strengthSets, trainingBlocks, userProfile, weekPlans } from '../db/schema'
 import {
   BLOCK_ZERO_BASE_WEEKS,
-  ageFromDob,
   backTrend,
   calibrationCeilingKg,
   e1rmsFromTests,
   hasWeek1Tests,
-  hrCeiling,
   latestRirTopSet,
   retestCeilingKg,
   testDeltas,
@@ -34,7 +32,7 @@ import {
 } from '../lib/blockZero'
 import { CLASS_MINUTES, countsFromDay, mtRampStartDay, runAllowanceBaseSec,} from '../lib/coach'
 import { trainingWeekFor } from './coachData'
-import { zone2CeilingBpm } from '../lib/hrAnalysis'
+import { loadEasyHrCeiling } from '../lib/hrAnalysis'
 import { mondayOf } from '../lib/dates'
 import type { createDB } from '../db/client'
 import { readinessState, type ReadinessState } from '../lib/brain/readiness'
@@ -204,16 +202,6 @@ export async function recordCheckSetE1rm(db: DB, setId: string) {
   })
 }
 
-/** Latest talk-test HR this block (week-1 test, R9), for the run-walk ceiling. */
-export async function talkTestBpm(db: DB): Promise<number | null> {
-  const block = await getActiveBlockZero(db)
-  if (!block) return null
-  const rows = await db.select().from(blockTests)
-    .where(and(eq(blockTests.blockId, block.id), eq(blockTests.testKey, 'talk_test_hr')))
-  const latest = rows.sort((a, b) => b.week - a.week)[0]
-  return latest?.value ?? null
-}
-
 // ─── Muay thai class checks (R12) ──────────────────────────────
 
 // ─── End gate inputs ───────────────────────────────────────────
@@ -364,13 +352,8 @@ export async function loadBlockZeroAiContext(db: DB, todayEpochDay: number, week
   const backRows = await loadBackScores(db, start, todayEpochDay)
   const backByDay = new Map(backRows.map(r => [r.epochDay, r.backToday]))
 
-  const [profile] = await db.select({ maxHr: userProfile.maxHr, dob: userProfile.dob }).from(userProfile).where(eq(userProfile.id, 'default'))
-  const ceiling = hrCeiling({
-    talkTestBpm: await talkTestBpm(db),
-    measuredMaxHr: profile?.maxHr ?? null,
-    ageYears: ageFromDob(profile?.dob ?? null, todayEpochDay),
-    defaultBpm: zone2CeilingBpm(null),
-  })
+  // The one HR line (audit #32): the same calculation as the dose's cap and the model's line.
+  const ceiling = await loadEasyHrCeiling(db, todayEpochDay)
   const run = await loadRunHistory(db, todayEpochDay)
 
   return {
