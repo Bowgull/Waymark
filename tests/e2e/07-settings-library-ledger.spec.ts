@@ -60,7 +60,11 @@ test('Ledger: the week, month and season boards', async ({ page }) => {
     await range.getByRole('tab', { name: tab }).tap()
     await expect(range.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true')
   }
-  await expect(page.getByText('Aerobic base', { exact: true })).toBeVisible()
-  // Block Zero: page 63's board is now the NEXT BLOCK meter (page 69 §5 A).
-  await expect(page.locator('section.lg-meter').getByText('Next block', { exact: true })).toBeVisible()
+  // Page 77 A / 79: under the rings, one closed line per board (Running leads the goals).
+  await expect(page.locator('button.cl-line[data-line="running"]')).toHaveAttribute('aria-expanded', 'false')
+  // Block Zero: the NEXT BLOCK board in plain words (page 79 §5), behind its line.
+  const next = page.locator('button.cl-line[data-line="next"]')
+  await expect(next).toContainText('Next block')
+  await next.tap()
+  await expect(page.locator('section.lg-meter-new')).toBeVisible()
 })

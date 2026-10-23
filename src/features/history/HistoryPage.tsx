@@ -6,37 +6,43 @@ import { apiFetch } from '@/lib/api'
 import { PageErrorScreen } from '@/components/ui/ErrorScreens'
 import { getTodayISO } from '@/lib/dates'
 import { logger } from '@/lib/logger'
-import { pondReaction, type LedgerRange, type LedgerRing, type LiftSeries, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
+import { pondReaction, type LedgerRange, type LedgerRing, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
 import type { ConsistencyView } from '@/lib/ledgerConsistency'
-import type { ReadinessReport } from '@/lib/brain/readinessParts'
+import type { BodyView, EasyRunsView, FightView, FiveKView, NextBlockView, StrengthSinceView } from '@/lib/ledgerBoards'
 import { setWorldPond } from '@/world/worldStore'
 
-import { AerobicBoard, ConsistencyBoard, HerbBoard, ReadinessMeter, RingBoard, SleepBoard, StrengthBoard } from './LedgerBoards'
+import {
+  BodyBoard, BodyFlap, ConsistencyBoard, FightBoard, FightFlap, HerbBoard, HerbFlap, NextBlockBoard, NextBlockFlap, RingBoard,
+  RunningBoard, RunningFlap, SleepBoard, SleepFlap, StrengthFlap, StrengthSinceBoard,
+} from './LedgerBoards'
+import { LedgerLines, type LedgerLineItem } from './LedgerLines'
 import { PondRings } from './PondRings'
 import './ledger.css'
 
-// The Ledger (page 32, "The Ledger · together"): the pond fills the screen, the boards sit on glass
-// up top. WEEK / MONTH / SEASON, the week's flap-segment rings (the same rings rest on the pond),
-// Aerobic Base, Strength, Sleep + soreness, Body weight, Consistency. The app's older Ledger cards
-// (time training, running, weekly zones, marks earned, recent sessions) are dropped from this
-// screen; their endpoints stay for the coach.
+// The Ledger (page 32, "The Ledger · together"; page 77 A, page 79): the pond fills the screen.
+// On top, WEEK / MONTH / SEASON and the week's flap-segment rings (the same rings float on the
+// pond); under them one closed line per board, in the order of what's next, his goals, then
+// recovery: Next block, Running, Fight, Strength, Sleep + soreness, Herb, Body. A line opens its
+// board in place (LedgerLines).
 
 export interface LedgerData {
   range: LedgerRange
   weeks: number
   rings: LedgerRing[]
-  /** stale: the newest point is over 8 weeks old (no arrow); older servers leave it out. */
-  aerobic: { points: WeeklyPoint[]; runs: number; stale?: boolean }
-  strength: { lifts: LiftSeries[]; sets: number }
+  /** Page 79 (older servers leave these out): the 5K first, then easy runs at his own heart line. */
+  running?: { fiveK: FiveKView; easy: EasyRunsView & { empty: string | null } }
+  fight?: FightView
+  /** Strength since he started. */
+  lifts?: StrengthSinceView
+  /** In Block Zero: page 69 §5's meter in plain words. */
+  nextBlock?: NextBlockView | null
+  body?: BodyView & { points: WeeklyPoint[]; weighIns: number }
   /** mornings: how many the average is from (older servers leave it out). */
   sleep: { days: SleepDay[]; avg: number | null; mornings?: number }
   /** Page 62 B: the last 28 mornings' herb; older servers leave it out. */
   herb?: { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null; n7?: number; n28?: number }
-  weight: { points: WeeklyPoint[]; weighIns: number }
-  /** Page 63: the Consistency board (the block bar, or the last weeks after Block Zero). */
+  /** Page 63: the Consistency board (the last weeks after Block Zero). */
   consistencyBoard?: ConsistencyView
-  /** Page 69 §5 A: in Block Zero, the NEXT BLOCK meter (four readiness parts) in page 63's place. */
-  readinessMeter?: ReadinessReport | null
   /** The pond's reaction (the range's sessions); older servers leave it out. */
   pond?: number | null
 }
@@ -57,6 +63,21 @@ function LedgerHeader({ week }: { week: number | null }) {
       {week != null && <FlapLabel text={`WEEK ${week}`} size="xs" />}
     </header>
   )
+}
+
+/** Page 79's order: what's next, then his goals (5K, fighting, lifting), then recovery; Body last. */
+function lineItems(d: LedgerData): LedgerLineItem[] {
+  const items: LedgerLineItem[] = []
+  if (d.nextBlock) items.push({ key: 'next', name: 'Next block', flap: <NextBlockFlap view={d.nextBlock} />, board: <NextBlockBoard view={d.nextBlock} /> })
+  else if (d.consistencyBoard) items.push({ key: 'consistency', name: 'Consistency', flap: <FlapLabel text={d.consistencyBoard.flap} size="xs" tone={d.consistencyBoard.tone} animate={false} />, board: <ConsistencyBoard view={d.consistencyBoard} /> })
+  if (d.running) items.push({ key: 'running', name: 'Running', flap: <RunningFlap fiveK={d.running.fiveK} />, board: <RunningBoard fiveK={d.running.fiveK} easy={d.running.easy} /> })
+  if (d.fight) items.push({ key: 'fight', name: 'Fight', flap: <FightFlap view={d.fight} />, board: <FightBoard view={d.fight} /> })
+  if (d.lifts) items.push({ key: 'strength', name: 'Strength', flap: <StrengthFlap view={d.lifts} />, board: <StrengthSinceBoard view={d.lifts} /> })
+  items.push({ key: 'sleep', name: 'Sleep + soreness', flap: <SleepFlap avg={d.sleep.avg} mornings={d.sleep.mornings} />, board: <SleepBoard days={d.sleep.days} avg={d.sleep.avg} mornings={d.sleep.mornings} /> })
+  // page 62 B: right after Sleep + soreness
+  if (d.herb) items.push({ key: 'herb', name: 'Herb', flap: <HerbFlap avg7={d.herb.avg7} n7={d.herb.n7} />, board: <HerbBoard days={d.herb.days} avg7={d.herb.avg7} avg28={d.herb.avg28} line={d.herb.line} n7={d.herb.n7} n28={d.herb.n28} /> })
+  if (d.body) items.push({ key: 'body', name: 'Body', flap: <BodyFlap view={d.body} />, board: <BodyBoard view={d.body} points={d.body.points} /> })
+  return items
 }
 
 export function HistoryPage() {
@@ -115,13 +136,7 @@ export function HistoryPage() {
           <>
             <RingBoard rings={data.rings} title={title} sub={range === 'week' ? undefined : 'done / planned'} />
             {spanLine && <p className="lg-span">{spanLine}</p>}
-            {/* page 63: between the week rings and Aerobic base */}
-            {data.readinessMeter ? <ReadinessMeter view={data.readinessMeter} /> : data.consistencyBoard && <ConsistencyBoard view={data.consistencyBoard} />}
-            <AerobicBoard points={data.aerobic.points} runs={data.aerobic.runs} stale={data.aerobic.stale} />
-            <StrengthBoard lifts={data.strength.lifts} sets={data.strength.sets} />
-            <SleepBoard days={data.sleep.days} avg={data.sleep.avg} mornings={data.sleep.mornings} />
-            {/* page 62 B: right after Sleep + soreness */}
-            {data.herb && <HerbBoard days={data.herb.days} avg7={data.herb.avg7} avg28={data.herb.avg28} line={data.herb.line} n7={data.herb.n7} n28={data.herb.n28} />}
+            <LedgerLines items={lineItems(data)} />
           </>
         )}
       </div>

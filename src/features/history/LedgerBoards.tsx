@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
 import { FlapLabel, SessionIcon, useOutsideClose } from '@/design'
 import type { ConsistencyView, TileState } from '@/lib/ledgerConsistency'
-import type { ReadinessReport } from '@/lib/brain/readinessParts'
-import { RING_COLOUR, avgFlap, avgName, linePoints, paceDelta, paceFlap, spanWeeks, weightDelta, type LedgerRing, type LiftSeries, type RingState, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
+import { RING_COLOUR, avgFlap, avgName, linePoints, type LedgerRing, type RingState, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
+import {
+  FIVE_K_CHART, FIVE_K_GOAL_SEC, fightBars, fiveKChart, fiveKX, liftFlap, mmss, perKm, strengthLines,
+  type BodyView, type EasyRunsView, type FightView, type FiveKView, type NextBlockView, type PartKey, type StrengthSinceView,
+} from '@/lib/ledgerBoards'
 
 // The Ledger's boards, drawn as page 32 draws them ("The Ledger · together").
 
@@ -66,68 +69,43 @@ const GRID = ({ w, h }: { w: number; h: number }) => (
   <>{[0.25, 0.5, 0.75].map(t => <line key={t} x1="0" x2={w} y1={h * t} y2={h * t} stroke="rgba(240,230,192,.08)" />)}</>
 )
 
-/** page 32's LINE: a dark under-stroke, the coloured line, dots, the last one larger; optional faint fill. */
-function Line({ values, w, h, pad, invert, col, fill = false }: { values: number[]; w: number; h: number; pad: number; invert: boolean; col: string; fill?: boolean }) {
-  const pts = linePoints(values, w, h, pad, invert)
-  if (pts.length < 2) return null
+/** page 32's LINE drawn through given corners: a dark under-stroke, the coloured line, dots, the last one larger; optional faint fill. */
+function PathLine({ pts, h, col, fill = false }: { pts: { x: number; y: number }[]; h: number; col: string; fill?: boolean }) {
+  if (pts.length === 0) return null
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
   return (
     <>
-      {fill && <path d={`${d} L${pts[pts.length - 1].x} ${h} L${pts[0].x} ${h} Z`} fill={col} opacity=".08" />}
-      <path d={d} fill="none" stroke="#000" strokeWidth="7" opacity=".55" strokeLinejoin="round" />
-      <path d={d} fill="none" stroke={col} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" />
+      {fill && pts.length >= 2 && <path d={`${d} L${pts[pts.length - 1].x} ${h} L${pts[0].x} ${h} Z`} fill={col} opacity=".08" />}
+      {pts.length >= 2 && <path d={d} fill="none" stroke="#000" strokeWidth="7" opacity=".55" strokeLinejoin="round" />}
+      {pts.length >= 2 && <path d={d} fill="none" stroke={col} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" />}
       {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={i === pts.length - 1 ? 4.5 : 2.4} fill={col} />)}
     </>
   )
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
-
-export function AerobicBoard({ points, runs, stale = false }: { points: WeeklyPoint[]; runs: number; stale?: boolean }) {
-  const drawn = points.length >= 2
-  const last = points[points.length - 1]
-  // Old data says nothing about now: no faster / slower arrow (audit 2026-10-23 #21).
-  const delta = stale ? null : paceDelta(points)
-  return (
-    <section className="lg-glass lg-chart">
-      <div className="lg-head"><span>Aerobic base</span>{last && <FlapLabel text={paceFlap(last.value)} size="xs" tone="gold" animate={false} />}</div>
-      <svg viewBox="0 0 320 120" aria-hidden><GRID w={320} h={120} />{drawn && <Line values={points.map(p => p.value)} w={320} h={120} pad={10} invert col="#c9a656" fill />}</svg>
-      <div className="lg-legend">
-        <span><i style={{ background: '#c9a656' }} />pace at 140 bpm · {drawn ? plural(spanWeeks(points), 'week') : `${plural(runs, 'run')} so far`}</span>
-        {delta && <span className={`lg-delta${delta.up ? '' : ' is-dn'}`}>{delta.text}</span>}
-      </div>
-    </section>
-  )
+/** page 32's LINE over values (invert: lower is higher, so a faster pace climbs). */
+function Line({ values, w, h, pad, invert, col, fill = false, domain }: { values: number[]; w: number; h: number; pad: number; invert: boolean; col: string; fill?: boolean; domain?: { min: number; max: number } }) {
+  const pts = linePoints(values, w, h, pad, invert, domain)
+  if (pts.length < 2) return null
+  return <PathLine pts={pts} h={h} col={col} fill={fill} />
 }
 
-/** Bone for the front squat, grey for the bench (the icon colours, page 32). */
-const liftCol = (short: string) => short === 'bench' ? '#8a8a80' : '#e4dcc4'
-
-export function StrengthBoard({ lifts, sets }: { lifts: LiftSeries[]; sets: number }) {
-  const drawn = lifts.filter(l => l.points.length >= 2)
-  const head = lifts[0]?.points[lifts[0].points.length - 1]
-  return (
-    <section className="lg-glass lg-chart">
-      <div className="lg-head"><span>Strength</span>{head && <FlapLabel text={`${lifts[0].short.replace(/^front /, '').toUpperCase()} ${head.value}`} size="xs" tone="gold" animate={false} />}</div>
-      <svg viewBox="0 0 320 130" aria-hidden>
-        <GRID w={320} h={130} />
-        {drawn.map((l) => <Line key={l.short} values={l.points.map(p => p.value)} w={320} h={130} pad={10} invert={false} col={liftCol(l.short)} />)}
-      </svg>
-      <div className="lg-legend">
-        {lifts.map(l => <span key={l.short}><i style={{ background: liftCol(l.short) }} />{l.short}</span>)}
-        <span>{drawn.length ? `top set, lbs · ${plural(Math.max(...drawn.map(l => spanWeeks(l.points))), 'week')}` : `${plural(sets, 'top set')} so far`}</span>
-      </div>
-    </section>
-  )
+/** A board's head: its name and its flap (the Ledger's closed line shows the same head). */
+export function BoardHead({ name, children }: { name: string; children?: ReactNode }) {
+  return <div className="lg-head"><span>{name}</span>{children}</div>
 }
 
 const SORE_WORD = ['fresh', 'loose', 'normal', 'sore', 'cooked']
 const SORE_COL = ['#4aa3c8', '#6fb85a', '#c4b070', '#d0843e', '#c63f34']
 
+export function SleepFlap({ avg, mornings = 7 }: { avg: number | null; mornings?: number }) {
+  return avg != null ? <FlapLabel text={avgFlap(`${avg.toFixed(1)} H`, mornings)} size="xs" tone="teal" animate={false} /> : null
+}
+
 export function SleepBoard({ days, avg, mornings = 7 }: { days: SleepDay[]; avg: number | null; mornings?: number }) {
   return (
     <section className="lg-glass lg-chart">
-      <div className="lg-head"><span>Sleep + soreness</span>{avg != null && <FlapLabel text={avgFlap(`${avg.toFixed(1)} H`, mornings)} size="xs" tone="teal" animate={false} />}</div>
+      <BoardHead name="Sleep + soreness"><SleepFlap avg={avg} mornings={mornings} /></BoardHead>
       <div className="lg-label" style={{ margin: '2px 0 4px' }}>Sleep · hours each night</div>
       <svg viewBox="0 0 320 96" aria-label={days.map(d => `${d.letter} ${d.sleepHours ?? 'no'} hours`).join(', ')}>
         {days.map((d, i) => {
@@ -164,6 +142,10 @@ export function SleepBoard({ days, avg, mornings = 7 }: { days: SleepDay[]; avg:
  * good or bad colours. The dashed brass line is his 28-day average; the flap
  * his 7-day average. One plain line from his own check-ins.
  */
+export function HerbFlap({ avg7, n7 = 7 }: { avg7: number | null; n7?: number }) {
+  return avg7 != null ? <FlapLabel text={avgFlap(avg7.toFixed(1), n7)} size="xs" animate={false} /> : null
+}
+
 export function HerbBoard({ days, avg7, avg28, line, n7 = 7, n28 = 28 }: { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null; n7?: number; n28?: number }) {
   const W = 320, H = 112, base = 92, x0 = 4
   const yv = (v: number) => base - v / 9 * 72
@@ -171,7 +153,7 @@ export function HerbBoard({ days, avg7, avg28, line, n7 = 7, n28 = 28 }: { days:
   const bx = (i: number): [number, number] => (i < 21 ? [x0 + i * oldStep, oldStep - 2] : [newX0 + (i - 21) * newStep, newStep - 4])
   return (
     <section className="lg-glass lg-chart lg-herb">
-      <div className="lg-head"><span>Herb</span>{avg7 != null && <FlapLabel text={avgFlap(avg7.toFixed(1), n7)} size="xs" animate={false} />}</div>
+      <BoardHead name="Herb"><HerbFlap avg7={avg7} n7={n7} /></BoardHead>
       <svg viewBox={`0 0 ${W} ${H}`} aria-label={days.slice(-7).map(d => `${d.letter} ${d.herb ?? 'not logged'}`).join(', ')}>
         <line x1="0" x2={W} y1={base} y2={base} stroke="rgba(240,230,192,.12)" />
         {days.map((d, i) => {
@@ -205,22 +187,6 @@ export function HerbBoard({ days, avg7, avg28, line, n7 = 7, n28 = 28 }: { days:
           <small>From your last {line.checkIns} check-ins.</small>
         </p>
       )}
-    </section>
-  )
-}
-
-export function BodyWeightBoard({ points, weighIns }: { points: WeeklyPoint[]; weighIns: number }) {
-  const drawn = points.length >= 2
-  const last = points[points.length - 1]
-  const delta = weightDelta(points)
-  return (
-    <section className="lg-glass lg-chart">
-      <div className="lg-head"><span>Body weight</span>{last && <FlapLabel text={`${last.value.toFixed(1)} LB`} size="xs" animate={false} />}</div>
-      <svg viewBox="0 0 320 80" aria-hidden><GRID w={320} h={80} />{drawn && <Line values={points.map(p => p.value)} w={320} h={80} pad={8} invert={false} col="#cfd9d2" />}</svg>
-      <div className="lg-legend">
-        <span>from the Body Log · {drawn ? plural(spanWeeks(points), 'week') : `${plural(weighIns, 'weigh-in')} so far`}</span>
-        {delta && <span className={`lg-delta${delta.down ? '' : ' is-dn'}`}>{delta.text}</span>}
-      </div>
     </section>
   )
 }
@@ -374,7 +340,10 @@ export function ConsistencyBoard({ view }: { view: ConsistencyView }) {
   )
 }
 
-/** One run of 6 flap tiles: brass as a part builds, teal when it's in (page 69 §5). */
+
+// ─── Page 79: the boards that answer his goals ───────────────
+
+/** One run of 6 flap tiles: brass as a part builds, teal when it's done (page 69 §5). */
 function PartTiles({ n, met, className }: { n: number; met: boolean; className: string }) {
   return (
     <span className={className}>
@@ -383,71 +352,219 @@ function PartTiles({ n, met, className }: { n: number; met: boolean; className: 
   )
 }
 
-const METER_SEEN = 'wm.ledger.meter'
-
-/** Which parts moved since he last saw the meter (their tiles flip once). Per phone; nothing breaks without it. */
-function usePartFlips(parts: ReadonlyArray<{ key: string; tiles: number; in: boolean }>): Set<string> {
-  const [flips] = useState(() => {
-    const out = new Set<string>()
-    try {
-      const seen = JSON.parse(window.localStorage.getItem(METER_SEEN) ?? 'null') as Record<string, number> | null
-      if (seen) for (const p of parts) if (seen[p.key] !== undefined && seen[p.key] !== p.tiles + (p.in ? 10 : 0)) out.add(p.key)
-    } catch { /* no storage: no flips */ }
-    return out
-  })
-  useEffect(() => {
-    try { window.localStorage.setItem(METER_SEEN, JSON.stringify(Object.fromEntries(parts.map(p => [p.key, p.tiles + (p.in ? 10 : 0)])))) } catch { /* no storage */ }
-  }, [parts])
-  return flips
+export function NextBlockFlap({ view }: { view: NextBlockView }) {
+  return <FlapLabel text={view.flap} size="xs" tone={view.tone} animate={false} />
 }
 
 /**
- * NEXT BLOCK (page 69 §5, option A, approved 2026-10-20): page 63's board,
- * evolved in place on the Ledger's first screen. Closed: the header, a flap
- * (BUILDING / N OF 4 IN / READY / N DAY BREAK), one bar of 4 × 6 flap tiles
- * (brass as a part builds, teal when it's in), the part names under it and one
- * line naming what's left. Open: one group per part with its tiles and one
- * plain line of real numbers; page 63's details sit inside Habit. It opens and
- * closes as page 63 does (page 61's rules).
+ * NEXT BLOCK in plain words (page 79 §5): Showing up, Running base, Lifting,
+ * Back; "N OF 4 DONE"; one bar of 4 × 6 tiles; one line of what's left. Tap a
+ * part: its one plain line (one open at a time). The rules are page 69 §5's.
  */
-export function ReadinessMeter({ view }: { view: ReadinessReport }) {
-  const { open, toggle, className, props } = useOpenBoard()
-  const flips = usePartFlips(view.parts)
+export function NextBlockBoard({ view }: { view: NextBlockView }) {
+  const [on, setOn] = useState<PartKey>(view.openKey)
   return (
     <section
-      {...props}
-      className={`lg-glass lg-cb lg-meter${className}`}
-      aria-label={`Next block, ${view.flap.toLowerCase()}. ${view.parts.map(p => `${p.name} ${p.in ? 'in' : `${p.tiles} of 6`}`).join(', ')}. ${view.line}.`}
+      className="lg-glass lg-chart lg-meter-new"
+      aria-label={`Next block, ${view.flap.toLowerCase()}. ${view.parts.map(p => `${p.name} ${p.in ? 'done' : `${p.tiles} of 6`}`).join(', ')}. ${view.line}.`}
     >
-      <div className="lg-head">
-        <span>Next block</span>
-        <span className="rt">
-          <FlapLabel text={view.flap} size="xs" tone={view.tone} />
-          {open
-            ? <button type="button" className="lg-closeb" onClick={e => { e.stopPropagation(); toggle(false) }}>Close</button>
-            : CHEV}
-        </span>
-      </div>
+      <BoardHead name="Next block"><NextBlockFlap view={view} /></BoardHead>
       <div className="lg-bar">
         <div className="track lanes">
-          {view.parts.map(p => <PartTiles key={p.key} n={p.tiles} met={p.in} className={`lane${flips.has(p.key) ? ' is-flip' : ''}`} />)}
+          {view.parts.map(p => <PartTiles key={p.key} n={p.tiles} met={p.in} className="lane" />)}
         </div>
       </div>
-      <div className="lg-lanek">
+      <div className="lg-lanek lg-lanek-4">
         {view.parts.map(p => <span key={p.key} className={p.in ? 'ok' : undefined}>{p.name.toUpperCase()}</span>)}
       </div>
       <div className="lg-bark one">{view.line}</div>
-      <div className="lg-cdet" aria-hidden={!open}>
-        <div className="in">
-          {view.parts.map(p => (
-            <div key={p.key} className="lg-grp" data-part={p.key}>
-              <div className="gh"><span>{p.name}</span><PartTiles n={p.tiles} met={p.in} className="mini" /></div>
-              <div className="nb">{p.in && <span className="ok">In. </span>}{p.line}{p.small && <small>{p.small}</small>}</div>
-            </div>
-          ))}
-          <div className="lg-grp"><div className="nb lg-foot">{view.foot}</div></div>
-        </div>
+      <div className="nb-parts">
+        {view.parts.map(p => (
+          <button key={p.key} type="button" data-part={p.key} className={`nb-part${on === p.key ? ' is-on' : ''}`} aria-expanded={on === p.key} onClick={() => setOn(p.key)}>
+            <span className="gh"><span>{p.name}</span><PartTiles n={p.tiles} met={p.in} className="mini" /></span>
+            <span className="nb-say">{p.in && <><b>Done.</b> </>}{p.say}</span>
+          </button>
+        ))}
       </div>
+      <p className="nb-foot">{view.foot}</p>
+    </section>
+  )
+}
+
+export function RunningFlap({ fiveK }: { fiveK: FiveKView }) {
+  return <FlapLabel text={fiveK.flap} size="xs" tone="gold" animate={false} />
+}
+
+const GOLD = '#c9a656'
+const BRASS = '#b8984a'
+
+/**
+ * RUNNING (page 79 §2): the 5K first. Each test a step up toward the dashed
+ * 22:00 line at the top (up is better), the next test as a ring. Under it, easy
+ * runs at his own heart line, a faster pace higher; treadmill runs count.
+ */
+export function RunningBoard({ fiveK, easy }: { fiveK: FiveKView; easy: EasyRunsView & { empty: string | null } }) {
+  const ch = fiveKChart(fiveK)
+  const { w, h, goalY } = FIVE_K_CHART
+  const vals = easy.points.map(p => p.value)
+  const lo = Math.min(...vals), hi = Math.max(...vals), m = (hi - lo) * 0.12
+  return (
+    <section className="lg-glass lg-chart">
+      <BoardHead name="Running"><RunningFlap fiveK={fiveK} /></BoardHead>
+      <svg viewBox={`0 0 ${w} ${h}`} aria-label={fiveK.tests.length ? fiveK.tests.map(t => `week ${t.week} ${mmss(t.sec)}`).join(', ') : `first test in week ${fiveK.nextWeek}`}>
+        <GRID w={w} h={h} />
+        <line x1="0" x2={w} y1={goalY} y2={goalY} stroke="#000" strokeWidth="4" opacity=".45" />
+        <line x1="0" x2={w} y1={goalY} y2={goalY} stroke={BRASS} strokeWidth="1.6" strokeDasharray="5 3" />
+        <text x="316" y={goalY - 5} textAnchor="end" className="lg-hbv">{mmss(FIVE_K_GOAL_SEC)} GOAL</text>
+        <PathLine pts={ch.steps} h={h} col={GOLD} />
+        {ch.labels.map((l, i) => <text key={i} x={l.x} y={l.y} className="lg-hbv">{l.text}</text>)}
+        {ch.next && (
+          <>
+            <line x1={ch.next.x0} x2={ch.next.x} y1={ch.next.y} y2={ch.next.y} stroke={GOLD} strokeWidth="1.6" strokeDasharray="3 3" opacity=".7" />
+            <circle cx={ch.next.x} cy={ch.next.y} r="3.6" fill="none" stroke={GOLD} strokeWidth="1.4" />
+          </>
+        )}
+        {fiveK.tests.length === 0 && <text x={fiveKX(fiveK.nextWeek, fiveK.axisWeeks) + 8} y="97.6" className="lg-hbv">FIRST TEST · WEEK {fiveK.nextWeek}</text>}
+        {ch.ticks.map(t => <text key={t.text} x={t.x} y="128" textAnchor={t.anchor} className="lg-hbd">{t.text}</text>)}
+      </svg>
+      <div className="lg-legend is-wrap">
+        <span><i style={{ background: GOLD }} />your 5K tests</span>
+        <span><i style={{ background: BRASS }} />goal {mmss(FIVE_K_GOAL_SEC)}</span>
+      </div>
+      <p className="lg-hline">{fiveK.line}</p>
+      <div className="lg-label" style={{ margin: '14px 0 6px' }}>Easy runs · pace at heart {easy.bpm}</div>
+      <svg viewBox="0 0 320 84" aria-hidden>
+        <GRID w={320} h={84} />
+        <Line values={vals} w={320} h={84} pad={10} invert col={GOLD} fill domain={vals.length ? { min: lo - m, max: hi + m } : undefined} />
+      </svg>
+      {easy.now != null
+        ? (
+          <div className="lg-legend">
+            <span><i style={{ background: GOLD }} />{perKm(easy.now)} now</span>
+            {easy.delta && <span className={`lg-delta${easy.delta.up ? '' : ' is-dn'}`}>{easy.delta.text}</span>}
+          </div>
+        )
+        : easy.empty && <p className="lg-hline">{easy.empty}</p>}
+    </section>
+  )
+}
+
+export function FightFlap({ view }: { view: FightView }) {
+  return <FlapLabel text={view.flap} size="xs" tone="gold" animate={false} />
+}
+
+/** FIGHT (page 79 §3): bag rounds each week (this week bright), MT classes this week, combos learned and mastered. */
+export function FightBoard({ view }: { view: FightView }) {
+  const bars = fightBars(view.weeks)
+  const base = view.anyRounds ? 78 : 42
+  const c = view.combos
+  return (
+    <section className="lg-glass lg-chart">
+      <BoardHead name="Fight"><FightFlap view={view} /></BoardHead>
+      <div className="lg-label" style={{ margin: '2px 0 6px' }}>Bag rounds · each week</div>
+      <svg viewBox={`0 0 320 ${view.anyRounds ? 96 : 60}`} aria-label={view.weeks.map(wk => `${wk.now ? 'this week' : wk.label || 'before'} ${wk.rounds}`).join(', ')}>
+        <line x1="0" x2="320" y1={base} y2={base} stroke="rgba(240,230,192,.12)" />
+        {bars.map((b, i) => (
+          <g key={i}>
+            {b.h > 0 && <rect x={(b.x - b.w / 2).toFixed(1)} y={(base - b.h).toFixed(1)} width={b.w} height={b.h} rx="2" fill={b.now ? '#cfd9d2' : '#5d6863'} />}
+            {b.value > 0 && <text x={b.x.toFixed(1)} y={(base - b.h - 4).toFixed(1)} textAnchor="middle" className="lg-hbv">{b.value}</text>}
+            <text x={b.x.toFixed(1)} y={base + 14} textAnchor="middle" className="lg-hbd">{b.label}</text>
+          </g>
+        ))}
+      </svg>
+      {view.anyRounds
+        ? (
+          <div className="lg-legend">
+            <span><i style={{ background: '#cfd9d2' }} />this week</span>
+            <span><i style={{ background: '#5d6863' }} />weeks before</span>
+          </div>
+        )
+        : <p className="lg-hline">No bag rounds yet. They count here from your first bag session.</p>}
+      {view.classes.picked || view.classes.done > 0
+        ? <div className="fx-row"><span className="fx-k">MT classes this week</span><FlapLabel text={String(view.classes.done)} size="xs" animate={false} /></div>
+        : (
+          <>
+            <div className="fx-row"><span className="fx-k">MT classes</span><FlapLabel text="NONE PICKED" size="xs" animate={false} /></div>
+            <div className="fx-sub">Pick class days in Settings when you know your week.</div>
+          </>
+        )}
+      <div className="fx-row"><span className="fx-k">Combos</span><FlapLabel text={c.learned ? `${c.learned} LEARNED · ${c.mastered} MASTERED` : '0 LEARNED'} size="xs" animate={false} /></div>
+      {c.learned === 0 && <div className="fx-sub">They count here as you rate them after bag rounds.</div>}
+      {c.closest && (
+        <div className="fx-combo">
+          <span>{c.closest.name}</span>
+          <span className="fx-dots" aria-hidden>{Array.from({ length: 5 }, (_, i) => <i key={i} className={i < c.closest!.dots ? 'on' : ''} />)}</span>
+          <em>{c.closest.words}</em>
+        </div>
+      )}
+    </section>
+  )
+}
+
+const LIFT_COL = ['#e4dcc4', GOLD, '#7fd0b4', '#c8844e']
+
+export function StrengthFlap({ view }: { view: StrengthSinceView }) {
+  return <FlapLabel text={view.flap} size="xs" tone="gold" animate={false} />
+}
+
+/** STRENGTH since you started (page 79 §4): one line per lift he does, from 0 in week 1, reps included. */
+export function StrengthSinceBoard({ view }: { view: StrengthSinceView }) {
+  const lines = strengthLines(view)
+  const rows = view.lifts.map((l, i) => (
+    <div key={l.exerciseId} className="fx-row">
+      <span className="fx-k"><i className="sw" style={{ background: LIFT_COL[i] }} />{l.name}</span>
+      <FlapLabel text={liftFlap(l)} size="xs" animate={false} />
+    </div>
+  ))
+  return (
+    <section className="lg-glass lg-chart">
+      <BoardHead name="Strength"><StrengthFlap view={view} /></BoardHead>
+      <svg viewBox="0 0 320 130" aria-label={view.lifts.map(l => `${l.name} ${liftFlap(l).toLowerCase()}`).join(', ')}>
+        <GRID w={320} h={130} />
+        {view.started
+          ? (
+            <>
+              <line x1="0" x2="320" y1="114" y2="114" stroke="rgba(240,230,192,.2)" />
+              <text x="2" y="128" className="lg-hbd">WK 1</text>
+              {view.currentWeek > 1 && <text x="318" y="128" textAnchor="end" className="lg-hbd">WK {view.currentWeek}</text>}
+              {lines.map((l, i) => <PathLine key={l.exerciseId} pts={l.pts} h={130} col={LIFT_COL[i]} />)}
+            </>
+          )
+          : (
+            <>
+              <line x1="0" x2="320" y1="120" y2="120" stroke="rgba(240,230,192,.2)" />
+              <text x="4" y="116" className="lg-hbd">WEEK 1 = 0</text>
+            </>
+          )}
+      </svg>
+      {view.started && <div className="lg-legend is-wrap"><span>how much stronger since week 1, reps included</span></div>}
+      {!view.started && <p className="lg-hline">{view.line}</p>}
+      {rows}
+      {view.started && <p className="lg-hline">{view.line}</p>}
+    </section>
+  )
+}
+
+export function BodyFlap({ view }: { view: BodyView }) {
+  return <FlapLabel text={view.flap} size="xs" animate={false} />
+}
+
+/** BODY (page 79 §6): the weekly weigh-in line from Settings › Body metrics; no weigh-ins, it says so. */
+export function BodyBoard({ view, points }: { view: BodyView; points: WeeklyPoint[] }) {
+  return (
+    <section className="lg-glass lg-chart">
+      <BoardHead name="Body"><BodyFlap view={view} /></BoardHead>
+      <svg viewBox="0 0 320 84" aria-hidden>
+        <GRID w={320} h={84} />
+        <Line values={points.map(p => p.value)} w={320} h={84} pad={10} invert={false} col="#cfd9d2" domain={view.domain ?? undefined} />
+      </svg>
+      {view.legend && (
+        <div className="lg-legend">
+          <span><i style={{ background: '#cfd9d2' }} />{view.legend}</span>
+          {view.delta && <span className={`lg-delta${view.delta.down ? '' : ' is-dn'}`}>{view.delta.text}</span>}
+        </div>
+      )}
+      <p className="lg-hline">{view.line}<small>{view.small}</small></p>
     </section>
   )
 }

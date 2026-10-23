@@ -70,6 +70,34 @@ export interface ReadinessPart {
   /** The open board's line (real numbers), and its small line. */
   line: string
   small: string | null
+  /** The numbers behind the line, for the Ledger's plain words (page 79 §5). */
+  facts?: PartFacts
+}
+
+/** What each part measured (only its own fields are set). */
+export interface PartFacts {
+  /** habit: key sessions due and done in the last 4 weeks, weeks with 4+ days, the longest break, sessions in a row it needs. */
+  due?: number
+  done?: number
+  weeksOk?: number
+  breakDays?: number
+  needInARow?: number
+  /** engine: qualifying run-walks in 14 days, runs in that window, his line, talk tests so far, line current. */
+  goodRuns?: number
+  runsInWindow?: number
+  lineBpm?: number
+  talkTests?: number
+  lineOk?: boolean
+  /** strength: the patterns still to go, the share of main sets with reps left logged. */
+  missing?: string[]
+  rirShare?: number
+  /** back: scores to read from, the means, the raven's plan open, days without a back ease. */
+  scores?: number
+  backNow?: number | null
+  backWeek1?: number | null
+  meanOk?: boolean
+  planOpen?: boolean
+  cleanDays?: number
 }
 
 export interface ReadinessReport {
@@ -168,11 +196,13 @@ function habitPart(inp: ReadinessIn): ReadinessPart {
   const score = 0.2 * clamp01(rate / HABIT_RATE) + 0.65 * (weeksOk / HABIT_WEEKS) + 0.15 * (brk < BREAK_DAYS ? 1 : 0)
   const head = `${done} of your last ${due.length} sessions, and 4+ days a week in ${weeksOk} of the last 4 weeks.`
   let line = head
+  let needInARow = 0
   if (!isIn) {
     if (due.length === 0) line = 'No sessions due yet.'
     else if (brk >= BREAK_DAYS) line = `A ${brk}-day break in the last 3 weeks. ${head}`
     else if (rate < HABIT_RATE) {
       const need = Math.max(1, Math.ceil((HABIT_RATE * due.length - done) / (1 - HABIT_RATE) - 1e-9))
+      needInARow = need
       line = `${head} ${word(need)} more done in a row brings the sessions up.`
     } else line = `${head} It needs 3.`
   }
@@ -192,7 +222,8 @@ function habitPart(inp: ReadinessIn): ReadinessPart {
     `Mornings ${am.filter(s => s.status === 'completed').length} of ${am.length}, evenings ${pm.filter(s => s.status === 'completed').length} of ${pm.length}.`,
     counts.size ? `Why missed: ${[...counts.entries()].sort((a, b) => (a[0] === 'no reason' ? 1 : 0) - (b[0] === 'no reason' ? 1 : 0)).map(([k, n]) => `${k} ${n}`).join(', ')}.` : null,
   ].filter(Boolean)
-  return { key: 'habit', name: 'Habit', in: isIn, tiles: tilesOf(score, isIn), line, small: block.length ? bits.join(' ') : null }
+  const facts: PartFacts = { due: due.length, done, weeksOk, breakDays: brk, needInARow }
+  return { key: 'habit', name: 'Habit', in: isIn, tiles: tilesOf(score, isIn), line, small: block.length ? bits.join(' ') : null, facts }
 }
 
 // ─── Engine ──────────────────────────────────────────────────
@@ -224,7 +255,8 @@ function enginePart(inp: ReadinessIn): ReadinessPart {
   }
   if (run.easyPaceSecKm != null) bits.push(`Easy pace at ${bpm}: ${pace(run.easyPaceSecKm)}.`)
   if (tests.length > 0 && !isIn && good.length >= 2) bits.push(`Last talk test: ${dayLabel(last!.day)}.`)
-  return { key: 'engine', name: 'Engine', in: isIn, tiles: tilesOf(score, isIn), line, small: bits.length ? bits.join(' ') : null }
+  const facts: PartFacts = { goodRuns: good.length, runsInWindow: window.length, lineBpm: bpm, talkTests: tests.length, lineOk }
+  return { key: 'engine', name: 'Engine', in: isIn, tiles: tilesOf(score, isIn), line, small: bits.length ? bits.join(' ') : null, facts }
 }
 
 // ─── Strength ────────────────────────────────────────────────
@@ -268,7 +300,8 @@ function strengthPart(inp: ReadinessIn): ReadinessPart {
   else line = `Reps left logged on ${Math.round(share * 100)}% of sets. It needs 9 in 10.`
   const weights = PATTERNS.map(p => status.get(p)!).filter(s => s.in && s.kg != null && s.lift).map((s, i) => `${i === 0 ? liftShort(s.lift!).replace(/^./, c => c.toUpperCase()) : liftShort(s.lift!)} ${kgToLbs(s.kg!)}${i === 0 ? ' lb' : ''}`)
   const bits = [weights.length ? `${weights.join(', ')}.` : null, recent.length ? `Reps left logged on ${Math.round(share * 100)}% of sets.` : null].filter(Boolean)
-  return { key: 'strength', name: 'Strength', in: isIn, tiles: tilesOf(score, isIn), line, small: bits.length ? bits.join(' ') : null }
+  const facts: PartFacts = { missing: [...missing], rirShare: share }
+  return { key: 'strength', name: 'Strength', in: isIn, tiles: tilesOf(score, isIn), line, small: bits.length ? bits.join(' ') : null, facts }
 }
 
 // ─── Back ────────────────────────────────────────────────────
@@ -300,7 +333,8 @@ function backPart(inp: ReadinessIn): ReadinessPart {
   const bits: string[] = []
   if (data) bits.push(`Back averages ${r1(lm as number)} over 3 weeks, ${(lm as number) > (fm as number) + 0.05 ? 'up from' : (lm as number) < (fm as number) - 0.05 ? 'down from' : 'level with'} ${r1(fm as number)} in week 1.`)
   if (lastEase != null) bits.push(`Last ease: ${dayLabel(lastEase)}.`)
-  return { key: 'back', name: 'Back', in: isIn, tiles: tilesOf(score, isIn), line, small: bits.length ? bits.join(' ') : null }
+  const facts: PartFacts = { scores: Math.min(first.length, last.length), backNow: lm, backWeek1: fm, meanOk, planOpen: !planOk, cleanDays: clean }
+  return { key: 'back', name: 'Back', in: isIn, tiles: tilesOf(score, isIn), line, small: bits.length ? bits.join(' ') : null, facts }
 }
 
 // ─── The report ──────────────────────────────────────────────

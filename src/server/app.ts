@@ -8,6 +8,7 @@ import { cors } from 'hono/cors'
 import { createDB } from '../db/client'
 import { CONSISTENCY_SPAN, weeksConsistency } from '../lib/ledgerConsistency'
 import { blockReadinessFor } from './readiness'
+import { ledgerGoalBoards } from './ledgerData'
 import { activeRecoverySessions, athleteEstimates, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, runTypes, techniques, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { athleteDayFrom, isoToEpochDay, mondayOf, TODAY_HEADER, TZ_HEADER } from '../lib/dates'
 import { cycleWeeks } from '../lib/programWeeks'
@@ -3684,8 +3685,11 @@ app.get('/api/history/ledger', async (c) => {
   const foundation = { done: foundationDays.size, of: Math.max(foundationDays.size, today - foundationFrom + (foundationDays.has(today) ? 1 : 0)) }
   const readinessMeter = activeBlock?.blockType === 'block_zero' ? await blockReadinessFor(db, today) : null
   const consistencyBoard = readinessMeter ? undefined : weeksConsistency(consistencyRows, CONSISTENCY_SPAN[range], today, mondayOf, { tzOffsetMin, foundation })
+  // Page 79: the boards that answer his goals (Next block in plain words, Running, Fight, Strength since he started, Body).
+  const goals = await ledgerGoalBoards(db, { today, weeks, allSessions, allRuns, allSexes, allSets, weights, readiness: readinessMeter })
 
   return c.json({
+    ...goals,
     range,
     today,
     weeks,

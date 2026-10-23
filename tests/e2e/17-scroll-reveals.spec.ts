@@ -69,6 +69,17 @@ async function measure(page: Page) {
   })
 }
 
+/**
+ * Page 77 A: the Ledger's boards sit behind closed lines, so the page alone may be too short to
+ * scroll a window's worth. Opening the last line (Body) gives the list its room below; then back to the top.
+ */
+async function roomOnLedger(page: Page) {
+  const body = page.locator('.wm-pane:not([style*="display: none"]) button.cl-line[data-line="body"]')
+  await body.tap()
+  await expect(body).toHaveAttribute('aria-expanded', 'true')
+  await scrollTo(page, 0)
+}
+
 /** Scroll the shell to y, then let a frame pass (the suite's Reduce Motion gives every change a 0.01 ms transition). */
 async function scrollTo(page: Page, y: number) {
   await page.evaluate(v => {
@@ -93,7 +104,8 @@ test('each world tab opens with its place in the window: boards 46% down, 40% on
   }
 
   // scrolled, then away and back: it lands at the window again (page 67 item 6)
-  // (once Ledger's boards are in: a page still loading is too short to scroll)
+  // (once Ledger's boards are in: a page still loading is too short to scroll; a line open for room)
+  await roomOnLedger(page)
   await expect.poll(() => page.evaluate(() => { const m = document.querySelector<HTMLElement>('main.waymark-scroll')!; return m.scrollHeight - m.clientHeight })).toBeGreaterThanOrEqual(300)
   await scrollTo(page, 300)
   await expect.poll(async () => (await measure(page)).scroll).toBeGreaterThan(0)
@@ -107,6 +119,7 @@ test('scrolled: the scene darkens to 60% and the header gets its backing; Reduce
   await gotoToday(page)
   await openTab(page, 'ledger', /\/history$/)
   await expect(page.getByRole('region', { name: /^This week:/ })).toBeVisible()
+  await roomOnLedger(page)
   const w = (await measure(page)).window
   expect(w).toBeGreaterThan(100)
 
@@ -139,6 +152,7 @@ test.describe('moving (no Reduce Motion)', () => {
     await gotoToday(page)
     await openTab(page, 'ledger', /\/history$/)
     await expect(page.getByRole('region', { name: /^This week:/ })).toBeVisible()
+    await roomOnLedger(page)
     // the rise and its flaps landed
     await page.waitForTimeout(1500)
     const w = (await measure(page)).window
