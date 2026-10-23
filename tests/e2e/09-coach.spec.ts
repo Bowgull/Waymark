@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { addDaysISO, dayRow, epochOf, gotoToday, holdRow, insertSession, todayISO, todayRow } from './support/helpers'
 import { GOOD_MORNING, setMorning } from './support/data'
 
@@ -19,6 +19,25 @@ test.describe.configure({ mode: 'serial', retries: 0 })
 type Row = { id: string; type: string; source: string | null; status: string; skipReason: string | null }
 // A row's name: its icon's alt (the flap name), the flap, the minutes ("FOUNDATION FOUNDATION ~12min").
 const row = (page: Page, name: RegExp) => page.locator('.td-row').filter({ has: page.getByRole('button', { name }) })
+/**
+ * Tap a line in the COACH PICKS window. EVERYTHING (with a line open) is taller
+ * than the window, which scrolls inside itself; bring the line into the window
+ * first and let the list settle, so the tap never has to scroll the page (a
+ * page scroll closes the window, by design).
+ */
+async function pickTap(picks: Locator, name: string) {
+  const b = picks.getByRole('button', { name, exact: true })
+  await expect(b).toBeVisible()
+  await b.evaluate(el => {
+    const w = el.closest('.pl-cmd') as HTMLElement
+    const r = el.getBoundingClientRect(), wr = w.getBoundingClientRect()
+    if (r.top < wr.top) w.scrollTop -= wr.top - r.top + 8
+    else if (r.bottom > wr.bottom) w.scrollTop += r.bottom - wr.bottom + 8
+  })
+  await expect.poll(() => b.evaluate(el => el.closest('.pl-cmd')!.getAnimations({ subtree: true })
+    .filter(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity).length)).toBe(0)
+  await b.tap()
+}
 const sessionsToday = (api: { get<T>(p: string): Promise<T> }) => api.get<Row[]>(`/api/sessions/today?date=${todayISO()}`)
 
 test('REPLACE: hold, COACH PICKS, SWAP IN, then BODY', async ({ page, api }) => {
@@ -75,9 +94,12 @@ test('+ Add always adds, MT Class included', async ({ page }) => {
     await page.getByRole('button', { name: '+ add session' }).tap()
     const picks = page.getByRole('dialog', { name: 'Coach picks: add' })
     await expect(picks.locator('.pl-cl:not(.is-more)').first()).toBeVisible({ timeout: 20_000 })
-    await picks.getByRole('button', { name: 'Everything else' }).tap()
-    await picks.getByRole('button', { name, exact: true }).tap()
-    await picks.getByRole('button', { name: 'Add', exact: true }).tap()
+    await pickTap(picks, 'Everything else')
+    // page 76: the runs fold into RUNS ›; MT Class and Skip Rope stay plain lines in EVERYTHING
+    await expect(picks.getByRole('button', { name: 'Runs', exact: true })).toBeVisible()
+    await pickTap(picks, name)
+    await expect(picks.getByRole('button', { name, exact: true })).toHaveAttribute('aria-current', 'true')
+    await pickTap(picks, 'Add')
     await expect(picks).toBeHidden()
     await expect(rows).toHaveCount(before + 1)
   }
