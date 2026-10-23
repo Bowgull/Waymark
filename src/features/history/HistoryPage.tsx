@@ -25,11 +25,13 @@ export interface LedgerData {
   range: LedgerRange
   weeks: number
   rings: LedgerRing[]
-  aerobic: { points: WeeklyPoint[]; runs: number }
+  /** stale: the newest point is over 8 weeks old (no arrow); older servers leave it out. */
+  aerobic: { points: WeeklyPoint[]; runs: number; stale?: boolean }
   strength: { lifts: LiftSeries[]; sets: number }
-  sleep: { days: SleepDay[]; avg: number | null }
+  /** mornings: how many the average is from (older servers leave it out). */
+  sleep: { days: SleepDay[]; avg: number | null; mornings?: number }
   /** Page 62 B: the last 28 mornings' herb; older servers leave it out. */
-  herb?: { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null }
+  herb?: { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null; n7?: number; n28?: number }
   weight: { points: WeeklyPoint[]; weighIns: number }
   /** Page 63: the Consistency board (the block bar, or the last weeks after Block Zero). */
   consistencyBoard?: ConsistencyView
@@ -115,11 +117,11 @@ export function HistoryPage() {
             {spanLine && <p className="lg-span">{spanLine}</p>}
             {/* page 63: between the week rings and Aerobic base */}
             {data.readinessMeter ? <ReadinessMeter view={data.readinessMeter} /> : data.consistencyBoard && <ConsistencyBoard view={data.consistencyBoard} />}
-            <AerobicBoard points={data.aerobic.points} runs={data.aerobic.runs} />
+            <AerobicBoard points={data.aerobic.points} runs={data.aerobic.runs} stale={data.aerobic.stale} />
             <StrengthBoard lifts={data.strength.lifts} sets={data.strength.sets} />
-            <SleepBoard days={data.sleep.days} avg={data.sleep.avg} />
+            <SleepBoard days={data.sleep.days} avg={data.sleep.avg} mornings={data.sleep.mornings} />
             {/* page 62 B: right after Sleep + soreness */}
-            {data.herb && <HerbBoard days={data.herb.days} avg7={data.herb.avg7} avg28={data.herb.avg28} line={data.herb.line} />}
+            {data.herb && <HerbBoard days={data.herb.days} avg7={data.herb.avg7} avg28={data.herb.avg28} line={data.herb.line} n7={data.herb.n7} n28={data.herb.n28} />}
           </>
         )}
       </div>

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { gotoToday } from './support/helpers'
+import { gotoToday, todayISO } from './support/helpers'
 
 /**
  * The full Library (page 52) and its content (page 60), approved 2026-10-19,
@@ -181,10 +181,11 @@ test('Live numbers: his last set on top, this week\'s run-walk (page 60, page 65
   // the real endpoint answers the shape the pages read
   const real = await api.get<{ lastSets: Record<string, unknown>; runWalk: unknown }>('/api/library/hints')
   expect(typeof real.lastSets).toBe('object')
-  // known numbers, so the lines match the mockup exactly
+  // known numbers, so the lines match the mockup exactly; a set from 3 days ago (over 4 weeks old adds its month)
+  const recentDay = Math.floor(Date.parse(`${todayISO()}T00:00:00Z`) / 86_400_000) - 3
   await page.route('**/api/library/hints', route => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify({ lastSets: { 'ex-front-squat': { weightKg: 47.6, reps: 8, bandColor: null, day: 20_744 } }, runWalk: { week: 1, runSec: 60, walkSec: 120, rounds: 6, warmupSec: 300 } }),
+    body: JSON.stringify({ lastSets: { 'ex-front-squat': { weightKg: 47.6, reps: 8, bandColor: null, day: recentDay } }, runWalk: { week: 1, runSec: 60, walkSec: 120, rounds: 6, warmupSec: 300 } }),
   }))
   await page.goto('/library?open=strength&item=ex-front-squat')
   await expect(page.locator('.lib-imeta')).toHaveText('Barbell · last time 105 lb × 8')

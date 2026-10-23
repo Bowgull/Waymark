@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 
 import {
-  agoText, clampYmd, cleanNumber, countLevels, daysUntilRedeploy, dobFlaps, filterFlaps, formatDob, histDate,
+  agoText, clampYmd, cleanNumber, countLevels, daysUntilRedeploy, dobFlaps, filterFlaps, formatDob, histDate, injuriesText,
   joinTime, leadFlap, parseDob, splitTime, stepHour, stepMinute, tanakaMaxHr, timeFlap, todayFlap,
 } from './settingsModel'
 import { kgToLbs, lbsToKg } from '@/lib/units'
@@ -82,6 +82,14 @@ test('body metrics: dates and typed numbers', () => {
 test('weight is typed and shown in lb, stored in kg', () => {
   for (const lb of [150, 185, 186, 188, 190, 240]) assert.equal(kgToLbs(lbsToKg(lb)), lb)
   assert.ok(Math.abs(lbsToKg(185) - 83.91) < 0.01)
+})
+
+test('back and pain: an old code list reads as plain words (audit 2026-10-23 #26)', () => {
+  assert.equal(injuriesText('["lower_back_sensitivity"]'), 'Lower back sensitivity.')
+  assert.equal(injuriesText('["lower_back_sensitivity","right_shoulder"]'), 'Lower back sensitivity. Right shoulder.')
+  assert.equal(injuriesText('Lower back stiff'), 'Lower back stiff')
+  assert.equal(injuriesText('[not json'), '[not json')
+  assert.equal(injuriesText(null), '')
 })
 
 console.log(`settingsModel: ${passed} passed`)

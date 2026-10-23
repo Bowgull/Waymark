@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import {
   withoutRestartLeftovers,
   aerobicWeekly, buildRings, pondReaction, dayLetter, linePoints, mondayOf, paceAt140, paceDelta, paceFlap,
-  herbMonth, ringState, ringWindow, sleepWeek, seasonRings, sessionRings, SEASON_WEEKS, spanWeeks, strengthWeekly, weightDelta, weightWeekly,
+  avgFlap, avgName, herbMonth, ringState, ringWindow, sleepWeek, seasonRings, sessionRings, SEASON_WEEKS, spanWeeks, strengthWeekly, weightDelta, weightWeekly,
 } from './ledger'
 import { isoToEpochDay } from './dates'
 
@@ -78,6 +78,25 @@ test('aerobic base: runs near 140 bpm, normalised to 140, one point per week', (
   assert.deepEqual(points, [{ weekStart: MON - 7, value: 410 }, { weekStart: MON, value: 380 }])
   assert.deepEqual(paceDelta(points), { text: '▲ 30 s faster', up: true })
   assert.equal(paceFlap(365), '6:05/KM @140')
+  assert.equal(aerobicWeekly(runs, 10, SUN).stale, false)
+})
+
+test('aerobic base (audit 2026-10-23 #21): stub runs under 2 min are out; old data has no arrow', () => {
+  const stub = aerobicWeekly([
+    { epochDay: MON - 7, paceSecKm: 420, avgHr: 140, completed: true, durationSec: 1200 },
+    { epochDay: MON, paceSecKm: 300, avgHr: 140, completed: true, durationSec: 11 },
+    { epochDay: MON + 1, paceSecKm: 400, avgHr: 140, completed: true, durationSec: 120 },
+  ], 13, SUN)
+  assert.equal(stub.runs, 2, 'an 11-second run is not a pace')
+  assert.deepEqual(stub.points, [{ weekStart: MON - 7, value: 420 }, { weekStart: MON, value: 400 }])
+  const old = aerobicWeekly([
+    { epochDay: MON - 84, paceSecKm: 420, avgHr: 140, completed: true },
+    { epochDay: MON - 63, paceSecKm: 390, avgHr: 140, completed: true },
+  ], 13, SUN)
+  assert.equal(old.points.length, 2)
+  assert.equal(old.stale, true, 'newest point 9 weeks old: stale')
+  assert.equal(aerobicWeekly([{ epochDay: MON - 56, paceSecKm: 390, avgHr: 140, completed: true }], 13, SUN).stale, false, '8 weeks old: still shown')
+  assert.equal(aerobicWeekly([], 13, SUN).stale, false)
 })
 
 test('strength: the top set per week of the front squat and the bench', () => {
@@ -94,6 +113,13 @@ test('strength: the top set per week of the front squat and the bench', () => {
   assert.deepEqual(lifts.map(l => l.short), ['front squat', 'bench'])
   assert.deepEqual(lifts[0].points, [{ weekStart: MON - 7, value: 145 }, { weekStart: MON, value: 155 }])
   assert.equal(strengthWeekly([], 10, SUN).lifts.length, 0)
+  // Audit 2026-10-23 #28: Block Zero's squat is the goblet squat; it charts.
+  const goblet = strengthWeekly([
+    { epochDay: MON - 7, exerciseName: 'Goblet Squat', weightLbs: 30 },
+    { epochDay: MON, exerciseName: 'Goblet Squat', weightLbs: 35 },
+  ], 10, SUN)
+  assert.deepEqual(goblet.lifts.map(l => l.short), ['goblet squat'])
+  assert.deepEqual(goblet.lifts[0].points, [{ weekStart: MON - 7, value: 30 }, { weekStart: MON, value: 35 }])
 })
 
 test('sleep + soreness: the last seven mornings, gaps kept, average of the logged nights', () => {
@@ -110,6 +136,13 @@ test('sleep + soreness: the last seven mornings, gaps kept, average of the logge
   assert.equal(days[0].sleepHours, null)
   assert.equal(avg, 6.5)
   assert.equal(sleepWeek([], SUN).avg, null)
+  // Audit 2026-10-23 #25: an average from fewer than 7 mornings says how many.
+  assert.equal(sleepWeek(logs, SUN).mornings, 2)
+  assert.equal(avgFlap('6.5 H', 2), '6.5 H · 2 MORNINGS')
+  assert.equal(avgFlap('6.5 H', 1), '6.5 H · 1 MORNING')
+  assert.equal(avgFlap('6.5 H', 7), '6.5 H AVG')
+  assert.equal(avgName('28-day', 3), 'average of 3 mornings')
+  assert.equal(avgName('28-day', 12), '28-day average')
 })
 
 test('body weight: the last weigh-in of each week', () => {
@@ -192,11 +225,13 @@ test('herb (page 62 B): 28 mornings, the 7- and 28-day averages, the sleep line 
   assert.equal(x.avg7, 6.9)
   assert.equal(x.avg28, 6.0)
   assert.deepEqual(x.line, { avg: 6, above: 10, aboveSleep: 6.7, rest: 18, restSleep: 7.3, checkIns: 28 })
+  assert.deepEqual([x.n7, x.n28], [7, 28])
   // gaps stay gaps; off-scale is not drawn; no herb logged: no averages, no line
   const gap = herbMonth([{ logDate: SUN, herbScale: 12, sleepHours: 7 }, { logDate: SUN - 1, herbScale: 3, sleepHours: null }], SUN)
   assert.equal(gap.days[27].herb, null)
   assert.equal(gap.avg28, 3)
   assert.equal(gap.line, null, 'no mornings with sleep on both sides: no line')
+  assert.deepEqual([gap.n7, gap.n28], [1, 1], 'one morning logged: the boards say 1 morning')
   assert.deepEqual([herbMonth([], SUN).avg7, herbMonth([], SUN).avg28, herbMonth([], SUN).line], [null, null, null])
 })
 

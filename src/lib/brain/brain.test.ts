@@ -55,6 +55,24 @@ const lb = (kg: number | null) => (kg == null ? null : Math.round(kg / LB))
   assert.equal(readinessState(base, MON, { notes: 'Feeling sick, sore throat' }).state, 'RED', 'a sick note: RED')
   assert.equal(readinessState([ci(MON, { sleepHours: 6, soreness: 4 })], MON).state, 'GREEN', 'no baseline yet: nothing reads as worse')
   assert.equal(lowerState('FRESH', 'AMBER'), 'AMBER')
+
+  // Audit 2026-10-23 #3: a blank row (nothing answered) is not a check-in.
+  const blank: ModelCheckIn = { day: MON, sleepHours: null, sleepQuality: null, energy: null, soreness: null, stress: null, mood: null, backToday: null }
+  assert.equal(readinessState([...base, blank], MON).checkedIn, false, 'a blank row is not checked in')
+  assert.equal(readinessState([...base, { ...blank, energy: 3 }], MON).checkedIn, true, 'one answer is a check-in')
+
+  // Audit 2026-10-23 #4: plain AMBER floors before a baseline; RED stays.
+  const sore5 = readinessState([ci(MON, { soreness: 5 })], MON)
+  assert.equal(sore5.state, 'AMBER', 'no baseline, soreness 5: AMBER')
+  assert.equal(sore5.why, 'Soreness 5.')
+  assert.equal(readinessState([ci(MON, { stress: 5 })], MON).state, 'AMBER', 'no baseline, stress 5: AMBER')
+  const short = readinessState([ci(MON, { sleepHours: 5.5, energy: 2 })], MON)
+  assert.equal(short.state, 'AMBER', 'no baseline, under 6 h with energy 2: AMBER')
+  assert.equal(short.why, 'Slept 5.5 h with energy 2.')
+  assert.equal(readinessState([ci(MON, { sleepHours: 5.5, energy: 3 })], MON).state, 'GREEN', 'short sleep with energy 3: no floor')
+  assert.equal(readinessState([ci(MON, { sleepHours: 4.5, energy: 2 })], MON).state, 'RED', 'the RED rule still holds with no baseline')
+  assert.equal(readinessState([...steady(MON - 14, MON - 1).map(c => ({ ...c, soreness: 5 })), ci(MON, { soreness: 5 })], MON).state, 'GREEN', 'with a baseline the floor is not read (soreness 5 is his usual)')
+  assert.equal(readinessState([ci(MON - 1, { soreness: 5 })], MON).state, 'AMBER', 'a floored yesterday carries to a day with no check-in')
 }
 
 // ─── Strength doses from the model ───────────────────────────

@@ -83,6 +83,28 @@ export function tanakaMaxHr(dob: Ymd | null, now: Date): number | null {
 
 // ─── Logs ─────────────────────────────────────────────────────
 
+/**
+ * The back-and-pain box's text. Onboarding once saved a JSON list of codes
+ * (["lower_back_sensitivity"]); show those as plain words ("Lower back
+ * sensitivity."). Anything else is his own text, as is. Saving the plain words
+ * back keeps "back" in it, so the coach's back read is unchanged.
+ */
+export function injuriesText(raw: string | null | undefined): string {
+  const t = (raw ?? '').trim()
+  if (!t.startsWith('[')) return raw ?? ''
+  try {
+    const list = JSON.parse(t) as unknown
+    if (!Array.isArray(list) || !list.every(x => typeof x === 'string')) return raw ?? ''
+    return list
+      .map(x => x.replace(/[_-]+/g, ' ').trim())
+      .filter(Boolean)
+      .map(x => `${x.charAt(0).toUpperCase()}${x.slice(1)}.`)
+      .join(' ')
+  } catch {
+    return raw ?? ''
+  }
+}
+
 export type LogLevelKey = 'debug' | 'info' | 'warn' | 'error'
 export type LogFilter = 'all' | LogLevelKey | 'session'
 

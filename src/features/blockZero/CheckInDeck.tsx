@@ -245,7 +245,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, existingPassed,
           <>
             <BzDots n={total} now={-1} done={() => true} />
             <Board className="bz-bd bz-verd">
-              <FlapLabel text={line ? (line.tone === 'bad' ? 'EASING TODAY' : 'GOOD TO GO') : 'LOGGED'} size="md" tone={tone} animate="mount" />
+              <FlapLabel text={line && !line.noBaseline ? (line.tone === 'bad' ? 'EASING TODAY' : 'GOOD TO GO') : 'LOGGED'} size="md" tone={tone} animate="mount" />
               {line && <p>{line.why}</p>}
               <div className="wm-btns">
                 <FlapButton label="+ ADD NOTE" size="sm" onClick={() => setNoteOpen(true)} />

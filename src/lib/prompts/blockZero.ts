@@ -196,7 +196,7 @@ export function buildAssessmentPrompt(
 
   lines.push(
     '',
-    'For mtCapPerWeek: this is the cap for the entire block, 0 to 3. Set based on injury risk and recovery needs. The user has access to MT most evenings and will overtrain without enforcement.',
+    'For mtCapPerWeek: this is the cap for the entire block, 0 to 3. Set based on injury risk and recovery needs; his class days are in the profile.',
     '',
     jsonInstructionFor(BLOCK_ZERO_TOOL),
   )

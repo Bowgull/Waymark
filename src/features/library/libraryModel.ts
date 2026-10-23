@@ -473,10 +473,28 @@ export function moreSummary(p: { tips: number; coach?: boolean; how?: boolean; c
   return out.join(' · ')
 }
 
-/** A lift's meta line: "Barbell · last time 105 lb × 8" (equipment, then his last set). */
-export function exerciseMeta(equipment: string, lastSet: string | null): string {
+const MONTH_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+/** Over this many days old, the last set says its month (audit 2026-10-23 #27). */
+export const LAST_SET_DATED_DAYS = 28
+
+/**
+ * When the last set was, for the meta line: "in June" once it is over 4 weeks
+ * old ("in June 2025" from another year), else ''. Epoch days.
+ */
+export function lastSetWhen(day: number | null | undefined, today: number): string {
+  if (day == null || today - day <= LAST_SET_DATED_DAYS) return ''
+  const d = new Date(day * 86400000)
+  const t = new Date(today * 86400000)
+  const month = MONTH_LONG[d.getUTCMonth()]
+  return d.getUTCFullYear() === t.getUTCFullYear() ? `in ${month}` : `in ${month} ${d.getUTCFullYear()}`
+}
+
+/** A lift's meta line: "Barbell · last time 105 lb × 8" (equipment, then his last set; "… in June" when old). */
+export function exerciseMeta(equipment: string, lastSet: string | null, when = ''): string {
   if (!lastSet) return equipment
-  return equipment ? `${equipment} · last time ${lastSet}` : `Last time ${lastSet}`
+  const set = when ? `${lastSet} ${when}` : lastSet
+  return equipment ? `${equipment} · last time ${set}` : `Last time ${set}`
 }
 
 /** A technique's meta line: "Punch · in 26 of your combos". */

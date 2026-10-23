@@ -133,7 +133,12 @@ export interface WeeklyPoint { weekStart: number; value: number }
 
 // ── Aerobic Base: pace at 140 bpm ──
 
-export interface LedgerRunRow { epochDay: number; paceSecKm: number | null; avgHr: number | null; completed: boolean }
+export interface LedgerRunRow { epochDay: number; paceSecKm: number | null; avgHr: number | null; completed: boolean; durationSec?: number | null }
+
+/** A run shorter than this is a stub (a test or a mis-tap), never a pace (audit 2026-10-23 #21). */
+export const AEROBIC_MIN_SEC = 120
+/** The newest point older than this many weeks: no ▲/▼ (old data says nothing about now). */
+export const AEROBIC_STALE_WEEKS = 8
 
 /**
  * Easy runs count; each is normalised to 140 (pace × HR ÷ 140, the same work
@@ -147,14 +152,19 @@ export function paceAt140(paceSecKm: number, avgHr: number): number {
   return paceSecKm * avgHr / AEROBIC_HR.target
 }
 
-/** One point per week that had a run near 140 bpm: the mean of that week's normalised paces. */
-export function aerobicWeekly(runs: LedgerRunRow[], weeks: number, todayEpochDay: number): { points: WeeklyPoint[]; runs: number } {
+/**
+ * One point per week that had a run near 140 bpm: the mean of that week's
+ * normalised paces. Runs under 2 minutes are left out. stale: the newest point
+ * is more than 8 weeks old, so the board shows no faster / slower arrow.
+ */
+export function aerobicWeekly(runs: LedgerRunRow[], weeks: number, todayEpochDay: number): { points: WeeklyPoint[]; runs: number; stale: boolean } {
   const lastMon = mondayOf(todayEpochDay)
   const firstMon = lastMon - (weeks - 1) * 7
   const byWeek = new Map<number, number[]>()
   let count = 0
   for (const r of runs) {
     if (!r.completed || r.paceSecKm == null || r.avgHr == null || r.paceSecKm <= 0) continue
+    if (r.durationSec != null && r.durationSec < AEROBIC_MIN_SEC) continue
     if (r.avgHr < AEROBIC_HR.low || r.avgHr > AEROBIC_HR.high) continue
     const mon = mondayOf(r.epochDay)
     if (mon < firstMon || mon > lastMon) continue
@@ -166,7 +176,9 @@ export function aerobicWeekly(runs: LedgerRunRow[], weeks: number, todayEpochDay
   const points = [...byWeek.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([weekStart, v]) => ({ weekStart, value: Math.round(v.reduce((s, x) => s + x, 0) / v.length) }))
-  return { points, runs: count }
+  const newest = points[points.length - 1]
+  const stale = newest != null && lastMon - newest.weekStart > AEROBIC_STALE_WEEKS * 7
+  return { points, runs: count, stale }
 }
 
 // ── Strength: top set per week for the main lifts ──
@@ -174,9 +186,14 @@ export function aerobicWeekly(runs: LedgerRunRow[], weeks: number, todayEpochDay
 export interface LedgerSetRow { epochDay: number; exerciseName: string; weightLbs: number }
 export interface LiftSeries { name: string; short: string; points: WeeklyPoint[] }
 
-/** Page 32's two lines: the main squat, the front squat (bone), and the bench (grey). */
+/**
+ * Page 32's lines: the main squat, the front squat (bone), and the bench
+ * (grey). Block Zero's squat is the goblet squat (audit 2026-10-23 #28): it
+ * charts as the squat too.
+ */
 const MAIN_LIFTS: { short: string; match: RegExp }[] = [
   { short: 'front squat', match: /^front squat/i },
+  { short: 'goblet squat', match: /^goblet squat/i },
   { short: 'bench', match: /bench press/i },
 ]
 
@@ -211,7 +228,11 @@ export function dayLetter(epochDay: number): string {
   return DAY_LETTER[(epochDay + 4) % 7]
 }
 
-export function sleepWeek(logs: LedgerDailyRow[], todayEpochDay: number): { days: SleepDay[]; avg: number | null } {
+/** A week's mornings: under this many, an average is "N mornings", not a 7- or 28-day average. */
+export const FULL_WEEK_MORNINGS = 7
+
+/** The sleep average with how many mornings it is from (mornings < 7: say so). */
+export function sleepWeek(logs: LedgerDailyRow[], todayEpochDay: number): { days: SleepDay[]; avg: number | null; mornings: number } {
   const byDay = new Map(logs.map(l => [l.logDate, l]))
   const days: SleepDay[] = []
   for (let d = todayEpochDay - 6; d <= todayEpochDay; d++) {
@@ -220,7 +241,7 @@ export function sleepWeek(logs: LedgerDailyRow[], todayEpochDay: number): { days
     days.push({ epochDay: d, letter: dayLetter(d), sleepHours: l?.sleepHours ?? null, soreness: sore })
   }
   const hrs = days.map(d => d.sleepHours).filter((h): h is number => h != null)
-  return { days, avg: hrs.length ? Math.round(hrs.reduce((s, h) => s + h, 0) / hrs.length * 10) / 10 : null }
+  return { days, avg: hrs.length ? Math.round(hrs.reduce((s, h) => s + h, 0) / hrs.length * 10) / 10 : null, mornings: hrs.length }
 }
 
 // ── Herb: the last 28 mornings (page 62, option B, approved 2026-10-19) ──
@@ -246,7 +267,7 @@ const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length
  * check-ins: how he slept on the mornings above his 28-day average and on
  * the others. No good or bad: numbers only.
  */
-export function herbMonth(logs: LedgerHerbRow[], todayEpochDay: number): { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null } {
+export function herbMonth(logs: LedgerHerbRow[], todayEpochDay: number): { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null; n7: number; n28: number } {
   const byDay = new Map(logs.map(l => [l.logDate, l]))
   const days: HerbDay[] = []
   for (let d = todayEpochDay - 27; d <= todayEpochDay; d++) {
@@ -268,7 +289,17 @@ export function herbMonth(logs: LedgerHerbRow[], todayEpochDay: number): { days:
       line = { avg: avg28, above: above.length, aboveSleep: r1(mean(above.map(d => d.sleepHours!))), rest: rest.length, restSleep: r1(mean(rest.map(d => d.sleepHours!))), checkIns: withSleep.length }
     }
   }
-  return { days, avg7, avg28, line }
+  return { days, avg7, avg28, line, n7: last7.length, n28: logged.length }
+}
+
+/** "7.2 H AVG" style flaps, or "· 2 MORNINGS" when the average is from fewer than 7 (audit 2026-10-23 #25). */
+export function avgFlap(value: string, mornings: number): string {
+  return mornings >= FULL_WEEK_MORNINGS ? `${value} AVG` : `${value} · ${mornings} ${mornings === 1 ? 'MORNING' : 'MORNINGS'}`
+}
+
+/** The herb average's name: "28-day average", or "average of 3 mornings" under 7. */
+export function avgName(span: string, mornings: number): string {
+  return mornings >= FULL_WEEK_MORNINGS ? `${span} average` : `average of ${mornings} ${mornings === 1 ? 'morning' : 'mornings'}`
 }
 
 // ── Body weight: the last weigh-in of each week ──

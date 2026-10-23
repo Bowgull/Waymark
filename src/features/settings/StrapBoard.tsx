@@ -52,7 +52,8 @@ export function StrapBoard() {
   const link = status?.link ?? 'none'
   const searching = link === 'searching'
   const known = link !== 'none' && !searching
-  const heart: HeartState = searching ? 'search' : known ? 'under' : 'idle'
+  // The heart beats only on a live heart rate; saved or silent, it stays still.
+  const heart: HeartState = searching ? 'search' : link === 'connected' && status?.hr != null ? 'under' : 'idle'
 
   return (
     <Board head="Connections" solid className="st-board">
@@ -96,7 +97,7 @@ function StrapRowConnected({ status, heart, open, onOpen, onClose, onForget }: {
         onClick={onOpen}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
       >
-        <span className="st-hcell"><HeartContainer size={18} state={heart} bpm={status?.hr ?? 64} /></span>
+        <span className="st-hcell"><HeartContainer size={18} state={heart} bpm={status?.hr ?? undefined} /></span>
         <div className="st-sl">
           <b>Heart rate strap</b>
           <small>{strapLine(status)}</small>

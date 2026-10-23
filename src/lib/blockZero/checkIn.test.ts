@@ -40,6 +40,11 @@ assert(early.items.every(i => i.mean7 === null) && !early.ease, 'under 4 days of
 const backOnly = readinessReport([...week, row(D + 7, { backToday: 2 }), row(D + 8, { backToday: 2 })].map(checkInFromDailyLog), D + 8)
 assert(!backOnly.ease, 'back alone (one item) does not ease; back swaps handle it')
 
+// Audit 2026-10-23 #3: a blank row is not a check-in; one answer is.
+const blankRow = checkInFromDailyLog({ logDate: D + 7 })
+assert(!readinessReport([...week.map(checkInFromDailyLog), blankRow], D + 7).checkedIn, 'a blank daily-log row is not checked in')
+assert(readinessReport([...week.map(checkInFromDailyLog), checkInFromDailyLog({ logDate: D + 7, herbScale: 0 })], D + 7).checkedIn, 'one answer (herb 0) is a check-in')
+
 // ─── Rolling load (R5) ──────────────────────────────────────────
 
 const START = D

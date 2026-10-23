@@ -36,7 +36,7 @@ import {
 } from '../lib/coach'
 import { getActiveBlock, loadRunHistory, readinessFor } from './blockZeroData'
 import type { createDB } from '../db/client'
-import { classDaySlots, type ClassDaySlot } from '../lib/classSlots'
+import { classDaySlots, parseClassDays, type ClassDaySlot } from '../lib/classSlots'
 
 type DB = ReturnType<typeof createDB>
 type Block = typeof trainingBlocks.$inferSelect
@@ -87,12 +87,13 @@ export async function loadCompletedKeyDays(db: DB, toDay: number): Promise<numbe
 /** His slot per lit class day (page 70): saved, else PM on weekdays and ANY on the weekend. */
 export async function mtClassSlots(db: DB): Promise<Record<number, ClassDaySlot>> {
   const [row] = await db.select({ mt: settings.mtClassDays, slots: settings.mtClassSlots }).from(settings)
-  return classDaySlots((row?.mt ?? '1,3,5').split(',').filter(Boolean).map(Number), row?.slots)
+  return classDaySlots(parseClassDays(row?.mt), row?.slots)
 }
 
 export async function mtClassDays(db: DB): Promise<Set<number>> {
   const [row] = await db.select({ mt: settings.mtClassDays }).from(settings)
-  return new Set((row?.mt ?? '1,3,5').split(',').filter(Boolean).map(Number))
+  // None picked (null or ''): no classes, as brain.ts's week reads it.
+  return new Set(parseClassDays(row?.mt))
 }
 
 /** Key sessions in a normal week of the block's template (for the half-done rule). */

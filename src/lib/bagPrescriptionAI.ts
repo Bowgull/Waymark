@@ -163,7 +163,7 @@ export async function runBagPrescription(
     injuries: profileRow?.injuries ?? null,
     postureIssues: profileRow?.postureIssues ?? null,
     trainingHistory: profileRow?.trainingHistory ?? null,
-    mtGymAccessDays: profileRow?.mtGymAccessDays ?? null,
+    mtClassDays: userSettings?.mtClassDays ?? null,
     mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
     weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,

@@ -9,6 +9,15 @@ export type ClassDaySlot = 'am' | 'pm' | 'any'
 const KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
 
 /** A newly lit day (and a saved day with no slot yet): ANY on the weekend, PM on weekdays. */
+/**
+ * Settings' class days ("1,3,5", 0 = Sunday) as day numbers. Null and '' are
+ * the same: no class days picked, no classes (audit 2026-10-23 #30; never a
+ * Mon/Wed/Fri fallback).
+ */
+export function parseClassDays(raw: string | null | undefined): number[] {
+  return [...new Set((raw ?? '').split(',').map(x => x.trim()).filter(Boolean).map(Number).filter(d => Number.isInteger(d) && d >= 0 && d <= 6))]
+}
+
 export function defaultClassSlot(dow: number): ClassDaySlot {
   return dow === 0 || dow === 6 ? 'any' : 'pm'
 }

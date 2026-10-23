@@ -5,7 +5,7 @@
 // The end-of-block check is gone (coach-brain §8, server/readiness.ts).
 
 import { desc, eq } from 'drizzle-orm'
-import { coachingOutputs, exercises, trainingMaxes, userProfile } from '../../db/schema'
+import { coachingOutputs, exercises, settings, trainingMaxes, userProfile } from '../../db/schema'
 import { anthropicCall, getStructuredOutput, jsonFormatFor } from '../../lib/anthropic'
 import { MODELS } from '../../lib/models'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
@@ -83,6 +83,7 @@ export async function runBlockZeroAssessment(
   blockId: string,
 ): Promise<BlockZeroAssessmentOutput | null> {
   const [profileRow] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
+  const [settingsRow] = await db.select({ mtClassDays: settings.mtClassDays }).from(settings).limit(1)
 
   const tmRows = await db
     .select({ weightKg: trainingMaxes.weightKg, name: exercises.name })
@@ -96,7 +97,7 @@ export async function runBlockZeroAssessment(
     injuries: profileRow?.injuries ?? null,
     postureIssues: profileRow?.postureIssues ?? null,
     trainingHistory: profileRow?.trainingHistory ?? null,
-    mtGymAccessDays: profileRow?.mtGymAccessDays ?? null,
+    mtClassDays: settingsRow?.mtClassDays ?? null,
     mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
     weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
