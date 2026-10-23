@@ -29,7 +29,7 @@ import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTem
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { BLOCK_ZERO_BASE_WEEKS, CLASS_EASE_LINE, blockZeroTrainingWeek, getRunWalkWeek, isBlockZeroModelRun, mtRampWeek, strengthDayFor, validateTestResult } from '../lib/blockZero'
 import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, gotBodyNote, lowerLegOnWatch, markAgainstFlag, ravenLineFor, seenBodyNote } from './bodyWatch'
-import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, isoOf } from '../lib/coach'
+import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, isoOf } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, withoutRestartLeftovers, type LedgerRange } from '../lib/ledger'
@@ -52,6 +52,8 @@ import { clearCollectedTrainingData } from './trainingReset'
 import { getActiveBlock, loadMtRamp, listBlockTests, readinessFor, recordCheckSetE1rm, upsertBlockTest } from './blockZeroData'
 import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
+import { bagBuilder, bagPool } from './routes/bagBuilder'
+import { parseBagSpec, roundsForSpec, planCoachRounds, STAGE_ROUND_TYPE } from '../lib/coach/bagArc'
 import { pendingReviews } from './linkHealth'
 import {
   blockStartDay,
@@ -159,6 +161,7 @@ for (const path of [
 }
 
 app.route('/api/class-combos', classCombos)
+app.route('/api/bag', bagBuilder)
 
 // H1 (page 61): ENTER after a RESET (or any start that finds the session
 // already set up) went back to the workout without putting the session in
@@ -834,8 +837,11 @@ app.post('/api/sessions/insert-ad-hoc', async (c) => {
 
   const id = crypto.randomUUID()
   const notes = check.ok ? check.notes : []
+  // Page 80: Bag Work carries his choice (COACH / HYBRID / CUSTOM and the rounds he picked).
+  const bagSpec = body.type === 'bag_work' ? parseBagSpec(body.bag) : null
   const addCtx = {
     ...(notes.length > 0 ? { placement: { notes, estimatedMin: check.ok ? check.change.estimatedMin ?? null : null } } : {}),
+    ...(bagSpec ? { bag: bagSpec } : {}),
   }
   await db.insert(sessions).values({
     id,
@@ -931,10 +937,13 @@ app.post('/api/sessions/:id/replace', async (c) => {
     timeSlot: 'am' | 'pm'
     runCategory?: string
     today?: string
+    /** Bag Work (page 80): his choice of COACH / HYBRID / CUSTOM. */
+    bag?: unknown
   }>()
 
   const db = createDB(c.env)
   const nowSec = Math.floor(Date.now() / 1000)
+  const bagSpec = body.type === 'bag_work' ? parseBagSpec(body.bag) : null
 
   const [original] = await db.select().from(sessions).where(eq(sessions.id, id))
   if (!original) return c.json({ error: 'session not found' }, 404)
@@ -972,7 +981,7 @@ app.post('/api/sessions/:id/replace', async (c) => {
       notes: runTag,
       source: 'replace',
       // A swap in the lead-in stays optional like what it replaced (Part B).
-      contextJson: JSON.stringify({ replaced: swapSource }),
+      contextJson: JSON.stringify({ replaced: swapSource, ...(bagSpec ? { bag: bagSpec } : {}) }),
       createdAt: nowSec,
     }),
   ] as unknown as Parameters<typeof db.batch>[0])
@@ -1713,20 +1722,13 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
     return c.json(await buildBagWorkResponse(db, sessionId))
   }
 
-  // Get user's enabled techniques
-  const [userSettings] = await db.select().from(settings)
-  const enabledTechniques = new Set((userSettings?.enabledTechniques ?? 'boxing,kicks,defensive').split(','))
-
-  // Get unlocked combos filtered by enabled techniques
-  const allUnlocked = await db.select().from(combos).where(eq(combos.unlocked, 1))
-  const unlockedCombos = allUnlocked.filter(c => {
-    const comboTechniques = c.techniques.split(',').filter(Boolean)
-    return comboTechniques.length === 0 || comboTechniques.every(t => enabledTechniques.has(t))
-  })
-
-  if (unlockedCombos.length === 0) {
+  // His pool: unlocked combos whose techniques are all switched on in Settings.
+  const pool = await bagPool(db)
+  if (pool.length === 0) {
     return c.json({ error: 'no unlocked combos available' }, 400)
   }
+  // Page 80: his choice when he added it (COACH / HYBRID / CUSTOM); none = the coach's.
+  const spec = parseBagSpec(parseJson<{ bag?: unknown }>(session.contextJson, {}).bag)
 
   // The brain's dose (coach brain P2): rounds from his tolerance and its uncertainty, finishers only when earned.
   const bagDay = session.scheduledDate ?? athleteDay(c)
@@ -1743,96 +1745,64 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
     ],
   }
 
-  // AI prescription path (coach prescribes typed rounds), inside the rules
-  const apiKey = (c.env as { ANTHROPIC_API_KEY?: string }).ANTHROPIC_API_KEY
-  let prescribed: Awaited<ReturnType<typeof runBagPrescription>> = null
-  if (apiKey) {
-    try {
-      const todayEpochDay = athleteDay(c)
-      prescribed = await runBagPrescription(db, apiKey, { sessionId, todayEpochDay, rules })
-    } catch (err) {
-      console.warn('[start-bag-work] prescription failed', err)
-    }
-  }
-  if (rules.reason) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: rules.maxRounds } }) }).where(eq(sessions.id, sessionId))
-
-  if (prescribed && prescribed.rounds.length >= 3) {
-    for (const r of governBagRounds(prescribed.rounds, rules)) {
-      const roundId = crypto.randomUUID()
-      const durationSec = r.roundType === 'warmup' ? 150 : r.roundType === 'conditioning' ? 180 : 180
-      await db.insert(bagWorkRounds).values({
-        id: roundId,
-        sessionId,
-        roundNumber: r.roundNumber,
-        durationSec,
-        restSec: 60,
-        roundType: r.roundType,
-        coachRationale: r.rationale,
-        createdAt: nowSec,
-      })
-      for (let ci = 0; ci < r.comboIds.length; ci++) {
-        await db.insert(bagWorkRoundCombos).values({
-          id: crypto.randomUUID(),
-          roundId,
-          comboId: r.comboIds[ci],
-          orderIndex: ci,
-        })
-      }
-    }
-  } else {
-    // Deterministic fallback: weighted-random rounds with positional round types,
-    // after the rules (no power or conditioning finishers when eased or back from a gap).
-    // Used when AI is offline or returns too few rounds.
-    const POSITIONAL_TYPES = fallbackRoundTypes(rules).slice(0, rounds)
-    const ROUND_COUNT = POSITIONAL_TYPES.length
-    const COMBOS_PER_ROUND = 3
-
-    for (let r = 0; r < ROUND_COUNT; r++) {
+  type NewRound = { roundType: string; durationSec: number; restSec: number; rationale: string; comboIds: string[] }
+  const writeRounds = async (list: NewRound[]) => {
+    for (let r = 0; r < list.length; r++) {
       const roundId = crypto.randomUUID()
       await db.insert(bagWorkRounds).values({
         id: roundId,
         sessionId,
         roundNumber: r + 1,
-        durationSec: 180,
-        restSec: 60,
-        roundType: POSITIONAL_TYPES[r],
-        coachRationale: rules.noFinishers && r === ROUND_COUNT - 1 && rules.reason ? `Finisher out. ${rules.reason}` : '',
+        durationSec: list[r].durationSec,
+        restSec: list[r].restSec,
+        roundType: list[r].roundType,
+        coachRationale: list[r].rationale,
         createdAt: nowSec,
       })
-
-      const weighted = unlockedCombos.map(c => ({
-        combo: c,
-        weight: Math.max(1, 10 - c.masteryScore) + (c.isFavourite ? 2 : 0),
-      }))
-      const totalWeight = weighted.reduce((sum, w) => sum + w.weight, 0)
-
-      const picked: typeof unlockedCombos = []
-      const used = new Set<string>()
-      const pickCount = Math.min(COMBOS_PER_ROUND, unlockedCombos.length)
-
-      for (let ci = 0; ci < pickCount; ci++) {
-        let roll = Math.random() * totalWeight
-        let chosen = weighted[0].combo
-        for (const w of weighted) {
-          if (used.has(w.combo.id)) continue
-          roll -= w.weight
-          if (roll <= 0) { chosen = w.combo; break }
-        }
-        if (used.has(chosen.id)) {
-          chosen = unlockedCombos.find(c => !used.has(c.id)) ?? chosen
-        }
-        used.add(chosen.id)
-        picked.push(chosen)
+      for (let ci = 0; ci < list[r].comboIds.length; ci++) {
+        await db.insert(bagWorkRoundCombos).values({ id: crypto.randomUUID(), roundId, comboId: list[r].comboIds[ci], orderIndex: ci })
       }
+    }
+  }
 
-      for (let ci = 0; ci < picked.length; ci++) {
-        await db.insert(bagWorkRoundCombos).values({
-          id: crypto.randomUUID(),
-          roundId,
-          comboId: picked[ci].id,
-          orderIndex: ci,
-        })
+  if (spec && spec.mode !== 'coach') {
+    // HYBRID: his rounds kept, the coach fills the rest on the kru's arc. CUSTOM: exactly his; the coach says nothing.
+    if (spec.mode === 'hybrid' && rules.reason) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: spec.rounds } }) }).where(eq(sessions.id, sessionId))
+    const planned = roundsForSpec(spec, pool, { finishers: !noFinishers, nowSec })
+    await writeRounds(planned.map(r => ({ roundType: r.roundType, durationSec: r.durationSec, restSec: r.restSec, rationale: '', comboIds: r.comboIds })))
+  } else {
+    // COACH: the AI prescription on the kru's arc, inside the rules; offline, the arc itself.
+    const apiKey = (c.env as { ANTHROPIC_API_KEY?: string }).ANTHROPIC_API_KEY
+    let prescribed: Awaited<ReturnType<typeof runBagPrescription>> = null
+    if (apiKey) {
+      try {
+        const todayEpochDay = athleteDay(c)
+        prescribed = await runBagPrescription(db, apiKey, { sessionId, todayEpochDay, rules })
+      } catch (err) {
+        console.warn('[start-bag-work] prescription failed', err)
       }
+    }
+    if (rules.reason) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: rules.maxRounds } }) }).where(eq(sessions.id, sessionId))
+
+    if (prescribed && prescribed.rounds.length >= 3) {
+      await writeRounds(governBagRounds(prescribed.rounds, rules).map(r => ({
+        roundType: r.roundType,
+        durationSec: r.roundType === 'warmup' ? 150 : 180,
+        restSec: 60,
+        rationale: r.rationale,
+        comboIds: r.comboIds,
+      })))
+    } else {
+      // The kru's arc from his own combos (lib/coach/bagArc): warm-up basics, technique while fresh
+      // (a new combo first), pressure with his hardest, a finisher when the day allows one. No round repeated.
+      const planned = planCoachRounds(pool, { rounds, finishers: !noFinishers, nowSec })
+      await writeRounds(planned.map((r, i) => ({
+        roundType: r.stage ? STAGE_ROUND_TYPE[r.stage] : 'combo_practice',
+        durationSec: r.stage === 'warmup' ? 150 : 180,
+        restSec: 60,
+        rationale: rules.noFinishers && i === planned.length - 1 && rules.reason ? `Finisher out. ${rules.reason}` : '',
+        comboIds: r.comboIds,
+      })))
     }
   }
 

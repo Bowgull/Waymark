@@ -11,6 +11,7 @@ import { TOOL_BAG_PRESCRIPTION, type BagPrescriptionOutput } from './prompts/too
 import type { createDB } from '../db/client'
 import { MODELS } from './models'
 import { governBagRounds, type BagRules } from './coach/bag'
+import { poolTag } from './coach/bagArc'
 
 type DB = ReturnType<typeof createDB>
 
@@ -29,6 +30,8 @@ export interface AvailableCombo {
   masteryScore: number
   isFavourite: number
   formTips: string | null
+  /** Page 80: one he added in the last two weeks (typed or from class): its technique round comes first. */
+  isNew?: boolean
 }
 
 /** Mastery is the sum of the last five ratings (1-3 each), so it tops out at 15. */
@@ -38,7 +41,21 @@ export function summarizeCombo(c: AvailableCombo): string {
   const tips = (c.formTips ?? '').slice(0, 180)
   const tags = c.techniques || '-'
   const fav = c.isFavourite ? ' fav' : ''
-  return `  - ${c.id} [${c.tier}, ${tags}, mastery ${c.masteryScore}/${MASTERY_MAX}${fav}]: ${c.text}${tips ? ` — tips: ${tips}` : ''}`
+  const isNew = c.isNew ? ' NEW' : ''
+  return `  - ${c.id} [${c.tier}, ${tags}, mastery ${c.masteryScore}/${MASTERY_MAX}${fav}${isNew}]: ${c.text}${tips ? ` — tips: ${tips}` : ''}`
+}
+
+/** Page 80: no two rounds hold the same combos (the first of each kept, renumbered). */
+export function distinctRounds<T extends { roundNumber: number; comboIds: string[] }>(rounds: T[]): T[] {
+  const seen = new Set<string>()
+  return rounds
+    .filter(r => {
+      const key = [...r.comboIds].sort().join('|')
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .map((r, i) => ({ ...r, roundNumber: i + 1 }))
 }
 
 interface MtNoteRow {
@@ -72,9 +89,12 @@ function buildPrompt(
   const lines: string[] = [
     'Prescribe today\'s heavy-bag session. You are this athlete\'s coach.',
     '',
-    'Session structure rules:',
-    '- Round 1 is always a warmup.',
-    '- Finisher (last round) is conditioning or power based on today state.',
+    'Session structure rules (a kru\'s arc for a heavy-bag session):',
+    '- Round 1 is always a warmup: basics, the easiest combos he knows best.',
+    '- Technique rounds next, while he is fresh (technical_flow or drill_isolation). A combo marked NEW goes here first, alone and slow; the next round pairs it with one more combo he is still learning.',
+    '- Pressure rounds after (combo_practice or power): his hardest and longest combos at pace, then elbows and knees.',
+    '- Finisher (last round) is conditioning or power based on today state: kicks and knees, the last 30 s all out.',
+    '- No two rounds hold the same combos. Pick only from the list below; never make up a combo.',
     '- 4 to 6 rounds total. Prefer 5 for a normal day, 4 when recovery-limited, 6 when fresh.',
     '- At least one drill_isolation round every session to reinforce fundamentals. Cite the Fagan or Sylvie protocol from the chosen combo form_tips in the rationale.',
     '- No freestyle type. The coach prescribes, the athlete does not choose in the round.',
@@ -150,6 +170,7 @@ export async function runBagPrescription(
       masteryScore: c.masteryScore,
       isFavourite: c.isFavourite,
       formTips: c.formTips,
+      isNew: poolTag(c, Math.floor(Date.now() / 1000)) === 'new',
     }))
 
   if (available.length === 0) return null
@@ -203,12 +224,12 @@ export async function runBagPrescription(
   }
 
   const availableIds = new Set(available.map(c => c.id))
-  const rounds = output.rounds.map((r, idx) => ({
+  const rounds = distinctRounds(output.rounds.map((r, idx) => ({
     roundNumber: idx + 1,
     roundType: r.roundType,
     rationale: r.rationale,
     comboIds: r.comboIds.filter(id => availableIds.has(id)),
-  })).filter(r => r.comboIds.length > 0)
+  })).filter(r => r.comboIds.length > 0))
   const sanitized: BagPrescriptionOutput = {
     sessionIntent: output.sessionIntent,
     // The rules win over the model: finishers out, round count capped.

@@ -59,6 +59,13 @@ test('REPLACE: hold, COACH PICKS, SWAP IN, then BODY', async ({ page, api }) => 
   await expect(picks.getByRole('button', { name: 'MT Class', exact: true })).toBeVisible()
   await picks.getByRole('button', { name: 'Bag Work', exact: true }).tap()
   await picks.getByRole('button', { name: 'Swap in' }).tap()
+  // Page 80: Bag Work asks COACH / HYBRID / CUSTOM; COACH shows the kru's rounds, then SWAP IN.
+  const modes = page.getByRole('dialog', { name: 'Bag work', exact: true })
+  await expect(modes.getByRole('button', { name: 'Hybrid' })).toBeVisible()
+  await modes.getByRole('button', { name: 'Coach' }).tap()
+  const board = page.getByRole('dialog', { name: 'Bag work: coach' })
+  await expect(board.getByText('WARM-UP')).toBeVisible()
+  await board.getByRole('button', { name: 'Swap in' }).tap()
   const why = page.getByRole('dialog', { name: 'Why, optional' })
   await expect(why).toBeVisible()
   await why.getByRole('button', { name: 'BODY', exact: true }).tap()

@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm'
 import { combos, mtClassLogs, sessions, settings } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
 import { addToBag, bagLibrary, declineCombo, learnedFor } from './routes/classCombos'
+import { bagPool, listRoutines, saveRoutine } from './routes/bagBuilder'
 import { testDb } from './testDb'
 
 const TUE20 = isoToEpochDay('2026-10-20')
@@ -93,6 +94,39 @@ async function main() {
   const none = await learnedFor(db, '', 'mt-1', 'Partner work. Good class.')
   assert.deepEqual(none?.lines, [])
   assert.deepEqual(none?.unknown, [])
+
+  // Page 80: a combo he typed: his ('mine'), no class day, his nudged grade; one strike is fine.
+  const mine = await addToBag(db, ['Jab', 'Cross', 'Hook', 'Cross', 'Hook'], null, TUE20, { source: 'mine', difficulty: 'expert' })
+  assert.ok(!('error' in mine))
+  assert.equal(mine.status, 'added')
+  assert.match(mine.combo.id, /^combo-m-/)
+  assert.equal(mine.combo.source, 'mine')
+  assert.equal(mine.combo.classDate, null)
+  assert.equal(mine.combo.tier, 'flow', 'graded by the Library\'s rules')
+  assert.equal(mine.combo.difficultyOverride, 'expert', 'his nudge kept')
+  assert.equal(mine.combo.unlocked, 1, 'in his pool')
+  const ungraded = await addToBag(db, ['Jab', 'Cross', 'Low kick', 'Hook'], null, TUE20, { source: 'mine' })
+  assert.ok(!('error' in ungraded) && ungraded.combo.difficultyOverride == null, 'no nudge: the tier\'s grade')
+  // a locked library combo he types: unlocked as his
+  const typedLocked = await addToBag(db, ['Jab', 'Cross', 'Low kick'], null, TUE20, { source: 'mine' })
+  assert.ok(!('error' in typedLocked) && typedLocked.status === 'unlocked' && typedLocked.combo.source === 'mine')
+  assert.ok('error' in await addToBag(db, ['Jab', 'Swich kick'], null, TUE20, { source: 'mine' }), 'an unknown strike is refused')
+
+  // His pool for the bag builder: unlocked, switched on; knees off leaves the knee combo out.
+  const pool = await bagPool(db)
+  assert.ok(pool.some(p => p.id === mine.combo.id && p.source === 'mine' && p.difficultyOverride === 'expert'))
+  assert.ok(!pool.some(p => p.id === 'combo-w10'), 'knees are off in Settings')
+  assert.ok(pool.every(p => p.id !== 'combo-w03' || p.source === 'mine'))
+
+  // SAVE ROUTINE: saved, then the same name updates it; newest first.
+  const r1 = await saveRoutine(db, { name: 'Tuesday kicks', mode: 'hybrid', rounds: [[], [mine.combo.id], [], []], roundSec: 180, restSec: 60 }, 100)
+  assert.equal(r1.name, 'Tuesday kicks')
+  assert.deepEqual(r1.rounds, [[], [mine.combo.id], [], []])
+  const r1b = await saveRoutine(db, { name: 'tuesday kicks', mode: 'custom', rounds: [['combo-f02']], roundSec: 120, restSec: 60 }, 200)
+  assert.equal(r1b.id, r1.id, 'the same name: updated')
+  assert.equal(r1b.mode, 'custom')
+  await saveRoutine(db, { name: 'Quick hands', mode: 'custom', rounds: [['combo-f02'], []], roundSec: 120, restSec: 60 }, 300)
+  assert.deepEqual((await listRoutines(db)).map(r => r.name), ['Quick hands', 'tuesday kicks'])
 
   console.log('server classCombos tests passed')
 }

@@ -8,8 +8,11 @@ import { getTodayISO } from '@/lib/dates'
 import { sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
 import type { ChangeViewIn } from '@/features/coach/changeView'
 import type { PickAction } from '@/lib/coach'
+import type { BagSpec } from '@/lib/coach/bagArc'
+import { prefetchBagPool } from '@/features/combos/combosClient'
 
 import { ActBody, Cmd, PicksBody, RuneBody, WhyBody, type PickRow, type ReasonChoice } from './CommandWindow'
+import { BagBuilder } from './BagBuilder'
 
 // The command windows' flow (page 73), the same on Program and Today: hold a
 // session → REPLACE / SKIP (or UNDO SKIP); REPLACE and + add → COACH PICKS
@@ -22,13 +25,15 @@ import { ActBody, Cmd, PicksBody, RuneBody, WhyBody, type PickRow, type ReasonCh
 const REPLACE_WHY: ReadonlyArray<ReasonChoice> = REPLACE_WHY_TILES.map(t => ({ label: t.label, code: t.value }))
 const SKIP_WHY: ReadonlyArray<ReasonChoice> = SKIP_WHY_TILES.map(t => ({ label: t.label, code: t.value }))
 
-interface CoachPickJson extends PickRow { timeSlot: 'am' | 'pm'; flexibleTimeSlot: boolean; action?: PickAction }
+interface CoachPickJson extends PickRow { timeSlot: 'am' | 'pm'; flexibleTimeSlot: boolean; action?: PickAction; bag?: { rounds: number; finishers: boolean } }
 
 type Win =
   | { kind: 'act'; s: DayBoardSession; anchor: DOMRect }
   | { kind: 'why'; mode: 'skip' | 'replace'; sessionId: string; changeId: string | null; anchor: DOMRect | null; contextJson?: string | null }
   | { kind: 'rune'; change: ChangeViewIn; say: ReactNode; back: string; undone: boolean; canUndo: boolean; anchor: DOMRect | null }
   | { kind: 'pick'; mode: 'replace' | 'add'; s: DayBoardSession | null; date: string; day3: string; view: 'picks' | 'all' | 'runs'; cur: number; picks: CoachPickJson[] | null; all: CoachPickJson[] | null }
+  // page 80: Bag Work asks COACH / HYBRID / CUSTOM before it lands
+  | { kind: 'bag'; pick: Extract<Win, { kind: 'pick' }>; row: CoachPickJson }
 
 export interface PlanMenuDeps {
   onSessionUpdate: (id: string, patch: Partial<DayBoardSession>) => void
@@ -50,6 +55,7 @@ export interface PlanMenuDeps {
 }
 
 const DAY3 = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+const DAY_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 /** A row's lines open in this long (page 59 Expand); the WHY? window waits for them. */
 const LINES_OPEN_MS = 360
 
@@ -72,7 +78,7 @@ export function usePlanMenu(deps: PlanMenuDeps) {
 
   // While COACH PICKS is open the rows' cursor steps aside (the window has its own).
   useEffect(() => {
-    document.body.classList.toggle('pl-pickopen', win?.kind === 'pick' && !closing)
+    document.body.classList.toggle('pl-pickopen', (win?.kind === 'pick' || win?.kind === 'bag') && !closing)
     return () => document.body.classList.remove('pl-pickopen')
   }, [win, closing])
 
@@ -108,6 +114,8 @@ export function usePlanMenu(deps: PlanMenuDeps) {
     setClosing(false)
     setWin(w)
     loadPicks(w)
+    // page 80: his combos and routines for Bag Work's builder, read now (nothing loads after a tap)
+    void prefetchBagPool()
   }, [loadPicks])
 
   /** Hold a to-do (or a skipped) session. */
@@ -167,11 +175,17 @@ export function usePlanMenu(deps: PlanMenuDeps) {
     }
   }
 
-  async function take(w: Extract<Win, { kind: 'pick' }>, row: CoachPickJson) {
+  async function take(w: Extract<Win, { kind: 'pick' }>, row: CoachPickJson, bag?: BagSpec) {
+    // Bag Work asks how first (page 80): COACH / HYBRID / CUSTOM, or a saved routine.
+    if (row.type === 'bag_work' && !bag) {
+      setClosing(false)
+      setWin({ kind: 'bag', pick: w, row })
+      return
+    }
     setBusy(true)
     try {
       if (w.mode === 'replace' && w.s) {
-        const result = await submitReplace<DayBoardSession>(w.s.id, { type: row.type, label: row.label, timeSlot: row.timeSlot, runCategory: row.runCategory }, null, getTodayISO()) as { original: DayBoardSession; replacement: DayBoardSession; changeId?: string | null }
+        const result = await submitReplace<DayBoardSession>(w.s.id, { type: row.type, label: row.label, timeSlot: row.timeSlot, runCategory: row.runCategory, bag }, null, getTodayISO()) as { original: DayBoardSession; replacement: DayBoardSession; changeId?: string | null }
         d.current.onSessionUpdate(result.original.id, result.original)
         d.current.onSessionAdded(result.replacement)
         close(() => {
@@ -180,7 +194,7 @@ export function usePlanMenu(deps: PlanMenuDeps) {
         })
         d.current.onChanged()
       } else {
-        const out = await submitBoardPick<DayBoardSession>({ type: row.type, label: row.label, timeSlot: row.timeSlot, runCategory: row.runCategory, action: row.action }, w.date, getTodayISO())
+        const out = await submitBoardPick<DayBoardSession>({ type: row.type, label: row.label, timeSlot: row.timeSlot, runCategory: row.runCategory, action: row.action, bag }, w.date, getTodayISO())
         if (out.kind === 'added') d.current.onSessionAdded(out.session)
         else { d.current.onSessionUpdate(out.session.id, out.session); for (const x of out.displaced) d.current.onSessionUpdate(x.id, x) }
         close(() => d.current.focus(out.session.id))
@@ -262,6 +276,22 @@ export function usePlanMenu(deps: PlanMenuDeps) {
           onView={(v, c) => setWin(cur => (cur && cur.kind === 'pick' ? { ...cur, view: v, cur: c ?? 0 } : cur))}
         />
       </Cmd>
+    )
+  }
+
+  else if (win?.kind === 'bag') {
+    const w = win
+    node = (
+      <BagBuilder
+        add={w.pick.mode === 'add'}
+        dayName={DAY_NAME[new Date(`${w.pick.date}T12:00:00Z`).getUTCDay()]}
+        dose={w.row.bag ?? { rounds: 4, finishers: false }}
+        busy={busy}
+        closing={closing}
+        onLeft={left}
+        onDismiss={dismiss}
+        onTake={spec => { void take(w.pick, w.row, spec) }}
+      />
     )
   }
 

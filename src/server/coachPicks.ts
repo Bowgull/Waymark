@@ -51,6 +51,8 @@ export interface CoachPick {
   lines: PreviewLine[]
   /** + add: the week's next strength pulled to this day, as the board does. */
   action?: PickAction
+  /** Bag Work (page 80): the coach's rounds that day and whether a finisher is on. */
+  bag?: { rounds: number; finishers: boolean }
 }
 
 export interface CoachPicksOut {
@@ -201,6 +203,8 @@ export async function coachPicksFor(db: DB, q: CoachPicksQuery): Promise<CoachPi
       minutes: minutesFor(o.type, dose, row, stamps.weekNumber, kind, { ropeRounds: rope, foundationMin }),
       lines: previewLines(o.type, dose, { week: stamps.weekNumber, slot, rope: { rounds: rope }, foundationMin, equipment: inp.equipment, unit }),
       ...(action ? { action } : {}),
+      // Page 80: Bag Work's builder reads the coach's rounds and whether a finisher is on today.
+      ...(dose?.bag ? { bag: { rounds: dose.bag.rounds, finishers: dose.bag.finishers } } : {}),
     })
   }
 

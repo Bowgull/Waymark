@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { MASTERY_MAX, recentMtNoteLines, summarizeCombo } from './bagPrescriptionAI'
+import { MASTERY_MAX, distinctRounds, recentMtNoteLines, summarizeCombo } from './bagPrescriptionAI'
 
 // Mastery is the sum of the last five 1-3 ratings: the AI is told /15, not /10.
 assert.equal(MASTERY_MAX, 15)
@@ -24,5 +24,14 @@ assert.equal(notes.length, 5)
 assert.equal(notes[0], 'focus: newest')
 assert.equal(notes[1], 'focus: second | weakness: guard')
 assert.ok(!notes.some(n => n.includes('oldest')), 'the oldest falls off, not the newest')
+
+// Page 80: a new combo is marked for the coach; no two rounds hold the same combos.
+assert.ok(summarizeCombo({ id: 'c2', text: 'Jab, cross, switch kick', tier: 'weapons', techniques: 'boxing,kicks', masteryScore: 0, isFavourite: 0, formTips: null, isNew: true }).includes(' NEW]'))
+const dr = distinctRounds([
+  { roundNumber: 1, comboIds: ['a', 'b'] },
+  { roundNumber: 2, comboIds: ['b', 'a'] },
+  { roundNumber: 3, comboIds: ['c'] },
+])
+assert.deepEqual(dr, [{ roundNumber: 1, comboIds: ['a', 'b'] }, { roundNumber: 2, comboIds: ['c'] }])
 
 console.log('bagPrescriptionAI tests passed')

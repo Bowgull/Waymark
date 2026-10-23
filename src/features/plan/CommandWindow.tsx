@@ -16,7 +16,7 @@ import './plan.css'
 export type CmdPlace = 'side' | 'below' | 'bottom'
 
 /** The window's frame. `closing` plays the leave; `onLeft` follows it. */
-export function Cmd({ anchor, place, closing, onLeft, onDismiss, label, className = '', children }: {
+export function Cmd({ anchor, place, closing, onLeft, onDismiss, label, className = '', stayOnScroll = false, children }: {
   anchor: DOMRect | null
   place: CmdPlace
   closing: boolean
@@ -24,6 +24,8 @@ export function Cmd({ anchor, place, closing, onLeft, onDismiss, label, classNam
   onDismiss: () => void
   label: string
   className?: string
+  /** A window he types in (page 80's slate): the keyboard moving the page doesn't close it. */
+  stayOnScroll?: boolean
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -46,11 +48,11 @@ export function Cmd({ anchor, place, closing, onLeft, onDismiss, label, classNam
 
   // A scroll closes it (not the page's own reveal right after it opened).
   useEffect(() => {
-    if (closing) return
+    if (closing || stayOnScroll) return
     const onScroll = (e: Event) => { if (e.target instanceof Node && ref.current?.contains(e.target)) return; if (Date.now() - opened.current > 800) onDismiss() }
     window.addEventListener('scroll', onScroll, { capture: true, passive: true })
     return () => window.removeEventListener('scroll', onScroll, { capture: true })
-  }, [closing, onDismiss])
+  }, [closing, onDismiss, stayOnScroll])
 
   useEffect(() => {
     if (!closing) return

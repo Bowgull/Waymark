@@ -13,6 +13,15 @@ import {
   parseCombos,
   tierFor,
   unknownLine,
+  applyFix,
+  comboLevel,
+  gradeLevel,
+  leaveOut,
+  levelOfTier,
+  nudgeLevel,
+  readStrikes,
+  readTypedCombo,
+  LEVELS,
   type BagCombo,
 } from './classCombos'
 
@@ -122,6 +131,73 @@ const NOTE = 'Teeps to the body to start. Then jab, cross, lead hook on the pads
   assert.equal(tierFor(['Double jab', 'Cross', 'Hook', 'Cross']), 'flow', 'five strikes or more')
   assert.equal(matchKey(['Lead hook', 'Cross']), matchKey(['Hook', 'Cross']), 'the lead hook is the hook')
   assert.equal(matchKey(['Jab × 3']), matchKey(['Jab', 'Jab', 'Jab']))
+}
+
+// ─── tiers: feints and defensive moves (page 80 grades by these) ──
+{
+  assert.equal(tierFor(['Feint jab', 'Cross', 'Left kick', 'Step out']), 'deception', 'a feint: Deception (combo-d01)')
+  assert.equal(tierFor(['Slip', 'Cross', 'Hook', 'Low kick']), 'deception', 'a slip: Deception (combo-d07)')
+  assert.equal(tierFor(['Jab', 'Cross', 'Hook', 'Check', 'Teep']), 'mastery', 'five with a check: Mastery (combo-m02)')
+  assert.equal(tierFor(['Jab', 'Jab', 'Teep']), 'weapons', 'a teep alone is no trick')
+}
+
+// ─── a combo typed in words (page 80) ──
+{
+  const LIB2 = [...LIBRARY, { id: 'combo-w02', text: 'Jab → Cross → Switch Kick', tier: 'weapons', unlocked: 0 }, { id: 'combo-x', text: 'Teep → Cross → Rear Knee', tier: 'weapons', unlocked: 0 }]
+  const T2 = deriveTechniques(LIB2.map(c => c.text))
+  const names = (ts: ReturnType<typeof readTypedCombo>) => ts.map(t => (t.kind === 'strike' ? t.name : `?${t.raw}`))
+
+  // known strikes, the longest name first, little words skipped
+  const ok = readTypedCombo('jab then cross and switch kick', T2, ALL_ON)
+  assert.deepEqual(names(ok), ['Jab', 'Cross', 'Switch kick'])
+  assert.deepEqual(readStrikes(ok), ['Jab', 'Cross', 'Switch kick'])
+  assert.deepEqual(names(readTypedCombo('Double jab, cross → lead hook', T2, ALL_ON)), ['Double jab', 'Cross', 'Lead hook'])
+
+  // a misspelt word stays in place, unknown, with its likely fix (it and the word after: "swich kick")
+  const typo = readTypedCombo('jab cross swich kick', T2, ALL_ON)
+  assert.deepEqual(names(typo), ['Jab', 'Cross', '?swich', '?kick'])
+  assert.equal(readStrikes(typo), null, 'ADD waits while an unknown remains')
+  const unk = typo[2]
+  assert.ok(unk.kind === 'unknown')
+  assert.equal(unk.fixes[0].name, 'Switch kick')
+  assert.equal(unk.fixes[0].span, 2, 'the fix stands for "swich kick"')
+  const fixed = applyFix(typo, 2, unk.fixes[0])
+  assert.deepEqual(names(fixed), ['Jab', 'Cross', 'Switch kick'])
+  assert.deepEqual(readStrikes(fixed), ['Jab', 'Cross', 'Switch kick'])
+
+  // LEAVE IT OUT: the word goes
+  const extra = readTypedCombo('jab cross superman', T2, ALL_ON)
+  assert.deepEqual(names(extra), ['Jab', 'Cross', '?superman'])
+  assert.ok(extra[2].kind === 'unknown' && extra[2].fixes.length === 0, 'nothing close: only LEAVE IT OUT')
+  assert.deepEqual(readStrikes(leaveOut(extra, 2)), ['Jab', 'Cross'])
+
+  // a side word on a strike the app knows plainly: the strike is offered
+  const side = readTypedCombo('lead teep cross', T2, ALL_ON)
+  assert.deepEqual(names(side), ['?lead', 'Teep', 'Cross'])
+  assert.ok(side[0].kind === 'unknown' && side[0].fixes[0].name === 'Teep' && side[0].fixes[0].span === 2)
+  assert.deepEqual(names(applyFix(side, 0, side[0].fixes[0])), ['Teep', 'Cross'])
+
+  // a strike switched off in Settings is unknown with no fixes (Settings decides)
+  const off = readTypedCombo('jab cross rear knee', T2, DEFAULT_ON)
+  assert.ok(off[2].kind === 'unknown' && off[2].off && off[2].fixes.length === 0)
+  assert.equal(readTypedCombo('', T2, ALL_ON).length, 0)
+  assert.equal(readStrikes([]), null)
+}
+
+// ─── the grade in plain words, and the nudge ──
+{
+  assert.deepEqual([...LEVELS], ['EASY', 'MEDIUM', 'HARD', 'EXPERT'])
+  assert.deepEqual(['foundation', 'weapons', 'flow', 'deception', 'mastery'].map(levelOfTier), [0, 1, 2, 2, 3])
+  assert.equal(gradeLevel(['Jab', 'Cross']), 0, 'hands only: EASY')
+  assert.equal(gradeLevel(['Jab', 'Cross', 'Switch kick']), 1, 'a kick: MEDIUM')
+  assert.equal(gradeLevel(['Teep', 'Cross', 'Rear knee', 'Switch kick', 'Cross']), 2, 'five strikes: HARD')
+  assert.equal(gradeLevel(['Jab', 'Cross', 'Hook', 'Check', 'Teep']), 3, 'Mastery: EXPERT')
+  assert.equal(nudgeLevel(1, 1), 2)
+  assert.equal(nudgeLevel(3, 1), 3, 'never past EXPERT')
+  assert.equal(nudgeLevel(0, -1), 0, 'never below EASY')
+  assert.equal(comboLevel({ tier: 'weapons' }), 1)
+  assert.equal(comboLevel({ tier: 'weapons', difficultyOverride: 'expert' }), 3, 'his nudge wins')
+  assert.equal(comboLevel({ tier: 'flow', difficultyOverride: 'nonsense' }), 2)
 }
 
 console.log('classCombos tests passed')

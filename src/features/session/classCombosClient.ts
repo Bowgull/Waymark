@@ -24,6 +24,11 @@ export interface FoundResult {
   local?: boolean
 }
 
+/** The copy of the bag kept from the last read (null before the first). */
+export function cachedBagLibrary(): BagLibrary | null {
+  return cached()
+}
+
 function cached(): BagLibrary | null {
   try {
     const raw = getItem(BAG_CACHE_KEY)
