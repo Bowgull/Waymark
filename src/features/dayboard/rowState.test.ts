@@ -312,3 +312,10 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
 }
 
 console.log('dayboard tests passed')
+
+// Page 80: a Custom bag session's row minutes are his own rounds, length and rest (+ the 5-min rope warm-up).
+{
+  const custom = plannedRowMinutes({ type: 'bag_work', notes: null, label: 'Bag Work', scheduledDate: 20750, blockWeek: 1, blockType: 'block_zero', contextJson: JSON.stringify({ bag: { mode: 'custom', rounds: 4, roundSec: 120, restSec: 60, picked: {} } }), doseJson: null })
+  assert.equal(custom, 16, '4 × 2 min + 3 × 1 min rest + 5 min warm-up')
+  console.log('ok: a Custom bag row counts his own rounds')
+}

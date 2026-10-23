@@ -18,7 +18,7 @@ import { loadLabel } from '../../lib/strengthLoads'
 import { getStrengthTemplate } from '../../lib/strengthTemplates'
 import { getStrengthWeekTarget } from '../../lib/blockZero/strength'
 import { estimatedMinutes } from '../../lib/coach/sessions'
-import { plannedRowStrengthMinutes } from '../../lib/plannedLength'
+import { bagMinutes, plannedRowStrengthMinutes } from '../../lib/plannedLength'
 import { doseJsonMinutes } from '../../lib/brain/doseMinutes'
 import type { RuneState } from '../../lib/coach/changes'
 import { getRunWalkWeek, runWalkTotalSec } from '../../lib/blockZero/running'
@@ -514,6 +514,13 @@ const word = (n: number) => NUM_WORDS[n] ?? String(n)
  * numbers (run-walk week, Foundation's routine).
  */
 export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'label' | 'scheduledDate' | 'blockWeek' | 'blockType'> & { contextJson?: string | null; doseJson?: string | null }, weekNumber?: number | null): number {
+  // Page 80: a Custom bag session runs his own rounds, length and rest, not the coach's dose.
+  if (s.type === 'bag_work') {
+    const bag = parseContext(s.contextJson).bag as { mode?: string; rounds?: number; roundSec?: number; restSec?: number } | undefined
+    if (bag?.mode === 'custom' && (bag.rounds ?? 0) > 0 && (bag.roundSec ?? 0) > 0) {
+      return bagMinutes(Array.from({ length: bag.rounds! }, () => ({ durationSec: bag.roundSec!, restSec: bag.restSec ?? 0 })))
+    }
+  }
   // Page 73: the coach's dose when the row carries one (the same minutes its lines and the coach picks show).
   const fromDose = doseJsonMinutes(s)
   if (fromDose != null) return fromDose
