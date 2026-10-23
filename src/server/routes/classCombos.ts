@@ -152,8 +152,9 @@ export async function addToBag(db: DB, strikes: string[], sessionId: string | nu
     return { combo: row, status: 'in_bag' as const }
   }
   if (same[0]) {
-    // LOCKED: ADD TO BAG unlocks it, and it carries the glove from now on.
-    await db.update(combos).set({ unlocked: 1, ...marks }).where(eq(combos.id, same[0].id))
+    // LOCKED: ADD TO BAG unlocks it, and it carries the glove from now on. Its date becomes today's:
+    // to him it's new (page 80: the coach drills a just-added combo first; Library's NEW reads it too).
+    await db.update(combos).set({ unlocked: 1, createdAt: Math.floor(Date.now() / 1000), ...marks }).where(eq(combos.id, same[0].id))
     const [row] = await db.select().from(combos).where(eq(combos.id, same[0].id))
     return { combo: row, status: 'unlocked' as const }
   }

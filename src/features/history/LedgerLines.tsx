@@ -70,6 +70,9 @@ export function LedgerLines({ items }: { items: LedgerLineItem[] }) {
     const under = hd ? Math.max(0, hd.getBoundingClientRect().bottom - box.top) : 0
     const target = Math.max(0, Math.min(m.scrollHeight, m.scrollTop + line.getBoundingClientRect().top - box.top - shrink - under - 6))
     cancelAnimationFrame(snapRaf.current)
+    // not enough page below to lift the line that high: the list makes exactly the room it needs
+    const short = target - (m.scrollHeight - m.clientHeight)
+    if (short > 0 && list.current) list.current.style.paddingBottom = `${(parseFloat(list.current.style.paddingBottom) || 0) + Math.ceil(short)}px`
     if (prefersReducedMotion()) { m.scrollTop = target; return }
     const from = m.scrollTop, d = target - from
     let t0 = -1
