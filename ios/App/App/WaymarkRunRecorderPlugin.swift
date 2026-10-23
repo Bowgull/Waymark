@@ -34,8 +34,11 @@ import Capacitor
 //     "Poppy"), with a buzz, while his show in another app dips under it
 //     (.playback, .mixWithOthers + .duckOthers only while a cue plays). Outside
 //     it also watches the pace on the hard pieces and nudges (src/lib/runCues.ts,
-//     the same numbers). Indoors a hard run keeps the location updates on at low
-//     accuracy so the clock keeps going with the screen off.
+//     the same numbers). Indoors there is no location at all: the run keeps going
+//     locked on the strap's Bluetooth link when there is one, and on background
+//     audio (UIBackgroundModes 'audio'): while an indoor run has cues, a silent
+//     loop holds the .playback session (mixing, never ducking), so the 1 Hz clock
+//     and the cues it fires stay on time with the screen off.
 // JS gets throttled ticks while the app is open, and the finished recording.
 //
 // Licence note: no third-party code is copied here. The GPS filter follows the
@@ -159,7 +162,6 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
     private var nudgeSamples: [(t: Int, d: Double)] = []
     private var nudgeLastAt: Int?
     private var pendingNudge: (word: String, kmh: Double)?
-    private var keepAlive = false
     private lazy var cueAudio = RunCueAudio()
 
     // Live Activity throttle
@@ -424,11 +426,8 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
             self.nudgeTargets = outdoor ? targets : []
             self.nudgeSamples = []
             self.nudgeLastAt = nil
-            // Indoors the GPS isn't needed for distance, but it keeps the clock (and the cues) going locked.
-            if !list.isEmpty, let r = self.run, !r.outdoor, !self.keepAlive {
-                self.keepAlive = true
-                self.startLocation(keepAlive: true)
-            }
+            // Indoors (no location): the audio session keeps the run's clock, and its cues, going locked.
+            if !list.isEmpty, let r = self.run, !r.outdoor { self.cueAudio.keepAlive(true) }
             call.resolve()
         }
     }
@@ -441,7 +440,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         nudgeSamples = []
         nudgeLastAt = nil
         pendingNudge = nil
-        keepAlive = false
+        cueAudio.keepAlive(false)
     }
 
     /// One second of the cue clock (not paused): the due cue plays; outside, the pace nudge.
@@ -877,14 +876,13 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
 
     // MARK: location
 
-    private func startLocation(keepAlive: Bool = false) {
+    private func startLocation() {
         let lm = locationManager ?? CLLocationManager()
         locationManager = lm
         lm.delegate = self
         lm.activityType = .fitness
-        // Indoors (a hard run's cues): coarse, only so the run keeps going with the screen off.
-        lm.desiredAccuracy = keepAlive ? kCLLocationAccuracyThreeKilometers : kCLLocationAccuracyBest
-        lm.distanceFilter = keepAlive ? 500 : kCLDistanceFilterNone
+        lm.desiredAccuracy = kCLLocationAccuracyBest
+        lm.distanceFilter = kCLDistanceFilterNone
         lm.pausesLocationUpdatesAutomatically = false
         lm.allowsBackgroundLocationUpdates = true
         lm.showsBackgroundLocationIndicator = true
@@ -903,7 +901,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
     }
 
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        if run?.outdoor == true || keepAlive, manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
+        if run?.outdoor == true, manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
             manager.startUpdatingLocation()
         }
     }
@@ -1066,20 +1064,40 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
 // MARK: - The cue player (page 76 "Hear it")
 
 /// Plays a cue's clips one after another from the app bundle (public/cues/<name>.m4a, the web
-/// build's own files). While a cue plays the session is .playback with .mixWithOthers and
-/// .duckOthers, so his show in another app dips under it; when the last clip ends the session
-/// is let go with .notifyOthersOnDeactivation and the show comes back up. A new cue waits for
-/// the one playing. Main queue only.
+/// build's own files), and on an indoor run keeps the app running locked with no location.
+///
+/// - keepAlive(true): a silent loop holds the .playback session with .mixWithOthers only, so his
+///   show in another app plays at full volume and the app (its 1 Hz clock, the cues) keeps running
+///   with the screen off (UIBackgroundModes 'audio').
+/// - A cue: the session takes .duckOthers (the show dips), the clips play, then the session is
+///   let go with .notifyOthersOnDeactivation (the show comes back up) and, when keeping alive,
+///   taken again at once with .mixWithOthers and the silent loop restarted.
+/// A new cue waits for the one playing. Main queue only.
 final class RunCueAudio: NSObject, AVAudioPlayerDelegate {
     private var queue: [[String]] = []
     private var current: [String] = []
     private var player: AVAudioPlayer?
-    private var active = false
+    private var silent: AVAudioPlayer?
+    private var alive = false
+    private var playing = false
 
     func play(_ clips: [String]) {
         guard !clips.isEmpty else { return }
         queue.append(clips)
-        if player == nil && current.isEmpty { next() }
+        if !playing { next() }
+    }
+
+    func keepAlive(_ on: Bool) {
+        guard on != alive else { return }
+        alive = on
+        if on {
+            setSession(duck: false)
+            startSilent()
+        } else {
+            silent?.stop()
+            silent = nil
+            if !playing { try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation]) }
+        }
     }
 
     private func url(_ name: String) -> URL? {
@@ -1087,25 +1105,38 @@ final class RunCueAudio: NSObject, AVAudioPlayerDelegate {
             ?? Bundle.main.url(forResource: name, withExtension: "m4a")
     }
 
-    private func activate() {
-        guard !active else { return }
+    private func setSession(duck: Bool) {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers, .duckOthers])
+        try? session.setCategory(.playback, mode: .spokenAudio, options: duck ? [.mixWithOthers, .duckOthers] : [.mixWithOthers])
         try? session.setActive(true, options: [])
-        active = true
     }
 
-    private func release() {
-        guard active else { return }
-        active = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    /// One second of silence (16-bit PCM WAV built in memory), looped.
+    private func startSilent() {
+        guard silent == nil else { silent?.play(); return }
+        let rate: UInt32 = 22050, n: UInt32 = rate
+        var d = Data()
+        func u32(_ v: UInt32) { var x = v.littleEndian; d.append(Data(bytes: &x, count: 4)) }
+        func u16(_ v: UInt16) { var x = v.littleEndian; d.append(Data(bytes: &x, count: 2)) }
+        d.append(contentsOf: Array("RIFF".utf8)); u32(36 + n * 2); d.append(contentsOf: Array("WAVE".utf8))
+        d.append(contentsOf: Array("fmt ".utf8)); u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16)
+        d.append(contentsOf: Array("data".utf8)); u32(n * 2); d.append(Data(count: Int(n * 2)))
+        guard let p = try? AVAudioPlayer(data: d) else { return }
+        p.numberOfLoops = -1
+        p.volume = 0
+        p.prepareToPlay()
+        p.play()
+        silent = p
     }
 
     private func next() {
         if current.isEmpty {
-            guard !queue.isEmpty else { player = nil; release(); return }
+            guard !queue.isEmpty else { finished(); return }
             current = queue.removeFirst()
-            activate()
+            if !playing {
+                playing = true
+                setSession(duck: true)
+            }
         }
         let name = current.removeFirst()
         guard let u = url(name), let p = try? AVAudioPlayer(contentsOf: u) else {
@@ -1117,6 +1148,18 @@ final class RunCueAudio: NSObject, AVAudioPlayerDelegate {
         p.prepareToPlay()
         player = p
         if !p.play() { DispatchQueue.main.async { [weak self] in self?.next() } }
+    }
+
+    /// The last clip ended: the show comes back up; indoors the silent loop holds the session again.
+    private func finished() {
+        player = nil
+        playing = false
+        silent?.stop()
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        if alive {
+            setSession(duck: false)
+            startSilent()
+        }
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

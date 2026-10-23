@@ -161,8 +161,7 @@ export function RunSessionView({
     const wx = weatherAt(readyWeather, Date.now())
     if (wx) setIsIndoor(runPlace(wx, shortHour(Date.now()), temperatureUnit()).place === 'inside')
   }, [readyWeather])
-  // The 5K test: the run clock when he finished the 5 km (null while it goes), and its time for Log your run.
-  const [testEnd, setTestEnd] = useState<number | null>(() => draft.testEnd ? Number(draft.testEnd) : null)
+  // The 5K test: its time for Log your run (the GPS's 5.00 km outside, else the clock less the warm-up).
   const [fiveK, setFiveK] = useState(draft.fiveK ?? '')
   // A pace nudge on the screen for a few seconds (outside, hard pieces; the recorder plays its sound).
   const [nudge, setNudge] = useState<{ n: 'fast' | 'slow'; kmh: number; at: number } | null>(null)
@@ -236,10 +235,10 @@ export function RunSessionView({
       stopwatch,
       isIndoor,
       media,
-      draft: { distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, ...(resumeOnClose ? { resumeOnClose: '1' } : {}), ...(talkTouched ? { talkHr: String(talkHr) } : {}), ...(testEnd != null ? { testEnd: String(testEnd) } : {}), ...(fiveK ? { fiveK } : {}) },
+      draft: { distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, ...(resumeOnClose ? { resumeOnClose: '1' } : {}), ...(talkTouched ? { talkHr: String(talkHr) } : {}), ...(fiveK ? { fiveK } : {}) },
       ...(runId ? { runId } : {}),
     })
-  }, [onPersist, phase, stopwatch, isIndoor, media, distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, runId, resumeOnClose, talkTouched, talkHr, testEnd, fiveK])
+  }, [onPersist, phase, stopwatch, isIndoor, media, distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, runId, resumeOnClose, talkTouched, talkHr, fiveK])
 
   useWakeLock(ticking)
 
@@ -331,8 +330,9 @@ export function RunSessionView({
    */
   function openLog() {
     const now = Date.now()
-    // The 5K test finished in its 5 km without the tap: its time so far fills the 5K cell (he can change it).
-    if (hard?.kind === 'test' && testEnd == null && stopwatch && !fiveK) {
+    // The 5K test is a normal run: he stops at 5.00 km and holds the grass. Its time is the running time
+    // less the planned warm-up (the GPS's 5.00 km mark outside, when it has one); he can change it.
+    if (hard?.kind === 'test' && stopwatch && !fiveK) {
       const t = Math.floor(stopwatchElapsedMs(stopwatch, now) / 1000)
       const open = hardSegments(hard, null).find(x => x.sec === Infinity)
       if (open && t > open.startSec) setFiveK(mmss(t - open.startSec))
@@ -378,7 +378,8 @@ export function RunSessionView({
     if (hardSegs) {
       const hp = hardAt(hardSegs, elapsedMs / 1000)
       if (hp.done || hp.index >= hardSegs.length - 1) return
-      if (hp.segment.sec === Infinity) { finishTest(); return }
+      // The 5K test's 5 km runs until he finishes the run (the grass hold): nothing skips it.
+      if (hp.segment.sec === Infinity) return
       const jump = Math.max(0, (hp.segment.startSec + hp.segment.sec) * 1000 - elapsedMs)
       setStopwatch(sw => (!sw ? sw : sw.state === 'running' ? { state: 'running', startedAtMs: sw.startedAtMs - jump } : { state: 'paused', elapsedMs: sw.elapsedMs + jump }))
       setNowMs(now)
@@ -542,32 +543,21 @@ export function RunSessionView({
   const rwIndex = rwPos?.index ?? -1
 
   // ─── A hard run's pieces on the run clock (page 76 §4) ───
-  const hardSegs = useMemo(() => (hard ? hardSegments(hard, testEnd) : null), [hard, testEnd])
+  const hardSegs = useMemo(() => (hard ? hardSegments(hard) : null), [hard])
   const hPos = hardSegs ? hardAt(hardSegs, elapsed) : null
   const hSeg: HardSegment | null = hPos && !hPos.done ? hPos.segment : null
-  /** The 5K test's 5 km is done: the clock stamps it, the cool-down starts, its time fills Log your run. */
-  function finishTest() {
-    if (!hardSegs || testEnd != null || !stopwatch) return
-    const now = Date.now()
-    const t = Math.floor(stopwatchElapsedMs(stopwatch, now) / 1000)
-    const seg = hardSegs.find(x => x.sec === Infinity)
-    if (!seg || t <= seg.startSec) return
-    setTestEnd(t)
-    setFiveK(mmss(t - seg.startSec))
-    setNowMs(now)
-  }
-  // Outside, the 5 km ends by itself at 5.00 km on the GPS (from where the piece began).
+  // Outside, the GPS marks the time at 5.00 km from where the 5 km began (finishing is still the grass hold).
   const testFrom = useRef<number | null>(null)
   useEffect(() => {
     if (!hSeg || hSeg.sec !== Infinity || isIndoor) { if (!hSeg || hSeg.sec !== Infinity) testFrom.current = null; return }
     if (testFrom.current == null) { testFrom.current = live.distanceM; return }
-    if (live.distanceM - testFrom.current >= 5000) finishTest()
-    // finishTest reads the latest clock; it runs on each distance tick only.
+    if (!fiveK && live.distanceM - testFrom.current >= 5000) setFiveK(mmss(Math.max(0, elapsed - hSeg.startSec)))
+    // Only each distance tick matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hSeg?.sec, hSeg?.startSec, live.distanceM, isIndoor])
   // The recorder plays the cues by itself on the run clock (locked too); sent again after a skip, a
   // resume, the 5 km, a unit or place change. Paused: it waits.
-  const cueKey = hard && hardSegs && phase === 'running' && stopwatch?.state === 'running' && runId ? `${runId}:${stopwatch.startedAtMs}:${testEnd}:${isIndoor}:${unit}` : null
+  const cueKey = hard && hardSegs && phase === 'running' && stopwatch?.state === 'running' && runId ? `${runId}:${stopwatch.startedAtMs}:${isIndoor}:${unit}` : null
   useEffect(() => {
     if (!cueKey || !hardSegs || !stopwatch) return
     const clockSec = Math.floor(stopwatchElapsedMs(stopwatch, Date.now()) / 1000)
@@ -846,10 +836,7 @@ export function RunSessionView({
       <div className="ss-phase">
         {over
           ? <FlapLabel text="EASE OFF" size="md" tone="clay" />
-          : hs?.sec === Infinity
-            // The 5K test's 5 km: tap it when the treadmill (or the GPS) reads 5.00.
-            ? <button type="button" className="ss-5k" aria-label="5 km done" onClick={finishTest}><FlapLabel text="5K" size="md" tone="gold" /></button>
-            : <FlapLabel text={hs ? phaseWord(hs.kind) : 'DONE'} size="md" tone={hs ? phaseTone(hs.kind) : 'gold'} />}
+          : <FlapLabel text={hs ? phaseWord(hs.kind) : 'DONE'} size="md" tone={hs ? phaseTone(hs.kind) : 'gold'} />}
         {of && <small className="ss-of">{of}</small>}
       </div>
       <TimerFace big seconds={hShown} kind={hEasy ? 'rest' : 'work'} tone={hEasy ? 'teal' : undefined} heat={over ? null : hHeat} track={hTrack} />
@@ -870,7 +857,7 @@ export function RunSessionView({
       )}
       <div className="ss-piece2">
         {isIndoor && altMph(kmh, unit) && <span className="ss-mph">{altMph(kmh, unit)}</span>}
-        <span className="ss-nx">NEXT</span><span>{hardSegs && hp ? nextWords(hardSegs, hp.index) : 'done'}</span>
+        <span className="ss-nx">NEXT</span><span>{hardSegs && hp && hs?.sec !== Infinity ? nextWords(hardSegs, hp.index) : 'done'}</span>
       </div>
     </div>
   )
