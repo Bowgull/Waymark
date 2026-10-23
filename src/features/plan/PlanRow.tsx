@@ -16,6 +16,28 @@ export const HOLD_MS = 500
 /** A finger that moves this far is a scroll, not a hold. */
 const MOVE_PX = 8
 
+/**
+ * The finger lifting after a hold is not a tap. Its click lands on the command
+ * window's veil or the page, where it would close the row that was open above
+ * (the list shifts, that reads as a scroll, and the window closes with it).
+ * Only a click inside the window still counts.
+ */
+function swallowReleaseClick(): void {
+  const swallow = (e: MouseEvent) => {
+    if (e.target instanceof Element && e.target.closest('.pl-cmd')) return
+    e.stopPropagation()
+    e.preventDefault()
+  }
+  const lifted = () => {
+    window.removeEventListener('pointerup', lifted, { capture: true })
+    window.removeEventListener('pointercancel', lifted, { capture: true })
+    window.setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 400)
+  }
+  window.addEventListener('click', swallow, { capture: true })
+  window.addEventListener('pointerup', lifted, { capture: true })
+  window.addEventListener('pointercancel', lifted, { capture: true })
+}
+
 /** A coach change on the row: the rune, then the why with the old value struck. */
 export interface RowChange {
   rune: RuneState
@@ -104,6 +126,7 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
             setPress(false)
             held.current = true
             void tapHaptic()
+            swallowReleaseClick()
             if (el) onHold(el)
           }, HOLD_MS),
         }

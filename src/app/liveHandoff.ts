@@ -194,8 +194,19 @@ function padsOf(el: HTMLElement): { paddingTop: string; paddingBottom: string } 
 /** The copy fades out over what it handed over to, then goes. */
 function handOver(ghost: HTMLElement): void {
   const fade = play(ghost, [{ opacity: 1 }, { opacity: 0 }], { duration: HANDOVER_MS, easing: 'linear', fill: 'forwards' })
-  if (fade) fade.finished.then(() => ghost.remove(), () => ghost.remove())
-  else ghost.remove()
+  if (fade) {
+    fade.finished.then(() => ghost.remove(), () => ghost.remove())
+    // a busy compositor can start the fade late (or never): the copy still goes
+    window.setTimeout(() => ghost.remove(), HANDOVER_MS + SETTLE_SLACK_MS)
+  } else ghost.remove()
+}
+
+/** Past an animation's own end: its finish runs even if the browser never reports it. */
+const SETTLE_SLACK_MS = 400
+function finishBy(fly: Animation | null, finish: () => void): void {
+  if (!fly) { finish(); return }
+  fly.finished.then(finish, finish)
+  window.setTimeout(finish, LIFT_MS + TRAVEL_MS + SETTLE_SLACK_MS)
 }
 
 /**
@@ -223,8 +234,7 @@ export function flyRowToStrip(row: HTMLElement, done: () => void): () => void {
     done()
     handOver(ghost)
   }
-  if (fly) fly.finished.then(finish, finish)
-  else finish()
+  finishBy(fly, finish)
   // stopped early (Today left): the end state at once; after the landing the copy fades out by itself
   return () => { if (over) return; over = true; fly?.cancel(); gap?.cancel(); ghost.remove(); done() }
 }
@@ -254,8 +264,7 @@ export function flyStripToRow(row: HTMLElement, done: () => void): () => void {
     handOver(ghost)
     done()
   }
-  if (fly) fly.finished.then(finish, finish)
-  else finish()
+  finishBy(fly, finish)
   return () => {
     if (over) return
     over = true
