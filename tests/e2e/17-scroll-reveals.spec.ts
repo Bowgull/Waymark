@@ -93,6 +93,8 @@ test('each world tab opens with its place in the window: boards 46% down, 40% on
   }
 
   // scrolled, then away and back: it lands at the window again (page 67 item 6)
+  // (once Ledger's boards are in: a page still loading is too short to scroll)
+  await expect.poll(() => page.evaluate(() => { const m = document.querySelector<HTMLElement>('main.waymark-scroll')!; return m.scrollHeight - m.clientHeight })).toBeGreaterThanOrEqual(300)
   await scrollTo(page, 300)
   await expect.poll(async () => (await measure(page)).scroll).toBeGreaterThan(0)
   await openTab(page, 'today', /\/today/)
