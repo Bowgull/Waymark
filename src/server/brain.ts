@@ -37,12 +37,11 @@ import { lowerState, nightRead, readinessState, STATE_RANK, type NightRead, type
 import { tempStates, type TempState } from '../lib/brain/tempStates'
 import type { AthleteModel, ModelCheckIn, ModelEvents } from '../lib/brain/types'
 import { KEY_TYPES } from '../lib/keyTypes'
-import { getRunWalkWeek, type WeeklyRunContext } from '../lib/blockZero'
+import { getRunWalkWeek, isBlockZeroModelRun, type WeeklyRunContext } from '../lib/blockZero'
 import { isHardRun, isHeavyLegs } from '../lib/coach/sessions'
 import { applyContext, coachEaseFrom, injuryActionFor, isoOf, mondayOf, runAllowanceBaseSec, slotStart, withMergedLifts, type InjuryFlag } from '../lib/coach'
 import { getStrengthTemplate, getWaveLoadingSetsReps, getWeekPercentage } from '../lib/strengthTemplates'
 import { loadEquipment, type LoadEquipment } from '../lib/strengthLoads'
-import { loadEasyHrCeiling } from '../lib/hrAnalysis'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getActiveBlock } from './blockZeroData'
 import { blockKind, blockStartDay, bodyPlanMark, dayHasPlan, generateDaySessions, loadInjuryFlag, resolveWeekPlan, trainingWeekFor, weekStamps } from './coachData'
@@ -215,7 +214,8 @@ async function runDoseHistory(db: DB, s: Pick<SessionRow, 'id' | 'scheduledDate'
   const rows = await db.select({ id: sessions.id, day: sessions.scheduledDate, doseJson: sessions.doseJson, status: sessions.status }).from(sessions)
     .where(and(inArray(sessions.type, ['foundation_run', 'running']), gte(sessions.scheduledDate, day - 21), lt(sessions.scheduledDate, day)))
   const doses = rows.filter(r => r.id !== s.id && (r.status === 'completed' || r.status === 'in_progress'))
-    .map(r => ({ day: r.day as number, sec: parseDose(r.doseJson)?.run?.runTotalSec ?? null }))
+    // A walk-only dose (an easy walk or bike) ran nothing: it is not the last run (audit #8).
+    .map(r => { const run = parseDose(r.doseJson)?.run; return { day: r.day as number, sec: run && !run.walkOnly && run.runTotalSec > 0 ? run.runTotalSec : null } })
     .filter((r): r is { day: number; sec: number } => r.sec != null)
     .sort((a, b) => a.day - b.day)
   const last = doses[doses.length - 1] ?? null
@@ -361,9 +361,11 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
 
   if (s.type === 'foundation_run' || s.type === 'running') {
     const guards = await loadRunGuardInputs(db, s.id, s.weekPlanId, day)
-    const ceiling = await loadEasyHrCeiling(db, day)
+    // The model's line (audit #32: one HR line, the same one the model judges his runs against).
+    const ceiling = { bpm: inputs.model.run.lineBpm }
     const hist = await runDoseHistory(db, s)
-    const runWalk = s.type === 'foundation_run' && s.blockType === 'block_zero'
+    // Block Zero's easy runs (the run-walk, and a plain easy / Zone 2 run) follow the model's rung.
+    const runWalk = isBlockZeroModelRun(s)
     const bike = inj.action.action === 'walk_or_bike' ? { label: 'Easy bike', why: inj.action.note ?? 'Easy bike today.' } : null
     let plannedSec: number | null = null
     if (!runWalk) {
@@ -414,12 +416,10 @@ export async function doseFor(db: DB, s: SessionRow, today: number): Promise<Sto
     const back = bodyPlanMark(s.contextJson)?.op === 'back' ? 1 : backToday
     if (stored.stamp === doseStamp(s, cap, back, inLighter(day, inp.move)) && stored.day === day) return stored
     const fresh = await computeDose(db, s, today, inp)
-    if (fresh) await db.update(sessions).set({ doseJson: JSON.stringify(fresh) }).where(eq(sessions.id, s.id))
-    return fresh
+    return fresh ? storeDose(db, s, fresh) : fresh
   }
   const fresh = await computeDose(db, s, today)
-  if (fresh) await db.update(sessions).set({ doseJson: JSON.stringify(fresh) }).where(eq(sessions.id, s.id))
-  return fresh
+  return fresh ? storeDose(db, s, fresh) : fresh
 }
 
 /** Write doses for every planned key session in [from, to]. */
@@ -430,8 +430,7 @@ export async function refreshDoses(db: DB, from: number, to: number, today: numb
   for (const s of rows) {
     const d = await computeDose(db, s, today, inputs)
     if (!d) continue
-    const label = runLabelFor(s, d)
-    await db.update(sessions).set({ doseJson: JSON.stringify(d), ...(label !== s.label ? { label } : {}) }).where(eq(sessions.id, s.id))
+    await storeDose(db, s, d)
     n++
   }
   return n
@@ -470,7 +469,9 @@ export async function capToday(db: DB, day: number, nowSec: number): Promise<num
     if (capped && !held.has(s.id) && s.type !== 'mt_class') ctxJson = applyContext(s.contextJson, { brainCap: { state: capped.state, why: capped.why, at: nowSec } satisfies BrainCap })
     const next = { ...s, contextJson: ctxJson }
     const dose = await computeDose(db, next, day, inp)
-    await db.update(sessions).set({ contextJson: ctxJson, ...(dose ? { doseJson: JSON.stringify(dose) } : {}) }).where(eq(sessions.id, s.id))
+    await db.update(sessions).set({ contextJson: ctxJson }).where(eq(sessions.id, s.id))
+    // A walk-only morning reads EASY WALK OR BIKE on its row too (audit #8): the dose names the run.
+    if (dose) await storeDose(db, next, dose)
     // A rune when the cap changed what he sees (AMBER or RED); a FRESH → GREEN cap only takes the push off, quietly.
     if (capped && ctxJson !== s.contextJson && dose && (capped.state === 'AMBER' || capped.state === 'RED') && changedFrom(before, dose)) {
       const setId = crypto.randomUUID()
@@ -694,11 +695,38 @@ async function weekOutline(db: DB, block: ActiveBlock, w: number, today: number,
  * A Block Zero run's label follows its dose: "Easy Run" when it is one
  * continuous easy run, "Run-Walk" when it has walk breaks. Other labels stay.
  */
-export function runLabelFor(s: Pick<SessionRow, 'type' | 'blockType' | 'label'>, dose: StoredDose | null): string | null {
-  if (s.type !== 'foundation_run' || s.blockType !== 'block_zero' || !dose?.run || dose.run.walkOnly) return s.label
-  if (s.label != null && s.label !== 'Run-Walk' && s.label !== 'Easy Run') return s.label
-  const r = dose.run
+export function runLabelFor(s: Pick<SessionRow, 'type' | 'blockType' | 'label' | 'notes'>, dose: StoredDose | null): string | null {
+  if (!isBlockZeroModelRun(s) || !dose?.run) return s.label
+  if (s.label != null && !RUN_SHAPE_LABELS.has(s.label)) return s.label
+  return runShapeLabel(dose.run)
+}
+
+/** The labels the dose's shape owns (a run he named himself keeps its name). */
+const RUN_SHAPE_LABELS = new Set(['Run-Walk', 'Easy Run', 'Easy Walk or Bike', 'Zone 2 Run'])
+
+/** A run dose's one name (audit #14): walk only, one continuous easy run, or a run-walk. */
+export function runShapeLabel(r: Pick<RunDose, 'walkOnly' | 'rounds' | 'walkSec' | 'runSec'>): string {
+  if (r.walkOnly) return 'Easy Walk or Bike'
   return r.rounds === 1 && r.walkSec === 0 && r.runSec >= CONTINUOUS_FROM_SEC ? 'Easy Run' : 'Run-Walk'
+}
+
+/** The dose's stamp with the session's new label in it (the label is one of its inputs), so a relabel never re-doses. */
+function restamp(d: StoredDose, label: string | null): StoredDose {
+  try {
+    const parts = JSON.parse(d.stamp) as unknown[]
+    if (Array.isArray(parts) && parts.length > 1) parts[1] = label
+    return { ...d, stamp: JSON.stringify(parts) }
+  } catch {
+    return d
+  }
+}
+
+/** Store a dose on its session, with the run's label from its shape (audit #14). */
+async function storeDose(db: DB, s: SessionRow, d: StoredDose): Promise<StoredDose> {
+  const label = runLabelFor(s, d)
+  const dose = label !== s.label ? restamp(d, label) : d
+  await db.update(sessions).set({ doseJson: JSON.stringify(dose), ...(label !== s.label ? { label } : {}) }).where(eq(sessions.id, s.id))
+  return dose
 }
 
 export interface ReplanResult { ran: boolean; reason?: string; changes: number; doses: number; summary: string[] }
@@ -781,7 +809,7 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
       if (!s) continue
       const dec: DoseDecision = { id: decision.id, day: today, level: pick.level, tweak: pick.tweak, why: pick.why, from: pick.from, ...(pick.above ? { above: true } : {}) }
       const dose = await computeDose(db, s, today, fresh, { decision: dec })
-      if (dose) await db.update(sessions).set({ doseJson: JSON.stringify(dose) }).where(eq(sessions.id, s.id))
+      if (dose) await storeDose(db, s, dose)
     }
   }
   const doses = await refreshDoses(db, today, today + 6, today, await loadBrainInputs(db, today))

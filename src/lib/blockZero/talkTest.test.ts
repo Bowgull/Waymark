@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 
 import { blockTestsBodySchema } from '../validators/schemas'
-import { clampTalkHr, talkTestBody, talkTestDue, talkTestStart } from './talkTest'
+import { clampTalkHr, talkTestBody, talkTestDue, talkTestStart, talkTestToSave } from './talkTest'
 import { validateTestResult } from './tests'
 
 let passed = 0
@@ -39,6 +39,12 @@ test('the body passes the block-tests route\'s schema and validation', () => {
   assert.ok(blockTestsBodySchema.safeParse(body).success)
   assert.ok(validateTestResult(body, 6).ok)
   assert.ok(validateTestResult(talkTestBody(6, 146), 6).ok)
+})
+
+test('an untouched drum saves nothing; a set one saves its value (audit #1)', () => {
+  assert.equal(talkTestToSave(1, 140, false), null)
+  assert.equal(talkTestToSave(1, talkTestStart(152), false), null)
+  assert.deepEqual(talkTestToSave(1, 151, true), { week: 1, testKey: 'talk_test_hr', value: 151, unit: 'bpm' })
 })
 
 console.log(`talkTest: ${passed} passed`)

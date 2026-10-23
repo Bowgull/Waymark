@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { getItem as storageGetItem, removeItem as storageRemoveItem, setItem as storageSetItem } from '@/lib/safeStorage'
-import { entranceLine, parseRoundSecs, roundSecsKey, withRoundSec } from '@/lib/plannedLength'
+import { BAG_WARMUP_SEC, entranceLine, parseRoundSecs, roundSecsKey, withRoundSec } from '@/lib/plannedLength'
 import { estimatedMinutes } from '@/lib/coach/sessions'
 
 import { getTodayISO } from '@/lib/dates'
@@ -1388,7 +1388,7 @@ export function WorkoutPage() {
     if (phase === 'bag-warmup') {
       return (
         <SkipWarmupTimer
-          durationSec={300}
+          durationSec={BAG_WARMUP_SEC}
           onComplete={() => setPhase('exercise')}
           description="Light and easy. Get the blood flowing before you hit the bag."
           resume={engineResume?.kind === 'warmup' ? engineResume.timer : null}

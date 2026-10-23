@@ -1,4 +1,5 @@
-// Static prescription for the Active Recovery session. Two phases:
+// Static prescription for the Active Recovery session (Reset). Three phases:
+//  0) Easy walk or bike, a timed step (audit #15, Josh: "add the walk").
 //  1) Hip Mobility — card per movement, timed or rep-based.
 //  2) Foam Rolling — big auto-advancing timer that cycles through areas.
 //
@@ -112,4 +113,29 @@ export function totalFoamRollingSeconds(): number {
 /** Seconds per foam-rolling step, both sides of a bilateral area in turn (the view's step list). */
 export function rollStepSecs(): number[] {
   return FOAM_ROLLING_AREAS.flatMap(area => (area.bilateral ? [area.sec, area.sec] : [area.sec]))
+}
+
+/** Reset opens with an easy walk or bike (Josh, audit #15: 10-15 min). */
+export const RESET_WALK_MIN = 12
+
+/** A rep's time, and the moment between steps (set up, switch sides), seconds. */
+const REP_SEC = 5
+const STEP_CHANGE_SEC = 10
+
+/** The hip block's seconds: holds per side, reps per side, and the changes between steps. */
+export function hipMobilitySeconds(): number {
+  return HIP_MOBILITY_MOVEMENTS.reduce((t, m) => {
+    const sides = m.bilateral ? 2 : 1
+    const work = m.mode === 'hold' ? (m.holdSec ?? 0) : (m.reps ?? 0) * REP_SEC
+    return t + sides * (work + STEP_CHANGE_SEC)
+  }, 0)
+}
+
+/**
+ * Reset's whole length, minutes: the walk, the hip block and the foam rolling. The one number
+ * every screen shows for it (plan lines, coach picks, the week's day line, the row's minutes).
+ */
+export function resetMinutes(walkMin: number = RESET_WALK_MIN): number {
+  const rollSec = rollStepSecs().reduce((t, sec) => t + sec + STEP_CHANGE_SEC, 0)
+  return Math.round((walkMin * 60 + hipMobilitySeconds() + rollSec) / 60)
 }

@@ -75,7 +75,7 @@ for (const id of ['w2', 'w5']) {
   const run = rows.find(s => s.id === id)
   const d = parseDose(run?.doseJson)?.run
   assert.equal(run?.label, 'Easy Run', 'the run-walk reads as an easy run')
-  assert.deepEqual([d?.runSec, d?.walkSec, d?.rounds], [1200, 0, 1], '20 min continuous, no walk breaks')
+  assert.deepEqual([d?.runSec, d?.walkSec, d?.rounds], [900, 0, 1], '15 min continuous, no walk breaks (his usual 18 less the time off, rounded down)')
 }
 assert.equal(rows.filter(s => s.status !== 'planned').length, rows.filter(s => s.scheduledDate! < START - 30).length, 'nothing of his changed status')
 
@@ -93,6 +93,6 @@ assert.equal(third.changes, 0, 'taken off with UNDO: not offered again this week
 const model = await refreshAthleteModel(db, START, nowSec(START, 19))
 assert.equal(model.lifts['ex-db-row'].workingSource, 'history')
 assert.equal(lb(model.lifts['ex-db-row'].workingKg), 25)
-assert.deepEqual([model.run.rungSec, model.run.rungSource], [1200, 'history'])
+assert.deepEqual([model.run.rungSec, model.run.rungSource], [900, 'history'])
 
 console.log('re-plan from history tests passed')

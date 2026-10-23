@@ -3,7 +3,7 @@
 // the coach line that only shows when it matters. Toronto coordinates only.
 import assert from 'node:assert/strict'
 import { buildWeather, coachLine, ecSky, feelsLike, parseCity, wmoSky, type OpenMeteo } from './weatherData'
-import { plannedMinute, plannedRuns } from './plannedHours'
+import { plannedMinute, plannedRuns, plannedWord } from './plannedHours'
 
 process.env.TZ = 'America/Toronto'
 
@@ -111,6 +111,7 @@ assert.ok((feelsLike(32, 60, 5).humidex ?? 0) >= 40, 'humidex on a hot humid day
   assert.equal(coachLine(w, [{ name: 'Run', at: NOW - 3 * 3600000 }], NOW), null, 'a run hour long gone says nothing')
   // °F follows Settings when it says miles
   assert.equal(coachLine(w, [{ name: 'Run', at: six }], NOW, 'F')?.text, 'Run at 6 PM: 36° and rain. Indoor works too.')
+  assert.equal(coachLine(w, [{ name: 'Run', at: six, when: 'Evening' }], NOW)?.text, 'Run this evening: 2° and rain. Indoor works too.', 'no learned hour: no clock hour')
 }
 
 // ─── The planned hour: his usual start, a class's time, Settings' PM ──
@@ -124,6 +125,12 @@ assert.ok((feelsLike(32, 60, 5).humidex ?? 0) >= 40, 'humidex on a hot humid day
   const runs = plannedRuns([{ type: 'foundation_run', status: 'planned', timeSlot: 'pm' }, { type: 'foundation_run', status: 'completed', timeSlot: 'am' }, { type: 'strength', status: 'planned', timeSlot: 'am' }], hours, mid)
   assert.equal(runs.length, 1, 'only runs still to do')
   assert.equal(new Date(runs[0].at).getHours(), 17)
+  // Audit #16: no learned hour, no made-up clock hour: "Morning" / "Evening".
+  assert.equal(plannedWord({ type: 'running', status: 'planned', timeSlot: 'am' }, hours), 'Morning')
+  assert.equal(plannedWord({ type: 'running', status: 'planned', timeSlot: 'pm' }, hours), 'Evening')
+  assert.equal(plannedWord({ type: 'foundation_run', status: 'planned', timeSlot: 'pm' }, hours), null, 'a learned hour is named')
+  assert.equal(plannedWord({ type: 'running', status: 'planned', timeSlot: 'am' }, null), 'Morning')
+  assert.equal(plannedRuns([{ type: 'running', status: 'planned', timeSlot: 'am' }], hours, mid)[0].when, 'Morning')
 }
 
 console.log('weather: ok')

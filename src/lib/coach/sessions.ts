@@ -4,6 +4,9 @@
 
 import { ZONE2_PRESCRIPTION, RUNNING_PLAN_TEMPLATE } from '../runningPlanTemplate'
 import { getRunWalkWeek, runWalkTotalSec } from '../blockZero/running'
+import { foundationMinutes } from '../foundation'
+import { resetMinutes } from '../activeRecoveryTemplate'
+import { ROPE_ROUNDS, ropeMinutes } from '../plannedLength'
 import { mondayOf } from '../dates'
 
 export type BlockKind = 'fighter' | 'block_zero'
@@ -171,9 +174,9 @@ export function estimatedMinutes(s: Pick<SessionLike, 'type' | 'notes' | 'estima
     case 'strength': return blockType === 'block_zero' ? 60 : 75
     case 'mt_class': return CLASS_MINUTES
     case 'bag_work': return 30
-    case 'skip_rope': return 15
-    case 'active_recovery': return 25
-    case 'mobility': return 12
+    case 'skip_rope': return ropeMinutes(ROPE_ROUNDS)
+    case 'active_recovery': return resetMinutes()
+    case 'mobility': return foundationMinutes({ week: blockType === 'block_zero' ? weekNumber : null })
     default: return 30
   }
 }

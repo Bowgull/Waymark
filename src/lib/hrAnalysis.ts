@@ -15,7 +15,7 @@
 
 import { and, desc, eq, gte, isNotNull } from 'drizzle-orm'
 import { blockTests, runSessions, sessions, trainingBlocks, userProfile } from '../db/schema'
-import { ageFromDob, hrCeiling, type HrCeilingSource } from './blockZero/running'
+import { easyHrLine, type HrCeilingSource } from './blockZero/running'
 import type { createDB } from '../db/client'
 
 type DB = ReturnType<typeof createDB>
@@ -91,20 +91,26 @@ const TALK_TEST_MAX_AGE_DAYS = 180
  * estimate, else the default. Prescriptions and compliance scoring both read
  * this, so they can't disagree.
  */
+/**
+ * The easy-run HR line for a day, read from the database: the same talk tests the athlete model
+ * reads (the active block's; with no block running, the last 180 days), through the one shared
+ * calculation (blockZero/running easyHrLine), so the cap never drifts from the model's line.
+ */
 export async function loadEasyHrCeiling(db: DB, todayEpochDay: number): Promise<{ bpm: number; source: HrCeilingSource }> {
   const rows = await db
-    .select({ value: blockTests.value, week: blockTests.week, recordedAt: blockTests.recordedAt, status: trainingBlocks.status })
+    .select({ value: blockTests.value, recordedAt: blockTests.recordedAt, status: trainingBlocks.status })
     .from(blockTests)
     .innerJoin(trainingBlocks, eq(blockTests.blockId, trainingBlocks.id))
-    .where(and(eq(blockTests.testKey, 'talk_test_hr'), gte(blockTests.recordedAt, (todayEpochDay - TALK_TEST_MAX_AGE_DAYS) * 86400)))
-  const active = rows.filter(r => r.status === 'active').sort((a, b) => b.week - a.week)[0]
-  const latest = active ?? rows.sort((a, b) => b.recordedAt - a.recordedAt)[0]
+    .where(eq(blockTests.testKey, 'talk_test_hr'))
+  const active = rows.filter(r => r.status === 'active')
+  const pool = active.length > 0 ? active : rows.filter(r => r.recordedAt >= (todayEpochDay - TALK_TEST_MAX_AGE_DAYS) * 86400)
   const [profile] = await db.select({ maxHr: userProfile.maxHr, dob: userProfile.dob }).from(userProfile).where(eq(userProfile.id, 'default'))
-  return hrCeiling({
-    talkTestBpm: latest?.value ?? null,
-    measuredMaxHr: profile?.maxHr ?? null,
-    ageYears: ageFromDob(profile?.dob ?? null, todayEpochDay),
-    defaultBpm: zone2CeilingBpm(null),
+  return easyHrLine({
+    // UTC day of the test, never past today (a late-evening test is still today's).
+    tests: pool.map(r => ({ day: Math.min(Math.floor(r.recordedAt / 86400), todayEpochDay), bpm: r.value })),
+    day: todayEpochDay,
+    dob: profile?.dob ?? null,
+    maxHr: profile?.maxHr ?? null,
   })
 }
 

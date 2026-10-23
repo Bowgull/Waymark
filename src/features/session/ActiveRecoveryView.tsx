@@ -6,6 +6,7 @@ import { apiFetch } from '@/lib/api'
 import {
   FOAM_ROLLING_AREAS,
   HIP_MOBILITY_MOVEMENTS,
+  RESET_WALK_MIN,
   type FoamRollingArea,
   type HipMobilityMovement,
 } from '@/lib/activeRecoveryTemplate'
@@ -132,6 +133,8 @@ export function ActiveRecoveryView({
   // Both blocks' timers are wall-clock anchored (end time stored), not
   // decremented by an interval: they used to freeze while locked and drift
   // from the Live Activity.
+  const walkSec = RESET_WALK_MIN * 60
+  const [walkTimer, setWalkTimer] = useState<TimerSnap | null>(() => resume?.walkTimer ?? null)
   const hipSteps = useMemo(() => buildHipSteps(), [])
   const rollSteps = useMemo(() => buildRollSteps(), [])
   const rollSecs = useMemo(() => rollSteps.map(st => st.area.sec), [rollSteps])
@@ -153,7 +156,7 @@ export function ActiveRecoveryView({
   const currentHipStep = hipSteps[hipIdx]
   const currentRollStep = rollSteps[rollIdx]
 
-  const ticking = hipTimer?.state === 'running' || rollTimer?.state === 'running'
+  const ticking = walkTimer?.state === 'running' || hipTimer?.state === 'running' || rollTimer?.state === 'running'
   useEffect(() => {
     if (!ticking) return
     const id = setInterval(() => setNowMs(Date.now()), 250)
@@ -166,6 +169,13 @@ export function ActiveRecoveryView({
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
+
+  // The easy walk or bike (audit #15): one timed step before the hips.
+  const walkRunning = walkTimer != null
+  const walkPaused = walkTimer?.state === 'paused'
+  const walkRemainingMs = walkTimer ? Math.max(0, timerRemainingMs(walkTimer, nowMs)) : walkSec * 1000
+  const walkSecondsLeft = Math.ceil(walkRemainingMs / 1000)
+  const walkReachedTarget = walkRunning && walkRemainingMs <= 0
 
   // Hip hold
   const hipHoldSec = currentHipStep?.movement.holdSec ?? 0
@@ -184,17 +194,35 @@ export function ActiveRecoveryView({
 
   // Save on every change.
   useEffect(() => {
-    onPersist?.({ kind: 'recovery', phase, hipIdx, hipTimer, rollIdx, rollTimer })
-  }, [onPersist, phase, hipIdx, hipTimer, rollIdx, rollTimer])
+    onPersist?.({ kind: 'recovery', phase, ...(walkTimer ? { walkTimer } : {}), hipIdx, hipTimer, rollIdx, rollTimer })
+  }, [onPersist, phase, walkTimer, hipIdx, hipTimer, rollIdx, rollTimer])
 
   useWakeLock(
+    (phase === 'walk' && walkRunning && !walkPaused && !walkReachedTarget) ||
     (phase === 'hip' && hipRunning && !hipPaused && !hipReachedTarget) ||
     (phase === 'roll' && rollTimer != null && !rollPaused && !rollReachedTarget),
   )
 
   // ───── Handlers ─────
 
+  function startWalk() {
+    setPhase('walk')
+    setWalkTimer(null)
+  }
+
+  function startWalkTimer() {
+    setNowMs(Date.now())
+    setWalkTimer(timerStart(walkSec, Date.now()))
+  }
+
+  function toggleWalkPause(pausedRemainingMs?: number) {
+    const now = Date.now()
+    setNowMs(now)
+    setWalkTimer(t => (!t ? t : t.state === 'paused' ? timerResume(t, now) : timerPause(t, now, pausedRemainingMs)))
+  }
+
   function startHipBlock() {
+    setWalkTimer(null)
     setPhase('hip')
     setHipIdx(0)
     setHipTimer(null)
@@ -268,7 +296,9 @@ export function ActiveRecoveryView({
     phase:
       phase === 'intro'
         ? 'intro'
-        : phase === 'roll-intro'
+        : phase === 'walk'
+          ? 'walk'
+          : phase === 'roll-intro'
           ? 'roll-intro'
           : phase === 'done'
             ? 'complete'
@@ -288,16 +318,19 @@ export function ActiveRecoveryView({
           : undefined,
   })
 
-  // Progress: 2 blocks (Hip, Foam Rolling)
+  // Progress: 3 blocks (Walk or bike, Hip, Foam Rolling)
+  const walkBlockDone = phase !== 'intro' && phase !== 'walk'
   const hipBlockDone = phase === 'roll-intro' || phase === 'roll' || phase === 'done'
   const foamBlockDone = phase === 'done'
   const progress = {
-    completed: (hipBlockDone ? 1 : 0) + (foamBlockDone ? 1 : 0),
+    completed: (walkBlockDone ? 1 : 0) + (hipBlockDone ? 1 : 0) + (foamBlockDone ? 1 : 0),
     active:
-      phase === 'intro' || phase === 'hip'
+      phase === 'intro' || phase === 'walk'
         ? 0
-        : 1,
-    total: 2,
+        : phase === 'hip'
+          ? 1
+          : 2,
+    total: 3,
   }
 
   // Live Activity for recovery timers: the same end times the app uses.
@@ -316,6 +349,22 @@ export function ActiveRecoveryView({
             endsAt: hipTimer.state === 'running' ? hipTimer.endsAtMs : nowMs + hipTimer.remainingMs,
             isPaused: hipPaused,
             pausedRemaining: hipPaused ? hipSecondsLeft : undefined,
+          },
+        }
+      : null
+
+  const walkLiveConfig: LiveActivityConfig | null =
+    phase === 'walk' && walkTimer && !walkReachedTarget
+      ? {
+          sessionType: 'recovery',
+          sessionLabel: 'Recovery',
+          state: {
+            phase: 'active',
+            label: 'Easy walk or bike',
+            startedAt: walkTimer.state === 'running' ? walkTimer.startedAtMs : nowMs + walkTimer.remainingMs - walkSec * 1000,
+            endsAt: walkTimer.state === 'running' ? walkTimer.endsAtMs : nowMs + walkTimer.remainingMs,
+            isPaused: walkPaused,
+            pausedRemaining: walkPaused ? walkSecondsLeft : undefined,
           },
         }
       : null
@@ -339,19 +388,23 @@ export function ActiveRecoveryView({
         }
       : null
 
-  useSessionLiveActivity(hipLiveConfig ?? rollLiveConfig, {
+  useSessionLiveActivity(walkLiveConfig ?? hipLiveConfig ?? rollLiveConfig, {
     onPause: (pausedRemainingMs) => {
-      if (phase === 'roll' && rollTimer?.state === 'running') toggleRollPause(pausedRemainingMs)
+      if (phase === 'walk' && walkTimer?.state === 'running') toggleWalkPause(pausedRemainingMs)
+      else if (phase === 'roll' && rollTimer?.state === 'running') toggleRollPause(pausedRemainingMs)
       else if (phase === 'hip' && hipTimer?.state === 'running') toggleHipPause(pausedRemainingMs)
     },
     onResume: (newEndsAtMs) => {
       const now = Date.now()
       setNowMs(now)
-      if (phase === 'roll') setRollTimer(rollTimer && rollTimer.state === 'paused' ? timerResume(rollTimer, now, newEndsAtMs) : rollTimer)
+      if (phase === 'walk') setWalkTimer(t => (t && t.state === 'paused' ? timerResume(t, now, newEndsAtMs) : t))
+      else if (phase === 'roll') setRollTimer(rollTimer && rollTimer.state === 'paused' ? timerResume(rollTimer, now, newEndsAtMs) : rollTimer)
       else if (phase === 'hip') setHipTimer(t => (t && t.state === 'paused' ? timerResume(t, now, newEndsAtMs) : t))
     },
     onRestart: () => {
-      if (phase === 'hip' && currentHipStep) {
+      if (phase === 'walk') {
+        startWalkTimer()
+      } else if (phase === 'hip' && currentHipStep) {
         startHipHold()
       } else if (phase === 'roll' && currentRollStep) {
         setNowMs(Date.now())
@@ -367,14 +420,17 @@ export function ActiveRecoveryView({
     // hip → advance to next hip step (or roll-intro);
     // roll → skip zone, or finish on last.
     onAdvance: () => {
-      if (phase === 'hip') advanceHip()
+      if (phase === 'walk') startHipBlock()
+      else if (phase === 'hip') advanceHip()
       else if (phase === 'roll') skipRollZone()
     },
   })
 
   // Counter
   let counter: string | undefined
-  if (phase === 'hip' && currentHipStep) {
+  if (phase === 'walk') {
+    counter = 'Walk or Bike'
+  } else if (phase === 'hip' && currentHipStep) {
     counter = `Hip ${currentHipStep.index + 1} of ${HIP_MOBILITY_MOVEMENTS.length}`
   } else if (phase === 'roll' && currentRollStep) {
     counter = `Roll ${currentRollStep.areaIndex + 1} of ${FOAM_ROLLING_AREAS.length}`
@@ -398,14 +454,23 @@ export function ActiveRecoveryView({
           Active Recovery
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-foreground/85">
-          Two short blocks: hip mobility, then foam rolling. Move slow, breathe
-          deep, let the body reset.
+          Three short blocks: an easy walk or bike, hip mobility, then foam
+          rolling. Move slow, breathe deep, let the body reset.
         </p>
 
         <div className="mt-6 space-y-3">
           <div className="rounded-2xl border border-gold/15 bg-deep-forest/60 p-4 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
             <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
               Block 1
+            </p>
+            <p className="mt-1 font-medium text-foreground">Easy Walk or Bike</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {RESET_WALK_MIN} min. Easy pace, timed.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-gold/15 bg-deep-forest/60 p-4 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
+            <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
+              Block 2
             </p>
             <p className="mt-1 font-medium text-foreground">Hip Mobility</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -414,7 +479,7 @@ export function ActiveRecoveryView({
           </div>
           <div className="rounded-2xl border border-gold/15 bg-deep-forest/60 p-4 shadow-[inset_0_1px_0_rgba(232,200,96,0.06)]">
             <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
-              Block 2
+              Block 3
             </p>
             <p className="mt-1 font-medium text-foreground">Foam Rolling</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -426,13 +491,78 @@ export function ActiveRecoveryView({
     )
     footer = (
       <Button
-        onClick={startHipBlock}
+        onClick={startWalk}
         size="lg"
         className="w-full"
         style={{ backgroundColor: ACCENT, color: '#020A08' }}
       >
         Begin
       </Button>
+    )
+  } else if (phase === 'walk') {
+    // The same timed step as a foam-rolling zone: the ring, Pause and Skip (audit #15).
+    body = (
+      <div className="mx-auto flex max-w-md flex-col items-center animate-fade-in">
+        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
+          Walk or Bike · {RESET_WALK_MIN} min
+        </p>
+        <h2 className="mt-1 text-display-lg text-center leading-[1.1] text-foreground">
+          Easy Walk or Bike
+        </h2>
+        <p className="mt-3 text-center text-sm leading-relaxed text-foreground/85">
+          Easy pace, pain-free. You can talk the whole way.
+        </p>
+
+        <div className="mt-8 rounded-2xl border border-teal/20 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(74,202,170,0.08)]">
+          <RingTimer
+            totalSeconds={walkSec}
+            secondsRemaining={walkRunning ? walkSecondsLeft : walkSec}
+            label={walkReachedTarget ? 'Done' : walkRunning ? (walkPaused ? undefined : 'Moving') : 'Ready'}
+            accentColor={ACCENT}
+            isComplete={walkReachedTarget}
+            isPaused={walkPaused}
+            onTogglePause={walkRunning && !walkReachedTarget ? () => toggleWalkPause() : undefined}
+          />
+        </div>
+      </div>
+    )
+    footer = !walkRunning ? (
+      <Button
+        onClick={startWalkTimer}
+        size="lg"
+        className="w-full"
+        style={{ backgroundColor: ACCENT, color: '#020A08' }}
+      >
+        Start Timer
+      </Button>
+    ) : walkReachedTarget ? (
+      <Button
+        onClick={startHipBlock}
+        size="lg"
+        className="w-full"
+        style={{ backgroundColor: ACCENT, color: '#020A08' }}
+      >
+        Next
+      </Button>
+    ) : (
+      <div className="flex w-full gap-2">
+        <Button
+          onClick={() => toggleWalkPause()}
+          size="lg"
+          variant="secondary"
+          className="flex-1"
+        >
+          {walkPaused ? 'Resume' : 'Pause'}
+        </Button>
+        <Button
+          onClick={startHipBlock}
+          size="lg"
+          className="flex-1"
+          style={{ backgroundColor: ACCENT, color: '#020A08' }}
+        >
+          Skip
+        </Button>
+      </div>
     )
   } else if (phase === 'hip' && currentHipStep) {
     const movement = currentHipStep.movement
@@ -635,7 +765,7 @@ export function ActiveRecoveryView({
           All Done
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-foreground/85">
-          Hip mobility and foam rolling complete. Water, food, sleep.
+          Walk, hip mobility and foam rolling complete. Water, food, sleep.
         </p>
       </div>
     )

@@ -10,7 +10,7 @@ import { dailyLogs, sessions, settings, weekAdjustments } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
 import { startedAtForLocalDay } from '../lib/coach'
 import { createTrainingBlock } from './blocks'
-import { brainCapFrom, capToday, doseFor, parseDose, runBrainNight } from './brain'
+import { brainCapFrom, capToday, doseFor, parseDose, runBrainNight, runLabelFor, runShapeLabel, type StoredDose } from './brain'
 import { undoChange } from './changes'
 import { prepareWeek } from './weeklyPass'
 import { athleteTimeZone, localDayIn, noteAppOpen } from './timeZone'
@@ -79,5 +79,19 @@ assert.equal(await athleteTimeZone(db), 'America/Vancouver')
 assert.equal(localDayIn(Date.UTC(2027, 0, 13, 6, 0) / 1000, 'America/Vancouver'), isoToEpochDay('2027-01-12'), '10 PM in Vancouver is still the 12th')
 const woke = await runBrainNight(db, MON + 10, nowSec(MON + 10))
 assert.ok(woke.ran, 'opened yesterday: the pass runs')
+
+// Audit #8 / #14: one name per run, from its dose's shape.
+{
+  const shape = (run: Partial<NonNullable<StoredDose['run']>>) => ({ run: { walkOnly: false, rounds: 1, walkSec: 0, runSec: 900, ...run } } as unknown as StoredDose)
+  assert.equal(runShapeLabel({ walkOnly: true, rounds: 0, walkSec: 0, runSec: 0 }), 'Easy Walk or Bike')
+  assert.equal(runShapeLabel({ walkOnly: false, rounds: 1, walkSec: 0, runSec: 900 }), 'Easy Run')
+  assert.equal(runShapeLabel({ walkOnly: false, rounds: 6, walkSec: 60, runSec: 90 }), 'Run-Walk')
+  const bzRun = { type: 'foundation_run', blockType: 'block_zero', label: 'Run-Walk', notes: null }
+  assert.equal(runLabelFor(bzRun, shape({})), 'Easy Run', 'a continuous dose: Easy Run on its row')
+  assert.equal(runLabelFor(bzRun, shape({ walkOnly: true, rounds: 0, runSec: 0 })), 'Easy Walk or Bike', 'a walk-only dose: never RUN-WALK')
+  assert.equal(runLabelFor({ ...bzRun, type: 'running', label: null, notes: 'zone2' }, shape({})), 'Easy Run', 'a Block Zero Zone 2 run reads Easy Run')
+  assert.equal(runLabelFor({ ...bzRun, label: 'Hill Loop' }, shape({})), 'Hill Loop', 'a name he gave stays')
+  assert.equal(runLabelFor({ ...bzRun, blockType: 'fighter' }, shape({})), 'Run-Walk', 'outside Block Zero: unchanged')
+}
 
 console.log('server coach brain tests passed')

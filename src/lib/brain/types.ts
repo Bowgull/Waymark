@@ -79,6 +79,8 @@ export interface ModelRun {
   pieceSec: number | null
   /** The ladder rung the coach's dose aimed at (P2 dose_json), when it had one. */
   rungSec?: number | null
+  /** Its dose was an easy walk or bike (no running): it never moves the run rung (audit #8). */
+  walkOnly?: boolean
 }
 
 export interface ModelBag {

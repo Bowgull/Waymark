@@ -18,14 +18,21 @@ export interface LastSet {
   day: number
 }
 
-/** This Block Zero week's run-walk shape (blockZero/running.ts), or null outside Block Zero. */
+/**
+ * This week's next Block Zero run as the coach dosed it (one round and no walk: an easy continuous
+ * run; walkOnly: an easy walk or bike), else the week's run-walk template; null outside Block Zero.
+ */
 export interface RunWalkNow {
   week: number
   runSec: number
   walkSec: number
   rounds: number
   warmupSec: number
+  walkOnly?: boolean
 }
+
+/** The dose is one easy run with no walk breaks. */
+const continuous = (now: RunWalkNow) => !now.walkOnly && now.rounds === 1 && now.walkSec === 0
 
 /** What GET /api/library/hints answers. */
 export interface LibraryHintData {
@@ -108,11 +115,15 @@ const minutes = (sec: number) => String(sec % 30 === 0 ? sec / 60 : Math.round(s
 export function runHint(r: { runType: string; coachHint?: string | null }, now: RunWalkNow | null | undefined): string | null {
   if (r.runType !== 'run_walk' || !now) return r.coachHint ?? null
   const total = now.warmupSec + now.rounds * (now.runSec + now.walkSec)
+  if (now.walkOnly) return `Every Block Zero run: Tue, Thu, Sat. Next: an easy walk or bike, ${minutes(total)} min.`
+  if (continuous(now)) return `Every Block Zero run: Tue, Thu, Sat. Next: ${minutes(now.runSec)} min easy, no walk breaks.`
   return `Every Block Zero run: Tue, Thu, Sat. Week ${now.week}: ${now.rounds} rounds of ${span(now.runSec)} run, ${span(now.walkSec)} walk. ${minutes(total)} min in all.`
 }
 
-/** This week's run-walk on the item page's meta line (page 65): "6 × 1 min run, 2 min walk". */
+/** This week's run on the item page's meta line (page 65): "6 × 1 min run, 2 min walk", "20 min easy, no walk breaks". */
 export function runWalkShape(now: RunWalkNow): string {
+  if (now.walkOnly) return `easy walk or bike, ${minutes(now.warmupSec)} min`
+  if (continuous(now)) return `${minutes(now.runSec)} min easy, no walk breaks`
   return `${now.rounds} × ${span(now.runSec)} run, ${span(now.walkSec)} walk`
 }
 

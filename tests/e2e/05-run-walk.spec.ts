@@ -15,7 +15,8 @@ test('Run-walk: warm-up, ready card, then run and walk intervals', async ({ page
 
   // The Zone 2 warm-up: six moves, each skipped the way a thumb would.
   await expect(page.getByRole('img', { name: '1 OF 6' })).toBeVisible()
-  const ready = page.getByRole('dialog', { name: /Run, ready$/ })
+  // The ready board carries the run's one name from its dose (Run-Walk, Easy Run, or Easy Walk or Bike).
+  const ready = page.getByRole('dialog', { name: /^(Run-Walk|Easy Run|Easy Walk or Bike), ready$/ })
   await throughWarmup(page, () => ready.isVisible())
 
   const { prescription } = await api.get<{ prescription: { runWalk: RunWalk; targetDesc: string } }>(`/api/sessions/${s.id}/foundation-run-workout`)
@@ -24,9 +25,9 @@ test('Run-walk: warm-up, ready card, then run and walk intervals', async ({ page
   await expect(ready.getByRole('radio', { name: 'OUTDOOR' })).toBeVisible()
   await expect(ready).toHaveScreenshot('run-walk-ready.png')
 
-  // Indoors: START RUN doesn't open Strava.
+  // Indoors: START RUN doesn't open Strava (a walk-only day reads START).
   await ready.getByRole('radio', { name: 'INDOOR' }).tap()
-  await ready.getByRole('button', { name: 'START RUN' }).tap()
+  await ready.getByRole('button', { name: /^START( RUN)?$/ }).tap()
   await expect(page.getByRole('timer')).toBeVisible()
 
   // The run guards can cap a week's run volume (then it's an easy walk, no intervals).

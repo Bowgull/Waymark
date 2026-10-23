@@ -106,3 +106,34 @@ export function entranceLine(o: { type: string; rounds?: number | null; week?: n
   if (lead && min) return `${lead} · ${min}`
   return lead ?? min
 }
+
+// ─── Rope and bag: one calculation every screen shares (audit #23) ───
+
+/** Skip rope: 3 min rounds, 1 min rest between them (none after the last). */
+export const ROPE_ROUND_SEC = 180
+export const ROPE_REST_SEC = 60
+/** Rope rounds: 5, or 3 on an AMBER / RED day or a walk-or-bike injury flag (lower-leg load, F11). */
+export const ROPE_ROUNDS = 5
+export const ROPE_EASED_ROUNDS = 3
+
+/** The rope rounds for the day's read: the coach state (AMBER / RED eases it) and an injury flag. */
+export function ropeRounds(state: string | null | undefined, injuryEased = false): number {
+  return injuryEased || state === 'AMBER' || state === 'RED' || state === 'RECOVER' ? ROPE_EASED_ROUNDS : ROPE_ROUNDS
+}
+
+/** Rope minutes for its rounds: 5 rounds 19 min, 3 rounds 11 min. */
+export function ropeMinutes(rounds: number, roundSec: number = ROPE_ROUND_SEC): number {
+  return plannedRoundMinutes(Array.from({ length: Math.max(0, rounds) }, () => ({ durationSec: roundSec, restSec: ROPE_REST_SEC }))) ?? 0
+}
+
+/** Bag work opens with a 5 min rope warm-up before its rounds. */
+export const BAG_WARMUP_SEC = 300
+export const BAG_ROUND_SEC = 180
+export const BAG_REST_SEC = 60
+
+/** Bag minutes: the rope warm-up, the rounds and the rests between them. 4 rounds: 20 min. */
+export function bagMinutes(rounds: number | ReadonlyArray<{ durationSec: number; restSec?: number | null }>): number {
+  const list = typeof rounds === 'number' ? Array.from({ length: Math.max(0, rounds) }, () => ({ durationSec: BAG_ROUND_SEC, restSec: BAG_REST_SEC })) : rounds
+  const sec = list.reduce((t, r, i) => t + r.durationSec + (i < list.length - 1 ? Math.max(0, r.restSec ?? 0) : 0), 0)
+  return Math.max(1, Math.round((BAG_WARMUP_SEC + sec) / 60))
+}

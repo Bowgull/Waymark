@@ -21,6 +21,7 @@ import { plannedRowStrengthMinutes } from '../../lib/plannedLength'
 import { doseJsonMinutes } from '../../lib/brain/doseMinutes'
 import type { RuneState } from '../../lib/coach/changes'
 import { getRunWalkWeek, runWalkTotalSec } from '../../lib/blockZero/running'
+import { runWarmupSec } from '../../lib/foundation'
 
 // ─── Inputs (the shapes the existing endpoints return) ─────────
 
@@ -96,8 +97,10 @@ export function sessionDisplayName(s: Pick<DayBoardSession, 'type' | 'label' | '
   if (s.type === 'strength') return label ?? 'Strength'
   // page 58: a raven's plan puts an easy bike (or walk) in a run's place.
   if (s.type === 'active_recovery' && label && /^easy (bike|walk)$/i.test(label)) return label
-  // page 56: Block Zero's run-walk reads RUN-WALK on its row.
+  // page 56: Block Zero's run-walk reads RUN-WALK on its row; a run its dose named (Easy Run, Easy
+  // Walk or Bike) reads that name, the same as its ready board (audit #14).
   if (s.type === 'foundation_run' && label && /run-walk/i.test(label)) return label
+  if ((s.type === 'foundation_run' || s.type === 'running') && label && /^(easy run|easy walk or bike|run-walk)$/i.test(label)) return label
   const key = iconFor(s)
   if (key === 'run') return label ?? 'Run'
   return SESSION_ICON_NAME[key]
@@ -503,7 +506,8 @@ export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'l
     if (min != null) return min
   }
   // A run-walk carries no block week: the week's own shape, with eased rounds (X3: ~28 in week 4).
-  if (s.type === 'foundation_run' && kind === 'block_zero') return continuousRunMin(s) ?? Math.round(runWalkTotalSec(runWalkShapeFor(s, weekNumber ?? week)) / 60)
+  // With its dynamic warm-up (~6.5 min), as the dose's minutes count it.
+  if (s.type === 'foundation_run' && kind === 'block_zero') return Math.round((runWalkTotalSec(runWalkShapeFor(s, weekNumber ?? week)) + runWarmupSec()) / 60)
   return estimatedMinutes({ type: s.type, notes: s.notes ?? null, estimatedMin: null }, kind, weekNumber ?? week)
 }
 

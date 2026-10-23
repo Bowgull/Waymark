@@ -7,7 +7,8 @@
 // ✓ and effort. A skip says so first; his reason closes a swap. Pure; the
 // data is SessionSummary's (the per-type endpoints) and the row's own dose.
 
-import { foundationLevel } from '../../lib/foundation'
+import { foundationLevel, foundationMinutes } from '../../lib/foundation'
+import { RESET_WALK_MIN, resetMinutes } from '../../lib/activeRecoveryTemplate'
 import { kgToLbs } from '../../lib/units'
 import type { SummaryData } from '../dayboard/summaryData'
 import { actualMinutes, continuousRunMin, plannedRowMinutes, rowStatus, runWalkShapeFor, shortLift, strengthDiffLines, type DayBoardSession, type WorkoutExercise } from '../dayboard/rowState'
@@ -132,8 +133,10 @@ export function planLines(s: DayBoardSession, data: SummaryData | null, opts: Li
       if (done) {
         const run = data?.kind === 'run' ? data.run ?? s.runSession ?? null : s.runSession ?? null
         const rm = run?.durationSec ? Math.round(run.durationSec / 60) : min
-        out.push({ label: 'RUN', value: `${rm != null ? `${rm} min` : 'done'}${run?.avgHr ? ` · avg HR ${run.avgHr}` : ''}`, tick: true })
-        const shape = data?.kind === 'run' && data.plan?.runWalk && data.plan.runWalk.walkSec > 0 ? 'run-walk' : 'one steady run'
+        // A walk-only day (audit #8) was an easy walk or bike, never a run.
+        const walked = doseOf(s)?.run?.walkOnly === true
+        out.push({ label: walked ? 'EASY' : 'RUN', value: `${rm != null ? `${rm} min` : 'done'}${run?.avgHr ? ` · avg HR ${run.avgHr}` : ''}`, tick: true })
+        const shape = walked ? 'walk or bike' : data?.kind === 'run' && data.plan?.runWalk && data.plan.runWalk.walkSec > 0 ? 'run-walk' : 'one steady run'
         out.push({ label: 'DONE', value: `${shape}${effort}` })
       } else out.push(...runPlan(s, data, opts))
       break
@@ -156,9 +159,12 @@ export function planLines(s: DayBoardSession, data: SummaryData | null, opts: Li
       break
     }
     case 'mobility': {
-      const level = foundationLevel(s.blockType === 'block_zero' ? opts.weekNumber ?? s.blockWeek ?? null : null)
+      const week = s.blockType === 'block_zero' ? opts.weekNumber ?? s.blockWeek ?? null : null
+      const level = foundationLevel(week)
+      // The routine's own minutes for its level and day (audit #24), never a flat 12.
+      const fmin = data?.kind === 'mobility' && data.plannedMin ? data.plannedMin : foundationMinutes({ week, dayOfWeek: s.scheduledDate != null ? new Date(s.scheduledDate * 86400000).getUTCDay() : null })
       if (done) { out.push({ label: 'BLOCKS', value: 'back, neck and shoulder', tick: true }); doneLine(null) }
-      else out.push({ label: 'BLOCKS', value: 'back, then neck and shoulder' }, { label: 'LEVEL', value: `${level} · ~${data?.kind === 'mobility' && data.plannedMin ? data.plannedMin : 12} min` })
+      else out.push({ label: 'BLOCKS', value: 'back, then neck and shoulder' }, { label: 'LEVEL', value: `${level} · ~${fmin} min` })
       break
     }
     case 'mt_class': {
@@ -171,7 +177,8 @@ export function planLines(s: DayBoardSession, data: SummaryData | null, opts: Li
     }
     case 'active_recovery':
       if (done) doneLine(null)
-      else out.push({ label: 'EASY', value: 'walk or bike · ~25 min' }, { label: 'THEN', value: 'hips and foam roller' })
+      // Reset (audit #15): the easy walk or bike first, then hips and the foam roller; one length everywhere.
+      else out.push({ label: 'EASY', value: `walk or bike · ${RESET_WALK_MIN} min` }, { label: 'THEN', value: `hips and foam roller · ~${resetMinutes()} min in all` })
       break
     default:
       if (done) doneLine(null)
