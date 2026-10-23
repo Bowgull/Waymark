@@ -5,10 +5,10 @@ import { GOOD_MORNING } from './support/data'
 
 /**
  * Class days (coach brain P4; coach-brain §9, page 70 layout A, approved 2026-10-21):
- * - Settings › Training › MT class days keeps the day row; under each lit day a
- *   slot flap (sun AM, moon PM, both + gold ANY) that a tap flips AM → PM → ANY;
- *   unlit days show nothing; a newly lit day starts ANY on the weekend, PM on a
- *   weekday; the sub line reads as approved.
+ * - Settings › Training › MT class days (page 76, approved 2026-10-23): one flap
+ *   per day; a tap goes OFF → AM → PM → ANY → OFF; the lit tile shows its mark
+ *   inside it (sun AM teal, moon PM clay, both ANY gold, nothing OFF); no slot
+ *   row under the days; the sub line reads as approved.
  * - The nightly pass places a class on a class day as a coach change: a Dagaz
  *   rune on that day, one plain why, UNDO that takes it off.
  *
@@ -23,46 +23,52 @@ interface SettingsRow { mtClassDays: string | null; mtClassSlots?: string | null
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 const API_URL = () => process.env.E2E_API_URL as string
 
-test('Settings: a slot flap under each lit class day flips AM → PM → ANY (page 70 A)', async ({ page, api }) => {
+test('Settings: one flap per class day, a tap goes OFF → AM → PM → ANY → OFF (page 76)', async ({ page, api }) => {
   const before = await api.get<SettingsRow>('/api/settings')
   await api.patch('/api/settings', { mtClassDays: '1,3', mtClassSlots: 'mon:pm,wed:pm' })
   await page.goto('/settings')
   await expect(page.getByText('Classes are booked outside the app. Pick the days, and morning, evening or either.', { exact: true })).toBeVisible()
   const days = page.getByRole('group', { name: 'MT class days' })
-  const slots = page.getByRole('group', { name: 'MT class slots' })
-  // The day row is as it was: seven days; one slot flap under each lit day, nothing under the rest.
+  // Seven day flaps, nothing under them (page 70's slot row is gone).
   await expect(days.getByRole('button')).toHaveCount(7)
-  await expect(slots.getByRole('button')).toHaveCount(2)
-  await expect(slots.locator('.st-slot.is-off')).toHaveCount(5)
+  await expect(page.getByRole('group', { name: 'MT class slots' })).toHaveCount(0)
+  await expect(days.getByRole('button', { name: 'Tuesday class: off. Change' })).toBeVisible()
+  await expect(days.getByRole('button', { name: 'Tuesday class: off. Change' }).locator('svg.st-mk')).toHaveCount(0)
 
-  // Monday: PM (the moon) → ANY (both, gold) → AM (the sun).
-  const mon = slots.getByRole('button', { name: /^Monday class:/ })
+  // Monday: PM (the moon, clay) → ANY (both, gold) → OFF (no mark) → AM (the sun, teal).
+  const mon = days.getByRole('button', { name: /^Monday class:/ })
   await expect(mon).toHaveAccessibleName('Monday class: evening. Change')
-  await expect(mon.getByRole('img', { name: 'PM' })).toBeVisible()
+  await expect(mon).toHaveAttribute('data-slot', 'pm')
   await expect(mon.locator('svg.st-mk')).toHaveCount(1)
+  await expect(mon.getByRole('img', { name: 'MO' })).toHaveClass(/is-clay/)
   await mon.tap()
   await expect(mon).toHaveAccessibleName('Monday class: either. Change')
-  await expect(mon.getByRole('img', { name: 'ANY' })).toBeVisible()
   await expect(mon.locator('svg.st-mk')).toHaveCount(2)
+  await expect(mon.getByRole('img', { name: 'MO' })).toHaveClass(/is-gold/)
+  await mon.tap()
+  await expect(mon).toHaveAccessibleName('Monday class: off. Change')
+  await expect(mon.locator('svg.st-mk')).toHaveCount(0)
   await mon.tap()
   await expect(mon).toHaveAccessibleName('Monday class: morning. Change')
-  await expect(mon.getByRole('img', { name: 'AM' })).toBeVisible()
+  await expect(mon.locator('svg.st-mk')).toHaveCount(1)
+  await expect(mon.getByRole('img', { name: 'MO' })).toHaveClass(/is-teal/)
 
-  // A newly lit day: Saturday starts ANY, Tuesday PM. Unlit again, its flap goes.
-  await days.getByRole('button', { name: 'Saturday' }).tap()
-  await expect(slots.getByRole('button', { name: 'Saturday class: either. Change' })).toBeVisible()
-  await days.getByRole('button', { name: 'Tuesday' }).tap()
-  await expect(slots.getByRole('button', { name: 'Tuesday class: evening. Change' })).toBeVisible()
-  await days.getByRole('button', { name: 'Saturday' }).tap()
-  await expect(slots.getByRole('button', { name: /^Saturday class/ })).toHaveCount(0)
-  await expect(slots.getByRole('button')).toHaveCount(3)
+  // An OFF day lights at AM, whatever the weekday; Saturday round to OFF again.
+  const sat = days.getByRole('button', { name: /^Saturday class:/ })
+  await sat.tap()
+  await expect(sat).toHaveAccessibleName('Saturday class: morning. Change')
+  await days.getByRole('button', { name: /^Tuesday class:/ }).tap()
+  await days.getByRole('button', { name: /^Tuesday class:/ }).tap()
+  await expect(days.getByRole('button', { name: /^Tuesday class:/ })).toHaveAccessibleName('Tuesday class: evening. Change')
+  for (let i = 0; i < 3; i++) await sat.tap()
+  await expect(sat).toHaveAccessibleName('Saturday class: off. Change')
 
   if (process.env.P4_SHOTS) await page.locator('.st-board').first().screenshot({ path: `${process.env.P4_SHOTS}/settings-class-days.png` })
   // Saved as "mon:am,tue:pm,wed:pm" (the days still in mt_class_days), and there on the next open.
   await expect.poll(async () => (await api.get<SettingsRow>('/api/settings')).mtClassSlots, { timeout: 10_000 }).toBe('mon:am,tue:pm,wed:pm')
   expect((await api.get<SettingsRow>('/api/settings')).mtClassDays?.split(',').sort().join(',')).toBe('1,2,3')
   await page.reload()
-  await expect(page.getByRole('group', { name: 'MT class slots' }).getByRole('button', { name: 'Monday class: morning. Change' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'MT class days' }).getByRole('button', { name: 'Monday class: morning. Change' })).toBeVisible()
 
   await api.patch('/api/settings', { mtClassDays: before.mtClassDays ?? '1,3,5', mtClassSlots: before.mtClassSlots ?? null })
 })

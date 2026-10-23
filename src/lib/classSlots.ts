@@ -51,3 +51,50 @@ export function classDaySlots(days: Iterable<number>, raw: string | null | undef
   for (const d of days) if (d >= 0 && d <= 6) out[d] = saved[d] ?? defaultClassSlot(d)
   return out
 }
+
+/**
+ * Page 76 (approved 2026-10-23): one flap per day in Settings. A day is OFF
+ * (no class) or lit with its slot; a tap goes OFF → AM → PM → ANY → OFF.
+ */
+export type ClassDayState = 'off' | ClassDaySlot
+
+const CYCLE: readonly ClassDayState[] = ['off', 'am', 'pm', 'any']
+
+/** The day tile's next face: OFF → AM → PM → ANY → OFF. */
+export function nextClassDayState(s: ClassDayState): ClassDayState {
+  return CYCLE[(CYCLE.indexOf(s) + 1) % CYCLE.length]
+}
+
+/** What a day's tile shows: OFF when the day isn't picked, else its saved slot (or the default). */
+export function classDayState(days: ReadonlySet<number>, slots: Partial<Record<number, ClassDaySlot>>, dow: number): ClassDayState {
+  return days.has(dow) ? slots[dow] ?? defaultClassSlot(dow) : 'off'
+}
+
+/** Days and slots after setting one day's state (same shapes Settings saves as mtClassDays / mtClassSlots). */
+export function withClassDayState(
+  days: ReadonlySet<number>,
+  slots: Partial<Record<number, ClassDaySlot>>,
+  dow: number,
+  state: ClassDayState,
+): { days: Set<number>; slots: Partial<Record<number, ClassDaySlot>> } {
+  const nextDays = new Set(days)
+  const nextSlots = { ...slots }
+  if (state === 'off') {
+    nextDays.delete(dow)
+    delete nextSlots[dow]
+  } else {
+    nextDays.add(dow)
+    nextSlots[dow] = state
+  }
+  return { days: nextDays, slots: nextSlots }
+}
+
+/** The tap: the day's next state applied. */
+export function cycleClassDay(days: ReadonlySet<number>, slots: Partial<Record<number, ClassDaySlot>>, dow: number) {
+  return withClassDayState(days, slots, dow, nextClassDayState(classDayState(days, slots, dow)))
+}
+
+/** The spoken word for a state ("Monday class: morning. Change"). */
+export function classDayWord(s: ClassDayState): string {
+  return s === 'am' ? 'morning' : s === 'pm' ? 'evening' : s === 'any' ? 'either' : 'off'
+}
