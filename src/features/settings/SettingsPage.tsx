@@ -17,7 +17,7 @@ import { BodyProfileBoard } from './BodyProfileBoard'
 import { StrapBoard } from './StrapBoard'
 import { ArcCard, NumberCard, TimeCard } from './SettingsCards'
 import { ChevValue, MOON_MARK, SBlock, SRow, SettingsScreen, SUN_MARK, TimeValue } from './settingsParts'
-import { defaultClassSlot, formatClassSlots, nextClassSlot, parseClassSlots, type ClassDaySlot } from '@/lib/classSlots'
+import { classDayState, classDayWord, cycleClassDay, formatClassSlots, parseClassSlots, type ClassDaySlot } from '@/lib/classSlots'
 import { goBack } from '@/lib/goBack'
 import { daysUntilRedeploy, leadFlap, splitTime, timeFlap } from './settingsModel'
 
@@ -72,6 +72,8 @@ export function SettingsPage() {
 
   const [mtDays, setMtDays] = useState<Set<string>>(new Set())
   const [mtSlots, setMtSlots] = useState<Partial<Record<number, ClassDaySlot>>>({})
+  /** The day tapped last: only its mark fades in (page 59: one step, no load-in on open). */
+  const [tappedDay, setTappedDay] = useState<string | null>(null)
   const [amReminder, setAmReminder] = useState('06:30')
   const [amEnabled, setAmEnabled] = useState(true)
   const [pmLeadMin, setPmLeadMin] = useState(60)
@@ -183,23 +185,12 @@ export function SettingsPage() {
   // Leaving with a change still waiting: send it now.
   useEffect(() => () => { flushSettings.current?.() }, [])
 
-  function toggleDay(day: string) {
-    const next = new Set(mtDays)
-    if (next.has(day)) next.delete(day)
-    else {
-      next.add(day)
-      // A newly lit day starts at its default (page 70: PM on weekdays, ANY on the weekend).
-      const rest = { ...mtSlots }
-      delete rest[Number(day)]
-      setMtSlots(rest)
-    }
-    setMtDays(next)
-  }
-
-  /** The slot flap under a lit day: AM → PM → ANY. */
-  function flipSlot(day: string) {
-    const d = Number(day)
-    setMtSlots({ ...mtSlots, [d]: nextClassSlot(mtSlots[d] ?? defaultClassSlot(d)) })
+  /** Page 76: one flap per day; a tap goes OFF → AM → PM → ANY → OFF. */
+  function cycleDay(day: string) {
+    const next = cycleClassDay(new Set(Array.from(mtDays, Number)), mtSlots, Number(day))
+    setMtDays(new Set(Array.from(next.days, String)))
+    setMtSlots(next.slots)
+    setTappedDay(day)
   }
 
   function setTechnique(tech: string, on: boolean) {
@@ -230,28 +221,19 @@ export function SettingsPage() {
 
       <Board head="Training" solid className="st-board">
         <SBlock label="MT class days" sub="Classes are booked outside the app. Pick the days, and morning, evening or either.">
+          {/* page 76: one flap per day, OFF → AM → PM → ANY; the lit tile carries its sun, moon or both. */}
           <div className="st-days" role="group" aria-label="MT class days">
             {DAYS.map(({ key, label }) => {
-              const on = mtDays.has(key)
+              const state = classDayState(new Set(Array.from(mtDays, Number)), mtSlots, Number(key))
+              const tone = state === 'am' ? 'teal' : state === 'pm' ? 'clay' : state === 'any' ? 'gold' : 'ink'
               return (
-                <button key={key} type="button" aria-pressed={on} aria-label={DAY_NAMES[key]} className={`st-day${on ? ' is-on' : ''}`} onClick={() => toggleDay(key)}>
-                  <FlapLabel text={label} size="xs" tone={on ? 'teal' : 'ink'} />
+                <button key={key} type="button" aria-label={`${DAY_NAMES[key]} class: ${classDayWord(state)}. Change`} data-slot={state} className={`st-day${state === 'off' ? '' : ' is-on'}`} onClick={() => cycleDay(key)}>
+                  <FlapLabel text={label} size="xs" tone={tone} />
+                  <span key={state} className={`st-mks${tappedDay === key ? ' is-new' : ''}`} aria-hidden>
+                    {state === 'am' ? SUN_MARK : state === 'pm' ? MOON_MARK : state === 'any' ? <>{SUN_MARK}{MOON_MARK}</> : null}
+                  </span>
                 </button>
               )
-            })}
-          </div>
-          {/* page 70 A: a slot flap under each lit day; tap flips AM → PM → ANY. Unlit days show nothing. */}
-          <div className="st-slots" role="group" aria-label="MT class slots">
-            {DAYS.map(({ key }) => {
-              const on = mtDays.has(key)
-              const slot = mtSlots[Number(key)] ?? defaultClassSlot(Number(key))
-              const word = slot === 'am' ? 'morning' : slot === 'pm' ? 'evening' : 'either'
-              return on ? (
-                <button key={key} type="button" className="st-slot" data-slot={slot} aria-label={`${DAY_NAMES[key]} class: ${word}. Change`} onClick={() => flipSlot(key)}>
-                  {slot === 'am' ? SUN_MARK : slot === 'pm' ? MOON_MARK : <span className="two">{SUN_MARK}{MOON_MARK}</span>}
-                  <FlapLabel text={slot === 'any' ? 'ANY' : slot.toUpperCase()} size="xs" tone={slot === 'am' ? 'teal' : slot === 'pm' ? 'clay' : 'gold'} />
-                </button>
-              ) : <span key={key} className="st-slot is-off" aria-hidden />
             })}
           </div>
         </SBlock>

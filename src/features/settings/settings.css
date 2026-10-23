@@ -39,18 +39,27 @@
 
 /* Training: day tiles and technique chips */
 .st-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 9px; }
-.st-day { display: block; padding: 6px 0; border: 0; border-radius: 7px; text-align: center; line-height: normal; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
-.st-day.is-on { background: rgba(95, 160, 140, 0.22); box-shadow: inset 0 0 0 1px rgba(143, 212, 184, 0.55); }
-/* page 70 A: the slot flap under each lit day (AM sun · PM moon · ANY both, gold) */
-.st-slots { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 4px; min-height: 30px; }
-.st-slot { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 3px; border: 0; border-radius: 7px; line-height: normal; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
-.st-slot.is-off { visibility: hidden; }
-.st-slot .st-mk { width: 13px; height: 13px; }
-.st-slot .two { display: flex; gap: 1px; }
-.st-slot:active { transform: scale(0.97); }
+/* page 76: one flap per day (OFF → AM → PM → ANY); the lit tile takes the old slot tone and shows its mark */
+.st-day { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; padding: 6px 0 5px; border: 0; border-radius: 7px; line-height: normal; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: transform var(--t-tap) var(--ease-out), background-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }
+.st-day[data-slot='am'] { background: rgba(95, 160, 140, 0.24); box-shadow: inset 0 0 0 1px rgba(143, 212, 184, 0.6); }
+.st-day[data-slot='pm'] { background: rgba(200, 132, 78, 0.22); box-shadow: inset 0 0 0 1px rgba(226, 160, 112, 0.6); }
+.st-day[data-slot='any'] { background: rgba(232, 200, 96, 0.16); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.6); }
+/* page 76's measured plates (contrast ≥4.5:1 on both halves): the day letter on a lit tile */
+.st-day .wm-flap.is-teal .wm-cell:not(.is-gap):not(.is-pad) { color: #f2ecd6; background: linear-gradient(180deg, #33695b 0 50%, #2b594d 50% 100%); }
+.st-day .wm-flap.is-teal .wm-leaf { background: #33695b; }
+.st-day .wm-flap.is-clay .wm-cell:not(.is-gap):not(.is-pad) { color: #f6eadc; background: linear-gradient(180deg, #8a4a33 0 50%, #733c29 50% 100%); }
+.st-day .wm-flap.is-clay .wm-leaf { background: #8a4a33; }
+.st-day .wm-flap.is-gold .wm-cell:not(.is-gap):not(.is-pad) { color: #141008; text-shadow: none; background: linear-gradient(180deg, #d9b45e 0 50%, #c8a24e 50% 100%); }
+.st-day .wm-flap.is-gold .wm-leaf { background: #d9b45e; }
+.st-mks { display: flex; justify-content: center; gap: 1px; height: 13px; }
+.st-mks .st-mk { display: block; width: 13px; height: 13px; }
+.st-mks.is-new .st-mk { animation: st-mkin 150ms var(--ease-out); }
+@keyframes st-mkin { from { opacity: 0; transform: scale(0.7); } to { opacity: 1; transform: none; } }
 .st-techs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 9px; }
 .st-tech { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 7px; line-height: normal; cursor: pointer; background: rgba(8, 13, 11, 0.4); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.18); -webkit-tap-highlight-color: transparent; }
-.st-day:active, .st-tech:active { transform: scale(0.97); }
+.st-tech:active { transform: scale(0.97); }
+.st-day:active { transform: scale(0.95); }
 
 /* Time of day (and the arc card): two to a row; a column grows to its words */
 .st-tod { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 9px; }
@@ -125,7 +134,8 @@
 .st-lt .x { margin: 6px 0 0; font: 600 12px/1.5 var(--font-mono); color: #9fb2a8; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: reduce) {
-  .st-chip:active, .st-day:active, .st-slot:active, .st-tech:active { transform: none; }
+  .st-chip:active, .st-day:active, .st-tech:active { transform: none; }
+  .st-day, .st-mks.is-new .st-mk { transition: none; animation: none; }
 }
 .st-valtxt { display: flex; flex: 0 1 auto; min-width: 0; }
 .st-fld .st-fnum { max-width: 100%; }
