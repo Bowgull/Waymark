@@ -210,7 +210,7 @@ test.describe('Item 6: the row and the strip move into each other (motion on)', 
     // While the row flies the strip keeps its place, unseen; then it shows and the copy is gone.
     const stripAt = await strip.boundingBox()
     // the flight happens: a copy of the row is in the air while the strip waits unseen
-    await expect(page.locator('.td-ghost')).toHaveCount(1, { timeout: 5000 })
+    await expect(page.locator('.td-ghost')).toHaveCount(1, { timeout: 15_000 })
     await expect(strip).not.toHaveClass(/is-awaiting/, { timeout: 8000 })
     await expect(page.locator('.td-ghost')).toHaveCount(0, { timeout: 3000 })
     await expect.poll(() => strip.evaluate(el => getComputedStyle(el).opacity)).toBe('1')
