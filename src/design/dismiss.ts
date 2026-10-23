@@ -109,7 +109,7 @@ export function useOutsideClose(ref: RefObject<HTMLElement | null>, open: boolea
     const onDown = (e: Event) => {
       const t = e.target as HTMLElement | null
       if (!t || ref.current?.contains(t)) return
-      if (t.closest('[role="dialog"], .wm-scrim, .wm-tabs, .wm-pop-host, .wm-live')) return
+      if (t.closest('[role="dialog"], .wm-scrim, .pl-veil, .wm-tabs, .wm-pop-host, .wm-live')) return
       closeRef.current()
     }
     document.addEventListener(on, onDown, true)
