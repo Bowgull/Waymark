@@ -99,7 +99,8 @@ export function LedgerLines({ items }: { items: LedgerLineItem[] }) {
     }
     panel.getAnimations().forEach(a => a.cancel())
     inner.getAnimations().forEach(a => a.cancel())
-    if (prefersReducedMotion()) { panel.style.height = 'auto'; snapTo(line, shrink); return }
+    // Reduce Motion: the panel above already closed at once (animClose), so there's nothing still to shrink
+    if (prefersReducedMotion()) { panel.style.height = 'auto'; snapTo(line, 0); return }
     const a = panel.animate([{ height: '0px' }, { height: `${h}px` }], { duration: LINE_OPEN_MS, easing: LINE_SPRING })
     a.onfinish = () => { if (openRef.current === key) panel.style.height = 'auto' }
     panel.style.height = `${h}px`
