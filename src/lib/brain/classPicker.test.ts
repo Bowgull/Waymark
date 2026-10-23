@@ -42,7 +42,7 @@ function events(over: Partial<ModelEvents> = {}): ModelEvents { return { profile
   const choices = classSlotChoices([], MON, classDaySlots([1, 6], 'sat:any'))
   assert.equal(choices[6], 'any')
   assert.equal(choices[1], 'pm')
-  assert.deepEqual(candidateClassDays([]), [0, 1, 2, 3, 4, 5, 6], 'no days set: the coach suggests from every day')
+  assert.deepEqual(candidateClassDays([]), [], 'no days picked: no classes at all')
   assert.deepEqual(candidateClassDays([1, 3, 9]), [1, 3])
 }
 

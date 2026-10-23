@@ -67,7 +67,7 @@ export interface OutlineIn {
   /** First day of the block (classes from its second week). */
   blockStart: number
   sessions: OutlineSession[]
-  /** Candidate class days (0 = Sunday): Settings' days, else every day. */
+  /** Candidate class days (0 = Sunday): the days he picked in Settings; none, no classes. */
   classDays: readonly number[]
   /** Settings has class days (the why says so when it doesn't). */
   classDaysSet?: boolean

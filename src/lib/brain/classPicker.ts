@@ -4,7 +4,8 @@
 // suggestions, never rules:
 //
 // - Candidate days: Settings' class days (settings.mtClassDays). None set:
-//   every day is a candidate and his own adherence picks.
+//   no classes at all (Josh 2026-10-23: no days picked means he isn't going,
+//   e.g. no gym membership; he picks the days once he knows his week).
 // - The slot on each day: slotForClassDay. His Settings choice per lit day
 //   (page 70: AM, PM or ANY; a new day starts PM on weekdays, ANY on the
 //   weekend) always wins. 'any' lets the solver take whichever slot fits that
@@ -85,10 +86,9 @@ export function classSlotChoices(sessions: readonly ModelSession[], today: numbe
   return out
 }
 
-/** Candidate class days: Settings' days, else every day (the coach suggests from his own adherence). */
+/** Candidate class days: only the days he picked in Settings. None picked: no classes. */
 export function candidateClassDays(settingDays: readonly number[]): number[] {
-  const set = settingDays.filter(d => Number.isInteger(d) && d >= 0 && d <= 6)
-  return set.length > 0 ? [...new Set(set)] : [0, 1, 2, 3, 4, 5, 6]
+  return [...new Set(settingDays.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))]
 }
 
 // ─── The ladder ──────────────────────────────────────────────

@@ -13,7 +13,8 @@ import { rolloverAndFix } from './changes'
 import { testDb } from './testDb'
 import { LIVE_GRACE_SEC, closeStaleInProgress } from '../lib/sessionRollover'
 
-const FRI = isoToEpochDay('2026-10-23')
+// A fixed Friday well in the past: the rollover's 6 h live grace reads the real clock.
+const FRI = isoToEpochDay('2026-09-25')
 const db = testDb()
 await createTrainingBlock(db, { name: 'Block Zero', blockType: 'block_zero', totalWeeks: 6, nowSec: (FRI - 30) * 86400, startedAt: startedAtForLocalDay(FRI - 32) })
 const started = FRI * 86400 + 7 * 3600

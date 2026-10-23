@@ -2861,30 +2861,24 @@ app.patch('/api/settings', async (c) => {
     }
   }
 
-  // Cascade: if MT class days changed, clean up future planned sessions
+  // Cascade: if MT class days changed, the planned classes on days he no longer
+  // picked go (today's too, if not started; Josh 2026-10-23). Done ones stay.
   let cascade: { removed: number; freedDays?: string[]; freed?: Array<{ day: string; slot: 'AM' | 'PM' }> } | null = null
   if (body.mtClassDays !== undefined && body.mtClassDays !== oldMtDays) {
     const newMtDays = new Set(body.mtClassDays.split(',').filter(Boolean).map(Number))
     const removedDays = oldMtDays.split(',').filter(Boolean).map(Number).filter(d => !newMtDays.has(d))
-
-    if (removedDays.length > 0) {
-      const todayEpochDay = athleteDay(c)
-      // Find future planned MT class sessions on removed days
-      const futureMtSessions = await db.select().from(sessions).where(
-        and(
-          eq(sessions.type, 'mt_class'),
-          eq(sessions.status, 'planned'),
-          gt(sessions.scheduledDate, todayEpochDay)
-        )
+    const todayEpochDay = athleteDay(c)
+    const plannedMt = await db.select().from(sessions).where(
+      and(
+        eq(sessions.type, 'mt_class'),
+        eq(sessions.status, 'planned'),
+        gte(sessions.scheduledDate, todayEpochDay)
       )
+    )
+    // Any day not picked now (not only the days just unpicked)
+    const toDelete = plannedMt.filter(s => s.scheduledDate != null && !newMtDays.has(new Date(s.scheduledDate * 86400 * 1000).getUTCDay()))
 
-      // Filter to only sessions on removed day-of-week
-      const toDelete = futureMtSessions.filter(s => {
-        if (s.scheduledDate == null) return false
-        const date = new Date(s.scheduledDate * 86400 * 1000)
-        const dow = date.getUTCDay()
-        return removedDays.includes(dow)
-      })
+    if (removedDays.length > 0 || toDelete.length > 0) {
 
       for (const s of toDelete) {
         await db.delete(sessions).where(eq(sessions.id, s.id))

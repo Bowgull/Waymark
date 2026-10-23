@@ -644,7 +644,7 @@ interface WeekContext {
 /** What every week's outline reads beyond its sessions: class days and slots, the class cap and times, a rest day due. */
 async function weekContext(db: DB, inp: BrainInputs, today: number): Promise<WeekContext> {
   const [profile] = await db.select({ cap: userProfile.mtCapPerWeek }).from(userProfile).where(eq(userProfile.id, 'default'))
-  // Class days (§9): the days he set in Settings; none set, the coach suggests from every day.
+  // Class days (§9): only the days he picked in Settings; none picked, no classes.
   // The slot per day is learned from the classes he did, else weekday evenings and weekend mornings.
   const [st] = await db.select({ mt: settings.mtClassDays, slots: settings.mtClassSlots }).from(settings).limit(1)
   const setDays = (st?.mt ?? '').split(',').filter(Boolean).map(Number).filter(d => d >= 0 && d <= 6)

@@ -17,11 +17,12 @@ import { foundationLevel } from '../lib/foundation'
 import { kgToLbs } from '../lib/units'
 import { doseMinutes } from '../lib/brain/doseMinutes'
 import { rankPicks, type PickOption, type PickWeather } from '../lib/brain/picks'
+import { dowOf } from '../lib/brain/classPicker'
 import type { OutlineSession } from '../lib/brain/outline'
 import { shortLift } from '../features/dayboard/rowState'
 import { computeDose, loadBrainInputs, morningState, nightState, type StoredDose } from './brain'
 import { getActiveBlock } from './blockZeroData'
-import { blockKind, loadInjuryFlag, loadPlacementContext, trainingWeekFor, weekStamps } from './coachData'
+import { blockKind, loadInjuryFlag, loadPlacementContext, mtClassDays, trainingWeekFor, weekStamps } from './coachData'
 import { lowerLegOnWatch } from './bodyWatch'
 
 type DB = ReturnType<typeof createDB>
@@ -169,7 +170,10 @@ export async function coachPicksFor(db: DB, q: CoachPicksQuery): Promise<CoachPi
     id: r.id, type: r.type, label: r.label, notes: r.notes, day: r.scheduledDate as number, slot: r.timeSlot === 'pm' ? 'pm' : 'am', status: r.status, source: r.source, locked: true,
   }))
   const trained = new Set(inp.events.sessions.filter(s => s.status === 'completed' && KEY_TYPES.has(s.type) && s.day < day).map(s => s.day))
-  const pickOptions: PickOption[] = options.map(o => ({ key: keyOf(o), type: o.type, label: o.label, ...(o.runCategory ? { runCategory: o.runCategory } : {}) }))
+  // A class only on a day he picked in Settings (none picked: he isn't going); EVERYTHING ELSE still lists it.
+  const classDay = (await mtClassDays(db)).has(dowOf(day))
+  const pickOptions: PickOption[] = options.filter(o => o.type !== 'mt_class' || classDay)
+    .map(o => ({ key: keyOf(o), type: o.type, label: o.label, ...(o.runCategory ? { runCategory: o.runCategory } : {}) }))
   const ranked = rankPicks({
     mode: q.mode, day, today: q.today, slot: target ? (target.timeSlot === 'pm' ? 'pm' : 'am') : q.pmOnly ? 'pm' : 'am',
     replacing: target ? { id: target.id, type: target.type, label: target.label, notes: target.notes } : null,
