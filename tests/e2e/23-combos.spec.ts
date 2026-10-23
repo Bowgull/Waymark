@@ -117,7 +117,7 @@ test('HYBRID: fill a round from the picker (gold edge), the rest say coach fills
   await expect(board.getByText('coach fills').first()).toBeVisible()
   await board.getByRole('button', { name: 'Round 2' }).tap()
   const pick = page.getByRole('dialog', { name: 'Round 2' })
-  await expect(pick.getByRole('img', { name: 'NEW' })).toBeVisible()
+  await expect(pick.getByRole('img', { name: 'NEW' }).first()).toBeVisible()
   await expect(pick.getByRole('img', { name: 'ALL' })).toBeVisible()
   await expect(pick.getByRole('button', { name: '+ New combo' })).toBeVisible()
   await pick.getByRole('button', { name: 'Jab → Cross → Switch Kick' }).tap()
