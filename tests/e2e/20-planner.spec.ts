@@ -27,6 +27,7 @@ test('Today: no location, no weather; the week strip is gone', async ({ page }) 
 
 test('Today: the flap weather strip, its coach line, the hours and the week', async ({ page, context, api }) => {
   // A run tonight: the coach line speaks for it when the rain is at its hour.
+  // No hour learned yet, so it names the evening, not a made-up clock hour (audit 2026-10-23 #16).
   await insertSession(api, 'foundation_run', 'pm')
   await mockWeather(page, context)
   await gotoToday(page)
@@ -36,7 +37,7 @@ test('Today: the flap weather strip, its coach line, the hours and the week', as
   await expect(strip.locator('.l2 b')).toHaveText(/^Rain at \d{1,2}(:\d\d)?$/)
   // No wind, no source or freshness words.
   await expect(page.locator('.wx-wrap')).not.toContainText(/km\/h|wind|station|Environment|Open-Meteo|min ago|updated/i)
-  await expect(page.locator('.wx-cline')).toHaveText(/^Run at \d{1,2} (AM|PM): −?\d+° and rain\. Indoor works too\.$/)
+  await expect(page.locator('.wx-cline')).toHaveText(/^Run this evening: −?\d+° and rain\. Indoor works too\.$/)
   // It sits where the week strip was: above the Morning Report.
   const wxBox = (await page.locator('.wx-wrap').boundingBox())!
   const mrBox = (await page.getByRole('button', { name: /^Morning Report/ }).boundingBox())!

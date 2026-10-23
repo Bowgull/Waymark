@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 
 import { test, expect, type Api } from './fixtures'
-import { enterFromToday, insertSession, todayISO } from './support/helpers'
+import { addDaysISO, enterFromToday, insertSession, todayISO } from './support/helpers'
 import { setMorning } from './support/data'
 
 /**
@@ -14,7 +14,26 @@ import { setMorning } from './support/data'
  */
 
 interface RunWorkout { prescription: { z2CeilingBpm?: number | null } | null }
-interface Row { id: string; status: string }
+interface Row { id: string; status: string; skipReason?: string | null }
+
+/**
+ * 10-raven leaves knee skips (reason: injury) on the shared DB, and a knee in
+ * the last 10 days swaps a run for an easy bike, which now reads EASY WALK OR
+ * BIKE with no HR line and START (audit 2026-10-23 #8). These tests are about
+ * the run itself, so the knee skips are re-filed as TIME first.
+ */
+test.beforeAll(async ({ request }) => {
+  const { makeApiFor } = await import('./support/api')
+  const api = makeApiFor(request)
+  const T = todayISO()
+  for (let n = 0; n <= 10; n++) {
+    const date = addDaysISO(T, -n)
+    const rows = await api.get<Row[]>(`/api/sessions/today?date=${date}`)
+    for (const r of rows.filter(x => x.status === 'skipped' && x.skipReason === 'injury')) {
+      await api.patch(`/api/sessions/${r.id}`, { status: 'skipped', skipReason: 'time', skipReasonDetail: null, today: T })
+    }
+  }
+})
 
 const strapHr = (page: Page, bpm: number | null) => page.evaluate(b => (window as unknown as { __wmStrapMock: { hr(b: number | null): void } }).__wmStrapMock.hr(b), bpm)
 const strapDistance = (page: Page, m: number) => page.evaluate(d => (window as unknown as { __wmStrapMock: { distance(m: number): void } }).__wmStrapMock.distance(d), m)
