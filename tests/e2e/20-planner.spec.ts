@@ -143,6 +143,20 @@ test('REPLACE: COACH PICKS from the brain, a tap only previews, SWAP IN swaps, t
   // EVERYTHING ELSE ›, then back.
   await picks.getByRole('button', { name: 'Everything else' }).tap()
   await expect(picks.getByRole('img', { name: 'EVERYTHING' })).toBeVisible()
+  // Page 76: the run types fold into RUNS ›: its own list (a tap previews, ‹ BACK returns).
+  await expect(picks.getByRole('button', { name: 'Run-Walk', exact: true })).toHaveCount(0)
+  await picks.getByRole('button', { name: 'Runs', exact: true }).tap()
+  await expect(picks.getByRole('img', { name: 'RUNS' })).toBeVisible()
+  const runLines = picks.locator('.pl-cl:not(.is-more)')
+  await expect(runLines.first()).toHaveClass(/is-on/)
+  await expect(runLines.first().locator('.pl-inn .pl-ol').first()).toBeVisible()
+  if (await runLines.count() > 1) {
+    await runLines.nth(1).tap()
+    await expect(runLines.nth(1).locator('.pl-inn .pl-ol').first()).toBeVisible()
+  }
+  await picks.getByRole('button', { name: 'Back', exact: true }).tap()
+  await expect(picks.getByRole('img', { name: 'EVERYTHING' })).toBeVisible()
+  await expect(picks.getByRole('button', { name: 'Runs', exact: true })).toHaveClass(/is-on/)
   await picks.getByRole('button', { name: 'Coach picks' }).tap()
   // Tapping away changes nothing.
   await page.mouse.click(8, 8)

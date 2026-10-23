@@ -35,7 +35,8 @@ import {
 } from './index'
 import { blockZeroWorkingLoad, checkInFromDailyLog, readinessReport, type DailyLogFields, type LoggedWorkingSet } from './index'
 import { guardReactiveReplan, guardWeekPlan, type Clamp, type GuardSession } from './guardrails'
-import { weeklyRunAllowanceSec } from './running'
+import { weeklyRunAllowanceSec, weeklyRunCap } from './running'
+import { hardKindOf, hardPlan, totalOf } from '../brain/hardRuns'
 import type { WeekPlanOutput } from '../prompts/tools'
 
 function assert(cond: unknown, msg: string): void {
@@ -58,7 +59,7 @@ interface Script {
   skipEveryOther?: boolean
 }
 
-interface RunLog { day: number; sec: number; longest30: number; capped: boolean }
+interface RunLog { day: number; sec: number; longest30: number; capped: boolean; test?: boolean }
 interface LoadStep { day: number; liftId: string; rpe: number; target: [number, number]; before: number; after: number }
 interface BackPick { day: number; picked: string; original: string }
 interface ClassLog { day: number; type: string; allowed: boolean; rampWeek: number; reason: string }
@@ -226,10 +227,24 @@ function simulate(script: Script) {
           const longest30 = inWindow.reduce((m, r) => Math.max(m, r.sec), 0)
           const lastWeek = runs.filter(r => r.day >= monday - 7 && r.day < monday).reduce((n, r) => n + r.sec, 0)
           const soFar = runs.filter(r => r.day >= monday && r.day < day).reduce((n, r) => n + r.sec, 0)
-          const left = [0, 1, 2, 3, 4, 5, 6].map(k => monday + k).filter(d => d >= day && template[dow(d)].some(x => x.type === 'foundation_run')).length
+          const left = [0, 1, 2, 3, 4, 5, 6].map(k => monday + k).filter(d => d >= day && template[dow(d)].some(x => x.type === 'foundation_run' || x.type === 'running')).length
           const p = prescribeRunWalk({ week, longestLast30Sec: longest30 || null, weekly: { lastWeekRunSec: lastWeek, thisWeekSoFarSec: soFar, sessionsLeftThisWeek: Math.max(1, left) } })
           if (p.totalSec > 0) runs.push({ day, sec: p.totalSec, longest30, capped: p.capped })
           loadEntries.push({ epochDay: day, rpe: 4, minutes: Math.round(p.totalSec / 60) })
+        } else if (s.type === 'running') {
+          // Page 76: a hard run from week 4, inside the same limits (the test keeps its 5 km).
+          const monday = START + (week - 1) * 7
+          const longest30 = runs.filter(r => r.day >= day - 30 && r.day < day).reduce((m, r) => Math.max(m, r.sec), 0)
+          const lastWeek = runs.filter(r => r.day >= monday - 7 && r.day < monday).reduce((n, r) => n + r.sec, 0)
+          const soFar = runs.filter(r => r.day >= monday && r.day < day).reduce((n, r) => n + r.sec, 0)
+          const left = [0, 1, 2, 3, 4, 5, 6].map(k => monday + k).filter(d => d >= day && template[dow(d)].some(x => x.type === 'foundation_run' || x.type === 'running')).length
+          const kind = hardKindOf({ type: 'running', notes: template[dow(day)].find(x => x.type === 'running')?.runCategory ?? null })
+          if (kind) {
+            const capSec = Math.min(longest30 ? Math.floor(longest30 * 1.1) : RESTART_SESSION_SEC, weeklyRunCap(1e9, { lastWeekRunSec: lastWeek, thisWeekSoFarSec: soFar, sessionsLeftThisWeek: Math.max(1, left) }).capSec)
+            const hp = hardPlan({ kind, weeksSince: Math.max(0, week - 4), fiveK: null, easyPaceSecKm: 420, maxHr: 186, lineBpm: 147, ease: false, capSec })
+            runs.push({ day, sec: totalOf(hp.plan.pieces), longest30, capped: hp.why.some(w => /Shorter/.test(w)), test: kind === 'test' })
+            loadEntries.push({ epochDay: day, rpe: 7, minutes: Math.round(totalOf(hp.plan.pieces) / 60) })
+          }
         } else if (s.type === 'mt_class') {
           loadEntries.push({ epochDay: day, rpe: 6, minutes: s.estimatedMin })
         } else if (key) {
@@ -257,7 +272,8 @@ function assertGuarded(name: string, sim: ReturnType<typeof simulate>): void {
     assert(g.shapeMatches, `${tag}: guarded week has exactly the rules' shape`)
     const runs = all.filter(s => s.type === 'foundation_run' || s.type === 'running')
     const single = g.longest30 > 0 ? Math.floor(g.longest30 * 1.1 / 60) : 23
-    assert(runs.every(s => s.type === 'foundation_run' && s.estimatedMin <= single), `${tag}: 50-min runs cut to <= ${single} min`)
+    // Page 76: from week 4 the template's two hard runs are 'running' (the kind is the rules', never the planner's).
+    assert(runs.every(s => (s.type === 'foundation_run' || (g.week >= 4 && s.type === 'running')) && s.estimatedMin <= single), `${tag}: 50-min runs cut to <= ${single} min`)
     const weekly = Math.floor(weeklyRunAllowanceSec(g.lastWeek) / 60)
     assert(runs.reduce((n, s) => n + s.estimatedMin, 0) <= weekly, `${tag}: run total within the weekly cap (${weekly} min)`)
     assert(g.clamps.length > 0 && g.clamps.every(c => c.reason.length > 0 && !/[!\u2014]/.test(c.reason)), `${tag}: ${g.clamps.length} clamps, each with a house-voice reason`)
@@ -290,7 +306,8 @@ assert(scripted.guardDays.some(d => d.kind === 'ease') && scripted.guardDays.som
 
 // Runs: R7 and R8 never broken.
 assert(scripted.runs.length > 10, `${scripted.runs.length} runs logged`)
-for (const r of scripted.runs) {
+// The 5K test (page 76) keeps its 5 km whatever the 30 days held; every other run stays inside.
+for (const r of scripted.runs.filter(x => !x.test)) {
   const limit = r.longest30 > 0 ? Math.floor(r.longest30 * 1.1) : RESTART_SESSION_SEC
   assert(r.sec <= limit, `run day ${r.day - START}: ${r.sec}s within ${r.longest30 > 0 ? '110% of 30-day longest' : 'the week-1 restart'} (${limit}s)`)
 }
@@ -348,7 +365,7 @@ for (let w = 2; w <= 6; w++) {
   const run = (wk: number) => clean.runs.filter(r => weekOf(r.day) === wk).reduce((n, r) => n + r.sec, 0)
   assert(run(w) <= run(w - 1) * 1.3, `clean week ${w}: run time within +30%`)
 }
-assert(clean.runs.every(r => r.longest30 === 0 || r.sec <= r.longest30 * 1.1), 'clean athlete: no run over 110%')
+assert(clean.runs.every(r => r.test || r.longest30 === 0 || r.sec <= r.longest30 * 1.1), 'clean athlete: no run over 110% (the 5K test keeps its 5 km)')
 
 // ─── Phase B: readiness from daily_logs rows, loads from logged RIR ──
 //

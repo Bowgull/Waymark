@@ -3,6 +3,8 @@ import UIKit
 import CoreBluetooth
 import CoreLocation
 import ActivityKit
+import AVFoundation
+import AudioToolbox
 import Capacitor
 
 // The run recorder (mockup page 74, approved; plan: waymark-research
@@ -25,7 +27,18 @@ import Capacitor
 //     JSON lines, writable while locked), so a killed app resumes the run;
 //   - the Live Activity's heart rate, zone colour and distance while locked
 //     (local ActivityKit updates, throttled: on a zone change, or every 5 s at
-//     most when the number moved).
+//     most when the number moved);
+//   - a hard run's voice cues (page 76 "Hear it"): the app sends the cue list
+//     once (cues()), and the recorder plays each one on its own run clock, a
+//     game chime then the words from the bundled clips (public/cues, Piper
+//     "Poppy"), with a buzz, while his show in another app dips under it
+//     (.playback, .mixWithOthers + .duckOthers only while a cue plays). Outside
+//     it also watches the pace on the hard pieces and nudges (src/lib/runCues.ts,
+//     the same numbers). Indoors there is no location at all: the run keeps going
+//     locked on the strap's Bluetooth link when there is one, and on background
+//     audio (UIBackgroundModes 'audio'): while an indoor run has cues, a silent
+//     loop holds the .playback session (mixing, never ducking), so the 1 Hz clock
+//     and the cues it fires stay on time with the screen off.
 // JS gets throttled ticks while the app is open, and the finished recording.
 //
 // Licence note: no third-party code is copied here. The GPS filter follows the
@@ -50,6 +63,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         CAPPluginMethod(name: "unfinished", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "ackUploaded", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "discard", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cues", returnType: CAPPluginReturnPromise),
     ]
 
     // MARK: constants
@@ -69,6 +83,13 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
     private static let laDistanceIntervalSec: Double = 15
     private static let goldBand = 5
     private static let overSec: Double = 30
+    // Page 76: the pace nudge (src/lib/runCues.ts NUDGE_*).
+    private static let nudgeWindowSec = 20
+    private static let nudgeOffSecKm: Double = 10
+    private static let nudgeCooldownSec = 60
+    private static let nudgeFirstSec = 60
+    private static let nudgeSettleSec = 10
+    private static let kmPerMile = 1.609344
 
     private let hrService = CBUUID(string: "180D")
     private let hrMeasurement = CBUUID(string: "2A37")
@@ -107,6 +128,8 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         var runSessionId: String
         var outdoor: Bool
         var ceiling: Int?
+        /// A hard run's range (page 76): ember only this far over the top for 30 s.
+        var overBy: Int = 0
         var startedAt: Double   // unix s
         var paused = false
         var t: [Int] = []
@@ -126,6 +149,20 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
     // zone (src/lib/hrZoneState.ts, the same numbers)
     private var zone = "none"
     private var overSince: Double?
+
+    // Page 76: a hard run's cues on the run clock, and the pace nudge.
+    private struct Cue { let atSec: Int; let clips: [String]; let buzz: Bool }
+    private struct NudgeTarget { let fromSec: Int; let toSec: Int; let kmh: Double }
+    private var cueList: [Cue] = []
+    private var cuePlayed = Set<Int>()
+    private var cueClock = 0
+    private var cueOutdoor = false
+    private var cuePerMile = false
+    private var nudgeTargets: [NudgeTarget] = []
+    private var nudgeSamples: [(t: Int, d: Double)] = []
+    private var nudgeLastAt: Int?
+    private var pendingNudge: (word: String, kmh: Double)?
+    private lazy var cueAudio = RunCueAudio()
 
     // Live Activity throttle
     private var laLastAt: Double = 0
@@ -225,6 +262,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         let runSessionId = call.getString("runSessionId") ?? ""
         let outdoor = call.getBool("outdoor") ?? true
         let ceiling = call.getInt("ceilingBpm")
+        let overBy = call.getInt("overBy") ?? 0
         let startedAtMs = call.getDouble("startedAtMs") ?? Date().timeIntervalSince1970 * 1000
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -232,6 +270,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
                 // The same run (the app came back, or relaunched after a kill): rejoin it.
                 r.paused = false
                 r.ceiling = ceiling
+                r.overBy = overBy
                 // Seconds lost while the app was dead: kept as time gone (the run clock
                 // counted them), with no heart rate and no distance.
                 self.openJournalForAppend(runId)
@@ -252,7 +291,9 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
             self.finished = nil
             self.finishedEndedAt = nil
             var r = Run(runId: runId, sessionId: sessionId, runSessionId: runSessionId, outdoor: outdoor, ceiling: ceiling, startedAt: startedAtMs / 1000)
+            r.overBy = overBy
             r.paused = false
+            self.clearCues()
             self.run = r
             self.zone = "none"
             self.overSince = nil
@@ -357,6 +398,92 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         }
     }
 
+    // MARK: plugin methods: a hard run's cues (page 76)
+
+    /// The cue list from the run clock now on: { cues: [{ atSec, clips, buzz }], clockSec, outdoor,
+    /// unit, nudge: [{ fromSec, toSec, kmh }] }. Sent again after a skip, a resume, the test's 5 km.
+    @objc func cues(_ call: CAPPluginCall) {
+        let raw = call.getArray("cues", JSObject.self) ?? []
+        let list: [Cue] = raw.compactMap { o in
+            guard let at = (o["atSec"] as? NSNumber)?.intValue, let clips = o["clips"] as? [String] else { return nil }
+            return Cue(atSec: at, clips: clips, buzz: (o["buzz"] as? Bool) ?? false)
+        }
+        let targets: [NudgeTarget] = (call.getArray("nudge", JSObject.self) ?? []).compactMap { o in
+            guard let f = (o["fromSec"] as? NSNumber)?.intValue, let t = (o["toSec"] as? NSNumber)?.doubleValue, let k = (o["kmh"] as? NSNumber)?.doubleValue else { return nil }
+            return NudgeTarget(fromSec: f, toSec: Int(min(t, 1e9)), kmh: k)
+        }
+        let clock = max(0, Int((call.getDouble("clockSec") ?? 0).rounded()))
+        let outdoor = call.getBool("outdoor") ?? false
+        let perMile = call.getString("unit") == "mph"
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.cueList = list
+            self.cueClock = clock
+            // The cue at this very second still plays; the ones before it are past.
+            self.cuePlayed = Set(list.indices.filter { list[$0].atSec < clock })
+            self.cueOutdoor = outdoor
+            self.cuePerMile = perMile
+            self.nudgeTargets = outdoor ? targets : []
+            self.nudgeSamples = []
+            self.nudgeLastAt = nil
+            // Indoors (no location): the audio session keeps the run's clock, and its cues, going locked.
+            if !list.isEmpty, let r = self.run, !r.outdoor { self.cueAudio.keepAlive(true) }
+            call.resolve()
+        }
+    }
+
+    private func clearCues() {
+        cueList = []
+        cuePlayed = []
+        cueClock = 0
+        nudgeTargets = []
+        nudgeSamples = []
+        nudgeLastAt = nil
+        pendingNudge = nil
+        cueAudio.keepAlive(false)
+    }
+
+    /// One second of the cue clock (not paused): the due cue plays; outside, the pace nudge.
+    private func stepCues(distance: Double) {
+        guard !cueList.isEmpty || !nudgeTargets.isEmpty else { return }
+        cueClock += 1
+        // The latest cue due now and not played (one more than 3 s late is let go).
+        var due: Int?
+        for (i, c) in cueList.enumerated() where !cuePlayed.contains(i) && c.atSec <= cueClock && cueClock - c.atSec <= 3 {
+            if due == nil || c.atSec >= cueList[due!].atSec { due = i }
+        }
+        if let i = due {
+            cuePlayed.insert(i)
+            cueAudio.play(cueList[i].clips)
+            if cueList[i].buzz { buzz() }
+        }
+        guard cueOutdoor, !nudgeTargets.isEmpty else { return }
+        nudgeSamples.append((cueClock, distance))
+        nudgeSamples.removeAll { cueClock - $0.t > Self.nudgeWindowSec + 5 }
+        guard let t = nudgeTargets.first(where: { cueClock >= $0.fromSec && cueClock < $0.toSec }), t.kmh > 0 else { return }
+        guard cueClock >= Self.nudgeFirstSec else { return }
+        let windowStart = cueClock - Self.nudgeWindowSec
+        guard windowStart >= t.fromSec + Self.nudgeSettleSec else { return }
+        if let last = nudgeLastAt, cueClock - last < Self.nudgeCooldownSec { return }
+        guard let first = nudgeSamples.first(where: { $0.t >= windowStart }), cueClock - first.t >= Self.nudgeWindowSec - 1 else { return }
+        let dKm = (distance - first.d) / 1000
+        guard dKm > 0.02 else { return }
+        let pace = Double(cueClock - first.t) / dKm
+        let off = pace - 3600 / t.kmh
+        guard abs(off) > Self.nudgeOffSecKm else { return }
+        nudgeLastAt = cueClock
+        let fast = off < 0
+        let secs = Int(((3600 / t.kmh) * (cuePerMile ? Self.kmPerMile : 1)).rounded())
+        let clamped = min(540, max(210, secs))
+        cueAudio.play(["chime_nudge", fast ? "fast" : "slow", String(format: "p_%d%02d", clamped / 60, clamped % 60)])
+        pendingNudge = (fast ? "fast" : "slow", t.kmh)
+    }
+
+    /// One light buzz with a cue (the phone may be locked: the system vibration, not a UIKit generator).
+    private func buzz() {
+        AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+    }
+
     // MARK: the run's engines
 
     private func startEngines(outdoor: Bool) {
@@ -376,6 +503,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
     private func finishRun(keep: Bool) {
         clock?.cancel()
         clock = nil
+        clearCues()
         stopLocation()
         closeJournal()
         if let id = run?.runId, !keep { deleteJournal(id) }
@@ -400,11 +528,22 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         appendLine(line)
         if r.t.count % 30 == 0 { try? journal?.synchronize() }
 
+        let wasOver = zone == "over"
         stepZone(hr: hr, now: now)
+        // EASE OFF: one buzz. In the app the screen gives it; locked, the recorder does.
+        if !wasOver && zone == "over" && isBackground { buzz() }
+        if !r.paused { stepCues(distance: r.outdoor ? r.distance : 0) }
         if !isBackground {
             var tick: [String: Any] = ["t": now * 1000, "elapsedSec": Int((now - r.startedAt).rounded()), "movingSec": r.moving.reduce(0, +), "distanceM": r.outdoor ? r.distance : 0, "link": link, "zone": zone]
             tick["hr"] = Self.nn(hr)
+            if let n = pendingNudge {
+                tick["nudge"] = n.word
+                tick["nudgeKmh"] = n.kmh
+                pendingNudge = nil
+            }
             notifyListeners("tick", data: tick)
+        } else {
+            pendingNudge = nil
         }
         updateLiveActivity(hr: hr, now: now, distanceM: r.outdoor ? r.distance : nil)
     }
@@ -412,7 +551,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
     private func stepZone(hr: Int?, now: Double) {
         guard let h = hr, h > 0 else { zone = "none"; overSince = nil; return }
         guard let ceiling = run?.ceiling, ceiling > 0 else { zone = "in"; overSince = nil; return }
-        if h > ceiling {
+        if h > ceiling + (run?.overBy ?? 0) {
             let since = overSince ?? now
             overSince = since
             zone = now - since >= Self.overSec ? "over" : "gold"
@@ -827,6 +966,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
             "outdoor": r.outdoor, "startedAt": r.startedAt,
         ]
         head["ceiling"] = Self.nn(r.ceiling)
+        head["overBy"] = r.overBy
         head["strap"] = Self.nn(UserDefaults.standard.string(forKey: Self.keyPeripheralName))
         appendLine(head)
     }
@@ -878,6 +1018,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
                             outdoor: obj["outdoor"] as? Bool ?? true,
                             ceiling: obj["ceiling"] as? Int,
                             startedAt: (obj["startedAt"] as? NSNumber)?.doubleValue ?? Date().timeIntervalSince1970)
+                    r?.overBy = obj["overBy"] as? Int ?? 0
                 } else if ev == "stop" {
                     endedAt = (obj["endedAt"] as? NSNumber)?.doubleValue
                 }
@@ -917,5 +1058,123 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
                 "distM": r.distM.map { ($0 * 10).rounded() / 10 },
             ] as [String: Any],
         ]
+    }
+}
+
+// MARK: - The cue player (page 76 "Hear it")
+
+/// Plays a cue's clips one after another from the app bundle (public/cues/<name>.m4a, the web
+/// build's own files), and on an indoor run keeps the app running locked with no location.
+///
+/// - keepAlive(true): a silent loop holds the .playback session with .mixWithOthers only, so his
+///   show in another app plays at full volume and the app (its 1 Hz clock, the cues) keeps running
+///   with the screen off (UIBackgroundModes 'audio').
+/// - A cue: the session takes .duckOthers (the show dips), the clips play, then the session is
+///   let go with .notifyOthersOnDeactivation (the show comes back up) and, when keeping alive,
+///   taken again at once with .mixWithOthers and the silent loop restarted.
+/// A new cue waits for the one playing. Main queue only.
+final class RunCueAudio: NSObject, AVAudioPlayerDelegate {
+    private var queue: [[String]] = []
+    private var current: [String] = []
+    private var player: AVAudioPlayer?
+    private var silent: AVAudioPlayer?
+    private var alive = false
+    private var playing = false
+
+    func play(_ clips: [String]) {
+        guard !clips.isEmpty else { return }
+        queue.append(clips)
+        if !playing { next() }
+    }
+
+    func keepAlive(_ on: Bool) {
+        guard on != alive else { return }
+        alive = on
+        if on {
+            setSession(duck: false)
+            startSilent()
+        } else {
+            silent?.stop()
+            silent = nil
+            if !playing { try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation]) }
+        }
+    }
+
+    private func url(_ name: String) -> URL? {
+        Bundle.main.url(forResource: name, withExtension: "m4a", subdirectory: "public/cues")
+            ?? Bundle.main.url(forResource: name, withExtension: "m4a")
+    }
+
+    private func setSession(duck: Bool) {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .spokenAudio, options: duck ? [.mixWithOthers, .duckOthers] : [.mixWithOthers])
+        try? session.setActive(true, options: [])
+    }
+
+    /// One second of silence (16-bit PCM WAV built in memory), looped.
+    private func startSilent() {
+        guard silent == nil else { silent?.play(); return }
+        let rate: UInt32 = 22050, n: UInt32 = rate
+        var d = Data()
+        func u32(_ v: UInt32) { var x = v.littleEndian; d.append(Data(bytes: &x, count: 4)) }
+        func u16(_ v: UInt16) { var x = v.littleEndian; d.append(Data(bytes: &x, count: 2)) }
+        d.append(contentsOf: Array("RIFF".utf8)); u32(36 + n * 2); d.append(contentsOf: Array("WAVE".utf8))
+        d.append(contentsOf: Array("fmt ".utf8)); u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16)
+        d.append(contentsOf: Array("data".utf8)); u32(n * 2); d.append(Data(count: Int(n * 2)))
+        guard let p = try? AVAudioPlayer(data: d) else { return }
+        p.numberOfLoops = -1
+        p.volume = 0
+        p.prepareToPlay()
+        p.play()
+        silent = p
+    }
+
+    private func next() {
+        if current.isEmpty {
+            guard !queue.isEmpty else { finished(); return }
+            current = queue.removeFirst()
+            if !playing {
+                playing = true
+                setSession(duck: true)
+            }
+        }
+        let name = current.removeFirst()
+        guard let u = url(name), let p = try? AVAudioPlayer(contentsOf: u) else {
+            // A missing clip: go on with the rest.
+            DispatchQueue.main.async { [weak self] in self?.next() }
+            return
+        }
+        p.delegate = self
+        p.prepareToPlay()
+        player = p
+        if !p.play() { DispatchQueue.main.async { [weak self] in self?.next() } }
+    }
+
+    /// The last clip ended: the show comes back up; indoors the silent loop holds the session again.
+    private func finished() {
+        player = nil
+        playing = false
+        silent?.stop()
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        if alive {
+            setSession(duck: false)
+            startSilent()
+        }
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        // A short gap between the chime and the words, as on the web.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+            guard let self = self else { return }
+            self.player = nil
+            self.next()
+        }
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        DispatchQueue.main.async { [weak self] in
+            self?.player = nil
+            self?.next()
+        }
     }
 }

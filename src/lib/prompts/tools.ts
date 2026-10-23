@@ -14,7 +14,8 @@ export type SessionType =
   | 'mobility'
 
 export type TimeSlot = 'am' | 'pm'
-export type RunCategory = 'zone2' | 'progression'
+/** 'tempo' | 'intervals' | '5k_test': Block Zero's hard runs (page 76), set by the rules, never the planner. */
+export type RunCategory = 'zone2' | 'progression' | 'tempo' | 'intervals' | '5k_test'
 
 export interface PlannedSession {
   type: SessionType

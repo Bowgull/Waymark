@@ -279,10 +279,10 @@ export function allBoardRows(): SessionSuggestion[] {
 /**
  * The board's names in the running block (dead end #19): in Block Zero the
  * run-walk reads Run-Walk (not "Zone 2") and the plain run reads what it opens
- * as there (an Easy Run at his line), not "Progression Run". The coach picks
+ * as there (a Zone 2 Run at his line), not "Progression Run". The coach picks
  * rename each from its dose's shape (audit #14: one name per run).
  */
 export function withBlockLabels<T extends { type: string; label: string; runCategory?: string }>(rows: T[], blockType: string | null | undefined): T[] {
   if (blockType !== 'block_zero') return rows
-  return rows.map(r => (r.type === 'foundation_run' ? { ...r, label: 'Run-Walk' } : r.type === 'running' && r.runCategory === 'progression' ? { ...r, label: 'Easy Run' } : r))
+  return rows.map(r => (r.type === 'foundation_run' ? { ...r, label: 'Run-Walk' } : r.type === 'running' && r.runCategory === 'progression' ? { ...r, label: 'Zone 2 Run' } : r))
 }

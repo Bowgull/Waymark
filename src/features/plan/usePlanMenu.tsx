@@ -28,7 +28,7 @@ type Win =
   | { kind: 'act'; s: DayBoardSession; anchor: DOMRect }
   | { kind: 'why'; mode: 'skip' | 'replace'; sessionId: string; changeId: string | null; anchor: DOMRect | null; contextJson?: string | null }
   | { kind: 'rune'; change: ChangeViewIn; say: ReactNode; back: string; undone: boolean; canUndo: boolean; anchor: DOMRect | null }
-  | { kind: 'pick'; mode: 'replace' | 'add'; s: DayBoardSession | null; date: string; day3: string; view: 'picks' | 'all'; cur: number; picks: CoachPickJson[] | null; all: CoachPickJson[] | null }
+  | { kind: 'pick'; mode: 'replace' | 'add'; s: DayBoardSession | null; date: string; day3: string; view: 'picks' | 'all' | 'runs'; cur: number; picks: CoachPickJson[] | null; all: CoachPickJson[] | null }
 
 export interface PlanMenuDeps {
   onSessionUpdate: (id: string, patch: Partial<DayBoardSession>) => void
@@ -259,7 +259,7 @@ export function usePlanMenu(deps: PlanMenuDeps) {
           forWhat={win.s ? `for ${sessionDisplayName(win.s).toLowerCase()}` : `add to ${win.day3.toLowerCase()}`}
           onPoint={i => setWin(cur => (cur && cur.kind === 'pick' ? { ...cur, cur: i } : cur))}
           onTake={row => { void take(win, row as CoachPickJson) }}
-          onView={v => setWin(cur => (cur && cur.kind === 'pick' ? { ...cur, view: v, cur: 0 } : cur))}
+          onView={(v, c) => setWin(cur => (cur && cur.kind === 'pick' ? { ...cur, view: v, cur: c ?? 0 } : cur))}
         />
       </Cmd>
     )

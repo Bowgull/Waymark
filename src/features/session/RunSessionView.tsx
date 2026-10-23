@@ -39,6 +39,11 @@ import './session.css'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 import { NarutoEpisodeCard } from './NarutoEpisodeCard'
 import { checkMaxHrBump } from '@/lib/maxHrBump'
+import { parseFiveK, type HardPlan } from '@/lib/brain/hardRuns'
+import { hardAt, hardCues, hardSegments, nextWords, nudgeTargets, nudgeWord, phaseTone, phaseWord, pieceOf, type HardSegment } from '@/lib/runCues'
+import { altMph, BASE_INCLINE, mmss, paceFlap, paceUnitWord, speedFlap, speedUnitWord, type TreadmillUnit } from '@/lib/runSpeed'
+import { useTreadmillUnit } from '@/lib/treadmillUnit'
+import { postRunShort, type PostRunFacts } from '@/lib/postRun'
 
 interface RunSession {
   id: string
@@ -67,8 +72,10 @@ interface RunPrescription {
   runWalk?: RunWalkShape | null
   /** An easy walk or bike in the run's place (a rough morning, an injury): no running at all. */
   walkOnly?: boolean
-  /** The run's one name from its dose ("Easy Run", "Run-Walk", "Easy Walk or Bike"), as on its row. */
+  /** The run's one name from its dose ("Zone 2 Run", "Run-Walk", "Easy Walk or Bike", "Tempo", "Intervals", "5K Test"), as on its row. */
   name?: string | null
+  /** Page 76: a hard run (tempo, intervals, the 5K test): its pieces, speeds and heart range. */
+  hard?: HardPlan | null
 }
 
 type RunPhase = 'ready' | 'running' | 'logging'
@@ -81,6 +88,8 @@ function storedIndoorMedia(): IndoorMedia {
 }
 
 const WALK_ONLY_NAME = 'Easy Walk or Bike'
+/** How long the saved board shows its line before it goes on by itself (page 76 §4b). */
+const SAVED_MS = 2600
 
 /** The dose is an easy walk or bike, no running (the server's walkOnly, or a run-walk of 0 rounds). */
 function isWalkOnly(p: RunPrescription | null | undefined): boolean {
@@ -137,6 +146,16 @@ export function RunSessionView({
   const draft = resume?.draft ?? {}
   const [phase, setPhase] = useState<RunPhase>(() => resume?.sub ?? 'ready')
   const [isIndoor, setIsIndoor] = useState(() => resume ? resume.isIndoor : runSession.isIndoor === 1)
+  // Page 76: a hard run, and the treadmill unit every speed and pace follows.
+  const hard = prescription?.hard ?? null
+  const unit = useTreadmillUnit()
+  // The 5K test: its time for Log your run (the GPS's 5.00 km outside, else the clock less the warm-up).
+  const [fiveK, setFiveK] = useState(draft.fiveK ?? '')
+  // A pace nudge on the screen for a few seconds (outside, hard pieces; the recorder plays its sound).
+  const [nudge, setNudge] = useState<{ n: 'fast' | 'slow'; kmh: number; at: number } | null>(null)
+  // After SAVE RUN (page 76 §4b): the board shows SAVED and the one line, then goes on by itself.
+  const [saved, setSaved] = useState<{ line: string } | null>(null)
+  const afterSave = useRef<(() => void) | null>(null)
   const [media, setMedia] = useState<IndoorMedia>(() => resume?.media ?? storedIndoorMedia())
   // The run clock: wall-clock anchored (virtual start time, or elapsed when
   // paused), so a lock, a reload or a kill keeps the right time.
@@ -169,7 +188,9 @@ export function RunSessionView({
 
   // ─── The recorder (page 74): the strap's heart rate and GPS distance, the zone ───
   // The run's line (the HR ceiling, e.g. 147): teal under, gold at the top, ember over for ~30 s.
-  const ceiling = prescription?.z2CeilingBpm ?? null
+  // A hard run has its own range: gold near the top, ember only HARD_OVER_BY over it for 30 s (page 76).
+  const ceiling = hard ? hard.heart.top : prescription?.z2CeilingBpm ?? null
+  const overBy = hard ? hard.heart.overBy : 0
   // One id per run; the same id rejoins the recording after a relaunch.
   const [runId, setRunId] = useState<string | null>(() => resume?.runId ?? null)
   const [live, setLive] = useState<{ hr: number | null; distanceM: number; link: StrapLink }>({ hr: null, distanceM: 0, link: 'none' })
@@ -202,10 +223,10 @@ export function RunSessionView({
       stopwatch,
       isIndoor,
       media,
-      draft: { distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, ...(resumeOnClose ? { resumeOnClose: '1' } : {}), ...(talkTouched ? { talkHr: String(talkHr) } : {}) },
+      draft: { distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, ...(resumeOnClose ? { resumeOnClose: '1' } : {}), ...(talkTouched ? { talkHr: String(talkHr) } : {}), ...(fiveK ? { fiveK } : {}) },
       ...(runId ? { runId } : {}),
     })
-  }, [onPersist, phase, stopwatch, isIndoor, media, distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, runId, resumeOnClose, talkTouched, talkHr])
+  }, [onPersist, phase, stopwatch, isIndoor, media, distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, runId, resumeOnClose, talkTouched, talkHr, fiveK])
 
   useWakeLock(ticking)
 
@@ -250,10 +271,10 @@ export function RunSessionView({
     recStartRef.current = runId
     const sw = stopwatch
     const started = sw.state === 'running' ? sw.startedAtMs : Date.now() - sw.elapsedMs
-    runRecorder().start({ runId, sessionId: runSession.sessionId ?? '', runSessionId: runSession.id, outdoor: !isIndoor, ceilingBpm: ceiling, startedAtMs: started })
+    runRecorder().start({ runId, sessionId: runSession.sessionId ?? '', runSessionId: runSession.id, outdoor: !isIndoor, ceilingBpm: ceiling, overBy, startedAtMs: started })
       .then(() => { if (sw.state === 'paused') return runRecorder().pause() })
       .catch(e => logger.warn('session', 'run recorder start failed', { message: e instanceof Error ? e.message : String(e) }, 'The run recorder did not start. The clock runs; no heart rate or distance.'))
-  }, [recording, runId, stopwatch, runSession.sessionId, runSession.id, isIndoor, ceiling])
+  }, [recording, runId, stopwatch, runSession.sessionId, runSession.id, isIndoor, ceiling, overBy])
 
   // The clock's pause / go on, mirrored to the recorder.
   const clockPaused = stopwatch?.state === 'paused'
@@ -272,14 +293,15 @@ export function RunSessionView({
     if (!recording) return
     return runRecorder().onTick(t => {
       setLive({ hr: t.hr, distanceM: t.distanceM, link: t.link })
+      if (t.nudge && t.nudgeKmh) setNudge({ n: t.nudge, kmh: t.nudgeKmh, at: Date.now() })
       const prev = zoneRef.current
-      const next = nextZone(prev, t.hr, ceiling, t.t)
+      const next = nextZone(prev, t.hr, ceiling, t.t, overBy)
       zoneRef.current = next
       // Ember after ~30 s over: EASE OFF and one light buzz.
       if (enteredOver(prev.zone, next.zone)) void tapHaptic()
       setZone(next.zone)
     })
-  }, [recording, ceiling])
+  }, [recording, ceiling, overBy])
 
   /** The clock's time as Log your run shows it ("20:06", or "20" on the minute). */
   function durationFromClock(sw: StopwatchSnap | null, now: number): string {
@@ -296,6 +318,13 @@ export function RunSessionView({
    */
   function openLog() {
     const now = Date.now()
+    // The 5K test is a normal run: he stops at 5.00 km and holds the grass. Its time is the running time
+    // less the planned warm-up (the GPS's 5.00 km mark outside, when it has one); he can change it.
+    if (hard?.kind === 'test' && stopwatch && !fiveK) {
+      const t = Math.floor(stopwatchElapsedMs(stopwatch, now) / 1000)
+      const open = hardSegments(hard, null).find(x => x.sec === Infinity)
+      if (open && t > open.startSec) setFiveK(mmss(t - open.startSec))
+    }
     setResumeOnClose(stopwatch?.state === 'running')
     setDuration(durationFromClock(stopwatch, now))
     setStopwatch(sw => (sw ? stopwatchPause(sw, now) : sw))
@@ -330,9 +359,21 @@ export function RunSessionView({
 
   /** Run-walk, from the lock screen's skip stone: on to the next piece (run <-> walk). Never the finish. */
   function skipPiece() {
-    if (!segments || phase !== 'running' || !stopwatch) return
+    if (phase !== 'running' || !stopwatch) return
     const now = Date.now()
     const elapsedMs = stopwatchElapsedMs(stopwatch, now)
+    // A hard run: the 5K test's 5 km ends here; another piece jumps to its end (page 76).
+    if (hardSegs) {
+      const hp = hardAt(hardSegs, elapsedMs / 1000)
+      if (hp.done || hp.index >= hardSegs.length - 1) return
+      // The 5K test's 5 km runs until he finishes the run (the grass hold): nothing skips it.
+      if (hp.segment.sec === Infinity) return
+      const jump = Math.max(0, (hp.segment.startSec + hp.segment.sec) * 1000 - elapsedMs)
+      setStopwatch(sw => (!sw ? sw : sw.state === 'running' ? { state: 'running', startedAtMs: sw.startedAtMs - jump } : { state: 'paused', elapsedMs: sw.elapsedMs + jump }))
+      setNowMs(now)
+      return
+    }
+    if (!segments) return
     const pos = runWalkAt(segments, elapsedMs / 1000)
     if (pos.done || pos.index >= segments.length - 1) return
     const jumpMs = Math.max(0, (pos.segment.startSec + pos.segment.sec) * 1000 - elapsedMs)
@@ -359,9 +400,11 @@ export function RunSessionView({
         recRef.current = rec
         await uploadRecording(rec)
       }
-      await apiFetch(`/api/run-sessions/${runSession.id}`, {
+      const res = await apiFetch<{ post?: PostRunFacts | null } | null>(`/api/run-sessions/${runSession.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
+          // Page 76: the 5K test's time for the 5 km (it sets the next 4 weeks' speeds).
+          ...(hard?.kind === 'test' ? { fiveKSec: parseFiveK(fiveK) } : {}),
           distanceKm, durationSec, paceSecKm,
           isIndoor: isIndoor ? 1 : 0,
           onePaceArc: isIndoor && media === 'one_pace' && onePaceArc ? onePaceArc : undefined,
@@ -389,6 +432,9 @@ export function RunSessionView({
         })
       }
 
+      // Page 76 §4b: SAVED and the one line on the board, then on (by itself, or a tap).
+      const line = res?.post ? postRunShort(res.post, unit) : null
+      const goOn = () => {
       // Naruto: ask before moving the episode on. Never advance silently.
       if (isIndoor && media === 'naruto') {
         const watched = narutoEpisodesWatched(durationSec)
@@ -421,10 +467,25 @@ export function RunSessionView({
         return
       }
       onComplete()
+      }
+      if (!line) { goOn(); return }
+      afterSave.current = goOn
+      setSaved({ line })
+      setSaving(false)
+      window.setTimeout(closeSaved, SAVED_MS)
     } catch (e) {
       console.error('Failed to save run:', e)
       setSaving(false)
     }
+  }
+
+  /** The saved board closes (by itself after SAVED_MS, or a tap): the rest of the finish goes on. */
+  function closeSaved() {
+    const f = afterSave.current
+    if (!f) return
+    afterSave.current = null
+    setSaved(null)
+    f()
   }
 
   async function confirmNarutoEp() {
@@ -460,7 +521,7 @@ export function RunSessionView({
   const walkOnly = isWalkOnly(prescription)
   const isZone2 = prescription?.runType === 'zone2' && !walkOnly
   // One name (audit #14): the dose's, as on its row; else the run's kind.
-  const runTypeLabel = walkOnly ? WALK_ONLY_NAME : prescription?.name ?? (prescription ? (RUN_TYPE_LABELS[prescription.runType] ?? 'Run') : 'Easy Run')
+  const runTypeLabel = walkOnly ? WALK_ONLY_NAME : prescription?.name ?? (prescription ? (RUN_TYPE_LABELS[prescription.runType] ?? 'Run') : 'Zone 2 Run')
   const timerEstimate = prescription?.targetDurSec ?? 3600
 
   const remaining = Math.max(0, timerEstimate - elapsed)
@@ -468,6 +529,36 @@ export function RunSessionView({
   const segments = useMemo(() => runWalkSegments(prescription?.runWalk), [prescription?.runWalk])
   const rwPos = segments ? runWalkAt(segments, elapsed) : null
   const rwIndex = rwPos?.index ?? -1
+
+  // ─── A hard run's pieces on the run clock (page 76 §4) ───
+  const hardSegs = useMemo(() => (hard ? hardSegments(hard) : null), [hard])
+  const hPos = hardSegs ? hardAt(hardSegs, elapsed) : null
+  const hSeg: HardSegment | null = hPos && !hPos.done ? hPos.segment : null
+  // Outside, the GPS marks the time at 5.00 km from where the 5 km began (finishing is still the grass hold).
+  const testFrom = useRef<number | null>(null)
+  useEffect(() => {
+    if (!hSeg || hSeg.sec !== Infinity || isIndoor) { if (!hSeg || hSeg.sec !== Infinity) testFrom.current = null; return }
+    if (testFrom.current == null) { testFrom.current = live.distanceM; return }
+    if (!fiveK && live.distanceM - testFrom.current >= 5000) setFiveK(mmss(Math.max(0, elapsed - hSeg.startSec)))
+    // Only each distance tick matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hSeg?.sec, hSeg?.startSec, live.distanceM, isIndoor])
+  // The recorder plays the cues by itself on the run clock (locked too); sent again after a skip, a
+  // resume, the 5 km, a unit or place change. Paused: it waits.
+  const cueKey = hard && hardSegs && phase === 'running' && stopwatch?.state === 'running' && runId ? `${runId}:${stopwatch.startedAtMs}:${isIndoor}:${unit}` : null
+  useEffect(() => {
+    if (!cueKey || !hardSegs || !stopwatch) return
+    const clockSec = Math.floor(stopwatchElapsedMs(stopwatch, Date.now()) / 1000)
+    void runRecorder().cues({ cues: hardCues(hardSegs, !isIndoor, unit), clockSec, outdoor: !isIndoor, unit, nudge: isIndoor ? [] : nudgeTargets(hardSegs) }).catch(() => {})
+    // cueKey holds every input that matters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cueKey])
+  // A nudge shows for 6 s.
+  useEffect(() => {
+    if (!nudge) return
+    const t = window.setTimeout(() => setNudge(null), 6000)
+    return () => window.clearTimeout(t)
+  }, [nudge])
 
   // A cue at every run / walk change while the app is open (the lock screen gets notifications).
   const rwIndexRef = useRef<number | null>(null)
@@ -499,11 +590,12 @@ export function RunSessionView({
   // round-end so the sound vocabulary is consistent across engines.
   const targetHitRef = useRef(false)
   useEffect(() => {
-    if (phase === 'running' && remaining === 0 && elapsed > 0 && !targetHitRef.current) {
+    // A hard run's finish is the recorder's "Done. Nice work." (page 76).
+    if (!hard && phase === 'running' && remaining === 0 && elapsed > 0 && !targetHitRef.current) {
       targetHitRef.current = true
       soundRoundEnd()
     }
-  }, [phase, remaining, elapsed])
+  }, [phase, remaining, elapsed, hard])
 
   const toggleRunPause = useCallback(() => {
     if (phase !== 'running') return
@@ -532,11 +624,13 @@ export function RunSessionView({
     hr: live.hr,
     hrZone: zone,
     ...(!isIndoor ? { distanceKm: Math.round(live.distanceM / 10) / 100 } : {}),
-    runKind: segments ? 'runwalk' as const : 'easy' as const,
+    runKind: hard ? 'hard' as const : segments ? 'runwalk' as const : 'easy' as const,
     // A run-walk's piece on the island ("RUN 3 OF 6"); its walks are the teal rest.
     ...(rwPos && !rwPos.done && rwPos.segment.round > 0 ? { stepIndex: rwPos.segment.round, stepTotal: prescription?.runWalk?.rounds ?? 0 } : {}),
+    // A hard run's piece (page 76): RUN HARD 3 OF 6, EASY JOG (teal), TEMPO, 5K.
+    ...(hard && hSeg ? { runPhase: phaseWord(hSeg.kind), ...(hSeg.round > 0 ? { stepIndex: hSeg.round, stepTotal: hard.reps } : {}) } : {}),
   }
-  const rwWalking = !!rwPos && !rwPos.done && rwPos.segment.kind !== 'run'
+  const rwWalking = (!!rwPos && !rwPos.done && rwPos.segment.kind !== 'run') || (hSeg != null && phaseTone(hSeg.kind) === 'teal')
   const runLiveConfig: LiveActivityConfig | null =
     phase === 'running' && runStartedAtMs > 0
       ? {
@@ -588,7 +682,7 @@ export function RunSessionView({
     // The skip stone (run-walk only): the next piece, run <-> walk. An easy run has no skip,
     // and nothing on the lock screen ever finishes the run.
     onAdvance: () => {
-      if (phase === 'running' && segments) skipPiece()
+      if (phase === 'running' && (segments || hardSegs)) skipPiece()
     },
   })
 
@@ -599,13 +693,13 @@ export function RunSessionView({
   }, [phase, narutoConfirm])
 
   // A Block Zero run-walk is RUN-WALK here too, as on its row (m9).
-  const runTitle = walkOnly ? 'WALK OR BIKE' : prescription?.runWalk ? 'RUN-WALK' : prescription?.name === 'Easy Run' ? RUN_TITLES.easy : (prescription ? RUN_TITLES[prescription.runType] : null) ?? 'RUN'
+  const runTitle = hard && !walkOnly ? runTypeLabel.toUpperCase() : walkOnly ? 'WALK OR BIKE' : prescription?.runWalk ? 'RUN-WALK' : prescription?.name === 'Zone 2 Run' ? 'ZONE 2 RUN' : (prescription ? RUN_TITLES[prescription.runType] : null) ?? 'RUN'
   const icon = isZone2 || runSession.runType === 'zone2' ? 'zone2' as const : 'run' as const
   const targetMin = prescription?.targetDurSec ? Math.round(prescription.targetDurSec / 60) : null
 
   // ─── Ready (page 31 "Zone 2 · ready, indoor" / "Progression · ready, outdoor"; page 74: the plan lives here) ───
   if (phase === 'ready') {
-    const eyebrow = walkOnly ? 'Easy day' : isZone2 ? 'Morning Run' : prescription ? `Week ${prescription.weekNumber}` : 'Run'
+    const eyebrow = walkOnly ? 'Easy day' : hard ? (new Date().getHours() < 12 ? 'Morning Run' : 'Evening Run') : isZone2 ? 'Morning Run' : prescription ? `Week ${prescription.weekNumber}` : 'Run'
     const onePaceWhy = [onePaceArc, onePaceEp ? `Ep ${onePaceEp}` : ''].filter(Boolean).join(' · ') || 'onepace.net'
     const hrLine = !walkOnly && (isZone2 || ceiling != null)
     const shape = runShape(prescription)
@@ -614,11 +708,15 @@ export function RunSessionView({
         <CentredCard label={`${runTypeLabel}, ready`} head={eyebrow} headRight={<SessionIcon kind={icon} size={34} />} onDismiss={onExit} closeOnOutside={false} className="ss-card">
           <div style={{ margin: '4px 0 10px' }}><FlapLabel text={runTypeLabel} size="lg" fit /></div>
           <div className="ss-rows">
-            {targetMin != null && <TargetRow k="Time" v={`${targetMin} MIN`} />}
-            {hrLine && <TargetRow k="Heart rate" v={ceiling != null ? `≤ ${ceiling}` : 'TALK TEST'} tone="teal" />}
-            {hrLine && <TargetRow k="Breathing" v="NASAL" />}
-            {shape && <TargetRow k="Shape" v={shape} fit />}
-            {prescription?.targetDistKm != null && <TargetRow k="Distance" v={`${prescription.targetDistKm} KM`} />}
+            {hard && !walkOnly ? <HardRows hard={hard} outdoor={!isIndoor} unit={unit} targetMin={targetMin} /> : (
+              <>
+                {targetMin != null && <TargetRow k="Time" v={`${targetMin} MIN`} />}
+                {hrLine && <TargetRow k="Heart rate" v={ceiling != null ? `≤ ${ceiling}` : 'TALK TEST'} tone="teal" />}
+                {hrLine && <TargetRow k="Breathing" v="NASAL" />}
+                {shape && <TargetRow k="Shape" v={shape} fit />}
+                {prescription?.targetDistKm != null && <TargetRow k="Distance" v={`${prescription.targetDistKm} KM`} />}
+              </>
+            )}
           </div>
           <div className="ss-seg2" role="radiogroup" aria-label="Where">
             <button type="button" role="radio" aria-checked={!isIndoor} onClick={() => setIsIndoor(false)}><FlapLabel text="OUTDOOR" size="sm" tone={!isIndoor ? 'gold' : 'ink'} /></button>
@@ -691,47 +789,101 @@ export function RunSessionView({
   // The heart and the number: teal in the zone, gold at the top, ember over; dim with dashes without the strap.
   const strapOn = zone !== 'none' && live.hr != null
   const filled = !!recRef.current && avgHr !== ''
+  const heartRow = (
+    <div className="ss-live" data-live data-zone={zone}>
+      <span className="ss-stt">
+        <span className="ss-hshow"><HeartContainer size={84} bpm={strapOn ? live.hr : null} state={strapOn ? heartState(zone) : 'idle'} label={strapOn ? `Heart rate ${live.hr}` : 'No heart rate strap'} /></span>
+        <FlapLabel text={strapOn ? String(live.hr) : '---'} size="lg" className={strapOn ? `ss-hrn${zone === 'gold' ? ' is-gold' : over ? ' is-over' : ''}` : 'ss-dashes'} />
+        <span className="ss-u">BPM</span>
+      </span>
+      {!isIndoor && !hard && (
+        <span className="ss-stt">
+          <FlapLabel text={(live.distanceM / 1000).toFixed(2)} size="lg" />
+          <span className="ss-u">KM</span>
+        </span>
+      )}
+    </div>
+  )
+  // ─── A hard run (page 76 §4): RUN HARD / EASY JOG big with "3 of 6", the piece's clock, the heart,
+  // SPEED and INCLINE big (outside: PACE and KM), mph small while no unit is picked, NEXT small. ───
+  const hp = hard && hPos ? hPos : null
+  const hs = hp && !hp.done ? hp.segment : null
+  const hEasy = hs != null && phaseTone(hs.kind) === 'teal'
+  const hShown = hp ? hp.shownSec : 0
+  const hHeat = hs && !hEasy && !hp?.up ? heatFor(hShown) : null
+  const hDur = hs ? (hs.sec === Infinity ? hard?.pieces[hp?.index ?? 0]?.sec ?? 1500 : hs.sec) : timerEstimate
+  const hTrack: TimerTrack = {
+    durationSec: hDur,
+    endsAtMs: runPaused || !runStartedAtMs || !hs || hs.sec === Infinity ? null : runStartedAtMs + (hs.startSec + hs.sec) * 1000,
+    remainingMs: (hp?.up ? Math.max(0, hDur - hShown) : hShown) * 1000,
+  }
+  const kmh = hs?.kmh ?? hard?.speeds.easy ?? 0
+  const of = hs ? pieceOf(hs, hard?.reps ?? 0) : null
+  const hardMid = hard && hp && (
+    <div className="ss-runmid is-hard">
+      <div className="ss-phase">
+        {over
+          ? <FlapLabel text="EASE OFF" size="md" tone="clay" />
+          : <FlapLabel text={hs ? phaseWord(hs.kind) : 'DONE'} size="md" tone={hs ? phaseTone(hs.kind) : 'gold'} />}
+        {of && <small className="ss-of">{of}</small>}
+      </div>
+      <TimerFace big seconds={hShown} kind={hEasy ? 'rest' : 'work'} tone={hEasy ? 'teal' : undefined} heat={over ? null : hHeat} track={hTrack} />
+      {heartRow}
+      {isIndoor ? (
+        <div className="ss-spd">
+          <span className="ss-st2"><span className="ss-u">SPEED <b className="ss-uw">{speedUnitWord(unit)}</b></span><FlapLabel text={speedFlap(kmh, unit)} size="lg" /></span>
+          <span className="ss-st2"><span className="ss-u">INCLINE</span><FlapLabel text={String(hard.incline ?? BASE_INCLINE)} size="lg" /></span>
+        </div>
+      ) : (
+        <div className="ss-spd">
+          <span className="ss-st2"><span className="ss-u">PACE <b className="ss-uw">{paceUnitWord(unit)}</b></span><FlapLabel text={paceFlap(kmh, unit)} size="lg" /></span>
+          <span className="ss-st2"><span className="ss-u">KM</span><FlapLabel text={(live.distanceM / 1000).toFixed(2)} size="lg" /></span>
+        </div>
+      )}
+      {nudge && !isIndoor && (
+        <div className="ss-nudge" role="status"><FlapLabel text={nudgeWord(nudge.n).flap} size="xs" tone="clay" animate={false} /><span>{nudgeWord(nudge.n).to}</span><FlapLabel text={paceFlap(nudge.kmh, unit)} size="xs" animate={false} /></div>
+      )}
+      <div className="ss-piece2">
+        {isIndoor && altMph(kmh, unit) && <span className="ss-mph">{altMph(kmh, unit)}</span>}
+        <span className="ss-nx">NEXT</span><span>{hardSegs && hp && hs?.sec !== Infinity ? nextWords(hardSegs, hp.index) : 'done'}</span>
+      </div>
+    </div>
+  )
   return (
     <>
       <SessionFrame
         title={runTitle}
-        count={seg ? runWalkCount(seg, rounds) : walkOnly ? 'EASY' : 'RUN'}
+        count={hard ? undefined : seg ? runWalkCount(seg, rounds) : walkOnly ? 'EASY' : 'RUN'}
         onEnd={onExit}
         onEndAndLog={openLog}
         closeHead={walkOnly ? sentenceCase(WALK_ONLY_NAME) : prescription?.runWalk ? 'Run-walk' : sentenceCase(runTypeLabel)}
         paused={runPaused && !logging}
-        grass={<GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} zone={zone} hold={{ onHeld: openLog, held: logging }} />}
+        grass={hard ? <GrassZone track={hTrack} kind={hEasy ? 'rest' : 'work'} heat={hHeat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} zone={zone} hold={{ onHeld: openLog, held: logging }} />
+          : <GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} zone={zone} hold={{ onHeld: openLog, held: logging }} />}
       >
-        <div className="ss-runmid">
-          <TimerFace big seconds={shown} kind={walking ? 'rest' : 'work'} tone={walking ? 'teal' : undefined} heat={over ? null : heat} label={label} labelTone={labelTone} track={track} />
-          <div className="ss-live" data-live data-zone={zone}>
-            <span className="ss-stt">
-              <span className="ss-hshow"><HeartContainer size={84} bpm={strapOn ? live.hr : null} state={strapOn ? heartState(zone) : 'idle'} label={strapOn ? `Heart rate ${live.hr}` : 'No heart rate strap'} /></span>
-              <FlapLabel text={strapOn ? String(live.hr) : '---'} size="lg" className={strapOn ? `ss-hrn${zone === 'gold' ? ' is-gold' : over ? ' is-over' : ''}` : 'ss-dashes'} />
-              <span className="ss-u">BPM</span>
-            </span>
-            {!isIndoor && (
-              <span className="ss-stt">
-                <FlapLabel text={(live.distanceM / 1000).toFixed(2)} size="lg" />
-                <span className="ss-u">KM</span>
-              </span>
-            )}
+        {hardMid || (
+          <div className="ss-runmid">
+            <TimerFace big seconds={shown} kind={walking ? 'rest' : 'work'} tone={walking ? 'teal' : undefined} heat={over ? null : heat} label={label} labelTone={labelTone} track={track} />
+            {heartRow}
           </div>
-        </div>
+        )}
       </SessionFrame>
       {logging && (
         // Log your run (page 74): filled by itself, no helper text. A tap outside (or CLOSE) puts
         // the run back exactly as it was, nothing saved; the grass eases back.
-        <CentredCard label="Log your run" head="Log your run" onDismiss={saving ? undefined : closeLog} className={`ss-card${logLeaving ? ' is-leaving' : ''}`}>
+        <CentredCard label="Log your run" head="Log your run" headRight={saved ? <FlapLabel text="SAVED" size="xs" tone="teal" animate={false} /> : undefined} onDismiss={saved ? closeSaved : saving ? undefined : closeLog} className={`ss-card${logLeaving ? ' is-leaving' : ''}`}>
           <div className="ss-grid4">
             <ReadoutCell k="KM" value={distance} onChange={setDistance} inputMode="decimal" placeholder="5.0" />
             <ReadoutCell k="TIME" value={duration} onChange={setDuration} inputMode="numeric" placeholder="25:00" />
             <ReadoutCell k="AVG HR" value={avgHr} onChange={setAvgHr} inputMode="numeric" placeholder="138" />
             <ReadoutCell k="MAX HR" value={maxHr} onChange={setMaxHr} inputMode="numeric" placeholder="162" />
           </div>
+          {/* Page 76 §6: the 5K test's time for the 5 km (the clock stamped it; tap to change). */}
+          {hard?.kind === 'test' && !saved && <div className="ss-grid4 is-one"><ReadoutCell k="5K" value={fiveK} onChange={setFiveK} inputMode="numeric" placeholder="27:48" /></div>}
+          {saved && <p className="ss-post1">{saved.line}</p>}
           {/* Without the strap the board is as it was (page 31): the one line on changing a number. */}
-          {!talkTest && !filled && <p className="tm-note" style={{ margin: '-2px 0 0' }}>Tap a number to change it.</p>}
-          {talkTest && (
+          {!saved && !talkTest && !filled && <p className="tm-note" style={{ margin: '-2px 0 0' }}>Tap a number to change it.</p>}
+          {!saved && talkTest && (
             <div className="ss-talk">
               <FlapLabel text="TALK TEST" size="sm" tone="gold" />
               <p className="ss-q">Heart rate when full sentences got hard?</p>
@@ -742,18 +894,20 @@ export function RunSessionView({
               </div>
             </div>
           )}
-          {isIndoor && media === 'one_pace' && (
+          {!saved && isIndoor && media === 'one_pace' && (
             <div className="ss-two">
               <label className="ss-fld"><span className="wm-label">Arc</span><input className="ss-in" value={onePaceArc} onChange={e => setOnePaceArc(e.target.value)} placeholder="e.g. Water 7" /></label>
               <label className="ss-fld"><span className="wm-label">Episode</span><input className="ss-in" value={onePaceEp} onChange={e => setOnePaceEp(e.target.value)} placeholder="e.g. 3" inputMode="numeric" /></label>
             </div>
           )}
-          {showRunRealityMark && <p className="tm-note" style={{ margin: 0 }}>Short run noted.</p>}
+          {!saved && showRunRealityMark && <p className="tm-note" style={{ margin: 0 }}>Short run noted.</p>}
           {/* Cut short: one optional tap says why (NO TIME holds the next run; it never reads as too hard). */}
-          {showRunRealityMark && <ReasonTiles tiles={EARLY_END_REASONS} value={endReason} onChange={setEndReason} />}
-          <div className="wm-btns" style={{ marginTop: 12 }}>
-            <SessionButton label={saving ? 'SAVING' : 'SAVE RUN'} primary disabled={saving} onClick={() => void handleSave()} />
-          </div>
+          {!saved && showRunRealityMark && <ReasonTiles tiles={EARLY_END_REASONS} value={endReason} onChange={setEndReason} />}
+          {!saved && (
+            <div className="wm-btns" style={{ marginTop: 12 }}>
+              <SessionButton label={saving ? 'SAVING' : 'SAVE RUN'} primary disabled={saving} onClick={() => void handleSave()} />
+            </div>
+          )}
         </CentredCard>
       )}
       <ToastContainer />
@@ -768,6 +922,64 @@ function runShape(p: RunPrescription | null | undefined): string | null {
   if (p?.runWalk && p.runWalk.rounds > 0 && p.runWalk.runSec > 0) return `RUN ${mmss(p.runWalk.runSec)} · WALK ${mmss(p.runWalk.walkSec)}`
   if (!p || p.runType === 'zone2' || p.runType === 'easy') return 'ONE STEADY RUN'
   return null
+}
+
+/** A speed (or pace) row on the ready board: the flap and its unit word, small (page 76 §3). */
+function NumRow({ k, v, u }: { k: string; v: string; u: string }) {
+  return (
+    <div className="ss-row">
+      <span className="wm-label ss-grow">{k}</span>
+      <span className="ss-spf"><FlapLabel text={v} size="sm" /><small className="ss-uw">{u}</small></span>
+    </div>
+  )
+}
+
+/**
+ * A hard run's ready board in words (page 76 §3): how long, the pieces ("Run
+ * hard 2 MIN, Then jog 2 MIN, Times 6"), the two speeds and the incline inside
+ * (the two paces outside), and the most the heart should hit. No bar.
+ */
+function HardRows({ hard, outdoor, unit, targetMin }: { hard: HardPlan; outdoor: boolean; unit: TreadmillUnit; targetMin: number | null }) {
+  const p = hard.pieces
+  const minOf = (k: string) => Math.round((p.find(x => x.kind === k)?.sec ?? 0) / 60)
+  const num = (k: string, kmh: number) => outdoor
+    ? <NumRow key={k} k={`${k} pace`} v={paceFlap(kmh, unit)} u={paceUnitWord(unit)} />
+    : <NumRow key={k} k={`${k} speed`} v={speedFlap(kmh, unit)} u={speedUnitWord(unit)} />
+  const incline = outdoor ? null : <TargetRow k="Incline" v={String(hard.incline ?? BASE_INCLINE)} />
+  if (hard.kind === 'test') {
+    return (
+      <>
+        {targetMin != null && <TargetRow k="Time" v={`~${targetMin} MIN`} />}
+        <TargetRow k="Run" v="5 KM" />
+        {num('Start', hard.speeds.test)}
+        {incline}
+      </>
+    )
+  }
+  if (hard.kind === 'steady') {
+    return (
+      <>
+        {targetMin != null && <TargetRow k="Time" v={`${targetMin} MIN`} />}
+        <TargetRow k="Tempo" v={`${minOf('steady')} MIN`} />
+        {num('Hard', hard.speeds.steady)}
+        {num('Easy', hard.speeds.easy)}
+        {incline}
+        <TargetRow k="Heart" v={hard.heart.low != null ? `${hard.heart.low}–${hard.heart.top}` : `UP TO ${hard.heart.top}`} tone="teal" />
+      </>
+    )
+  }
+  return (
+    <>
+      {targetMin != null && <TargetRow k="Time" v={`${targetMin} MIN`} />}
+      <TargetRow k="Run hard" v={`${minOf('hard')} MIN`} />
+      <TargetRow k="Then jog" v={`${minOf('jog')} MIN`} />
+      <TargetRow k="Times" v={String(hard.reps)} />
+      {num('Hard', hard.speeds.hard)}
+      {num('Jog', hard.speeds.jog)}
+      {incline}
+      <TargetRow k="Heart" v={`UP TO ${hard.heart.top}`} tone="teal" />
+    </>
+  )
 }
 
 function TargetRow({ k, v, tone, fit = false }: { k: string; v: string; tone?: 'teal'; fit?: boolean }) {

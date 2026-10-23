@@ -7,6 +7,7 @@ import { iconFor, plannedRowMinutes, rowStatus, sessionDisplayName, shortLift, t
 import { getStrengthTemplate } from '../../lib/strengthTemplates'
 import { ROPE_ROUNDS } from '../../lib/plannedLength'
 import type { SessionIconKey } from '../../design/sessionIconKeys'
+import { fiveKText, hardKindOf } from '../../lib/brain/hardRuns'
 
 export { cycleWeeks } from '../../lib/programWeeks'
 
@@ -101,7 +102,7 @@ export function splitWhy(why: string): { lead: string; rest: string } {
 
 // ─── The planner's day list (page 73, approved 2026-10-22) ───────
 
-/** "Easy Run" → "Easy run", "Run-Walk" → "Run-walk". */
+/** "Zone 2 Run" → "Zone 2 run", "Run-Walk" → "Run-walk". */
 function sentenceCase(s: string): string {
   const t = s.trim()
   return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()
@@ -114,6 +115,11 @@ function liftsLine(s: Pick<DayBoardSession, 'scheduledDate' | 'blockWeek' | 'blo
   const main = getStrengthTemplate(new Date(s.scheduledDate * 86400000).getUTCDay(), s.blockWeek ?? 1, kind, s.label ?? null).exercises.filter(e => e.section === 'main')
   if (main.length === 0) return 'Strength'
   return main.slice(0, 3).map((e, i) => (i === 0 ? shortLift(e.label) : (shortLift(e.label).split(' ').pop() ?? '').toLowerCase())).join(' · ')
+}
+
+function hardReps(doseJson: string | null | undefined): number | null {
+  if (!doseJson) return null
+  try { const r = (JSON.parse(doseJson) as { run?: { hard?: { reps?: unknown } } }).run?.hard?.reps; return typeof r === 'number' ? r : null } catch { return null }
 }
 
 function bagRounds(doseJson: string | null | undefined): number | null {
@@ -132,7 +138,13 @@ export function dayLine(list: ReadonlyArray<DayBoardSession>, weekNumber: number
   switch (main.type) {
     case 'strength': return liftsLine(main)
     case 'running':
-    case 'foundation_run': return `${sentenceCase(sessionDisplayName(main))} · ${plannedRowMinutes(main, weekNumber)} min`
+    case 'foundation_run': {
+      // Page 76: "Tempo · 30 min", "Intervals 2 min × 6", "5K test", "5K test · 27:48".
+      const hard = hardKindOf(main)
+      if (hard === 'test') return main.runSession?.fiveKSec ? `5K test · ${fiveKText(main.runSession.fiveKSec)}` : '5K test'
+      if (hard === 'intervals') { const reps = hardReps(main.doseJson); if (reps) return `Intervals 2 min × ${reps}` }
+      return `${sentenceCase(sessionDisplayName(main))} · ${plannedRowMinutes(main, weekNumber)} min`
+    }
     case 'bag_work': { const r = bagRounds(main.doseJson); return r ? `Bag · ${r} × 3 min` : `Bag · ~${plannedRowMinutes(main, weekNumber)} min` }
     case 'mt_class': return 'MT class'
     case 'active_recovery': return `${sentenceCase(sessionDisplayName(main))} · ~${plannedRowMinutes(main, weekNumber)} min`

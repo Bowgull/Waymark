@@ -1,0 +1,17 @@
+Waymark run cues
+
+The spoken clips in this folder were made with the Piper text-to-speech engine
+(https://github.com/rhasspy/piper) and the voice "Poppy":
+
+  Piper voice en_GB-semaine (DFKI SEMAINE), CC BY-NC-SA 4.0
+  model en_GB-semaine-medium, speaker 3
+
+The SEMAINE voice data is licensed Creative Commons Attribution-NonCommercial-
+ShareAlike 4.0 (https://creativecommons.org/licenses/by-nc-sa/4.0/). These
+clips are derived from it and carry the same licence: credit the voice as
+above, no commercial use, share alike.
+
+The chimes (chime_*.m4a, ticks.m4a) are plain synthesized tones made by
+scripts/make-cues.py.
+
+Remake every clip: see scripts/make-cues.py.

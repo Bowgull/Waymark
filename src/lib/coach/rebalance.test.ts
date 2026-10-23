@@ -18,7 +18,9 @@ const dow = (d: number) => new Date(d * 86400000).getUTCDay()
 function week4(monday: number, week = 4): RebalanceSession[] {
   const out: RebalanceSession[] = []
   for (let d = monday; d < monday + 7; d++) {
-    for (const t of getDayTemplate('block_zero', week, dow(d), new Set())) {
+    // The page 56 story is the week-4 shape with its three run-walks (from page 76 week 4 holds two
+    // hard runs; the rebalance rules are the same for any run, so the story keeps its run-walks).
+    for (const t of getDayTemplate('block_zero', Math.min(week, 3), dow(d), new Set())) {
       out.push({ id: `${t.type}-${d - monday}`, type: t.type, label: t.label, epochDay: d, timeSlot: t.timeSlot, status: 'planned' })
     }
   }

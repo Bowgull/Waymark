@@ -382,7 +382,8 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             hrZone: dict["hrZone"] as? String,
             hrSeq: Self.intValue(dict["hrSeq"]),
             distanceKm: (dict["distanceKm"] as? NSNumber)?.doubleValue,
-            runKind: dict["runKind"] as? String
+            runKind: dict["runKind"] as? String,
+            runPhase: dict["runPhase"] as? String
         )
     }
 

@@ -22,7 +22,10 @@ import { rankPicks, type PickOption, type PickWeather } from '../lib/brain/picks
 import { dowOf } from '../lib/brain/classPicker'
 import type { OutlineSession } from '../lib/brain/outline'
 import { shortLift } from '../features/dayboard/rowState'
-import { computeDose, loadBrainInputs, morningState, nightState, runLabelFor, type StoredDose } from './brain'
+import { computeDose, fiveKReady, loadBrainInputs, morningState, nightState, runLabelFor, type StoredDose } from './brain'
+import { HARD_NOTES, HARD_START_LABEL, hardWeek, type HardKind } from '../lib/brain/hardRuns'
+import { BASE_INCLINE, parseUnit, speedText, type TreadmillUnit } from '../lib/runSpeed'
+import { settings } from '../db/schema'
 import { getActiveBlock } from './blockZeroData'
 import { blockKind, loadInjuryFlag, loadPlacementContext, mtClassDays, trainingWeekFor, weekStamps } from './coachData'
 import { lowerLegOnWatch } from './bodyWatch'
@@ -78,7 +81,7 @@ const lb = (kg: number | null | undefined, equipment: string | null | undefined,
 }
 
 /** The preview lines from a dose (or the session's fixed shape when it has none). */
-export function previewLines(type: string, dose: StoredDose | null, opts: { week: number; slot: 'am' | 'pm'; rope?: { rounds: number }; foundationMin?: number; equipment?: Readonly<Record<string, string>> }): PreviewLine[] {
+export function previewLines(type: string, dose: StoredDose | null, opts: { week: number; slot: 'am' | 'pm'; rope?: { rounds: number }; foundationMin?: number; equipment?: Readonly<Record<string, string>>; unit?: TreadmillUnit }): PreviewLine[] {
   if (dose?.strength) {
     return dose.strength.lifts.slice(0, 4).map(l => {
       const name = shortLift(l.label).toUpperCase()
@@ -90,6 +93,17 @@ export function previewLines(type: string, dose: StoredDose | null, opts: { week
         : `${l.sets}×${l.reps} · ${lb(l.weightKg, eq)}`
       return l.change === 'increase' ? [name, value, 'up'] : l.change === 'decrease' ? [name, value, 'down'] : [name, value]
     })
+  }
+  // Page 76: a hard run as it would be that day: the shape with its warm-up and cool-down, the numbers to set, the heart.
+  if (dose?.run?.hard) {
+    const h = dose.run.hard
+    const unit = opts.unit ?? null
+    const set = (kmh: number) => `speed ${speedText(kmh, unit)} · incline ${BASE_INCLINE}`
+    const m = (sec: number) => `${Math.round(sec / 60)} min`
+    const warm = m(h.pieces[0]?.sec ?? 600), cool = m(h.pieces[h.pieces.length - 1]?.sec ?? 300)
+    if (h.kind === 'test') return [['WHAT', `easy ${warm}, then 5 km as fast as you can, easy ${cool}`], ['START', set(h.speeds.test)], ['THEN', 'a little faster each km if you can']]
+    if (h.kind === 'steady') return [['WHAT', `easy ${warm}, tempo ${m(h.pieces.find(p => p.kind === 'steady')?.sec ?? 900)}, easy ${cool}`], ['HARD', set(h.speeds.steady)], ['EASY', set(h.speeds.easy)], ['HEART', h.heart.low != null ? `stay ${h.heart.low}–${h.heart.top}` : `up to ${h.heart.top}`]]
+    return [['WHAT', `Run hard 2 min, then easy jog 2 min · ${h.reps} times`], ['WARM', `easy ${warm} · cool easy ${cool}`], ['HARD', set(h.speeds.hard)], ['JOG', set(h.speeds.jog)], ['HEART', `hard: up to ${h.heart.top}${h.heart.jogTop ? ` · jog: under ${h.heart.jogTop}` : ''}`]]
   }
   if (dose?.run) {
     const r = dose.run
@@ -137,7 +151,13 @@ export async function coachPicksFor(db: DB, q: CoachPicksQuery): Promise<CoachPi
   const inp = await loadBrainInputs(db, q.today)
   const read = day === q.today ? morningState(inp, day) ?? nightState(inp, day) : nightState(inp, day)
 
-  const board = withBlockLabels(allBoardRows(), block?.blockType ?? null)
+  // Page 76: from week 4 the hard runs are options too (Tempo, Intervals, 5K test), in Block Zero.
+  const hardOpts = kind === 'block_zero' && hardWeek(stamps.weekNumber)
+    ? (['steady', 'intervals', 'test'] as HardKind[]).map(k => ({ type: 'running', label: HARD_START_LABEL[k], timeSlot: 'pm' as const, flexibleTimeSlot: true, runCategory: HARD_NOTES[k], reason: null, priority: 'neutral' as const }))
+    : []
+  const board = [...withBlockLabels(allBoardRows(), block?.blockType ?? null), ...hardOpts]
+  const [st] = await db.select({ unit: settings.treadmillUnit }).from(settings).limit(1)
+  const unit = parseUnit(st?.unit)
   const options = board.filter(o => !target || keepsFor(target, o))
   const slotFor = (o: { timeSlot: 'am' | 'pm'; flexibleTimeSlot: boolean }): 'am' | 'pm' => {
     if (target) return o.flexibleTimeSlot ? (target.timeSlot === 'pm' ? 'pm' : 'am') : o.timeSlot
@@ -172,14 +192,14 @@ export async function coachPicksFor(db: DB, q: CoachPicksQuery): Promise<CoachPi
     } as SessionRow
     const dose = KEY_TYPES.has(o.type) ? await computeDose(db, row, q.today, inp, { decision: null }).catch(() => null) : null
     const action = placement ? pickDayOption({ type: o.type, label: null, notes: o.type === 'running' ? o.runCategory ?? null : null, timeSlot: slot }, day, placement).action : undefined
-    // A run reads the name its dose gives it (Easy Run, Run-Walk, Easy Walk or Bike), as its row will (audit #14).
+    // A run reads the name its dose gives it (Zone 2 Run, Run-Walk, Easy Walk or Bike, Tempo, Intervals, 5K Test), as its row will (audit #14).
     const runName = (o.type === 'foundation_run' || o.type === 'running') && dose ? runLabelFor(row, dose) : null
     out.set(keyOf(o), {
       key: keyOf(o), type: o.type, label: action?.label && o.type === 'strength' ? action.label : runName ?? o.label, ...(o.runCategory ? { runCategory: o.runCategory } : {}),
       timeSlot: slot, flexibleTimeSlot: action && action.kind !== 'add' ? false : o.flexibleTimeSlot,
       reason: null,
       minutes: minutesFor(o.type, dose, row, stamps.weekNumber, kind, { ropeRounds: rope, foundationMin }),
-      lines: previewLines(o.type, dose, { week: stamps.weekNumber, slot, rope: { rounds: rope }, foundationMin, equipment: inp.equipment }),
+      lines: previewLines(o.type, dose, { week: stamps.weekNumber, slot, rope: { rounds: rope }, foundationMin, equipment: inp.equipment, unit }),
       ...(action ? { action } : {}),
     })
   }
@@ -202,8 +222,15 @@ export async function coachPicksFor(db: DB, q: CoachPicksQuery): Promise<CoachPi
     minutes: Object.fromEntries([...out.values()].map(p => [p.key, p.minutes])),
     weather: q.weather ?? null, kneeFlag,
   })
+  // Ready for a 5K test (page 76): the coach puts it first, when the slot is a run's or a free day's.
+  let picks = ranked.picks.map(r => ({ ...out.get(r.key)!, reason: r.reason }))
+  const testKey = 'running:5k_test'
+  if (out.has(testKey) && (!target || target.type === 'running' || target.type === 'foundation_run')) {
+    const ready = await fiveKReady(db, inp, q.today)
+    if (ready.ready) picks = [{ ...out.get(testKey)!, reason: ready.why }, ...picks.filter(p => p.key !== testKey)].slice(0, 3)
+  }
   return {
-    picks: ranked.picks.map(r => ({ ...out.get(r.key)!, reason: r.reason })),
+    picks,
     rest: ranked.rest.map(r => out.get(r.key)!),
     all: [...out.values()],
   }

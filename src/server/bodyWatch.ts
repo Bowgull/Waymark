@@ -27,6 +27,7 @@ import {
   noteView,
   physioView,
   planFor,
+  isPlanRun,
   planToast,
   plan2View,
   programLine,
@@ -511,7 +512,7 @@ async function clearAlert(db: DB, row: AlertRow, today: number, nowSec: number, 
     if (st.same) continue
     if (st.sessionId == null) {
       if (st.shapeWeek != null) {
-        const s = list.find(x => x.id == null && x.day === st.day && x.type === 'foundation_run')
+        const s = list.find(x => x.id == null && x.day === st.day && isPlanRun(x))
         if (s) pending.push({ day: st.day, type: s.type, timeSlot: s.timeSlot, op: { kind: 'shape', week: st.shapeWeek }, before: st.before, after: st.after, was: '', round: 3, ...whyFor(region, { op: { kind: 'shape', week: st.shapeWeek }, type: s.type, label: s.label, notes: s.notes }, st.shapeWeek) })
       }
       continue
@@ -667,7 +668,7 @@ async function viewOf(db: DB, row: AlertRow, today: number): Promise<BodyWatchVi
     case 'physio': board = physioView(a, today); break
     case 'cleared': board = clearView(a, today); break
     case 'ask1': case 'ask2': {
-      const next = (await loadPlanSessions(db, today + 1, today + 7, today, row.id)).find(s => s.type === 'foundation_run' || s.plan?.op === 'shape')
+      const next = (await loadPlanSessions(db, today + 1, today + 7, today, row.id)).find(s => isPlanRun(s) || s.plan?.op === 'shape')
       ask = askView(a, today, next?.day ?? null)
       break
     }

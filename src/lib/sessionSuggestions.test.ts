@@ -50,7 +50,7 @@ console.log('sessionSuggestions tests passed')
   const { withBlockLabels: wbl, allBoardRows: rows } = await import('./sessionSuggestions')
   const bz = wbl(rows(), 'block_zero')
   if (bz.find(r => r.type === 'foundation_run')?.label !== 'Run-Walk') throw new Error('Block Zero: the run-walk reads Run-Walk')
-  if (bz.find(r => r.type === 'running')?.label !== 'Easy Run') throw new Error('Block Zero: the run reads Easy Run')
+  if (bz.find(r => r.type === 'running')?.label !== 'Zone 2 Run') throw new Error('Block Zero: the run reads Zone 2 Run')
   if (wbl(rows(), 'fighter').find(r => r.type === 'foundation_run')?.label !== 'Zone 2') throw new Error('Fighter keeps Zone 2')
   console.log('ok: Block Zero board labels')
 }

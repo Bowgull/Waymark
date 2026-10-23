@@ -182,6 +182,8 @@ export const runSessions = sqliteTable('run_sessions', {
   // Strava activity start and end, unix seconds (0028). Null for manual runs.
   activityStartAt: integer('activity_start_at'),
   activityEndAt: integer('activity_end_at'),
+  // 0048: a 5K test's time for the 5 km, seconds (run_type '5k_test'; page 76).
+  fiveKSec: integer('five_k_sec'),
 }, (t) => [
   uniqueIndex('idx_run_session').on(t.sessionId),
   uniqueIndex('idx_run_strava').on(t.stravaActivityId),
@@ -539,6 +541,8 @@ export const settings = sqliteTable('settings', {
   timeZone: text('time_zone'),
   // 0047: a slot per MT class day, "mon:pm,sat:any" (page 70). Missing: weekday PM, weekend ANY.
   mtClassSlots: text('mt_class_slots'),
+  // 0048: the treadmill speed unit, 'kmh' | 'mph' (page 76). Null: both units show.
+  treadmillUnit: text('treadmill_unit'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 })

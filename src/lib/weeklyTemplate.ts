@@ -7,7 +7,8 @@ export interface TemplateSession {
   type: string
   label: string
   estimatedMin: number
-  runCategory?: 'zone2' | 'progression'
+  /** 'tempo' | 'intervals' | '5k_test': Block Zero's hard runs (page 76). */
+  runCategory?: 'zone2' | 'progression' | 'tempo' | 'intervals' | '5k_test'
 }
 
 const DAILY_FOUNDATION: TemplateSession = {

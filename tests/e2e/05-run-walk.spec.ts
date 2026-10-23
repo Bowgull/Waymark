@@ -15,8 +15,8 @@ test('Run-walk: warm-up, ready card, then run and walk intervals', async ({ page
 
   // The Zone 2 warm-up: six moves, each skipped the way a thumb would.
   await expect(page.getByRole('img', { name: '1 OF 6' })).toBeVisible()
-  // The ready board carries the run's one name from its dose (Run-Walk, Easy Run, or Easy Walk or Bike).
-  const ready = page.getByRole('dialog', { name: /^(Run-Walk|Easy Run|Easy Walk or Bike), ready$/ })
+  // The ready board carries the run's one name from its dose (Run-Walk, Zone 2 Run, or Easy Walk or Bike).
+  const ready = page.getByRole('dialog', { name: /^(Run-Walk|Zone 2 Run|Easy Walk or Bike), ready$/ })
   await throughWarmup(page, () => ready.isVisible())
 
   const { prescription } = await api.get<{ prescription: { runWalk: RunWalk; targetDesc: string } }>(`/api/sessions/${s.id}/foundation-run-workout`)

@@ -93,3 +93,7 @@ body.pl-pickopen .pl-row > .pl-cur, body.pl-pickopen .pl-dr > .pl-cur { display:
   .pl-cmd, .pl-cmd.is-out { animation: none; }
   .pl-row, .pl-row::after, .pl-row.is-press, .pl-row.is-press::after { transition: none; }
 }
+/* page 76: COACH PICKS ↔ EVERYTHING ↔ RUNS swap in the same window: the new list settles in 180 ms (page 59 --t-quick, ease-out), transform and opacity only */
+.pl-view { animation: pl-viewin var(--t-quick) var(--ease-out) both; }
+@keyframes pl-viewin { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .pl-view { animation: none; } }

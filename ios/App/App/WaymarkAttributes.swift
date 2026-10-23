@@ -112,6 +112,9 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
         // "easy" (one continuous run: pause / play only, never skip) or
         // "runwalk" (skip = the next piece, run <-> walk). Nil: not a run.
         public var runKind: String?
+        // Page 76: a hard run's piece word ("RUN HARD", "EASY JOG", "TEMPO",
+        // "5K", "EASY"), with runKind "hard". Nil: not a hard run.
+        public var runPhase: String?
 
         public init(
             phase: String,
@@ -139,7 +142,8 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             hrZone: String? = nil,
             hrSeq: Int? = nil,
             distanceKm: Double? = nil,
-            runKind: String? = nil
+            runKind: String? = nil,
+            runPhase: String? = nil
         ) {
             self.phase = phase
             self.label = label
@@ -167,6 +171,7 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             self.hrSeq = hrSeq
             self.distanceKm = distanceKm
             self.runKind = runKind
+            self.runPhase = runPhase
         }
     }
 

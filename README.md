@@ -134,3 +134,9 @@ Native Capacitor builds fall back to this API when the configured API origin is 
 - Build plans live in `BUILD_PLAN.md`, `BUILD_PLAN_v1_DONE.md`, and `docs/IMPLEMENTATION_PLAN.md`.
 
 Read the handoff first. Then run the checks. The ledger is the truth.
+
+## Run cues and credits
+
+- Hard runs speak their piece changes (page 76): a game chime, then a short voice from clips bundled in `public/cues/` (AAC in `.m4a`). On the phone the run recorder plays them itself, locked too; the web build plays them with HTMLAudio.
+- Remake the clips with `scripts/make-cues.py` (Piper and `afconvert`; the usage is at the top of the script).
+- Voice credit: Piper voice en_GB-semaine (DFKI SEMAINE), CC BY-NC-SA 4.0, speaker "Poppy". The clips are derived from it and carry the same licence; see `public/cues/CREDITS.txt`.

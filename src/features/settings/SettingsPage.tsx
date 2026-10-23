@@ -7,6 +7,7 @@ import { scheduleAlarms } from '@/lib/notifications'
 import { coachLine, nextAlarmDay } from '@/lib/coachLine'
 import { getTodayISO } from '@/lib/dates'
 import { ONE_PACE_ARCS } from '@/lib/onePace'
+import { TreadmillUnitRow } from './TreadmillUnitRow'
 import { NARUTO_ARC_NAMES, NARUTO_EPISODES, narutoArcForEp, narutoEpDrumStart } from '@/lib/naruto'
 import { isHapticsEnabled, setHapticsEnabled, tapHaptic } from '@/lib/haptics'
 import { SessionPicker, type SessionOption } from '@/components/ui/SessionPicker'
@@ -237,6 +238,7 @@ export function SettingsPage() {
             })}
           </div>
         </SBlock>
+        <TreadmillUnitRow />
         <SBlock label="Bag work techniques" sub="Combos using a technique that's off won't appear in sessions.">
           <div className="st-techs">
             {TECHNIQUES.map(({ key, label }) => {
