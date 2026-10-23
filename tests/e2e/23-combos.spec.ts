@@ -103,7 +103,7 @@ test('Bag Work asks COACH / HYBRID / CUSTOM; COACH plans the kru\'s arc', async 
   // the new combo goes to the first technique round, alone
   await expect(board.locator('.bb-rnd').nth(1).locator('.cmb-strikes')).toHaveCount(1)
   await expect(board.locator('.bb-rnd').nth(1)).toContainText(/SWITCH\s*KICK/)
-  await expect(board).toHaveScreenshot('bag-coach.png', { mask: [board.locator('.bb-rnd .cs')] })
+  // (no screenshot: the coach's round count follows the test athlete's readiness, set by earlier specs)
   const before = (await api.get<Array<{ type: string }>>(`/api/sessions/today?date=${new Date().toISOString().slice(0, 10)}`)).length
   await board.getByRole('button', { name: 'Add' }).tap()
   await expect(board).toBeHidden()
@@ -129,7 +129,7 @@ test('HYBRID: fill a round from the picker (gold edge), the rest say coach fills
   await expect(pick).toBeHidden()
   await expect(board.locator('.bb-rnd').nth(1)).toHaveClass(/is-mine/)
   await expect(board.locator('.bb-rnd').nth(1)).toContainText(/SWITCH\s*KICK/)
-  await expect(board).toHaveScreenshot('bag-hybrid.png')
+  // (no screenshot: Hybrid's round count is the coach's, see above)
 
   await board.getByRole('button', { name: 'Save routine' }).tap()
   const save = page.getByRole('dialog', { name: 'Save as routine' })
