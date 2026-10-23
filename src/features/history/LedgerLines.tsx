@@ -73,7 +73,12 @@ export function LedgerLines({ items }: { items: LedgerLineItem[] }) {
     // not enough page below to lift the line that high: the list makes exactly the room it needs
     const short = target - (m.scrollHeight - m.clientHeight)
     if (short > 0 && list.current) list.current.style.paddingBottom = `${(parseFloat(list.current.style.paddingBottom) || 0) + Math.ceil(short)}px`
-    if (prefersReducedMotion()) { m.scrollTop = target; return }
+    if (prefersReducedMotion()) {
+      m.scrollTop = target
+      // WebKit can clamp to the height before the room just added is laid out: set it again next frame
+      snapRaf.current = requestAnimationFrame(() => { if (Math.abs(m.scrollTop - target) > 1) m.scrollTop = target })
+      return
+    }
     const from = m.scrollTop, d = target - from
     let t0 = -1
     const ease = (x: number) => 1 - Math.pow(1 - x, 3)
@@ -82,6 +87,7 @@ export function LedgerLines({ items }: { items: LedgerLineItem[] }) {
       const k = Math.min(1, (n - t0) / LINE_OPEN_MS)
       m.scrollTop = from + d * ease(k)
       if (k < 1) snapRaf.current = requestAnimationFrame(step)
+      else snapRaf.current = requestAnimationFrame(() => { if (Math.abs(m.scrollTop - target) > 1) m.scrollTop = target })
     }
     snapRaf.current = requestAnimationFrame(step)
   }
