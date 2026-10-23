@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { kgToLbs, lbsToKg } from './units'
-import { accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp } from './strengthLoads'
+import { accessoryIncrementKg, accessoryLoadKg, accessoryProgression, bodyweightOk, loadEquipment, loadLabel, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp } from './strengthLoads'
 
 const lb = (kg: number) => kgToLbs(kg)
 
@@ -12,6 +12,21 @@ assert.equal(loadEquipment('bodyweight,dumbbell'), 'dumbbell')
 assert.equal(loadEquipment('cable,band'), 'machine')
 assert.equal(loadEquipment('bodyweight'), 'none')
 assert.equal(loadEquipment(null), 'none')
+
+// BW only for a lift he can do at bodyweight; a loadable lift with no weight finds it.
+assert.equal(bodyweightOk('bodyweight'), true)
+assert.equal(bodyweightOk('pull-up bar,band'), true, 'nothing to load')
+assert.equal(bodyweightOk('bodyweight,dumbbell'), true, 'calf raise: bodyweight is one option')
+assert.equal(bodyweightOk('dumbbell,bench'), false)
+assert.equal(bodyweightOk('cable,band'), false)
+assert.equal(loadLabel(null, 'bodyweight'), 'BW')
+assert.equal(loadLabel(null, 'dumbbell,bench'), 'find your weight', 'dumbbell row with no weight: not BW')
+assert.equal(loadLabel(0, 'cable,band'), 'find your weight', 'face pulls at 0: not BW')
+assert.equal(loadLabel(lbsToKg(35), 'dumbbell'), '35')
+assert.equal(loadLabel(lbsToKg(35), 'dumbbell', lbsToKg(20)), '20→35', 'a work-up: first set → top')
+assert.equal(loadLabel(lbsToKg(35), 'dumbbell', lbsToKg(35)), '35', 'flat: one number')
+assert.equal(accessoryIncrementKg('hamstrings'), 4.54)
+assert.equal(accessoryIncrementKg('back,biceps'), 2.27)
 
 // Plate snapping, pounds: 44 kg (97 lb) loads as 95; never under the bar.
 assert.equal(lb(snapLoadKg(44, 'barbell')), 95, '97 lb snaps to 95')

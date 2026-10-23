@@ -15,13 +15,14 @@ import {
   shortLift,
   strengthWeekLine,
   strengthPlanDetail,
-  topLiftsLine,
   zone2PlanLine,
   runDiffLines,
   sessionDisplayName,
   slotRows,
   NO_ROW_SLOTS,
   strengthDiffLines,
+  liftLoad,
+  planLiftLine,
   type DayBoardSession,
   type WorkoutExercise,
 } from './rowState'
@@ -128,6 +129,29 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   const notLogged = strengthDiffLines([{ exerciseId: 'x', section: 'main', exercise: { name: 'Bench' }, sets: [set(1, 50, 5, 50, 5, false)] }])
   assert.equal(notLogged[0].band, null, 'no logged sets: shown as planned, unbanded')
   assert.equal(notLogged[0].parts[0].text, '1×5 · 110')
+
+  // A work-up (goblet squat 20 → 25 → 30 → 35): stopped at 25, no "−10" against a top he was never meant to force.
+  const L = (lb: number) => lb / 2.20462
+  const gs: WorkoutExercise = { exerciseId: 'gs', section: 'main', exercise: { name: 'Goblet Squat', equipment: 'dumbbell' }, sets: [set(1, L(20), 8, L(20), 8), set(2, L(25), 8, L(25), 8), set(3, L(25), 8, L(30), 8), set(4, L(25), 8, L(35), 8)] }
+  const [stopped] = strengthDiffLines([gs])
+  assert.equal(stopped.parts.map(p => p.text).join(''), '4×8 · 25')
+  assert.deepEqual([stopped.band, stopped.chip], [null, null], 'stopping in a work-up is the plan, not a miss')
+  const [todoGs] = strengthDiffLines([{ ...gs, sets: gs.sets!.map(x => ({ ...x, completedAt: null })) }])
+  assert.equal(todoGs.parts[0].text, '4×8 · 20→35', 'not started: the ladder, first set to top')
+  // A dumbbell row nothing was logged on yet, no weight: not BW.
+  const [row] = strengthDiffLines([{ exerciseId: 'row', section: 'accessory', exercise: { name: 'Dumbbell Row', equipment: 'dumbbell,bench' }, sets: [set(1, 0, 10, 0, 10, false)] }])
+  assert.equal(row.parts[0].text, '1×10 · find your weight')
+}
+
+// ─── to-do lift lines: one weight per lift ──
+{
+  const ex = (equipment: string | null, kg: number | null, fromKg: number | null = null): WorkoutExercise => ({ exerciseId: 'x', section: 'accessory', name: 'Lift', equipment, prescription: { prescribedWeightKg: kg, fromWeightKg: fromKg, setsReps: '4×8' } })
+  assert.equal(liftLoad(ex('dumbbell', 35 / 2.20462, 20 / 2.20462)), '20→35', 'Goblet Squat 4×8 · 20→35 lb')
+  assert.equal(liftLoad(ex('dumbbell,bench', null)), 'find your weight', 'Dumbbell Row with no weight: not BW')
+  assert.equal(liftLoad(ex('cable,band', null)), 'find your weight', 'Face Pulls with no weight: not BW')
+  assert.equal(liftLoad(ex('bodyweight', null)), 'BW', 'a bodyweight move')
+  assert.equal(liftLoad(ex('bodyweight,dumbbell', null)), 'BW', 'calf raise at bodyweight')
+  assert.equal(planLiftLine(ex('dumbbell', 35 / 2.20462, 20 / 2.20462)).parts[0].text, '4×8 · 20→35')
 }
 
 // ─── headline and minutes ──
@@ -223,13 +247,6 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   assert.equal(shortLift('Romanian Deadlift'), 'RDL')
   assert.equal(shortLift('Bench Press'), 'Bench press', 'm14: one case for every lift')
   assert.equal(shortLift('DB Bench Press'), 'DB bench press')
-  const lifts: WorkoutExercise[] = [
-    { exerciseId: 'sq', section: 'main', name: 'Front Squat', prescription: { prescribedWeightKg: 61.2, setsReps: '2×8' } },
-    { exerciseId: 'rdl', section: 'main', name: 'Romanian Deadlift', prescription: { prescribedWeightKg: 52.2, setsReps: '2×8' } },
-    { exerciseId: 'ss', section: 'accessory', name: 'Split Squat', prescription: { prescribedWeightKg: 11.3, setsReps: '2×10' } },
-  ]
-  assert.equal(topLiftsLine(lifts), 'Front squat 2×135lbs · RDL 2×115lbs', 'page 20 top lifts on Today')
-  assert.equal(topLiftsLine([]), null)
   assert.equal(zone2PlanLine('Run-walk', 142, 35), 'Easy, conversational pace. Heart rate under 142, nasal breathing. Run-walk, 35 min.', 'page 33 Zone 2 line')
   const sat = 20379 // a Saturday (2025-10-18)
   const bz = plannedRowMinutes({ type: 'strength', label: 'Strength C', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null })

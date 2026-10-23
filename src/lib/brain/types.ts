@@ -188,7 +188,7 @@ export interface LiftEstimate extends Confidence {
   workingKg: number | null
   workingSource: 'e1rm' | 'used' | 'training_max' | 'history' | null
   /** Started from his history before the block (no exposure in the block yet), with the time-off discount. */
-  seed?: { lastKg: number; lastDay: number; daysOff: number; discount: number } | null
+  seed?: { lastKg: number; lastDay: number; daysOff: number; discount: number; /** The most a first session works up to (kg). */ capKg: number } | null
   /** His RIR bias in reps (+ = more in reserve than he says), ±0.25 a session, clamped ±1.5. */
   rirBias: number
   equipment: ModelSet['equipment']

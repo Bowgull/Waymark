@@ -7,7 +7,7 @@
 // strength session in the outline.
 import assert from 'node:assert/strict'
 import { buildAthleteModel } from './athleteModel'
-import { runDose, strengthDose, nextContinuous, type DoseCtx, type RunIn } from './doses'
+import { runDose, strengthDose, nextContinuous, workUpLadder, type DoseCtx, type RunIn } from './doses'
 import { CONTINUOUS_FROM_SEC, SEED_U, discountedKg, firstStrengthPick, seedFromHistory, timeOffDiscount } from './history'
 import { solveOutline, type OutlineIn, type OutlineSession } from './outline'
 import type { ModelEvents, ModelRun, ModelSession, ModelSet } from './types'
@@ -84,9 +84,9 @@ const history = events({
   assert.deepEqual(Object.keys(seed.lifts).sort(), ['ex-db-ohp', 'ex-db-rdl', 'ex-db-row', 'ex-hammer-curl'], 'weighted main and accessory lifts; core work and missed sessions are not')
   assert.equal(lbOf(seed.lifts['ex-db-rdl'].lastKg), 35, 'the last exposure, not the heaviest ever (a missed session never counts)')
   assert.equal(seed.lifts['ex-db-rdl'].exposures, 3, 'a finished session with weights counts even when the sets were not marked logged')
-  assert.equal(lbOf(seed.lifts['ex-db-rdl'].workingKg), 30)
-  assert.equal(lbOf(seed.lifts['ex-db-row'].workingKg), 25)
-  assert.equal(lbOf(seed.lifts['ex-db-ohp'].workingKg), 15)
+  assert.equal(lbOf(seed.lifts['ex-db-rdl'].capKg), 30, 'the top a first session works up to, not its start')
+  assert.equal(lbOf(seed.lifts['ex-db-row'].capKg), 25)
+  assert.equal(lbOf(seed.lifts['ex-db-ohp'].capKg), 15)
   assert.ok(seed.run, 'a run seed')
   assert.equal(seed.run?.runs, 4, 'stubs and typos are not runs')
   assert.equal(seed.run?.rungSec, 1200, `his usual run (~18 min) rounds to 20 min continuous: ${seed.run?.rungSec}`)
@@ -112,21 +112,36 @@ const block = (over: Partial<ModelEvents> = {}) => events({ ...over, sessions: [
 {
   const m = buildAthleteModel(block(), START, { fromDay: START, seed })
   const rdl = m.lifts['ex-db-rdl']
-  assert.deepEqual([rdl.workingSource, rdl.state, rdl.u, lbOf(rdl.workingKg), rdl.exposures], ['history', 'LEARNING', 0.4, 30, 0], 'the RDL starts at 30 lb, LEARNING at u 0.4')
+  assert.deepEqual([rdl.workingSource, rdl.state, rdl.u, rdl.workingKg, lbOf(rdl.seed?.capKg), rdl.exposures], ['history', 'LEARNING', 0.4, null, 30, 0], 'the RDL: no start weight from history, 30 lb its top, LEARNING at u 0.4')
   assert.deepEqual([m.run.rungSec, m.run.rungSource, m.run.state, m.run.u], [1200, 'history', 'LEARNING', 0.4], 'the run starts at 20 min continuous')
   assert.equal(m.bag.state, 'GUESS', 'areas with no history still start from nothing')
   const unseeded = buildAthleteModel(block(), START, { fromDay: START })
   assert.deepEqual([Object.keys(unseeded.lifts).length, unseeded.run.rungSec], [0, 60], 'without a seed: from scratch, as before')
 
-  // Strength B on day one: the DB RDL at 30 lb, 3 × 8 with about 3 left; the barbell press works up from the bar.
+  // Strength B on day one (Josh, 2026-10-23: months off, much weaker than his logs): every lift finds its
+  // weight from light. The DB RDL works up from 20 lb, never over his June 35 lb less the time off (30 lb).
   const sb = strengthDose(ctx(block(), START + 2), {
     kind: 'block_zero', main: [{ exerciseId: 'ex-db-rdl', label: 'DB Romanian Deadlift', reps: 8 }, { exerciseId: 'ex-ohp', label: 'Overhead Press', reps: 8 }],
-    tmKg: {}, equipment: { 'ex-db-rdl': 'dumbbell', 'ex-ohp': 'barbell' }, steppedThisWeek: [], lastFeltHard: null,
+    tmKg: {}, equipment: { 'ex-db-rdl': 'dumbbell', 'ex-ohp': 'barbell', 'ex-hammer-curl': 'dumbbell', 'ex-face-pulls': 'machine', 'ex-dead-bugs': 'none', 'ex-calf': 'dumbbell' },
+    steppedThisWeek: [], lastFeltHard: null,
+    accessories: [
+      { exerciseId: 'ex-hammer-curl', label: 'Hammer Curl', section: 'accessory', sets: 3, reps: 10 },
+      { exerciseId: 'ex-face-pulls', label: 'Face Pulls', section: 'accessory', sets: 2, reps: 15 },
+      { exerciseId: 'ex-dead-bugs', label: 'Dead Bugs', section: 'core', sets: 2, reps: 10 },
+      { exerciseId: 'ex-calf', label: 'Calf Raise', section: 'core', sets: 2, reps: 12 },
+    ],
+    bodyweightIds: ['ex-dead-bugs', 'ex-calf'],
   })
   const [hinge, press] = sb.lifts
-  assert.deepEqual([hinge.exerciseId, lbOf(hinge.weightKg), hinge.sets, hinge.targetRir, hinge.workUp], ['ex-db-rdl', 30, 3, 3, false], 'DB RDL 3 × 8 @ 30 lb, about 3 left')
-  assert.ok(hinge.why && /30 lb/.test(hinge.why) && /35 lb/.test(hinge.why) && /months off/.test(hinge.why), `plain why in lb: ${hinge.why}`)
+  assert.deepEqual([hinge.exerciseId, lbOf(hinge.weightKg), hinge.sets, hinge.targetRir, hinge.workUp], ['ex-db-rdl', 20, 4, 3, true], 'DB RDL: find your weight, 4 × 8 from 20 lb')
+  assert.deepEqual(hinge.setWeightsKg?.map(lbOf), [20, 25, 30, 30], 'it climbs, and stops at the top (30 lb), never over it')
+  assert.ok(hinge.why && /20 lb/.test(hinge.why) && /30 lb/.test(hinge.why) && /35 lb/.test(hinge.why) && /months off/.test(hinge.why), `plain why in lb: ${hinge.why}`)
   assert.ok(press.workUp && lbOf(press.weightKg) === 45, 'the barbell press: find your weight from the empty bar')
+  // Accessories the same way: light start, his history the top; bodyweight moves get no weight.
+  const acc = Object.fromEntries((sb.accessories ?? []).map(a => [a.exerciseId, a]))
+  assert.deepEqual([acc['ex-hammer-curl']?.workUp, acc['ex-hammer-curl']?.setWeightsKg?.map(lbOf)], [true, [10, 10, 10]], 'hammer curl: 15 lb in June less the time off is 10 lb, the top and the start')
+  assert.deepEqual(acc['ex-face-pulls']?.setWeightsKg?.map(lbOf), [20, 25], 'face pulls, no history: from a light 20 lb on the stack')
+  assert.ok(!acc['ex-dead-bugs'] && !acc['ex-calf'], 'dead bugs and calf raises: bodyweight, no weight')
 
   // The run: 20 min continuous at the line, no walk breaks.
   const easy = runDose(ctx(block(), START + 1), runIn())
@@ -136,6 +151,24 @@ const block = (over: Partial<ModelEvents> = {}) => events({ ...over, sessions: [
   const amber = runDose(ctx(block(), START + 1, { state: 'AMBER', stateWhy: 'Slept 5 h.' }), runIn())
   assert.equal(amber.runSec, 1080, 'an AMBER morning: 10% shorter')
   assert.equal(nextContinuous(1200), 1320, 'the next step: 10% longer, to the minute')
+}
+
+// ─── The work-up ladder and an accessory done in the block ───
+{
+  const L = (lb: number) => lb * LB
+  assert.deepEqual(workUpLadder(L(45), 4, 'ex-bench-press', 'barbell').map(lbOf), [45, 50, 55, 60], 'no history: climbs a step a set')
+  assert.deepEqual(workUpLadder(L(20), 4, 'ex-db-row', 'dumbbell', L(25)).map(lbOf), [20, 25, 25, 25], 'his old weight is the top, never passed')
+  assert.deepEqual(workUpLadder(L(20), 3, 'ex-db-ohp', 'dumbbell', L(15)).map(lbOf), [15, 15, 15], 'a top under the light start: starts at the top')
+  assert.deepEqual(workUpLadder(null, 2, 'ex-bird-dogs', 'none'), [null, null], 'nothing to load')
+
+  // He did face pulls in the block, every rep at 25 lb: next time +5 lb on a green day, held on an AMBER one.
+  const facePull = { exerciseId: 'ex-face-pulls', label: 'Face Pulls', section: 'accessory' as const, sets: 2, reps: 15 }
+  const last = { 'ex-face-pulls': { plannedSets: 2, sets: [{ weightKg: L(25), reps: 15, plannedReps: 15, rir: 3 }, { weightKg: L(25), reps: 15, plannedReps: 15, rir: 2 }] } }
+  const inp = { kind: 'block_zero' as const, main: [], tmKg: {}, equipment: { 'ex-face-pulls': 'machine' as const }, steppedThisWeek: [], lastFeltHard: null, accessories: [facePull], accessoryLast: last }
+  const green = strengthDose(ctx(block(), START + 9), inp).accessories?.[0]
+  assert.deepEqual([green?.workUp, lbOf(green?.weightKg), green?.change], [false, 30, 'increase'], 'all sets hit: one step up')
+  const amber = strengthDose(ctx(block(), START + 9, { state: 'AMBER', stateWhy: 'Slept 5 h.' }), inp).accessories?.[0]
+  assert.deepEqual([lbOf(amber?.weightKg), amber?.change], [25, 'hold'], 'AMBER: same weight')
 }
 
 // ─── His own sessions take over (both ways) ──────────────────

@@ -22,7 +22,7 @@ import { isLoggedWorkSet } from '../lib/loggedSets'
 import { lastWorkingSets, type LibraryHintData } from '../lib/libraryHints'
 import { notesOnComplete } from '../lib/sessionNotes'
 import { parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes } from '../lib/plannedLength'
-import { RAMP_REST_SEC, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
+import { RAMP_REST_SEC, accessoryIncrementKg, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
 import { idempotent } from './idempotency'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
@@ -240,9 +240,11 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
     const targetReps = workingSets[0]?.reps ?? 0
     // Loads were written per set at start (RIR rules or TM x %, snapped to
     // plates); the last working set is the working load (a check set may lead).
+    // A work-up climbs: its first set is the from of "20→35 lb".
     const written = workingSets.length > 0 ? workingSets[workingSets.length - 1].plannedWeightKg : null
     const fallback = computeWorkingWeightKg(tmKg, se.section, wavePct)
     const prescribedWeightKg = written ?? (fallback != null ? snapLoadKg(fallback, loadEquipment(exercise?.equipment)) : null)
+    const fromWeightKg = workUpFromKg(workingSets.map(st => st.plannedWeightKg))
 
     result.push({
       id: se.id,
@@ -256,6 +258,7 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
         trainingMaxKg: tmKg,
         wavePercentage: se.section === 'main' ? wavePct : null,
         prescribedWeightKg,
+        fromWeightKg,
         setsReps: targetReps > 0 ? `${setsCount}×${targetReps}` : `${setsCount} sets`,
       },
     })
@@ -263,7 +266,16 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
 
   // The planned length from the session's own sets and rests (the done summary's "+N min").
   const plannedMin = plannedStrengthMinutes(result.flatMap(r => r.sets.map(st => ({ isWarmup: st.isWarmup, restSec: st.restSec }))))
-  return { session, exercises: result, plannedMin }
+  // What the coach decided at start stays with the session (its lines keep the ↑ / ↓ and the notes once started).
+  const ctx = parseJson<{ brain?: unknown; coach?: unknown }>(session?.contextJson ?? null, {})
+  return { session, exercises: result, plannedMin, ...(ctx.brain ? { brain: ctx.brain } : {}), ...(ctx.coach ? { coach: ctx.coach } : {}) }
+}
+
+/** A work-up's first planned weight when the working sets climb to a heavier top; else null. */
+function workUpFromKg(planned: Array<number | null | undefined>): number | null {
+  const w = planned.filter((x): x is number => x != null && x > 0)
+  if (w.length < 2) return null
+  return w[w.length - 1] > w[0] + 0.01 ? w[0] : null
 }
 
 async function buildStrengthPreview(db: DrizzleDB, sessionId: string, todayDay: number) {
@@ -298,10 +310,12 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string, todayDay: 
       label: tex.label,
       section: tex.section,
       orderIndex,
+      equipment: ex?.equipment ?? null,
       prescription: {
         trainingMaxKg: tmKg,
         wavePercentage: tex.section === 'main' ? wavePct : null,
         prescribedWeightKg,
+        fromWeightKg: workUpFromKg(workingSets.map(st => st.suggestedWeightKg)),
         setsReps: targetReps > 0 ? `${setsCount}×${targetReps}` : `${setsCount} sets`,
       },
     }
@@ -1343,6 +1357,8 @@ app.patch('/api/strength-sets/:id', async (c) => {
 
   const updates: Record<string, unknown> = {}
 
+  // 0 is no weight (bodyweight), never a load of 0: it would read back as BW on a cable or a dumbbell.
+  if (body.weightKg === 0) body.weightKg = null
   if (body.weightKg !== undefined) updates.weightKg = body.weightKg
   if (body.reps !== undefined) updates.reps = body.reps
   if (body.completedAt !== undefined) updates.completedAt = body.completedAt
@@ -2940,14 +2956,16 @@ app.get('/api/exercises/:id/last-session', async (c) => {
 
   // Determine exercise category for increment size
   const [exercise] = await db.select().from(exercises).where(eq(exercises.id, exerciseId))
-  const isLower = exercise?.muscleGroups?.includes('quads') || exercise?.muscleGroups?.includes('glutes') || exercise?.muscleGroups?.includes('hamstrings')
-  const incrementKg = isLower ? 4.54 : 2.27 // 10lb lower, 5lb upper
+  const incrementKg = accessoryIncrementKg(exercise?.muscleGroups) // 10lb lower, 5lb upper
+  // A last session from before the active block: months off, no "Try N lb?" from it (the dose starts him light).
+  const block = await getActiveBlock(db)
+  const blockStartSec = block ? (block.startedAt ?? block.createdAt) : null
 
   return c.json({
     lastWeight: bestMatch.weight,
     lastReps: bestMatch.reps,
     lastDate: bestMatch.date,
-    suggestedWeight: snapIncreaseKg(bestMatch.weight, bestMatch.weight + incrementKg, loadEquipment(exercise?.equipment)),
+    suggestedWeight: blockStartSec != null && latestDate < blockStartSec ? null : snapIncreaseKg(bestMatch.weight, bestMatch.weight + incrementKg, loadEquipment(exercise?.equipment)),
   })
 })
 
@@ -2959,8 +2977,10 @@ app.get('/api/exercises/:id/history', async (c) => {
   const db = createDB(c.env)
 
   const [exercise] = await db.select().from(exercises).where(eq(exercises.id, exerciseId))
-  const isLower = exercise?.muscleGroups?.includes('quads') || exercise?.muscleGroups?.includes('glutes') || exercise?.muscleGroups?.includes('hamstrings')
-  const incrementKg = isLower ? 4.54 : 2.27 // 10lb lower, 5lb upper
+  const incrementKg = accessoryIncrementKg(exercise?.muscleGroups) // 10lb lower, 5lb upper
+  // A last session from before the active block: months off, no "Try N lb?" from it (the dose starts him light).
+  const block = await getActiveBlock(db)
+  const blockStartSec = block ? (block.startedAt ?? block.createdAt) : null
 
   // Get all session-exercises for this exercise
   const sexes = await db.select().from(strengthSessionExercises)
@@ -3023,10 +3043,14 @@ app.get('/api/exercises/:id/history', async (c) => {
   const lastSession = sessionRecords[0] ?? null
   const recentTrend = sessionRecords.slice(0, 3).reverse() // oldest-first for display
 
+  const beforeBlock = lastSession != null && blockStartSec != null && lastSession.epoch < blockStartSec
+
   // Compute suggestion based on section type
   let suggestion: { type: string; message: string; suggestedWeightKg: number | null } | null = null
 
-  if (section === 'main') {
+  if (beforeBlock) {
+    suggestion = null
+  } else if (section === 'main') {
     suggestion = { type: 'follow_prescription', message: 'Follow prescribed weight', suggestedWeightKg: null }
   } else if (section === 'accessory' && lastSession) {
     // Double progression against the planned reps and set count: weight goes
@@ -3047,6 +3071,7 @@ app.get('/api/exercises/:id/history', async (c) => {
       reps: lastSession.avgReps,
       date: lastSession.date,
       allSets: lastSession.allSets,
+      beforeBlock,
     } : null,
     pr: prRecord,
     recentTrend: recentTrend.map(r => ({ date: r.date, maxWeightKg: r.maxWeightKg, avgReps: r.avgReps })),

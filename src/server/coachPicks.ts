@@ -14,7 +14,7 @@ import { estimatedMinutes } from '../lib/coach/sessions'
 import { KEY_TYPES } from '../lib/keyTypes'
 import { mondayOf } from '../lib/dates'
 import { foundationLevel } from '../lib/foundation'
-import { kgToLbs } from '../lib/units'
+import { loadLabel } from '../lib/strengthLoads'
 import { doseMinutes } from '../lib/brain/doseMinutes'
 import { rankPicks, type PickOption, type PickWeather } from '../lib/brain/picks'
 import { dowOf } from '../lib/brain/classPicker'
@@ -69,14 +69,23 @@ export interface CoachPicksQuery {
 
 const keyOf = (o: { type: string; runCategory?: string }) => (o.runCategory ? `${o.type}:${o.runCategory}` : o.type)
 const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`
-const lb = (kg: number | null | undefined) => (kg != null && kg > 0 ? `${kgToLbs(kg)} lb` : 'BW')
+/** The plan lines' load words: "35 lb", a work-up "20→35 lb", "BW" only for a bodyweight move. */
+const lb = (kg: number | null | undefined, equipment: string | null | undefined, fromKg?: number | null) => {
+  const w = loadLabel(kg, equipment, fromKg)
+  return /\d$/.test(w) ? `${w} lb` : w
+}
 
 /** The preview lines from a dose (or the session's fixed shape when it has none). */
-export function previewLines(type: string, dose: StoredDose | null, opts: { week: number; slot: 'am' | 'pm'; rope?: { rounds: number } }): PreviewLine[] {
+export function previewLines(type: string, dose: StoredDose | null, opts: { week: number; slot: 'am' | 'pm'; rope?: { rounds: number }; equipment?: Readonly<Record<string, string>> }): PreviewLine[] {
   if (dose?.strength) {
     return dose.strength.lifts.slice(0, 4).map(l => {
       const name = shortLift(l.label).toUpperCase()
-      const value = l.workUp ? `${l.sets}×${l.reps} · from ${lb(l.setWeightsKg?.[0] ?? l.weightKg)}` : `${l.sets}×${l.reps} · ${lb(l.weightKg)}`
+      const eq = opts.equipment?.[l.exerciseId] ?? null
+      // A work-up shows its ladder, first set to top, the same as the plan lines.
+      const ladder = (l.setWeightsKg ?? []).filter((w): w is number => w != null && w > 0)
+      const value = l.workUp && ladder.length > 0
+        ? `${l.sets}×${l.reps} · ${lb(ladder[ladder.length - 1], eq, ladder[0])}`
+        : `${l.sets}×${l.reps} · ${lb(l.weightKg, eq)}`
       return l.change === 'increase' ? [name, value, 'up'] : l.change === 'decrease' ? [name, value, 'down'] : [name, value]
     })
   }
@@ -160,7 +169,7 @@ export async function coachPicksFor(db: DB, q: CoachPicksQuery): Promise<CoachPi
       timeSlot: slot, flexibleTimeSlot: action && action.kind !== 'add' ? false : o.flexibleTimeSlot,
       reason: null,
       minutes: minutesFor(o.type, dose, row, stamps.weekNumber, kind),
-      lines: previewLines(o.type, dose, { week: stamps.weekNumber, slot, rope: { rounds: read.state === 'AMBER' || read.state === 'RED' ? 3 : 5 } }),
+      lines: previewLines(o.type, dose, { week: stamps.weekNumber, slot, rope: { rounds: read.state === 'AMBER' || read.state === 'RED' ? 3 : 5 }, equipment: inp.equipment }),
       ...(action ? { action } : {}),
     })
   }

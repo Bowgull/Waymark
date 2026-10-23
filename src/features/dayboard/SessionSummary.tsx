@@ -16,7 +16,6 @@ import {
   strengthDiffLines,
   strengthWeekLine,
   easedOneSet,
-  topLiftsLine,
   zone2PlanLine,
   runWalkPlanLine,
   runWalkShapeFor,
@@ -247,13 +246,11 @@ export function SessionSummary({ session, weekNumber, onReplace, onSkip, variant
   const todo = status === 'todo'
   const today = variant === 'today'
 
-  // Today, a session to do (page 20): the intent line, the top lifts, then ENTER / REPLACE / SKIP full width.
+  // Today, a session to do (page 20): the intent line, then ENTER / REPLACE / SKIP full width.
   if (today && status !== 'done') {
-    const lifts = data?.kind === 'strength' ? topLiftsLine(data.exercises) : null
     return (
       <div className="db-today">
         <p className="db-today-p">{getSessionIntent(session.type)}</p>
-        {lifts && <p className="db-today-p">{lifts}</p>}
         {actions && <div className="wm-btns">{actions}</div>}
       </div>
     )

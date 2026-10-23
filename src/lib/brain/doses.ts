@@ -14,7 +14,7 @@
 // time), HR over the line. Pure.
 
 import { RUN_WALK_WEEKS, runWalkTotalSec, singleRunCap, weeklyRunCap, RESTART_SESSION_SEC, type WeeklyRunContext } from '../blockZero/running'
-import { snapIncreaseKg, snapLoadKg, type LoadEquipment } from '../strengthLoads'
+import { accessoryProgression, snapIncreaseKg, snapLoadKg, type AccessorySetLog, type LoadEquipment } from '../strengthLoads'
 import { liftRegion } from '../blockZero/strength'
 import { workingWeight, RUNG_LADDER } from './athleteModel'
 import { backDaySwap, chooseSlot, ravenSwap, slotOf, type MainSlot } from './progression'
@@ -114,6 +114,34 @@ export interface StrengthIn {
   steppedThisWeek: readonly string[]
   /** The last similar session felt 2+ over its target, or the next morning was sore (4+): at most HOLD. */
   lastFeltHard: string | null
+  /** The template's accessory and core rows (their weights come from the dose too). */
+  accessories?: AccessoryIn[]
+  /** Exercise ids he can do at bodyweight (bodyweightOk): no weight is prescribed. */
+  bodyweightIds?: readonly string[]
+  /** Accessories he has done in the block: the last session's logged working sets. */
+  accessoryLast?: Readonly<Record<string, { sets: AccessorySetLog[]; plannedSets: number }>>
+}
+
+export interface AccessoryIn {
+  exerciseId: string
+  label: string
+  section: 'accessory' | 'core'
+  /** Working sets and reps in the template. */
+  sets: number
+  reps: number
+}
+
+export interface AccessoryDose {
+  exerciseId: string
+  section: 'accessory' | 'core'
+  sets: number
+  reps: number
+  /** The working weight (a work-up: its first set). */
+  weightKg: number | null
+  workUp: boolean
+  setWeightsKg?: Array<number | null>
+  change: LoadChange
+  note: string | null
 }
 
 export type LoadChange = 'start' | 'increase' | 'hold' | 'decrease'
@@ -145,6 +173,8 @@ export interface StrengthDose {
   lifts: LiftDose[]
   /** Accessory sets for the day (null: as the template has them). */
   accessorySets: number | null
+  /** Accessory and core weights (a lift missing here keeps the template's own: bodyweight, or a TM). */
+  accessories?: AccessoryDose[]
   /** Main working sets at the rules' HOLD level, and as prescribed (the replay compares them). */
   holdSets: number
   sets: number
@@ -164,6 +194,25 @@ export function startKg(equipment: LoadEquipment): number | null {
 function snap(kg: number | null, eq: LoadEquipment, dir: 'nearest' | 'up' | 'down' = 'nearest'): number | null {
   if (kg == null || !(kg > 0)) return kg
   return snapLoadKg(kg, eq, { direction: dir })
+}
+
+/**
+ * A find-your-weight ladder: `n` sets from `firstKg`, a large step up each set,
+ * never above `capKg` (his history less the time off). A start above the cap
+ * starts at the cap. Unloaded lifts: no weights.
+ */
+export function workUpLadder(firstKg: number | null, n: number, exerciseId: string, eq: LoadEquipment, capKg: number | null = null): Array<number | null> {
+  const top = capKg != null && capKg > 0 && eq !== 'none' ? snapLoadKg(capKg, eq, { direction: 'down' }) : null
+  const out: Array<number | null> = []
+  let w = firstKg != null && top != null ? Math.min(firstKg, top) : firstKg
+  for (let i = 0; i < n; i++) {
+    out.push(w)
+    if (w != null && eq !== 'none') {
+      const next = stepUpKg(w, exerciseId, eq, true)
+      w = top != null ? Math.min(next, Math.max(top, w)) : next
+    }
+  }
+  return out
 }
 
 /** One load step for a lift: lower body +5-10%, upper +2.5-5% (§6.2), snapped to the next loadable step. */
@@ -222,18 +271,19 @@ function blockZeroLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCe
   const t = liftTargets(u)
   const reps = tex.reps
 
-  // A lift the model knows nothing about: find your weight (§7), sets of 8 working up.
-  const known = lift != null && lift.workingKg != null && lift.workingSource !== 'training_max'
+  // Nothing logged in the block yet: find your weight (§7), sets of 8 working up from light.
+  // His history before the block is only the top (Josh, 2026-10-23), never the start.
+  const known = lift != null && lift.workingKg != null && lift.workingSource !== 'training_max' && lift.workingSource !== 'history'
   if (!known) {
     const tm = inp.tmKg[exerciseId]
     const fromTm = tm != null ? snap(workingWeight(tm / 0.9, reps, BASE_RIR + 2, 0, eq) * 0.8, eq, 'down') : null
-    const first = fromTm ?? startKg(eq)
-    const weights: Array<number | null> = []
-    let w = first
+    const cap = lift?.seed?.capKg ?? null
     const n = recoverOrLess(sessionCeiling) ? 2 : ctx.state === 'AMBER' || sessionCeiling === 'EASE' ? WORKUP_SETS - 1 : WORKUP_SETS
-    for (let i = 0; i < n; i++) {
-      weights.push(w)
-      if (w != null && eq !== 'none') w = stepUpKg(w, exerciseId, eq, true)
+    const weights = workUpLadder(fromTm ?? startKg(eq), n, exerciseId, eq, cap)
+    const first = weights[0] ?? null
+    if (lift?.seed && first != null && cap != null) {
+      const lb = (kg: number) => Math.round(kg * 2.20462)
+      whys.push(`${label}: start light at ${lb(first)} lb and work up, no higher than ${lb(cap)} lb today. You did ${lb(lift.seed.lastKg)} lb in ${monthOf(lift.seed.lastDay)}, before ${gapWords(lift.seed.daysOff)} off.`)
     }
     const level = minLevel('HOLD', sessionCeiling)
     return {
@@ -256,13 +306,6 @@ function blockZeroLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCe
   if (levelAbove(level, 'HOLD') && inp.lastFeltHard) level = 'HOLD'
   if (levelAbove(level, 'HOLD') && inp.steppedThisWeek.includes(exerciseId)) level = 'HOLD'
   if (sig.why && level === sig.level) whys.push(named(sig.why, lift.exerciseId, label) as string)
-  // Started from his history (no exposure in the block yet): where the weight comes from, in lb.
-  if (lift.workingSource === 'history' && lift.seed && level === 'HOLD' && lift.workingKg != null) {
-    const lb = (kg: number) => Math.round(kg * 2.20462)
-    whys.push(lift.seed.discount > 0
-      ? `${label}: ${lb(lift.workingKg)} lb, down from your ${lb(lift.seed.lastKg)} lb in ${monthOf(lift.seed.lastDay)} after ${gapWords(lift.seed.daysOff)} off.`
-      : `${label}: ${lb(lift.workingKg)} lb, where you left off.`)
-  }
 
   let sets = t.sets
   let weight: number | null
@@ -342,6 +385,46 @@ function fighterLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCeil
   }
 }
 
+/** A light first weight for an accessory or core lift (kg): the bar, a 10 lb dumbbell, 20 lb on a stack. */
+export function accessoryStartKg(equipment: LoadEquipment): number | null {
+  switch (equipment) {
+    case 'barbell': return 20.41
+    case 'dumbbell': return 4.54
+    case 'machine': return 9.07
+    default: return null
+  }
+}
+
+/**
+ * An accessory or core lift's weight, the same rule as the main lifts: done in
+ * the block, double progression from the last session (no weight added on a
+ * HOLD day or lower); not yet, find your weight from light, capped by his history.
+ * Null: no weight to prescribe (bodyweight, nothing to load, or a TM decides).
+ */
+export function accessoryLift(ctx: DoseCtx, inp: StrengthIn, a: AccessoryIn, ceiling: Level, accessorySets: number | null): AccessoryDose | null {
+  const eq = inp.equipment[a.exerciseId] ?? 'none'
+  if (eq === 'none' || inp.bodyweightIds?.includes(a.exerciseId) || inp.tmKg[a.exerciseId] != null) return null
+  const sets = accessorySets != null ? Math.min(a.sets, accessorySets) : a.sets
+  if (sets <= 0) return null
+  const last = inp.accessoryLast?.[a.exerciseId]
+  if (last && last.sets.length > 0) {
+    const inc = liftRegion(a.exerciseId) === 'lower' ? 4.54 : 2.27
+    const p = accessoryProgression(last.sets, last.plannedSets, { incrementKg: inc, equipment: eq })
+    const top = Math.max(...last.sets.map(x => x.weightKg))
+    let weightKg = p?.suggestedWeightKg ?? top
+    let change: LoadChange = p?.type === 'weight_increase' ? 'increase' : 'hold'
+    if (recoverOrLess(ceiling)) { weightKg = snap(top * 0.9, eq, 'down') ?? top; change = 'decrease' }
+    else if (change === 'increase' && !levelAbove(ceiling, 'HOLD')) { weightKg = top; change = 'hold' }
+    return { exerciseId: a.exerciseId, section: a.section, sets, reps: a.reps, weightKg, workUp: false, change, note: null }
+  }
+  const cap = ctx.model.lifts[a.exerciseId]?.seed?.capKg ?? null
+  const weights = workUpLadder(accessoryStartKg(eq), sets, a.exerciseId, eq, cap)
+  return {
+    exerciseId: a.exerciseId, section: a.section, sets, reps: a.reps, weightKg: weights[0] ?? null, workUp: true, setWeightsKg: weights, change: 'start',
+    note: 'Find your weight: start light, a little heavier each set. Stop adding at the first set with about 3 left, and stay there.',
+  }
+}
+
 export function strengthDose(ctx: DoseCtx, inp: StrengthIn): StrengthDose {
   const own = ownHold(ctx.model, 'strength')
   const ceiling = own ? minLevel(ceilingFor(ctx), 'HOLD') : ceilingFor(ctx)
@@ -356,7 +439,9 @@ export function strengthDose(ctx: DoseCtx, inp: StrengthIn): StrengthDose {
   const sets = lifts.reduce((n, l) => n + l.sets, 0)
   const level = lifts.reduce<Level>((m, l) => minLevel(m, l.level), lifts[0]?.level ?? 'HOLD')
   const why = [ctx.state === 'AMBER' || ctx.state === 'RED' ? ctx.stateWhy : null, own && !recoverOrLess(ceiling) ? own.why : null, ...lifts.map(l => l.why)].filter((w): w is string => !!w)
-  return { kind: 'strength', level, lifts, accessorySets: recoverOrLess(ceiling) ? 1 : null, holdSets, sets, why }
+  const accessorySets = recoverOrLess(ceiling) ? 1 : null
+  const accessories = (inp.accessories ?? []).map(a => accessoryLift(ctx, inp, a, ceiling, accessorySets)).filter((a): a is AccessoryDose => a != null)
+  return { kind: 'strength', level, lifts, accessorySets, ...(accessories.length ? { accessories } : {}), holdSets, sets, why }
 }
 
 // ─── Run ─────────────────────────────────────────────────────
@@ -616,7 +701,8 @@ export function leftWords(rir: number): string {
 /**
  * The template with its main lifts replaced by the dose: the chosen exercise,
  * its sets × reps at the dose's weight (work-up sets climbing), the note in
- * plain words. Accessories keep the template's sets, one set on a recover day.
+ * plain words. Accessories keep the template's sets (one on a recover day) at
+ * the dose's accessory weights.
  */
 export function templateFromDose<T extends { exercises: Array<{ exerciseId: string; label: string; section: string; sets: Array<{ isWarmup: boolean; targetReps: number; restSec: number; suggestedWeightKg?: number | null; loadMultiplier?: number }>; notes?: string }> }>(template: T, dose: StrengthDose): T {
   let mainIdx = 0
@@ -629,10 +715,16 @@ export function templateFromDose<T extends { exercises: Array<{ exerciseId: stri
       const what = l.workUp ? null : `${l.sets} × ${l.reps}, ${leftWords(l.targetRir)}. Never to failure.`
       return { ...tex, exerciseId: l.exerciseId, label: l.label, sets, notes: [l.why, what, l.note].filter(Boolean).join(' ') }
     }
-    if (dose.accessorySets != null && (tex.section === 'accessory' || tex.section === 'core')) {
+    if (tex.section === 'accessory' || tex.section === 'core') {
       const warm = tex.sets.filter(s => s.isWarmup)
-      const work = tex.sets.filter(s => !s.isWarmup).slice(0, dose.accessorySets)
-      return { ...tex, sets: [...warm, ...work] }
+      let work = tex.sets.filter(s => !s.isWarmup)
+      if (dose.accessorySets != null) work = work.slice(0, dose.accessorySets)
+      const a = dose.accessories?.find(x => x.exerciseId === tex.exerciseId)
+      if (a) {
+        work = work.map((s, i) => ({ ...s, suggestedWeightKg: a.workUp ? (a.setWeightsKg?.[i] ?? a.setWeightsKg?.[a.setWeightsKg.length - 1] ?? a.weightKg) : a.weightKg }))
+        return { ...tex, sets: [...warm, ...work], ...(a.note ? { notes: [a.note, tex.notes].filter(Boolean).join(' ') } : {}) }
+      }
+      if (dose.accessorySets != null) return { ...tex, sets: [...warm, ...work] }
     }
     return tex
   })

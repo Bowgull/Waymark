@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 
 import { kgToLbs } from '../units'
-import { carryKey, editedStartKg, parseCarry, plannedSetLbs, setLbsToKg, startSetLbs, stepSetLbs, withLogged } from './setWeight'
+import { carryKey, editedStartKg, parseCarry, plannedSetLbs, setLbsToKg, setNeedsWeight, startSetLbs, stepSetLbs, withLogged } from './setWeight'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; console.log(`ok: ${name}`) }
@@ -51,6 +51,34 @@ test('m12: front squat set 1 changed to 70 lb, sets 2-3 start at 70', () => {
   assert.equal(editedStartKg(c.fsq, { isWarmup: false, plannedKg: 80 / 2.20462 }), null)
   // Logged as planned: nothing to carry.
   assert.equal(editedStartKg(withLogged({}, 'fsq', plan, { isWarmup: false, plannedKg: plan }).fsq, { isWarmup: false, plannedKg: plan }), null)
+})
+
+test('a work-up he stopped climbing: later sets start at what he logged, not the next rung', () => {
+  const L = (lb: number) => lb / 2.20462
+  // Rungs 20 → 25 → 30 → 35. Set 2 he stayed at 20 (under its 25): sets 3 and 4 start at 20.
+  let c = withLogged({}, 'gs', L(20), { isWarmup: false, plannedKg: L(20) })
+  assert.equal(editedStartKg(c.gs, { isWarmup: false, plannedKg: L(25) }), null, 'logged as planned: the next rung')
+  c = withLogged(c, 'gs', L(20), { isWarmup: false, plannedKg: L(25) })
+  assert.equal(startSetLbs(L(30), 'dumbbell', null, editedStartKg(c.gs, { isWarmup: false, plannedKg: L(30) })), 20, 'set 3: 20, not 30')
+  assert.equal(startSetLbs(L(35), 'dumbbell', null, editedStartKg(c.gs, { isWarmup: false, plannedKg: L(35) })), 20, 'set 4: 20, not 35')
+  // Climbing over a rung is not a stop: the next rung stands.
+  const over = withLogged({}, 'gs', L(30), { isWarmup: false, plannedKg: L(25) })
+  assert.equal(editedStartKg(over.gs, { isWarmup: false, plannedKg: L(30) }), null)
+  // A warm-up never counts as stopping.
+  assert.equal(editedStartKg(c.gs, { isWarmup: true, plannedKg: L(35) }), null)
+})
+
+test('bodyweight lifts log with no weight; loadable ones (cable and machine too) wait for one', () => {
+  assert.equal(setNeedsWeight('bodyweight,dumbbell', false, 0), false, 'calf raise, single-leg RDL: bodyweight is fine')
+  assert.equal(setNeedsWeight('bodyweight,dumbbell,band', false, 0), false, 'reverse lunge')
+  assert.equal(setNeedsWeight('dumbbell,bench', false, 0), true, 'dumbbell row at 0: set the weight')
+  assert.equal(setNeedsWeight('cable,band', false, 0), true, 'face pulls at 0: set the weight')
+  assert.equal(setNeedsWeight('machine', false, 0), true, 'hamstring curl at 0: set the weight')
+  assert.equal(setNeedsWeight('machine', false, 40), false)
+  assert.equal(setNeedsWeight('machine', true, 0), false, 'a warm-up logs as it is')
+  assert.equal(setNeedsWeight('bodyweight', false, null), false, 'no weight row at all')
+  assert.equal(startSetLbs(null, 'machine'), 0, 'a stack with no plan starts empty, not at a real-looking weight')
+  assert.equal(setLbsToKg(0), null, '0 is never saved as a weight')
 })
 
 test('m10: the carried weight survives a reload (stored per session)', () => {

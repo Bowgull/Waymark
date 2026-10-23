@@ -110,7 +110,7 @@ interface PrescriptionData {
 }
 
 interface ExerciseHistoryData {
-  lastSession: { weightKg: number; reps: number; date: string; allSets: { weightKg: number; reps: number }[] } | null
+  lastSession: { weightKg: number; reps: number; date: string; allSets: { weightKg: number; reps: number }[]; /** Before the active block started. */ beforeBlock?: boolean } | null
   pr: { weightKg: number; reps: number; date: string } | null
   recentTrend: { date: string; maxWeightKg: number; avgReps: number }[]
   suggestion: { type: string; message: string; suggestedWeightKg: number | null } | null
@@ -1578,6 +1578,8 @@ export function WorkoutPage() {
 
   const suggestionDisplay = (() => {
     if (!currentExercise) return undefined
+    // One weight per lift: a set the coach planned a weight for shows that weight, no "Try N lb?" beside it.
+    if (currentSet?.weightKg != null && currentSet.weightKg > 0) return undefined
     const h = exerciseHistories.get(currentExercise.exerciseId)
     if (!h?.suggestion?.suggestedWeightKg) return undefined
     return {
@@ -1605,7 +1607,8 @@ export function WorkoutPage() {
           editedWeightKg: currentExercise ? editedStartKg(loggedKgRef.current?.[currentExercise.exerciseId], { isWarmup: currentSet.isWarmup === 1, plannedKg: currentSet.weightKg ?? null }) : null,
           carryWeightKg: currentExercise ? (loggedKgRef.current?.[currentExercise.exerciseId]?.kg
             ?? currentExercise.sets.slice(0, setIdx).reverse().find(s => s.weightKg != null && s.weightKg > 0)?.weightKg
-            ?? exerciseHistories.get(currentExercise.exerciseId)?.lastSession?.weightKg
+            // His last session, only from inside this block (months off: the dose starts him light instead).
+            ?? (exerciseHistories.get(currentExercise.exerciseId)?.lastSession?.beforeBlock ? null : exerciseHistories.get(currentExercise.exerciseId)?.lastSession?.weightKg)
             ?? null) : null,
           targetReps: currentSet.plannedReps ?? currentSet.reps,
           restSec: currentSet.restSec ?? 60,

@@ -40,6 +40,35 @@ export function loadEquipment(equipment: string | null | undefined): LoadEquipme
   return 'none'
 }
 
+/**
+ * A lift he can do with no weight at all: nothing to load ('bodyweight', a
+ * band, a bar to hang from), or the library names bodyweight as one option
+ * ("bodyweight,dumbbell": calf raise, lunge, single-leg RDL). No weight is
+ * needed to log it, and no weight reads "BW".
+ */
+export function bodyweightOk(equipment: string | null | undefined): boolean {
+  if (loadEquipment(equipment) === 'none') return true
+  return (equipment ?? '').toLowerCase().split(',').some(t => t.trim() === 'bodyweight')
+}
+
+/**
+ * A lift's load in words, lb without the unit: "35", a work-up "20→35"
+ * (`fromKg`, the first set, under the top), "BW" only for a lift he can do
+ * at bodyweight, else "find your weight" (a loadable lift with no weight yet).
+ */
+export function loadLabel(kg: number | null | undefined, equipment: string | null | undefined, fromKg?: number | null): string {
+  if (kg == null || !(kg > 0)) return bodyweightOk(equipment) ? 'BW' : 'find your weight'
+  const top = Math.round(kg * LB_PER_KG)
+  const from = fromKg != null && fromKg > 0 ? Math.round(fromKg * LB_PER_KG) : null
+  return from != null && from < top ? `${from}→${top}` : String(top)
+}
+
+/** One accessory step (kg): 10 lb for a lower-body lift, 5 lb for the rest. */
+export function accessoryIncrementKg(muscleGroups: string | null | undefined): number {
+  const m = muscleGroups ?? ''
+  return m.includes('quads') || m.includes('glutes') || m.includes('hamstrings') ? 4.54 : 2.27
+}
+
 function toUnit(kg: number, unit: LoadUnit): number {
   return unit === 'lb' ? kg * LB_PER_KG : kg
 }
