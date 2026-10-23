@@ -201,6 +201,14 @@ test.describe('Item 6: the row and the strip move into each other (motion on)', 
     await intoRound(page, bag.id)
     // the way in with Reduce Motion (steady taps), then motion on for the handoff itself
     await page.emulateMedia({ reducedMotion: 'no-preference' })
+    // the copy flies for about a second: watch for it rather than poll for it
+    await page.evaluate(() => {
+      const w = window as unknown as { __ghostSeen: boolean }
+      w.__ghostSeen = false
+      new MutationObserver((ms, obs) => {
+        if (ms.some(m => [...m.addedNodes].some(n => n instanceof Element && n.classList.contains('td-ghost')))) { w.__ghostSeen = true; obs.disconnect() }
+      }).observe(document.body, { childList: true })
+    })
     await page.getByRole('button', { name: '‹ TODAY' }).tap()
     await expect(page).toHaveURL(/\/today/)
     const strip = page.locator('button.wm-live')
@@ -210,7 +218,7 @@ test.describe('Item 6: the row and the strip move into each other (motion on)', 
     // While the row flies the strip keeps its place, unseen; then it shows and the copy is gone.
     const stripAt = await strip.boundingBox()
     // the flight happens: a copy of the row is in the air while the strip waits unseen
-    await expect(page.locator('.td-ghost')).toHaveCount(1, { timeout: 15_000 })
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __ghostSeen: boolean }).__ghostSeen), { timeout: 15_000 }).toBe(true)
     await expect(strip).not.toHaveClass(/is-awaiting/, { timeout: 8000 })
     await expect(page.locator('.td-ghost')).toHaveCount(0, { timeout: 3000 })
     await expect.poll(() => strip.evaluate(el => getComputedStyle(el).opacity)).toBe('1')
