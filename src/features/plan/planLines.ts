@@ -9,9 +9,8 @@
 
 import { foundationLevel, foundationMinutes } from '../../lib/foundation'
 import { RESET_WALK_MIN, resetMinutes } from '../../lib/activeRecoveryTemplate'
-import { kgToLbs } from '../../lib/units'
 import type { SummaryData } from '../dayboard/summaryData'
-import { actualMinutes, continuousRunMin, plannedRowMinutes, rowStatus, runWalkShapeFor, shortLift, strengthDiffLines, type DayBoardSession, type WorkoutExercise } from '../dayboard/rowState'
+import { actualMinutes, continuousRunMin, liftLoad, plannedRowMinutes, rowStatus, runWalkShapeFor, shortLift, strengthDiffLines, type DayBoardSession, type WorkoutExercise } from '../dayboard/rowState'
 
 export interface PlanLine {
   label: string
@@ -31,7 +30,6 @@ export interface LinesOpts {
 }
 
 const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`
-const lbs = (kg: number | null | undefined) => (kg != null && kg > 0 ? `${kgToLbs(kg)} lb` : 'BW')
 
 /** The words for his reason on a row (the page 73 tiles, then the older codes). */
 const REASON_WORD: Readonly<Record<string, string>> = {
@@ -73,7 +71,8 @@ function strengthTodo(data: Extract<SummaryData, { kind: 'strength' }>): PlanLin
     if (ex.section === 'core') { core.push(shortLift(ex.label || ex.name || ex.exercise?.name || '').toLowerCase()); continue }
     const sr = ex.prescription?.setsReps ?? ''
     const change = data.brainLifts?.find(l => l.exerciseId === ex.exerciseId)?.change
-    out.push({ label: liftName(ex), value: `${sr}${sr ? ' · ' : ''}${lbs(ex.prescription?.prescribedWeightKg)}`, ...(change === 'increase' ? { mark: 'up' as const } : change === 'decrease' ? { mark: 'down' as const } : {}) })
+    const load = liftLoad(ex)
+    out.push({ label: liftName(ex), value: `${sr}${sr ? ' · ' : ''}${/\d$/.test(load) ? `${load} lb` : load}`, ...(change === 'increase' ? { mark: 'up' as const } : change === 'decrease' ? { mark: 'down' as const } : {}) })
   }
   const min = data.plannedMin != null ? `~${data.plannedMin} min` : null
   if (core.length > 0) out.push({ label: 'CORE', value: [core.filter(Boolean).join(', '), min].filter(Boolean).join(' · ') })

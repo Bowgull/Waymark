@@ -66,7 +66,12 @@ assert.deepEqual([added.label, added.scheduledDate, added.timeSlot, added.source
 const sDose = parseDose(added.doseJson)?.strength
 const rdl = sDose?.lifts.find(l => l.exerciseId === 'ex-db-rdl')
 assert.ok(rdl, 'the hinge is the DB RDL (the barbell hinge starts later, on the ladder)')
-assert.deepEqual([lb(rdl.weightKg), rdl.sets, rdl.reps, rdl.targetRir], [30, 3, 8, 3], 'DB RDL 3 × 8 @ 30 lb, about 3 left (35 lb less ~15%)')
+// 2026-10-23: months off, every lift finds its weight from light; 35 lb less ~15% (30 lb) is only the top.
+assert.deepEqual([rdl.workUp, rdl.sets, rdl.reps, rdl.targetRir], [true, 4, 8, 3], 'DB RDL: find your weight, 4 × 8')
+assert.deepEqual(rdl.setWeightsKg?.map(lb), [20, 25, 30, 30], 'from a light 20 lb, never over 30 lb')
+const pulldown = sDose?.accessories?.find(a => a.exerciseId === 'ex-lat-pulldown')
+assert.deepEqual([pulldown?.workUp, pulldown?.setWeightsKg?.map(lb)], [true, [20, 25]], 'an accessory finds its weight too: the stack from a light 20 lb')
+assert.equal(sDose?.accessories?.some(a => a.exerciseId === 'ex-bird-dogs'), false, 'a bodyweight core move gets no weight')
 const [change] = await db.select().from(weekAdjustments).where(eq(weekAdjustments.targetSessionId, added.id))
 assert.ok(change && change.actor === 'coach' && change.kind === 'add' && change.undoUntil != null, 'a coach change row with UNDO')
 assert.ok(/^Strength B on Friday: strength starts this week, not next Monday/.test(change.why ?? ''), `plain why: ${change.why}`)
@@ -92,7 +97,8 @@ assert.equal(third.changes, 0, 'taken off with UNDO: not offered again this week
 // The stored model shows where it started.
 const model = await refreshAthleteModel(db, START, nowSec(START, 19))
 assert.equal(model.lifts['ex-db-row'].workingSource, 'history')
-assert.equal(lb(model.lifts['ex-db-row'].workingKg), 25)
+assert.equal(model.lifts['ex-db-row'].workingKg, null, 'no start from June')
+assert.equal(lb(model.lifts['ex-db-row'].seed?.capKg), 25, 'June 30 lb less the time off: the top')
 assert.deepEqual([model.run.rungSec, model.run.rungSource], [900, 'history'])
 
 console.log('re-plan from history tests passed')

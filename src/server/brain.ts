@@ -41,7 +41,7 @@ import { getRunWalkWeek, isBlockZeroModelRun, type WeeklyRunContext } from '../l
 import { isHardRun, isHeavyLegs } from '../lib/coach/sessions'
 import { applyContext, coachEaseFrom, injuryActionFor, isoOf, mondayOf, runAllowanceBaseSec, slotStart, withMergedLifts, type InjuryFlag } from '../lib/coach'
 import { getStrengthTemplate, getWaveLoadingSetsReps, getWeekPercentage } from '../lib/strengthTemplates'
-import { loadEquipment, type LoadEquipment } from '../lib/strengthLoads'
+import { bodyweightOk, loadEquipment, type AccessorySetLog, type LoadEquipment } from '../lib/strengthLoads'
 import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getActiveBlock } from './blockZeroData'
 import { blockKind, blockStartDay, bodyPlanMark, dayHasPlan, generateDaySessions, loadInjuryFlag, resolveWeekPlan, trainingWeekFor, weekStamps } from './coachData'
@@ -121,7 +121,11 @@ export interface BrainInputs {
   backByDay: Map<number, number | null>
   openPlans: Array<{ region: string }>
   tmKg: Record<string, number>
+  /** Training maxes set inside the active block. Block Zero reads only these: older ones are placeholders. */
+  tmInBlockKg: Record<string, number>
   equipment: Record<string, LoadEquipment>
+  /** Exercises he can do at bodyweight (no weight prescribed, none needed to log). */
+  bodyweightIds: string[]
   /** Short states from his notes and sick skips (sick, away, busy), each with its own end. */
   temp: TempState[]
   /** The move to the next block in force (coach-brain §8): its lighter days are dosed lighter. */
@@ -157,7 +161,9 @@ export async function loadBrainInputs(db: DB, today: number): Promise<BrainInput
     backByDay: new Map(logs.map(l => [l.logDate, l.backToday])),
     openPlans: alerts.filter(a => a.appliedOn != null).map(a => ({ region: a.region })),
     tmKg: Object.fromEntries(tms.map(t => [t.exerciseId, t.weightKg])),
+    tmInBlockKg: Object.fromEntries(events.trainingMaxes.filter(t => t.day >= Math.min(fromDay, today)).map(t => [t.exerciseId, t.weightKg])),
     equipment: Object.fromEntries(exRows.map(e => [e.id, loadEquipment(e.equipment)])),
+    bodyweightIds: exRows.filter(e => bodyweightOk(e.equipment)).map(e => e.id),
     move: await activeMove(db),
     seed,
   }
@@ -181,6 +187,31 @@ export function morningState(inp: BrainInputs, day: number): { state: ReadinessS
 // ─── One session's dose (step 2: options, limits, the rules' pick) ─
 
 /** Main lifts as the template (plus any missed session's merged lifts) has them. */
+/**
+ * Accessories he has done in the block: per lift, the last finished session's
+ * logged working sets with a weight, and how many working sets it planned
+ * (the same double progression the exercise history reads).
+ */
+export function accessoryLastFrom(events: Pick<ModelEvents, 'sessions' | 'sets'>, before: number): Record<string, { sets: AccessorySetLog[]; plannedSets: number }> {
+  const done = new Set(events.sessions.filter(x => x.status === 'completed' && x.day < before).map(x => x.id))
+  const rows = events.sets.filter(x => (x.section === 'accessory' || x.section === 'core') && !x.isWarmup && done.has(x.sessionId))
+  const lastDay = new Map<string, { day: number; sessionId: string }>()
+  for (const x of rows) {
+    if (!x.logged || x.weightKg == null || !(x.weightKg > 0)) continue
+    const cur = lastDay.get(x.exerciseId)
+    if (!cur || x.day > cur.day) lastDay.set(x.exerciseId, { day: x.day, sessionId: x.sessionId })
+  }
+  const out: Record<string, { sets: AccessorySetLog[]; plannedSets: number }> = {}
+  for (const [id, { sessionId }] of lastDay) {
+    const mine = rows.filter(x => x.exerciseId === id && x.sessionId === sessionId)
+    out[id] = {
+      plannedSets: mine.length,
+      sets: mine.filter(x => x.logged && x.weightKg != null && x.weightKg > 0).map(x => ({ weightKg: x.weightKg as number, reps: x.reps, plannedReps: x.plannedReps, rir: x.rir })),
+    }
+  }
+  return out
+}
+
 function templateFor(s: Pick<SessionRow, 'scheduledDate' | 'blockWeek' | 'blockType' | 'label' | 'contextJson'>) {
   const day = s.scheduledDate ?? 0
   const kind = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
@@ -347,9 +378,15 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
     }
     // An injury flag or the raven's one-set plan: one set less, never more than HOLD (a limit, not a stack).
     const limitWhy = inj.action.action === 'ease' || inj.action.action === 'back_swap' ? inj.action.note : inj.ravenOneSet
+    // Accessory and core rows: their weights come from the dose too (find your weight, then double progression).
+    const accessories = t.exercises.filter(e => e.section === 'accessory' || e.section === 'core').map(e => {
+      const work = e.sets.filter(x => !x.isWarmup)
+      return { exerciseId: e.exerciseId, label: e.label, section: e.section as 'accessory' | 'core', sets: work.length, reps: work[0]?.targetReps ?? 10 }
+    })
     const dose = strengthDose(limitWhy ? { ...ctx, state: lowerState(ctx.state, 'AMBER'), stateWhy: limitWhy } : ctx, {
-      kind, main, fighter, tmKg: inputs.tmKg, equipment: inputs.equipment,
+      kind, main, fighter, tmKg: kind === 'block_zero' ? inputs.tmInBlockKg : inputs.tmKg, equipment: inputs.equipment,
       steppedThisWeek: await steppedThisWeek(db, s), lastFeltHard: await lastFeltHard(db, s, inputs),
+      accessories, bodyweightIds: inputs.bodyweightIds, accessoryLast: accessoryLastFrom(inputs.events, day),
     })
     const u = dose.lifts.length ? Math.round((dose.lifts.reduce((n, l) => n + l.u, 0) / dose.lifts.length) * 100) / 100 : null
     if (lighter) {
@@ -396,7 +433,8 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
 function doseStamp(s: Pick<SessionRow, 'type' | 'label' | 'scheduledDate' | 'contextJson'>, cap: BrainCap | null, backToday: number | null, lighter = false): string {
   const plan = bodyPlanMark(s.contextJson)
   const ease = coachEaseFrom(s.contextJson)
-  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null, ...(lighter ? ['lighter'] : [])])
+  // 'fyw': strength doses written before every lift started light (2026-10-23) are written again.
+  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null, ...(lighter ? ['lighter'] : []), ...(s.type === 'strength' ? ['fyw'] : [])])
 }
 
 /**

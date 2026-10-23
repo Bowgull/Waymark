@@ -7,7 +7,9 @@
 //   sets with a weight, from a finished session), less a discount for the
 //   time off: none up to 2 weeks, then 5% plus 2.5% a month, at most 20%.
 //   Snapped to what can be loaded, and always at least one step under the old
-//   weight once there is a discount.
+//   weight once there is a discount. That weight is only the TOP (Josh,
+//   2026-10-23: months off, much weaker than his logs): every lift still
+//   starts light and works up ("find your weight"), never above it.
 // - Run: his typical continuous run (the median of runs of 8 min to 2 h),
 //   less the same discount, rounded down to 5 min (never under 10 min when
 //   it was 10 or more), and never over his longest less the discount. Ten
@@ -49,8 +51,8 @@ export interface SeededLift {
   lastDay: number
   /** Exposures with a weight in the history. */
   exposures: number
-  /** The starting working weight after the time-off discount, snapped (kg). */
-  workingKg: number
+  /** The most a first session works up to: the old weight less the time-off discount, snapped (kg). Never the start. */
+  capKg: number
 }
 
 export interface SeededRun {
@@ -83,7 +85,7 @@ export function timeOffDiscount(daysOff: number): number {
   return round(clamp(DISCOUNT_BASE + DISCOUNT_PER_MONTH * ((daysOff - DISCOUNT_FREE_DAYS) / 30), 0, DISCOUNT_MAX), 3)
 }
 
-/** The weight to start from: the old weight less the discount, snapped, at least one step under it once discounted. */
+/** The top for a first session back: the old weight less the discount, snapped, at least one step under it once discounted. */
 export function discountedKg(lastKg: number, discount: number, equipment: LoadEquipment): number {
   if (discount <= 0 || equipment === 'none') return round(snapLoadKg(lastKg, equipment, { direction: 'nearest' }), 2)
   const snapped = snapLoadKg(lastKg * (1 - discount), equipment, { direction: 'nearest' })
@@ -144,7 +146,7 @@ export function seedFromHistory(prior: ModelEvents, fromDay: number): HistorySee
     lifts[id] = {
       exerciseId: id, equipment, lastKg: round(top.weightKg as number, 2), lastReps: top.reps, lastDay: lastSessionDay,
       exposures: new Set(xs.map(s => s.sessionId)).size,
-      workingKg: discountedKg(top.weightKg as number, discount, equipment),
+      capKg: discountedKg(top.weightKg as number, discount, equipment),
     }
   }
 
@@ -206,14 +208,14 @@ export function firstStrengthPick(model: AthleteModel, blockWeek: number): { lab
       const slot = slotOf(e.exerciseId)
       const id = slot ? chooseSlot(slot, model).exerciseId : e.exerciseId
       const l = model.lifts[id]
-      if (l?.workingKg != null && l.workingSource !== 'training_max') known++
+      if ((l?.workingKg != null && l.workingSource !== 'training_max') || l?.seed != null) known++
       exposures += (l?.exposures ?? 0) + (l?.seed ? 1 : 0)
     }
     if (!best || known > best.known || (known === best.known && exposures > best.exposures)) best = { label, known, exposures }
   }
   const seeded = Object.values(model.lifts).find(l => l.workingSource === 'history' && l.seed)
   const why = seeded?.seed && seeded.seed.discount > 0
-    ? `strength starts this week, not next Monday. Weights start from your last sessions, a little lighter after ${gapWords(seeded.seed.daysOff)} off.`
+    ? `strength starts this week, not next Monday. Every lift starts light after ${gapWords(seeded.seed.daysOff)} off; your last sessions are only the top.`
     : 'strength starts this week, not next Monday.'
   return { label: (best as { label: string }).label, why }
 }

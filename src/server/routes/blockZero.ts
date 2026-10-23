@@ -5,7 +5,7 @@
 // The end-of-block check is gone (coach-brain §8, server/readiness.ts).
 
 import { desc, eq } from 'drizzle-orm'
-import { coachingOutputs, exercises, settings, trainingMaxes, userProfile } from '../../db/schema'
+import { coachingOutputs, exercises, settings, trainingBlocks, trainingMaxes, userProfile } from '../../db/schema'
 import { anthropicCall, getStructuredOutput, jsonFormatFor } from '../../lib/anthropic'
 import { MODELS } from '../../lib/models'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
@@ -85,10 +85,15 @@ export async function runBlockZeroAssessment(
   const [profileRow] = await db.select().from(userProfile).where(eq(userProfile.id, 'default'))
   const [settingsRow] = await db.select({ mtClassDays: settings.mtClassDays }).from(settings).limit(1)
 
-  const tmRows = await db
-    .select({ weightKg: trainingMaxes.weightKg, name: exercises.name })
+  // Only maxes set inside this block: older ones are placeholders, not anything he lifted (Josh, 2026-10-23:
+  // months off, every lift finds its weight from light).
+  const [block] = await db.select({ startedAt: trainingBlocks.startedAt, createdAt: trainingBlocks.createdAt }).from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
+  const blockStartSec = block ? (block.startedAt ?? block.createdAt) : null
+  const tmRows = (await db
+    .select({ weightKg: trainingMaxes.weightKg, name: exercises.name, updatedAt: trainingMaxes.updatedAt })
     .from(trainingMaxes)
-    .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id))
+    .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id)))
+    .filter(t => blockStartSec != null && t.updatedAt >= blockStartSec)
 
   const latestBodyweightKg = await getLatestBodyweightKg(db)
 

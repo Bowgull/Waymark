@@ -14,6 +14,7 @@
 
 import { SESSION_ICON_NAME, sessionIconFor, type SessionIconKey } from '../../design/sessionIconKeys'
 import { kgToLbs } from '../../lib/units'
+import { loadLabel } from '../../lib/strengthLoads'
 import { getStrengthTemplate } from '../../lib/strengthTemplates'
 import { getStrengthWeekTarget } from '../../lib/blockZero/strength'
 import { estimatedMinutes } from '../../lib/coach/sessions'
@@ -326,25 +327,38 @@ export interface WorkoutExercise {
   exerciseId: string
   section?: string | null
   orderIndex?: number
-  exercise?: { name: string } | null
+  exercise?: { name: string; equipment?: string | null } | null
   name?: string
   label?: string
+  /** The library's equipment ("dumbbell,bench"); the preview sends it here, the workout on `exercise`. */
+  equipment?: string | null
   sets?: WorkoutSet[]
-  prescription?: { prescribedWeightKg: number | null; setsReps: string } | null
+  /** fromWeightKg: a work-up's first set, under the top (prescribedWeightKg). */
+  prescription?: { prescribedWeightKg: number | null; fromWeightKg?: number | null; setsReps: string } | null
 }
 
 function exerciseName(ex: WorkoutExercise): string {
   return (ex.label || ex.name || ex.exercise?.name || 'Lift').toUpperCase()
 }
 
-function loadText(kg: number | null | undefined): string {
-  return kg != null && kg > 0 ? String(kgToLbs(kg)) : 'BW'
+function equipmentOf(ex: WorkoutExercise): string | null {
+  return ex.equipment ?? ex.exercise?.equipment ?? null
 }
 
-/** A to-do lift line: "2×8 · 135" (lbs; BW when unloaded). */
+/** lb without the unit: "135", a work-up "20→35", BW only for a bodyweight move, else "find your weight". */
+function loadText(kg: number | null | undefined, ex: WorkoutExercise, fromKg?: number | null): string {
+  return loadLabel(kg, equipmentOf(ex), fromKg)
+}
+
+/** A to-do lift's load: "135", "20→35" (a work-up), "BW", "find your weight". */
+export function liftLoad(ex: WorkoutExercise): string {
+  return loadText(ex.prescription?.prescribedWeightKg, ex, ex.prescription?.fromWeightKg)
+}
+
+/** A to-do lift line: "2×8 · 135" (lbs; a work-up "4×8 · 20→35"; BW only for a bodyweight move). */
 export function planLiftLine(ex: WorkoutExercise): DiffLine {
   const sr = ex.prescription?.setsReps ?? ''
-  return plainLine(exerciseName(ex), `${sr}${sr ? ' · ' : ''}${loadText(ex.prescription?.prescribedWeightKg)}`)
+  return plainLine(exerciseName(ex), `${sr}${sr ? ' · ' : ''}${liftLoad(ex)}`)
 }
 
 /**
@@ -364,18 +378,21 @@ export function strengthDiffLines(exercises: ReadonlyArray<WorkoutExercise>): Di
     const plannedSets = working.length
     const plannedReps = working[0].plannedReps ?? working[0].reps
     const plannedKg = working[working.length - 1].plannedWeightKg ?? working[working.length - 1].weightKg
+    // A work-up (planned sets climbing): its top is where he might stop short of, not a target.
+    const firstKg = working[0].plannedWeightKg
+    const workUp = firstKg != null && firstKg > 0 && plannedKg != null && plannedKg > firstKg + 0.01
     const done = working.filter(s => s.completedAt != null)
     if (done.length === 0) {
-      lines.push(plainLine(exerciseName(ex), `${plannedSets}×${plannedReps} · ${loadText(plannedKg)}`))
+      lines.push(plainLine(exerciseName(ex), `${plannedSets}×${plannedReps} · ${loadText(plannedKg, ex, workUp ? firstKg : null)}`))
       continue
     }
     const reps = Math.min(...done.map(s => s.reps))
     const topKg = Math.max(...done.map(s => s.weightKg ?? 0))
     const setDiff = done.length - plannedSets
-    const loadDiff = plannedKg != null && plannedKg > 0 && topKg > 0 ? kgToLbs(topKg) - kgToLbs(plannedKg) : 0
+    const loadDiff = !workUp && plannedKg != null && plannedKg > 0 && topKg > 0 ? kgToLbs(topKg) - kgToLbs(plannedKg) : 0
     const repDiff = reps - plannedReps
     const setsReps = `${done.length}×${reps}`
-    const load = loadText(topKg > 0 ? topKg : plannedKg)
+    const load = loadText(topKg > 0 ? topKg : plannedKg, ex)
     let chip: string | null = null
     let band: DiffLine['band'] = null
     let lift: 'sets' | 'load' | null = null
@@ -543,20 +560,6 @@ export function strengthWeekLine(blockType: string | null | undefined, week: num
 export function shortLift(name: string): string {
   if (/romanian deadlift/i.test(name)) return 'RDL'
   return name.split(' ').map((w, i) => (/^[A-Z]{2,3}$/.test(w) ? w : i === 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase())).join(' ')
-}
-
-/** Page 20's top lifts on Today: "Front squat 2×135lbs · RDL 2×115lbs" (main lifts: sets × load). */
-export function topLiftsLine(exercises: ReadonlyArray<WorkoutExercise>): string | null {
-  const parts = exercises
-    .filter(ex => ex.section === 'main')
-    .map(ex => {
-      const sets = Number((ex.prescription?.setsReps ?? '').split('×')[0]) || null
-      const kg = ex.prescription?.prescribedWeightKg
-      if (!sets || kg == null || kg <= 0) return null
-      return `${shortLift(ex.label || ex.name || ex.exercise?.name || 'Lift')} ${sets}×${kgToLbs(kg)}lbs`
-    })
-    .filter((x): x is string => x != null)
-  return parts.length > 0 ? parts.join(' · ') : null
 }
 
 /** Page 33's to-do Zone 2 line: "Easy, conversational pace. Heart rate under 142, nasal breathing. Run-walk, 35 min." */

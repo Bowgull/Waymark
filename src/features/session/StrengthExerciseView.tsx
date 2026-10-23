@@ -4,10 +4,9 @@ import { FlapLabel } from '@/design'
 import { FormVideoLink } from '@/components/FormVideoLink'
 import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
 import { mediumHaptic } from '@/lib/haptics'
-import type { PlateCount } from '@/lib/plateMath'
 import { calculatePlates } from '@/lib/plateMath'
 import { assessStrengthSet, shouldShowStrengthRealityMark } from '@/lib/trainingReality'
-import { setLbsToKg, startSetLbs, stepSetLbs } from '@/lib/timers/setWeight'
+import { setLbsToKg, setNeedsWeight, startSetLbs, stepSetLbs } from '@/lib/timers/setWeight'
 
 import type { StrengthSection, StrengthPhase } from './strengthMicrocopy'
 import './session.css'
@@ -22,25 +21,6 @@ const SECTION_LABELS: Record<StrengthSection, string> = {
 }
 
 // ─── Display types ─────────────────────────────────────────────
-
-export interface StrengthPrescriptionDisplay {
-  weightLbs: number | null
-  tmLbs: number | null
-  setsReps: string
-  plateCounts: PlateCount[] | null
-  wavePercentage: number | null
-}
-
-export interface StrengthHistoryDisplay {
-  lastWeightLbs: number | null
-  lastReps: number | null
-  lastDate: string | null
-  prWeightLbs: number | null
-  prReps: number | null
-  prDate: string | null
-  recentTrend: { date: string; weightLbs: number; avgReps: number }[] | null
-  suggestion: { message: string } | null
-}
 
 export interface StrengthSetInput {
   /** UI-facing set number (1-based, warmups included). */
@@ -229,9 +209,8 @@ function SetBoard({
     actualReps: reps,
   }))
 
-  // m11: a dumbbell or kettlebell working set needs its weight (the cue: "Log that weight").
-  const bell = /dumbbell|kettlebell/i.test(equipment ?? '')
-  const needsWeight = bell && !set.isWarmup && weight === 0
+  // m11: a loadable working set (dumbbell, kettlebell, cable, machine) needs its weight; one he can do at bodyweight does not.
+  const needsWeight = setNeedsWeight(equipment, set.isWarmup, weight)
   const blocked = reps <= 0 || needsWeight
 
   function log() {

@@ -256,13 +256,14 @@ function finishLift(state: LiftState, today: number, tmKg: number | null, seeded
   }
 }
 
-/** A lift with no exposure in the block yet, started from his history (history.ts). */
+/** A lift with no exposure in the block yet, known from his history (history.ts): a top, not a start. */
 function seededLift(s: SeededLift, seed: HistorySeed, today: number): LiftEstimate {
   const u = seededU(seed, today)
   return {
     evidence: 'LEARNING', state: stateFromU(u), n: 0, lastDay: null, u,
-    exerciseId: s.exerciseId, e1rmKg: null, e1rmSdKg: null, workingKg: s.workingKg, workingSource: 'history',
-    seed: { lastKg: s.lastKg, lastDay: s.lastDay, daysOff: seed.fromDay - s.lastDay, discount: seed.discount },
+    // No working weight: the first session finds it from light, the history is only its top (capKg).
+    exerciseId: s.exerciseId, e1rmKg: null, e1rmSdKg: null, workingKg: null, workingSource: 'history',
+    seed: { lastKg: s.lastKg, lastDay: s.lastDay, daysOff: seed.fromDay - s.lastDay, discount: seed.discount, capKg: s.capKg },
     rirBias: 0, equipment: s.equipment, rirExposures: 0, exposures: 0, last: null, recent: [], easeStreak: 0,
   }
 }
@@ -909,7 +910,7 @@ export function modelSummary(m: AthleteModel): string[] {
   const kg = (v: number | null) => (v == null ? '-' : `${Math.round(v * 2.20462)} lb`)
   const lines: string[] = []
   for (const l of Object.values(m.lifts)) {
-    lines.push(`lift ${l.exerciseId}: ${l.state} u=${l.u} n=${l.n} e1RM=${kg(l.e1rmKg)} working=${kg(l.workingKg)} (${l.workingSource ?? '-'}${l.seed ? ` from ${kg(l.seed.lastKg)} ${l.seed.daysOff} days before the block, -${Math.round(l.seed.discount * 100)}%` : ''}) bias=${l.rirBias} exposures=${l.exposures}${l.last ? ` last: top ${kg(l.last.topKg)} of ${kg(l.last.plannedKg)}${l.last.lowered ? ' LOWERED' : ''}${l.last.raised ? ' RAISED' : ''}${l.last.incomplete ? ' INCOMPLETE' : ''} rir=${l.last.lastRir ?? '-'}` : ''} easeStreak=${l.easeStreak}`)
+    lines.push(`lift ${l.exerciseId}: ${l.state} u=${l.u} n=${l.n} e1RM=${kg(l.e1rmKg)} working=${kg(l.workingKg)} (${l.workingSource ?? '-'}${l.seed ? ` from ${kg(l.seed.lastKg)} ${l.seed.daysOff} days before the block, -${Math.round(l.seed.discount * 100)}% = top ${kg(l.seed.capKg)}, starts light` : ''}) bias=${l.rirBias} exposures=${l.exposures}${l.last ? ` last: top ${kg(l.last.topKg)} of ${kg(l.last.plannedKg)}${l.last.lowered ? ' LOWERED' : ''}${l.last.raised ? ' RAISED' : ''}${l.last.incomplete ? ' INCOMPLETE' : ''} rir=${l.last.lastRir ?? '-'}` : ''} easeStreak=${l.easeStreak}`)
   }
   const r = m.run
   lines.push(`run: ${r.state} u=${r.u} line=${r.lineBpm} (${r.lineSource}; age prior ${r.linePriorBpm}) U=${r.uShare ?? '-'} drift=${r.driftBpm ?? '-'} rung=${r.rungSec}s (${r.rungSource ?? '-'}${r.seed ? `: history median ${r.seed.medianSec}s, longest ${r.seed.longestSec}s, avg HR ${r.seed.avgHr ?? '-'}` : ''}) longest30=${r.longestLast30Sec ?? '-'}s easyPace=${r.easyPaceSecKm ?? '-'}s/km runs=${r.runs} withHr=${r.runsWithHr} recheck=${r.recheckWhy ?? 'no'}`)
