@@ -37,6 +37,16 @@ const RING_META: Record<RingKey, Pick<LedgerRing, 'label' | 'icon'>> = {
   recovery: { label: 'Recovery', icon: 'foundation' },
 }
 
+/**
+ * Josh 2026-10-23: what a Block Zero he restarted planned and he never did
+ * doesn't count on the rings (nor against him). Done sessions in it still do;
+ * the rows themselves stay in his history. `ended`: each ended Block Zero's
+ * first and last day.
+ */
+export function withoutRestartLeftovers<T extends LedgerSessionRow>(rows: T[], ended: ReadonlyArray<{ from: number; to: number }>): T[] {
+  return rows.filter(r => r.status === 'completed' || r.scheduledDate == null || !ended.some(b => r.scheduledDate! >= b.from && r.scheduledDate! <= b.to))
+}
+
 /** The Monday on or before an epoch day (1970-01-01 was a Thursday). */
 export function mondayOf(epochDay: number): number {
   return epochDay - ((epochDay + 3) % 7)

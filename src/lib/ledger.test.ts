@@ -3,6 +3,7 @@
 // the last seven mornings, weekly body weight, the streak.
 import assert from 'node:assert/strict'
 import {
+  withoutRestartLeftovers,
   aerobicWeekly, buildRings, pondReaction, dayLetter, linePoints, mondayOf, paceAt140, paceDelta, paceFlap,
   herbMonth, ringState, ringWindow, sleepWeek, seasonRings, sessionRings, SEASON_WEEKS, spanWeeks, strengthWeekly, weightDelta, weightWeekly,
 } from './ledger'
@@ -197,6 +198,18 @@ test('herb (page 62 B): 28 mornings, the 7- and 28-day averages, the sleep line 
   assert.equal(gap.avg28, 3)
   assert.equal(gap.line, null, 'no mornings with sleep on both sides: no line')
   assert.deepEqual([herbMonth([], SUN).avg7, herbMonth([], SUN).avg28, herbMonth([], SUN).line], [null, null, null])
+})
+
+test('a restarted Block Zero: what it planned and he never did is off the rings, done still counts', () => {
+  const W = isoToEpochDay('2026-10-21')
+  const rows = [
+    { id: 'lead', type: 'mobility', status: 'missed', scheduledDate: W },
+    { id: 'did', type: 'mobility', status: 'completed', scheduledDate: W },
+    { id: 'after', type: 'mobility', status: 'missed', scheduledDate: W + 3 },
+  ]
+  const kept = withoutRestartLeftovers(rows, [{ from: W - 1, to: W + 1 }]).map(r => r.id)
+  assert.deepEqual(kept, ['did', 'after'])
+  assert.deepEqual(sessionRings(withoutRestartLeftovers(rows.slice(0, 1), [{ from: W - 1, to: W + 1 }]), 'week', W).find(r => r.key === 'recovery')?.list, [], 'the one missed leftover: an empty ring')
 })
 
 console.log(`ledger: ${passed} passed`)

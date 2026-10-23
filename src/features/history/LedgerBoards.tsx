@@ -15,7 +15,7 @@ const arc = (r: number, a0: number, a1: number) => {
   return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`
 }
 
-/** B · flap-segment ring: one segment per planned session, two-tone with a hinge line; skipped is struck in clay. */
+/** B · flap-segment ring: one segment per planned session, two-tone with a hinge line; missed is clay, no strike (page 75 B). */
 function SegRing({ ring }: { ring: LedgerRing }) {
   const n = ring.list.length
   const col = RING_COLOUR[ring.key]
@@ -27,16 +27,12 @@ function SegRing({ ring }: { ring: LedgerRing }) {
     const a1 = -Math.PI / 2 + (i + 1) / n * Math.PI * 2 - gap / 2
     const outer = st === 'done' ? col : st === 'skip' ? '#9c5a40' : '#23281f'
     const inner = st === 'done' ? 'rgba(0,0,0,.28)' : st === 'skip' ? 'rgba(0,0,0,.3)' : 'rgba(0,0,0,.2)'
-    const mid = (a0 + a1) / 2
-    const sx = 50 + Math.cos(mid) * 40
-    const sy = 50 + Math.sin(mid) * 40
     return (
       <g key={i} className="lg-seg" style={{ animationDelay: `${(i * Math.min(0.18, 1.2 / n)).toFixed(2)}s` }}>
         <path d={arc(42.5, a0, a1)} stroke={outer} strokeWidth="6" fill="none" />
         <path d={arc(37.5, a0, a1)} stroke={outer} strokeWidth="5" fill="none" />
         <path d={arc(37.5, a0, a1)} stroke={inner} strokeWidth="5" fill="none" />
         <path d={arc(40, a0, a1)} stroke="rgba(0,0,0,.55)" strokeWidth=".7" fill="none" />
-        {st === 'skip' && <line x1={sx - 5} y1={sy + 4} x2={sx + 5} y2={sy - 4} stroke="#f0d8c8" strokeWidth="1.6" />}
       </g>
     )
   }

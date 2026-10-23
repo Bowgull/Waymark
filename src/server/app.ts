@@ -31,7 +31,7 @@ import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, got
 import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, isoOf } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
-import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, type LedgerRange } from '../lib/ledger'
+import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, withoutRestartLeftovers, type LedgerRange } from '../lib/ledger'
 import { allBoardRows, boardSuggestions, computeSuggestions, withBlockLabels } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, weekLineFor } from './weeklyPass'
 import { applyTmUpdate } from './coachAsks'
@@ -3621,6 +3621,13 @@ app.get('/api/history/ledger', async (c) => {
   const tzRaw = Number(c.req.query('tz'))
   const tzOffsetMin = Number.isFinite(tzRaw) && Math.abs(tzRaw) <= 900 ? tzRaw : 0
   const activeBlock = await getActiveBlock(db)
+  // A restarted Block Zero's undone sessions are off the rings (Josh 2026-10-23). Restarted: an
+  // ended Block Zero followed by another Block Zero or by nothing yet (graduating starts Fighter).
+  const blocksInOrder = (await db.select().from(trainingBlocks)).sort((a, b) => a.createdAt - b.createdAt)
+  const restarted = blocksInOrder
+    .filter((b, i) => b.blockType === 'block_zero' && b.status === 'ended' && (blocksInOrder[i + 1]?.blockType ?? 'block_zero') === 'block_zero')
+    .map(b => ({ from: Math.floor((b.startedAt ?? b.createdAt) / 86400), to: Math.floor((b.endedAt ?? b.createdAt) / 86400) }))
+  const ringRows = withoutRestartLeftovers(allSessions, restarted)
   const consistencyRows = allSessions.map(s => ({ type: s.type, status: s.status, scheduledDate: s.scheduledDate, timeSlot: s.timeSlot, startedAt: s.startedAt, skipReason: s.skipReason }))
   const foundationFrom = activeBlock?.blockType === 'block_zero' ? blockStartDay(activeBlock) : mondayOf(today) - (CONSISTENCY_SPAN[range] - 1) * 7
   const foundationDays = new Set(allSessions.filter(s => s.type === 'mobility' && s.status === 'completed' && s.scheduledDate != null && s.scheduledDate >= foundationFrom && s.scheduledDate <= today).map(s => s.scheduledDate))
@@ -3634,7 +3641,7 @@ app.get('/api/history/ledger', async (c) => {
     weeks,
     consistencyBoard,
     readinessMeter,
-    rings: buildRings(allSessions, range, today),
+    rings: buildRings(ringRows, range, today),
     aerobic: aerobicWeekly(runs, weeks, today),
     strength: strengthWeekly(setRows, weeks, today),
     sleep: sleepWeek(logs, today),
@@ -3642,7 +3649,7 @@ app.get('/api/history/ledger', async (c) => {
     herb: herbMonth(logs, today),
     weight: weightWeekly(weights, weeks, today),
     // the pond reads the range's sessions (SEASON's rings are per week)
-    pond: pondReaction(sessionRings(allSessions, range, today)),
+    pond: pondReaction(sessionRings(ringRows, range, today)),
   })
 })
 
