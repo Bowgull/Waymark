@@ -2,7 +2,7 @@
 // The adaptive coach's other rules: the training max proposal, the weekly
 // pass (eases with reasons, the week line, idempotency).
 import { fighterTmDecision, tmAcceptValues, tmProposal, type BlockWorkingSet } from './tm'
-import { claimDecision, easeDetail, placePlannedWeek, type PlannedEntry, houseLine, STALE_CLAIM_SEC, weeklyPassKey, weeklyPassTarget, whyThisWeek, type WeekSignals } from './weeklyPass'
+import { claimDecision, easeDetail, placePlannedWeek, type PlannedEntry, houseLine, STALE_CLAIM_SEC, weeklyPassKey, weeklyPassTarget, whyThisWeek, stillStarting, type WeekSignals } from './weeklyPass'
 import { summarizeEffort } from './effort'
 import { MON, assert, ctx,} from './testUtil'
 import { analyzeWeek, previousAnalysisFrom } from '../weekAnalysis'
@@ -48,6 +48,17 @@ assert(good === 'New this week: main lifts at 75% of your max, down from 90%. Ne
 // Page 56 item 16: Block Zero week 3 -> 4, in plain words with the real numbers.
 const bz4: WeekSignals = { ...base, blockType: 'block_zero', weekNumber: 4, totalWeeks: 6 }
 assert(whyThisWeek(bz4, []).startsWith('Week 4. Each session is set the night before') && plainWords(whyThisWeek(bz4, [])), `Block Zero week line (coach brain P2): ${whyThisWeek(bz4, [])}`)
+// Audit 2026-10-23 #18: week 1, or lifts / run still found from a guess or his history, claims nothing it hasn't read.
+assert(whyThisWeek({ ...bz4, weekNumber: 1 }, []) === 'Week 1. This week finds your starting weights and run length.', `week 1 line: ${whyThisWeek({ ...bz4, weekNumber: 1 }, [])}`)
+assert(whyThisWeek(bz4, [], { starting: true }).startsWith('Week 4. This week finds your starting weights'), 'still starting: the finding line')
+{
+  const lift = (state: string, v: object) => ({ kind: 'lift', key: 'x', state, valueJson: JSON.stringify(v) })
+  const run = (state: string, rungSource: string) => ({ kind: 'run', key: 'tolerance', state, valueJson: JSON.stringify({ rungSource }) })
+  assert(stillStarting([run('LEARNING', 'history'), lift('LEARNING', { exposures: 3, seed: null })]), 'run from history: starting')
+  assert(stillStarting([run('GUESS', 'prior')]), 'run a guess: starting')
+  assert(stillStarting([run('LEARNING', 'block'), lift('LEARNING', { exposures: 0, seed: { lastKg: 10 } }), lift('KNOWN', { exposures: 4 })]), 'half the lifts from history: starting')
+  assert(!stillStarting([run('LEARNING', 'block'), lift('LEARNING', { exposures: 2, seed: null }), lift('KNOWN', { exposures: 4 }), lift('GUESS', { exposures: 0 })]), 'lifts and run read in the block: not starting')
+}
 assert([1, 2, 3, 4, 5, 6].every(w => plainWords(whyThisWeek({ ...bz4, weekNumber: w }, []))), 'no jargon in any Block Zero week line')
 
 assert(whyThisWeek({ ...base, waveEnd: true }, []).includes('New maxes'), 'wave end: the week line says new maxes go in')

@@ -5,7 +5,7 @@ import { Board, FlapLabel, glowRow } from '@/design'
 import { apiFetch } from '@/lib/api'
 import { DobCard, NumberCard } from './SettingsCards'
 import { SBlock, SRow } from './settingsParts'
-import { dobFlaps, formatDob, parseDob, tanakaMaxHr, type Ymd } from './settingsModel'
+import { dobFlaps, formatDob, injuriesText, parseDob, tanakaMaxHr, type Ymd } from './settingsModel'
 
 interface Profile {
   dob: string | null
@@ -46,8 +46,9 @@ export function BodyProfileBoard() {
         if (!alive) return
         const v = { dob: p?.dob ?? null, maxHr: p?.maxHr ?? null, injuries: p?.injuries ?? null }
         setProfile(v)
-        setInjuries(v.injuries ?? '')
-        savedInjuries.current = v.injuries ?? ''
+        // Plain words for an old code list; only saved (as those words) if he edits the box.
+        setInjuries(injuriesText(v.injuries))
+        savedInjuries.current = injuriesText(v.injuries)
       })
       .catch(() => { if (alive) { setProfile({ dob: null, maxHr: null, injuries: null }); savedInjuries.current = '' } })
     return () => { alive = false }
@@ -85,6 +86,10 @@ export function BodyProfileBoard() {
   const dob = parseDob(profile?.dob)
   const estimate = tanakaMaxHr(dob, new Date())
   const maxHr = profile?.maxHr ?? estimate
+  // A stored number that isn't the birth-date estimate was set by him (or raised by a run):
+  // say so, and point at the card's FROM BIRTH DATE to go back to the estimate (audit 2026-10-23 #2).
+  const storedMax = profile?.maxHr != null && profile.maxHr !== estimate
+  const maxSub = !storedMax ? 'From your birth date until real runs raise it.' : dob ? 'Set by you, not from your birth date. Tap to change or clear.' : 'Set by you, not from your birth date.'
   const [dd, mon, yyyy] = dob ? dobFlaps(dob) : ['', '', '']
   const note = (row: string) => error?.row === row ? <p className="wm-row-note" role="alert">{error.text}</p> : null
   const defaultDob: Ymd = { y: new Date().getFullYear() - 30, m: 1, d: 1 }
@@ -106,7 +111,7 @@ export function BodyProfileBoard() {
         {note('dob')}
       </div>
       <div ref={el => { rows.current.maxHr = el }} className="st-rowwrap">
-        <SRow label="Max heart rate" sub="From your birth date until real runs raise it." onClick={() => setCard('maxHr')} ariaLabel={`Max heart rate${maxHr != null ? `, ${maxHr}` : ', not set'}. Change`}>
+        <SRow label="Max heart rate" sub={maxSub} onClick={() => setCard('maxHr')} ariaLabel={`Max heart rate${maxHr != null ? `, ${maxHr}` : ', not set'}. Change`}>
           <FlapLabel text={maxHr != null ? String(maxHr) : ''} len={maxHr != null ? 0 : 3} size="sm" tone="gold" />
         </SRow>
         {note('maxHr')}

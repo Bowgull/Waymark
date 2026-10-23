@@ -90,6 +90,12 @@ export function rollingLoadRead(entries: LoadEntry[], todayEpochDay: number, blo
   return { ...flag, flagged: applies && flag.flagged, reason: applies ? flag.reason : null, last7, prev7, applies }
 }
 
+/** A check-in counts once at least one answer is in (a blank row is not a check-in). */
+export function answered(c: CheckIn | null): boolean {
+  if (!c) return false
+  return Object.entries(c).some(([k, v]) => k !== 'epochDay' && v != null)
+}
+
 export function readinessReport(checkIns: CheckIn[], todayEpochDay: number, load: LoadRead | null = null): ReadinessReport {
   const upToToday = checkIns.filter(c => c.epochDay <= todayEpochDay)
   const byDay = new Map(upToToday.map(c => [c.epochDay, c]))
@@ -122,7 +128,7 @@ export function readinessReport(checkIns: CheckIn[], todayEpochDay: number, load
 
   return {
     epochDay: todayEpochDay,
-    checkedIn: today != null,
+    checkedIn: answered(today),
     items,
     worseItems: day?.worseItems ?? [],
     flaggedToday: day?.flagged ?? false,

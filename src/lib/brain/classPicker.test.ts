@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { buildAthleteModel } from './athleteModel'
 import { candidateClassDays, classLadder, classLean, classOffWhy, classSlotChoices, classWhy, learnedClassSlots, slotForClassDay, slotsOf } from './classPicker'
 import { solveOutline, violations, type OutlineIn, type OutlineSession } from './outline'
-import { classDaySlots, defaultClassSlot, formatClassSlots, nextClassSlot, parseClassSlots } from '../classSlots'
+import { classDaySlots, defaultClassSlot, formatClassSlots, nextClassSlot, parseClassDays, parseClassSlots } from '../classSlots'
 import type { ModelCheckIn, ModelEvents, ModelSession } from './types'
 
 const MON = 20822 // Monday 2027-01-04
@@ -128,5 +128,12 @@ const inOf = (over: Partial<OutlineIn> = {}): OutlineIn => ({
   assert.ok(!r.changes.some(c => 'sessionId' in c && c.sessionId === 'fri'), 'Friday\'s stays')
   assert.ok(r.changes.length <= 2)
 }
+
+// Audit 2026-10-23 #30: null and '' are the same, no class days (never Mon/Wed/Fri).
+assert.deepEqual(parseClassDays(null), [])
+assert.deepEqual(parseClassDays(undefined), [])
+assert.deepEqual(parseClassDays(''), [])
+assert.deepEqual(parseClassDays('1,3,5'), [1, 3, 5])
+assert.deepEqual(parseClassDays(' 2, 9,2,x'), [2], 'off-range and junk dropped, no repeats')
 
 console.log('class day tests passed')

@@ -8,10 +8,10 @@ import { cors } from 'hono/cors'
 import { createDB } from '../db/client'
 import { CONSISTENCY_SPAN, weeksConsistency } from '../lib/ledgerConsistency'
 import { blockReadinessFor } from './readiness'
-import { activeRecoverySessions, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, runTypes, techniques, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
+import { activeRecoverySessions, athleteEstimates, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, runTypes, techniques, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { athleteDayFrom, isoToEpochDay, mondayOf, TODAY_HEADER, TZ_HEADER } from '../lib/dates'
 import { cycleWeeks } from '../lib/programWeeks'
-import { classDaySlots } from '../lib/classSlots'
+import { classDaySlots, parseClassDays } from '../lib/classSlots'
 import { loggedAtSec } from '../lib/units'
 import { adHocSessionSchema, blockTestsBodySchema, completeSessionSchema, dailyLogSchema, mtClassLogPatchSchema, strengthSetPatchSchema, userProfilePatchSchema } from '../lib/validators/schemas'
 import { DAILY_MOBILITY_TEMPLATE, FR_WARMUP_TEMPLATE, legacyMobilityTemplates, type MobilityExerciseTemplate } from '../lib/mobilityTemplate'
@@ -2476,7 +2476,8 @@ async function weekJson(db: ReturnType<typeof createDB>, blockId: string, weekNu
 
   // The week line in plain words, what's new and what's next (page 56 item 16).
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, week.blockId))
-  const whyLine = block ? weekLineFor(week, block, weekSessions) : week.whyLine
+  const estimates = block?.blockType === 'block_zero' ? await db.select({ kind: athleteEstimates.kind, key: athleteEstimates.key, state: athleteEstimates.state, valueJson: athleteEstimates.valueJson }).from(athleteEstimates) : null
+  const whyLine = block ? weekLineFor(week, block, weekSessions, estimates) : week.whyLine
   return { week: { ...weekForClient(week), whyLine }, sessions: weekSessions }
 }
 
@@ -2831,7 +2832,8 @@ app.patch('/api/settings', async (c) => {
 
   // Read old settings for cascade comparison
   const [oldSettings] = await db.select().from(settings).where(eq(settings.id, 'default'))
-  const oldMtDays = oldSettings?.mtClassDays ?? '1,3,5'
+  // None picked (null or ''): no classes (audit 2026-10-23 #30).
+  const oldMtDays = oldSettings?.mtClassDays ?? ''
 
   if (body.mtClassDays !== undefined) updates.mtClassDays = body.mtClassDays
   if (body.mtClassSlots !== undefined) updates.mtClassSlots = body.mtClassSlots
@@ -2849,8 +2851,8 @@ app.patch('/api/settings', async (c) => {
   const [row] = await db.select().from(settings).where(eq(settings.id, 'default'))
 
   // A class day's slot changed (page 70): its planned classes from tomorrow sit in the new slot. ANY leaves them.
-  const oldSlots = classDaySlots(oldMtDays.split(',').filter(Boolean).map(Number), oldSettings?.mtClassSlots)
-  const newSlots = classDaySlots((row?.mtClassDays ?? '').split(',').filter(Boolean).map(Number), row?.mtClassSlots)
+  const oldSlots = classDaySlots(parseClassDays(oldMtDays), oldSettings?.mtClassSlots)
+  const newSlots = classDaySlots(parseClassDays(row?.mtClassDays), row?.mtClassSlots)
   const moved = Object.entries(newSlots).filter(([d, s]) => s !== 'any' && oldSlots[Number(d)] !== undefined && oldSlots[Number(d)] !== s).map(([d, s]) => [Number(d), s] as const)
   if (moved.length > 0) {
     const todayEpochDay = athleteDay(c)
@@ -3597,7 +3599,7 @@ app.get('/api/history/ledger', async (c) => {
 
   const runs = allRuns.map(r => {
     const s = sessionById.get(r.sessionId)
-    return { epochDay: s ? dayOf(s) : 0, paceSecKm: r.paceSecKm, avgHr: r.avgHr, completed: s?.status === 'completed' }
+    return { epochDay: s ? dayOf(s) : 0, paceSecKm: r.paceSecKm, avgHr: r.avgHr, completed: s?.status === 'completed', durationSec: r.durationSec }
   })
 
   const exName = new Map(allExercises.map(e => [e.id, e.name]))

@@ -11,7 +11,8 @@ export interface UserProfileContext {
   injuries: string | null
   postureIssues: string | null
   trainingHistory: string | null
-  mtGymAccessDays: string | null
+  /** Settings' class days (settings.mt_class_days, "1,3,5", 0 = Sunday). '' or null: none picked. */
+  mtClassDays: string | null
   mtCapPerWeek: number | null
   weeklyDayTarget: number | null
   constraints: string | null
@@ -40,7 +41,7 @@ Approved copy examples:
 - Four weeks. Corrective work, light loading, habit building. Skip this block and the next one breaks you.
 - Cleared. The groundwork held. Next block expects more.
 
-Muay Thai guideline: aim to schedule MT sessions at or below mtCapPerWeek. This is a soft target, not a hard ceiling. You may schedule one session above the cap when soreness is low, sleep is adequate, and the week load is otherwise light. If you exceed it, explain why in adjustmentNotes. The user has MT access most evenings and will default to overtraining without a clear plan.
+Muay Thai guideline: aim to schedule MT sessions at or below mtCapPerWeek. This is a soft target, not a hard ceiling. You may schedule one session above the cap when soreness is low, sleep is adequate, and the week load is otherwise light. If you exceed it, explain why in adjustmentNotes.
 
 # MT protection rule
 
@@ -116,6 +117,18 @@ Some athletes start the program after long sedentary periods, with compromised l
 
 Concurrent training interference (strength vs aerobic vs skill) is a real phenomenon but it only binds for trained athletes near their adaptation ceiling. Novice and returning athletes get simultaneous gains across all modalities for roughly the first 6 to 12 months of consistent training. For athletes in their first year back, do not force trade-offs between strength, running, and MT. The answer to "should we cut running to prioritize hypertrophy" in year one is: no, run easy, lift heavy, hit the bag, all of it works. Revisit priority tradeoffs only when progress visibly stalls in a lagging modality. Until then, serve the whole goal set.`
 
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/**
+ * Settings' class days in words ("Mon, Wed, Fri"), Monday first. Empty or
+ * null: "no class days picked" (no classes, never a Mon/Wed/Fri fallback).
+ */
+export function classDaysWords(raw: string | null | undefined): string {
+  const days = [...new Set((raw ?? '').split(',').map(x => x.trim()).filter(Boolean).map(Number).filter(d => Number.isInteger(d) && d >= 0 && d <= 6))]
+    .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
+  return days.length ? days.map(d => DAY_SHORT[d]).join(', ') : 'no class days picked'
+}
+
 function serializeProfile(profile: UserProfileContext): string {
   const lines: string[] = ['# User Profile']
 
@@ -124,7 +137,7 @@ function serializeProfile(profile: UserProfileContext): string {
   if (profile.postureIssues) lines.push(`Posture issues: ${profile.postureIssues}`)
   if (profile.trainingHistory) lines.push(`Training history: ${profile.trainingHistory}`)
   if (profile.constraints) lines.push(`Constraints: ${profile.constraints}`)
-  if (profile.mtGymAccessDays) lines.push(`MT gym access days: ${profile.mtGymAccessDays}`)
+  lines.push(`MT class days: ${classDaysWords(profile.mtClassDays)}`)
   if (profile.mtCapPerWeek != null) lines.push(`MT cap per week: ${profile.mtCapPerWeek} sessions`)
   if (profile.weeklyDayTarget != null) lines.push(`Weekly training days target: ${profile.weeklyDayTarget}`)
   if (profile.latestBodyweightKg != null) lines.push(`Bodyweight: ${kgToLbs(profile.latestBodyweightKg)} lb (logged within last 30 days)`)
@@ -167,7 +180,7 @@ export function emptyProfile(): UserProfileContext {
     injuries: null,
     postureIssues: null,
     trainingHistory: null,
-    mtGymAccessDays: null,
+    mtClassDays: null,
     mtCapPerWeek: null,
     weeklyDayTarget: null,
     constraints: null,

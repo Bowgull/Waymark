@@ -3,7 +3,7 @@
 // revert to the local rule-based generator.
 
 import { eq } from 'drizzle-orm'
-import { coachingOutputs, exercises, trainingMaxes, userProfile } from '../db/schema'
+import { coachingOutputs, exercises, settings, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInputs } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
 import { getLatestBodyweightKg } from './bodyMetrics'
@@ -140,12 +140,13 @@ export async function runLedgerInsights(
   apiKey: string,
   data: LedgerInsightData,
 ): Promise<string[] | null> {
-  const [profileRow, tmRows] = await Promise.all([
+  const [profileRow, tmRows, settingsRow] = await Promise.all([
     db.select().from(userProfile).limit(1).then(rows => rows[0] ?? null),
     db
       .select({ weightKg: trainingMaxes.weightKg, name: exercises.name })
       .from(trainingMaxes)
       .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id)),
+    db.select({ mtClassDays: settings.mtClassDays }).from(settings).limit(1).then(rows => rows[0] ?? null),
   ])
 
   const latestBodyweightKg = await getLatestBodyweightKg(db)
@@ -155,7 +156,7 @@ export async function runLedgerInsights(
     injuries: profileRow?.injuries ?? null,
     postureIssues: profileRow?.postureIssues ?? null,
     trainingHistory: profileRow?.trainingHistory ?? null,
-    mtGymAccessDays: profileRow?.mtGymAccessDays ?? null,
+    mtClassDays: settingsRow?.mtClassDays ?? null,
     mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
     weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,

@@ -6,7 +6,7 @@
 
 import { BLOCK_ZERO_TOOL, assessmentFromModel, buildAssessmentPrompt, buildTransitionPrompt, type BlockZeroAssessmentOutput, type TransitionPromptData } from './blockZero'
 import { TOOL_BLOCK_TRANSITION, transitionFromModel } from './tools'
-import { buildSystemPrompt, emptyProfile } from './system'
+import { buildSystemPrompt, classDaysWords, emptyProfile } from './system'
 import { calibrationCeilingKg, fixedResults, hasWeek1Tests, retestCeilingKg, testDeltas, week1LiftBaselines, workupE1rm, type TestRow, type WorkupSet } from '../blockZero'
 import { assessmentTestData, guardAssessment, transitionTestData } from '../../server/routes/blockZero'
 import type { BlockTestData } from '../../server/blockZeroData'
@@ -149,6 +149,10 @@ const sys = buildSystemPrompt({ ...emptyProfile(), latestBodyweightKg: 80, train
 assert(sys.includes('Weights in lb only. Never write kg.'), 'voice rule: lb only')
 assert(sys.includes('Bodyweight: 176 lb') && sys.includes('Bench Press: 132 lb'), 'profile bodyweight and training maxes in lb')
 assert(kgFree(sys), 'system prompt: no kg')
+// Audit 2026-10-23 #22: class days come from Settings; none picked says so; no hard-coded "most evenings".
+assert(sys.includes('MT class days: no class days picked') && !/most evenings/.test(sys), 'no class days: said plainly, no evenings claim')
+assert(buildSystemPrompt({ ...emptyProfile(), mtClassDays: '6,2' }, null).map(b => b.text).join('\n').includes('MT class days: Tue, Sat'), 'Settings class days in words')
+assert(classDaysWords('') === 'no class days picked' && classDaysWords('0,1') === 'Mon, Sun' && classDaysWords('1,3,5') === 'Mon, Wed, Fri', 'class days in words, Monday first')
 
 const startSchema = (BLOCK_ZERO_TOOL.input_schema as { properties: { calibrationStarts: { items: { properties: Record<string, { description?: string }>; required: string[] } } } }).properties.calibrationStarts.items
 assert(startSchema.required.includes('startingWeightLb') && /pounds \(lb\)/.test(startSchema.properties.startingWeightLb.description ?? ''), 'assessment returns startingWeightLb, defined as pounds')

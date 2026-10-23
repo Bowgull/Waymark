@@ -31,11 +31,13 @@ import {
   weeklyPassKey,
   weeklyPassTarget,
   whyThisWeek,
+  stillStarting,
   isLeadInContext,
   hasCoachEase,
   type WeekChange,
   type WeekIntelligence,
   type WeekSignals,
+  type EstimateLike,
 } from '../lib/coach'
 import { checkInFromDailyLog, evaluateReadiness, weeklyLoadFlag } from '../lib/blockZero'
 import { strengthBlockWeek } from '../lib/weeklyTemplate'
@@ -371,7 +373,7 @@ export async function runWeeklyPass(db: DB, apiKey: string, todayDay: number, no
  * and week alone. Weeks prepared before 0033 carry older wording in why_line;
  * this reads them the new way.
  */
-export function weekLineFor(week: Pick<WeekPlanRow, 'weekNumber' | 'analysisJson'>, block: Pick<Block, 'blockType' | 'totalWeeks'>, rows: ReadonlyArray<Pick<SessionRow, 'id' | 'label' | 'contextJson'>> = []): string {
+export function weekLineFor(week: Pick<WeekPlanRow, 'weekNumber' | 'analysisJson'>, block: Pick<Block, 'blockType' | 'totalWeeks'>, rows: ReadonlyArray<Pick<SessionRow, 'id' | 'label' | 'contextJson'>> = [], estimates: ReadonlyArray<EstimateLike> | null = null): string {
   const stored = parseStored(week.analysisJson) as Partial<WeekIntelligence> | null
   const kind = blockKind(block.blockType)
   const signals: WeekSignals = stored?.version === 2 && stored.signals
@@ -389,5 +391,7 @@ export function weekLineFor(week: Pick<WeekPlanRow, 'weekNumber' | 'analysisJson
     .filter(c => c.source === 'rules' && c.cause != null && (rows.length === 0 || hasCoachEase(rows.find(r => r.id === c.sessionId)?.contextJson)))
     .map(c => ({ cause: c.cause as NonNullable<WeekChange['cause']>, epochDay: c.epochDay, name: rows.find(r => r.id === c.sessionId)?.label ?? (c.type === 'strength' ? 'Strength' : c.type), type: c.type }))
   const leadIn = rows.length > 0 && rows.some(r => isLeadInContext(r.contextJson))
-  return whyThisWeek(signals, eases, { leadIn })
+  // The coach's stored estimates: still finding his starting weights and run (audit 2026-10-23 #18).
+  const starting = estimates != null && stillStarting(estimates)
+  return whyThisWeek(signals, eases, { leadIn, starting })
 }

@@ -1,7 +1,8 @@
 // The readiness line (Block Zero Phase C, direction 5): one line from
 // GET /api/readiness/today; tap it to see why. On Today it sits on the Morning
 // Report row (page 56 item 14): LOGGED, then "Good to go." or "Easing today.
-// Sleep off trend."; a tap shows the why. The lantern dims on eased days (the
+// Sleep off trend." ("Logged. Not enough check-ins yet…" before a baseline);
+// a tap shows the why. The lantern dims on eased days (the
 // world). Pure.
 
 export interface ReadinessItemIn {
@@ -33,6 +34,8 @@ export interface ReadinessLineView {
   rest: string
   /** What tapping shows. */
   why: string
+  /** No baseline yet (fewer than 4 check-ins in 10 days): "Logged.", never "Good to go.". */
+  noBaseline?: boolean
 }
 
 const WORDS: Record<string, string> = {
@@ -75,6 +78,7 @@ export function readinessLine(r: ReadinessIn | null | undefined): ReadinessLineV
     return view('good', 'Good to go.', `${capital(joinWords(worse))} ${worse.length === 1 ? 'is' : 'are'} off trend today. One day doesn't change the plan.`)
   }
   const hasBaseline = (r.items ?? []).some(i => i.today != null && i.mean7 != null)
-  if (!hasBaseline) return view('good', 'Good to go.', 'Not enough check-ins yet for your usual. Keep logging.')
+  // No baseline yet: nothing to call "good" against, so say so plainly (audit 2026-10-23 #4).
+  if (!hasBaseline) return { ...view('good', 'Logged. Not enough check-ins yet for your usual.', 'Not enough check-ins yet for your usual. Keep logging.'), noBaseline: true }
   return view('good', 'Good to go.', 'Everything is near your usual.')
 }

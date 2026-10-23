@@ -253,5 +253,7 @@ export function runRecorder(): RunRecorderApi {
 export function strapLine(s: StrapStatus | null): string {
   if (!s || s.link === 'none') return 'Not connected.'
   if (s.link === 'searching') return 'Looking for it…'
-  return `${s.name ?? 'Heart rate strap'} · connected`
+  // Only a live link with a heart rate is "connected" (audit 2026-10-23 #20).
+  const word = s.link === 'connected' ? 'connected' : s.link === 'silent' ? 'no signal' : 'saved'
+  return `${s.name ?? 'Heart rate strap'} · ${word}`
 }

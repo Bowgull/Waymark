@@ -68,6 +68,10 @@ import { readinessLine } from './readinessLine'
   assert.match(oneOff!.why, /^Energy is off trend today/)
   const fresh = readinessLine({ checkedIn: true, ease: false, worseItems: [], reason: null, items: [] })
   assert.match(fresh!.why, /Not enough check-ins yet/)
+  // Audit 2026-10-23 #4: no baseline is "Logged.", never "Good to go.", and says so in the line.
+  assert.equal(fresh?.lead, 'Logged.')
+  assert.equal(fresh?.text, 'Logged. Not enough check-ins yet for your usual.')
+  assert.equal(fresh?.noBaseline, true)
   const steady = readinessLine({ checkedIn: true, ease: false, worseItems: [], reason: null, items: [{ item: 'sleepHours', today: 7, mean7: 7, worse: false }] })
   assert.equal(steady?.why, 'Everything is near your usual.')
 }

@@ -111,16 +111,50 @@ export interface WeekLineEase {
   type?: string
 }
 
+/** One stored athlete_estimates row, as stillStarting reads it. */
+export interface EstimateLike {
+  kind: string
+  key: string
+  state: string
+  valueJson: string
+}
+
+/**
+ * The block's lifts or run are still found, not read (audit 2026-10-23 #18):
+ * the run is a guess or still from his history before the block, or half or
+ * more of the lifts have no set in the block yet (a guess, or seeded from
+ * history). Then the week line says it is finding his starting points.
+ */
+export function stillStarting(rows: ReadonlyArray<EstimateLike>): boolean {
+  const parse = (r: EstimateLike): Record<string, unknown> => {
+    try { return (JSON.parse(r.valueJson) ?? {}) as Record<string, unknown> } catch { return {} }
+  }
+  const run = rows.find(r => r.kind === 'run' && r.key === 'tolerance')
+  if (run) {
+    const v = parse(run)
+    if (run.state === 'GUESS' || (v.rungSource != null && v.rungSource !== 'block')) return true
+  }
+  const lifts = rows.filter(r => r.kind === 'lift')
+  if (lifts.length === 0) return run == null
+  const unread = lifts.filter(r => {
+    const v = parse(r)
+    return r.state === 'GUESS' || v.seed != null || v.exposures === 0
+  }).length
+  return unread * 2 >= lifts.length
+}
+
 /**
  * The week's one line (page 56 item 16): in plain words, what's new against
  * last week and what's next, with the real numbers. No jargon. Shown only on
  * Program's week board, as plain text. When the coach eased a session, one
  * sentence says which and why.
  */
-export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>, opts: { leadIn?: boolean } = {}): string {
+export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>, opts: { leadIn?: boolean; starting?: boolean } = {}): string {
   const parts: string[] = []
-  void opts
-  if (s.blockType === 'block_zero') {
+  if (s.blockType === 'block_zero' && (s.weekNumber <= 1 || opts.starting)) {
+    // Audit 2026-10-23 #18: nothing to read reps or heart rate from yet, so don't claim it.
+    parts.push(`Week ${s.weekNumber}. This week finds your starting weights and run length.`)
+  } else if (s.blockType === 'block_zero') {
     // Coach brain P2: no week template drives the dose; each session is set the night before.
     parts.push(`Week ${s.weekNumber}. Each session is set the night before from your last ones: weights from the reps you had left, run pieces from your heart rate.`)
   } else {

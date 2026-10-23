@@ -4,6 +4,7 @@ import {
   bagCount,
   cueSplit,
   exerciseMeta,
+  lastSetWhen,
   masteryWords,
   moreSummary,
   sentences,
@@ -175,6 +176,17 @@ assert.equal(sharpLine(2), 'Sharp twice.')
 assert.equal(sharpLine(4), 'Sharp 4 times.')
 // the one useful number
 assert.equal(exerciseMeta('Barbell', '105 lb × 8'), 'Barbell · last time 105 lb × 8')
+// Audit 2026-10-23 #27: a last set over 4 weeks old says its month.
+{
+  const OCT23 = Date.UTC(2026, 9, 23) / 86400000
+  const JUN12 = Date.UTC(2026, 5, 12) / 86400000
+  assert.equal(lastSetWhen(JUN12, OCT23), 'in June')
+  assert.equal(lastSetWhen(OCT23 - 28, OCT23), '', '4 weeks old: no date yet')
+  assert.equal(lastSetWhen(OCT23 - 29, OCT23), 'in September')
+  assert.equal(lastSetWhen(Date.UTC(2025, 5, 12) / 86400000, OCT23), 'in June 2025')
+  assert.equal(lastSetWhen(null, OCT23), '')
+  assert.equal(exerciseMeta('Dumbbell', '30 lb × 10', lastSetWhen(JUN12, OCT23)), 'Dumbbell · last time 30 lb × 10 in June')
+}
 assert.equal(exerciseMeta('Barbell', null), 'Barbell')
 assert.equal(exerciseMeta('', '8 reps'), 'Last time 8 reps')
 assert.equal(techniqueMeta({ kind: 'Punch' }, 26), 'Punch · in 26 of your combos')

@@ -8,6 +8,7 @@ import {
   runSessions,
   runSplits,
   sessions,
+  settings,
   strengthSessionExercises,
   strengthSets,
   trainingMaxes,
@@ -299,7 +300,7 @@ export async function runSessionReview(
   apiKey: string,
   session: { id: string; type: string; rpe: number | null; notes: string | null; durationSec: number | null },
 ): Promise<SessionReviewOutput | null> {
-  const [profileRow, recent, tmRows] = await Promise.all([
+  const [profileRow, recent, tmRows, settingsRow] = await Promise.all([
     db.select().from(userProfile).limit(1).then(rows => rows[0] ?? null),
     db
       .select({ id: sessions.id, type: sessions.type, rpe: sessions.rpe })
@@ -311,6 +312,7 @@ export async function runSessionReview(
       .select({ weightKg: trainingMaxes.weightKg, name: exercises.name })
       .from(trainingMaxes)
       .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id)),
+    db.select({ mtClassDays: settings.mtClassDays }).from(settings).limit(1).then(rows => rows[0] ?? null),
   ])
 
   const latestBodyweightKg = await getLatestBodyweightKg(db)
@@ -320,7 +322,7 @@ export async function runSessionReview(
     injuries: profileRow?.injuries ?? null,
     postureIssues: profileRow?.postureIssues ?? null,
     trainingHistory: profileRow?.trainingHistory ?? null,
-    mtGymAccessDays: profileRow?.mtGymAccessDays ?? null,
+    mtClassDays: settingsRow?.mtClassDays ?? null,
     mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
     weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,

@@ -13,6 +13,7 @@ import {
   equipmentName,
   exerciseMeta,
   isMastered,
+  lastSetWhen,
   masteryDots,
   masteryWords,
   moreSummary,
@@ -225,6 +226,9 @@ function MoreNote({ label, text }: { label?: string; text: string | null | undef
 
 // ─── the four item pages ──────────────────────────────────────
 
+/** Today's local epoch day (the session days the hints carry are local days). */
+const localToday = () => Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000)
+
 const GROUP_ICON: Record<string, SessionIconKey> = { strength: 'strength', core: 'core', posture: 'foundation', mobility: 'mobility' }
 
 export function ExercisePage({ ex, last = null }: { ex: LibraryExercise; last?: LastSet | null }) {
@@ -234,7 +238,7 @@ export function ExercisePage({ ex, last = null }: { ex: LibraryExercise; last?: 
   return (
     <>
       <TopBoard>
-        <Hero icon={GROUP_ICON[ex.category] ?? 'strength'} title={ex.name} meta={exerciseMeta(equipmentName(ex.equipment), last ? setText(last) : null) || null} />
+        <Hero icon={GROUP_ICON[ex.category] ?? 'strength'} title={ex.name} meta={exerciseMeta(equipmentName(ex.equipment), last ? setText(last) : null, last ? lastSetWhen(last.day, localToday()) : '') || null} />
         <Watch name={ex.name} video={videoOf(ex)} />
       </TopBoard>
       <CueLine text={cue.line} />

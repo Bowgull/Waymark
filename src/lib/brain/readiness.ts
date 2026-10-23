@@ -12,6 +12,10 @@
 //          sleep under 5 h with energy 2 or less,
 //          or a "sick" skip or check-in note
 //
+// Before a baseline (audit 2026-10-23 #4): an item with no baseline yet can't
+// be "worse", so a few plain floors stand in for it and make the day AMBER:
+// soreness 5, stress 5, or sleep under 6 h with energy 2 or less.
+//
 // "Worse" is 1 point worse than his mean (sleep: 1 h less). Cannabis and
 // alcohol are neutral inputs: they never move the state. One bad night never
 // cancels a session; it only caps the dose. This replaces the old 7-day R10
@@ -39,6 +43,12 @@ export function lowerState(a: ReadinessState, b: ReadinessState): ReadinessState
 
 export const RED_SLEEP_HOURS = 5
 export const RED_ENERGY = 2
+
+/** Absolute AMBER floors, read only for items with no baseline yet. */
+export const FLOOR_SORENESS = 5
+export const FLOOR_STRESS = 5
+export const FLOOR_SLEEP_HOURS = 6
+export const FLOOR_ENERGY = 2
 
 export interface ItemRead {
   item: CheckInItem
@@ -88,7 +98,9 @@ export function readDay(checkIns: readonly ModelCheckIn[], day: number): DayRead
   const read = items.filter(i => i.today != null && i.mean != null).length
   const confidence: ReadConfidence = read >= FULL_ITEMS ? 'full' : read > 0 ? 'partial' : 'none'
   const weightedWorse = read === 0 ? 0 : read >= FULL_ITEMS ? worse.length : Math.round((worse.length * FULL_ITEMS / read) * 100) / 100
-  return { day, checkedIn: c != null, items, worse, better: items.filter(i => i.better).map(i => i.item), read, confidence, weightedWorse }
+  // A blank row (nothing answered yet) is not a check-in.
+  const checkedIn = c != null && CHECKIN_ITEMS.some(i => c[i] != null)
+  return { day, checkedIn, items, worse, better: items.filter(i => i.better).map(i => i.item), read, confidence, weightedWorse }
 }
 
 /** 2+ items worse, reweighted for a partial check-in. */
@@ -151,10 +163,41 @@ export function readinessState(checkIns: readonly ModelCheckIn[], day: number, o
     return { ...base, state: 'GREEN', why: null }
   }
   const state = stateOfDay(today, yesterday)
+  if (state === 'AMBER' && STATE_RANK[relativeState(today, yesterday)] > STATE_RANK.AMBER) {
+    return { ...base, state, why: `${cap(floorHits(today).join(', '))}.` }
+  }
   return { ...base, state, why: whyFor(state, today, yesterday) }
 }
 
+/**
+ * The floors hit by a morning's items that have no baseline yet, in plain
+ * words ("soreness 5", "slept 5.5 h with energy 2"). Empty when none.
+ */
+export function floorHits(d: Pick<DayRead, 'items'>): string[] {
+  const it = (k: CheckInItem) => d.items.find(i => i.item === k)
+  const noBase = (k: CheckInItem) => it(k)?.mean == null
+  const val = (k: CheckInItem) => it(k)?.today ?? null
+  const out: string[] = []
+  const sore = val('soreness')
+  if (sore != null && noBase('soreness') && sore >= FLOOR_SORENESS) out.push(`soreness ${sore}`)
+  const stress = val('stress')
+  if (stress != null && noBase('stress') && stress >= FLOOR_STRESS) out.push(`stress ${stress}`)
+  const sleep = val('sleepHours')
+  const energy = val('energy')
+  if (sleep != null && energy != null && (noBase('sleepHours') || noBase('energy')) && sleep < FLOOR_SLEEP_HOURS && energy <= FLOOR_ENERGY) {
+    out.push(`slept ${round1(sleep)} h with energy ${energy}`)
+  }
+  return out
+}
+
 function stateOfDay(today: DayRead, yesterday: DayRead): ReadinessState {
+  const s = relativeState(today, yesterday)
+  // No baseline yet for an item: its plain floor can still make the day AMBER.
+  if (STATE_RANK[s] > STATE_RANK.AMBER && floorHits(today).length > 0) return 'AMBER'
+  return s
+}
+
+function relativeState(today: DayRead, yesterday: DayRead): ReadinessState {
   const twoDays = manyWorse(today) && manyWorse(yesterday)
   if (twoDays) return 'RED'
   const sameItem = today.worse.some(i => yesterday.worse.includes(i))

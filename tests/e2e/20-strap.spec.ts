@@ -25,10 +25,10 @@ test('Settings: connect the heart rate strap, then forget it; no Strava anywhere
   await expect(board.locator('canvas.wm-heart')).toHaveAttribute('data-state', 'search')
   await expect(board.getByRole('button', { name: 'CONNECT HEART RATE STRAP' })).toHaveCount(0)
 
-  // Found: COOSPO H9Z · connected, the heart in the zone colour.
+  // Found: COOSPO H9Z · connected. No heart rate yet, so the heart stays still (audit 2026-10-23 #20).
   await page.clock.fastForward(1800)
   await expect(board.getByText('COOSPO H9Z · connected')).toBeVisible()
-  await expect(board.locator('canvas.wm-heart')).toHaveAttribute('data-state', 'under')
+  await expect(board.locator('canvas.wm-heart')).toHaveAttribute('data-state', 'idle')
   // The heart container is drawn (canvases are hidden in screenshots): its pixels are there.
   const lit = await board.locator('canvas.wm-heart').evaluate((c: HTMLCanvasElement) => {
     const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data
@@ -39,18 +39,18 @@ test('Settings: connect the heart rate strap, then forget it; no Strava anywhere
   expect(lit).toBeGreaterThan(50)
   await expect(board).toHaveScreenshot('strap-connected.png')
 
-  // Remembered: still connected after a reload.
+  // Remembered after a reload: saved, not live (it links on the next run).
   await page.reload()
-  await expect(page.getByText('COOSPO H9Z · connected')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText('COOSPO H9Z · saved')).toBeVisible({ timeout: 20_000 })
 
   // Tap the row: one small line, FORGET STRAP. A tap away closes it.
-  const row = page.getByRole('button', { name: /^Heart rate strap, COOSPO H9Z · connected\. Options$/ })
+  const row = page.getByRole('button', { name: /^Heart rate strap, COOSPO H9Z · saved\. Options$/ })
   await row.tap()
   const menu = page.getByRole('menu', { name: 'Heart rate strap' })
   await expect(menu.getByRole('menuitem', { name: 'FORGET STRAP' })).toBeVisible()
   await page.locator('.st-hveil').tap({ position: { x: 10, y: 10 } })
   await expect(menu).toHaveCount(0)
-  await expect(page.getByText('COOSPO H9Z · connected')).toBeVisible()
+  await expect(page.getByText('COOSPO H9Z · saved')).toBeVisible()
 
   // FORGET STRAP: back to not connected, the button again.
   await row.tap()

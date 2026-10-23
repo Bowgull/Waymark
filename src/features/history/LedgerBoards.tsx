@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { FlapLabel, SessionIcon, useOutsideClose } from '@/design'
 import type { ConsistencyView, TileState } from '@/lib/ledgerConsistency'
 import type { ReadinessReport } from '@/lib/brain/readinessParts'
-import { RING_COLOUR, linePoints, paceDelta, paceFlap, spanWeeks, weightDelta, type LedgerRing, type LiftSeries, type RingState, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
+import { RING_COLOUR, avgFlap, avgName, linePoints, paceDelta, paceFlap, spanWeeks, weightDelta, type LedgerRing, type LiftSeries, type RingState, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
 
 // The Ledger's boards, drawn as page 32 draws them ("The Ledger · together").
 
@@ -83,10 +83,11 @@ function Line({ values, w, h, pad, invert, col, fill = false }: { values: number
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-export function AerobicBoard({ points, runs }: { points: WeeklyPoint[]; runs: number }) {
+export function AerobicBoard({ points, runs, stale = false }: { points: WeeklyPoint[]; runs: number; stale?: boolean }) {
   const drawn = points.length >= 2
   const last = points[points.length - 1]
-  const delta = paceDelta(points)
+  // Old data says nothing about now: no faster / slower arrow (audit 2026-10-23 #21).
+  const delta = stale ? null : paceDelta(points)
   return (
     <section className="lg-glass lg-chart">
       <div className="lg-head"><span>Aerobic base</span>{last && <FlapLabel text={paceFlap(last.value)} size="xs" tone="gold" animate={false} />}</div>
@@ -123,10 +124,10 @@ export function StrengthBoard({ lifts, sets }: { lifts: LiftSeries[]; sets: numb
 const SORE_WORD = ['fresh', 'loose', 'normal', 'sore', 'cooked']
 const SORE_COL = ['#4aa3c8', '#6fb85a', '#c4b070', '#d0843e', '#c63f34']
 
-export function SleepBoard({ days, avg }: { days: SleepDay[]; avg: number | null }) {
+export function SleepBoard({ days, avg, mornings = 7 }: { days: SleepDay[]; avg: number | null; mornings?: number }) {
   return (
     <section className="lg-glass lg-chart">
-      <div className="lg-head"><span>Sleep + soreness</span>{avg != null && <FlapLabel text={`${avg.toFixed(1)} H AVG`} size="xs" tone="teal" animate={false} />}</div>
+      <div className="lg-head"><span>Sleep + soreness</span>{avg != null && <FlapLabel text={avgFlap(`${avg.toFixed(1)} H`, mornings)} size="xs" tone="teal" animate={false} />}</div>
       <div className="lg-label" style={{ margin: '2px 0 4px' }}>Sleep · hours each night</div>
       <svg viewBox="0 0 320 96" aria-label={days.map(d => `${d.letter} ${d.sleepHours ?? 'no'} hours`).join(', ')}>
         {days.map((d, i) => {
@@ -163,14 +164,14 @@ export function SleepBoard({ days, avg }: { days: SleepDay[]; avg: number | null
  * good or bad colours. The dashed brass line is his 28-day average; the flap
  * his 7-day average. One plain line from his own check-ins.
  */
-export function HerbBoard({ days, avg7, avg28, line }: { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null }) {
+export function HerbBoard({ days, avg7, avg28, line, n7 = 7, n28 = 28 }: { days: HerbDay[]; avg7: number | null; avg28: number | null; line: HerbSleepLine | null; n7?: number; n28?: number }) {
   const W = 320, H = 112, base = 92, x0 = 4
   const yv = (v: number) => base - v / 9 * 72
   const oldStep = 166 / 21, newX0 = 180, newStep = (W - 2 - newX0) / 7
   const bx = (i: number): [number, number] => (i < 21 ? [x0 + i * oldStep, oldStep - 2] : [newX0 + (i - 21) * newStep, newStep - 4])
   return (
     <section className="lg-glass lg-chart lg-herb">
-      <div className="lg-head"><span>Herb</span>{avg7 != null && <FlapLabel text={`${avg7.toFixed(1)} AVG`} size="xs" animate={false} />}</div>
+      <div className="lg-head"><span>Herb</span>{avg7 != null && <FlapLabel text={avgFlap(avg7.toFixed(1), n7)} size="xs" animate={false} />}</div>
       <svg viewBox={`0 0 ${W} ${H}`} aria-label={days.slice(-7).map(d => `${d.letter} ${d.herb ?? 'not logged'}`).join(', ')}>
         <line x1="0" x2={W} y1={base} y2={base} stroke="rgba(240,230,192,.12)" />
         {days.map((d, i) => {
@@ -196,11 +197,11 @@ export function HerbBoard({ days, avg7, avg28, line }: { days: HerbDay[]; avg7: 
       <div className="lg-legend is-wrap">
         <span><i style={{ background: '#cfd9d2' }} />last 7 days</span>
         <span><i style={{ background: '#5d6863' }} />the 3 weeks before</span>
-        {avg28 != null && <span><i className="dash" />28-day average {avg28.toFixed(1)}</span>}
+        {avg28 != null && <span><i className="dash" />{avgName('28-day', n28)} {avg28.toFixed(1)}</span>}
       </div>
       {line && (
         <p className="lg-hline">
-          On the {line.above} mornings above your 28-day average ({line.avg.toFixed(1)}), you slept {line.aboveSleep.toFixed(1)} h. On the other {line.rest}, {line.restSleep.toFixed(1)} h.
+          On the {line.above} mornings above your {n28 >= 7 ? '28-day average' : 'average'} ({line.avg.toFixed(1)}), you slept {line.aboveSleep.toFixed(1)} h. On the other {line.rest}, {line.restSleep.toFixed(1)} h.
           <small>From your last {line.checkIns} check-ins.</small>
         </p>
       )}
