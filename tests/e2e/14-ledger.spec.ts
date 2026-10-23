@@ -14,7 +14,7 @@ import { makeApiFor } from './support/api'
  *   closes it; the opened line snaps up under the header; lines start closed
  *   each visit.
  * - page 79 (approved 2026-10-23): the list is Next block, Running, Fight,
- *   Strength, Sleep + soreness, Herb, Body. Next block in plain words (Showing
+ *   Strength, Sleep + soreness, Herb (no Body board). Next block in plain words (Showing
  *   up, Running base, Lifting, Back; "N OF 4 DONE"; tap a part for its line).
  */
 test.describe.configure({ mode: 'serial' })
@@ -64,15 +64,15 @@ test('Herb: 28 mornings, the averages, and the sleep line (page 62 B)', async ({
   await expect(herb.getByText('From your last 28 check-ins.')).toBeVisible()
   await expect(herb).toHaveScreenshot('ledger-herb.png', { mask: [herb.locator('text.lg-hbd')] })
 
-  // page 79's order: right after Sleep + soreness, Body last
+  // page 79's order: Herb right after Sleep + soreness, last; no Body line
   const order = await page.locator('.wm-pane:not([style*="display: none"]) .cl-line .cl-head > span:first-child').allTextContents()
-  expect(order.map(x => x.trim())).toEqual(['Next block', 'Running', 'Fight', 'Strength', 'Sleep + soreness', 'Herb', 'Body'])
+  expect(order.map(x => x.trim())).toEqual(['Next block', 'Running', 'Fight', 'Strength', 'Sleep + soreness', 'Herb'])
 })
 
 test('Lines (page 77 A): closed each visit; one open at a time; tap again, outside or Escape closes; the open line snaps under the header', async ({ page }) => {
   await openLedger(page)
   const lines = page.locator('.wm-pane:not([style*="display: none"]) button.cl-line')
-  await expect(lines).toHaveCount(7)
+  await expect(lines).toHaveCount(6)
   for (const l of await lines.all()) await expect(l).toHaveAttribute('aria-expanded', 'false')
   // the rings and the toggle stay on top
   await expect(page.getByRole('region', { name: /^This week:/ })).toBeVisible()
@@ -88,11 +88,12 @@ test('Lines (page 77 A): closed each visit; one open at a time; tap again, outsi
   await line(page, 'fight').tap()
   await expect(line(page, 'fight')).toHaveAttribute('aria-expanded', 'false')
   // even the last line snaps to the top (the list makes room below)
-  await openLine(page, 'body')
-  await expect.poll(async () => Math.round((await line(page, 'body').boundingBox())!.y - (hd.y + hd.height))).toBeLessThanOrEqual(12)
+  await line(page, 'herb').tap()
+  await expect(line(page, 'herb')).toHaveAttribute('aria-expanded', 'true')
+  await expect.poll(async () => Math.round((await line(page, 'herb').boundingBox())!.y - (hd.y + hd.height))).toBeLessThanOrEqual(12)
   // tap outside
   await page.touchscreen.tap(hd.x + hd.width - 8, hd.y + hd.height / 2)
-  await expect(line(page, 'body')).toHaveAttribute('aria-expanded', 'false')
+  await expect(line(page, 'herb')).toHaveAttribute('aria-expanded', 'false')
   // Escape
   await openLine(page, 'strength')
   await page.keyboard.press('Escape')
@@ -106,7 +107,7 @@ test('Lines (page 77 A): closed each visit; one open at a time; tap again, outsi
   await expect(line(page, 'running')).toHaveAttribute('aria-expanded', 'false')
 })
 
-test('Goal boards (page 79): Running leads with the 5K and the 22:00 goal; Fight, Strength and Body say where he is, honestly', async ({ page }) => {
+test('Goal boards (page 79): Running leads with the 5K and the 22:00 goal; Fight and Strength say where he is, honestly', async ({ page }) => {
   await openLedger(page)
   // Running: the 5K headline (a test time, or when the first test is)
   await expect(line(page, 'running').getByRole('img', { name: /^5K (\d+:\d\d|FIRST TEST WK \d+)$/ })).toBeVisible()
@@ -122,12 +123,11 @@ test('Goal boards (page 79): Running leads with the 5K and the 22:00 goal; Fight
   await expect(page.locator('.cl-panel[aria-hidden="false"] .fx-k').first()).toHaveText(/^MT classes/)
   // Strength since you started
   await expect(line(page, 'strength').getByRole('img', { name: /^(FROM TODAY|WEEK 1 = 0|\d+ LIFTS? UP)$/ })).toBeVisible()
-  // Body: the weigh-in line, or how to start one
-  await expect(line(page, 'body').getByRole('img', { name: /^(NO WEIGH-INS|\d+\.\d LB)$/ })).toBeVisible()
-  await openLine(page, 'body')
-  await expect(page.locator('.cl-panel[aria-hidden="false"] .lg-hline')).toContainText(/Goal: visible muscle/)
+  // no Body board, no weigh-in prompt anywhere on the Ledger
+  await expect(line(page, 'body')).toHaveCount(0)
+  expect(await page.locator('.wm-pane:not([style*="display: none"])').innerText()).not.toMatch(/weigh/i)
   // his units only
-  for (const k of ['running', 'fight', 'strength', 'body']) {
+  for (const k of ['running', 'fight', 'strength']) {
     await openLine(page, k)
     expect(await page.locator('.cl-panel[aria-hidden="false"]').innerText()).not.toMatch(/\bkg\b|\bmiles?\b/)
   }

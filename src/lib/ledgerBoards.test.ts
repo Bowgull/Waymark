@@ -1,9 +1,9 @@
 // Run: tsx src/lib/ledgerBoards.test.ts
 // Page 79's Ledger boards: the 5K (up is better), easy runs at his line, Fight,
-// Strength since he started, Next block in plain words, Body; honest early states.
+// Strength since he started, Next block in plain words; honest early states.
 import assert from 'node:assert/strict'
 import {
-  FIVE_K_GOAL_SEC, bodyBoard, comboName, dayWord, easyRunsAtLine, easyRunsEmptyLine, estStrength, fightBars, fightBoard, fiveKBoard, fiveKChart,
+  FIVE_K_GOAL_SEC, comboName, dayWord, easyRunsAtLine, easyRunsEmptyLine, estStrength, fightBars, fightBoard, fiveKBoard, fiveKChart,
   fiveKTestSec, fiveKY, liftFlap, mmss, plainNextBlock, plainPartLine, runPaceSecKm, setSpeedKmh, strengthLines, strengthSince,
 } from './ledgerBoards'
 import type { ReadinessPart, ReadinessReport } from './brain/readinessParts'
@@ -207,22 +207,6 @@ test('Next block: break, lagging and the rest of the part lines', () => {
   assert.equal(plainPartLine(part('back', false, { planOpen: true })), 'The raven\'s plan for your back is still open.')
   const all = plainNextBlock(report(['habit', 'engine', 'strength', 'back'].map(k => part(k as ReadinessPart['key'], true, {})), { minMet: false }))
   assert.equal(all.flap, '4 OF 4 DONE')
-})
-
-test('Body: the weekly weigh-in line read with his lifts; no weigh-ins says so', () => {
-  const empty = bodyBoard([], 0, { up: 0, of: 0 })
-  assert.equal(empty.flap, 'NO WEIGH-INS')
-  assert.equal(empty.line, 'Weigh in once a week in Settings › Body metrics and your line shows here.')
-  assert.equal(empty.legend, null)
-  const pts = [{ weekStart: START, value: 181.2 }, { weekStart: START + 49, value: 179.2 }]
-  const v = bodyBoard(pts, 8, { up: 4, of: 4 })
-  assert.equal(v.flap, '179.2 LB')
-  assert.equal(v.line, 'Down a little while every lift went up: that is the visible-muscle direction.')
-  assert.equal(v.legend, 'weekly weigh-in · 8 weeks')
-  assert.deepEqual(v.delta, { text: '▼ 2.0 lb', down: true })
-  assert.deepEqual(v.domain, { min: 178.7, max: 181.7 })
-  assert.equal(bodyBoard(pts, 8, { up: 0, of: 0 }).line, 'Down 2 lb over 8 weeks.')
-  assert.equal(bodyBoard([pts[1]], 1, { up: 0, of: 0 }).line, 'One weigh-in so far. Weigh in once a week and your line shows here.')
 })
 
 test('since you started: the latest Block Zero\'s first day, else the active block\'s, else today', () => {

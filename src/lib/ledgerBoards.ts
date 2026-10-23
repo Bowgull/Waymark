@@ -1,7 +1,7 @@
 // The Ledger's boards that answer his goals (page 79, approved 2026-10-23):
 // Next block in plain words, Running (the 5K first, then easy runs at his own
-// heart line), Fight (bag rounds, MT classes, combos), Strength since he
-// started, and Body (the weekly weigh-in line). Pure functions over plain rows
+// heart line), Fight (bag rounds, MT classes, combos) and Strength since he
+// started. Pure functions over plain rows
 // so the server and the tests share them. Up is better on every graph: a
 // faster 5K and a faster easy pace climb, as lifts do.
 
@@ -9,7 +9,7 @@ import { listWords, type PartKey, type ReadinessPart, type ReadinessReport } fro
 import { liftShort } from './brain/readinessParts'
 export type { PartKey } from './brain/readinessParts'
 import { patternOf } from './brain/loadLevels'
-import { mondayOf, spanWeeks, weightDelta, type WeeklyPoint } from './ledger'
+import { mondayOf, type WeeklyPoint } from './ledger'
 import { kgToLbs } from './units'
 
 const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -523,45 +523,6 @@ export function strengthLines(v: StrengthSinceView): { exerciseId: string; pts: 
     exerciseId: l.exerciseId,
     pts: l.points.map(p => ({ x: r1(10 + (p.week - 1) / (span - 1) * 300), y: r1(Math.max(4, Math.min(124, 114 - p.gain / maxGain * 100))) })),
   }))
-}
-
-// ─── Body: the weekly weigh-in line ──────────────────────────
-
-export interface BodyView {
-  flap: string
-  /** The line under the chart, and its small line. */
-  line: string
-  small: string
-  legend: string | null
-  delta: { text: string; down: boolean } | null
-  /** The chart's domain: half a pound of room top and bottom. */
-  domain: { min: number; max: number } | null
-}
-
-export const BODY_GOAL = 'Goal: visible muscle.'
-export const BODY_EMPTY = 'Weigh in once a week in Settings › Body metrics and your line shows here.'
-
-/** The Body board: the weekly weigh-in line (Settings › Body metrics), read with his lifts; no weigh-ins, it says so. */
-export function bodyBoard(points: readonly WeeklyPoint[], weighIns: number, lifts: { up: number; of: number }): BodyView {
-  const last = points[points.length - 1]
-  if (!last) return { flap: 'NO WEIGH-INS', line: BODY_EMPTY, small: `${BODY_GOAL} Weight steady while your lifts go up is muscle coming in.`, legend: null, delta: null, domain: null }
-  const flap = `${last.value.toFixed(1)} LB`
-  if (points.length < 2) {
-    return { flap, line: `${weighIns > 1 ? 'One week' : 'One weigh-in'} so far. Weigh in once a week and your line shows here.`, small: BODY_GOAL, legend: `weekly weigh-in · ${plural(weighIns, 'weigh-in')} so far`, delta: null, domain: null }
-  }
-  const vals = points.map(p => p.value)
-  const d = r1(last.value - points[0].value)
-  const weeks = spanWeeks(points as WeeklyPoint[])
-  const liftsBit = lifts.up > 0 ? (lifts.up === lifts.of ? 'every lift went up' : `${lifts.up} of your lifts went up`) : null
-  let line: string
-  if (liftsBit) {
-    if (d <= -0.5) line = `Down ${-d <= 3 ? 'a little' : `${-d} lb`} while ${liftsBit}: that is the visible-muscle direction.`
-    else if (d < 0.5) line = `Steady while ${liftsBit}: that is muscle coming in.`
-    else line = `Up ${d} lb while ${liftsBit}.`
-  } else if (d <= -0.5) line = `Down ${-d} lb over ${plural(weeks, 'week')}.`
-  else if (d < 0.5) line = `Steady over ${plural(weeks, 'week')}.`
-  else line = `Up ${d} lb over ${plural(weeks, 'week')}.`
-  return { flap, line, small: BODY_GOAL, legend: `weekly weigh-in · ${plural(weeks, 'week')}`, delta: weightDelta(points as WeeklyPoint[]), domain: { min: Math.min(...vals) - 0.5, max: Math.max(...vals) + 0.5 } }
 }
 
 function parseJson(raw: string | null | undefined): Record<string, unknown> | null {

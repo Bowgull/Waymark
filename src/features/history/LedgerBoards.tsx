@@ -2,10 +2,10 @@ import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
 import { FlapLabel, SessionIcon, useOutsideClose } from '@/design'
 import type { ConsistencyView, TileState } from '@/lib/ledgerConsistency'
-import { RING_COLOUR, avgFlap, avgName, linePoints, type LedgerRing, type RingState, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
+import { RING_COLOUR, avgFlap, avgName, linePoints, type LedgerRing, type RingState, type SleepDay, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
 import {
   FIVE_K_CHART, FIVE_K_GOAL_SEC, fightBars, fiveKChart, fiveKX, liftFlap, mmss, perKm, strengthLines,
-  type BodyView, type EasyRunsView, type FightView, type FiveKView, type NextBlockView, type PartKey, type StrengthSinceView,
+  type EasyRunsView, type FightView, type FiveKView, type NextBlockView, type PartKey, type StrengthSinceView,
 } from '@/lib/ledgerBoards'
 
 // The Ledger's boards, drawn as page 32 draws them ("The Ledger · together").
@@ -541,30 +541,6 @@ export function StrengthSinceBoard({ view }: { view: StrengthSinceView }) {
       {!view.started && <p className="lg-hline">{view.line}</p>}
       {rows}
       {view.started && <p className="lg-hline">{view.line}</p>}
-    </section>
-  )
-}
-
-export function BodyFlap({ view }: { view: BodyView }) {
-  return <FlapLabel text={view.flap} size="xs" animate={false} />
-}
-
-/** BODY (page 79 §6): the weekly weigh-in line from Settings › Body metrics; no weigh-ins, it says so. */
-export function BodyBoard({ view, points }: { view: BodyView; points: WeeklyPoint[] }) {
-  return (
-    <section className="lg-glass lg-chart">
-      <BoardHead name="Body"><BodyFlap view={view} /></BoardHead>
-      <svg viewBox="0 0 320 84" aria-hidden>
-        <GRID w={320} h={84} />
-        <Line values={points.map(p => p.value)} w={320} h={84} pad={10} invert={false} col="#cfd9d2" domain={view.domain ?? undefined} />
-      </svg>
-      {view.legend && (
-        <div className="lg-legend">
-          <span><i style={{ background: '#cfd9d2' }} />{view.legend}</span>
-          {view.delta && <span className={`lg-delta${view.delta.down ? '' : ' is-dn'}`}>{view.delta.text}</span>}
-        </div>
-      )}
-      <p className="lg-hline">{view.line}<small>{view.small}</small></p>
     </section>
   )
 }

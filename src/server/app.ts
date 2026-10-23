@@ -32,7 +32,7 @@ import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, got
 import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, fallbackRoundTypes, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, isoOf } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
-import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, weightWeekly, withoutRestartLeftovers, type LedgerRange } from '../lib/ledger'
+import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, withoutRestartLeftovers, type LedgerRange } from '../lib/ledger'
 import { allBoardRows, boardSuggestions, computeSuggestions, withBlockLabels } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, weekLineFor } from './weeklyPass'
 import { applyTmUpdate } from './coachAsks'
@@ -3633,14 +3633,13 @@ app.get('/api/history/ledger', async (c) => {
   const weeks = CHART_WEEKS[range]
   const db = createDB(c.env)
 
-  const [allSessions, allRuns, allSexes, allSets, allExercises, logs, metrics] = await Promise.all([
+  const [allSessions, allRuns, allSexes, allSets, allExercises, logs] = await Promise.all([
     db.select().from(sessions),
     db.select().from(runSessions),
     db.select().from(strengthSessionExercises),
     db.select().from(strengthSets),
     db.select().from(exercises),
     db.select().from(dailyLogs),
-    db.select().from(bodyMetrics),
   ])
   const dayOf = (s: { scheduledDate: number | null; completedAt: number | null; createdAt: number }) =>
     s.scheduledDate ?? Math.floor((s.completedAt ?? s.createdAt) / 86400)
@@ -3663,10 +3662,6 @@ app.get('/api/history/ledger', async (c) => {
     setRows.push({ epochDay: dayOf(s), exerciseName: exName.get(se.exerciseId) ?? '', weightLbs: Math.round(st.weightKg * 2.20462) })
   }
 
-  const weights = metrics
-    .filter(m => m.weightKg != null)
-    .map(m => ({ epochDay: Math.floor(loggedAtSec(m.loggedAt) / 86400), weightLbs: Math.round(m.weightKg! * 2.20462 * 10) / 10 }))
-
   // Page 69 §5 A: in Block Zero the NEXT BLOCK meter (the four readiness parts) takes page 63's place;
   // after it, page 63's board over the last 4 / 8 / 13 weeks.
   const tzRaw = Number(c.req.query('tz'))
@@ -3685,8 +3680,8 @@ app.get('/api/history/ledger', async (c) => {
   const foundation = { done: foundationDays.size, of: Math.max(foundationDays.size, today - foundationFrom + (foundationDays.has(today) ? 1 : 0)) }
   const readinessMeter = activeBlock?.blockType === 'block_zero' ? await blockReadinessFor(db, today) : null
   const consistencyBoard = readinessMeter ? undefined : weeksConsistency(consistencyRows, CONSISTENCY_SPAN[range], today, mondayOf, { tzOffsetMin, foundation })
-  // Page 79: the boards that answer his goals (Next block in plain words, Running, Fight, Strength since he started, Body).
-  const goals = await ledgerGoalBoards(db, { today, weeks, allSessions, allRuns, allSexes, allSets, weights, readiness: readinessMeter })
+  // Page 79: the boards that answer his goals (Next block in plain words, Running, Fight, Strength since he started).
+  const goals = await ledgerGoalBoards(db, { today, weeks, allSessions, allRuns, allSexes, allSets, readiness: readinessMeter })
 
   return c.json({
     ...goals,
@@ -3701,7 +3696,6 @@ app.get('/api/history/ledger', async (c) => {
     sleep: sleepWeek(logs, today),
     // page 62 B: the last 28 mornings' herb, its averages and the sleep line
     herb: herbMonth(logs, today),
-    weight: weightWeekly(weights, weeks, today),
     // the pond reads the range's sessions (SEASON's rings are per week)
     pond: pondReaction(sessionRings(ringRows, range, today)),
   })

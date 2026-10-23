@@ -7,11 +7,10 @@ import type { createDB } from '../db/client'
 import { parseClassDays } from '../lib/classSlots'
 import { loadEasyHrCeiling } from '../lib/hrAnalysis'
 import { isLoggedWorkSet } from '../lib/loggedSets'
-import { weightWeekly, type WeeklyPoint } from '../lib/ledger'
 import type { ReadinessReport } from '../lib/brain/readinessParts'
 import {
-  bodyBoard, easyRunsAtLine, easyRunsEmptyLine, fightBoard, fiveKBoard, fiveKTestSec, plainNextBlock, setSpeedKmh, strengthSince,
-  type BodyView, type EasyRunRow, type EasyRunsView, type LiftSetRow, type FightView, type FiveKView, type NextBlockView, type StrengthSinceView,
+  easyRunsAtLine, easyRunsEmptyLine, fightBoard, fiveKBoard, fiveKTestSec, plainNextBlock, setSpeedKmh, strengthSince,
+  type EasyRunRow, type EasyRunsView, type LiftSetRow, type FightView, type FiveKView, type NextBlockView, type StrengthSinceView,
 } from '../lib/ledgerBoards'
 
 type DB = ReturnType<typeof createDB>
@@ -29,7 +28,6 @@ export interface LedgerGoalBoards {
   lifts: StrengthSinceView
   /** In Block Zero: the meter in plain words. */
   nextBlock: NextBlockView | null
-  body: BodyView & { points: WeeklyPoint[]; weighIns: number }
 }
 
 /** Week 1 of "since you started": the latest Block Zero's first day (else the active block's, else today). */
@@ -54,7 +52,6 @@ export async function ledgerGoalBoards(db: DB, inp: {
   allRuns: RunRow[]
   allSexes: SexRow[]
   allSets: SetRow[]
-  weights: { epochDay: number; weightLbs: number }[]
   readiness: ReadinessReport | null
 }): Promise<LedgerGoalBoards> {
   const { today, weeks, allSessions, allRuns, allSexes, allSets } = inp
@@ -129,11 +126,9 @@ export async function ledgerGoalBoards(db: DB, inp: {
   }
   const lifts = strengthSince(liftSets, start, today, { exerciseIds: plannedIds, day: nextLift?.scheduledDate ?? null, label: nextLift?.label ?? null })
 
-  // ── Next block, Body ──
+  // ── Next block ──
   const firstRunSec = nextRun ? (parse(nextRun.doseJson)?.run as { totalSec?: unknown } | undefined)?.totalSec : null
   const nextBlock = inp.readiness ? plainNextBlock(inp.readiness, { firstRunMin: runsSinceStart === 0 && typeof firstRunSec === 'number' ? Math.round(firstRunSec / 60) : null }) : null
-  const weight = weightWeekly(inp.weights, weeks, today)
-  const body = { ...bodyBoard(weight.points, weight.weighIns, { up: lifts.up, of: lifts.started ? lifts.lifts.length : 0 }), ...weight }
 
   return {
     running: {
@@ -143,7 +138,6 @@ export async function ledgerGoalBoards(db: DB, inp: {
     fight,
     lifts,
     nextBlock,
-    body,
   }
 }
 

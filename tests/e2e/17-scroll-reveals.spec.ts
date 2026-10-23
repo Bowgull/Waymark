@@ -71,12 +71,12 @@ async function measure(page: Page) {
 
 /**
  * Page 77 A: the Ledger's boards sit behind closed lines, so the page alone may be too short to
- * scroll a window's worth. Opening the last line (Body) gives the list its room below; then back to the top.
+ * scroll a window's worth. Opening the last line (Herb) gives the list its room below; then back to the top.
  */
 async function roomOnLedger(page: Page) {
-  const body = page.locator('.wm-pane:not([style*="display: none"]) button.cl-line[data-line="body"]')
-  await body.tap()
-  await expect(body).toHaveAttribute('aria-expanded', 'true')
+  const last = page.locator('.wm-pane:not([style*="display: none"]) button.cl-line[data-line="herb"]')
+  await last.tap()
+  await expect(last).toHaveAttribute('aria-expanded', 'true')
   await scrollTo(page, 0)
 }
 

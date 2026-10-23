@@ -6,13 +6,13 @@ import { apiFetch } from '@/lib/api'
 import { PageErrorScreen } from '@/components/ui/ErrorScreens'
 import { getTodayISO } from '@/lib/dates'
 import { logger } from '@/lib/logger'
-import { pondReaction, type LedgerRange, type LedgerRing, type SleepDay, type WeeklyPoint, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
+import { pondReaction, type LedgerRange, type LedgerRing, type SleepDay, type HerbDay, type HerbSleepLine } from '@/lib/ledger'
 import type { ConsistencyView } from '@/lib/ledgerConsistency'
-import type { BodyView, EasyRunsView, FightView, FiveKView, NextBlockView, StrengthSinceView } from '@/lib/ledgerBoards'
+import type { EasyRunsView, FightView, FiveKView, NextBlockView, StrengthSinceView } from '@/lib/ledgerBoards'
 import { setWorldPond } from '@/world/worldStore'
 
 import {
-  BodyBoard, BodyFlap, ConsistencyBoard, FightBoard, FightFlap, HerbBoard, HerbFlap, NextBlockBoard, NextBlockFlap, RingBoard,
+  ConsistencyBoard, FightBoard, FightFlap, HerbBoard, HerbFlap, NextBlockBoard, NextBlockFlap, RingBoard,
   RunningBoard, RunningFlap, SleepBoard, SleepFlap, StrengthFlap, StrengthSinceBoard,
 } from './LedgerBoards'
 import { LedgerLines, type LedgerLineItem } from './LedgerLines'
@@ -22,7 +22,7 @@ import './ledger.css'
 // The Ledger (page 32, "The Ledger · together"; page 77 A, page 79): the pond fills the screen.
 // On top, WEEK / MONTH / SEASON and the week's flap-segment rings (the same rings float on the
 // pond); under them one closed line per board, in the order of what's next, his goals, then
-// recovery: Next block, Running, Fight, Strength, Sleep + soreness, Herb, Body. A line opens its
+// recovery: Next block, Running, Fight, Strength, Sleep + soreness, Herb. A line opens its
 // board in place (LedgerLines).
 
 export interface LedgerData {
@@ -36,7 +36,6 @@ export interface LedgerData {
   lifts?: StrengthSinceView
   /** In Block Zero: page 69 §5's meter in plain words. */
   nextBlock?: NextBlockView | null
-  body?: BodyView & { points: WeeklyPoint[]; weighIns: number }
   /** mornings: how many the average is from (older servers leave it out). */
   sleep: { days: SleepDay[]; avg: number | null; mornings?: number }
   /** Page 62 B: the last 28 mornings' herb; older servers leave it out. */
@@ -65,7 +64,7 @@ function LedgerHeader({ week }: { week: number | null }) {
   )
 }
 
-/** Page 79's order: what's next, then his goals (5K, fighting, lifting), then recovery; Body last. */
+/** Page 79's order: what's next, then his goals (5K, fighting, lifting), then recovery. */
 function lineItems(d: LedgerData): LedgerLineItem[] {
   const items: LedgerLineItem[] = []
   if (d.nextBlock) items.push({ key: 'next', name: 'Next block', flap: <NextBlockFlap view={d.nextBlock} />, board: <NextBlockBoard view={d.nextBlock} /> })
@@ -76,7 +75,6 @@ function lineItems(d: LedgerData): LedgerLineItem[] {
   items.push({ key: 'sleep', name: 'Sleep + soreness', flap: <SleepFlap avg={d.sleep.avg} mornings={d.sleep.mornings} />, board: <SleepBoard days={d.sleep.days} avg={d.sleep.avg} mornings={d.sleep.mornings} /> })
   // page 62 B: right after Sleep + soreness
   if (d.herb) items.push({ key: 'herb', name: 'Herb', flap: <HerbFlap avg7={d.herb.avg7} n7={d.herb.n7} />, board: <HerbBoard days={d.herb.days} avg7={d.herb.avg7} avg28={d.herb.avg28} line={d.herb.line} n7={d.herb.n7} n28={d.herb.n28} /> })
-  if (d.body) items.push({ key: 'body', name: 'Body', flap: <BodyFlap view={d.body} />, board: <BodyBoard view={d.body} points={d.body.points} /> })
   return items
 }
 
