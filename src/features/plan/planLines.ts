@@ -142,7 +142,7 @@ function hardTodo(h: HardPlan, opts: LinesOpts): PlanLine[] {
   if (h.kind === 'steady') {
     const st = p.find(x => x.kind === 'steady')
     return [
-      { label: 'WHAT', value: `easy ${min(warm)}, steady hard ${min(st?.sec ?? 900)}, easy ${min(cool)}` },
+      { label: 'WHAT', value: `easy ${min(warm)}, tempo ${min(st?.sec ?? 900)}, easy ${min(cool)}` },
       { label: 'HARD', value: setWords(h.speeds.steady, out, unit) },
       { label: 'EASY', value: setWords(h.speeds.easy, out, unit) },
       { label: 'HEART', value: h.heart.low != null ? `stay ${h.heart.low}–${h.heart.top}` : `up to ${h.heart.top}` },
@@ -174,7 +174,7 @@ function testDone(sec: number, unit: TreadmillUnit): PlanLine[] {
   return [
     { label: '5K', value: fiveKText(sec), tick: true },
     { label: 'GOAL', value: `${fiveKText(GOAL_5K_SEC)} · ${toGoalText(sec)}` },
-    { label: 'NEW', value: `steady hard ${speedText(sp.steady, unit)} · run hard ${speedText(sp.hard, unit)}` },
+    { label: 'NEW', value: `tempo ${speedText(sp.steady, unit)} · intervals ${speedText(sp.hard, unit)}` },
   ]
 }
 

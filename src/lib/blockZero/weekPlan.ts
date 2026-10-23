@@ -14,7 +14,7 @@ import type { TemplateSession } from '../weeklyTemplate'
 import { FOUNDATION_LABEL } from '../foundation'
 import { getRunWalkWeek, runWalkTotalSec } from './running'
 import { blockZeroPhase, type BlockZeroPhase } from './weeks'
-import { HARD_NOTES, HARD_START_LABEL, hardWeek, isTestWeek, type HardKind } from '../brain/hardRuns'
+import { HARD_NOTES, HARD_START_LABEL, hardWeek, type HardKind } from '../brain/hardRuns'
 
 export type StrengthDay = 'A' | 'B' | 'C'
 
@@ -57,8 +57,8 @@ function runWalk(week: number, alternative: boolean): BlockZeroTemplateSession {
 
 /**
  * A hard run (page 76, approved 2026-10-23): from week 4, Tuesday is steady
- * hard (the 5K test in weeks 4, 8, 12 ...) and Saturday run hard / jog. The
- * nightly pass keeps the week's balance (lib/brain/hardRuns.ts planWeekRuns).
+ * hard and Saturday run hard / jog. The nightly pass keeps the week's balance
+ * and places the 5K test when he is ready (lib/brain/hardRuns.ts).
  */
 function hardRun(kind: HardKind): BlockZeroTemplateSession {
   return { timeSlot: 'am', type: 'running', label: HARD_START_LABEL[kind], estimatedMin: kind === 'steady' ? 30 : 40, runCategory: HARD_NOTES[kind] as 'tempo' | 'intervals' | '5k_test' }
@@ -78,7 +78,7 @@ export function getBlockZeroWeekTemplate(weekNumber: number): Record<number, Blo
   return {
     0: [FOUNDATION],
     1: monday,
-    2: [FOUNDATION, hardWeek(weekNumber) ? hardRun(isTestWeek(weekNumber) ? 'test' : 'steady') : runWalk(weekNumber, true)],
+    2: [FOUNDATION, hardWeek(weekNumber) ? hardRun('steady') : runWalk(weekNumber, true)],
     3: [FOUNDATION, strength('B', phase)],
     4: [FOUNDATION, runWalk(weekNumber, true)],
     5: [FOUNDATION, strength('C', phase)],

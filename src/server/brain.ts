@@ -48,7 +48,7 @@ import { blockKind, blockStartDay, bodyPlanMark, dayHasPlan, generateDaySessions
 import { loadHistorySeed, loadModelEvents, modelFromDay } from './athleteModel'
 import { CONTINUOUS_FROM_SEC, firstStrengthPick, type HistorySeed } from '../lib/brain/history'
 import { emptyState, loadHeld, loadWeekChanges, pmStart, recordChanges, snap, type NewChange } from './changes'
-import { HARD_NOTES, HARD_START_LABEL, hardKindOf, hardLabel, hardPlan, hardRunDose, hardWeek, isHardLabel, latestTest, planWeekRuns, speedsFrom, estimateFiveKSec, type WeekRun, type WeekRunKind } from '../lib/brain/hardRuns'
+import { HARD_NOTES, HARD_START_LABEL, hardKindOf, hardLabel, hardPlan, hardRunDose, hardWeek, isHardLabel, latestTest, planWeekRuns, speedsFrom, estimateFiveKSec, testReady, type RecentHard, type WeekRun, type WeekRunKind } from '../lib/brain/hardRuns'
 import { fiveKTests } from './fiveK'
 
 type DB = ReturnType<typeof createDB>
@@ -403,7 +403,7 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
     // The model's line (audit #32: one HR line, the same one the model judges his runs against).
     const ceiling = { bpm: inputs.model.run.lineBpm }
     const hist = await runDoseHistory(db, s)
-    // Page 76: a hard run (steady hard, run hard / jog, the 5K test) at the last test's speeds.
+    // Page 76: a hard run (tempo, intervals, the 5K test) at the last test's speeds.
     // A rough (RED) morning, an injury or the raven: the easy walk or bike below, as for any run.
     // Before he runs 10 min straight: the easy run-walk ("hard runs start once you run 10 minutes straight").
     const bike = inj.action.action === 'walk_or_bike' ? { label: 'Easy bike', why: inj.action.note ?? 'Easy bike today.' } : null
@@ -418,7 +418,7 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
       // fewer reps or minutes to fit. The test keeps its 5 km (only its warm-up shortens).
       const capSec = Math.min(guards.longestLast30Sec ? Math.floor(guards.longestLast30Sec * 1.1) : Infinity, weeklyRunCap(1e9, guards.weekly).capSec)
       const { plan: hp, why } = hardPlan({
-        kind, week: await blockWeekOf(db, day, today), fiveK: lastTest, easyPaceSecKm: inputs.model.run.easyPaceSecKm,
+        kind, weeksSince: await weeksSinceSpeeds(db, day, lastTest), fiveK: lastTest, easyPaceSecKm: inputs.model.run.easyPaceSecKm,
         maxHr: inputs.events.profile.maxHr, lineBpm: ceiling.bpm, ease, capSec: Number.isFinite(capSec) ? capSec : null,
       })
       const level: Level = ease ? 'EASE' : 'HOLD'
@@ -473,11 +473,31 @@ async function stampTest(db: DB, s: Pick<SessionRow, 'type' | 'notes' | 'schedul
   return latestTest(await fiveKTests(db), (s.scheduledDate ?? today) - 1)?.sec ?? null
 }
 
-/** The block week (raw, extensions counted) of a day. */
-async function blockWeekOf(db: DB, day: number, today: number): Promise<number> {
-  const block = await getActiveBlock(db)
-  if (!block) return 1
-  return weekStamps(block, await trainingWeekFor(db, block, day, Math.min(day, today))).weekNumber
+/** The first hard run on the plan (the day hard runs began), or null. */
+async function hardStartDay(db: DB): Promise<number | null> {
+  const rows = await db.select({ day: sessions.scheduledDate, type: sessions.type, notes: sessions.notes }).from(sessions)
+    .where(and(eq(sessions.type, 'running'), inArray(sessions.notes, ['tempo', 'intervals', '5k_test'])))
+  const days = rows.map(r => r.day).filter((d): d is number => d != null)
+  return days.length ? Math.min(...days) : null
+}
+
+/** Weeks since the speeds were set: the last test, else the first hard run (reps and minutes grow with it). */
+async function weeksSinceSpeeds(db: DB, day: number, lastTest: { day: number } | null): Promise<number> {
+  const from = lastTest?.day ?? await hardStartDay(db)
+  return from == null ? 0 : Math.max(0, Math.floor((day - from) / 7))
+}
+
+/** His last hard runs done before `today` (not tests), with their heart top and highest heart rate. */
+async function recentHardRuns(db: DB, today: number): Promise<RecentHard[]> {
+  const rows = await db.select({ day: sessions.scheduledDate, status: sessions.status, doseJson: sessions.doseJson, maxHr: runSessions.maxHr, ratio: runSessions.completionRatio })
+    .from(sessions).leftJoin(runSessions, eq(runSessions.sessionId, sessions.id))
+    .where(and(eq(sessions.type, 'running'), inArray(sessions.notes, ['tempo', 'intervals']), lt(sessions.scheduledDate, today), gte(sessions.scheduledDate, today - 21)))
+  return rows.filter(r => r.day != null && (r.status === 'completed' || r.status === 'skipped' || r.status === 'missed')).sort((a, b) => (a.day as number) - (b.day as number)).map(r => ({
+    day: r.day as number,
+    completed: r.status === 'completed' && (r.ratio ?? 1) >= 0.9,
+    maxHr: r.maxHr ?? null,
+    top: parseDose(r.doseJson)?.run?.hard?.heart.top ?? 999,
+  }))
 }
 
 /**
@@ -773,11 +793,11 @@ async function weekOutline(db: DB, block: ActiveBlock, w: number, today: number,
 }
 
 /**
- * A Block Zero run's label follows its dose: "Easy Run" when it is one
+ * A Block Zero run's label follows its dose: "Zone 2 Run" when it is one
  * continuous easy run, "Run-Walk" when it has walk breaks. Other labels stay.
  */
 export function runLabelFor(s: Pick<SessionRow, 'type' | 'blockType' | 'label' | 'notes'>, dose: StoredDose | null): string | null {
-  // Page 76: a hard run is named by its dose (Steady Hard, Hard × 6, 5K Test); one not ready for it yet by its easy shape.
+  // Page 76: a hard run is named by its dose (Tempo, Intervals, 5K Test); one not ready for it yet by its easy shape.
   if (hardKindOf(s) && dose?.run && (s.label == null || isHardLabel(s.label) || RUN_SHAPE_LABELS.has(s.label))) return dose.run.hard ? hardLabel(dose.run.hard) : runShapeLabel(dose.run)
   if (!isBlockZeroModelRun(s) || !dose?.run) return s.label
   if (s.label != null && !RUN_SHAPE_LABELS.has(s.label)) return s.label
@@ -790,7 +810,7 @@ const RUN_SHAPE_LABELS = new Set(['Run-Walk', 'Easy Run', 'Easy Walk or Bike', '
 /** A run dose's one name (audit #14): walk only, one continuous easy run, or a run-walk. */
 export function runShapeLabel(r: Pick<RunDose, 'walkOnly' | 'rounds' | 'walkSec' | 'runSec'>): string {
   if (r.walkOnly) return 'Easy Walk or Bike'
-  return r.rounds === 1 && r.walkSec === 0 && r.runSec >= CONTINUOUS_FROM_SEC ? 'Easy Run' : 'Run-Walk'
+  return r.rounds === 1 && r.walkSec === 0 && r.runSec >= CONTINUOUS_FROM_SEC ? 'Zone 2 Run' : 'Run-Walk'
 }
 
 /** The dose's stamp with the session's new label in it (the label is one of its inputs), so a relabel never re-doses. */
@@ -851,7 +871,14 @@ export async function balanceHardRuns(db: DB, block: ActiveBlock, w: number, tod
   // The raven's plan for a knee, ankle, shin, hip or leg is open: the week's runs stay easy until it settles.
   const legs = inp.openPlans.find(p => LEG_REGIONS.has(p.region))
   const hold = legs ? `${legs.region.charAt(0).toUpperCase()}${legs.region.slice(1)}: hard runs wait until it settles.` : null
-  const plan = planWeekRuns({ week, runs, classDays: day('mt_class'), bagDays: day('bag_work'), tired: tiredWeek(inp, today, opts.restDue), hold })
+  // The 5K test when he is ready and the week allows (not a fixed slot): see testReady.
+  const tired = tiredWeek(inp, today, opts.restDue)
+  const lastTest = latestTest(await fiveKTests(db), today)
+  const since = lastTest?.day ?? await hardStartDay(db)
+  const ready = runs.some(r => r.kind === 'test') ? { ready: false, why: '' } : testReady({ week, today, sinceDay: since, recent: await recentHardRuns(db, today), rough: tired || legs != null || nightState(inp, today).state === 'RED' })
+  // Classes, bag work and the other hard runs keep the test off their day and the day after (planWeekRuns);
+  // the block's lifting days sit before every run day by design, so they don't.
+  const plan = planWeekRuns({ week, runs, classDays: day('mt_class'), bagDays: day('bag_work'), tired, hold, test: ready.ready ? { why: ready.why } : null, weeksSince: since == null ? 0 : Math.max(0, Math.floor((today - since) / 7)) })
   const pm = await pmStart(db)
   const setId = crypto.randomUUID()
   const records: NewChange[] = []
@@ -864,7 +891,10 @@ export async function balanceHardRuns(db: DB, block: ActiveBlock, w: number, tod
     const want = plan.kinds[r.id]
     if (want === (hardKindOf(r) ?? 'easy')) continue
     const f = runFields(want)
-    const eased = plan.baseline[r.id] !== want
+    // The coach's own call (a rune): the test placed, a hard run gone easy, or an easy run made hard.
+    // A swap between hard kinds around the test is part of it and stays quiet.
+    const was = plan.baseline[r.id]
+    const eased = was !== want && (want === 'test' || want === 'easy' || was === 'easy')
     if (eased && (shown >= opts.budget || heldWeek)) continue
     const next = { ...r, ...f }
     await db.update(sessions).set(f).where(eq(sessions.id, r.id))
@@ -874,15 +904,29 @@ export async function balanceHardRuns(db: DB, block: ActiveBlock, w: number, tod
     const stays = runRows.find(x => x.id !== r.id && plan.kinds[x.id] !== 'easy' && live(x))
     const what = want === 'easy' ? `${DAY_NAMES_LONG[dow(d)]}'s hard run goes easy` : `${DAY_NAMES_LONG[dow(d)]} is the hard run`
     const keep = stays && want === 'easy' ? ` ${DAY_NAMES_LONG[dow(stays.scheduledDate as number)]}'s hard run stays.` : ''
+    const line = want === 'test' ? `${DAY_NAMES_LONG[dow(d)]} is a 5K test. ${ready.why}` : `${what}: ${(plan.why ?? '').replace(/\.$/, '').toLowerCase()}.${keep}`
     records.push({
       setId, actor: 'coach', kind: 'ease', targetSessionId: r.id, sessionType: f.type,
       before: { show: (r.label ?? NAME[r.type] ?? 'RUN').toUpperCase(), day: d, sessions: [snap(r, ['type', 'notes', 'label'])] },
       after: { show: f.label.toUpperCase(), day: d, sessions: [snap(next, ['type', 'notes', 'label'])], put: { line: `${DAY_NAMES_LONG[dow(d)]}'s run is back as planned.`, dim: 'The coach leaves it as you set it this week.' } },
-      why: `${what}: ${(plan.why ?? '').replace(/\.$/, '').toLowerCase()}.${keep}`, detail: null,
-      undoUntil: slotStart(d, r.timeSlot === 'pm' ? 'pm' : 'am', pm), extraSource: { rule: 'hard_runs', heavy: plan.heavy },
+      why: line, detail: null,
+      undoUntil: slotStart(d, r.timeSlot === 'pm' ? 'pm' : 'am', pm), extraSource: { rule: want === 'test' ? 'five_k_test' : 'hard_runs', heavy: plan.heavy },
     })
   }
   return (await recordChanges(db, records, nowSec)).length
+}
+
+/**
+ * Ready for a 5K test today (the coach picks put it first then; the night places one in the week).
+ * His own test counts like the coach's: it resets the spacing.
+ */
+export async function fiveKReady(db: DB, inp: BrainInputs, today: number): Promise<{ ready: boolean; why: string }> {
+  const block = await getActiveBlock(db)
+  if (!block || blockKind(block.blockType) !== 'block_zero') return { ready: false, why: '' }
+  const week = weekStamps(block, await trainingWeekFor(db, block, today, today)).weekNumber
+  const since = latestTest(await fiveKTests(db), today)?.day ?? await hardStartDay(db)
+  const legs = inp.openPlans.some(p => LEG_REGIONS.has(p.region))
+  return testReady({ week, today, sinceDay: since, recent: await recentHardRuns(db, today), rough: legs || tiredWeek(inp, today, null) || nightState(inp, today).state === 'RED' })
 }
 
 const LEG_REGIONS = new Set(['knee', 'ankle', 'shin', 'hip', 'leg'])

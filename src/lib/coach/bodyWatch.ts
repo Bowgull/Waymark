@@ -58,9 +58,9 @@ export function isPlanRun(s: Pick<PlanSession, 'type' | 'notes' | 'blockZero'>):
   return s.blockZero && (s.type === 'foundation_run' || (s.type === 'running' && (s.notes === 'tempo' || s.notes === 'intervals' || s.notes === '5k_test')))
 }
 
-/** A hard run's flap (page 76): its own name, "STEADY HARD", "HARD RUN", "5K TEST". */
+/** A hard run's flap (page 76): its own name, "TEMPO", "INTERVALS", "5K TEST". */
 function hardFlap(s: Pick<PlanSession, 'type' | 'notes' | 'label'>): string | null {
-  return s.type === 'running' && (s.notes === 'tempo' || s.notes === 'intervals' || s.notes === '5k_test') ? (s.label?.trim() || 'Hard Run').toUpperCase() : null
+  return s.type === 'running' && (s.notes === 'tempo' || s.notes === 'intervals' || s.notes === '5k_test') ? (s.label?.trim() || 'Intervals').toUpperCase() : null
 }
 
 /**

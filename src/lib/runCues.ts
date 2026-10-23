@@ -65,12 +65,12 @@ export function hardAt(segments: HardSegment[], elapsedSec: number): HardPositio
   return { index: last, segment: segments[last], shownSec: 0, up: false, done: true }
 }
 
-/** The big phase word: RUN HARD, EASY JOG, STEADY HARD, 5K, EASY. */
+/** The big phase word: RUN HARD, EASY JOG, TEMPO, 5K, EASY. */
 export function phaseWord(kind: PieceKind): string {
   switch (kind) {
     case 'hard': return 'RUN HARD'
     case 'jog': return 'EASY JOG'
-    case 'steady': return 'STEADY HARD'
+    case 'steady': return 'TEMPO'
     case 'test': return '5K'
     default: return 'EASY'
   }
@@ -107,7 +107,7 @@ export interface Cue {
   buzz: boolean
 }
 
-const PHRASE: Readonly<Record<PieceKind, string>> = { hard: 'run_hard', jog: 'easy_jog', steady: 'steady_hard', test: 'five_k', easy: 'easy_run' }
+const PHRASE: Readonly<Record<PieceKind, string>> = { hard: 'run_hard', jog: 'easy_jog', steady: 'tempo', test: 'five_k', easy: 'zone2_run' }
 const CHIME: Readonly<Record<PieceKind, string>> = { hard: 'chime_hard', jog: 'chime_jog', steady: 'chime_hard', test: 'chime_hard', easy: 'chime_jog' }
 
 /** The words for one piece: indoors "Speed" and the number in his unit, outside "Pace" and the time per km (per mile with MPH). */

@@ -663,7 +663,7 @@ private struct LAInfo {
 
     var isEasyRun: Bool { state.runKind == "easy" }
     var isRunWalk: Bool { state.runKind == "runwalk" }
-    // Page 76: a hard run (run hard / jog, steady hard, the 5K test): skip = the next piece.
+    // Page 76: a hard run (intervals, tempo, the 5K test): skip = the next piece.
     var isHardRun: Bool { state.runKind == "hard" }
 
     // The zone, on a run only (nil: not a strap run, today's card).

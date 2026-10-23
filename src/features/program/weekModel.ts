@@ -102,7 +102,7 @@ export function splitWhy(why: string): { lead: string; rest: string } {
 
 // ─── The planner's day list (page 73, approved 2026-10-22) ───────
 
-/** "Easy Run" → "Easy run", "Run-Walk" → "Run-walk". */
+/** "Zone 2 Run" → "Zone 2 run", "Run-Walk" → "Run-walk". */
 function sentenceCase(s: string): string {
   const t = s.trim()
   return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()
@@ -139,10 +139,10 @@ export function dayLine(list: ReadonlyArray<DayBoardSession>, weekNumber: number
     case 'strength': return liftsLine(main)
     case 'running':
     case 'foundation_run': {
-      // Page 76: "Steady hard · 30 min", "Run hard 2 min × 6", "5K test", "5K test · 27:48".
+      // Page 76: "Tempo · 30 min", "Intervals 2 min × 6", "5K test", "5K test · 27:48".
       const hard = hardKindOf(main)
       if (hard === 'test') return main.runSession?.fiveKSec ? `5K test · ${fiveKText(main.runSession.fiveKSec)}` : '5K test'
-      if (hard === 'intervals') { const reps = hardReps(main.doseJson); if (reps) return `Run hard 2 min × ${reps}` }
+      if (hard === 'intervals') { const reps = hardReps(main.doseJson); if (reps) return `Intervals 2 min × ${reps}` }
       return `${sentenceCase(sessionDisplayName(main))} · ${plannedRowMinutes(main, weekNumber)} min`
     }
     case 'bag_work': { const r = bagRounds(main.doseJson); return r ? `Bag · ${r} × 3 min` : `Bag · ~${plannedRowMinutes(main, weekNumber)} min` }

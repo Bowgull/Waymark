@@ -38,7 +38,7 @@ assert.equal(paceClip(305), 'p_505')
 assert.equal(paceClip(100), 'p_330')
 
 // ── Segments and the cues ──
-const iv = hardPlan({ kind: 'intervals', week: 5, fiveK: { day: 1, sec: 1668 }, easyPaceSecKm: null, maxHr: 186, lineBpm: 147, ease: false, capSec: null }).plan
+const iv = hardPlan({ kind: 'intervals', weeksSince: 1, fiveK: { day: 1, sec: 1668 }, easyPaceSecKm: null, maxHr: 186, lineBpm: 147, ease: false, capSec: null }).plan
 const segs = hardSegments(iv)
 assert.equal(segs.length, 14)
 {
@@ -54,7 +54,7 @@ assert.equal(segs.length, 14)
 {
   const cues = hardCues(segs, false, 'kmh')
   // Every piece's start, ticks before each change, and done.
-  assert.deepEqual(cues[0].clips, ['chime_jog', 'easy_run', 'speed', `n_${Math.round(iv.speeds.easy * 10)}`])
+  assert.deepEqual(cues[0].clips, ['chime_jog', 'zone2_run', 'speed', `n_${Math.round(iv.speeds.easy * 10)}`])
   const firstHard = cues.find(c => c.atSec === 600)
   assert.deepEqual(firstHard?.clips, ['chime_hard', 'run_hard', 'speed', `n_${Math.round(iv.speeds.hard * 10)}`])
   assert.ok(cues.some(c => c.atSec === 597 && c.clips[0] === 'ticks'))
@@ -72,13 +72,13 @@ assert.equal(segs.length, 14)
 }
 // Steady hard: "Halfway." in the middle.
 {
-  const st = hardPlan({ kind: 'steady', week: 5, fiveK: null, easyPaceSecKm: null, maxHr: null, lineBpm: 147, ease: false, capSec: null }).plan
+  const st = hardPlan({ kind: 'steady', weeksSince: 1, fiveK: null, easyPaceSecKm: null, maxHr: null, lineBpm: 147, ease: false, capSec: null }).plan
   const cues = hardCues(hardSegments(st), false, null)
   assert.ok(cues.some(c => c.clips.includes('halfway') && c.atSec === 600 + 450))
 }
 // The test: its 5 km counts up until he finishes it; the cues stop there and come again after.
 {
-  const t = hardPlan({ kind: 'test', week: 4, fiveK: null, easyPaceSecKm: null, maxHr: null, lineBpm: 147, ease: false, capSec: null }).plan
+  const t = hardPlan({ kind: 'test', weeksSince: 0, fiveK: null, easyPaceSecKm: null, maxHr: null, lineBpm: 147, ease: false, capSec: null }).plan
   const open = hardSegments(t)
   const p = hardAt(open, 600 + 900)
   assert.equal(p.up, true)
@@ -143,9 +143,9 @@ assert.equal(segs.length, 14)
 }
 
 // ── Inside or outside, from the weather at the run's hour ──
-assert.deepEqual(runPlace({ t: 9, feels: 7, sky: 'sun', pop: 0 }, '7'), { place: 'outside', line: 'outside: 9° and clear at 7' })
-assert.deepEqual(runPlace({ t: 3, feels: -1, sky: 'rain', pop: 80 }, '6'), { place: 'inside', line: 'inside: 3° and sleet at 6' })
-assert.equal(runPlace({ t: -1, feels: -6, sky: 'snow', pop: 70 }, '9').line, 'inside: −1° and snow at 9')
+assert.deepEqual(runPlace({ t: 9, feels: 7, sky: 'sun', pop: 0 }, '7'), { place: 'outside', line: 'outside works: 9° and clear at 7' })
+assert.deepEqual(runPlace({ t: 3, feels: -1, sky: 'rain', pop: 80 }, '6'), { place: 'inside', line: 'inside today: 3° and sleet at 6' })
+assert.equal(runPlace({ t: -1, feels: -6, sky: 'snow', pop: 70 }, '9').line, 'inside today: −1° and snow at 9')
 assert.equal(runPlace({ t: 2, feels: -2, sky: 'cloud', pop: 0 }, '6').place, 'inside')
 {
   const now = Date.UTC(2026, 10, 17, 12)

@@ -241,7 +241,7 @@ function simulate(script: Script) {
           const kind = hardKindOf({ type: 'running', notes: template[dow(day)].find(x => x.type === 'running')?.runCategory ?? null })
           if (kind) {
             const capSec = Math.min(longest30 ? Math.floor(longest30 * 1.1) : RESTART_SESSION_SEC, weeklyRunCap(1e9, { lastWeekRunSec: lastWeek, thisWeekSoFarSec: soFar, sessionsLeftThisWeek: Math.max(1, left) }).capSec)
-            const hp = hardPlan({ kind, week, fiveK: null, easyPaceSecKm: 420, maxHr: 186, lineBpm: 147, ease: false, capSec })
+            const hp = hardPlan({ kind, weeksSince: Math.max(0, week - 4), fiveK: null, easyPaceSecKm: 420, maxHr: 186, lineBpm: 147, ease: false, capSec })
             runs.push({ day, sec: totalOf(hp.plan.pieces), longest30, capped: hp.why.some(w => /Shorter/.test(w)), test: kind === 'test' })
             loadEntries.push({ epochDay: day, rpe: 7, minutes: Math.round(totalOf(hp.plan.pieces) / 60) })
           }

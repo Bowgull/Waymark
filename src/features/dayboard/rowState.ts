@@ -100,10 +100,10 @@ export function sessionDisplayName(s: Pick<DayBoardSession, 'type' | 'label' | '
   if (s.type === 'strength') return label ?? 'Strength'
   // page 58: a raven's plan puts an easy bike (or walk) in a run's place.
   if (s.type === 'active_recovery' && label && /^easy (bike|walk)$/i.test(label)) return label
-  // page 56: Block Zero's run-walk reads RUN-WALK on its row; a run its dose named (Easy Run, Easy
+  // page 56: Block Zero's run-walk reads RUN-WALK on its row; a run its dose named (Zone 2 Run, Easy
   // Walk or Bike) reads that name, the same as its ready board (audit #14).
   if (s.type === 'foundation_run' && label && /run-walk/i.test(label)) return label
-  if ((s.type === 'foundation_run' || s.type === 'running') && label && /^(easy run|easy walk or bike|run-walk)$/i.test(label)) return label
+  if ((s.type === 'foundation_run' || s.type === 'running') && label && /^(zone 2 run|easy run|easy walk or bike|run-walk)$/i.test(label)) return label
   const key = iconFor(s)
   if (key === 'run') return label ?? 'Run'
   return SESSION_ICON_NAME[key]

@@ -84,12 +84,12 @@ assert.ok(woke.ran, 'opened yesterday: the pass runs')
 {
   const shape = (run: Partial<NonNullable<StoredDose['run']>>) => ({ run: { walkOnly: false, rounds: 1, walkSec: 0, runSec: 900, ...run } } as unknown as StoredDose)
   assert.equal(runShapeLabel({ walkOnly: true, rounds: 0, walkSec: 0, runSec: 0 }), 'Easy Walk or Bike')
-  assert.equal(runShapeLabel({ walkOnly: false, rounds: 1, walkSec: 0, runSec: 900 }), 'Easy Run')
+  assert.equal(runShapeLabel({ walkOnly: false, rounds: 1, walkSec: 0, runSec: 900 }), 'Zone 2 Run')
   assert.equal(runShapeLabel({ walkOnly: false, rounds: 6, walkSec: 60, runSec: 90 }), 'Run-Walk')
   const bzRun = { type: 'foundation_run', blockType: 'block_zero', label: 'Run-Walk', notes: null }
-  assert.equal(runLabelFor(bzRun, shape({})), 'Easy Run', 'a continuous dose: Easy Run on its row')
+  assert.equal(runLabelFor(bzRun, shape({})), 'Zone 2 Run', 'a continuous dose: Zone 2 Run on its row')
   assert.equal(runLabelFor(bzRun, shape({ walkOnly: true, rounds: 0, runSec: 0 })), 'Easy Walk or Bike', 'a walk-only dose: never RUN-WALK')
-  assert.equal(runLabelFor({ ...bzRun, type: 'running', label: null, notes: 'zone2' }, shape({})), 'Easy Run', 'a Block Zero Zone 2 run reads Easy Run')
+  assert.equal(runLabelFor({ ...bzRun, type: 'running', label: null, notes: 'zone2' }, shape({})), 'Zone 2 Run', 'a Block Zero Zone 2 run reads Zone 2 Run')
   assert.equal(runLabelFor({ ...bzRun, label: 'Hill Loop' }, shape({})), 'Hill Loop', 'a name he gave stays')
   assert.equal(runLabelFor({ ...bzRun, blockType: 'fighter' }, shape({})), 'Run-Walk', 'outside Block Zero: unchanged')
 }

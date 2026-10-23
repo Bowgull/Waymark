@@ -1,8 +1,8 @@
-// Inside or outside for a run (page 76, approved 2026-10-23): mostly the
-// treadmill this winter; on a mild, dry hour the coach sends him outside. It
-// reads the weather at the run's planned hour (the hour itself when it is in
-// the next 8 hours, else that day's forecast) and says why in one line:
-// "inside: 3° and sleet at 6" / "outside: 9° and clear at 7".
+// The coach's hint on a run's lines (page 76; Josh 2026-10-23: the choice is
+// his, on the ready board, never pre-picked): outside works on a mild, dry
+// hour, else inside. It reads the weather at the run's planned hour (the hour
+// itself in the next 8 hours, else that day's forecast) and says it in one
+// line: "outside works: 9° and clear at 7" / "inside today: −4° and snow at 6".
 // Pure; relative imports only so the tests run it under node.
 
 import { degText, type Sky, type Weather } from './weatherData'
@@ -26,7 +26,7 @@ const SKY_WORD: Readonly<Record<Sky, string>> = { sun: 'clear', moon: 'clear', p
 
 export interface RunPlace {
   place: 'inside' | 'outside'
-  /** "inside: 3° and sleet at 6" */
+  /** "inside today: 3° and sleet at 6" (a hint) */
   line: string
 }
 
@@ -36,7 +36,7 @@ export function runPlace(wx: PlaceWx, hourWord: string, unit: 'C' | 'F' = 'C'): 
   const sleet = wx.sky === 'rain' && wx.t <= 3
   const outside = !wet && wx.feels >= OUTSIDE_FROM_C && wx.t <= OUTSIDE_TO_C
   const what = sleet ? 'sleet' : wet && wx.sky !== 'snow' && wx.sky !== 'storm' && wx.sky !== 'rain' ? 'rain' : SKY_WORD[wx.sky]
-  return { place: outside ? 'outside' : 'inside', line: `${outside ? 'outside' : 'inside'}: ${degText(wx.t, unit)}° and ${what} at ${hourWord}` }
+  return { place: outside ? 'outside' : 'inside', line: `${outside ? 'outside works' : 'inside today'}: ${degText(wx.t, unit)}° and ${what} at ${hourWord}` }
 }
 
 /** "6" for 6 PM, "7" for 7 AM (the line's short hour). */

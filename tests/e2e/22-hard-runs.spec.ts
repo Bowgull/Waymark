@@ -42,7 +42,7 @@ test('Settings: Treadmill speed plates pick, unpick, and stay', async ({ page, a
 
 async function hardRun(api: Api) {
   await setMorning(api)
-  const s = await insertSession(api, 'running', 'am', { runCategory: 'intervals', label: 'Hard Run' })
+  const s = await insertSession(api, 'running', 'am', { runCategory: 'intervals', label: 'Intervals' })
   const w = await api.get<RunWorkout>(`/api/sessions/${s.id}/run-workout`)
   return { s, hard: w.prescription?.hard ?? null }
 }
@@ -78,6 +78,6 @@ test('A hard run: the ready board in words, then RUN HARD / EASY JOG with SPEED 
   // No "What:" bar.
   await expect(page.getByText(/^What:/)).toHaveCount(0)
   // The recorder plays the first cue (a chime, then "Easy run. Speed ...").
-  await expect.poll(async () => page.evaluate(() => ((window as unknown as { __wmCueLog?: string[][] }).__wmCueLog ?? [])[0]?.slice(0, 3).join(',') ?? ''), { timeout: 8000 }).toBe('chime_jog,easy_run,speed')
+  await expect.poll(async () => page.evaluate(() => ((window as unknown as { __wmCueLog?: string[][] }).__wmCueLog ?? [])[0]?.slice(0, 3).join(',') ?? ''), { timeout: 8000 }).toBe('chime_jog,zone2_run,speed')
   await api.patch('/api/settings', { treadmillUnit: null })
 })

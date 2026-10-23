@@ -44,9 +44,6 @@ import { hardAt, hardCues, hardSegments, nextWords, nudgeTargets, nudgeWord, pha
 import { altMph, BASE_INCLINE, mmss, paceFlap, paceUnitWord, speedFlap, speedUnitWord, type TreadmillUnit } from '@/lib/runSpeed'
 import { useTreadmillUnit } from '@/lib/treadmillUnit'
 import { postRunShort, type PostRunFacts } from '@/lib/postRun'
-import { useWeather } from '@/features/weather/useWeather'
-import { runPlace, shortHour, weatherAt } from '@/features/weather/runPlace'
-import { temperatureUnit } from '@/lib/units'
 
 interface RunSession {
   id: string
@@ -75,9 +72,9 @@ interface RunPrescription {
   runWalk?: RunWalkShape | null
   /** An easy walk or bike in the run's place (a rough morning, an injury): no running at all. */
   walkOnly?: boolean
-  /** The run's one name from its dose ("Easy Run", "Run-Walk", "Easy Walk or Bike"), as on its row. */
+  /** The run's one name from its dose ("Zone 2 Run", "Run-Walk", "Easy Walk or Bike", "Tempo", "Intervals", "5K Test"), as on its row. */
   name?: string | null
-  /** Page 76: a hard run (steady hard, run hard / jog, the 5K test): its pieces, speeds and heart range. */
+  /** Page 76: a hard run (tempo, intervals, the 5K test): its pieces, speeds and heart range. */
   hard?: HardPlan | null
 }
 
@@ -152,15 +149,6 @@ export function RunSessionView({
   // Page 76: a hard run, and the treadmill unit every speed and pace follows.
   const hard = prescription?.hard ?? null
   const unit = useTreadmillUnit()
-  // Inside or outside: the weather now picks it on a hard run's ready board, until he taps one himself.
-  const placeTouched = useRef(!!resume)
-  const pickPlace = (indoor: boolean) => { placeTouched.current = true; setIsIndoor(indoor) }
-  const readyWeather = useWeather(phase === 'ready' && hard != null && !resume)
-  useEffect(() => {
-    if (!readyWeather || placeTouched.current) return
-    const wx = weatherAt(readyWeather, Date.now())
-    if (wx) setIsIndoor(runPlace(wx, shortHour(Date.now()), temperatureUnit()).place === 'inside')
-  }, [readyWeather])
   // The 5K test: its time for Log your run (the GPS's 5.00 km outside, else the clock less the warm-up).
   const [fiveK, setFiveK] = useState(draft.fiveK ?? '')
   // A pace nudge on the screen for a few seconds (outside, hard pieces; the recorder plays its sound).
@@ -533,7 +521,7 @@ export function RunSessionView({
   const walkOnly = isWalkOnly(prescription)
   const isZone2 = prescription?.runType === 'zone2' && !walkOnly
   // One name (audit #14): the dose's, as on its row; else the run's kind.
-  const runTypeLabel = walkOnly ? WALK_ONLY_NAME : prescription?.name ?? (prescription ? (RUN_TYPE_LABELS[prescription.runType] ?? 'Run') : 'Easy Run')
+  const runTypeLabel = walkOnly ? WALK_ONLY_NAME : prescription?.name ?? (prescription ? (RUN_TYPE_LABELS[prescription.runType] ?? 'Run') : 'Zone 2 Run')
   const timerEstimate = prescription?.targetDurSec ?? 3600
 
   const remaining = Math.max(0, timerEstimate - elapsed)
@@ -639,7 +627,7 @@ export function RunSessionView({
     runKind: hard ? 'hard' as const : segments ? 'runwalk' as const : 'easy' as const,
     // A run-walk's piece on the island ("RUN 3 OF 6"); its walks are the teal rest.
     ...(rwPos && !rwPos.done && rwPos.segment.round > 0 ? { stepIndex: rwPos.segment.round, stepTotal: prescription?.runWalk?.rounds ?? 0 } : {}),
-    // A hard run's piece (page 76): RUN HARD 3 OF 6, EASY JOG (teal), STEADY HARD, 5K.
+    // A hard run's piece (page 76): RUN HARD 3 OF 6, EASY JOG (teal), TEMPO, 5K.
     ...(hard && hSeg ? { runPhase: phaseWord(hSeg.kind), ...(hSeg.round > 0 ? { stepIndex: hSeg.round, stepTotal: hard.reps } : {}) } : {}),
   }
   const rwWalking = (!!rwPos && !rwPos.done && rwPos.segment.kind !== 'run') || (hSeg != null && phaseTone(hSeg.kind) === 'teal')
@@ -705,7 +693,7 @@ export function RunSessionView({
   }, [phase, narutoConfirm])
 
   // A Block Zero run-walk is RUN-WALK here too, as on its row (m9).
-  const runTitle = hard && !walkOnly ? runTypeLabel.toUpperCase() : walkOnly ? 'WALK OR BIKE' : prescription?.runWalk ? 'RUN-WALK' : prescription?.name === 'Easy Run' ? RUN_TITLES.easy : (prescription ? RUN_TITLES[prescription.runType] : null) ?? 'RUN'
+  const runTitle = hard && !walkOnly ? runTypeLabel.toUpperCase() : walkOnly ? 'WALK OR BIKE' : prescription?.runWalk ? 'RUN-WALK' : prescription?.name === 'Zone 2 Run' ? 'ZONE 2 RUN' : (prescription ? RUN_TITLES[prescription.runType] : null) ?? 'RUN'
   const icon = isZone2 || runSession.runType === 'zone2' ? 'zone2' as const : 'run' as const
   const targetMin = prescription?.targetDurSec ? Math.round(prescription.targetDurSec / 60) : null
 
@@ -731,8 +719,8 @@ export function RunSessionView({
             )}
           </div>
           <div className="ss-seg2" role="radiogroup" aria-label="Where">
-            <button type="button" role="radio" aria-checked={!isIndoor} onClick={() => pickPlace(false)}><FlapLabel text="OUTDOOR" size="sm" tone={!isIndoor ? 'gold' : 'ink'} /></button>
-            <button type="button" role="radio" aria-checked={isIndoor} onClick={() => pickPlace(true)}><FlapLabel text="INDOOR" size="sm" tone={isIndoor ? 'gold' : 'ink'} /></button>
+            <button type="button" role="radio" aria-checked={!isIndoor} onClick={() => setIsIndoor(false)}><FlapLabel text="OUTDOOR" size="sm" tone={!isIndoor ? 'gold' : 'ink'} /></button>
+            <button type="button" role="radio" aria-checked={isIndoor} onClick={() => setIsIndoor(true)}><FlapLabel text="INDOOR" size="sm" tone={isIndoor ? 'gold' : 'ink'} /></button>
           </div>
           {isIndoor ? (
             <>
@@ -972,7 +960,7 @@ function HardRows({ hard, outdoor, unit, targetMin }: { hard: HardPlan; outdoor:
     return (
       <>
         {targetMin != null && <TargetRow k="Time" v={`${targetMin} MIN`} />}
-        <TargetRow k="Steady hard" v={`${minOf('steady')} MIN`} />
+        <TargetRow k="Tempo" v={`${minOf('steady')} MIN`} />
         {num('Hard', hard.speeds.steady)}
         {num('Easy', hard.speeds.easy)}
         {incline}

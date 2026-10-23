@@ -120,7 +120,7 @@
 .ss-dashes .wm-cell { color: rgba(240, 230, 192, 0.7); }
 @media (prefers-reduced-motion: reduce) { .ss-hrn .wm-cell { transition: none; } }
 
-/* ─── page 76: a hard run (run hard / easy jog, steady hard, the 5K test) ───
+/* ─── page 76: a hard run (intervals: run hard / easy jog, tempo, the 5K test) ───
    The phase big with "3 of 6" over the clock; the heart; SPEED and INCLINE big (outside PACE and KM);
    the mph small while no unit is picked; NEXT small. No "What:" bar. */
 .ss-runmid.is-hard { min-height: 384px; }

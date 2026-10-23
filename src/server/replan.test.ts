@@ -79,7 +79,7 @@ assert.ok(/^Strength B on Friday: strength starts this week, not next Monday/.te
 for (const id of ['w2', 'w5']) {
   const run = rows.find(s => s.id === id)
   const d = parseDose(run?.doseJson)?.run
-  assert.equal(run?.label, 'Easy Run', 'the run-walk reads as an easy run')
+  assert.equal(run?.label, 'Zone 2 Run', 'the run-walk reads as a Zone 2 run')
   assert.deepEqual([d?.runSec, d?.walkSec, d?.rounds], [900, 0, 1], '15 min continuous, no walk breaks (his usual 18 less the time off, rounded down)')
 }
 assert.equal(rows.filter(s => s.status !== 'planned').length, rows.filter(s => s.scheduledDate! < START - 30).length, 'nothing of his changed status')

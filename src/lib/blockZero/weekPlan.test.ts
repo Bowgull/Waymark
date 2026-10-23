@@ -36,12 +36,13 @@ for (const w of [1, 2, 3, 4, 5, 6, 7, 8]) {
   const types = typesOf(w)
   assert(!types.includes('mt_class'), `week ${w}: no MT class scheduled`)
   assert(types.filter(t => t === 'strength').length === 3, `week ${w}: 3 strength days`)
-  // Page 76: weeks 1-3 every run easy; from week 4 Tuesday is steady hard (the 5K test in weeks 4, 8) and Saturday run hard / jog.
+  // Page 76: weeks 1-3 every run easy; from week 4 Tuesday is tempo and Saturday intervals.
   if (w < 4) assert(types.filter(t => t === 'foundation_run').length === 3, `week ${w}: 3 run-walk days`)
   else {
     const tpl = getBlockZeroWeekTemplate(w)
     assert(types.filter(t => t === 'foundation_run').length === 1 && types.filter(t => t === 'running').length === 2, `week ${w}: one easy run, two hard runs`)
-    assert(tpl[2][1].runCategory === (w === 4 || w === 8 ? '5k_test' : 'tempo') && tpl[6][1].runCategory === 'intervals' && tpl[4][1].type === 'foundation_run', `week ${w}: Tuesday ${w === 4 || w === 8 ? 'the 5K test' : 'steady hard'}, Thursday easy, Saturday run hard / jog`)
+    // The 5K test has no slot: the coach places it when he is ready (lib/brain/hardRuns.ts testReady).
+    assert(tpl[2][1].runCategory === 'tempo' && tpl[6][1].runCategory === 'intervals' && tpl[4][1].type === 'foundation_run', `week ${w}: Tuesday tempo, Thursday easy, Saturday intervals`)
   }
   assert(ALL_DAYS.every(d => getBlockZeroWeekTemplate(w)[d].some(s => s.type === 'mobility' && s.label === 'Foundation')), `week ${w}: Foundation every day`)
   assert(ALL_DAYS.every(d => strengthBeforeRunning(getBlockZeroWeekTemplate(w)[d])), `week ${w}: strength before running on shared days`)

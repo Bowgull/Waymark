@@ -68,7 +68,7 @@ export interface ActivityState {
   distanceKm?: number
   /** easy: pause / play only, never skip. runwalk: skip = the next piece. hard (page 76): skip = the next piece too. */
   runKind?: 'easy' | 'runwalk' | 'hard'
-  /** A hard run's piece word on the lock card (page 76): RUN HARD, EASY JOG, STEADY HARD, 5K, EASY. */
+  /** A hard run's piece word on the lock card (page 76): RUN HARD, EASY JOG, TEMPO, 5K, EASY. */
   runPhase?: string
 }
 

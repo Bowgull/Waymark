@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { FlapLabel, SessionIcon, prefersReducedMotion, sessionIconFor, useDismissLayer } from '@/design'
 
 import { PixelCursor } from './PixelCursor'
+import { everythingEntries, runPicks } from './pickRuns'
 import './plan.css'
 
 // The command window (page 73 §2-4, FFX-like): a dark plate, a thin gold
@@ -156,10 +157,13 @@ function Inner({ lines }: { lines: PickRow['lines'] }) {
  * COACH PICKS for REPLACE and + add: the picks as menu lines, the cursor on
  * the first; the pointed one shows its reason and exactly what it would be
  * that day, and SWAP IN (ADD). Tapping a line only points at it. EVERYTHING
- * ELSE › is the full list in the same window; its last line goes back.
+ * ELSE › is the full list in the same window, the runs folded into one RUNS ›
+ * line (page 76) that opens the run types with ‹ BACK; its last line goes
+ * back to the picks. Every preview is already loaded: nothing loads after a
+ * tap. A list swap settles in 180 ms (page 59), no letter flips.
  */
 export function PicksBody({ view, picks, all, cur, add, forWhat, busy, onPoint, onTake, onView }: {
-  view: 'picks' | 'all'
+  view: 'picks' | 'all' | 'runs'
   picks: PickRow[] | null
   all: PickRow[] | null
   cur: number
@@ -168,37 +172,54 @@ export function PicksBody({ view, picks, all, cur, add, forWhat, busy, onPoint, 
   busy: boolean
   onPoint: (i: number) => void
   onTake: (row: PickRow) => void
-  onView: (v: 'picks' | 'all') => void
+  onView: (v: 'picks' | 'all' | 'runs', cur?: number) => void
 }) {
-  const list = view === 'all' ? all ?? [] : picks ?? []
   const take = (row: PickRow) => (
     <span className="pl-take" role="button" tabIndex={0} aria-label={add ? 'Add' : 'Swap in'} onClick={e => { e.stopPropagation(); if (!busy) onTake(row) }} onKeyDown={e => { if (e.key === 'Enter') onTake(row) }}>
       <FlapLabel text={add ? 'ADD' : 'SWAP IN'} size="xs" tone="gold" animate={false} />
     </span>
   )
+  const line = (o: PickRow, i: number, reason: boolean) => (
+    <CmdLine key={o.key} on={i === cur} onClick={() => onPoint(i)} label={o.label}>
+      <SessionIcon kind={sessionIconFor(o.type, o.runCategory)} size={26} label="" />
+      <span className="grow">
+        <FlapLabel text={o.label.toUpperCase()} size="sm" animate={false} />
+        {i === cur && (
+          <>
+            {reason && o.reason && <span className="why2">{o.reason}</span>}
+            <Inner lines={o.lines} />
+            {take(o)}
+          </>
+        )}
+      </span>
+      <span className="pl-mins">{o.minutes != null ? `~${o.minutes}min` : '—'}</span>
+    </CmdLine>
+  )
+  const entries = everythingEntries(all ?? [])
+  const runsAt = entries.findIndex(e => e.kind === 'runs')
+  const head = view === 'all' ? 'EVERYTHING' : view === 'runs' ? 'RUNS' : 'COACH PICKS'
   return (
     <>
-      <div className="pl-hdr"><FlapLabel text={view === 'all' ? 'EVERYTHING' : 'COACH PICKS'} size="xs" tone="gold" animate={false} /><small>{forWhat}</small></div>
+      <div className="pl-hdr"><FlapLabel text={head} size="xs" tone="gold" animate={false} /><small>{forWhat}</small></div>
       {picks == null && <p className="pl-say is-dim">Asking the coach.</p>}
-      {list.map((o, i) => (
-        <CmdLine key={o.key} on={i === cur} onClick={() => onPoint(i)} label={o.label}>
-          <SessionIcon kind={sessionIconFor(o.type, o.runCategory)} size={26} label="" />
-          <span className="grow">
-            <FlapLabel text={o.label.toUpperCase()} size="sm" animate={false} />
-            {i === cur && (
-              <>
-                {view === 'picks' && o.reason && <span className="why2">{o.reason}</span>}
-                <Inner lines={o.lines} />
-                {take(o)}
-              </>
-            )}
-          </span>
-          <span className="pl-mins">{o.minutes != null ? `~${o.minutes}min` : '—'}</span>
-        </CmdLine>
-      ))}
-      {picks != null && (view === 'all'
-        ? <CmdLine on={false} onClick={() => onView('picks')} className="is-more" label="Coach picks"><span className="gt">‹</span><FlapLabel text="COACH PICKS" size="xs" animate={false} /></CmdLine>
-        : <CmdLine on={false} onClick={() => onView('all')} className="is-more" label="Everything else"><span className="grow"><FlapLabel text="EVERYTHING ELSE" size="xs" animate={false} /></span><span className="gt">›</span></CmdLine>)}
+      <div key={view} className="pl-view">
+        {view === 'picks' && (picks ?? []).map((o, i) => line(o, i, true))}
+        {view === 'runs' && runPicks(all ?? []).map((o, i) => line(o, i, false))}
+        {view === 'all' && entries.map((e, i) => e.kind === 'row'
+          ? line(e.row, i, false)
+          : (
+            <CmdLine key="runs" on={i === cur} onClick={() => onView('runs')} label="Runs">
+              <SessionIcon kind="run" size={26} label="" />
+              <span className="grow"><FlapLabel text="RUNS" size="sm" animate={false} /></span>
+              <span className="gt">›</span>
+            </CmdLine>
+          ))}
+        {picks != null && (view === 'all'
+          ? <CmdLine on={false} onClick={() => onView('picks')} className="is-more" label="Coach picks"><span className="gt">‹</span><FlapLabel text="COACH PICKS" size="xs" animate={false} /></CmdLine>
+          : view === 'runs'
+            ? <CmdLine on={false} onClick={() => onView('all', Math.max(0, runsAt))} className="is-more" label="Back"><span className="gt">‹</span><FlapLabel text="BACK" size="xs" animate={false} /></CmdLine>
+            : <CmdLine on={false} onClick={() => onView('all')} className="is-more" label="Everything else"><span className="grow"><FlapLabel text="EVERYTHING ELSE" size="xs" animate={false} /></span><span className="gt">›</span></CmdLine>)}
+      </div>
     </>
   )
 }

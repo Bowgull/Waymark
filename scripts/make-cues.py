@@ -8,7 +8,7 @@ dataset is CC BY-NC-SA 4.0 (see public/cues/CREDITS.txt).
 
 The clip names are the contract with src/lib/runSpeech.ts:
 
-  phrases   run_hard easy_jog steady_hard easy_run five_k done halfway
+  phrases   run_hard easy_jog tempo zone2_run five_k done halfway
             speed pace fast slow
   chimes    chime_hard chime_jog chime_nudge chime_done ticks
   numbers   n_<tenths>   3.0 .. 18.0 in 0.1 steps ("twelve point eight": n_128)
@@ -64,8 +64,8 @@ def pace_words(sec):
 PHRASES = {
     'run_hard': 'Run hard.',
     'easy_jog': 'Easy jog.',
-    'steady_hard': 'Steady hard.',
-    'easy_run': 'Easy run.',
+    'tempo': 'Tempo.',
+    'zone2_run': 'Zone 2 run.',
     'five_k': 'Five K. As fast as you can.',
     'done': 'Done. Nice work.',
     'halfway': 'Halfway.',

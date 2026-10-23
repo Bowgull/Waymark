@@ -4,10 +4,15 @@
 // - Weeks 1 to 3 of the block: every run easy (Zone 2 at his line; the run
 //   keeps the name its dose gives it).
 // - From week 4: two hard runs a week, the rest easy (about 80/20). One
-//   STEADY HARD (about 15 min at a speed that's hard but holdable) and one
+//   TEMPO (about 15 min at a speed that's hard but holdable) and one
 //   RUN HARD / EASY JOG (2 min hard, 2 min jog, 5 to 8 times).
-// - A 5K test every 4 weeks from week 4 (4, 8, 12 ...) in place of one hard
-//   run. Its time sets the speeds (and outdoor paces) for the next 4 weeks.
+// - A 5K test when he is ready and the week allows (Josh, 2026-10-23: not a
+//   fixed slot): from week 4, about 3+ weeks after the last test (or after
+//   hard runs began), his recent hard runs done at their speeds and under the
+//   heart top (well under it: sooner), no rough stretch or raven plan, not
+//   the day after a class or another hard day. Typically every 4 to 6 weeks.
+//   It takes one hard run's place as a coach change (rune, KEEP, UNDO). Its
+//   time sets the speeds (and outdoor paces) after it.
 // - MT classes and bag work are hard days too: a week with two or more of
 //   them is a heavy week and keeps one hard run. A tired week keeps one hard
 //   run as well, never none.
@@ -23,7 +28,6 @@ import type { Level, RunDose } from './doses'
 
 export const GOAL_5K_SEC = 22 * 60
 export const HARD_FROM_WEEK = 4
-export const TEST_EVERY_WEEKS = 4
 export const FIVE_K_M = 5000
 /** EASE OFF only this far over the top of a hard run's range (for 30 s). */
 export const HARD_OVER_BY = 10
@@ -52,14 +56,54 @@ export function hardWeek(week: number): boolean {
   return week >= HARD_FROM_WEEK
 }
 
-/** Weeks 4, 8, 12 ... carry the 5K test. */
-export function isTestWeek(week: number): boolean {
-  return hardWeek(week) && (week - HARD_FROM_WEEK) % TEST_EVERY_WEEKS === 0
+// ─── When the 5K test comes ──────────────────────────────────
+
+/** At least this long after the last test (or since hard runs began); sooner when the speeds feel easy. */
+export const TEST_GAP_DAYS = 28
+export const TEST_GAP_EASY_DAYS = 21
+/** Past this, a test is due as soon as nothing is rough, even if the last hard runs weren't perfect. */
+export const TEST_GAP_MAX_DAYS = 42
+
+export interface RecentHard {
+  day: number
+  /** Done as planned (not cut short). */
+  completed: boolean
+  /** The highest heart rate and the run's top (null: no strap). */
+  maxHr: number | null
+  top: number
 }
 
-/** Where a week sits in its 4-week stretch after a test (0 = the test week). */
-export function weekIndex(week: number): number {
-  return hardWeek(week) ? (week - HARD_FROM_WEEK) % TEST_EVERY_WEEKS : 0
+export interface TestReadyIn {
+  week: number
+  today: number
+  /** The last 5K test's day, else the day hard runs began (null: none yet). */
+  sinceDay: number | null
+  /** His last hard runs (the latest last), the test excluded. */
+  recent: RecentHard[]
+  /** Two rough mornings, a rest day due, sore or a raven plan open. */
+  rough: boolean
+}
+
+/** Ready for a 5K test, and why (in his words), or why not. */
+export function testReady(inp: TestReadyIn): { ready: boolean; why: string } {
+  if (!hardWeek(inp.week)) return { ready: false, why: 'Hard runs first.' }
+  if (inp.rough) return { ready: false, why: 'A rough stretch: the test waits.' }
+  if (inp.sinceDay == null) return { ready: false, why: 'Hard runs first.' }
+  const since = inp.today - inp.sinceDay
+  const last = inp.recent.slice(-2)
+  const done = last.length === 2 && last.every(r => r.completed)
+  const over = last.some(r => r.maxHr != null && r.maxHr > r.top)
+  const easy = done && last.every(r => r.maxHr != null && r.maxHr <= r.top - 5)
+  const weeks = Math.round(since / 7)
+  if (since >= TEST_GAP_EASY_DAYS && easy) return { ready: true, why: `Your hard runs sit easily at their speeds, ${weeks} weeks on: a 5K test to set new ones.` }
+  if (since >= TEST_GAP_DAYS && done && !over) return { ready: true, why: `${weeks} weeks of hard runs at their speeds: a 5K test to set new ones.` }
+  if (since >= TEST_GAP_MAX_DAYS && !over) return { ready: true, why: `${weeks} weeks since the last speeds were set: a 5K test.` }
+  return { ready: false, why: 'Not yet.' }
+}
+
+/** Weeks since the speeds were set (the last test, or the first hard run), for reps and minutes. */
+export function weekIndex(weeksSince: number): number {
+  return Math.max(0, Math.min(3, Math.floor(weeksSince)))
 }
 
 // ─── The week: which runs are hard ───────────────────────────
@@ -87,6 +131,12 @@ export interface WeekRunsIn {
    * until it settles (its words). Null: none.
    */
   hold?: string | null
+  /** The coach places a 5K test this week (testReady), and why. */
+  test?: { why: string } | null
+  /** Days (epoch) of strength and other hard work: a test never goes the day after one, or on one. */
+  busyDays?: number[]
+  /** Weeks since the speeds were set: one hard run alternates by it. */
+  weeksSince?: number
 }
 
 export interface WeekRunsOut {
@@ -97,6 +147,8 @@ export interface WeekRunsOut {
   heavy: boolean
   /** The coach's reason when the week has fewer hard runs than the plan (heavy or tired), else null. */
   why: string | null
+  /** The run the 5K test went on (null: none placed this week). */
+  testId: string | null
 }
 
 const isHard = (k: WeekRunKind) => k !== 'easy'
@@ -145,20 +197,37 @@ function pickHard(runs: WeekRun[], need: number, fixedHardDays: number[], hardDa
   return best
 }
 
-function assign(inp: WeekRunsIn, target: number): Record<string, WeekRunKind> {
+function assign(inp: WeekRunsIn, target: number, withTest: boolean): { kinds: Record<string, WeekRunKind>; testId: string | null } {
   const out: Record<string, WeekRunKind> = {}
   const live = inp.runs.filter(r => r.status !== 'gone')
   for (const r of inp.runs) out[r.id] = r.fixed || r.status !== 'planned' ? r.kind : 'easy'
-  if (target === 0) return out
+  if (target === 0) return { kinds: out, testId: null }
   const fixedHard = live.filter(r => (r.fixed || r.status === 'done') && isHard(r.kind))
   const chosen = pickHard(live, target - fixedHard.length, fixedHard.map(r => r.day), [...inp.classDays, ...inp.bagDays])
-  // The kinds the week wants: the test in its week, then run hard / jog; one hard run alternates by week.
-  const one: HardKind = isTestWeek(inp.week) ? 'test' : weekIndex(inp.week) % 2 === 1 ? 'steady' : 'intervals'
-  const want: HardKind[] = target >= 2 ? [isTestWeek(inp.week) ? 'test' : 'steady', 'intervals'] : [one]
+  // The kinds the week wants: steady hard, then run hard / jog; one hard run alternates week to week.
+  const one: HardKind = (inp.weeksSince ?? inp.week) % 2 === 1 ? 'steady' : 'intervals'
+  const want: HardKind[] = target >= 2 ? ['steady', 'intervals'] : [one]
   const have = new Set(fixedHard.map(r => r.kind))
   const left = want.filter(k => !have.has(k))
-  for (const r of chosen.sort((a, b) => a.day - b.day)) out[r.id] = left.shift() ?? 'intervals'
-  return out
+  const sorted = chosen.sort((a, b) => a.day - b.day)
+  for (const r of sorted) out[r.id] = left.shift() ?? 'intervals'
+  // The 5K test takes one hard run's place: the first one not on, or the day after, a class or another hard day.
+  let testId: string | null = null
+  if (withTest && !fixedHard.some(r => r.kind === 'test')) {
+    const busy = [...inp.classDays, ...inp.bagDays, ...(inp.busyDays ?? [])]
+    const hardRunDays = live.filter(r => r.status !== 'gone' && out[r.id] !== 'easy').map(r => r.day)
+    const ok = (r: WeekRun) => !busy.includes(r.day) && !busy.includes(r.day - 1) && !hardRunDays.some(d => d === r.day - 1)
+    const pick = sorted.find(ok)
+    if (pick) {
+      const replaced = out[pick.id]
+      out[pick.id] = 'test'
+      testId = pick.id
+      // Two hard runs: the other one is run hard / jog.
+      const other = sorted.find(r => r.id !== pick.id)
+      if (other && replaced === 'intervals') out[other.id] = 'intervals'
+    }
+  }
+  return { kinds: out, testId }
 }
 
 /**
@@ -170,14 +239,14 @@ function assign(inp: WeekRunsIn, target: number): Record<string, WeekRunKind> {
 export function planWeekRuns(inp: WeekRunsIn): WeekRunsOut {
   const heavy = heavyWeek(inp.classDays, inp.bagDays)
   const target = inp.hold ? 0 : hardTarget(inp.week, heavy, inp.tired)
-  const kinds = assign(inp, target)
-  const baseline = assign(inp, hardTarget(inp.week, false, false))
+  const placed = assign(inp, target, !!inp.test && target > 0)
+  const baseline = assign(inp, hardTarget(inp.week, false, false), false).kinds
   const fewer = target < hardTarget(inp.week, false, false)
   const n = inp.classDays.length + inp.bagDays.length
   const why = !fewer ? null : inp.hold ? inp.hold : inp.tired
     ? 'A tired week: one hard run, the rest easy.'
     : `${n} classes and bag days this week: one hard run, the rest easy.`
-  return { kinds, baseline, hardTarget: target, heavy, why }
+  return { kinds: placed.kinds, baseline, hardTarget: target, heavy, why, testId: placed.testId }
 }
 
 // ─── Speeds, paces and the heart range ───────────────────────
@@ -275,14 +344,14 @@ export const COOL_SEC = 300
 export const HARD_PIECE_SEC = 120
 export const JOG_PIECE_SEC = 120
 
-/** Run hard reps for a week: 5 in the first week after a test, one more each week, 8 at most. */
-export function repsFor(week: number): number {
-  return Math.min(8, 5 + weekIndex(week))
+/** Run hard reps: 5 the first week after the speeds were set, one more each week, 8 at most. */
+export function repsFor(weeksSince: number): number {
+  return Math.min(8, 5 + weekIndex(weeksSince))
 }
 
-/** Steady hard minutes for a week: 13, 15, 17, 19 through the four weeks. */
-export function steadyMinFor(week: number): number {
-  return 13 + 2 * weekIndex(week)
+/** Steady hard minutes: 13, 15, 17, 19 through the weeks after the speeds were set. */
+export function steadyMinFor(weeksSince: number): number {
+  return 13 + 2 * weekIndex(weeksSince)
 }
 
 export function piecesFor(kind: HardKind, sp: HardSpeeds, reps: number, steadyMin: number, warmSec = WARM_SEC): HardPiece[] {
@@ -300,8 +369,8 @@ export const totalOf = (pieces: readonly HardPiece[]) => pieces.reduce((n, p) =>
 
 export interface HardDoseIn {
   kind: HardKind
-  /** The block week (raw, extensions included). */
-  week: number
+  /** Weeks since the speeds were set (the last test, or the first hard run). */
+  weeksSince: number
   /** The latest 5K test on or before this run's day. */
   fiveK: { day: number; sec: number } | null
   easyPaceSecKm: number | null
@@ -319,8 +388,8 @@ export function hardPlan(inp: HardDoseIn): { plan: HardPlan; why: string[] } {
   const easyKmh = inp.easyPaceSecKm && inp.easyPaceSecKm > 0 ? 3600 / inp.easyPaceSecKm : null
   const speeds = speedsFrom(fiveKSec, easyKmh)
   const why: string[] = []
-  let reps = repsFor(inp.week)
-  let steadyMin = steadyMinFor(inp.week)
+  let reps = repsFor(inp.weeksSince)
+  let steadyMin = steadyMinFor(inp.weeksSince)
   if (inp.ease && inp.kind !== 'test') {
     reps = Math.max(3, reps - 1)
     steadyMin = Math.max(8, steadyMin - 3)
@@ -345,16 +414,16 @@ export function hardPlan(inp: HardDoseIn): { plan: HardPlan; why: string[] } {
 
 /** The run's one name on its row, the ready board and the lock screen. */
 export function hardLabel(p: Pick<HardPlan, 'kind' | 'reps'>): string {
-  return p.kind === 'steady' ? 'Steady Hard' : p.kind === 'test' ? '5K Test' : `Hard × ${p.reps}`
+  return p.kind === 'steady' ? 'Tempo' : p.kind === 'test' ? '5K Test' : 'Intervals'
 }
 
 /** The labels a hard run's dose owns. */
 export function isHardLabel(label: string | null | undefined): boolean {
-  return !!label && /^(steady hard|5k test|hard × \d+|hard run)$/i.test(label.trim())
+  return !!label && /^(tempo|intervals|steady hard|5k test|hard × \d+|hard run)$/i.test(label.trim())
 }
 
 /** The label a hard run starts with before its dose names it. */
-export const HARD_START_LABEL: Readonly<Record<HardKind, string>> = { steady: 'Steady Hard', intervals: 'Hard Run', test: '5K Test' }
+export const HARD_START_LABEL: Readonly<Record<HardKind, string>> = { steady: 'Tempo', intervals: 'Intervals', test: '5K Test' }
 
 /** A hard run's dose in the shape every run dose has (the rest of the app reads totalSec, runTotalSec, rounds). */
 export function hardRunDose(level: Level, plan: HardPlan, why: string[]): RunDose {
