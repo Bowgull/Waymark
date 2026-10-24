@@ -180,9 +180,11 @@ test('Morning check-in: a PASS counts for re-opening (approved 2026-10-21), LOGG
   // Eight answers, the herb card passed.
   for (const [title, tile] of GOOD.slice(0, 8)) {
     await expect(deck.getByRole('img', { name: title, exact: true })).toBeVisible()
+    await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
     await deck.getByRole('button', { name: tile, exact: true }).tap()
   }
   await expect(deck.getByRole('img', { name: 'HERB', exact: true })).toBeVisible()
+  await page.waitForTimeout(350)
   await deck.getByRole('button', { name: /^PASS/ }).tap()
   await expect(deck.getByRole('img', { name: /^(GOOD TO GO|EASING TODAY)$/ })).toBeVisible()
   await deck.getByRole('button', { name: 'TO TODAY' }).tap()
