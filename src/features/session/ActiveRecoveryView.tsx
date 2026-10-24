@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { FlapLabel } from '@/design'
-import { GrassZone, HeroClock, NextLine, PhaseWord, SessionButton, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
+import { GrassZone, HeroClock, NextLine, PhaseWord, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api'
 import {
@@ -448,8 +448,8 @@ export function ActiveRecoveryView({
   // ───── Page 84: the three timed blocks are grass timers, like Foundation ─────
   // The word over the clock, the move's board on top (hips, rolling) with "2 OF 5" in the top
   // bar, NEXT small under it. The grass starts, pauses (tap) and moves on (swipe up); a held ×
-  // ends. No button copies the grass; the only one left is NEXT / FINISH once a timed step has
-  // run out, since those don't move on by themselves.
+  // ends. No button copies the grass: once a step has run out, swipe up moves on (the last
+  // rolling area finishes the block).
   const trackOf = (t: TimerSnap | null, totalSec: number, leftMs: number): TimerTrack => ({
     durationSec: t?.durationSec ?? totalSec,
     endsAtMs: t && t.state === 'running' ? t.endsAtMs : null,
@@ -473,7 +473,6 @@ export function ActiveRecoveryView({
           <PhaseWord text={done ? 'DONE' : walkRunning ? 'MOVING' : 'READY'} tone="teal" />
           <HeroClock seconds={walkRunning ? walkSecondsLeft : walkSec} kind="hold" tint="rest" track={walkRunning ? track : undefined} px={120} />
           <NextLine next="NEXT · HIP MOBILITY" />
-          {done && <div className="tm-sbtn"><SessionButton label="NEXT" primary onClick={startHipBlock} /></div>}
         </TimerColumn>
       </SessionFrame>
     )
@@ -498,7 +497,6 @@ export function ActiveRecoveryView({
           </div>
           <PhaseWord text={hipReachedTarget ? 'DONE' : hipRunning ? 'HOLD' : 'READY'} tone="teal" />
           <HeroClock seconds={hipRunning ? hipSecondsLeft : holdSec} kind="hold" tint="rest" track={hipRunning ? track : undefined} px={104} />
-          {hipReachedTarget && <div className="tm-sbtn"><SessionButton label="NEXT" primary onClick={advanceHip} /></div>}
         </TimerColumn>
       </SessionFrame>
     )
@@ -526,7 +524,6 @@ export function ActiveRecoveryView({
           <PhaseWord text={rollReachedTarget ? 'DONE' : 'ROLLING'} tone="teal" />
           <HeroClock seconds={rollSecondsLeft} kind="hold" tint="rest" track={track} px={104} />
           <NextLine next={nextLine} />
-          {rollReachedTarget && <div className="tm-sbtn"><SessionButton label="FINISH" primary onClick={finishFoam} /></div>}
         </TimerColumn>
       </SessionFrame>
     )
