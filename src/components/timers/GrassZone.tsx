@@ -84,8 +84,7 @@ interface GrassZoneProps {
  * early settles back); the blades part around the finger with a light under it
  * and a drag leaves a fading wake.
  */
-export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, state = 'running', label, band, zone, hold, holdWords = ['HOLD · FINISH', 'FINISHING'], orange = false }: GrassZoneProps) {
-  const onSkip = hold ? undefined : onSkipProp
+export function GrassZone({ track, kind, mode, heat, onTap, onSkip, state = 'running', label, band, zone, hold, holdWords = ['HOLD · FINISH', 'FINISHING'], orange = false }: GrassZoneProps) {
   const reduced = useReducedMotion()
   // Page 71: the first time, TAP THE GRASS TO START sits in a small box mid-grass; after the
   // grass has started a timer once on this phone it is the quiet line at the foot.
