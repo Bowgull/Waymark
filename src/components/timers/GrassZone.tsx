@@ -251,6 +251,8 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, 
           const trail = [...(touch.current.trail ?? []), { x: p.x, y: p.y, at: performance.now() / 1000 }].slice(-24)
           const pull = handlers.current.onSkip ? pullAmount(gesture.current.y0, e.clientY, p.h) : 0
           touch.current = { ...touch.current, finger: { x: p.x, y: p.y, on: true }, trail, pull, fcol: fcol() }
+          // Grass that both holds and skips (the interval timer): a finger going up is a swipe, not a hold.
+          if (handlers.current.onHeld && handlers.current.onSkip && hd.current.start != null && !hd.current.full && gesture.current.y0 - e.clientY > 24) letGo(performance.now())
         }}
         onPointerUp={e => {
           if (!gesture.current.down) return
@@ -264,8 +266,14 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, 
             const h = hd.current
             if (h.full) return
             const heldMs = h.start != null ? performance.now() - h.start : 0
+            const swiped = h.start == null
             letGo(performance.now())
-            if (heldMs < HOLD_TAP_MS) tap()
+            if (handlers.current.onSkip) {
+              const act = releaseAction(pull, e.clientY - gesture.current.y0)
+              if (act === 'skip') { handlers.current.onSkip(); return }
+              if (act === 'none') { if (pull > 0 && f) settle.current = { x: f.x, y: f.y, from: pull, at: performance.now() }; return }
+            }
+            if (!swiped && heldMs < HOLD_TAP_MS) tap()
             return
           }
           const act = handlers.current.onSkip ? releaseAction(pull, e.clientY - gesture.current.y0) : 'tap'
@@ -273,6 +281,7 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, 
           if (act === 'skip') handlers.current.onSkip?.()
           else if (act === 'tap') tap()
         }}
+        onContextMenu={e => e.preventDefault()}
         onPointerCancel={() => {
           gesture.current.down = false
           touch.current = { ...touch.current, finger: { x: 0, y: 0, on: false }, pull: 0 }

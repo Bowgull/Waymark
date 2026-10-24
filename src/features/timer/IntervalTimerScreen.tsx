@@ -7,7 +7,7 @@ import { playClips } from '@/lib/cuePlayer'
 import { intervalIsNative, intervalNative } from '@/lib/intervalNative'
 import { endLiveActivity } from '@/lib/liveActivity'
 import { intervalActivityState, INTERVAL_SESSION_LABEL } from '@/lib/timers/intervalActivity'
-import { clockAt, countFor, cueSchedule, doneWord, leftText, nextWords, elapsedSec, partClip, pauseClock, phaseWord, plan, positionAt, resumeClock, startClock, type IntervalClock, type IntervalSetup } from '@/lib/timers/intervalTimer'
+import { clockAt, countFor, cueSchedule, doneWord, leftText, nextWords, elapsedSec, pauseClock, phaseWord, plan, positionAt, resumeClock, startClock, type IntervalClock, type IntervalSetup } from '@/lib/timers/intervalTimer'
 import { ENDED_SHOW_MS } from '@/lib/timers/timerLook'
 import { useSessionLiveActivity, type LiveActivityConfig } from '@/features/session/useSessionLiveActivity'
 
@@ -67,13 +67,13 @@ export function IntervalTimerScreen({ setup, onClose }: { setup: IntervalSetup; 
     if (intervalIsNative || ended || paused) return
     const h = heard.current
     if (done) {
-      if (!h.done) { h.done = true; void playClips(['chime_done', 't_done']) }
+      if (!h.done) { h.done = true; void playClips(['chime_done']) }
       return
     }
     if (pos.index !== h.index) {
       h.index = pos.index
       h.tick = pos.shown
-      void playClips(['t_change', partClip(pos.part, setup.rounds)])
+      void playClips(['t_change'])
       return
     }
     if (pos.warn && pos.shown !== h.tick) { h.tick = pos.shown; void playClips(['t_tick']) }
@@ -103,6 +103,21 @@ export function IntervalTimerScreen({ setup, onClose }: { setup: IntervalSetup; 
     setClock(next)
     void (next.pausedAtMs != null ? intervalNative.pause() : intervalNative.resume())
   }, [ended, done, clock])
+
+  /** A swipe up the grass: on to the next part (its beep plays); paused stays paused. */
+  const skipPart = useCallback(() => {
+    if (ended || done) return
+    const t = Date.now()
+    const at = positionAt(parts, elapsedSec(clock, t))
+    const next = parts[at.index + 1]
+    const target = next ? next.startSec : at.part.startSec + at.part.len
+    const wasPaused = clock.pausedAtMs != null
+    const c = clockAt(target * 1000, wasPaused, t)
+    setClock(c)
+    setNow(t)
+    void intervalNative.start({ parts: parts.map(p => ({ ph: p.ph, len: p.len, round: p.round })), rounds: setup.rounds, cues: cueSchedule(setup), startedAtMs: t - target * 1000 })
+      .then(() => (wasPaused ? intervalNative.pause() : undefined))
+  }, [ended, done, parts, clock, setup])
 
   // Nothing leaves by the edge swipe while it runs (Settings' back sits under it).
   useEdgeBack(() => {})
@@ -147,9 +162,10 @@ export function IntervalTimerScreen({ setup, onClose }: { setup: IntervalSetup; 
           orange={warn}
           state={paused ? 'paused' : 'running'}
           onTap={togglePause}
+          onSkip={skipPart}
           hold={{ onHeld: endNow, held: ended }}
           holdWords={['HOLD · END', 'ENDING']}
-          label={paused ? 'Timer paused. Tap to go on. Hold for 3 seconds to end.' : 'Timer. Tap to pause. Hold for 3 seconds to end.'}
+          label={paused ? 'Timer paused. Tap to go on. Swipe up to skip. Hold for 3 seconds to end.' : 'Timer. Tap to pause. Swipe up to skip. Hold for 3 seconds to end.'}
         />
       }
     >

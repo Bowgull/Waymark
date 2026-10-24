@@ -83,15 +83,15 @@ test('position: part, whole seconds rounded up, done at the end', () => {
 
 test('the sounds: a change beep and Poppy at each part, a tick each orange second, done at the end', () => {
   const cues = cueSchedule(S)
-  assert.deepEqual(cues[0], { atSec: 0, kind: 'change', clips: ['t_change', 't_get_ready'] })
+  assert.deepEqual(cues[0], { atSec: 0, kind: 'change', clips: ['t_change'] })
   // get ready's ticks at 5..9
   assert.deepEqual(cues.filter(c => c.kind === 'tick' && c.atSec < 10).map(c => c.atSec), [5, 6, 7, 8, 9])
-  assert.deepEqual(cues.find(c => c.atSec === 10), { atSec: 10, kind: 'change', clips: ['t_change', 't_round_1'] })
+  assert.deepEqual(cues.find(c => c.atSec === 10), { atSec: 10, kind: 'change', clips: ['t_change'] })
   assert.deepEqual(cues.filter(c => c.kind === 'tick' && c.atSec >= 10 && c.atSec < 40).map(c => c.atSec), [30, 31, 32, 33, 34, 35, 36, 37, 38, 39])
-  assert.deepEqual(cues.find(c => c.atSec === 40)?.clips, ['t_change', 't_rest'])
+  assert.deepEqual(cues.find(c => c.atSec === 40)?.clips, ['t_change'])
   const last = cues.filter(c => c.kind === 'change').pop()!
-  assert.deepEqual(last.clips, ['t_change', 't_last_round'])
-  assert.deepEqual(cues[cues.length - 1], { atSec: totalSec(S), kind: 'done', clips: ['chime_done', 't_done'] })
+  assert.deepEqual(last.clips, ['t_change'])
+  assert.deepEqual(cues[cues.length - 1], { atSec: totalSec(S), kind: 'done', clips: ['chime_done'] })
   // a part shorter than its orange: no tick on its first second (its change beep is there)
   const short = cueSchedule({ rounds: 2, work: 5, rest: 0 })
   assert.equal(short.some(c => c.kind === 'tick' && c.atSec === 10), false)

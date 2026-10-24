@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test'
 
 import { test, expect } from './fixtures'
-import { gotoToday, todayISO } from './support/helpers'
+import { gotoToday, grass, swipeUpGrass, todayISO } from './support/helpers'
 
 /**
  * Page 81, the hidden interval timer. Settings shows nothing of it; holding
@@ -154,7 +154,7 @@ test('START: get ready, work, rest from the lock card state; hold the grass 3 s 
   await expect(page.getByRole('img', { name: 'Next 2 of 2' })).toBeVisible()
 
   // tap the grass: paused
-  const grass = page.getByRole('button', { name: /^Timer\. Tap to pause\. Hold for 3 seconds to end\.$/ })
+  const grass = page.getByRole('button', { name: /^Timer\. Tap to pause\. Swipe up to skip\. Hold for 3 seconds to end\.$/ })
   await grass.tap()
   await expect.poll(async () => (await activity(page))?.isPaused).toBe(true)
   await expect(page.getByRole('img', { name: 'PAUSED' })).toBeVisible()
@@ -177,4 +177,20 @@ test('START: get ready, work, rest from the lock card state; hold the grass 3 s 
   await expect(step(page, 'rounds').getByRole('img', { name: '2' })).toBeVisible()
   await expect(step(page, 'work').getByRole('img', { name: '0:20' })).toBeVisible()
   await expect(step(page, 'rest').getByRole('img', { name: '0:10' })).toBeVisible()
+})
+
+test('Swipe up the grass: on to the next part (GET READY → WORK → REST); the hold still ends it', async ({ page }) => {
+  await openSettings(page)
+  await openWindow(page)
+  await win(page).getByRole('button', { name: 'START' }).tap()
+  await expect(page.getByRole('img', { name: 'GET READY' })).toBeVisible()
+  await swipeUpGrass(page)
+  await expect(page.getByRole('img', { name: 'WORK', exact: true })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Round 1 of 8' })).toBeVisible()
+  await swipeUpGrass(page)
+  await expect(page.getByRole('img', { name: 'REST', exact: true })).toBeVisible()
+  // a swipe is never a hold: still running, not ended
+  await expect(page.getByRole('img', { name: 'ENDED' })).toHaveCount(0)
+  await hold(page, grass(page), 3400)
+  await expect(page.getByRole('img', { name: 'ENDED' })).toBeVisible()
 })

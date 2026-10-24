@@ -2,7 +2,9 @@
    tile, the calm flap clock with its heat and swell, the half-screen grass, pips and combos.
    Values are the mockups' (19-sessions.html, 31-in-session.html, shared/flap.css). */
 
-.tm-screen { position: fixed; inset: 0; z-index: 1; overflow: hidden; isolation: isolate; color: var(--sf-ink); transition: filter 180ms ease-out; }
+.tm-screen { position: fixed; inset: 0; z-index: 1; overflow: hidden; isolation: isolate; color: var(--sf-ink); transition: filter 180ms ease-out; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* a held thumb never selects the words over the grass (no copy menu); fields stay typeable */
+.tm-screen input, .tm-screen textarea, .tm-screen [contenteditable] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 .tm-screen.is-paused { filter: brightness(0.7); }
 /* held ×: ENDED shows in place, nothing more can be touched while it does (page 19 .xbtn) */
 .tm-screen.is-ended .tm-grass, .tm-screen.is-ended .tm-ui, .tm-screen.is-ended .tm-ui * { pointer-events: none; }

@@ -179,14 +179,15 @@ export function cueSchedule(s: IntervalSetup): IntervalCue[] {
   const parts = plan(s)
   const out: IntervalCue[] = []
   for (const p of parts) {
-    out.push({ atSec: p.startSec, kind: 'change', clips: ['t_change', partClip(p, s.rounds)] })
+    // Beeps only (no voice): the long beep at each change, short ones while orange.
+    out.push({ atSec: p.startSec, kind: 'change', clips: ['t_change'] })
     const w = warnLen(p)
     for (let k = 0; k < w; k++) {
       const at = p.startSec + p.len - w + k
       if (at > p.startSec) out.push({ atSec: at, kind: 'tick', clips: ['t_tick'] })
     }
   }
-  out.push({ atSec: totalSec(s), kind: 'done', clips: ['chime_done', 't_done'] })
+  out.push({ atSec: totalSec(s), kind: 'done', clips: ['chime_done'] })
   return out
 }
 
