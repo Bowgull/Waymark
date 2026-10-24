@@ -57,7 +57,8 @@ test('Run-walk: warm-up, ready card, then run and walk intervals', async ({ page
   if (rw.rounds > 1) await expect(count(`Round 2 of ${rw.rounds}`)).toBeVisible()
 
   // Page 85: the swipes move the plan's pieces, never the run. Up: the walk after round 2 now.
-  if (rw.rounds < 3 || rw.walkSec <= 10) return
+  expect(rw.rounds, 'the seeded run-walk has 3+ rounds').toBeGreaterThanOrEqual(3)
+  expect(rw.walkSec, 'and walks over 10 s').toBeGreaterThan(10)
   await expect(grass(page)).toHaveAccessibleName(/Swipe up to skip\. Swipe down to go back\. Hold for 3 seconds to finish\.$/)
   await swipeUpGrass(page)
   await expect(count(`Next 3 of ${rw.rounds}`)).toBeVisible()

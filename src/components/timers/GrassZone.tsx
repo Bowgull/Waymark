@@ -276,7 +276,8 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, onBack, stat
           const pullDown = touch.current.pullDown ?? 0
           const f = touch.current.finger
           touch.current = { ...touch.current, finger: { x: 0, y: 0, on: false }, pull: 0, pullDown: 0 }
-          const act = releaseAction(pull, e.clientY - gesture.current.y0, pullDown)
+          // Grass with no swipes (a Zone 2 run): any lift is the tap, a sloppy thumb included.
+          const act = handlers.current.onSkip || handlers.current.onBack ? releaseAction(pull, e.clientY - gesture.current.y0, pullDown) : 'tap'
           const settleBack = () => {
             if (f && pull > 0) settle.current = { x: f.x, y: f.y, from: pull, at: performance.now() }
             else if (f && pullDown > 0) settle.current = { x: f.x, y: f.y, from: pullDown, at: performance.now(), down: true }

@@ -111,7 +111,7 @@ test('Foundation hold, swipe down: restarts the hold; again within 3 s, the step
     if (await breathe.isVisible()) await page.clock.fastForward(3500)
     await page.waitForTimeout(250)
   }
-  test.skip(await done.isVisible(), 'this session follows its first hold with a counted step')
+  await expect(done, 'the seeded session follows its first hold with another timed step').toBeHidden()
   if (await grassToStart(page).isVisible()) await grassToStart(page).tap()
   const full = await timerSeconds(page)
   await page.clock.fastForward(5_000)

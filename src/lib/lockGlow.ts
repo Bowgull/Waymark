@@ -50,16 +50,19 @@ export function hardRunGlow(index: number, easy: boolean, over: boolean): LockGl
   return { glowTone: over ? 'ember' : easy ? 'teal' : 'gold', glowSeq: Math.max(0, index) + 1 }
 }
 
-/** Bag work: round `round` (1-based) and the rest after it. Orange (last 10 s) changes only the colour. */
-export function bagGlow(round: number, resting: boolean, lastTen: boolean): LockGlow {
+/**
+ * Bag work: round `round` (1-based) and the rest after it. Orange (last 10 s) changes only the colour.
+ * `backs` counts swipes back (page 85), so a restart of the same part still flashes once.
+ */
+export function bagGlow(round: number, resting: boolean, lastTen: boolean, backs = 0): LockGlow {
   const r = Math.max(1, round)
-  return { glowTone: lastTen ? 'orange' : resting ? 'teal' : 'gold', glowSeq: 2 * r - 1 + (resting ? 1 : 0) }
+  return { glowTone: lastTen ? 'orange' : resting ? 'teal' : 'gold', glowSeq: 2 * r - 1 + (resting ? 1 : 0) + 1000 * backs }
 }
 
-/** Skip rope: as bag work, without the orange. */
-export function ropeGlow(round: number, resting: boolean): LockGlow {
+/** Skip rope: as bag work, without the orange (`backs` as bag work's). */
+export function ropeGlow(round: number, resting: boolean, backs = 0): LockGlow {
   const r = Math.max(1, round)
-  return { glowTone: resting ? 'teal' : 'gold', glowSeq: 2 * r - 1 + (resting ? 1 : 0) }
+  return { glowTone: resting ? 'teal' : 'gold', glowSeq: 2 * r - 1 + (resting ? 1 : 0) + 1000 * backs }
 }
 
 /**

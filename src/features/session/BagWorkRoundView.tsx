@@ -91,6 +91,8 @@ interface BagWorkRoundViewProps {
  * own view, and the 3 s carry across.
  */
 let lastBagBackAt: number | null = null
+/** Swipes back this session (module-level like lastBagBackAt: it outlives a round's remount); the lock card flashes on each. */
+let bagBacks = 0
 
 /** The combos of a round as its board shows them: the first stacked, the others on THEN. */
 function roundView(r: RoundData | null | undefined): BagRoundView {
@@ -279,7 +281,7 @@ export function BagWorkRoundView({
             ...laCombo,
             fromClass: !!nowCombo?.fromClass,
             // page 82: gold, orange in the last 10 s (colour only); flashes as the round starts
-            ...bagGlow(round.roundNumber, false, !roundTimer.isPaused && roundTimer.secondsRemaining <= 10),
+            ...bagGlow(round.roundNumber, false, !roundTimer.isPaused && roundTimer.secondsRemaining <= 10, bagBacks),
             startedAt: roundTimer.startedAtMs,
             endsAt: roundTimer.endsAtMs,
             isPaused: roundTimer.isPaused,
@@ -298,7 +300,7 @@ export function BagWorkRoundView({
               detail: nextCombo?.text ?? `Next: Round ${round.roundNumber + 1}`,
               ...laCombo,
               fromClass: !!nextCombo?.fromClass,
-              ...bagGlow(round.roundNumber, true, false),
+              ...bagGlow(round.roundNumber, true, false, bagBacks),
               startedAt: restTimer.startedAtMs,
               endsAt: restTimer.endsAtMs,
               isPaused: restTimer.isPaused,
@@ -417,6 +419,7 @@ export function BagWorkRoundView({
     const t = Date.now()
     const step = backStep(lastBagBackAt, t)
     lastBagBackAt = t
+    bagBacks++
     const allRounds = rounds ?? []
     const to = roundsBack({ round: roundIndex, sub: phase }, step, r => allRounds[r]?.restSec ?? 0)
     if (to.sub === 'ready') return

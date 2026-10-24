@@ -130,6 +130,9 @@ export function EndControl({ head, onEnd, onEndAndLog, onEndStart }: { head: str
 
 // ─── The screen ───────────────────────────────────────────────
 
+/** Session screens mounted (one leaving while the next arrives still counts as up). */
+let sessionScreens = 0
+
 interface SessionFrameProps {
   /** The session on a flap (BAG WORK, WARM UP, STRENGTH A…). */
   title: string
@@ -188,8 +191,9 @@ export function SessionFrame({ title, count, icon, right, onEnd, onEndAndLog, cl
   useEffect(() => (rootRef.current ? watchFreshControls(rootRef.current) : undefined), [])
   // Pops drop in under the session's top row while one is up (design.css: no :has() on body, page 59).
   useEffect(() => {
+    sessionScreens++
     document.body.dataset.session = ''
-    return () => { delete document.body.dataset.session }
+    return () => { if (--sessionScreens === 0) delete document.body.dataset.session }
   }, [])
   // page 31 draws the set screen over the forest (the clearing, as the MT log)
   useEffect(() => {

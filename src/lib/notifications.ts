@@ -559,10 +559,17 @@ export function runWalkCueSpecs(startedAtMs: number, cues: Array<{ atSec: number
     .filter(s => s.at.getTime() > nowMs)
 }
 
+/** Reschedules run one after another (two quick swipes can't interleave their cancels and schedules). */
+let runWalkCueChain: Promise<void> = Promise.resolve()
+
 export async function scheduleRunWalkCues(startedAtMs: number, cues: Array<{ atSec: number; kind: 'warmup' | 'run' | 'walk' }>): Promise<void> {
   if (!isNative) return
-  await cancelRunWalkCues()
-  await scheduleCues(runWalkCueSpecs(startedAtMs, cues, Date.now()))
+  const run = runWalkCueChain.then(async () => {
+    await cancelRunWalkCues()
+    await scheduleCues(runWalkCueSpecs(startedAtMs, cues, Date.now()))
+  })
+  runWalkCueChain = run.catch(() => {})
+  return run
 }
 
 export async function cancelRunWalkCues(): Promise<void> {

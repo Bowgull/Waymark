@@ -43,6 +43,8 @@ interface SkipRopeViewProps {
 }
 
 export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersist, onRoundDone }: SkipRopeViewProps) {
+  // Swipes back so far: the lock card flashes on each, a restart of the same part included.
+  const backs = useRef(0)
   // Round is 1-based here; the saved state is 0-based like bag work.
   const [currentRound, setCurrentRound] = useState(() => (resume ? resume.round + 1 : 1))
   const [skipPhase, setSkipPhase] = useState<SkipPhase>(() =>
@@ -140,7 +142,7 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
             label: `Round ${currentRound} of ${totalRounds}`,
             stepIndex: currentRound,
             stepTotal: totalRounds,
-            ...ropeGlow(currentRound, false),
+            ...ropeGlow(currentRound, false, backs.current),
             startedAt: roundTimer.startedAtMs,
             endsAt: roundTimer.endsAtMs,
             isPaused: roundTimer.isPaused,
@@ -159,7 +161,7 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
               detail: `Next: Round ${currentRound + 1}`,
               stepIndex: currentRound,
               stepTotal: totalRounds,
-              ...ropeGlow(currentRound, true),
+              ...ropeGlow(currentRound, true, backs.current),
               startedAt: restTimer.startedAtMs,
               endsAt: restTimer.endsAtMs,
               isPaused: restTimer.isPaused,
@@ -262,6 +264,7 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
     const t = Date.now()
     const step = backStep(lastBackAt.current, t)
     lastBackAt.current = t
+    backs.current++
     const at: RoundSpot = { round: currentRound - 1, sub: skipping ? 'fighting' : skipPhase === 'rest' ? 'rest' : 'ready' }
     const to = roundsBack(at, step, () => SKIP_REST_SEC)
     if (to.sub === 'ready') return
