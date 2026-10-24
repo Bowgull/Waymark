@@ -9,6 +9,8 @@ import './settings.css'
 // blocks, the time value on a row, and the ▲ ▼ drum of the time card.
 
 const HOLD_MS = 700
+/** A press longer than this was a hold let go early (it eases back), not a tap to go back. */
+const TAP_MAX_MS = 300
 /** Page 81: the crest's hidden hold. */
 export const SECRET_HOLD_MS = 1000
 
@@ -24,10 +26,12 @@ export function SettingsScreen({ title, onBack, onHold, holdLabel = 'logs', onSe
    */ onSecretHold?: () => void; /** page 46: "‹ TODAY" in gold top left; the crest and title move right (the crest still goes back). */ backLabel?: string; children: ReactNode }) {
   const timer = useRef<number | null>(null)
   const held = useRef(false)
+  const downAt = useRef(0)
   const [pressing, setPressing] = useState(false)
   const stop = () => { if (timer.current) window.clearTimeout(timer.current); timer.current = null; setPressing(false) }
   const start = () => {
     held.current = false
+    downAt.current = performance.now()
     if (onSecretHold) {
       setPressing(true)
       timer.current = window.setTimeout(() => { timer.current = null; held.current = true; setPressing(false); void tapHaptic(); onSecretHold() }, SECRET_HOLD_MS)
@@ -53,7 +57,7 @@ export function SettingsScreen({ title, onBack, onHold, holdLabel = 'logs', onSe
           onPointerLeave={stop}
           onPointerCancel={stop}
           onContextMenu={e => e.preventDefault()}
-          onClick={() => { if (!held.current) onBack() }}
+          onClick={() => { const long = onSecretHold && downAt.current > 0 && performance.now() - downAt.current > TAP_MAX_MS; downAt.current = 0; if (!held.current && !long) onBack() }}
         >
           <span className="st-crest"><Crest width={backLabel ? 22 : 52} /></span>
           <FlapLabel text={title} size="sm" animate={false} />

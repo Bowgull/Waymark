@@ -31,8 +31,7 @@ test('Strength rest: RESTING AFTER the lift, REST over the clock, NEXT n OF m un
 test('Active Recovery walk: a grass timer (no ring, no rounded cards): READY, the grass starts it, MOVING, NEXT · HIP MOBILITY', async ({ page, api }) => {
   const s = await insertSession(api, 'active_recovery', 'pm')
   await enterFromToday(page, s.id)
-  const begin = page.getByRole('button', { name: 'Begin' })
-  if (await begin.isVisible()) await begin.tap()
+  await page.getByRole('button', { name: 'Begin' }).tap()
   await expect(page.getByRole('img', { name: 'WALK OR BIKE', exact: true })).toBeVisible()
   await expect(page.getByRole('img', { name: 'READY', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Start Timer' })).toHaveCount(0)

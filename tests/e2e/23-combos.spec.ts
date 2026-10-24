@@ -159,6 +159,10 @@ test('CUSTOM: − / + rounds, length and rest; empty rounds "—"; it starts exa
   const n = await rounds.count()
   await board.getByRole('button', { name: 'Rounds: more' }).tap()
   await expect(rounds).toHaveCount(n + 1)
+  // the coach's dose sets the starting count (it moves with the day), so the picture is taken at 5
+  for (let k = n + 1; k > 5; k--) await board.getByRole('button', { name: 'Rounds: less' }).tap()
+  for (let k = n + 1; k < 5; k++) await board.getByRole('button', { name: 'Rounds: more' }).tap()
+  await expect(rounds).toHaveCount(5)
   await board.getByRole('button', { name: 'Round: less' }).tap()
   await expect(board.getByRole('img', { name: '2:00' })).toBeVisible()
   await expect(rounds.first()).toContainText('—')

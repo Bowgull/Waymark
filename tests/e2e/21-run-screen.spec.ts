@@ -101,7 +101,7 @@ test('Zones from the strap: teal, gold at the top, ember with EASE OFF after 30 
   await strapDistance(page, 1234)
   await expect(liveRow).toHaveAttribute('data-zone', 'in')
   await expect(page.getByRole('img', { name: `Heart rate ${line - 20}` })).toBeVisible()
-  await expect(liveRow.getByRole('img', { name: '1.23', exact: true })).toBeVisible()
+  await expect(page.locator('.tm-next', { hasText: '1.23 KM' })).toBeVisible()
   await expect.poll(async () => (await activity(page))?.hrZone).toBe('in')
 
   await strapHr(page, line - 2)
