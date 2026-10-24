@@ -89,36 +89,37 @@ test('Active Recovery, swipe down: restarts the hip hold; again within 3 s, back
   await expect(page.getByRole('img', { name: 'MOVING', exact: true })).toBeVisible()
 })
 
-test('Foundation hold, swipe down: restarts the hold; again within 3 s, the step (or move) before', async ({ page, api }) => {
+test('Foundation hold, swipe down: restarts the hold; again within 3 s, the step before', async ({ page, api }) => {
   const s = await insertSession(api, 'mobility', 'pm')
   await enterFromToday(page, s.id)
   const done = page.getByRole('button', { name: 'DONE', exact: true })
   const breathe = page.getByRole('status', { name: /^Breathe/ })
-  for (let i = 0; i < 30 && !(await grassToStart(page).isVisible()); i++) {
-    if (await done.isVisible()) await done.tap()
-    if (await breathe.isVisible()) await page.clock.fastForward(3500)
+  const note = () => page.evaluate(() => document.querySelector('.wm-board .tm-note')?.textContent ?? '')
+  // On to the first timed move made of several holds (a rep or a side each): counted moves are DONE,
+  // a single hold is started and swiped on.
+  for (let i = 0; i < 40 && !/Rep 1 of|side/i.test(await note()); i++) {
+    if (await breathe.isVisible()) { await page.clock.fastForward(3500); continue }
+    if (await done.isVisible()) { await page.waitForTimeout(400); await done.tap(); continue }
+    if (await grassToStart(page).isVisible()) { await grassToStart(page).tap(); await swipeUpGrass(page); continue }
     await page.waitForTimeout(250)
   }
-  // the move's name and its set / side / rep line, read at once (a move may have no line)
-  const where = () => page.evaluate(() => [
-    document.querySelector('.wm-board .ss-row [role=img]')?.getAttribute('aria-label') ?? null,
-    document.querySelector('.wm-board .tm-note')?.textContent ?? null,
-  ])
-  const first = await where()
+  const first = await note()
+  expect(first, 'a timed move with several holds').toMatch(/Rep 1 of|side/i)
+  // Step 1 running, then on to step 2 and start it.
   await grassToStart(page).tap()
   await swipeUpGrass(page)
-  // on to the next timed step (a side, a rep, a set or the next move)
-  for (let i = 0; i < 30 && !(await grassToStart(page).isVisible()) && !(await grass(page).isVisible()); i++) {
-    if (await breathe.isVisible()) await page.clock.fastForward(3500)
-    await page.waitForTimeout(250)
-  }
-  await expect(done, 'the seeded session follows its first hold with another timed step').toBeHidden()
+  await expect.poll(note).not.toBe(first)
   if (await grassToStart(page).isVisible()) await grassToStart(page).tap()
+  await expect(grass(page)).toBeVisible()
   const full = await timerSeconds(page)
-  await page.clock.fastForward(5_000)
+  await page.clock.fastForward(3_000)
+  expect(await timerSeconds(page)).toBeLessThan(full)
+  // Down: this hold from its full time, still running.
   await swipeDownGrass(page)
   await expect.poll(() => timerSeconds(page)).toBeGreaterThanOrEqual(full - 1)
+  await expect(grass(page)).toBeVisible()
+  // Down again within 3 s: the step before, from its full time, still running.
   await swipeDownGrass(page)
-  await expect.poll(where).toEqual(first)
+  await expect.poll(note).toBe(first)
   await expect(grass(page)).toBeVisible()
 })
