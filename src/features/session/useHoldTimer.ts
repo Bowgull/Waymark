@@ -8,6 +8,7 @@ import {
   timerStart,
   type TimerSnap,
 } from '@/lib/sessionResume'
+import { restartSnap } from '@/lib/timers/swipeBack'
 
 export interface HoldTimerState {
   /** Seconds elapsed since start. */
@@ -35,6 +36,8 @@ export interface HoldTimerActions {
   pause: (pausedRemainingMs?: number) => void
   /** Resume a paused countdown (an explicit end time from the Live Activity wins). */
   resume: (newEndsAtMs?: number) => void
+  /** Page 85, swipe down: the hold again from its full time (paused stays paused; not started stays so). */
+  restart: () => void
   /** Put a saved hold back (session resume). */
   restore: (snap: TimerSnap | null) => void
   /** The hold as it stands, for saving. */
@@ -91,6 +94,10 @@ export function useHoldTimer(targetSec: number): HoldTimerState & HoldTimerActio
     apply(timerResume(cur, Date.now(), newEndsAtMs))
   }, [apply])
 
+  const restart = useCallback(() => {
+    apply(restartSnap(snapRef.current, targetSec, Date.now()))
+  }, [apply, targetSec])
+
   const restore = useCallback((next: TimerSnap | null) => apply(next), [apply])
   const snapshot = useCallback(() => snapRef.current, [])
 
@@ -119,6 +126,7 @@ export function useHoldTimer(targetSec: number): HoldTimerState & HoldTimerActio
     stop,
     pause,
     resume,
+    restart,
     restore,
     snapshot,
   }

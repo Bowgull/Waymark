@@ -7,8 +7,8 @@ import { playClips } from '@/lib/cuePlayer'
 import { intervalIsNative, intervalNative } from '@/lib/intervalNative'
 import { endLiveActivity } from '@/lib/liveActivity'
 import { intervalActivityState, INTERVAL_SESSION_LABEL } from '@/lib/timers/intervalActivity'
-import { clockAt, countFor, cueSchedule, doneWord, leftText, nextWords, elapsedSec, pauseClock, phaseWord, plan, positionAt, resumeClock, startClock, type IntervalClock, type IntervalSetup } from '@/lib/timers/intervalTimer'
-import { ENDED_SHOW_MS } from '@/lib/timers/timerLook'
+import { backTargetSec, clockAt, countFor, cueSchedule, doneWord, leftText, nextWords, elapsedSec, pauseClock, phaseWord, plan, positionAt, resumeClock, skipTargetSec, startClock, type IntervalClock, type IntervalSetup } from '@/lib/timers/intervalTimer'
+import { backStep, ENDED_SHOW_MS } from '@/lib/timers/timerLook'
 import { useSessionLiveActivity, type LiveActivityConfig } from '@/features/session/useSessionLiveActivity'
 
 import './intervalTimer.css'
@@ -104,20 +104,43 @@ export function IntervalTimerScreen({ setup, onClose }: { setup: IntervalSetup; 
     void (next.pausedAtMs != null ? intervalNative.pause() : intervalNative.resume())
   }, [ended, done, clock])
 
-  /** A swipe up the grass: on to the next part (its beep plays); paused stays paused. */
+  /** Moves the clock to `targetSec` in and re-times the native timer there (its change beep plays); paused stays paused. */
+  const jumpTo = useCallback((targetSec: number, t: number) => {
+    const wasPaused = clock.pausedAtMs != null
+    setClock(clockAt(targetSec * 1000, wasPaused, t))
+    setNow(t)
+    void intervalNative.start({ parts: parts.map(p => ({ ph: p.ph, len: p.len, round: p.round })), rounds: setup.rounds, cues: cueSchedule(setup), startedAtMs: t - targetSec * 1000 })
+      .then(() => (wasPaused ? intervalNative.pause() : undefined))
+  }, [clock, parts, setup])
+
+  /** A swipe up the grass: on to the next part. */
   const skipPart = useCallback(() => {
     if (ended || done) return
     const t = Date.now()
-    const at = positionAt(parts, elapsedSec(clock, t))
-    const next = parts[at.index + 1]
-    const target = next ? next.startSec : at.part.startSec + at.part.len
-    const wasPaused = clock.pausedAtMs != null
-    const c = clockAt(target * 1000, wasPaused, t)
-    setClock(c)
-    setNow(t)
-    void intervalNative.start({ parts: parts.map(p => ({ ph: p.ph, len: p.len, round: p.round })), rounds: setup.rounds, cues: cueSchedule(setup), startedAtMs: t - target * 1000 })
-      .then(() => (wasPaused ? intervalNative.pause() : undefined))
-  }, [ended, done, parts, clock, setup])
+    jumpTo(skipTargetSec(parts, elapsedSec(clock, t)), t)
+  }, [ended, done, parts, clock, jumpTo])
+
+  /**
+   * A swipe down (page 85): the part from its full length; another within 3 s
+   * goes to the part before. Its change beep plays at once, paused too, as
+   * the native timer plays it on the re-time; on the web it is played here
+   * (a restart may not move the part's index).
+   */
+  const lastBackAt = useRef<number | null>(null)
+  const backPart = useCallback(() => {
+    if (ended || done) return
+    const t = Date.now()
+    const step = backStep(lastBackAt.current, t)
+    lastBackAt.current = t
+    const target = backTargetSec(parts, elapsedSec(clock, t), step)
+    jumpTo(target, t)
+    if (intervalIsNative) return
+    const h = heard.current
+    const at = positionAt(parts, target)
+    h.index = at.index
+    h.tick = at.shown
+    void playClips(['t_change'])
+  }, [ended, done, parts, clock, jumpTo])
 
   // Nothing leaves by the edge swipe while it runs (Settings' back sits under it).
   useEdgeBack(() => {})
@@ -163,9 +186,10 @@ export function IntervalTimerScreen({ setup, onClose }: { setup: IntervalSetup; 
           state={paused ? 'paused' : 'running'}
           onTap={togglePause}
           onSkip={skipPart}
+          onBack={backPart}
           hold={{ onHeld: endNow, held: ended }}
           holdWords={['HOLD · END', 'ENDING']}
-          label={paused ? 'Timer paused. Tap to go on. Swipe up to skip. Hold for 3 seconds to end.' : 'Timer. Tap to pause. Swipe up to skip. Hold for 3 seconds to end.'}
+          label={paused ? 'Timer paused. Tap to go on. Swipe up to skip. Swipe down to go back. Hold for 3 seconds to end.' : 'Timer. Tap to pause. Swipe up to skip. Swipe down to go back. Hold for 3 seconds to end.'}
         />
       }
     >

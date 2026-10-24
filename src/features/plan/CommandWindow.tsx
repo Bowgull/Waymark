@@ -179,7 +179,7 @@ export function PicksBody({ view, picks, all, cur, add, forWhat, busy, onPoint, 
   onView: (v: 'picks' | 'all' | 'runs', cur?: number) => void
 }) {
   const take = (row: PickRow) => (
-    <span className="pl-take" role="button" tabIndex={0} aria-label={add ? 'Add' : 'Swap in'} onClick={e => { e.stopPropagation(); if (!busy) onTake(row) }} onKeyDown={e => { if (e.key === 'Enter') onTake(row) }}>
+    <span className="pl-take" role="button" tabIndex={0} aria-label={add ? 'Add' : 'Swap in'} onClick={e => { e.stopPropagation(); if (!busy) onTake(row) }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (!busy) onTake(row) } }}>
       <FlapLabel text={add ? 'ADD' : 'SWAP IN'} size="xs" tone="gold" animate={false} />
     </span>
   )

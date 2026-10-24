@@ -160,6 +160,18 @@ export async function swipeUpGrass(page: Page) {
   await page.mouse.up()
 }
 
+/** Page 85: a full pull down the grass goes back (the first restarts the part, another within 3 s the part before). */
+export async function swipeDownGrass(page: Page) {
+  const box = await grass(page).boundingBox()
+  if (!box) throw new Error('no grass to swipe')
+  const x = box.x + box.width / 2
+  const y0 = box.y + 4
+  await page.mouse.move(x, y0)
+  await page.mouse.down()
+  for (let i = 1; i <= 8; i++) await page.mouse.move(x, y0 + (box.height * 0.7 * i) / 8)
+  await page.mouse.up()
+}
+
 /**
  * Through a mobility / Zone 2 warm-up: tap the grass to start a timed hold
  * (page 71) then swipe it up to skip it, DONE a rep exercise, wait out the

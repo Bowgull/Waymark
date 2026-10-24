@@ -16,7 +16,7 @@
 
 /* header: the crest and WAYMARK on a flap, the date on a flap */
 .td-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px 6px; }
-.td-crest { width: 54px; height: 60px; display: grid; place-items: center; flex: none; }
+.td-crest { width: 54px; height: 60px; display: grid; place-items: center; flex: none; touch-action: none; }
 .td-brand { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 
 /* the week strip: the Program day tiles, small (page 35 #5 A; page 43 over the home) */
@@ -88,7 +88,8 @@
 .td-tm .old { font: 700 13px/1 var(--font-mono); color: rgba(240, 230, 192, 0.55); }
 .td-tm .arr { color: var(--sf-good-ink); font: 800 13px/1 var(--font-mono); }
 .td-tm .nw { font: 900 17px/1 var(--font-mono); color: #fff4dc; text-shadow: 0 2px 3px rgba(0, 0, 0, 0.8); min-width: 34px; text-align: right; }
-.td-stp { width: 30px; height: 30px; flex: none; border: 0; border-radius: 7px; display: grid; place-items: center; font: 900 16px/1 var(--font-mono); color: #e8dcb4; background: linear-gradient(180deg, #232823 0 50%, #1a1e1a 50%); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3); cursor: pointer; user-select: none; }
+.td-stp { width: 30px; height: 30px; flex: none; border: 0; border-radius: 7px; display: grid; place-items: center; font: 900 16px/1 var(--font-mono); color: #e8dcb4; background: linear-gradient(180deg, #232823 0 50%, #1a1e1a 50%); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3); cursor: pointer; transition: transform var(--t-tap) var(--ease-out); -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+.td-stp:active { transform: scale(0.95); }
 .td-lim { margin: 0; text-align: center; font: 600 12px/1.3 var(--font-body); color: rgba(240, 234, 214, 0.55); }
 .td-hold { position: relative; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
 .td-hold::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, rgba(232, 200, 96, 0.12), rgba(232, 200, 96, 0.38)); box-shadow: 0 0 18px rgba(255, 214, 140, 0.35); pointer-events: none; }
@@ -107,9 +108,10 @@
 .td-empty p { margin: 10px 0 14px; font: 600 15px/1.45 var(--font-body); color: #d6e0da; }
 
 /* the end button (×): a flap tile; hold 1.5 s, a clay bar fills along its foot */
-.td-xbtn { position: relative; width: 48px; height: 48px; flex: none; border: 0; border-radius: 9px; display: grid; place-items: center; font: 800 22px/1 var(--font-mono); color: #e8dcb4; background: linear-gradient(180deg, #232823 0 50%, #1a1e1a 50% 100%); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3), 0 2px 6px rgba(0, 0, 0, 0.55); cursor: pointer; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.td-xbtn { position: relative; width: 48px; height: 48px; flex: none; border: 0; border-radius: 9px; display: grid; place-items: center; font: 800 22px/1 var(--font-mono); color: #e8dcb4; background: linear-gradient(180deg, #232823 0 50%, #1a1e1a 50% 100%); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3), 0 2px 6px rgba(0, 0, 0, 0.55); cursor: pointer; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; transition: transform var(--t-tap) var(--ease-out), filter var(--t-tap) var(--ease-out); }
+.td-xbtn.is-hold { transform: scale(0.97); filter: brightness(0.92); }
 .td-xbtn::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(0, 0, 0, 0.5); }
-.td-xbtn::before { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--sf-clay); }
+.td-xbtn::before { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--sf-clay); transition: width var(--t-quick) var(--ease-out); }
 .td-xbtn.is-hold::before { transition: width 1.5s linear; width: 100%; }
 
 /* Strava on Today (page 40): the matched run and the unplanned run, four flap readouts, the clay over-cap band */
@@ -137,6 +139,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .td-hold.is-holding::before { transition: none; width: 100%; }
+  .td-xbtn::before { transition: none; }
   .td-xbtn.is-hold::before { transition: none; width: 100%; }
 }
 .td-opt .wm-ampm { gap: 4px; }

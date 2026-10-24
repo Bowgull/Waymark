@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures'
-import { enterFromToday, insertSession, throughWarmup, timerSeconds } from './support/helpers'
+import type { Page } from '@playwright/test'
+import { enterFromToday, grass, insertSession, swipeUpGrass, throughWarmup, timerSeconds } from './support/helpers'
 import { setMorning } from './support/data'
 
 interface RunWalk { runSec: number; walkSec: number; rounds: number; warmupSec: number; capped: boolean }
@@ -54,4 +55,32 @@ test('Run-walk: warm-up, ready card, then run and walk intervals', async ({ page
 
   await page.clock.fastForward(rw.walkSec * 1000)
   if (rw.rounds > 1) await expect(count(`Round 2 of ${rw.rounds}`)).toBeVisible()
+
+  // Page 85: the swipes move the plan's pieces, never the run. Up: the walk after round 2 now.
+  if (rw.rounds < 3 || rw.walkSec <= 10) return
+  await expect(grass(page)).toHaveAccessibleName(/Swipe up to skip\. Swipe down to go back\. Hold for 3 seconds to finish\.$/)
+  await swipeUpGrass(page)
+  await expect(count(`Next 3 of ${rw.rounds}`)).toBeVisible()
+  expect(await timerSeconds(page)).toBeGreaterThan(rw.walkSec - 3)
+  // 10 s in, down: the walk again from the top; down again within 3 s: round 2's run.
+  await page.clock.fastForward(10_000)
+  expect(await timerSeconds(page)).toBeLessThanOrEqual(rw.walkSec - 9)
+  await swipeDownGrass(page)
+  await expect.poll(() => timerSeconds(page)).toBeGreaterThan(rw.walkSec - 3)
+  await expect(count(`Next 3 of ${rw.rounds}`)).toBeVisible()
+  await swipeDownGrass(page)
+  await expect(count(`Round 2 of ${rw.rounds}`)).toBeVisible()
+  expect(await timerSeconds(page)).toBeGreaterThan(rw.runSec - 3)
 })
+
+/** A finger drag down the grass, all the way: back (page 85). */
+async function swipeDownGrass(page: Page) {
+  const box = await grass(page).boundingBox()
+  if (!box) throw new Error('no grass to swipe')
+  const x = box.x + box.width / 2
+  const y0 = box.y + 4
+  await page.mouse.move(x, y0)
+  await page.mouse.down()
+  for (let i = 1; i <= 8; i++) await page.mouse.move(x, y0 + (box.height * 0.7 * i) / 8)
+  await page.mouse.up()
+}

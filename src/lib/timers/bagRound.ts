@@ -180,3 +180,26 @@ export function lockComboSize(combos: string[][], width = LOCK_LINE_W): number {
   }
   return LOCK_COMBO_MIN
 }
+
+// ─── the swipe down (page 85; bag rounds and skip rope rounds alike) ───
+
+/** Where a rounds session stands: the round (0-based) and its part. */
+export interface RoundSpot {
+  round: number
+  sub: 'ready' | 'fighting' | 'rest'
+}
+
+/**
+ * Where a swipe down lands. Restart keeps the part (its timer goes back to
+ * full); previous goes to the part before: a rest's own round, a round's rest
+ * before it (or the round before when that rest is 0:00). The first round only
+ * restarts. A round still at READY has not begun, so it goes straight back.
+ * `restAfter(r)`: the rest after round r, seconds.
+ */
+export function roundsBack(at: RoundSpot, step: 'restart' | 'previous', restAfter: (round: number) => number): RoundSpot {
+  if (step === 'restart' && at.sub !== 'ready') return at
+  if (at.sub === 'rest') return { round: at.round, sub: 'fighting' }
+  if (at.round <= 0) return at
+  const prev = at.round - 1
+  return { round: prev, sub: restAfter(prev) > 0 ? 'rest' : 'fighting' }
+}

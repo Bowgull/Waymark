@@ -4,6 +4,10 @@ const config: CapacitorConfig = {
   appId: 'com.joshbocas.app',
   appName: 'Waymark',
   webDir: 'dist',
+  ios: {
+    // a long press on a link or image never opens the WebKit preview
+    allowsLinkPreview: false,
+  },
   plugins: {
     SplashScreen: {
       launchAutoHide: false,

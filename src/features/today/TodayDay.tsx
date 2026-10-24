@@ -8,6 +8,7 @@ import { apiFetch } from '@/lib/api'
 import type { RunPlace } from '@/features/weather/runPlace'
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
 import { overCapBpm, stravaReadouts } from '@/lib/stravaMatch'
+import { HOLD_GRACE_MS } from '@/lib/timers/timerLook'
 import { canReplaceOrSkipTodaySession, isActionableTodaySession } from './timelineStatus'
 import { SwapRow, Tick } from '@/design/MotionPrimitives'
 import { useSwapList } from '@/design/motionKit'
@@ -275,17 +276,68 @@ function StravaCard({ s, kind, ruled = false, onConfirmMatch, onReassignMatch, o
 }
 
 /** The end button (×): a flap tile. Hold 1.5 s; a clay bar fills along its foot. A tap only says so. */
+const END_HOLD_MS = 1500
+/** A finger that slides this far off the × lets go (a rolling thumb doesn't). */
+const END_SLOP_PX = 40
 function EndHold({ onHeld }: { onHeld: () => void }) {
-  const [holding, setHolding] = useState(false)
   const [hint, setHint] = useState(false)
-  const timer = useRef<number | null>(null)
-  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
-  const start = () => { setHolding(true); setHint(false); timer.current = window.setTimeout(() => { timer.current = null; setHolding(false); onHeld() }, 1500) }
-  const stop = () => { if (!timer.current) return; window.clearTimeout(timer.current); timer.current = null; setHolding(false); setHint(true) }
+  const ref = useRef<HTMLButtonElement>(null)
+  // The hold, kept off React so the press look and the bar start on the touch itself: when it began, where, and the frame loop.
+  const hold = useRef<{ start: number; x: number; y: number; raf: number } | null>(null)
+  const heldRef = useRef(onHeld)
+  useLayoutEffect(() => { heldRef.current = onHeld })
+  useEffect(() => () => { if (hold.current) cancelAnimationFrame(hold.current.raf) }, [])
+  const stop = () => {
+    const h = hold.current
+    if (!h) return
+    cancelAnimationFrame(h.raf)
+    hold.current = null
+    ref.current?.classList.remove('is-hold')
+  }
+  const fire = () => { stop(); setHint(false); heldRef.current() }
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-      {hint && <span className="wm-label">Hold to end</span>}
-      <button type="button" aria-label="Hold to end early" className={`td-xbtn${holding ? ' is-hold' : ''}`} onPointerDown={start} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onContextMenu={e => e.preventDefault()}>×</button>
+    <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      {/* beside the ×, out of the row's flow: showing or hiding it never moves the × under the finger */}
+      <span className="wm-label" aria-hidden={!hint} style={{ position: 'absolute', right: 'calc(100% + 8px)', whiteSpace: 'nowrap', visibility: hint ? 'visible' : 'hidden' }}>Hold to end</span>
+      <button
+        ref={ref}
+        type="button"
+        aria-label="Hold to end early"
+        className="td-xbtn"
+        onPointerDown={e => {
+          if (hold.current) return
+          // The finger stays the button's until it lifts: a small drift never cancels the hold.
+          try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* not capturable */ }
+          e.currentTarget.classList.add('is-hold')
+          void tapHaptic()
+          setHint(false)
+          const h = { start: performance.now(), x: e.clientX, y: e.clientY, raf: 0 }
+          hold.current = h
+          // Done on the frame the bar is full, the same moment it looks full.
+          const tick = () => {
+            if (hold.current !== h) return
+            if (performance.now() - h.start >= END_HOLD_MS) { fire(); return }
+            h.raf = requestAnimationFrame(tick)
+          }
+          h.raf = requestAnimationFrame(tick)
+        }}
+        onPointerMove={e => {
+          const h = hold.current
+          // Only a real slide away lets go.
+          if (h && Math.hypot(e.clientX - h.x, e.clientY - h.y) > END_SLOP_PX) stop()
+        }}
+        onPointerUp={() => {
+          const h = hold.current
+          if (!h) return
+          // Lifted as the bar filled: it still counts. Earlier, it eases back and says to hold.
+          if (performance.now() - h.start >= END_HOLD_MS - HOLD_GRACE_MS) fire()
+          else { stop(); setHint(true) }
+        }}
+        onPointerCancel={stop}
+        // keyboard and VoiceOver (a click with no pointer): it ends at once
+        onClick={e => { if (e.detail === 0) heldRef.current() }}
+        onContextMenu={e => e.preventDefault()}
+      >×</button>
     </span>
   )
 }

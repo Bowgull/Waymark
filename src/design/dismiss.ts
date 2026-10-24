@@ -143,7 +143,10 @@ export function wireDismissGestures(): void {
   let start: { x: number; y: number } | null = null
   window.addEventListener('touchstart', e => {
     const t = e.touches[0]
-    start = t && t.clientX <= EDGE_PX ? { x: t.clientX, y: t.clientY } : null
+    // a swipe that starts on something with its own sideways swipe (the grass, a book) is that thing's;
+    // the check-in deck keeps the edge swipe as its close (page 61)
+    const own = e.target instanceof Element && e.target.closest('.tm-grass, .lib-book, [data-no-edge]')
+    start = t && !own && t.clientX <= EDGE_PX ? { x: t.clientX, y: t.clientY } : null
   }, { passive: true })
   window.addEventListener('touchend', e => {
     const s = start

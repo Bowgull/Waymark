@@ -8,6 +8,7 @@ import { hardPlan } from './brain/hardRuns'
 import { dueCue, hardAt, hardCues, hardSegments, nextWords, NUDGE_START, nudgeClips, nudgeTargets, phaseWord, pieceOf, stepNudge, type HardSegment, type NudgeState } from './runCues'
 import { altMph, numberClip, numberWords, paceClip, paceFlap, paceOf, paceText, parseUnit, speedFlap, speedText, speedUnitWord } from './runSpeed'
 import { postRunLine, postRunShort, sameHrPace, type PostRunFacts } from './postRun'
+import { movePlan, planOnRunClock } from './timers/runWalk'
 import { runPlace, weatherAt } from '../features/weather/runPlace'
 import { nextZone, ZONE_START } from './hrZoneState'
 import type { Weather } from '../features/weather/weatherData'
@@ -166,6 +167,29 @@ assert.equal(runPlace({ t: 2, feels: -2, sky: 'cloud', pop: 0 }, '6').place, 'in
   assert.equal(z.zone, 'over')
   // An easy run keeps its line (no overBy).
   assert.equal(nextZone(nextZone(ZONE_START, 150, 147, 0), 150, 147, 31_000).zone, 'over')
+}
+
+// Page 85: a swipe moves the plan, not the run clock. The cues are made from the plan on the
+// run clock, so the new piece's words are due now (as at a natural change) and the old ones are past.
+{
+  const segs = hardSegments(iv)
+  // 30 s into the first hard piece, swipe up: the jog after it starts now.
+  const at = segs[1].startSec + 30
+  const shift = movePlan(segs, 0, at, 'skip')!
+  const onRun = planOnRunClock(segs, shift)
+  assert.equal(hardAt(onRun, at).index, 2)
+  assert.equal(hardAt(onRun, at).shownSec, segs[2].sec)
+  const cues = hardCues(onRun, false, 'kmh')
+  const played = new Set(cues.map((c, i) => (c.atSec < at ? i : -1)).filter(i => i >= 0))
+  const due = dueCue(cues, played, at)!
+  assert.equal(due.cue.atSec, at)
+  assert.ok(due.cue.clips.includes('easy_jog'), 'the jog\'s words play now')
+  // The nudge window follows the hard pieces too.
+  assert.equal(nudgeTargets(onRun)[1].fromSec, onRun[3].startSec)
+  // Swipe down: the jog again from now, its words again.
+  const back = movePlan(segs, shift, at + 20, 'restart')!
+  const again = hardCues(planOnRunClock(segs, back), false, 'kmh')
+  assert.ok(again.some(c => c.atSec === at + 20 && c.clips.includes('easy_jog')))
 }
 
 console.log('runCues: ok')

@@ -25,6 +25,8 @@ export const LINE_OPEN_MS = 400
 const DROP_DELAY_MS = 60
 const CLOSE_FADE_MS = 120
 const CLOSE_HEIGHT_MS = 240
+/** A line shows pressed only once the finger has rested this long (a scroll's touch doesn't flash it). */
+const PRESS_DELAY_MS = 80
 
 const CUR = (
   <svg className="cl-cur" width="10" height="14" viewBox="0 0 7 11" shapeRendering="crispEdges" aria-hidden>
@@ -41,6 +43,13 @@ export function LedgerLines({ items }: { items: LedgerLineItem[] }) {
   const lines = useRef(new Map<string, HTMLButtonElement>())
   const snapRaf = useRef(0)
   const padTimer = useRef(0)
+  const downTimer = useRef(0)
+  const press = (key: string | null) => {
+    window.clearTimeout(downTimer.current)
+    if (key) downTimer.current = window.setTimeout(() => setDown(key), PRESS_DELAY_MS)
+    else setDown(null)
+  }
+  useEffect(() => () => window.clearTimeout(downTimer.current), [])
 
   const scroller = () => list.current?.closest('main') as HTMLElement | null
   const header = () => list.current?.closest('.lg-root')?.querySelector<HTMLElement>('.wm-scene-hd, .lg-hd') ?? null
@@ -181,10 +190,10 @@ export function LedgerLines({ items }: { items: LedgerLineItem[] }) {
             ref={el => { if (el) lines.current.set(it.key, el); else lines.current.delete(it.key) }}
             className={`cl-line${open === it.key ? ' is-open' : ''}${down === it.key ? ' is-down' : ''}`}
             aria-expanded={open === it.key}
-            onPointerDown={() => setDown(it.key)}
-            onPointerUp={() => setDown(null)}
-            onPointerLeave={() => setDown(null)}
-            onPointerCancel={() => setDown(null)}
+            onPointerDown={() => press(it.key)}
+            onPointerUp={() => press(null)}
+            onPointerLeave={() => press(null)}
+            onPointerCancel={() => press(null)}
             onClick={() => toggle(it.key)}
           >
             {CUR}

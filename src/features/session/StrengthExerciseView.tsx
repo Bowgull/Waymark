@@ -60,6 +60,8 @@ interface StrengthExerciseViewProps {
     /** Running: the rest's wall-clock end (the grass and the 5 s swell). */
     endsAtMs?: number
     onTogglePause?: () => void
+    /** Page 85, swipe down: the rest again from its full time (every time; never back to the set, which stays saved). */
+    onRestart?: () => void
   }
   onSetComplete: (weightKg: number | null, reps: number) => void
   onLiveValuesChange?: (weightKg: number | null, reps: number) => void
@@ -106,7 +108,7 @@ export function StrengthExerciseView({
         title={sessionTitle}
         onEnd={onExit}
         paused={!!restState.isPaused}
-        grass={<GrassZone track={track} kind="rest" state={restState.isPaused ? 'paused' : 'running'} onTap={restState.onTogglePause} onSkip={onNextSet} />}
+        grass={<GrassZone track={track} kind="rest" state={restState.isPaused ? 'paused' : 'running'} onTap={restState.onTogglePause} onSkip={onNextSet} onBack={restState.onRestart} />}
       >
         <TimerColumn>
           <div className="tm-topx">

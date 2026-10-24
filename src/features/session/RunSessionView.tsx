@@ -16,7 +16,7 @@ import { runRecorder, type StrapLink } from '@/lib/runRecorder'
 import { summarizeRecording, type RunRecording } from '@/lib/runRecording'
 import { uploadRecording } from '@/lib/runRecordingUpload'
 import { cancelRunWalkCues, scheduleRunWalkCues } from '@/lib/notifications'
-import { runWalkAt, runWalkCueTimes, runWalkSegments, runWalkWord, type RunWalkShape } from '@/lib/timers/runWalk'
+import { movePlan, planOnRunClock, runWalkAt, runWalkCueTimes, runWalkSegments, runWalkWord, type PlanMove, type RunWalkShape } from '@/lib/timers/runWalk'
 import { assessRunCompletion, shouldShowRunRealityMark } from '@/lib/trainingReality'
 import { parseDurationToSec } from '@/lib/duration'
 import { NARUTO_NETFLIX_URL, ONEPACE_URL, type IndoorMedia } from '@/lib/onePace'
@@ -30,7 +30,7 @@ import {
   type StopwatchSnap,
 } from '@/lib/sessionResume'
 import { clampTalkHr, talkTestStart, talkTestToSave, TALK_TEST_RANGE } from '@/lib/blockZero/talkTest'
-import { heatFor, workLabel } from '@/lib/timers/timerLook'
+import { backStep, heatFor, workLabel } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
 import { setWorldBackdrop } from '@/world/worldStore'
 
@@ -166,6 +166,11 @@ export function RunSessionView({
   const runPaused = stopwatch?.state === 'paused'
   const elapsed = stopwatch ? Math.floor(stopwatchElapsedMs(stopwatch, nowMs) / 1000) : 0
   const runStartedAtMs = !stopwatch ? 0 : stopwatch.state === 'running' ? stopwatch.startedAtMs : nowMs - stopwatch.elapsedMs
+  // Page 85: a swipe moves the plan, never the run clock (lib/timers/runWalk movePlan). The plan's
+  // clock is the run clock plus planShift; planMoves counts the swipes so the lock card flashes at each.
+  const [planShift, setPlanShift] = useState(() => Number(draft.planShift) || 0)
+  const [planMoves, setPlanMoves] = useState(() => Number(draft.planMoves) || 0)
+  const lastBackAt = useRef<number | null>(null)
 
   const [distance, setDistance] = useState(draft.distance ?? '')
   const [duration, setDuration] = useState(draft.duration ?? '')
@@ -225,10 +230,10 @@ export function RunSessionView({
       stopwatch,
       isIndoor,
       media,
-      draft: { distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, ...(resumeOnClose ? { resumeOnClose: '1' } : {}), ...(talkTouched ? { talkHr: String(talkHr) } : {}), ...(fiveK ? { fiveK } : {}) },
+      draft: { distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, ...(resumeOnClose ? { resumeOnClose: '1' } : {}), ...(talkTouched ? { talkHr: String(talkHr) } : {}), ...(fiveK ? { fiveK } : {}), ...(planShift ? { planShift: String(planShift) } : {}), ...(planMoves ? { planMoves: String(planMoves) } : {}) },
       ...(runId ? { runId } : {}),
     })
-  }, [onPersist, phase, stopwatch, isIndoor, media, distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, runId, resumeOnClose, talkTouched, talkHr, fiveK])
+  }, [onPersist, phase, stopwatch, isIndoor, media, distance, duration, avgHr, maxHr, onePaceArc, onePaceEp, runId, resumeOnClose, talkTouched, talkHr, fiveK, planShift, planMoves])
 
   useWakeLock(ticking)
 
@@ -324,7 +329,7 @@ export function RunSessionView({
     // less the planned warm-up (the GPS's 5.00 km mark outside, when it has one); he can change it.
     if (hard?.kind === 'test' && stopwatch && !fiveK) {
       const t = Math.floor(stopwatchElapsedMs(stopwatch, now) / 1000)
-      const open = hardSegments(hard, null).find(x => x.sec === Infinity)
+      const open = (hardSegs ?? []).find(x => x.sec === Infinity)
       if (open && t > open.startSec) setFiveK(mmss(t - open.startSec))
     }
     setResumeOnClose(stopwatch?.state === 'running')
@@ -359,28 +364,29 @@ export function RunSessionView({
     })
   }
 
-  /** Run-walk, from the lock screen's skip stone: on to the next piece (run <-> walk). Never the finish. */
-  function skipPiece() {
-    if (phase !== 'running' || !stopwatch) return
+  /**
+   * Page 85, a Run-Walk or a hard run: the plan moves, the run clock, distance, heart rate and
+   * recording go on. Skip (a swipe up, the lock screen's skip stone): the next piece starts now,
+   * never the finish, never out of the test's 5 km. Back (a swipe down): the piece starts again;
+   * again within 3 s, the piece before. Paused stays paused. The screen, the lock card, the
+   * recorder's pieces and cues all follow from the shift (the effects below send them again).
+   */
+  function movePiece(move: PlanMove) {
+    const plan = hardPlanSegs ?? planSegments
+    if (phase !== 'running' || !stopwatch || !plan) return
     const now = Date.now()
-    const elapsedMs = stopwatchElapsedMs(stopwatch, now)
-    // A hard run: the 5K test's 5 km ends here; another piece jumps to its end (page 76).
-    if (hardSegs) {
-      const hp = hardAt(hardSegs, elapsedMs / 1000)
-      if (hp.done || hp.index >= hardSegs.length - 1) return
-      // The 5K test's 5 km runs until he finishes the run (the grass hold): nothing skips it.
-      if (hp.segment.sec === Infinity) return
-      const jump = Math.max(0, (hp.segment.startSec + hp.segment.sec) * 1000 - elapsedMs)
-      setStopwatch(sw => (!sw ? sw : sw.state === 'running' ? { state: 'running', startedAtMs: sw.startedAtMs - jump } : { state: 'paused', elapsedMs: sw.elapsedMs + jump }))
-      setNowMs(now)
-      return
-    }
-    if (!segments) return
-    const pos = runWalkAt(segments, elapsedMs / 1000)
-    if (pos.done || pos.index >= segments.length - 1) return
-    const jumpMs = Math.max(0, (pos.segment.startSec + pos.segment.sec) * 1000 - elapsedMs)
-    setStopwatch(sw => (!sw ? sw : sw.state === 'running' ? { state: 'running', startedAtMs: sw.startedAtMs - jumpMs } : { state: 'paused', elapsedMs: sw.elapsedMs + jumpMs }))
+    const next = movePlan(plan, planShift, Math.floor(stopwatchElapsedMs(stopwatch, now) / 1000), move)
+    if (next == null) return
+    setPlanShift(next)
+    setPlanMoves(m => m + 1)
     setNowMs(now)
+  }
+  const skipPiece = () => movePiece('skip')
+  function backPiece() {
+    const now = Date.now()
+    const step = backStep(lastBackAt.current, now)
+    lastBackAt.current = now
+    movePiece(step)
   }
 
   async function handleSave() {
@@ -526,28 +532,36 @@ export function RunSessionView({
   const runTypeLabel = walkOnly ? WALK_ONLY_NAME : prescription?.name ?? (prescription ? (RUN_TYPE_LABELS[prescription.runType] ?? 'Run') : 'Zone 2 Run')
   const timerEstimate = prescription?.targetDurSec ?? 3600
 
-  const remaining = Math.max(0, timerEstimate - elapsed)
-  // The run-walk's intervals on the same run clock (null: one countdown, as before).
-  const segments = useMemo(() => runWalkSegments(prescription?.runWalk), [prescription?.runWalk])
+  // The whole run's time left, on the plan's clock (a skip brings the end nearer; Zone 2 never shifts).
+  const remaining = Math.max(0, timerEstimate - planShift - elapsed)
+  // The run-walk's intervals on the same run clock (null: one countdown, as before), moved by the swipes.
+  const planSegments = useMemo(() => runWalkSegments(prescription?.runWalk), [prescription?.runWalk])
+  const segments = useMemo(() => (planSegments ? planOnRunClock(planSegments, planShift) : null), [planSegments, planShift])
   const rwPos = segments ? runWalkAt(segments, elapsed) : null
   const rwIndex = rwPos?.index ?? -1
 
   // ─── A hard run's pieces on the run clock (page 76 §4) ───
-  const hardSegs = useMemo(() => (hard ? hardSegments(hard) : null), [hard])
+  const hardPlanSegs = useMemo(() => (hard ? hardSegments(hard) : null), [hard])
+  const hardSegs = useMemo(() => (hardPlanSegs ? planOnRunClock(hardPlanSegs, planShift) : null), [hardPlanSegs, planShift])
   const hPos = hardSegs ? hardAt(hardSegs, elapsed) : null
+  // The lock card's change counter (lib/lockGlow): the piece, moved on by 2 at every swipe so a
+  // restart (same piece) and a step back (piece before) flash the card as a natural change does.
+  const glowSeqOf = (index: number) => Math.max(0, index) + 1 + 2 * planMoves
   const hSeg: HardSegment | null = hPos && !hPos.done ? hPos.segment : null
   // Outside, the GPS marks the time at 5.00 km from where the 5 km began (finishing is still the grass hold).
-  const testFrom = useRef<number | null>(null)
+  // A swipe down restarts the 5 km from here (its start moves): the mark starts again too.
+  const testFrom = useRef<{ startSec: number; distM: number } | null>(null)
   useEffect(() => {
     if (!hSeg || hSeg.sec !== Infinity || isIndoor) { if (!hSeg || hSeg.sec !== Infinity) testFrom.current = null; return }
-    if (testFrom.current == null) { testFrom.current = live.distanceM; return }
-    if (!fiveK && live.distanceM - testFrom.current >= 5000) setFiveK(mmss(Math.max(0, elapsed - hSeg.startSec)))
+    if (testFrom.current?.startSec !== hSeg.startSec) { testFrom.current = { startSec: hSeg.startSec, distM: live.distanceM }; return }
+    if (!fiveK && live.distanceM - testFrom.current.distM >= 5000) setFiveK(mmss(Math.max(0, elapsed - hSeg.startSec)))
     // Only each distance tick matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hSeg?.sec, hSeg?.startSec, live.distanceM, isIndoor])
   // The recorder plays the cues by itself on the run clock (locked too); sent again after a skip, a
-  // resume, the 5 km, a unit or place change. Paused: it waits.
-  const cueKey = hard && hardSegs && phase === 'running' && stopwatch?.state === 'running' && runId ? `${runId}:${stopwatch.startedAtMs}:${isIndoor}:${unit}` : null
+  // resume, the 5 km, a unit or place change. Paused: it waits. After a swipe (page 85) the new piece's
+  // words are due at the clock now, so the recorder plays them as at a natural change.
+  const cueKey = hard && hardSegs && phase === 'running' && stopwatch?.state === 'running' && runId ? `${runId}:${stopwatch.startedAtMs}:${isIndoor}:${unit}:${planShift}:${planMoves}` : null
   useEffect(() => {
     if (!cueKey || !hardSegs || !stopwatch) return
     const clockSec = Math.floor(stopwatchElapsedMs(stopwatch, Date.now()) / 1000)
@@ -557,13 +571,14 @@ export function RunSessionView({
   }, [cueKey])
   // Page 84: the pieces, for the recorder to move the lock card on at each one while the phone is
   // locked (sent with the run clock now, again after a skip or a resume, as the cues are).
-  const pieceKey = (hardSegs || segments) && phase === 'running' && stopwatch?.state === 'running' && runId ? `${runId}:${stopwatch.startedAtMs}` : null
+  // A swipe sends them again on the moved plan, the change counter (seq) moved on so the card flashes.
+  const pieceKey = (hardSegs || segments) && phase === 'running' && stopwatch?.state === 'running' && runId ? `${runId}:${stopwatch.startedAtMs}:${planShift}:${planMoves}` : null
   useEffect(() => {
     if (!pieceKey || !stopwatch) return
     const clockSec = Math.floor(stopwatchElapsedMs(stopwatch, Date.now()) / 1000)
     const list: RecorderPiece[] = hardSegs && hard
-      ? hardSegs.map((h, i) => ({ startSec: h.startSec, sec: Number.isFinite(h.sec) ? h.sec : 0, open: !Number.isFinite(h.sec), estSec: hard.pieces[i]?.sec ?? h.sec, phase: phaseTone(h.kind) === 'teal' ? 'rest' as const : 'active' as const, word: phaseWord(h.kind), round: h.round, total: h.round > 0 ? hard.reps : 0, seq: i + 1 }))
-      : (segments ?? []).map((g, i) => ({ startSec: g.startSec, sec: g.sec, open: false, estSec: g.sec, phase: g.kind === 'run' ? 'active' as const : 'rest' as const, round: g.round, total: g.round > 0 ? (prescription?.runWalk?.rounds ?? 0) : 0, seq: i + 1 }))
+      ? hardSegs.map((h, i) => ({ startSec: h.startSec, sec: Number.isFinite(h.sec) ? h.sec : 0, open: !Number.isFinite(h.sec), estSec: hard.pieces[i]?.sec ?? h.sec, phase: phaseTone(h.kind) === 'teal' ? 'rest' as const : 'active' as const, word: phaseWord(h.kind), round: h.round, total: h.round > 0 ? hard.reps : 0, seq: glowSeqOf(i) }))
+      : (segments ?? []).map((g, i) => ({ startSec: g.startSec, sec: g.sec, open: false, estSec: g.sec, phase: g.kind === 'run' ? 'active' as const : 'rest' as const, round: g.round, total: g.round > 0 ? (prescription?.runWalk?.rounds ?? 0) : 0, seq: glowSeqOf(i) }))
     void runRecorder().pieces({ pieces: list, clockSec }).catch(() => {})
     // pieceKey holds every input that matters
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -575,17 +590,19 @@ export function RunSessionView({
     return () => window.clearTimeout(t)
   }, [nudge])
 
-  // A cue at every run / walk change while the app is open (the lock screen gets notifications).
-  const rwIndexRef = useRef<number | null>(null)
+  // A cue at every run / walk change while the app is open (the lock screen gets notifications);
+  // a swipe (page 85) sounds the same, a restart of the same piece too.
+  const rwIndexRef = useRef<string | null>(null)
+  const rwMark = `${rwIndex}:${planMoves}`
   useEffect(() => {
     if (phase !== 'running' || !segments || rwIndex < 0) { rwIndexRef.current = null; return }
     const prev = rwIndexRef.current
-    rwIndexRef.current = rwIndex
-    if (prev == null || prev === rwIndex || rwPos?.done) return
+    rwIndexRef.current = rwMark
+    if (prev == null || prev === rwMark || rwPos?.done) return
     if (segments[rwIndex].kind === 'run') soundRoundStart()
     else soundRoundEnd()
     mediumHaptic()
-  }, [phase, segments, rwIndex, rwPos?.done])
+  }, [phase, segments, rwIndex, rwMark, rwPos?.done])
 
   // Locked screen: every change is scheduled up front from the clock's start; a pause cancels them.
   const rwCueStart = phase === 'running' && segments && stopwatch?.state === 'running' ? stopwatch.startedAtMs : null
@@ -646,9 +663,9 @@ export function RunSessionView({
     ...(hard && hSeg ? { runPhase: phaseWord(hSeg.kind), ...(hSeg.round > 0 ? { stepIndex: hSeg.round, stepTotal: hard.reps } : {}) } : {}),
     // Page 82: the moment's colour and the change counter (each piece; Zone 2: the run's time reached).
     ...(hard && hPos
-      ? hardRunGlow(hPos.index, hSeg != null && phaseTone(hSeg.kind) === 'teal', zone === 'over')
+      ? { ...hardRunGlow(hPos.index, hSeg != null && phaseTone(hSeg.kind) === 'teal', zone === 'over'), glowSeq: glowSeqOf(hPos.index) }
       : rwPos
-        ? runWalkGlow(rwPos.index, !rwPos.done && rwPos.segment.kind !== 'run', zone)
+        ? { ...runWalkGlow(rwPos.index, !rwPos.done && rwPos.segment.kind !== 'run', zone), glowSeq: glowSeqOf(rwPos.index) }
         : zone2Glow(zone, remaining === 0 && elapsed > 0)),
   }
   const livePiece: RunPiece | null = hard && hSeg
@@ -671,7 +688,7 @@ export function RunSessionView({
               ? { ...pieceTimes(livePiece, runStartedAtMs, elapsed, runPaused), isPaused: runPaused }
               : {
                   startedAt: runStartedAtMs,
-                  endsAt: runPaused ? nowMs + remaining * 1000 : runStartedAtMs + timerEstimate * 1000,
+                  endsAt: runPaused ? nowMs + remaining * 1000 : runStartedAtMs + (timerEstimate - planShift) * 1000,
                   isPaused: runPaused,
                   pausedRemaining: runPaused ? remaining : undefined,
                 }),
@@ -707,7 +724,7 @@ export function RunSessionView({
       // The card swiped away leaves the session (still in progress, resumable); nothing ends.
       onExit?.()
     },
-    // The skip stone (run-walk only): the next piece, run <-> walk. An easy run has no skip,
+    // The skip stone (a Run-Walk or a hard run): the next piece, as the grass's swipe up. An easy run has no skip,
     // and nothing on the lock screen ever finishes the run.
     onAdvance: () => {
       if (phase === 'running' && (segments || hardSegs)) skipPiece()
@@ -798,11 +815,16 @@ export function RunSessionView({
   // Run-walk: the clock counts down the interval you are in (WALK teal like a rest, RUN gold),
   // with RUN 2/6 beside the title. Without intervals: the one countdown.
   const logging = phase === 'logging'
+  // Page 85: the swipes, on a Run-Walk and a hard run only (Zone 2 and Walk or Bike are one piece).
+  // Up only while there is a next piece to go to (not the last, not the test's open 5 km).
+  const pieceRun = !walkOnly && (hardSegs != null || segments != null)
+  const canBack = pieceRun && !logging
+  const canSkip = canBack && (hPos ? !hPos.done && hPos.index < (hardSegs?.length ?? 0) - 1 && Number.isFinite(hPos.segment.sec) : !!rwPos && !rwPos.done && rwPos.index < (segments?.length ?? 0) - 1)
   const seg = rwPos && !rwPos.done ? rwPos.segment : null
   const walking = seg != null && seg.kind !== 'run'
   const shown = seg ? rwPos!.remainingSec : Math.max(0, remaining)
   const heat = seg ? (walking ? null : heatFor(shown)) : remaining > 0 ? heatFor(shown) : null
-  const segEnd = seg ? seg.startSec + seg.sec : timerEstimate
+  const segEnd = seg ? seg.startSec + seg.sec : timerEstimate - planShift
   const track: TimerTrack = {
     durationSec: seg ? seg.sec : timerEstimate,
     endsAtMs: runPaused || !runStartedAtMs ? null : runStartedAtMs + segEnd * 1000,
@@ -899,8 +921,8 @@ export function RunSessionView({
         onEndAndLog={openLog}
         closeHead={walkOnly ? sentenceCase(WALK_ONLY_NAME) : prescription?.runWalk ? 'Run-walk' : sentenceCase(runTypeLabel)}
         paused={runPaused && !logging}
-        grass={hard ? <GrassZone track={hTrack} kind={hEasy ? 'rest' : 'work'} heat={hHeat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} zone={zone} hold={{ onHeld: openLog, held: logging }} />
-          : <GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} zone={zone} hold={{ onHeld: openLog, held: logging }} />}
+        grass={hard ? <GrassZone track={hTrack} kind={hEasy ? 'rest' : 'work'} heat={hHeat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} onSkip={canSkip ? skipPiece : undefined} onBack={canBack ? backPiece : undefined} zone={zone} hold={{ onHeld: openLog, held: logging }} />
+          : <GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} onSkip={canSkip ? skipPiece : undefined} onBack={canBack ? backPiece : undefined} zone={zone} hold={{ onHeld: openLog, held: logging }} />}
       >
         {hardMid || easyMid}
       </SessionFrame>

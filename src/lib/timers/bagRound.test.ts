@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import {
   bagComboSize, CUE_SHOW_SEC, cueShown, flapWidth, LOCK_COMBO_MAX, LOCK_COMBO_MIN, lockComboLines, lockComboSize,
   lockLineWidth, roundClockText, splitTwoLines, stackHeight, thenHeight, viewFits, type BagRoundView,
+  roundsBack,
 } from './bagRound'
 import { comboStrikes } from './timerLook'
 
@@ -118,6 +119,22 @@ test('X11: a long single strike keeps about 25 px clear at each side of a 390 pt
   const px = bagComboSize([{ now: ['REAR ROUNDHOUSE'], then: [] }], { width: 390, height: 420 })
   const w = flapWidth('REAR ROUNDHOUSE', px, px * 0.05)
   assert.ok(w <= 390 - 50, `${w} px wide at ${px} px`)
+})
+
+test('page 85: a swipe down restarts the part, again goes to the part before', () => {
+  const rest = () => 60
+  assert.deepEqual(roundsBack({ round: 2, sub: 'fighting' }, 'restart', rest), { round: 2, sub: 'fighting' })
+  assert.deepEqual(roundsBack({ round: 2, sub: 'rest' }, 'restart', rest), { round: 2, sub: 'rest' })
+  assert.deepEqual(roundsBack({ round: 2, sub: 'fighting' }, 'previous', rest), { round: 1, sub: 'rest' }) // the rest before it
+  assert.deepEqual(roundsBack({ round: 2, sub: 'rest' }, 'previous', rest), { round: 2, sub: 'fighting' }) // its own round
+  // READY has not begun: straight to the part before.
+  assert.deepEqual(roundsBack({ round: 2, sub: 'ready' }, 'restart', rest), { round: 1, sub: 'rest' })
+  // A 0:00 rest is no part: the round before.
+  assert.deepEqual(roundsBack({ round: 2, sub: 'fighting' }, 'previous', () => 0), { round: 1, sub: 'fighting' })
+  // The first round only restarts.
+  assert.deepEqual(roundsBack({ round: 0, sub: 'fighting' }, 'previous', rest), { round: 0, sub: 'fighting' })
+  assert.deepEqual(roundsBack({ round: 0, sub: 'ready' }, 'previous', rest), { round: 0, sub: 'ready' })
+  assert.deepEqual(roundsBack({ round: 0, sub: 'rest' }, 'previous', rest), { round: 0, sub: 'fighting' })
 })
 
 console.log(`\n${passed} bag round tests passed`)

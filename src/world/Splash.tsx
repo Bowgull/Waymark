@@ -122,8 +122,15 @@ export function Splash({ onDone }: { onDone: () => void }) {
   function onPointerDown() {
     if (press.current) window.clearTimeout(press.current.timer)
     const p = { at: performance.now(), timer: 0 }
-    p.timer = window.setTimeout(() => { press.current = null; skip('hold') }, SPLASH_HOLD_MS)
+    p.timer = window.setTimeout(() => { press.current = null; swallowReleaseClick(); skip('hold') }, SPLASH_HOLD_MS)
     press.current = p
+  }
+  // iOS took the touch: no skip
+  function onPointerCancel() {
+    const p = press.current
+    if (!p) return
+    press.current = null
+    window.clearTimeout(p.timer)
   }
   function onPointerUp() {
     const p = press.current
@@ -140,6 +147,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
       role="img"
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onContextMenu={e => e.preventDefault()}
     >
       <div className="wm-splash-stage">
@@ -152,4 +160,20 @@ export function Splash({ onDone }: { onDone: () => void }) {
       </div>
     </div>
   )
+}
+
+/**
+ * The finger lifting after a hold-skip is not a tap: Today is already fading
+ * up under it, so its click would land on whatever sits there. Swallow it.
+ */
+function swallowReleaseClick(): void {
+  const swallow = (e: MouseEvent) => { e.stopPropagation(); e.preventDefault() }
+  const lifted = () => {
+    window.removeEventListener('pointerup', lifted, { capture: true })
+    window.removeEventListener('pointercancel', lifted, { capture: true })
+    window.setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 400)
+  }
+  window.addEventListener('click', swallow, { capture: true })
+  window.addEventListener('pointerup', lifted, { capture: true })
+  window.addEventListener('pointercancel', lifted, { capture: true })
 }

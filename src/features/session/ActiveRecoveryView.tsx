@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { FlapLabel } from '@/design'
 import { GrassZone, HeroClock, NextLine, PhaseWord, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
@@ -22,6 +22,7 @@ import {
   type RecoveryPhase,
   type TimerSnap,
 } from '@/lib/sessionResume'
+import { backMove, freshSnap, previousRecoveryPart, restartSnap, runOf, type RecoveryPart } from '@/lib/timers/swipeBack'
 import { useWakeLock } from '@/lib/wakeLock'
 
 import { resolveActiveRecoveryMoment } from './activeRecoveryMicrocopy'
@@ -290,6 +291,51 @@ export function ActiveRecoveryView({
     setRollTimer(timerStart(rollSteps[next].area.sec, Date.now()))
   }
 
+  // Page 85, swipe down on the grass: restart this part; again within 3 s, the part before (the
+  // hip hold before, the walk before the first; the rolling step before, the last hip hold before
+  // the first), from its full time, paused stays paused. The hip block's done flag on the server
+  // stays set (it was done once); finishing it again only sets it again, so nothing doubles.
+  const hipIsHold = useMemo(() => hipSteps.map(st => st.movement.mode === 'hold' && (st.movement.holdSec ?? 0) > 0), [hipSteps])
+  const lastBackRef = useRef<number | null>(null)
+  function goBack() {
+    if (phase !== 'walk' && phase !== 'hip' && phase !== 'roll') return
+    const now = Date.now()
+    const part: RecoveryPart = phase === 'walk' ? { phase } : phase === 'hip' ? { phase, hipIdx } : { phase, rollIdx }
+    const cur = phase === 'walk' ? walkTimer : phase === 'hip' ? hipTimer : rollTimer
+    const prev = previousRecoveryPart(part, hipIsHold)
+    const move = backMove(lastBackRef.current, now, prev != null, cur != null)
+    lastBackRef.current = now
+    setNowMs(now)
+    if (move === 'restart' || !prev) {
+      if (phase === 'walk') setWalkTimer(restartSnap(walkTimer, walkSec, now))
+      else if (phase === 'hip') setHipTimer(restartSnap(hipTimer, hipHoldSec, now))
+      else if (currentRollStep) {
+        setRollIdx(rollIdx)
+        setRollTimer(restartSnap(rollTimer, currentRollStep.area.sec, now))
+      }
+      return
+    }
+    const run = runOf(cur)
+    if (prev.phase === 'roll') {
+      setRollIdx(prev.rollIdx)
+      setRollTimer(freshSnap(run, rollSteps[prev.rollIdx].area.sec, now))
+      return
+    }
+    // Out of the rolling block or the hips: their clocks stop (rolling starts fresh from its intro again).
+    setRollIdx(0)
+    setRollTimer(null)
+    if (prev.phase === 'hip') {
+      setHipIdx(prev.hipIdx)
+      setHipTimer(freshSnap(run, hipSteps[prev.hipIdx].movement.holdSec ?? 0, now))
+      setPhase('hip')
+      return
+    }
+    setHipIdx(0)
+    setHipTimer(null)
+    setWalkTimer(freshSnap(run, walkSec, now))
+    setPhase('walk')
+  }
+
   // ───── Render helpers ─────
 
   const hipMovementHasTimer = currentHipStep?.movement.mode === 'hold'
@@ -463,7 +509,7 @@ export function ActiveRecoveryView({
         title="RECOVERY"
         onEnd={onExit}
         paused={walkPaused}
-        grass={<GrassZone track={track} kind="hold" state={!walkRunning ? 'ready' : walkPaused ? 'paused' : 'running'} onTap={!walkRunning ? startWalkTimer : done ? undefined : () => toggleWalkPause()} onSkip={walkRunning ? startHipBlock : undefined} />}
+        grass={<GrassZone track={track} kind="hold" state={!walkRunning ? 'ready' : walkPaused ? 'paused' : 'running'} onTap={!walkRunning ? startWalkTimer : done ? undefined : () => toggleWalkPause()} onSkip={walkRunning ? startHipBlock : undefined} onBack={goBack} />}
       >
         <TimerColumn>
           <div className="tm-topx">
@@ -487,7 +533,7 @@ export function ActiveRecoveryView({
         count={`${currentHipStep.index + 1} OF ${HIP_MOBILITY_MOVEMENTS.length}`}
         onEnd={onExit}
         paused={hipPaused}
-        grass={<GrassZone track={track} kind="hold" state={!hipRunning ? 'ready' : hipPaused ? 'paused' : 'running'} onTap={!hipRunning ? startHipHold : hipReachedTarget ? undefined : () => toggleHipPause()} onSkip={hipRunning ? advanceHip : undefined} />}
+        grass={<GrassZone track={track} kind="hold" state={!hipRunning ? 'ready' : hipPaused ? 'paused' : 'running'} onTap={!hipRunning ? startHipHold : hipReachedTarget ? undefined : () => toggleHipPause()} onSkip={hipRunning ? advanceHip : undefined} onBack={goBack} />}
       >
         <TimerColumn>
           <div className="tm-brd">
@@ -513,7 +559,7 @@ export function ActiveRecoveryView({
         count={`${currentRollStep.areaIndex + 1} OF ${FOAM_ROLLING_AREAS.length}`}
         onEnd={onExit}
         paused={rollPaused}
-        grass={<GrassZone track={track} kind="hold" state={rollPaused ? 'paused' : 'running'} onTap={rollReachedTarget ? undefined : () => toggleRollPause()} onSkip={skipRollZone} />}
+        grass={<GrassZone track={track} kind="hold" state={rollPaused ? 'paused' : 'running'} onTap={rollReachedTarget ? undefined : () => toggleRollPause()} onSkip={skipRollZone} onBack={goBack} />}
       >
         <TimerColumn>
           <div className="tm-brd">

@@ -9,7 +9,9 @@ import {
 } from '@/lib/notifications'
 import { soundRoundEnd, soundRoundStart } from '@/lib/sounds'
 import { SKIP_ROPE_REST_SEC, isStaleCue, type EngineState } from '@/lib/sessionResume'
-import { heatFor, workLabel } from '@/lib/timers/timerLook'
+import { roundsBack, type RoundSpot } from '@/lib/timers/bagRound'
+import { freshSnap } from '@/lib/timers/swipeBack'
+import { backStep, heatFor, workLabel } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
 
 import { useRestTimer } from './useRestTimer'
@@ -247,6 +249,41 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
     else if (resting) nextRound()
   }
 
+  /**
+   * A swipe down (page 85): the round or rest from its full length; another
+   * within 3 s goes to the part before (lib/timers/bagRound roundsBack). Its
+   * bell plays (paused too, so he hears it moved), and the cues and the lock
+   * card move with it as at a natural change; paused stays paused. Nothing is
+   * logged: a round counts when it ends, and ending it again only replaces
+   * its seconds.
+   */
+  const lastBackAt = useRef<number | null>(null)
+  function back() {
+    const t = Date.now()
+    const step = backStep(lastBackAt.current, t)
+    lastBackAt.current = t
+    const at: RoundSpot = { round: currentRound - 1, sub: skipping ? 'fighting' : skipPhase === 'rest' ? 'rest' : 'ready' }
+    const to = roundsBack(at, step, () => SKIP_REST_SEC)
+    if (to.sub === 'ready') return
+    const wasPaused = paused
+    void cancelRoundActiveCues()
+    void cancelRestCues()
+    if (to.sub === 'fighting') {
+      restTimer.stop()
+      roundTimer.restore(freshSnap(wasPaused ? 'paused' : 'running', skipSession.roundDurSec, t))
+      soundRoundStart()
+      if (!wasPaused) void scheduleRoundCuesUntil(t + skipSession.roundDurSec * 1000, to.round + 1 >= totalRounds ? null : SKIP_REST_SEC)
+      setSkipPhase('skipping')
+    } else {
+      roundTimer.stop()
+      restTimer.restore(freshSnap(wasPaused ? 'paused' : 'running', SKIP_REST_SEC, t))
+      soundRoundEnd()
+      if (!wasPaused) void scheduleRestCuesUntil(t + SKIP_REST_SEC * 1000)
+      setSkipPhase('rest')
+    }
+    setCurrentRound(to.round + 1)
+  }
+
   return (
     <SessionFrame
       title="SKIP ROPE"
@@ -261,6 +298,7 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
           state={skipPhase === 'ready' ? 'ready' : paused ? 'paused' : 'running'}
           onTap={skipPhase === 'ready' ? startRound : togglePause}
           onSkip={skipPhase === 'ready' ? undefined : skip}
+          onBack={skipPhase === 'ready' && currentRound <= 1 ? undefined : back}
         />
       }
     >

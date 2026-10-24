@@ -50,6 +50,7 @@ import { useToast } from '@/components/ui/Toast'
 import { GrassZone, HeroClock, PhaseWord, SessionButton, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { FlapLabel, SESSION_ICON_NAME, armCascade, sessionIconFor } from '@/design'
 import { heatFor, momentLine, workLabel } from '@/lib/timers/timerLook'
+import { previousSetPosition, type BackRun } from '@/lib/timers/swipeBack'
 import { talkTestDue, TALK_TEST_WEEKS } from '@/lib/blockZero/talkTest'
 
 import { ActiveRecoveryView } from './ActiveRecoveryView'
@@ -283,7 +284,8 @@ type RoundPhase = 'ready' | 'fighting' | 'rest'
  * over the hero clock (page 84), the grass under it.
  * Before you start: READY, and the grass starts it (page 71, no start button).
  * Running: SKIP, then FINISH with the heat in the last 10 s; a swipe up the
- * grass moves on (no button copies the gesture).
+ * grass moves on (no button copies the gesture); a swipe down starts it again
+ * from its full time, paused staying paused (page 85: one part, no "before").
  */
 function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersist, onExit }: {
   durationSec: number
@@ -342,7 +344,7 @@ function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersi
       icon="rope"
       onEnd={onExit}
       paused={running && timer.isPaused}
-      grass={<GrassZone track={track} kind="work" mode={running ? 'work' : 'ready'} heat={heat} state={!running ? 'ready' : timer.isPaused ? 'paused' : 'running'} onTap={running ? togglePause : handleStart} onSkip={running ? onComplete : undefined} />}
+      grass={<GrassZone track={track} kind="work" mode={running ? 'work' : 'ready'} heat={heat} state={!running ? 'ready' : timer.isPaused ? 'paused' : 'running'} onTap={running ? togglePause : handleStart} onSkip={running ? onComplete : undefined} onBack={running ? () => { timer.restart() } : undefined} />}
     >
       {/* page 84: SKIP ROPE and its line small on top, the word over the clock (120); a swipe up the grass skips it */}
       <TimerColumn>
@@ -437,6 +439,8 @@ export function WorkoutPage() {
   const [unlockSuggestions, setUnlockSuggestions] = useState<{ suggestions: UnlockSuggestion[]; message: string } | null>(null)
   // Saved engine state handed to the engine view that mounts first after a resume.
   const [engineResume, setEngineResume] = useState<EngineState | null>(null)
+  // Page 85: a hold swiped back into the set before starts on its last step, as the clock was.
+  const [holdBackInto, setHoldBackInto] = useState<{ run: BackRun; at: number } | null>(null)
   // A session saved more than RESUME_AUTO_MAX_MS ago: ask resume or end.
   const [staleResume, setStaleResume] = useState<SessionResumeState | null>(null)
   const pendingRestoreRef = useRef<(() => void) | null>(null)
@@ -1127,9 +1131,11 @@ export function WorkoutPage() {
     const frTotalExercises = frExercises.length
     const frCurrentExercise = frExercises[exerciseIdx]
     const frTotalSets = frCurrentExercise?.sets ?? 1
+    const frPrevSet = previousSetPosition({ exerciseIdx, setIdx }, frExercises.map(e => e.sets ?? 1))
 
     function handleFrWarmupSetDone() {
       if (!frCurrentExercise) return
+      setHoldBackInto(null)
       apiFetch(`/api/mobility-exercises/${frCurrentExercise.id}`, {
         method: 'PATCH', body: JSON.stringify({ completed: 1 }),
       }).catch((e) => {
@@ -1172,6 +1178,8 @@ export function WorkoutPage() {
           onExit={leaveSession}
           resume={engineResume?.kind === 'hold' ? engineResume : null}
           onPersist={persistEngine}
+          backInto={holdBackInto}
+          onBackSet={frPrevSet ? (into) => { setHoldBackInto(into); setExerciseIdx(frPrevSet.exerciseIdx); setSetIdx(frPrevSet.setIdx) } : undefined}
         />
       )
     }
@@ -1208,8 +1216,10 @@ export function WorkoutPage() {
     const totalExercises = exercises.length
     const currentExercise = exercises[exerciseIdx]
     const totalSets = currentExercise?.sets ?? 1
+    const prevSet = previousSetPosition({ exerciseIdx, setIdx }, exercises.map(e => e.sets ?? 1))
 
     function handleMobilitySetDone() {
+      setHoldBackInto(null)
       if (currentExercise) {
         apiFetch(`/api/mobility-exercises/${currentExercise.id}`, {
           method: 'PATCH',
@@ -1252,6 +1262,8 @@ export function WorkoutPage() {
         onExit={leaveSession}
         resume={engineResume?.kind === 'hold' ? engineResume : null}
         onPersist={persistEngine}
+        backInto={holdBackInto}
+        onBackSet={prevSet ? (into) => { setHoldBackInto(into); setExerciseIdx(prevSet.exerciseIdx); setSetIdx(prevSet.setIdx) } : undefined}
       />
     )
   }
@@ -1445,6 +1457,12 @@ export function WorkoutPage() {
           onComplete={handleBagWorkComplete}
           onExit={leaveSession}
           onRoundDone={recordRoundSec}
+          // Page 85: swiped back into an earlier round, it mounts on that round's state like a resume.
+          onBackRound={st => {
+            setEngineResume(st)
+            setRoundPhase(st.sub)
+            setRoundIdx(st.round)
+          }}
           resume={engineResume?.kind === 'rounds' ? engineResume : null}
           onPersist={persistEngine}
         />
@@ -1635,6 +1653,12 @@ export function WorkoutPage() {
               void cancelStrengthRestEnd()
               restTimer.pause()
             }
+          },
+          // Page 85: swipe down restarts the rest only (paused stays paused); the set stays saved.
+          onRestart: () => {
+            void cancelStrengthRestEnd()
+            const endsAt = restTimer.restart()
+            if (endsAt > Date.now()) void scheduleStrengthRestEnd(endsAt)
           },
         } : undefined}
         onSetComplete={handleSetComplete}

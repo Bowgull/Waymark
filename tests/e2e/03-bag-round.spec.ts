@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { enterFromToday, grass, grassPaused, grassToStart, insertSession, timerSeconds, swipeUpGrass } from './support/helpers'
+import { enterFromToday, grass, grassPaused, grassToStart, insertSession, timerSeconds, swipeDownGrass, swipeUpGrass } from './support/helpers'
 
 /**
  * The bag round (page 55 layout 1) on a test clock: READY, then the round in
@@ -40,6 +40,7 @@ test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
   await expect(phase('FIGHT')).toBeVisible()
   const roundSec = await timerSeconds(page)
   expect(roundSec).toBeGreaterThanOrEqual(60)
+  const round1Combo = await page.locator('.bw-stack').getAttribute('aria-label')
   await expect(page).toHaveScreenshot('bag-work.png', { mask: [combos, digits] })
 
   // The last 10 s: FINISH in the heat.
@@ -55,6 +56,19 @@ test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
   const restSec = await timerSeconds(page)
   expect(restSec).toBeGreaterThan(10)
   await expect(page).toHaveScreenshot('bag-rest.png', { mask: [combos, digits] })
+
+  // Page 85: a swipe down restarts the rest; another within 3 s goes back into round 1, its combo back.
+  await swipeDownGrass(page)
+  await expect(phase('REST')).toBeVisible()
+  await swipeDownGrass(page)
+  await expect(phase('FIGHT')).toBeVisible()
+  await expect(page.getByRole('img', { name: /^Round 1 of \d+$/ })).toBeVisible()
+  if (round1Combo) await expect(page.locator('.bw-stack')).toHaveAttribute('aria-label', round1Combo)
+  expect(await timerSeconds(page)).toBeGreaterThanOrEqual(roundSec - 1)
+  // A swipe up: on to its rest again, from full.
+  await swipeUpGrass(page)
+  await expect(phase('REST')).toBeVisible()
+  await expect(page.getByRole('img', { name: /^Next round 2 of \d+$/ })).toBeVisible()
 
   // Tap the grass: paused (PAUSED · TAP TO GO ON). Tap again: running.
   await grass(page).tap()

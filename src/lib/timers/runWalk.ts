@@ -76,3 +76,55 @@ export function runWalkCount(segment: RunWalkSegment, rounds: number): string {
 export function runWalkCueTimes(segments: RunWalkSegment[]): Array<{ atSec: number; kind: RunWalkKind }> {
   return segments.slice(1).map(s => ({ atSec: s.startSec, kind: s.kind }))
 }
+
+// ─── Swipe back (page 85): the plan moves, the run clock never does ───
+// A swipe up skips to the next piece; a swipe down restarts the piece (again
+// within 3 s: the piece before). Distance, time, heart rate and the recording
+// keep going: only the plan's pieces move against the run clock. The move is
+// one number, the plan shift: the plan's clock is the run clock plus the shift.
+// The screen, the lock card, the recorder's pieces and cues all take the plan
+// as pieces on the run clock (planOnRunClock), so they follow at once.
+
+/** Any run piece (a Run-Walk segment, a hard run's piece): its start and length on the plan. Infinity: open. */
+export interface PlanPiece {
+  startSec: number
+  sec: number
+}
+
+export type PlanMove = 'skip' | 'restart' | 'previous'
+
+/** The plan's pieces on the run clock: each start less the shift (a piece already passed can start below 0). */
+export function planOnRunClock<T extends PlanPiece>(pieces: readonly T[], shiftSec: number): T[] {
+  if (!shiftSec) return pieces.slice()
+  return pieces.map(p => ({ ...p, startSec: p.startSec - shiftSec }))
+}
+
+/** The piece the plan's clock is in (past the end: the last one, `done`). */
+function planIndex(pieces: readonly PlanPiece[], planSec: number): { index: number; done: boolean } {
+  const t = Math.max(0, planSec)
+  for (let i = 0; i < pieces.length; i++) if (t < pieces[i].startSec + pieces[i].sec) return { index: i, done: false }
+  return { index: pieces.length - 1, done: true }
+}
+
+/**
+ * The plan shift after a swipe at run clock `elapsedSec` (null: nothing to
+ * move). Skip: the next piece starts now; never past the last piece, and never
+ * out of an open piece (the 5K test's 5 km ends with the finish hold). Restart:
+ * the piece you're in starts again now (past the end: the last piece).
+ * Previous: the piece before starts now (the first piece: it restarts).
+ */
+export function movePlan(pieces: readonly PlanPiece[], shiftSec: number, elapsedSec: number, move: PlanMove): number | null {
+  if (pieces.length === 0) return null
+  const planSec = Math.max(0, elapsedSec + shiftSec)
+  const { index, done } = planIndex(pieces, planSec)
+  const p = pieces[index]
+  let to: number
+  if (move === 'skip') {
+    if (done || index >= pieces.length - 1 || !Number.isFinite(p.sec)) return null
+    to = pieces[index + 1].startSec
+  } else {
+    to = pieces[move === 'previous' ? Math.max(0, index - 1) : index].startSec
+  }
+  const next = to - Math.max(0, elapsedSec)
+  return next === shiftSec ? null : next
+}

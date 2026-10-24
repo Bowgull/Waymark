@@ -8,6 +8,7 @@ import {
   timerStartAt,
   type TimerSnap,
 } from '@/lib/sessionResume'
+import { restartSnap } from '@/lib/timers/swipeBack'
 
 interface RestTimerState {
   secondsRemaining: number
@@ -27,6 +28,9 @@ interface RestTimerState {
   /** Resume with remaining time from pause (or an explicit new endsAt from Live Activity).
    *  Returns the wall-clock ms when the timer will expire, for precise notification scheduling. */
   resume: (newEndsAtMs?: number) => number
+  /** Page 85, swipe down: the same countdown again from its full length (paused stays paused).
+   *  Returns the new wall-clock end while running (0 paused or stopped), for the notification. */
+  restart: () => number
   /** Put a saved timer back (session resume). */
   restore: (snap: TimerSnap | null) => void
   /** The timer as it stands, for saving. */
@@ -92,6 +96,14 @@ export function useRestTimer(): RestTimerState {
     return next.state === 'running' ? next.endsAtMs : 0
   }, [apply])
 
+  const restart = useCallback((): number => {
+    const cur = snapRef.current
+    if (!cur) return 0
+    const next = restartSnap(cur, cur.durationSec, Date.now())
+    apply(next)
+    return next?.state === 'running' ? next.endsAtMs : 0
+  }, [apply])
+
   const restore = useCallback((next: TimerSnap | null) => apply(next), [apply])
   const snapshot = useCallback(() => snapRef.current, [])
 
@@ -112,6 +124,7 @@ export function useRestTimer(): RestTimerState {
     stop,
     pause,
     resume,
+    restart,
     restore,
     snapshot,
   }

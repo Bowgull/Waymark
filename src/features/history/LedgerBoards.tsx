@@ -224,10 +224,17 @@ const MOON_MARK = (
 function useOpenBoard() {
   const [open, setOpen] = useState(false)
   const [press, setPress] = useState(false)
-  const [pull, setPull] = useState(0)
+  const [dragging, setDragging] = useState(false)
   const ref = useRef<HTMLElement>(null)
-  const drag = useRef<{ y: number; moved: boolean } | null>(null)
+  const drag = useRef<{ y: number; moved: boolean; pull: number } | null>(null)
   const dragged = useRef(false)
+  // the pull follows the finger straight on the element (no render per move); let go, it eases back
+  const setPull = (dy: number) => {
+    const el = ref.current
+    if (!el) return
+    if (dy <= 0) el.classList.remove('is-drag')
+    el.style.transform = dy > 0 ? `translateY(${Math.min(dy, 120) * 0.6}px)` : ''
+  }
   const toggle = (on: boolean) => {
     setOpen(on)
     const el = ref.current
@@ -245,29 +252,28 @@ function useOpenBoard() {
     } else scroller.scrollTo({ top: 0, behavior: 'smooth' })
   }
   useOutsideClose(ref, open, () => toggle(false))
-  const className = `${open ? ' is-open' : ''}${press ? ' is-press' : ''}${pull ? ' is-drag' : ''}`
+  const className = `${open ? ' is-open' : ''}${press ? ' is-press' : ''}${dragging ? ' is-drag' : ''}`
   const props = {
     ref,
     role: 'button',
     tabIndex: 0,
     'aria-expanded': open,
-    style: pull ? { transform: `translateY(${Math.min(pull, 120) * 0.6}px)` } : undefined,
-    onPointerDown: (e: React.PointerEvent) => { drag.current = { y: e.clientY, moved: false }; setPress(true) },
+    onPointerDown: (e: React.PointerEvent) => { drag.current = { y: e.clientY, moved: false, pull: 0 }; dragged.current = false; setPress(true) },
     onPointerMove: (e: React.PointerEvent) => {
       const d = drag.current
       if (!d || !open) return
       const dy = Math.max(0, e.clientY - d.y)
-      if (dy > 6) { d.moved = true; setPress(false); setPull(dy) }
+      if (dy > 6) { if (!d.moved) { d.moved = true; setPress(false); setDragging(true) } d.pull = dy; setPull(dy) }
     },
     onPointerUp: () => {
       const d = drag.current
       drag.current = null
       dragged.current = Boolean(d?.moved)
       setPress(false)
-      if (d?.moved) { const dy = pull; setPull(0); if (dy > 50) toggle(false) }
+      if (d?.moved) { setPull(0); setDragging(false); if (d.pull > 50) toggle(false) }
     },
     onPointerLeave: () => { setPress(false) },
-    onPointerCancel: () => { drag.current = null; setPress(false); setPull(0) },
+    onPointerCancel: () => { drag.current = null; setPress(false); setPull(0); setDragging(false) },
     onClick: (e: React.MouseEvent) => {
       if (dragged.current) { dragged.current = false; return }
       if (open && (e.target as HTMLElement).closest('.lg-cdet')) return

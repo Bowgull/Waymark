@@ -142,6 +142,24 @@ export function positionAt(parts: IntervalPart[], elapsed: number): IntervalPosi
   return { index, part, left, shown, warn: shown > 0 && shown <= warnLen(part), done: false }
 }
 
+/** A swipe up (page 85): the next part's start, seconds in (the end once on the last part). */
+export function skipTargetSec(parts: IntervalPart[], elapsed: number): number {
+  const at = positionAt(parts, elapsed)
+  const next = parts[at.index + 1]
+  return next ? next.startSec : at.part.startSec + at.part.len
+}
+
+/**
+ * A swipe down (page 85): restart goes to this part's start; previous to the
+ * part before's (the rest before a round, the round before a rest). The first
+ * part only restarts.
+ */
+export function backTargetSec(parts: IntervalPart[], elapsed: number, step: 'restart' | 'previous'): number {
+  const at = positionAt(parts, elapsed)
+  const to = step === 'previous' ? Math.max(0, at.index - 1) : at.index
+  return parts[to].startSec
+}
+
 /** The phase word on the plate. */
 export function phaseWord(ph: IntervalPhase): string {
   return ph === 'ready' ? 'GET READY' : ph === 'work' ? 'WORK' : 'REST'

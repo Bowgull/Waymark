@@ -81,7 +81,9 @@
 .lg-tl.todo { --c: #23281f; }
 .lg-tl.miss { --c: #9c5a40; }
 .lg-tl.miss::after { content: ''; position: absolute; left: 18%; right: 18%; top: 50%; height: 1.6px; background: #f0d8c8; transform: rotate(-32deg); }
-.lg-cb { cursor: pointer; touch-action: pan-x; transition: transform 0.16s ease, box-shadow 0.16s ease; -webkit-tap-highlight-color: transparent; user-select: none; }
+.lg-cb { cursor: pointer; touch-action: manipulation; transition: transform 0.16s ease, box-shadow 0.16s ease; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+/* opened, its top (head and bar) is the pull-down handle; the rest of the board still scrolls the page */
+.lg-cb.is-open .lg-head, .lg-cb.is-open .lg-bar, .lg-cb.is-open .lg-bark { touch-action: pan-x; }
 .lg-cb.is-press { transform: translateY(-2px) scale(1.012); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.34), 0 8px 26px rgba(0, 0, 0, 0.6); }
 .lg-cb .lg-head .rt { display: flex; align-items: center; gap: 8px; }
 .lg-cb .lg-chev { width: 14px; height: 14px; display: grid; place-items: center; opacity: 0.75; }

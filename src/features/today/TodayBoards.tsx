@@ -4,19 +4,31 @@ import { useNavigate } from 'react-router-dom'
 import { Board, CloseWord, Crest, FlapButton, FlapLabel, SessionIcon, showPop, useOutsideClose, type SessionIconKey } from '@/design'
 import { getItem as storageGet, removeItem as storageRemove, setItem as storageSet } from '@/lib/safeStorage'
 import { apiFetch, idempotencyHeaders } from '@/lib/api'
+import { tapHaptic } from '@/lib/haptics'
 import { logger } from '@/lib/logger'
 import { markWaybookOpen, requireUnlock, setWaybookShown } from '@/lib/waybookGate'
 import { dateFlap } from './weekStrip'
 
 // The pieces of Today (pages 35, 36, 43), on the split-flap boards over the forest.
 
+/** A finger that slides this far off the crest lets go of the hold. */
+const CREST_SLOP_PX = 40
+
 /** The header: the crest and WAYMARK on a flap; the date on a flap. Long-press the crest for Logs. */
 export function TodayHeader({ date }: { date: Date }) {
   const navigate = useNavigate()
   const timer = useRef<number | null>(null)
   const held = useRef(false)
-  const start = () => { held.current = false; timer.current = window.setTimeout(() => { held.current = true; navigate('/settings/logs') }, 700) }
-  const stop = () => { if (timer.current) window.clearTimeout(timer.current); timer.current = null }
+  const at = useRef<{ x: number; y: number } | null>(null)
+  const start = (e: React.PointerEvent<HTMLButtonElement>) => {
+    held.current = false
+    // the finger stays the crest's until it lifts: a small drift never cancels the hold
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* not capturable */ }
+    at.current = { x: e.clientX, y: e.clientY }
+    timer.current = window.setTimeout(() => { timer.current = null; held.current = true; void tapHaptic(); navigate('/settings/logs') }, 700)
+  }
+  const stop = () => { if (timer.current) window.clearTimeout(timer.current); timer.current = null; at.current = null }
+  const move = (e: React.PointerEvent) => { const a = at.current; if (a && Math.hypot(e.clientX - a.x, e.clientY - a.y) > CREST_SLOP_PX) stop() }
   useEffect(() => stop, [])
   return (
     <header className="td-hd wm-scene-hd">
@@ -25,8 +37,8 @@ export function TodayHeader({ date }: { date: Date }) {
         className="td-brand"
         aria-label="Waymark. Hold for logs."
         onPointerDown={start}
+        onPointerMove={move}
         onPointerUp={stop}
-        onPointerLeave={stop}
         onPointerCancel={stop}
         onContextMenu={e => e.preventDefault()}
         onClick={() => { if (!held.current) window.scrollTo({ top: 0 }) }}
@@ -66,7 +78,7 @@ export function WaybookLine({ today, variant = 'day' }: { today: string; variant
     else storageRemove(draftKey)
   }
   const fold = () => { setOpen(false); setSaved(false) }
-  useOutsideClose(boxRef, open, fold)
+  useOutsideClose(boxRef, open, fold, { on: 'click' })
 
   // The 3 minutes without Face ID count from the last time the box was open.
   useEffect(() => {

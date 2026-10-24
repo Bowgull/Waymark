@@ -16,6 +16,8 @@
   background: rgba(2, 8, 6, 0.82);
   animation: wm-fade-in var(--t-quick) var(--ease-out) both;
 }
+/* vertical scroll only: a sideways swipe is the deck's (pass / back), never a half-taken pan */
+.bz-deck, .bz-deck .bz-overlay { touch-action: pan-y; }
 .bz-col { margin: auto 0; width: 100%; max-width: 406px; align-self: center; display: flex; flex-direction: column; gap: 10px; }
 
 /* page 45: every board on these screens is near-opaque */

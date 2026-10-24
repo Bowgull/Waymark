@@ -47,6 +47,8 @@ export interface CheckInDeckProps {
 }
 
 const SWIPE_PX = 60
+/** A card ignores input this long after it appears, so a double tap can't answer the next one too. */
+const CARD_SETTLE_MS = 300
 
 /**
  * The morning check-in (page 45, "Morning check-in cards"): a centred board
@@ -75,6 +77,15 @@ export function CheckInDeck({ date, existing, existingBackNotes, existingPassed,
   // which way the cards go (page 59 §5.3): the next card slides in from the right, Back from the left
   const [step, setStep] = useState<{ index: number; dir: 'next' | 'back' | null }>({ index: state.index, dir: null })
   if (step.index !== state.index) setStep({ index: state.index, dir: state.index > step.index ? 'next' : 'back' })
+  // when the card on show appeared (a new card, the back-notes board, or the deck opening)
+  const shownAt = useRef(0)
+  useLayoutEffect(() => { shownAt.current = performance.now() }, [state.index, state.askingBackNotes, phase])
+  /** A card's answer, pass or back: dropped while the card is still settling. */
+  function act(a: CheckInAction): boolean {
+    if (performance.now() - shownAt.current < CARD_SETTLE_MS) return false
+    dispatch(a)
+    return true
+  }
 
   // Each answer is saved as it is given (the last one goes with the full save below).
   const lastPartial = useRef<string | null>(null)
@@ -115,6 +126,10 @@ export function CheckInDeck({ date, existing, existingBackNotes, existingPassed,
   function onPointerDown(e: React.PointerEvent) {
     touch.current = { x: e.clientX, y: e.clientY }
   }
+  // iOS took the touch (a scroll, the edge swipe): nothing fires on a later release
+  function onPointerCancel() {
+    touch.current = null
+  }
   function onPointerUp(e: React.PointerEvent) {
     const start = touch.current
     touch.current = null
@@ -122,7 +137,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, existingPassed,
     const dx = e.clientX - start.x
     const dy = e.clientY - start.y
     if (Math.abs(dx) < SWIPE_PX || Math.abs(dx) < Math.abs(dy) * 1.5) return
-    dispatch(dx < 0 ? { type: 'pass' } : { type: 'back' })
+    act(dx < 0 ? { type: 'pass' } : { type: 'back' })
   }
 
   // + ADD NOTE: the daily log's note field (POST /api/daily-logs only writes the keys it is sent).
@@ -170,7 +185,7 @@ export function CheckInDeck({ date, existing, existingBackNotes, existingPassed,
   }
 
   return (
-    <div className="bz-deck" data-step={step.dir ?? undefined} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+    <div className="bz-deck" data-step={step.dir ?? undefined} onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}>
       {/* page 61: CLOSE (the answers given are kept), a tap on the veil, Escape, the edge swipe; it closes while saving too (the save carries on) */}
       <BzOverlay label="Morning check-in" onDismiss={() => onClose(phase === 'settled')}>
         <div className="bz-toprow">
@@ -194,8 +209,8 @@ export function CheckInDeck({ date, existing, existingBackNotes, existingPassed,
                   onChange={e => dispatch({ type: 'backNotes', text: e.target.value })}
                 />
                 <div className="wm-btns" style={{ marginTop: 10 }}>
-                  <FlapButton label="BACK" size="xs" onClick={() => dispatch({ type: 'back' })} />
-                  <FlapButton label="NEXT" primary size="sm" onClick={() => dispatch({ type: 'finishNotes' })} />
+                  <FlapButton label="BACK" size="xs" onClick={() => act({ type: 'back' })} />
+                  <FlapButton label="NEXT" primary size="sm" onClick={() => act({ type: 'finishNotes' })} />
                 </div>
               </Board>
             ) : (
@@ -210,13 +225,13 @@ export function CheckInDeck({ date, existing, existingBackNotes, existingPassed,
                     ? { value: o.value, label: o.label, sub: o.sub, swatch: SORENESS_COLOURS[i] }
                     : { value: o.value, label: o.label, sub: o.sub }))}
                   selected={state.answers[q.key] ?? null}
-                  onPick={v => { void selectHaptic(); dispatch({ type: 'answer', key: q.key, value: v }) }}
+                  onPick={v => { if (act({ type: 'answer', key: q.key, value: v })) void selectHaptic() }}
                 />
               </Board>
             )}
             <div className="wm-btns">
-              <FlapButton label="‹ BACK" size="xs" onClick={() => dispatch({ type: 'back' })} />
-              <FlapButton label="PASS ›" size="xs" onClick={() => dispatch({ type: 'pass' })} />
+              <FlapButton label="‹ BACK" size="xs" onClick={() => act({ type: 'back' })} />
+              <FlapButton label="PASS ›" size="xs" onClick={() => act({ type: 'pass' })} />
             </div>
           </>
         )}

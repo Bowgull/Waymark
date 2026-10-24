@@ -4,6 +4,7 @@ import { FlapLabel, SessionIcon, type SessionIconKey } from '@/design'
 import { GrassZone, HeroClock, PhaseWord, SessionButton, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { mobilitySteps, type MobilityStep } from '@/lib/foundation'
 import type { EngineState } from '@/lib/sessionResume'
+import { backMove, freshSnap, runOf, type BackRun } from '@/lib/timers/swipeBack'
 import { useWakeLock } from '@/lib/wakeLock'
 
 import { useHoldTimer } from './useHoldTimer'
@@ -64,6 +65,13 @@ interface MobilityExerciseViewProps {
   resume?: Extract<EngineState, { kind: 'hold' }> | null
   /** Called on every change so the session can be resumed exactly here. */
   onPersist?: (state: Extract<EngineState, { kind: 'hold' }>) => void
+  /**
+   * Page 85: a second swipe down on this set's first step goes to the set before (the session
+   * moves its place; the move's done flag stays as it is). Absent at the very first set.
+   */
+  onBackSet?: (into: { run: BackRun; at: number }) => void
+  /** Entered by a swipe back: start on the set's last step from its full time, run state and 3 s window kept. */
+  backInto?: { run: BackRun; at: number } | null
 }
 
 /**
@@ -71,7 +79,7 @@ interface MobilityExerciseViewProps {
  * FOUNDATION and n OF m on flaps; the exercise board (the icon, its name, the
  * set and side, its cue); the teal clock with READY / HOLD / HOLD COMPLETE; no
  * start button (page 71): the calm teal grass starts the hold (TAP TO START),
- * pauses it (tap) and ends it early (swipe up); END EARLY while it runs, DONE
+ * pauses it (tap), ends it early (swipe up) and goes back (swipe down, page 85); END EARLY while it runs, DONE
  * at the target.
  */
 export function MobilityExerciseView({
@@ -86,6 +94,8 @@ export function MobilityExerciseView({
   warmUp = false,
   resume,
   onPersist,
+  onBackSet,
+  backInto,
 }: MobilityExerciseViewProps) {
   const icon: SessionIconKey = warmUp ? 'zone2' : 'foundation'
   const totalSets = exercise.sets ?? 1
@@ -94,7 +104,8 @@ export function MobilityExerciseView({
   // Memoised: a new array each render would restart the auto-advance timer on every tick.
   const steps = useMemo(() => mobilitySteps({ holdSec: exercise.holdSec, reps: exercise.reps, perSide: exercise.perSide }), [exercise.holdSec, exercise.reps, exercise.perSide])
   const [stepIdx, setStepIdx] = useState(() =>
-    resume ? Math.min(Math.max(0, resume.stepIdx), Math.max(0, steps.length - 1)) : 0,
+    backInto ? Math.max(0, steps.length - 1)
+      : resume ? Math.min(Math.max(0, resume.stepIdx), Math.max(0, steps.length - 1)) : 0,
   )
   const step = steps[Math.min(stepIdx, steps.length - 1)]
   const isHoldExercise = step.kind === 'hold'
@@ -106,13 +117,18 @@ export function MobilityExerciseView({
 
   // Resume: put the saved hold back. A hold whose time ran out while away
   // reaches its target at once and advances one step (the effect below).
+  // Entered by a swipe back (page 85): the last step from its full time, as the clock was.
   const restoredRef = useRef(false)
   const restoreHold = holdTimer.restore
+  const enteredHoldSec = step.holdSec ?? 0
   useEffect(() => {
     if (restoredRef.current) return
     restoredRef.current = true
-    if (resume?.timer && isHoldExercise) restoreHold(resume.timer)
-  }, [isHoldExercise, restoreHold, resume])
+    if (backInto) { if (isHoldExercise) restoreHold(freshSnap(backInto.run, enteredHoldSec, Date.now())) }
+    else if (resume?.timer && isHoldExercise) restoreHold(resume.timer)
+  }, [backInto, enteredHoldSec, isHoldExercise, restoreHold, resume])
+  // Page 85: the last swipe down (a second within 3 s goes to the step before); carried over a set change.
+  const lastBackRef = useRef<number | null>(backInto?.at ?? null)
 
   const holdSnapshot = holdTimer.snapshot
   useEffect(() => {
@@ -318,6 +334,24 @@ export function MobilityExerciseView({
     ? { durationSec: holdSec, endsAtMs: holdTimer.isPaused || done ? null : holdTimer.endsAtMs, remainingMs: done ? 0 : holdTimer.secondsRemaining * 1000 }
     : { durationSec: holdSec, endsAtMs: null, remainingMs: afterComplete ? 0 : holdSec * 1000 }
   const start = () => { setAutoStartNext(false); setAfterComplete(false); holdTimer.start() }
+  // Page 85, swipe down: restart this hold; again within 3 s, the step (side, rep) before, or the
+  // set before. From its full time, paused stays paused. Nothing is logged here: a set is only
+  // reported done (onSetDone) when its last step ends, so going back never doubles or drops one.
+  const back = () => {
+    const now = Date.now()
+    const move = backMove(lastBackRef.current, now, stepIdx > 0 || !!onBackSet, running)
+    lastBackRef.current = now
+    setAutoStartNext(false)
+    setAfterComplete(false)
+    if (move === 'restart') { holdTimer.restart(); return }
+    const run = runOf(holdTimer.snapshot())
+    if (stepIdx > 0) {
+      holdTimer.restore(freshSnap(run, steps[stepIdx - 1].holdSec ?? 0, now))
+      setStepIdx(stepIdx - 1)
+      return
+    }
+    onBackSet?.({ run, at: now })
+  }
   // Page 71: the grass is the control. Ready: tap starts. Running: tap pauses / goes on.
   const grassState = !running ? 'ready' : holdTimer.isPaused ? 'paused' : 'running'
   const onGrassTap = !running ? start : !done ? () => (holdTimer.isPaused ? holdTimer.resume() : holdTimer.pause()) : undefined
@@ -335,6 +369,7 @@ export function MobilityExerciseView({
           state={grassState}
           onTap={onGrassTap}
           onSkip={running ? advanceStep : undefined}
+          onBack={back}
         />
       }
     >

@@ -40,7 +40,8 @@
 .pl-ol.is-why .wm-rmk { margin-right: 0; }
 .pl-ol.is-why s, .pl-say s { color: rgba(230, 239, 233, 0.7); text-decoration-color: #c4623f; }
 .pl-row.is-done .pl-ol .v { color: rgba(223, 230, 223, 0.75); }
-.pl-enter { border: 0; background: none; font: 800 12px/1 var(--font-body); letter-spacing: 0.16em; color: #e8c878; cursor: pointer; padding: 6px 0; display: inline-block; min-height: 32px; }
+.pl-enter { border: 0; background: none; font: 800 12px/1 var(--font-body); letter-spacing: 0.16em; color: #e8c878; cursor: pointer; padding: 6px 0; display: inline-block; min-height: 32px; transition: transform var(--t-tap) var(--ease-out); -webkit-tap-highlight-color: transparent; }
+.pl-enter:active { transform: scale(0.95); }
 
 /* the cursor: a crisp pixel arrow at the left; it jumps, then a 2 px bob */
 .pl-cur { position: absolute; left: -13px; top: 50%; margin-top: -7px; width: 10px; height: 14px; pointer-events: none; filter: drop-shadow(1px 1px 0 #000); animation: pl-bob 0.9s steps(2) infinite; z-index: 1; }
@@ -61,7 +62,8 @@
 @keyframes pl-unpop { to { opacity: 0; transform: scale(0.97); } }
 .pl-cmd .pc { position: absolute; width: 3px; height: 3px; background: #e8c878; }
 .pl-cmd .pc.a { left: -1px; top: -1px; } .pl-cmd .pc.b { right: -1px; top: -1px; } .pl-cmd .pc.c { left: -1px; bottom: -1px; } .pl-cmd .pc.d { right: -1px; bottom: -1px; }
-.pl-cl { position: relative; display: flex; align-items: center; gap: 9px; min-height: 44px; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+.pl-cl { position: relative; display: flex; align-items: center; gap: 9px; min-height: 44px; cursor: pointer; outline: none; transition: transform var(--t-tap) var(--ease-out); -webkit-tap-highlight-color: transparent; }
+.pl-cl:active { transform: scale(0.95); }
 .pl-cl + .pl-cl { margin-top: 6px; }
 .pl-cl .pl-cur { left: -16px; }
 .pl-cl .grow { flex: 1; min-width: 0; }

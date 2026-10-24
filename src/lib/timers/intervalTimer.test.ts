@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import {
   clampSetup, clockAt, countFor, cueSchedule, leftText, nextWords, DEFAULT_SETUP, doneWord, elapsedSec, LAST_KEY, loadLast, mmss, padBack, padPush, padShow, padValue,
   parseSaved, partClip, pauseClock, phaseWord, plan, positionAt, resumeClock, saveLast, startClock, stepDown, stepUp, totalLine, totalSec,
-  valueText, warnLen, type IntervalSetup,
+  valueText, warnLen, skipTargetSec, backTargetSec, type IntervalSetup,
 } from './intervalTimer'
 import { intervalActivityState } from './intervalActivity'
 
@@ -220,6 +220,24 @@ test('page 83: ROUND at work, NEXT resting and getting ready; NEXT · REST only 
   assert.equal(leftText(S, 0), '5:55')
   assert.equal(leftText(S, 109.4), '4:06')
   assert.equal(leftText(S, 9999), '0:00')
+})
+
+test('page 85: swipe up goes to the next part; swipe down restarts, again goes to the part before', () => {
+  const p = plan(S) // ready 0-10, work 1 10-40, rest 1 40-55, work 2 55-85
+  assert.equal(skipTargetSec(p, 3), 10)
+  assert.equal(skipTargetSec(p, 41), 55)
+  assert.equal(skipTargetSec(p, totalSec(S) - 1), totalSec(S)) // the last part: on to the end
+  assert.equal(backTargetSec(p, 62, 'restart'), 55) // round 2 from the top
+  assert.equal(backTargetSec(p, 55, 'previous'), 40) // the rest before round 2
+  assert.equal(backTargetSec(p, 44, 'previous'), 10) // a rest: the round before it
+  assert.equal(backTargetSec(p, 12, 'previous'), 0) // round 1: get ready
+  assert.equal(backTargetSec(p, 4, 'restart'), 0)
+  assert.equal(backTargetSec(p, 4, 'previous'), 0) // the first part only restarts
+  const noRest = plan({ rounds: 3, work: 20, rest: 0 }) // ready 0-10, 10-30, 30-50, 50-70
+  assert.equal(backTargetSec(noRest, 35, 'previous'), 10) // no rest between: the round before
+  // The restarted part reads at its full length.
+  const at = positionAt(p, backTargetSec(p, 62, 'restart'))
+  assert.equal(at.part.ph, 'work'); assert.equal(at.part.round, 2); assert.equal(at.shown, 30)
 })
 
 console.log(`intervalTimer: ${passed} passed`)

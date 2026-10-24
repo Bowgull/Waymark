@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test'
 
 import { test, expect } from './fixtures'
-import { gotoToday, grass, swipeUpGrass, todayISO } from './support/helpers'
+import { gotoToday, grass, swipeDownGrass, swipeUpGrass, timerSeconds, todayISO } from './support/helpers'
 
 /**
  * Page 81, the hidden interval timer. Settings shows nothing of it; holding
@@ -193,4 +193,25 @@ test('Swipe up the grass: on to the next part (GET READY → WORK → REST); the
   await expect(page.getByRole('img', { name: 'ENDED' })).toHaveCount(0)
   await hold(page, grass(page), 3400)
   await expect(page.getByRole('img', { name: 'ENDED' })).toBeVisible()
+})
+
+test('Swipe down the grass (page 85): the part again from full, another within 3 s the part before', async ({ page }) => {
+  await openSettings(page)
+  await openWindow(page)
+  await win(page).getByRole('button', { name: 'START' }).tap()
+  await expect(page.getByRole('img', { name: 'GET READY' })).toBeVisible()
+  await swipeUpGrass(page) // round 1
+  await swipeUpGrass(page) // its rest
+  await swipeUpGrass(page) // round 2
+  await expect(page.getByRole('img', { name: 'Round 2 of 8' })).toBeVisible()
+  await swipeDownGrass(page)
+  await expect(page.getByRole('img', { name: 'WORK', exact: true })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Round 2 of 8' })).toBeVisible()
+  expect(await timerSeconds(page)).toBeGreaterThanOrEqual(29)
+  await swipeDownGrass(page)
+  await expect(page.getByRole('img', { name: 'REST', exact: true })).toBeVisible()
+  await swipeDownGrass(page)
+  await expect(page.getByRole('img', { name: 'WORK', exact: true })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Round 1 of 8' })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'ENDED' })).toHaveCount(0)
 })

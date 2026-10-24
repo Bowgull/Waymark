@@ -18,9 +18,10 @@ import {
 } from '@/lib/notifications'
 import { comboCue } from '@/lib/comboCue'
 import { isStaleCue, type EngineState } from '@/lib/sessionResume'
-import { bagComboSize, cueShown, lockComboSize, type BagRoundView } from '@/lib/timers/bagRound'
+import { bagComboSize, cueShown, lockComboSize, roundsBack, type BagRoundView } from '@/lib/timers/bagRound'
+import { freshSnap } from '@/lib/timers/swipeBack'
 import { bagGlow } from '@/lib/lockGlow'
-import { comboStrikes, heatFor, workLabel, type Heat } from '@/lib/timers/timerLook'
+import { backStep, comboStrikes, heatFor, workLabel, type Heat } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
 
 import { useRestTimer } from './useRestTimer'
@@ -76,7 +77,20 @@ interface BagWorkRoundViewProps {
   onPersist?: (state: Extract<EngineState, { kind: 'rounds' }>) => void
   /** A round ended: its index (0-based) and the seconds actually worked (the done summary's per-round lines). */
   onRoundDone?: (roundIndex: number, actualSec: number) => void
+  /**
+   * A swipe down into an earlier round (page 85): the session moves to that
+   * round in this state, its timer already set; the round's view mounts on it
+   * as on a resume (its cues scheduled there).
+   */
+  onBackRound?: (state: Extract<EngineState, { kind: 'rounds' }>) => void
 }
+
+/**
+ * The last swipe down's time (page 85: another within 3 s goes back again).
+ * Kept outside the view: going back into an earlier round mounts that round's
+ * own view, and the 3 s carry across.
+ */
+let lastBagBackAt: number | null = null
 
 /** The combos of a round as its board shows them: the first stacked, the others on THEN. */
 function roundView(r: RoundData | null | undefined): BagRoundView {
@@ -114,6 +128,7 @@ export function BagWorkRoundView({
   resume,
   onPersist,
   onRoundDone,
+  onBackRound,
 }: BagWorkRoundViewProps) {
   const roundTimer = useRestTimer()
   const restTimer = useRestTimer()
@@ -388,6 +403,50 @@ export function BagWorkRoundView({
     else if (resting) handleRestDone()
   }
 
+  /**
+   * A swipe down (page 85): the round or rest from its full length; another
+   * within 3 s goes to the part before (lib/timers/bagRound roundsBack): the
+   * rest before this round, or this rest's own round, whose combo comes back.
+   * Its bell plays (paused too, so he hears it moved), and the cues and the
+   * lock card move with it as at a natural change; paused stays paused.
+   * Nothing is logged here: a round counts when it ends (by its index, so
+   * ending it again only replaces its seconds), and the combos are rated once,
+   * after the last round.
+   */
+  function back() {
+    const t = Date.now()
+    const step = backStep(lastBagBackAt, t)
+    lastBagBackAt = t
+    const allRounds = rounds ?? []
+    const to = roundsBack({ round: roundIndex, sub: phase }, step, r => allRounds[r]?.restSec ?? 0)
+    if (to.sub === 'ready') return
+    const earlier = to.round !== roundIndex ? allRounds[to.round] : null
+    if (to.round !== roundIndex && (!earlier || !onBackRound)) return
+    const wasPaused = paused
+    void cancelRoundActiveCues()
+    void cancelRestCues()
+    if (to.sub === 'fighting') soundRoundStart()
+    else soundRoundEnd()
+    if (earlier && onBackRound) {
+      // An earlier round: its own view takes it from here.
+      roundTimer.stop()
+      restTimer.stop()
+      onBackRound({ kind: 'rounds', round: to.round, sub: to.sub, timer: freshSnap(wasPaused ? 'paused' : 'running', to.sub === 'fighting' ? earlier.durationSec : earlier.restSec, t) })
+      return
+    }
+    if (to.sub === 'fighting') {
+      restTimer.stop()
+      roundTimer.restore(freshSnap(wasPaused ? 'paused' : 'running', round.durationSec, t))
+      if (!wasPaused) void scheduleRoundCuesUntil(t + round.durationSec * 1000, isLastRound ? null : round.restSec)
+    } else {
+      roundTimer.stop()
+      restTimer.restore(freshSnap(wasPaused ? 'paused' : 'running', round.restSec, t))
+      if (!wasPaused) void scheduleRestCuesUntil(t + round.restSec * 1000)
+    }
+    if (to.sub !== phase) onPhaseChange(to.sub)
+  }
+  const canBack = phase !== 'ready' || (roundIndex > 0 && !!onBackRound && !!rounds?.[roundIndex - 1])
+
   const zoneStyle = { '--cs': `${comboPx ?? 36}px`, visibility: comboPx == null ? 'hidden' : undefined } as CSSProperties
 
   return (
@@ -406,6 +465,7 @@ export function BagWorkRoundView({
           state={phase === 'ready' ? 'ready' : paused ? 'paused' : 'running'}
           onTap={phase === 'ready' ? handleStartRound : togglePause}
           onSkip={phase === 'ready' ? undefined : skip}
+          onBack={canBack ? back : undefined}
         />
       }
     >

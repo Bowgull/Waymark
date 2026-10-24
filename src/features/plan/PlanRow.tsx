@@ -15,7 +15,9 @@ import './plan.css'
 /** The hold that opens the command window (page 73, page 59's motion). */
 export const HOLD_MS = 500
 /** A finger that moves this far is a scroll, not a hold. */
-const MOVE_PX = 8
+const MOVE_PX = 12
+/** The row darkens only once the finger has rested this long (a scroll's touch doesn't flash it). */
+const PRESS_DELAY_MS = 80
 
 /**
  * The finger lifting after a hold is not a tap. Its click lands on the command
@@ -77,7 +79,7 @@ export interface PlanRowProps {
  */
 export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, linesOpts, extra, className = '', hitClassName = '' }: PlanRowProps) {
   const ref = useRef<HTMLDivElement>(null)
-  const hold = useRef<{ t: number; x: number; y: number } | null>(null)
+  const hold = useRef<{ t: number; p: number; x: number; y: number } | null>(null)
   const held = useRef(false)
   const [press, setPress] = useState(false)
   const status = rowStatus(s.status)
@@ -97,11 +99,12 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
     // The key covers the fields the fetch reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted, key])
-  useEffect(() => () => { if (hold.current) window.clearTimeout(hold.current.t) }, [])
+  useEffect(() => () => { if (hold.current) { window.clearTimeout(hold.current.t); window.clearTimeout(hold.current.p) } }, [])
 
   const cancel = () => {
     if (!hold.current) return
     window.clearTimeout(hold.current.t)
+    window.clearTimeout(hold.current.p)
     hold.current = null
     setPress(false)
   }
@@ -119,11 +122,13 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
       onPointerDown={e => {
         held.current = false
         if (!onHold || e.button !== 0) return
+        // the row's own controls (ENTER ›, the ×, a link) and its open lines are not the row's hold
+        if (e.target instanceof Element && e.target.closest('button, a, .pl-lines')) return
         const el = ref.current
         const x = e.clientX, y = e.clientY
-        setPress(true)
         hold.current = {
           x, y,
+          p: window.setTimeout(() => setPress(true), PRESS_DELAY_MS),
           t: window.setTimeout(() => {
             hold.current = null
             setPress(false)
