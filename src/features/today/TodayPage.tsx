@@ -148,8 +148,12 @@ export function TodayPage() {
     }
   }
   useEffect(() => {
-    // The first row still to do (the running one is not in the list).
-    const first = sessions.find(s => (s.status === 'planned' || s.status === 'in_progress') && s.id !== stripId)
+    // The first row still to do, in the order the day shows them (AM, then PM, then the rest);
+    // the running one is not in the list.
+    const slotRank = (t: string | null | undefined) => (t === 'am' ? 0 : t === 'pm' ? 1 : 2)
+    const first = sessions
+      .filter(s => (s.status === 'planned' || s.status === 'in_progress') && s.id !== stripId)
+      .sort((a, b) => slotRank(a.timeSlot) - slotRank(b.timeSlot))[0]
     // The open row went live (ENTER, then back out): the next one to do opens in its place.
     if (openRow != null && openRow === stripId) { setOpenRow(first?.id ?? null); return }
     if (defaultOpened.current === today) return
