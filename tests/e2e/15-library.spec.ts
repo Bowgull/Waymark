@@ -46,7 +46,7 @@ test('The list: no NEW KIND, Bagwork in words, compact rows; the Waybook keeps i
   // Techniques: each with its kind and how many combos use it, most used first
   await techniques.tap()
   await expect(page.getByRole('button', { name: /^Jab Punch · in \d+ combos/ })).toBeVisible()
-  await page.getByRole('button', { name: /^Rear Roundhouse Kick · in \d+ combos/ }).tap()
+  await page.getByRole('button', { name: /^Body Kick Kick · in \d+ combos/ }).tap()
   await expect(page).toHaveURL(/open=techniques&item=tech-roundhouse/)
   // no alias sub-line (page 65: cut repeated copy)
   await expect(page.getByText(/also Right Kick/)).toHaveCount(0)

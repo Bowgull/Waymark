@@ -84,6 +84,8 @@ assert.deepEqual(tiers[0].combos.map(c => c.id), ['a', 'b', 'c', 'z'])
 assert.equal(currentTier(tiers), 'foundation')
 assert.equal(currentTier(tierViews([C('x', 'foundation', 1), C('y', 'weapons', 1)])), 'weapons')
 assert.equal(currentTier(tierViews([C('x', 'foundation', 0)])), null)
+// an open elbow combo in Mastery waits on its Settings switch: Bagwork still opens on his tier
+assert.equal(currentTier(tierViews([C('x', 'foundation', 1), { ...C('m', 'mastery', 1), techniques: 'boxing,elbows' }])), 'foundation')
 assert.equal(matchCombo(C('a', 'foundation', 1), 'fundamentals'), true)
 assert.equal(matchCombo(C('a', 'foundation', 1), 'cross'), true)
 assert.equal(matchCombo(C('a', 'foundation', 1), 'kick'), false)
@@ -129,10 +131,12 @@ console.log('libraryModel tests passed')
     tech('tech-jab', 'Jab', 'Punch', ['Jab', 'Double Jab', 'Jab x 3', 'Feint Jab']),
     tech('tech-cross', 'Cross', 'Punch', ['Cross', 'Body Cross']),
     tech('tech-roundhouse', 'Rear Roundhouse', 'Kick', ['Rear Roundhouse', 'Right Kick', 'Body Kick', 'Rear Kick']),
-    tech('tech-switch-kick', 'Switch Kick', 'Kick', ['Switch Kick', 'Left Kick', 'Left Body Kick']),
+    tech('tech-switch-kick', 'Switch Kick', 'Kick', ['Switch Kick']),
+    tech('tech-left-kick', 'Left Kick', 'Kick', ['Left Kick']),
     tech('tech-teep', 'Teep', 'Kick', ['Teep', 'Lead Teep', 'Fake Teep', 'Feint Teep']),
   ]
-  assert.equal(techniqueFor('Left Kick', T)?.id, 'tech-switch-kick', '"Left Kick" is the switch kick')
+  assert.equal(techniqueFor('Left Kick', T)?.id, 'tech-left-kick', '"Left Kick" is the step-through kick, not the switch kick')
+  assert.equal(techniqueFor('Switch Kick', T)?.id, 'tech-switch-kick')
   assert.equal(techniqueFor('JAB × 3', T)?.id, 'tech-jab')
   assert.equal(techniqueFor('Body kick', T)?.id, 'tech-roundhouse')
   assert.equal(techniqueFor('Superman Punch', T), null)

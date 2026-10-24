@@ -79,6 +79,26 @@ export const COMBO_CUES: Readonly<Record<string, string>> = {
   'combo-m07': 'NO WASTED MOVEMENT',
   'combo-m08': 'SELL THE LOW KICK',
   'combo-m09': 'STEP TURN LOOK KICK',
+  // Kru pass (2026-10-24)
+  'combo-w19': 'SWITCH OFF THE JAB',
+  'combo-w20': 'FOOT NEVER LANDS',
+  'combo-w21': 'KICK, RESET, TEEP',
+  'combo-w22': 'HOOK LOADS THE KNEE',
+  'combo-w23': 'JABS OPEN THE BODY',
+  'combo-w24': 'HOOK, THEN ELBOW',
+  'combo-w25': 'SELL THE JAB',
+  'combo-fl09': 'LOW, THEN BODY',
+  'combo-fl10': 'LEGS, HANDS, LEGS',
+  'combo-fl11': 'JAB, TEEP, SWITCH',
+  'combo-fl12': 'LOW, HIGH, LOW',
+  'combo-fl13': 'FALL INTO THE KNEE',
+  'combo-fl14': 'OUT, THEN IN',
+  'combo-fl15': 'ELBOW OVER THE TOP',
+  'combo-d11': 'SELL THE SWITCH',
+  'combo-d12': 'LONG TO CLOSE',
+  'combo-m10': 'HOOK LOADS THE KICK',
+  'combo-m11': 'DIP, THEN RISE',
+  'combo-m12': 'STEP BACK, THEN KICK',
 }
 
 /** Sentences that only say where a combo comes from, not how to throw it. */

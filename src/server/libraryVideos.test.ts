@@ -48,10 +48,12 @@ for (const s of statements) assert.ok(seed.includes(s), `seed.sql has: ${s.slice
 const files = readdirSync(join(ROOT, 'drizzle')).filter(n => n.endsWith('.sql')).sort()
 assert.equal(files[files.indexOf('0038_library_content.sql') + 1], '0039_library_videos.sql')
 
+// the kru pass (0050) also moves w12's video on: its file is skipped and, like 0041, its rows are taken out of the seed
+const LATER_FILES = ['0041_library_tiktok.sql', '0050_kru_combos.sql']
 const db = new Database(':memory:')
-for (const f of files) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
-// the Library as 0039 found it: the seed without the later passes' rows (0041 moves some of these videos on)
-const LATER = readFileSync(join(ROOT, 'drizzle/0041_library_tiktok.sql'), 'utf8').split(/\r?\n/).filter(l => l.startsWith('UPDATE'))
+for (const f of files.filter(n => n !== '0050_kru_combos.sql')) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
+// the Library as 0039 found it: the seed without the later passes' rows (0041 and 0050 move some of these videos on)
+const LATER = LATER_FILES.flatMap(f => readFileSync(join(ROOT, 'drizzle', f), 'utf8').split(/\r?\n/)).filter(l => /^(UPDATE|INSERT|DELETE)/.test(l))
 db.exec(seed.split(/\r?\n/).filter(l => !LATER.includes(l)).join('\n'))
 const count =() => ['exercises', 'combos', 'techniques', 'run_types'].map(t => (db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n)
 const before = count()

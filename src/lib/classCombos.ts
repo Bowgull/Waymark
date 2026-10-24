@@ -390,8 +390,8 @@ const TRICK = /\b(feint|fake|slip|parry|check|catch|sweep|block|step|pivot|reset
  * 80): hands only in Fundamentals, kicks, teeps, knees or elbows in Weapons,
  * five strikes or more in Flow; a feint or a defensive move makes it
  * Deception, Mastery at five strikes or more (the Library's own tiers read
- * that way: Feint Jab → Cross → Left Kick → Step Out is Deception,
- * Jab → Cross → Hook → Check → Teep is Mastery).
+ * that way: Feint Jab → Cross → Switch Kick → Step Out is Deception,
+ * Jab → Cross → Hook → Check → Lead Teep is Mastery).
  */
 export function tierFor(strikes: ReadonlyArray<string>): string {
   const n = strikes.flatMap(expandStrike).length
