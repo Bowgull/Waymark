@@ -48,10 +48,12 @@ export interface GrassParams {
   trail?: { x: number; y: number; at: number }[]
   /** How far up the finger has pulled (0..1); 1 = a full pull, skip on release. */
   pull?: number
+  /** Page 85: how far down (0..1); 1 = a full pull, back on release. */
+  pullDown?: number
   /** The finger's light colour. */
   fcol?: RGB
   /** An early pull let go: the beam sinking back where the finger was (0..1 of the zone; k = what is left of the pull). */
-  settle?: { x: number; y: number; k: number } | null
+  settle?: { x: number; y: number; k: number; down?: boolean } | null
   /** A tap ripple: where and when (s). */
   touch?: { x: number; y: number; at: number; col?: RGB } | null
   calm?: boolean
@@ -66,9 +68,10 @@ export interface GrassParams {
 }
 
 /** The pull's beam of light up the grass above the finger at (fx, fy), as strong as the pull k. */
-function beam(cell: Cell, x: number, y: number, fx: number, fy: number, k0: number, FC: RGB) {
-  if (Math.abs(x - fx) >= 0.09 || y >= fy) return
-  const k = k0 * (1 - Math.abs(x - fx) / 0.09) * (0.4 + 0.6 * (1 - (fy - y)))
+function beam(cell: Cell, x: number, y: number, fx: number, fy: number, k0: number, FC: RGB, down = false) {
+  // Page 85: swiping down, the light sinks from the finger into the roots instead.
+  if (Math.abs(x - fx) >= 0.09 || (down ? y <= fy : y >= fy)) return
+  const k = k0 * (1 - Math.abs(x - fx) / 0.09) * (0.4 + 0.6 * (1 - Math.abs(fy - y)))
   cell.c = mix(cell.c, FC, Math.min(1, k)); cell.b = clamp(cell.b + k * 0.9); if (k > 0.35) cell.ch = '|'
 }
 
@@ -99,8 +102,11 @@ export function timerCell(x: number, y: number, t: number, p: GrassParams, now: 
     if (d < 0.17) { const k = 1 - d / 0.17; cell.ch = d < 0.035 ? '*' : (x < f.x ? '\\' : '/'); cell.c = mix(cell.c, FC, k * 0.9); cell.b = clamp(cell.b + k * 0.9) }
     if (pull > 0) beam(cell, x, y, f.x, f.y, pull, FC)
     if (pull >= 1 && y < 0.12) { cell.c = FC; cell.b = 1 }
+    const down = p.pullDown ?? 0
+    if (down > 0) beam(cell, x, y, f.x, f.y, down, FC, true)
+    if (down >= 1 && y > 0.88) { cell.c = FC; cell.b = 1 }
   }
-  if (p.settle && p.settle.k > 0 && !(p.finger && p.finger.on)) beam(cell, x, y, p.settle.x, p.settle.y, p.settle.k, FC)
+  if (p.settle && p.settle.k > 0 && !(p.finger && p.finger.on)) beam(cell, x, y, p.settle.x, p.settle.y, p.settle.k, FC, !!p.settle.down)
   if (p.touch) {
     const dt = now - p.touch.at
     if (dt >= 0 && dt < 1.4) {
@@ -141,7 +147,9 @@ export function zoneCell(x: number, y: number, t: number, p: GrassParams, now: n
   const wave = p.wave ?? 0
   if (wave > 0) {
     const wx = p.wx ?? 0.5, wy = p.wy ?? 0.9
-    const d = Math.hypot((x - wx) * 1.6, y - wy), r = wave * 1.9, band = 0.32
+    // The front reaches the farthest corner exactly as the hold completes, so flat means done (never sooner).
+    const band = 0.32, far = Math.max(Math.hypot(wx * 1.6, wy), Math.hypot((1 - wx) * 1.6, wy), Math.hypot(wx * 1.6, 1 - wy), Math.hypot((1 - wx) * 1.6, 1 - wy))
+    const d = Math.hypot((x - wx) * 1.6, y - wy), r = wave * (far + band)
     const q = Math.max(0, Math.min(1, (r - d) / band)), k = q * q * (3 - 2 * q)
     if (k > 0.02) {
       const crest = Math.exp(-Math.pow((r - d) / 0.06, 2)), left = x < wx

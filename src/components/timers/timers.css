@@ -18,7 +18,7 @@
 .tm-stop .wm-sicon { width: 40px; height: 40px; }
 
 /* the end button: a flap tile with a ×; hold 1.5 s and a clay bar fills along its foot */
-.tm-x { position: relative; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 9px; display: grid; place-items: center; flex: none; font: 800 21px var(--font-mono); color: #e8dcb4; background: linear-gradient(180deg, #232823 0 50%, #1a1e1a 50% 100%); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3), 0 2px 6px rgba(0, 0, 0, 0.55); cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; overflow: hidden; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6); -webkit-tap-highlight-color: transparent; }
+.tm-x { position: relative; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 9px; display: grid; place-items: center; flex: none; font: 800 21px var(--font-mono); color: #e8dcb4; background: linear-gradient(180deg, #232823 0 50%, #1a1e1a 50% 100%); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.3), 0 2px 6px rgba(0, 0, 0, 0.55); cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; overflow: hidden; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6); -webkit-tap-highlight-color: transparent; touch-action: none; }
 .tm-x::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(0, 0, 0, 0.5); }
 .tm-x { isolation: isolate; }
 /* page 74: the × hold (3 s), a fill rising through the plate; let go early and it eases back (450 ms) */

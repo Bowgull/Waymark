@@ -94,11 +94,23 @@ export function pullAmount(startY: number, y: number, height: number): number {
   return Math.max(0, Math.min(1, (startY - y) / (height * 0.45)))
 }
 
-/** What a finger lift means: a full pull skips; a drag that went up more than 40 px is a let-go; else a tap pauses. */
-export function releaseAction(pull: number, dy: number): 'skip' | 'none' | 'tap' {
+/**
+ * What a finger lift means: a full pull up skips, a full pull down goes back (page 85); a drag
+ * that went more than 40 px either way is a let-go; else a tap pauses.
+ */
+export function releaseAction(pull: number, dy: number, pullDown = 0): 'skip' | 'back' | 'none' | 'tap' {
   if (pull >= 1) return 'skip'
-  if (dy < -40) return 'none'
+  if (pullDown >= 1) return 'back'
+  if (Math.abs(dy) > 40) return 'none'
   return 'tap'
+}
+
+/** Page 85: a second swipe down within this long goes to the part before (the first restarts this one). */
+export const BACK_AGAIN_MS = 3000
+
+/** Page 85: the swipe down. The first restarts the part; another within BACK_AGAIN_MS goes to the one before. */
+export function backStep(lastBackAt: number | null, now: number): 'restart' | 'previous' {
+  return lastBackAt != null && now - lastBackAt < BACK_AGAIN_MS ? 'previous' : 'restart'
 }
 
 /**
@@ -114,8 +126,12 @@ export const GRASS_HOLD_MS = 3000
 export const FINISHING_AFTER_MS = 1000
 /** Let go early (the grass, or the ×): it eases back over this long. */
 export const HOLD_RELEASE_MS = 450
-/** At full, the light haptic, then Log your run this much later. */
-export const HOLD_LOG_DELAY_MS = 250
+/** At full: the light haptic and the action together (page 85 fix: no wait after the grass is flat). */
+export const HOLD_LOG_DELAY_MS = 0
+/** Let go this close to full and it still counts (the thumb lifts as the grass goes flat). */
+export const HOLD_GRACE_MS = 150
+/** A finger that moves this far is a drag or a swipe, never a hold. */
+export const HOLD_SLOP_PX = 24
 
 /** A board closing on a tap outside (Log your run, the close window) fades away this long (page 74, --ease-in). */
 export const BOARD_OUT_MS = 180

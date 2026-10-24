@@ -2,7 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 
 import { CentredCard, FlapLabel, SessionIcon, useEdgeBack, type FlapTone, type SessionIconKey } from '@/design'
 import { tapHaptic } from '@/lib/haptics'
-import { comboStrikes, END_HOLD_MS, ENDED_SHOW_MS } from '@/lib/timers/timerLook'
+import { comboStrikes, END_HOLD_MS, ENDED_SHOW_MS, HOLD_GRACE_MS } from '@/lib/timers/timerLook'
+
+/** A finger that slides this far off the × lets go (a rolling thumb doesn't). */
+const END_SLOP_PX = 40
 import { setWorldBackdrop } from '@/world/worldStore'
 
 import { SessionEndedContext, getSessionNav } from './endedContext'
@@ -20,24 +23,52 @@ import './timers.css'
  * keyboard, VoiceOver) opens the close window at once.
  */
 export function EndButton({ onHeld, label = 'End. Hold for 3 seconds.' }: { onHeld?: () => void; label?: string }) {
-  const [holding, setHolding] = useState(false)
-  const timer = useRef<number | null>(null)
+  const ref = useRef<HTMLButtonElement>(null)
+  // The hold, kept off React so the fill starts on the touch itself: when it began, where, and the frame loop.
+  const hold = useRef<{ start: number; x: number; y: number; raf: number } | null>(null)
   const heldRef = useRef(onHeld)
   useLayoutEffect(() => { heldRef.current = onHeld })
-  const stop = () => { if (timer.current != null) window.clearTimeout(timer.current); timer.current = null; setHolding(false) }
-  useEffect(() => () => { if (timer.current != null) window.clearTimeout(timer.current) }, [])
+  const stop = () => {
+    const h = hold.current
+    if (!h) return
+    cancelAnimationFrame(h.raf)
+    hold.current = null
+    ref.current?.classList.remove('is-hold')
+  }
+  const fire = () => { stop(); void tapHaptic(); heldRef.current?.() }
+  useEffect(() => () => { if (hold.current) cancelAnimationFrame(hold.current.raf) }, [])
   return (
     <button
+      ref={ref}
       type="button"
-      className={`tm-x${holding ? ' is-hold' : ''}`}
+      className="tm-x"
       aria-label={label}
-      onPointerDown={() => {
-        if (!heldRef.current) return
-        setHolding(true)
-        timer.current = window.setTimeout(() => { timer.current = null; setHolding(false); void tapHaptic(); heldRef.current?.() }, END_HOLD_MS)
+      onPointerDown={e => {
+        if (!heldRef.current || hold.current) return
+        // The finger stays the button's until it lifts: a small drift never cancels the hold.
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* not capturable */ }
+        e.currentTarget.classList.add('is-hold')
+        const h = { start: performance.now(), x: e.clientX, y: e.clientY, raf: 0 }
+        hold.current = h
+        // Done on the frame the fill is full, the same moment the plate looks full.
+        const tick = () => {
+          if (hold.current !== h) return
+          if (performance.now() - h.start >= END_HOLD_MS) { fire(); return }
+          h.raf = requestAnimationFrame(tick)
+        }
+        h.raf = requestAnimationFrame(tick)
       }}
-      onPointerUp={stop}
-      onPointerLeave={stop}
+      onPointerMove={e => {
+        const h = hold.current
+        // Only a real slide away lets go (a thumb that rolls stays).
+        if (h && Math.hypot(e.clientX - h.x, e.clientY - h.y) > END_SLOP_PX) stop()
+      }}
+      onPointerUp={() => {
+        const h = hold.current
+        // Lifted as the plate filled: it still counts.
+        if (h && performance.now() - h.start >= END_HOLD_MS - HOLD_GRACE_MS) fire()
+        else stop()
+      }}
       onPointerCancel={stop}
       onContextMenu={e => e.preventDefault()}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); heldRef.current?.() } }}
