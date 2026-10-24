@@ -35,7 +35,8 @@ function wire() {
   document.addEventListener('click', e => {
     const now = performance.now()
     const el = controlOf(e.target)
-    if (el && el !== lastPress.el && now - lastPress.at < BOUNCE_MS && fresh(el, now)) {
+    // (a swipe's own click on the grass is not a press that can bounce)
+    if (el && el !== lastPress.el && !lastPress.el?.classList.contains('tm-grass') && now - lastPress.at < BOUNCE_MS && fresh(el, now)) {
       e.preventDefault()
       e.stopPropagation()
       return
@@ -63,5 +64,8 @@ export function watchFreshControls(root: HTMLElement): () => void {
 
 /** The grass: a tap right after a press on some other control is that press bouncing. */
 export function grassBounce(grass: Element | null): boolean {
-  return lastPress.el != null && lastPress.el !== grass && performance.now() - lastPress.at < BOUNCE_MS
+  // Only a press on a real control bounces: a swipe's own click on the grass (even a grass that has
+  // just been swapped for the next step's) never stops the next tap.
+  const el = lastPress.el
+  return el != null && el !== grass && !el.classList.contains('tm-grass') && performance.now() - lastPress.at < BOUNCE_MS
 }
