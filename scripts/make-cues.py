@@ -14,6 +14,13 @@ The clip names are the contract with src/lib/runSpeech.ts:
   numbers   n_<tenths>   3.0 .. 18.0 in 0.1 steps ("twelve point eight": n_128)
   paces     p_<m><ss>    3:30 .. 9:00 every second ("four forty-one": p_441)
 
+The interval timer's clips (page 81, src/lib/timers/intervalTimer.ts):
+
+  phrases   t_get_ready t_rest t_last_round t_done
+  rounds    t_round_<n>  "Round one." .. "Round thirty." (1 .. 30)
+  beeps     t_tick (the short game beep each orange second)
+            t_change (the longer beep when a part changes)
+
 Run (Piper's own Python, its espeak data, and afconvert on a Mac):
 
   ESPEAK_DATA_PATH=<piper>/bin/piper/espeak-ng-data \\
@@ -76,8 +83,21 @@ PHRASES = {
 }
 
 
+# Page 81: the interval timer.
+TIMER_PHRASES = {
+    't_get_ready': 'Get ready.',
+    't_rest': 'Rest.',
+    't_last_round': 'Last round.',
+    't_done': 'Done.',
+}
+
+
 def all_texts():
     out = dict(PHRASES)
+    out.update(TIMER_PHRASES)
+    for n in range(1, 31):
+        out[f't_round_{n}'] = f'Round {words_under_60(n)}.'
+
     for t in range(30, 181):
         out[f'n_{t}'] = number_words(t) + '.'
     for s in range(210, 541):
@@ -123,7 +143,12 @@ def chimes():
     done = [(NOTE[n], d, 0.22, 'square', 0.05) for n, d in [('G5', 0), ('C6', 0.12), ('E6', 0.24), ('G6', 0.36)]]
     done += [(NOTE['C6'], 0.5, 0.7, 'triangle', 0.1), (NOTE['E6'], 0.5, 0.7, 'triangle', 0.06), (NOTE['G6'], 0.5, 0.7, 'triangle', 0.05)]
     ticks = [(1760 if i == 2 else 1320, i * 1.0, 0.06, 'triangle', 0.09) for i in range(3)]
+    # Page 81's game beeps (the mockup's WebAudio SND.tick / SND.change).
+    tick = [(1320, 0.0, 0.07, 'square', 0.05)]
+    change = [(880, 0.0, 0.42, 'square', 0.06), (1760, 0.0, 0.3, 'triangle', 0.03)]
     return {
+        't_tick': render(tick, 0.1),
+        't_change': render(change, 0.46),
         'chime_hard': render(hard, 0.5),
         'chime_jog': render(jog, 0.62),
         'chime_nudge': render(nudge, 0.42),

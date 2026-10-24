@@ -5,6 +5,7 @@
 import { registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 import { Capacitor } from '@capacitor/core'
 import type { SessionIconKey } from '@/design/sessionIconKeys'
+import type { GlowTone } from './lockGlow'
 
 export type SessionType =
   | 'bag_work'
@@ -13,6 +14,8 @@ export type SessionType =
   | 'skip_rope'
   | 'run'
   | 'recovery'
+  /** Page 81: the hidden interval timer (nothing logged; the card shows the crest). */
+  | 'interval_timer'
 
 export type ActivityPhase = 'active' | 'rest' | 'hold' | 'complete' | 'exercise' | 'ready'
 
@@ -70,6 +73,17 @@ export interface ActivityState {
   runKind?: 'easy' | 'runwalk' | 'hard'
   /** A hard run's piece word on the lock card (page 76): RUN HARD, EASY JOG, TEMPO, 5K, EASY. */
   runPhase?: string
+  // Page 82 (every lock card's grass, approved 2026-10-23). All optional: the
+  // widget falls back to today's colours and never flashes without them.
+  /** The moment's colour: the grass's fill and its steady soft glow. */
+  glowTone?: GlowTone
+  /** The change counter: when it moves the grass glows brighter once and eases back (lib/lockGlow). */
+  glowSeq?: number
+  /** The grass's fill over the whole session (Reset), epoch ms; the clock keeps counting the part. */
+  fillFrom?: number
+  fillTo?: number
+  /** Paused with a whole-session fill: how full it stands (0..1). */
+  fillValue?: number
 }
 
 /** Default painted icon for a Live Activity session type. */
@@ -80,6 +94,7 @@ export const LIVE_ACTIVITY_ICON: Readonly<Record<SessionType, SessionIconKey>> =
   skip_rope: 'rope',
   run: 'run',
   recovery: 'reset',
+  interval_timer: 'foundation',
 }
 
 interface IsSupportedResult {

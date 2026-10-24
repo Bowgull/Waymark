@@ -13,6 +13,7 @@ import { heatFor, workLabel } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
 
 import { useRestTimer } from './useRestTimer'
+import { ropeGlow } from '@/lib/lockGlow'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
 interface SkipSession {
@@ -137,6 +138,7 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
             label: `Round ${currentRound} of ${totalRounds}`,
             stepIndex: currentRound,
             stepTotal: totalRounds,
+            ...ropeGlow(currentRound, false),
             startedAt: roundTimer.startedAtMs,
             endsAt: roundTimer.endsAtMs,
             isPaused: roundTimer.isPaused,
@@ -155,6 +157,7 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
               detail: `Next: Round ${currentRound + 1}`,
               stepIndex: currentRound,
               stepTotal: totalRounds,
+              ...ropeGlow(currentRound, true),
               startedAt: restTimer.startedAtMs,
               endsAt: restTimer.endsAtMs,
               isPaused: restTimer.isPaused,

@@ -7,6 +7,7 @@ import type { EngineState } from '@/lib/sessionResume'
 import { useWakeLock } from '@/lib/wakeLock'
 
 import { useHoldTimer } from './useHoldTimer'
+import { holdsGlow } from '@/lib/lockGlow'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 import './session.css'
 
@@ -167,6 +168,8 @@ export function MobilityExerciseView({
   //   ready    — between holds, waiting for Start Hold tap on the widget
   const mobilityActivityConfig: LiveActivityConfig | null = (() => {
     if (inline || !isHoldExercise) return null
+    // The hold's number in the session (lib/lockGlow): grows hold by hold, exercise by exercise.
+    const holdNo = exerciseIndex * 20 + currentSet
     const exerciseName = exercise.exercise?.name ?? 'Hold'
     const detail =
       (exercise.sets ?? 1) > 1
@@ -180,6 +183,7 @@ export function MobilityExerciseView({
           phase: 'hold',
           label: exerciseName,
           detail,
+          ...holdsGlow(holdNo, true),
           startedAt: holdTimer.startedAtMs,
           endsAt: holdTimer.endsAtMs,
           isPaused: holdTimer.isPaused,
@@ -200,6 +204,8 @@ export function MobilityExerciseView({
           phase: 'hold',
           label: exerciseName,
           detail,
+          // page 82: the hold ended, the grass flashes once
+          ...holdsGlow(holdNo, false),
           startedAt: holdTimer.startedAtMs || now,
           endsAt: now,
           isPaused: false,
@@ -216,6 +222,7 @@ export function MobilityExerciseView({
           label: detail ?? 'Next Hold',
           detail: exerciseName,
           exerciseName,
+          ...holdsGlow(holdNo, true),
           startedAt: now,
           endsAt: now,
           isPaused: false,

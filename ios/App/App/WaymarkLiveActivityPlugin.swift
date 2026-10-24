@@ -383,7 +383,12 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             hrSeq: Self.intValue(dict["hrSeq"]),
             distanceKm: (dict["distanceKm"] as? NSNumber)?.doubleValue,
             runKind: dict["runKind"] as? String,
-            runPhase: dict["runPhase"] as? String
+            runPhase: dict["runPhase"] as? String,
+            glowTone: dict["glowTone"] as? String,
+            glowSeq: Self.intValue(dict["glowSeq"]),
+            fillFrom: Self.dateValue(dict["fillFrom"]),
+            fillTo: Self.dateValue(dict["fillTo"]),
+            fillValue: (dict["fillValue"] as? NSNumber)?.doubleValue
         )
     }
 
@@ -394,6 +399,14 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         return words.isEmpty ? nil : words
+    }
+
+    // Epoch ms from JS as a Date; nil when absent or not a number.
+    private static func dateValue(_ value: Any?) -> Date? {
+        guard let n = value as? NSNumber else { return nil }
+        let ms = n.doubleValue
+        guard ms.isFinite, ms > 0 else { return nil }
+        return Date(timeIntervalSince1970: ms / 1000.0)
     }
 
     // JS numbers arrive as NSNumber (often a Double); accept any whole value.

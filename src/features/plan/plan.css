@@ -48,6 +48,13 @@
 
 /* ── the command window (FFX-like): dark plate, thin gold rule, crisp pixel corners ── */
 .pl-veil { position: fixed; inset: 0; z-index: 62; }
+/* page 81: a window that dims what's behind it (fades with the window) */
+.pl-veil.is-dim { background: rgba(2, 6, 5, 0.62); animation: pl-veil-in var(--t-quick) var(--ease-out) both; }
+.pl-veil.is-dim.is-out { animation: pl-veil-out 120ms var(--ease-in) both; pointer-events: none; }
+@keyframes pl-veil-in { from { opacity: 0; } }
+@keyframes pl-veil-out { to { opacity: 0; } }
+/* page 81: a window in the middle of the screen, 22 px from each side */
+.pl-cmd.is-center { left: 22px; right: 22px; top: 50%; translate: 0 -50%; transform-origin: center; max-width: 420px; margin: 0 auto; }
 .pl-cmd { position: fixed; z-index: 63; padding: 8px 12px 8px 22px; background: #070c0a; box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.55), inset 0 0 0 3px rgba(0, 0, 0, 0.55), 0 10px 26px rgba(0, 0, 0, 0.65); transform-origin: right center; animation: pl-pop var(--t-quick) var(--ease-out) both; max-width: calc(100vw - 20px); }
 .pl-cmd.is-out { animation: pl-unpop 120ms var(--ease-in) both; pointer-events: none; }
 @keyframes pl-pop { from { opacity: 0; transform: scale(0.94); } }
@@ -90,7 +97,7 @@ body.pl-pickopen .pl-row > .pl-cur, body.pl-pickopen .pl-dr > .pl-cur { display:
 
 @media (prefers-reduced-motion: reduce) {
   .pl-cur { animation: none; }
-  .pl-cmd, .pl-cmd.is-out { animation: none; }
+  .pl-cmd, .pl-cmd.is-out, .pl-veil.is-dim, .pl-veil.is-dim.is-out { animation: none; }
   .pl-row, .pl-row::after, .pl-row.is-press, .pl-row.is-press::after { transition: none; }
 }
 /* page 76: COACH PICKS ↔ EVERYTHING ↔ RUNS swap in the same window: the new list settles in 180 ms (page 59 --t-quick, ease-out), transform and opacity only */

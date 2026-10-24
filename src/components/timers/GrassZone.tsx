@@ -68,6 +68,13 @@ interface GrassZoneProps {
    * Replaces the swipe-up skip.
    */
   hold?: { onHeld: () => void; held: boolean }
+  /** The hold's words at the foot: [the hint, the flap after 1 s]. Page 81's timer: HOLD · END, ENDING. */
+  holdWords?: readonly [string, string]
+  /**
+   * Page 81, the interval timer's orange near the end of a part: the grass
+   * takes the warning orange, easing over about 1 s (instant with Reduce Motion).
+   */
+  orange?: boolean
 }
 
 /**
@@ -77,7 +84,7 @@ interface GrassZoneProps {
  * early settles back); the blades part around the finger with a light under it
  * and a drag leaves a fading wake.
  */
-export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, state = 'running', label, band, zone, hold }: GrassZoneProps) {
+export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, state = 'running', label, band, zone, hold, holdWords = ['HOLD · FINISH', 'FINISHING'], orange = false }: GrassZoneProps) {
   const onSkip = hold ? undefined : onSkipProp
   const reduced = useReducedMotion()
   // Page 71: the first time, TAP THE GRASS TO START sits in a small box mid-grass; after the
@@ -102,6 +109,14 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, 
     const now = performance.now()
     tint.current = { from: zoneEase(t.from, t.to, now - t.at, reduced), to, at: now }
   }, [zone, reduced])
+  // Page 81: the orange, eased the same way (one channel of the same ease).
+  const orangeT = useRef<{ from: readonly [number, number, number]; to: readonly [number, number, number]; at: number }>({ from: [orange ? 1 : 0, 0, 0], to: [orange ? 1 : 0, 0, 0], at: -1e9 })
+  useLayoutEffect(() => {
+    const to: readonly [number, number, number] = [orange ? 1 : 0, 0, 0], t = orangeT.current
+    if (to[0] === t.to[0]) return
+    const now = performance.now()
+    orangeT.current = { from: zoneEase(t.from, t.to, now - t.at, reduced), to, at: now }
+  }, [orange, reduced])
   // The finish hold: when it started (null: not holding), where an early let-go eases back from, and fired.
   const hd = useRef<{ start: number | null; from: number; at: number; full: boolean; wx: number; wy: number; timers: number[] }>({ start: null, from: 0, at: -1e9, full: false, wx: 0.5, wy: 0.9, timers: [] })
   const [finishing, setFinishing] = useState(false)
@@ -154,12 +169,13 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, 
       // 60 fps while the grass bends or the tint eases (page 74), else the calm 20 (2 with Reduce Motion).
       const pnow = performance.now()
       const wave = holdK(pnow)
-      const tn = tint.current, easing = !reduced && pnow - tn.at < 1000
+      const tn = tint.current, on = orangeT.current, easing = !reduced && (pnow - tn.at < 1000 || pnow - on.at < 1000)
       const fps = reduced ? (wave > 0 && wave < 1 ? 20 : 2) : wave > 0 || easing ? 60 : 20
       if (now - last < 1000 / fps - 1) return
       last = now
       const { track: tr, kind: k, mode: m, heat: h } = live.current
       const zt = zoneEase(tn.from, tn.to, pnow - tn.at, reduced)
+      const ok = zoneEase(on.from, on.to, pnow - on.at, reduced)[0]
       const remaining = trackRemainingMs(tr)
       const calm = k !== 'work'
       const params: GrassParams = {
@@ -171,6 +187,7 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, 
         ...touch.current,
         ...(zt[0] > 0 || zt[1] > 0 || zt[2] > 0 ? { zone: zt } : {}),
         ...(wave > 0 ? { wave, wx: hd.current.wx, wy: hd.current.wy } : {}),
+        ...(ok > 0 ? { orange: ok } : {}),
       }
       const st = settle.current
       if (st) {
@@ -270,7 +287,7 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip: onSkipProp, 
           : <div className="tm-ghint" aria-hidden data-hint>
               <span>{grassHint(state, taught)}</span>
               {hold && state !== 'ready'
-                ? <span className="tm-fin"><span className={`tm-fin-h${finishing ? ' is-gone' : ''}`}>HOLD · FINISH</span><span className={`tm-fin-w${finishing ? ' is-on' : ''}`} data-finishing={finishing ? '' : undefined}><FlapLabel text="FINISHING" size="xs" tone="gold" animate={false} /></span></span>
+                ? <span className="tm-fin"><span className={`tm-fin-h${finishing ? ' is-gone' : ''}`}>{holdWords[0]}</span><span className={`tm-fin-w${finishing ? ' is-on' : ''}`} data-finishing={finishing ? '' : undefined}><FlapLabel text={holdWords[1]} size="xs" tone="gold" animate={false} /></span></span>
                 : <span />}
             </div>
       )}

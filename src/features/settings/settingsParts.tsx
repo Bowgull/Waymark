@@ -1,6 +1,7 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { Crest, FlapLabel, useEdgeBack, type FlapSize, type FlapTone } from '@/design'
+import { tapHaptic } from '@/lib/haptics'
 import './settings.css'
 
 // The pieces page 37 builds Settings, Body metrics and Logs from: the solid
@@ -8,18 +9,30 @@ import './settings.css'
 // blocks, the time value on a row, and the ▲ ▼ drum of the time card.
 
 const HOLD_MS = 700
+/** Page 81: the crest's hidden hold. */
+export const SECRET_HOLD_MS = 1000
 
 /**
  * A full screen on the solid dark (page 37 `.solid`), the header (crest, the
  * title on a flap) fixed at the top and the boards scrolling under it. Tap the
  * crest to go back; hold it for Logs when `onHold` is given.
  */
-export function SettingsScreen({ title, onBack, onHold, holdLabel = 'logs', backLabel, children }: { title: string; onBack: () => void; onHold?: () => void; /** What holding the crest opens, for its label. */ holdLabel?: string; /** page 46: "‹ TODAY" in gold top left; the crest and title move right (the crest still goes back). */ backLabel?: string; children: ReactNode }) {
+export function SettingsScreen({ title, onBack, onHold, holdLabel = 'logs', onSecretHold, backLabel, children }: { title: string; onBack: () => void; onHold?: () => void; /** What holding the crest opens, for its label. */ holdLabel?: string; /**
+   * Page 81: holding the crest about 1 s opens something nothing on screen
+   * points to (the interval timer). The crest dips and a thin gold line traces
+   * under it; let go early and it eases back; at full a light haptic.
+   */ onSecretHold?: () => void; /** page 46: "‹ TODAY" in gold top left; the crest and title move right (the crest still goes back). */ backLabel?: string; children: ReactNode }) {
   const timer = useRef<number | null>(null)
   const held = useRef(false)
-  const stop = () => { if (timer.current) window.clearTimeout(timer.current); timer.current = null }
+  const [pressing, setPressing] = useState(false)
+  const stop = () => { if (timer.current) window.clearTimeout(timer.current); timer.current = null; setPressing(false) }
   const start = () => {
     held.current = false
+    if (onSecretHold) {
+      setPressing(true)
+      timer.current = window.setTimeout(() => { timer.current = null; held.current = true; setPressing(false); void tapHaptic(); onSecretHold() }, SECRET_HOLD_MS)
+      return
+    }
     if (!onHold) return
     timer.current = window.setTimeout(() => { held.current = true; onHold() }, HOLD_MS)
   }
@@ -33,8 +46,8 @@ export function SettingsScreen({ title, onBack, onHold, holdLabel = 'logs', back
         {backLabel && <button type="button" className="st-bk" onClick={onBack}>‹ {backLabel}</button>}
         <button
           type="button"
-          className="st-brand"
-          aria-label={onHold ? `Back. Hold for ${holdLabel}.` : 'Back'}
+          className={`st-brand${pressing ? ' is-press' : ''}`}
+          aria-label={onHold && !onSecretHold ? `Back. Hold for ${holdLabel}.` : 'Back'}
           onPointerDown={start}
           onPointerUp={stop}
           onPointerLeave={stop}
@@ -44,6 +57,7 @@ export function SettingsScreen({ title, onBack, onHold, holdLabel = 'logs', back
         >
           <span className="st-crest"><Crest width={backLabel ? 22 : 52} /></span>
           <FlapLabel text={title} size="sm" animate={false} />
+          {onSecretHold && <i className="st-ctrace" aria-hidden />}
         </button>
       </header>
       <div className="st-scroll">{children}</div>

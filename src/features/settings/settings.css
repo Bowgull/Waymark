@@ -6,6 +6,12 @@
 .st-hd { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 16px 6px; }
 .st-brand { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .st-crest { width: 54px; height: 60px; display: grid; place-items: center; flex: none; }
+/* page 81: the crest's hidden hold (1 s). The crest dips, a thin gold line traces under the brand; let go early and it eases back */
+.st-brand { position: relative; }
+.st-brand .st-crest { transition: transform var(--t-tap) var(--ease-out); }
+.st-brand.is-press .st-crest { transform: scale(0.96); }
+.st-ctrace { position: absolute; left: 0; bottom: -5px; height: 1.5px; width: 0; background: #e8c878; opacity: 0.9; box-shadow: 0 0 6px rgba(232, 200, 96, 0.6); pointer-events: none; transition: width var(--t-quick) var(--ease-in); }
+.st-brand.is-press .st-ctrace { width: 100%; transition: width 1000ms linear; }
 /* page 46 "A way back": ‹ TODAY in gold at the top left; the small crest and the title on the right (.hd2) */
 .st-hd.is-back { padding: 8px 16px 6px; gap: 10px; }
 .st-hd.is-back .st-crest { width: 30px; height: 34px; }

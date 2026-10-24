@@ -166,5 +166,11 @@ function stateKey(s: ActivityState): string {
     s.hrZone ?? '',
     s.runKind ?? '',
     s.runPhase ?? '',
+    // page 82: the moment's colour and the change counter (the flash)
+    s.glowTone ?? '',
+    s.glowSeq ?? '',
+    s.fillFrom != null ? Math.round(s.fillFrom) : '',
+    s.fillTo != null ? Math.round(s.fillTo) : '',
+    s.fillValue != null ? s.fillValue.toFixed(3) : '',
   ].join('|')
 }

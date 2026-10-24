@@ -13,10 +13,10 @@ import './plan.css'
 // anywhere else, a scroll, Escape or the edge swipe closes it. Lines are 44 pt
 // tall; the pixel cursor sits on the pointed one and its name turns gold.
 
-export type CmdPlace = 'side' | 'below' | 'bottom'
+export type CmdPlace = 'side' | 'below' | 'bottom' | 'center'
 
 /** The window's frame. `closing` plays the leave; `onLeft` follows it. */
-export function Cmd({ anchor, place, closing, onLeft, onDismiss, label, className = '', stayOnScroll = false, children }: {
+export function Cmd({ anchor, place, closing, onLeft, onDismiss, label, className = '', stayOnScroll = false, dim = false, children }: {
   anchor: DOMRect | null
   place: CmdPlace
   closing: boolean
@@ -26,6 +26,8 @@ export function Cmd({ anchor, place, closing, onLeft, onDismiss, label, classNam
   className?: string
   /** A window he types in (page 80's slate): the keyboard moving the page doesn't close it. */
   stayOnScroll?: boolean
+  /** Page 81: the veil dims what's behind (the timer window on Settings). */
+  dim?: boolean
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -36,7 +38,7 @@ export function Cmd({ anchor, place, closing, onLeft, onDismiss, label, classNam
 
   useLayoutEffect(() => {
     const w = ref.current
-    if (!w || place === 'bottom' || !anchor) return
+    if (!w || place === 'bottom' || place === 'center' || !anchor) return
     const ww = w.offsetWidth, h = w.offsetHeight, vh = window.innerHeight
     let left: number, top: number, origin: string
     if (place === 'side') { left = anchor.right - ww + 4; top = anchor.top + anchor.height / 2 - h / 2; origin = 'right center' }
@@ -60,11 +62,11 @@ export function Cmd({ anchor, place, closing, onLeft, onDismiss, label, classNam
     return () => window.clearTimeout(t)
   }, [closing, onLeft])
 
-  const style = place === 'bottom' ? undefined : pos ? { left: pos.left, top: pos.top, transformOrigin: pos.origin } : { left: 0, top: 0, visibility: 'hidden' as const }
+  const style = place === 'bottom' || place === 'center' ? undefined : pos ? { left: pos.left, top: pos.top, transformOrigin: pos.origin } : { left: 0, top: 0, visibility: 'hidden' as const }
   return createPortal(
     <>
-      <div className="pl-veil" onClick={() => { if (!closing) onDismiss() }} aria-hidden />
-      <div ref={ref} className={`pl-cmd${place === 'bottom' ? ' is-pickw' : ''}${closing ? ' is-out' : ''} ${className}`.trim()} style={style} role="dialog" aria-label={label}>
+      <div className={`pl-veil${dim ? ' is-dim' : ''}${dim && closing ? ' is-out' : ''}`} onClick={() => { if (!closing) onDismiss() }} aria-hidden />
+      <div ref={ref} className={`pl-cmd${place === 'bottom' ? ' is-pickw' : place === 'center' ? ' is-center' : ''}${closing ? ' is-out' : ''} ${className}`.trim()} style={style} role="dialog" aria-label={label}>
         <i className="pc a" /><i className="pc b" /><i className="pc c" /><i className="pc d" />
         {children}
       </div>

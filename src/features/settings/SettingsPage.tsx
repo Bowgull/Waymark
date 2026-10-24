@@ -20,6 +20,10 @@ import { ArcCard, NumberCard, TimeCard } from './SettingsCards'
 import { ChevValue, MOON_MARK, SBlock, SRow, SettingsScreen, SUN_MARK, TimeValue } from './settingsParts'
 import { classDayState, classDayWord, cycleClassDay, formatClassSlots, parseClassSlots, type ClassDaySlot } from '@/lib/classSlots'
 import { goBack } from '@/lib/goBack'
+import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
+import { loadLast, saveLast, type IntervalSetup } from '@/lib/timers/intervalTimer'
+import { IntervalTimerWindow } from '@/features/timer/IntervalTimerWindow'
+import { IntervalTimerScreen } from '@/features/timer/IntervalTimerScreen'
 import { daysUntilRedeploy, leadFlap, splitTime, timeFlap } from './settingsModel'
 
 interface Settings {
@@ -61,7 +65,7 @@ type Card = 'am' | 'pm' | 'lead' | 'opArc' | 'opEp' | 'nArc' | 'nEp' | null
  * Settings, page 37 A (approved): five grouped boards on the solid dark, no
  * world behind them: Training, Alarms, Body, World, Connections, with the
  * "5D until redeploy" badge on top. Every switch is an ON / OFF flap; times
- * open the centred time card. Hold the crest for Logs.
+ * open the centred time card.
  */
 export function SettingsPage() {
   const navigate = useNavigate()
@@ -70,6 +74,8 @@ export function SettingsPage() {
   const [showReplacementPicker, setShowReplacementPicker] = useState(false)
   const hydratedRef = useRef(false)
   const [card, setCard] = useState<Card>(null)
+  /** Page 81: the hidden interval timer, its window or running. */
+  const [timer, setTimer] = useState<{ setup: IntervalSetup; running?: boolean } | null>(null)
 
   const [mtDays, setMtDays] = useState<Set<string>>(new Set())
   const [mtSlots, setMtSlots] = useState<Partial<Record<number, ClassDaySlot>>>({})
@@ -202,17 +208,19 @@ export function SettingsPage() {
   }
 
   const back = () => goBack(navigate, '/today')
-  const hold = () => navigate('/settings/logs')
+  // Page 81: the crest held about 1 s opens the hidden interval timer (Logs stays on Today's crest).
+  const openTimer = () => setTimer({ setup: loadLast(storageGet) })
 
   if (loading) {
-    return <SettingsScreen title="SETTINGS" backLabel="TODAY" onBack={back} onHold={hold}><div aria-busy="true" aria-label="Loading settings" /></SettingsScreen>
+    return <SettingsScreen title="SETTINGS" backLabel="TODAY" onBack={back} onSecretHold={openTimer}><div aria-busy="true" aria-label="Loading settings" /></SettingsScreen>
   }
 
   const daysLeft = daysUntilRedeploy(Number(import.meta.env.VITE_BUILD_TIME), Date.now())
   const am = splitTime(amReminder)
   const pm = splitTime(pmSessionTime)
   return (
-    <SettingsScreen title="SETTINGS" backLabel="TODAY" onBack={back} onHold={hold}>
+    <>
+    <SettingsScreen title="SETTINGS" backLabel="TODAY" onBack={back} onSecretHold={openTimer}>
       {daysLeft !== null && (
         <div className="st-badge" aria-label={`${daysLeft} days until redeploy`}>
           <FlapLabel text={`${daysLeft}D`} size="sm" tone="gold" animate={false} />
@@ -335,5 +343,14 @@ export function SettingsPage() {
         />
       )}
     </SettingsScreen>
+    {timer && !timer.running && (
+      <IntervalTimerWindow
+        initial={timer.setup}
+        onStart={setup => { saveLast(storageSet, setup); setTimer({ setup, running: true }) }}
+        onClose={() => setTimer(t => (t?.running ? t : null))}
+      />
+    )}
+    {timer?.running && <IntervalTimerScreen setup={timer.setup} onClose={() => setTimer(null)} />}
+    </>
   )
 }

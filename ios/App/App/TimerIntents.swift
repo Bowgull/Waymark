@@ -42,6 +42,10 @@ public struct PauseTimerIntent: LiveActivityIntent {
             newState.isPaused = true
             newState.pausedRemaining = remaining
             newState.endPending = false
+            // Page 82: a whole-session fill stands where it was at the tap.
+            if let from = state.fillFrom, let to = state.fillTo, to > from {
+                newState.fillValue = min(1, max(0, Date().timeIntervalSince(from) / to.timeIntervalSince(from)))
+            }
             let content = ActivityContent(state: newState, staleDate: newState.timerStaleDate)
             await activity.update(content)
         }
@@ -75,6 +79,14 @@ public struct ResumeTimerIntent: LiveActivityIntent {
             let newEndsAt = now.addingTimeInterval(remaining)
             resumedEndsAt = newEndsAt
             var newState = state
+            // Page 82: a whole-session fill moves on by the time spent paused
+            // (the pause began where the old end minus what was left).
+            if let from = state.fillFrom, let to = state.fillTo {
+                let pausedFor = max(0, now.timeIntervalSince(state.endsAt.addingTimeInterval(-remaining)))
+                newState.fillFrom = from.addingTimeInterval(pausedFor)
+                newState.fillTo = to.addingTimeInterval(pausedFor)
+            }
+            newState.fillValue = nil
             newState.endsAt = newEndsAt
             newState.startedAt = now
             newState.isPaused = false

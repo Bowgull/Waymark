@@ -20,6 +20,7 @@ import {
 import { comboCue } from '@/lib/comboCue'
 import { isStaleCue, type EngineState } from '@/lib/sessionResume'
 import { bagComboSize, cueShown, lockComboSize, type BagRoundView } from '@/lib/timers/bagRound'
+import { bagGlow } from '@/lib/lockGlow'
 import { comboStrikes, heatFor, workLabel, type Heat } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
 
@@ -263,6 +264,8 @@ export function BagWorkRoundView({
             detail: nowCombo?.text ?? undefined,
             ...laCombo,
             fromClass: !!nowCombo?.fromClass,
+            // page 82: gold, orange in the last 10 s (colour only); flashes as the round starts
+            ...bagGlow(round.roundNumber, false, !roundTimer.isPaused && roundTimer.secondsRemaining <= 10),
             startedAt: roundTimer.startedAtMs,
             endsAt: roundTimer.endsAtMs,
             isPaused: roundTimer.isPaused,
@@ -281,6 +284,7 @@ export function BagWorkRoundView({
               detail: nextCombo?.text ?? `Next: Round ${round.roundNumber + 1}`,
               ...laCombo,
               fromClass: !!nextCombo?.fromClass,
+              ...bagGlow(round.roundNumber, true, false),
               startedAt: restTimer.startedAtMs,
               endsAt: restTimer.endsAtMs,
               isPaused: restTimer.isPaused,

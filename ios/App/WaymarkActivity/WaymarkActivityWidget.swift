@@ -45,6 +45,20 @@ import WidgetKit
 // Nothing on a run's card or island ends, logs or discards it: an easy run
 // has one wide pause / play stone filling the pair's slot; a run-walk has
 // pause / play and skip (the next piece). The stones take the zone's colour.
+//
+// Every card's grass (mockup page 82, approved 2026-10-23): the grass is the
+// system's own progress fill and never sways. It takes the moment's colour
+// (glowTone from the app; on a strap run the widget reads the zone itself) and
+// glows softly in it; when the change counter (glowSeq, like the heart's
+// hrSeq) moves, it glows brighter once and eases back. A colour change alone
+// (bag work's and the timer's orange) never flashes. Reduce Motion: no flash.
+// The island's big number glows and flashes with it.
+//
+// The interval timer's card (mockup page 81): the crest, INTERVAL TIMER, ROUND
+// 3 OF 8; the countdown to the part's end, the phase word (WORK gold, REST and
+// GET READY teal, orange near the end), the pause stone only; the grass fills
+// the part. Its island: 3/8 and the time in the phase colour; long-press for
+// the big time, ROUND 3/8, the phase and the pause stone. Nothing ends or logs.
 
 // MARK: - Palette (mockups shared/flap.css + page 44)
 
@@ -81,12 +95,28 @@ extension Color {
     static let wmGrassOff = Color(wmHex: 0x6E9858, opacity: 0.45)
     static let wmTapNote = Color(wmHex: 0xF0E6C0, opacity: 0.6)
     static let wmCardEdgeTeal = Color(wmHex: 0x5FA08C, opacity: 0.35)
+    // Page 82's moment colours (mockup ZC).
+    static let wmGlowTeal = Color(wmHex: 0x4ACAAA)
+    static let wmGlowGold = Color(wmHex: 0xE8C878)
+    static let wmGlowEmber = Color(wmHex: 0xEC8A5E)
+    static let wmGlowOrange = Color(wmHex: 0xF0A060)
+}
+
+// glowTone from the app ("teal", "gold", "ember", "orange").
+private func glowColor(_ raw: String?) -> Color? {
+    switch raw {
+    case "teal": return .wmGlowTeal
+    case "gold": return .wmGlowGold
+    case "ember": return .wmGlowEmber
+    case "orange": return .wmGlowOrange
+    default: return nil
+    }
 }
 
 // MARK: - Flap tiles
 
 private enum FlapTone {
-    case ink, dim, gold, teal, clay
+    case ink, dim, gold, teal, clay, orange
 
     var top: Color {
         switch self {
@@ -94,6 +124,7 @@ private enum FlapTone {
         case .gold: return .wmGold
         case .teal: return .wmTeal
         case .clay: return .wmClay
+        case .orange: return Color(wmHex: 0xE0904A)
         }
     }
 
@@ -103,6 +134,7 @@ private enum FlapTone {
         case .gold: return .wmGold2
         case .teal: return .wmTeal2
         case .clay: return .wmClay2
+        case .orange: return Color(wmHex: 0xCF7F3A)
         }
     }
 
@@ -113,6 +145,7 @@ private enum FlapTone {
         case .gold: return .wmGoldInk
         case .teal: return .wmTealInk
         case .clay: return .wmClayInk
+        case .orange: return Color(wmHex: 0x141008)
         }
     }
 }
@@ -362,22 +395,34 @@ private struct GrassStrip: View {
     var rowHeight: CGFloat = Grass.rowHeight
     // The unlit blades (page 74: the zone colour at .28 on a strap run).
     var off: Color = .wmGrassOff
+    // Page 82: the lit blades' steady soft glow, and what makes them flash
+    // once (a new key). Nil: no glow (an older state).
+    var glow: Color? = nil
+    var flashKey: String = ""
 
     var body: some View {
         ZStack {
             GrassGlyphs(fontSize: fontSize, rowHeight: rowHeight)
                 .foregroundStyle(off)
-            bar
-                .progressViewStyle(.linear)
-                .tint(tone.lit)
-                .frame(maxWidth: .infinity)
-                .scaleEffect(x: 1, y: rowHeight * 3, anchor: .center)
-                .frame(height: rowHeight * 3)
-                .mask {
-                    GrassGlyphs(fontSize: fontSize, rowHeight: rowHeight)
-                }
+            if let g = glow {
+                lit.modifier(FlashOnChange(key: flashKey, color: g, soft: 2.5, peak: 7))
+            } else {
+                lit
+            }
         }
         .frame(height: rowHeight * 3)
+    }
+
+    private var lit: some View {
+        bar
+            .progressViewStyle(.linear)
+            .tint(tone.lit)
+            .frame(maxWidth: .infinity)
+            .scaleEffect(x: 1, y: rowHeight * 3, anchor: .center)
+            .frame(height: rowHeight * 3)
+            .mask {
+                GrassGlyphs(fontSize: fontSize, rowHeight: rowHeight)
+            }
     }
 
     @ViewBuilder
@@ -392,6 +437,51 @@ private struct GrassStrip: View {
         case .value(let v):
             ProgressView(value: min(1, max(0, v)))
         }
+    }
+}
+
+// MARK: - The glow and the flash (page 82)
+
+// One level of the glow: k 0 = the steady soft glow, k 1 = the flash's peak.
+private struct GlowLevel: ViewModifier {
+    let color: Color
+    let k: Double
+    let soft: CGFloat
+    let peak: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .brightness(0.42 * k)
+            .shadow(color: color.opacity(0.55 + 0.4 * k), radius: soft + (peak - soft) * CGFloat(k))
+    }
+}
+
+// A steady soft glow in `color`; when `key` changes, the view comes back at
+// the flash's peak and eases to the soft glow (about 0.9 s), once. Live
+// Activities can't loop: this is the heart's hrSeq transition, for anything.
+private struct FlashOnChange: ViewModifier {
+    let key: String
+    let color: Color
+    var soft: CGFloat = 2.5
+    var peak: CGFloat = 8
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        ZStack {
+            content
+                .id(key)
+                .transition(flashOnce)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.9), value: key)
+    }
+
+    private var flashOnce: AnyTransition {
+        let steady = GlowLevel(color: color, k: 0, soft: soft, peak: peak)
+        if reduceMotion { return AnyTransition.modifier(active: steady, identity: steady) }
+        return AnyTransition.asymmetric(
+            insertion: AnyTransition.modifier(active: GlowLevel(color: color, k: 1, soft: soft, peak: peak), identity: steady),
+            removal: AnyTransition.identity
+        )
     }
 }
 
@@ -526,11 +616,14 @@ private struct LAInfo {
     let timeUp: Bool
     // The run's Live Activity (page 74 draws its strap card).
     let isRun: Bool
+    // Page 81: the hidden interval timer's card.
+    let isInterval: Bool
 
     init(context: ActivityViewContext<WaymarkActivityAttributes>, now: Date = Date()) {
         state = context.state
         sessionLabel = context.attributes.sessionLabel
         isRun = context.attributes.sessionType == "run" || context.attributes.sessionType == "running"
+        isInterval = context.attributes.sessionType == "interval_timer"
         let s = context.state
         let timer = s.phase != "complete" && s.phase != "exercise" && s.phase != "ready"
         timeUp = timer && !s.isPaused && (context.isStale || s.endsAt <= now)
@@ -631,11 +724,72 @@ private struct LAInfo {
             if let c = setCount { return .value(Double(c.current) / Double(c.total)) }
             return .value(0)
         }
+        // Page 82: a whole-session fill (Reset) when the app sends one.
+        if state.isPaused, let v = state.fillValue, v.isFinite { return .value(min(1, max(0, v))) }
+        if !state.isPaused, let from = state.fillFrom, let to = state.fillTo, to > from { return .timer(from...to) }
         if state.isPaused, let remaining = state.pausedRemaining {
             let total = max(1, state.endsAt.timeIntervalSince(state.startedAt))
             return .value(1 - remaining / total)
         }
         return .timer(safeRange(state))
+    }
+
+    // MARK: Every card's grass (page 82)
+
+    // The moment's colour: the lit grass, its glow, the island's big number.
+    // A strap run reads the zone itself (the recorder changes it locked):
+    // Zone 2 teal / gold / ember; run-walk teal walking, the zone running;
+    // tempo / intervals ember when well over, teal easy, gold hard. Otherwise
+    // the app's glowTone, else today's colours. Time ran out stays red.
+    var momentColor: Color {
+        if timeUp { return .wmGrassRed }
+        if isStrapRun {
+            let z = zone ?? .off
+            if isHardRun { return z == .over ? .wmGlowEmber : (isRest ? .wmGlowTeal : .wmGlowGold) }
+            if isRunWalk && isRest { return .wmGlowTeal }
+            return z.isLive ? z.tint : .wmGlowGold
+        }
+        if let c = glowColor(state.glowTone) { return c }
+        return grassTone.lit
+    }
+
+    // What makes the grass flash once: the app's change counter; on a Zone 2
+    // run also a zone change and the run's time being reached; on a hard run
+    // also EASE OFF. A run-walk flashes at its switches only.
+    var flashKey: String {
+        let seq = state.glowSeq ?? 0
+        if isRun {
+            if isHardRun { return "\(seq)|\(zone == .over)" }
+            if isRunWalk { return "\(seq)" }
+            return "\(seq)|\(state.hrZone ?? "")|\(timeUp)"
+        }
+        return "\(seq)"
+    }
+
+    // MARK: The interval timer (page 81)
+
+    var intervalRound: (current: Int, total: Int)? {
+        if let r = state.round, let t = state.roundTotal, r > 0, t > 0 { return (min(r, t), t) }
+        return step
+    }
+
+    var intervalRoundText: String {
+        guard let c = intervalRound else { return "" }
+        return "ROUND \(c.current) OF \(c.total)"
+    }
+
+    var intervalShortRound: String {
+        guard let c = intervalRound else { return "" }
+        return "\(c.current)/\(c.total)"
+    }
+
+    // WORK / REST / GET READY, PAUSED; the plate gold, teal, or orange near the end.
+    var intervalPhase: (text: String, tone: FlapTone) {
+        if state.isPaused { return ("PAUSED", .ink) }
+        if timeUp { return ("TIME", .clay) }
+        let word = state.label.trimmingCharacters(in: .whitespaces).uppercased()
+        if state.glowTone == "orange" { return (word, .orange) }
+        return (word, isRest ? .teal : .gold)
     }
 
     // Round and rest: pause + skip. Other running timers: pause. Between
@@ -646,6 +800,8 @@ private struct LAInfo {
     var actions: [RuneAction] {
         if isComplete || isExercise { return [] }
         if isReady { return [.startHold] }
+        // Page 81: the timer's one stone, pause / play. Never an end or a skip.
+        if isInterval { return [state.isPaused ? .resume : .pause] }
         if isEasyRun || isRunWalk || isHardRun {
             let first: RuneAction = state.isPaused ? .resume : .pause
             return isRunWalk || isHardRun ? [first, .skip] : [first]
@@ -676,11 +832,16 @@ private struct LAInfo {
     // (or no zone) they keep today's colours.
     var runeTone: RuneTone {
         if !isComplete, let z = zone, let tone = z.runeTone { return tone }
+        // The timer's stone: gold work, teal rest, ember for the orange (the nearest carved stone).
+        if isInterval && !isComplete {
+            if state.glowTone == "orange" { return .ember }
+            return isRest ? .teal : .gold
+        }
         return runesTeal ? .teal : .gold
     }
 
     // One control on an easy run: the stone fills the pair's slot.
-    var soloStone: Bool { isEasyRun && actions.count == 1 }
+    var soloStone: Bool { (isEasyRun || isInterval) && actions.count == 1 }
 
     var runTitle: String {
         if isRunWalk { return "RUN-WALK" }
@@ -1244,7 +1405,9 @@ private struct LockScreenView: View {
 
     var body: some View {
         let info = LAInfo(context: context)
-        if info.isBagCard {
+        if info.isInterval {
+            intervalCard(info)
+        } else if info.isBagCard {
             bagCard(info)
         } else if info.isStrapRun {
             runCard(info)
@@ -1269,8 +1432,10 @@ private struct LockScreenView: View {
             Spacer(minLength: 0)
             GrassStrip(
                 fill: info.grass,
-                tone: tinted ? .tint(zone.tint) : info.grassTone,
-                off: tinted ? zone.tint.opacity(0.28) : .wmGrassOff
+                tone: .tint(info.momentColor),
+                off: tinted ? zone.tint.opacity(0.28) : .wmGrassOff,
+                glow: info.momentColor,
+                flashKey: info.flashKey
             )
             .padding(.horizontal, -2)
             .frame(height: Grass.rowHeight * 3, alignment: .top)
@@ -1347,7 +1512,7 @@ private struct LockScreenView: View {
                 mainRow(info)
             }
             Spacer(minLength: 0)
-            GrassStrip(fill: info.grass, tone: info.grassTone)
+            GrassStrip(fill: info.grass, tone: .tint(info.momentColor), glow: info.momentColor, flashKey: info.flashKey)
                 .padding(.horizontal, -2)
                 .frame(height: Grass.band, alignment: .top)
         }
@@ -1380,7 +1545,7 @@ private struct LockScreenView: View {
             .padding(.horizontal, -8)
             .frame(maxWidth: .infinity)
             Spacer(minLength: 0)
-            GrassStrip(fill: info.grass, tone: info.grassTone)
+            GrassStrip(fill: info.grass, tone: .tint(info.momentColor), glow: info.momentColor, flashKey: info.flashKey)
                 .padding(.horizontal, -2)
                 .frame(height: Grass.rowHeight * 3, alignment: .top)
         }
@@ -1392,6 +1557,70 @@ private struct LockScreenView: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(info.isRest ? Color.wmCardEdgeTeal : Color.wmCardEdge, lineWidth: 1)
+        )
+    }
+
+    // MARK: The interval timer's card (page 81 "Locked", mockup LA())
+
+    // Header 22 (the crest, INTERVAL TIMER, ROUND 3 OF 8), main row 62 (the
+    // countdown to the part's end on lg tiles, the phase plate, the pause
+    // stone), the grass's three rows filling the part. The rule and its soft
+    // glow take the phase colour. At the end: DONE · 8 ROUNDS.
+    private func intervalCard(_ info: LAInfo) -> some View {
+        let tint = info.momentColor
+        return VStack(spacing: 0) {
+            HStack(spacing: 7) {
+                CrestImage()
+                    .frame(width: 18, height: 20)
+                FitFlap(text: "INTERVAL TIMER", size: FlapSize.xs)
+                    .layoutPriority(1)
+                Spacer(minLength: 4)
+                if !info.isComplete {
+                    Text(info.intervalRoundText)
+                        .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                        .tracking(1)
+                        .foregroundStyle(Color.wmBody)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .frame(height: 22)
+            Spacer(minLength: 0)
+            if info.isComplete {
+                HStack(alignment: .center, spacing: 12) {
+                    CrestImage(big: true)
+                        .frame(width: 44, height: 50)
+                        .shadow(color: Color.wmGrassGold.opacity(0.55), radius: 7)
+                    FitFlap(text: (info.state.completeMessage ?? "DONE").uppercased(), size: FlapSize.sm, tone: .gold)
+                    Spacer(minLength: 0)
+                }
+                .frame(height: 62)
+            } else {
+                let phase = info.intervalPhase
+                HStack(alignment: .center, spacing: 10) {
+                    BigTiles(info: info, size: FlapSize.lg)
+                    FitFlap(text: phase.text, size: FlapSize.xs, tone: phase.tone)
+                        .padding(.leading, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(1)
+                    RuneRow(info: info, spacing: 8)
+                }
+                .frame(height: 62)
+            }
+            Spacer(minLength: 0)
+            GrassStrip(fill: info.grass, tone: .tint(tint), glow: tint, flashKey: info.flashKey)
+                .padding(.horizontal, -2)
+                .frame(height: Grass.rowHeight * 3, alignment: .top)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .frame(height: 160)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(tint.opacity(0.62), lineWidth: 1)
+                .shadow(color: tint.opacity(0.14), radius: 9)
+                .animation(.easeOut(duration: 1.0), value: info.state.glowTone ?? "")
         )
     }
 
@@ -1488,7 +1717,11 @@ private struct CompactTrailing: View {
 
     var body: some View {
         let info = LAInfo(context: context)
-        if info.isStrapRun {
+        if info.isInterval && !info.isComplete {
+            // Page 81: the time left in the phase colour, counting by itself.
+            IntervalTimeText(info: info, size: 15)
+                .frame(maxWidth: 52, alignment: .trailing)
+        } else if info.isStrapRun {
             // Page 74: the bpm in the zone's colour ("--" dim with no strap).
             Text(info.bpmText)
                 .font(.system(size: 16, weight: .bold, design: .monospaced))
@@ -1522,7 +1755,15 @@ private struct ExpandedCenter: View {
 
     var body: some View {
         let info = LAInfo(context: context)
-        if info.isStrapRun {
+        if info.isInterval && !info.isComplete {
+            // Page 81: INTERVAL TIMER over the big time in the phase colour, glowing; it flashes with the card.
+            VStack(alignment: .center, spacing: 6) {
+                FitFlap(text: "INTERVAL TIMER", size: FlapSize.xs)
+                IntervalTimeText(info: info, size: 30)
+                    .modifier(FlashOnChange(key: info.flashKey, color: info.momentColor, soft: 3, peak: 9))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        } else if info.isStrapRun {
             // Page 74: the run on an xs flap over the time (mono 30).
             VStack(alignment: .center, spacing: 6) {
                 FitFlap(text: info.runTitle, size: FlapSize.xs)
@@ -1551,7 +1792,21 @@ private struct ExpandedTrailing: View {
     var body: some View {
         let info = LAInfo(context: context)
         Group {
-            if info.isStrapRun {
+            if info.isInterval && !info.isComplete {
+                // Page 81: 3/8 in the phase colour, ROUND small under it.
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(info.intervalShortRound)
+                        .font(.system(size: 26, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(info.momentColor)
+                        .shadow(color: info.momentColor.opacity(0.55), radius: 4)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text("ROUND")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .tracking(1.3)
+                        .foregroundStyle(Color(wmHex: 0xF0E6C0, opacity: 0.75))
+                }
+            } else if info.isStrapRun {
                 // Page 74: the big bpm in the zone's colour, BPM small under it.
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(info.bpmText)
@@ -1559,6 +1814,7 @@ private struct ExpandedTrailing: View {
                         .foregroundStyle(info.heartZone.number)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
+                        .modifier(FlashOnChange(key: info.flashKey, color: info.momentColor, soft: 3, peak: 9))
                     Text("BPM")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .tracking(1.3)
@@ -1569,7 +1825,9 @@ private struct ExpandedTrailing: View {
                     .frame(width: 36, height: 40)
                     .shadow(color: Color.wmGrassGold.opacity(0.55), radius: 6)
             } else {
+                // Page 82: the big number glows in the moment's colour and flashes with the card.
                 BigTiles(info: info, size: FlapSize.md)
+                    .modifier(FlashOnChange(key: info.flashKey, color: info.momentColor, soft: 3, peak: 9))
             }
         }
         .frame(maxHeight: .infinity)
@@ -1584,7 +1842,17 @@ private struct ExpandedBottom: View {
 
     var body: some View {
         let info = LAInfo(context: context)
-        if info.isStrapRun {
+        if info.isInterval && !info.isComplete {
+            // Page 81: the phase plate and the pause stone (no end from the island).
+            let phase = info.intervalPhase
+            HStack(alignment: .center, spacing: 0) {
+                FitFlap(text: phase.text, size: FlapSize.xs, tone: phase.tone)
+                Spacer(minLength: 6)
+                RuneRow(info: info, spacing: 8)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 44)
+        } else if info.isStrapRun {
             // Page 74: the distance, the flap, the stones (the wide 96 x 44 on
             // an easy run, the pair 44 + 44 with an 8 pt gap on a run-walk).
             HStack(alignment: .center, spacing: 0) {
@@ -1602,7 +1870,7 @@ private struct ExpandedBottom: View {
             .frame(height: 44)
         } else {
             VStack(spacing: 8) {
-                GrassStrip(fill: info.grass, tone: info.grassTone)
+                GrassStrip(fill: info.grass, tone: .tint(info.momentColor), glow: info.momentColor, flashKey: info.flashKey)
                 if !info.actions.isEmpty {
                     RuneRow(info: info, spacing: 16)
                         .frame(maxWidth: .infinity)
@@ -1629,6 +1897,29 @@ private struct BigTimeText: View {
         .font(.system(size: 30, weight: .bold, design: .monospaced))
         .foregroundStyle(Color.wmInk.opacity(info.state.isPaused ? 0.74 : 1))
         .multilineTextAlignment(.center)
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+    }
+}
+
+// Page 81: the timer's time left as plain mono text in the phase colour,
+// counting by itself (the system's timer text); paused, it stands.
+@available(iOS 16.2, *)
+private struct IntervalTimeText: View {
+    let info: LAInfo
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if info.timeUp {
+                Text(formatDuration(0))
+            } else {
+                clockText(info.state)
+            }
+        }
+        .font(.system(size: size, weight: .bold, design: .monospaced))
+        .foregroundStyle(info.momentColor.opacity(info.state.isPaused ? 0.74 : 1))
+        .multilineTextAlignment(.trailing)
         .lineLimit(1)
         .minimumScaleFactor(0.6)
     }
@@ -1670,7 +1961,18 @@ private struct CompactLeading: View {
 
     var body: some View {
         let info = LAInfo(context: context)
-        if info.isStrapRun {
+        if info.isInterval {
+            if info.isComplete {
+                CrestImage().frame(width: 18, height: 20)
+            } else {
+                // Page 81: the round, 3/8, in the phase colour.
+                Text(info.intervalShortRound)
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .foregroundStyle(info.momentColor)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        } else if info.isStrapRun {
             LiveHeart(info: info, size: 22, peak: 0.35, radius: 3)
         } else {
             SessionIcon(context: context)
@@ -1686,7 +1988,9 @@ private struct MinimalView: View {
 
     var body: some View {
         let info = LAInfo(context: context)
-        if info.isStrapRun {
+        if info.isInterval {
+            CrestImage().frame(width: 18, height: 20)
+        } else if info.isStrapRun {
             LiveHeart(info: info, size: 22, peak: 0.35, radius: 3)
         } else {
             SessionIcon(context: context)
@@ -1703,7 +2007,9 @@ private struct ExpandedLeading: View {
     var body: some View {
         let info = LAInfo(context: context)
         Group {
-            if info.isStrapRun {
+            if info.isInterval {
+                CrestImage().frame(width: 30, height: 34)
+            } else if info.isStrapRun {
                 LiveHeart(info: info, size: 44, peak: 0.55, radius: 5)
             } else {
                 SessionIcon(context: context)

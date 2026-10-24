@@ -69,6 +69,7 @@ import { SkipRopeView } from './SkipRopeView'
 import { StrengthExerciseView } from './StrengthExerciseView'
 import type { StrengthSection } from './strengthMicrocopy'
 import { useRestTimer } from './useRestTimer'
+import { strengthGlow } from '@/lib/lockGlow'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 import { endAllLiveActivities, endLiveActivity } from '@/lib/liveActivity'
 import { runRecorder } from '@/lib/runRecorder'
@@ -599,6 +600,9 @@ export function WorkoutPage() {
   // value keeps the payload from changing on every render.
   const [exerciseCardAtMs] = useState(() => Date.now())
 
+  // Page 82: teal; the set's number in the session stays through its rest and moves with the
+  // next set, so the lock card's grass flashes once as the rest ends.
+  const strengthGlowNow = strengthGlow(exerciseIdx * 100 + setIdx + 1)
   let strengthActivityConfig: LiveActivityConfig | null = null
   if (isStrengthSession && strengthActiveName) {
     if (phase === 'rest' && restTimer.isRunning) {
@@ -612,6 +616,7 @@ export function WorkoutPage() {
           // Kept on the rest card too, so the lock screen never loses the lift.
           exerciseName: strengthActiveName,
           ...strengthStep,
+          ...strengthGlowNow,
           startedAt: restTimer.startedAtMs,
           endsAt: restTimer.endsAtMs,
           isPaused: restTimer.isPaused,
@@ -632,6 +637,7 @@ export function WorkoutPage() {
           ...strengthStep,
           setIndex: strengthActivePlace?.n ?? setIdx + 1,
           setTotal: strengthActivePlace?.of ?? strengthActiveTotalSets,
+          ...strengthGlowNow,
           // Timer fields ignored by the widget in exercise phase, but the
           // payload shape requires them.
           startedAt: exerciseCardAtMs,

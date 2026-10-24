@@ -78,6 +78,8 @@
 .tm-back { position: relative; appearance: none; border: 0; background: none; padding: 10px 2px; cursor: pointer; font: 700 15px var(--font-body); letter-spacing: 0.08em; color: #e8c878; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
 .tm-back::before { content: ''; position: absolute; inset: -6px -8px; }
 .tm-stop-r { display: inline-flex; align-items: center; gap: 8px; }
+/* page 81: the interval timer's title takes the room left and steps down to fit it */
+.tm-title { flex: 1; min-width: 0; display: flex; justify-content: center; }
 
 /* page 74: a run's finish hold. HOLD · FINISH on the right of the hint; after 1 s FINISHING (gold) takes its place;
    let go early and it fades back (180 ms out, 320 ms in, page 59) */

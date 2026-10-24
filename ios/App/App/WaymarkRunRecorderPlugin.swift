@@ -41,6 +41,14 @@ import Capacitor
 //     and the cues it fires stay on time with the screen off.
 // JS gets throttled ticks while the app is open, and the finished recording.
 //
+// Page 81: the hidden interval timer borrows the indoor run's background-audio
+// path (no run, no journal, nothing recorded or logged): the app sends the
+// parts and the sound list once (intervalStart); the timer keeps its own wall
+// clock, plays each beep and Poppy clip at its second with the silent loop
+// holding the session, follows the lock screen's pause stone, and while the
+// app is in the background moves the lock card at each part change and each
+// orange edge (the change counter only at part changes, page 82).
+//
 // Licence note: no third-party code is copied here. The GPS filter follows the
 // public guidance in Apple's CoreLocation docs; FreePace (MIT) and OpenTracks
 // (Apache-2.0) were read for patterns only. No GPL/AGPL source was used.
@@ -64,6 +72,11 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         CAPPluginMethod(name: "ackUploaded", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "discard", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cues", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "intervalStart", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "intervalPause", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "intervalResume", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "intervalStop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "intervalState", returnType: CAPPluginReturnPromise),
     ]
 
     // MARK: constants
@@ -163,6 +176,21 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
     private var nudgeLastAt: Int?
     private var pendingNudge: (word: String, kmh: Double)?
     private lazy var cueAudio = RunCueAudio()
+
+    // Page 81: the interval timer.
+    private struct IntervalPart { let ph: String; let len: Double; let round: Int; let start: Double }
+    private struct IntervalCue { let atSec: Int; let kind: String; let clips: [String] }
+    private var iParts: [IntervalPart] = []
+    private var iRounds = 0
+    private var iCues: [IntervalCue] = []
+    private var iNextCue = 0
+    private var iStartedAt: Double = 0      // unix s
+    private var iPausedAt: Double?
+    private var iPausedTotal: Double = 0
+    private var iClock: DispatchSourceTimer?
+    private var iLastKey = ""
+    private var iDone = false
+    private var iObserving = false
 
     // Live Activity throttle
     private var laLastAt: Double = 0
@@ -477,6 +505,215 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         let clamped = min(540, max(210, secs))
         cueAudio.play(["chime_nudge", fast ? "fast" : "slow", String(format: "p_%d%02d", clamped / 60, clamped % 60)])
         pendingNudge = (fast ? "fast" : "slow", t.kmh)
+    }
+
+    // MARK: plugin methods: the interval timer (page 81)
+
+    /// { parts: [{ ph, len, round }], rounds, cues: [{ atSec, kind, clips }], startedAtMs }.
+    @objc func intervalStart(_ call: CAPPluginCall) {
+        let rawParts = call.getArray("parts", JSObject.self) ?? []
+        var at: Double = 0
+        var parts: [IntervalPart] = []
+        for o in rawParts {
+            guard let ph = o["ph"] as? String, let len = (o["len"] as? NSNumber)?.doubleValue, len > 0 else { continue }
+            let round = (o["round"] as? NSNumber)?.intValue ?? 1
+            parts.append(IntervalPart(ph: ph, len: len, round: round, start: at))
+            at += len
+        }
+        let cues: [IntervalCue] = (call.getArray("cues", JSObject.self) ?? []).compactMap { o in
+            guard let a = (o["atSec"] as? NSNumber)?.intValue, let clips = o["clips"] as? [String] else { return nil }
+            return IntervalCue(atSec: a, kind: (o["kind"] as? String) ?? "change", clips: clips)
+        }.sorted { $0.atSec < $1.atSec }
+        let rounds = call.getInt("rounds") ?? 1
+        let startedAt = (call.getDouble("startedAtMs") ?? Date().timeIntervalSince1970 * 1000) / 1000
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard !parts.isEmpty else { call.reject("No parts"); return }
+            self.stopInterval()
+            self.iParts = parts
+            self.iRounds = max(1, rounds)
+            self.iCues = cues
+            self.iStartedAt = startedAt
+            self.iPausedAt = nil
+            self.iPausedTotal = 0
+            self.iDone = false
+            self.iLastKey = ""
+            // Cues already behind the clock (more than a second) are past.
+            let el = self.intervalElapsed(Date().timeIntervalSince1970)
+            self.iNextCue = cues.firstIndex(where: { Double($0.atSec) >= el - 1 }) ?? cues.count
+            self.observeIntervalIntents()
+            self.cueAudio.keepAlive(true)
+            let t = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+            t.schedule(deadline: .now(), repeating: 0.2, leeway: .milliseconds(30))
+            t.setEventHandler { [weak self] in self?.stepInterval() }
+            t.resume()
+            self.iClock = t
+            call.resolve()
+        }
+    }
+
+    @objc func intervalPause(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            self?.pauseInterval(at: Date().timeIntervalSince1970)
+            call.resolve()
+        }
+    }
+
+    @objc func intervalResume(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            self?.resumeInterval(at: Date().timeIntervalSince1970)
+            call.resolve()
+        }
+    }
+
+    @objc func intervalStop(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            self?.stopInterval()
+            call.resolve()
+        }
+    }
+
+    /// Where the timer is: { active, elapsedMs, paused, done } (the app asks when it comes back).
+    @objc func intervalState(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let active = self.iClock != nil || self.iDone
+            call.resolve([
+                "active": active && !self.iParts.isEmpty,
+                "elapsedMs": self.intervalElapsed(Date().timeIntervalSince1970) * 1000,
+                "paused": self.iPausedAt != nil,
+                "done": self.iDone,
+            ])
+        }
+    }
+
+    private func intervalElapsed(_ now: Double) -> Double {
+        max(0, (iPausedAt ?? now) - iStartedAt - iPausedTotal)
+    }
+
+    private var intervalTotal: Double {
+        guard let last = iParts.last else { return 0 }
+        return last.start + last.len
+    }
+
+    private func pauseInterval(at now: Double) {
+        guard iClock != nil, !iDone, iPausedAt == nil else { return }
+        iPausedAt = now
+    }
+
+    private func resumeInterval(at now: Double) {
+        guard let p = iPausedAt else { return }
+        iPausedTotal += max(0, now - p)
+        iPausedAt = nil
+        iLastKey = ""   // the card moves on from where the stone left it
+    }
+
+    private func stopInterval() {
+        iClock?.cancel()
+        iClock = nil
+        iParts = []
+        iCues = []
+        iDone = false
+        iPausedAt = nil
+        // A run's indoor cues keep their own hold on the audio session.
+        if !(run.map { !$0.outdoor && !cueList.isEmpty } ?? false) { cueAudio.keepAlive(false) }
+    }
+
+    /// The lock screen's pause stone: the intents post these (the WebView may be asleep).
+    private func observeIntervalIntents() {
+        guard !iObserving else { return }
+        iObserving = true
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: .waymarkTimerPauseRequested, object: nil, queue: .main) { [weak self] n in
+            let at = (n.userInfo?["pausedAtMs"] as? Double).map { $0 / 1000 } ?? Date().timeIntervalSince1970
+            self?.pauseInterval(at: at)
+        }
+        nc.addObserver(forName: .waymarkTimerResumeRequested, object: nil, queue: .main) { [weak self] _ in
+            self?.resumeInterval(at: Date().timeIntervalSince1970)
+        }
+    }
+
+    /// Five times a second: the due sounds, the lock card at a part change or an orange edge, the end.
+    private func stepInterval() {
+        guard iClock != nil, !iDone, iPausedAt == nil, !iParts.isEmpty else { return }
+        let now = Date().timeIntervalSince1970
+        let el = intervalElapsed(now)
+        while iNextCue < iCues.count, Double(iCues[iNextCue].atSec) <= el {
+            let c = iCues[iNextCue]
+            iNextCue += 1
+            // A sound more than 2 s late (the phone held the clock up) is let go.
+            guard el - Double(c.atSec) <= 2 else { continue }
+            if c.kind == "tick" { c.clips.forEach { cueAudio.blip($0) } } else { cueAudio.play(c.clips) }
+        }
+        let total = intervalTotal
+        if el >= total {
+            iDone = true
+            iClock?.cancel()
+            iClock = nil
+            if isBackground { endIntervalActivity() }
+            // Let "Done." finish before the session is let go.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self = self, self.iClock == nil else { return }
+                if !(self.run.map { !$0.outdoor && !self.cueList.isEmpty } ?? false) { self.cueAudio.keepAlive(false) }
+            }
+            return
+        }
+        let idx = iParts.lastIndex(where: { $0.start <= el }) ?? 0
+        let part = iParts[idx]
+        let left = part.start + part.len - el
+        let shown = Int(ceil(left - 1e-9))
+        let warnLen = Int(min(Double(part.ph == "work" ? 10 : 5), part.len))
+        let warn = shown > 0 && shown <= warnLen
+        let key = "\(idx)|\(warn)"
+        guard key != iLastKey else { return }
+        iLastKey = key
+        if isBackground { updateIntervalActivity(part: part, index: idx, left: left, warn: warn, now: now) }
+    }
+
+    private static func intervalWord(_ ph: String) -> String {
+        ph == "ready" ? "GET READY" : ph == "work" ? "WORK" : "REST"
+    }
+
+    private func updateIntervalActivity(part: IntervalPart, index: Int, left: Double, warn: Bool, now: Double) {
+        let rounds = iRounds
+        Task {
+            guard let activity = Activity<WaymarkActivityAttributes>.activities.first(where: { $0.attributes.sessionType == "interval_timer" }) else { return }
+            var st = activity.content.state
+            guard st.phase != "complete" else { return }
+            let endsAt = Date(timeIntervalSince1970: now + max(0, left))
+            st.phase = part.ph == "work" ? "active" : "rest"
+            st.label = Self.intervalWord(part.ph)
+            st.endsAt = endsAt
+            st.startedAt = endsAt.addingTimeInterval(-part.len)
+            st.isPaused = false
+            st.pausedRemaining = nil
+            st.endPending = false
+            st.round = part.round
+            st.roundTotal = rounds
+            st.stepIndex = part.round
+            st.stepTotal = rounds
+            st.glowTone = warn ? "orange" : (part.ph == "work" ? "gold" : "teal")
+            st.glowSeq = index + 1
+            await activity.update(ActivityContent(state: st, staleDate: st.timerStaleDate))
+        }
+    }
+
+    /// The last round done with the phone locked: DONE · 8 ROUNDS for a few seconds, then the card goes.
+    private func endIntervalActivity() {
+        let rounds = iRounds
+        Task {
+            guard let activity = Activity<WaymarkActivityAttributes>.activities.first(where: { $0.attributes.sessionType == "interval_timer" }) else { return }
+            var st = activity.content.state
+            let now = Date()
+            st.phase = "complete"
+            st.completeMessage = "DONE · \(rounds) ROUND\(rounds == 1 ? "" : "S")"
+            st.isPaused = false
+            st.pausedRemaining = nil
+            st.endsAt = now
+            st.startedAt = now
+            WaymarkInternalEndTracker.shared.mark(activity.id)
+            await activity.end(ActivityContent(state: st, staleDate: nil), dismissalPolicy: .after(now.addingTimeInterval(4)))
+        }
     }
 
     /// One light buzz with a cue (the phone may be locked: the system vibration, not a UIKit generator).
@@ -1085,6 +1322,17 @@ final class RunCueAudio: NSObject, AVAudioPlayerDelegate {
         guard !clips.isEmpty else { return }
         queue.append(clips)
         if !playing { next() }
+    }
+
+    /// Page 81: a short beep at once, beside whatever plays, without ducking (the timer's orange seconds).
+    private var blips: [AVAudioPlayer] = []
+    func blip(_ name: String) {
+        guard let u = url(name), let p = try? AVAudioPlayer(contentsOf: u) else { return }
+        if !alive && !playing { setSession(duck: false) }
+        blips.removeAll { !$0.isPlaying }
+        p.prepareToPlay()
+        p.play()
+        blips.append(p)
     }
 
     func keepAlive(_ on: Bool) {

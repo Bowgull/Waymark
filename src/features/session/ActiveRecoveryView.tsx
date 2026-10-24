@@ -25,6 +25,7 @@ import { useWakeLock } from '@/lib/wakeLock'
 
 import { resolveActiveRecoveryMoment } from './activeRecoveryMicrocopy'
 import { SessionShell } from './SessionShell'
+import { resetGlow } from '@/lib/lockGlow'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
 interface RecoverySession {
@@ -333,6 +334,20 @@ export function ActiveRecoveryView({
     total: 3,
   }
 
+  // Page 82: the lock card's grass fills over the whole Reset (walk, hips, roller), calm teal,
+  // flashing once at each part change. The timed parts' seconds, in order.
+  const hipSecs = hipSteps.map(st => st.movement.holdSec ?? 0)
+  const sumSec = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+  const resetTotalSec = walkSec + sumSec(hipSecs) + sumSec(rollSecs)
+  /** The whole-session fill: running, its range (the part's end plus what comes after); paused, how full it stands. */
+  const resetFill = (part: number, endsAt: number, paused: boolean, leftSec: number, laterSec: number) => {
+    const glow = resetGlow(part)
+    if (!(resetTotalSec > 0)) return glow
+    if (paused) return { ...glow, fillValue: Math.max(0, Math.min(1, 1 - (leftSec + laterSec) / resetTotalSec)) }
+    const fillTo = endsAt + laterSec * 1000
+    return { ...glow, fillFrom: fillTo - resetTotalSec * 1000, fillTo }
+  }
+
   // Live Activity for recovery timers: the same end times the app uses.
   const hipLiveConfig: LiveActivityConfig | null =
     phase === 'hip' && hipTimer && !hipReachedTarget && currentHipStep
@@ -345,6 +360,7 @@ export function ActiveRecoveryView({
             detail: currentHipStep.side
               ? currentHipStep.side === 'left' ? 'Left side' : 'Right side'
               : undefined,
+            ...resetFill(2, hipTimer.state === 'running' ? hipTimer.endsAtMs : nowMs + hipTimer.remainingMs, hipPaused, hipSecondsLeft, sumSec(hipSecs.slice(hipIdx + 1)) + sumSec(rollSecs)),
             startedAt: hipTimer.state === 'running' ? hipTimer.startedAtMs : nowMs + hipTimer.remainingMs - hipHoldSec * 1000,
             endsAt: hipTimer.state === 'running' ? hipTimer.endsAtMs : nowMs + hipTimer.remainingMs,
             isPaused: hipPaused,
@@ -361,6 +377,7 @@ export function ActiveRecoveryView({
           state: {
             phase: 'active',
             label: 'Easy walk or bike',
+            ...resetFill(1, walkTimer.state === 'running' ? walkTimer.endsAtMs : nowMs + walkTimer.remainingMs, walkPaused, walkSecondsLeft, sumSec(hipSecs) + sumSec(rollSecs)),
             startedAt: walkTimer.state === 'running' ? walkTimer.startedAtMs : nowMs + walkTimer.remainingMs - walkSec * 1000,
             endsAt: walkTimer.state === 'running' ? walkTimer.endsAtMs : nowMs + walkTimer.remainingMs,
             isPaused: walkPaused,
@@ -380,6 +397,7 @@ export function ActiveRecoveryView({
             detail: currentRollStep.side
               ? currentRollStep.side === 'left' ? 'Left side' : 'Right side'
               : undefined,
+            ...resetFill(3, rollTimer.state === 'running' ? rollTimer.endsAtMs : nowMs + rollTimer.remainingMs, rollPaused, rollSecondsLeft, sumSec(rollSecs.slice(rollIdx + 1))),
             startedAt: rollTimer.state === 'running' ? rollTimer.startedAtMs : nowMs + rollTimer.remainingMs - currentRollStep.area.sec * 1000,
             endsAt: rollTimer.state === 'running' ? rollTimer.endsAtMs : nowMs + rollTimer.remainingMs,
             isPaused: rollPaused,

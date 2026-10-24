@@ -115,6 +115,19 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
         // Page 76: a hard run's piece word ("RUN HARD", "EASY JOG", "TEMPO",
         // "5K", "EASY"), with runKind "hard". Nil: not a hard run.
         public var runPhase: String?
+        // Page 82 (every lock card's grass, approved 2026-10-23). Optional, so
+        // an older state still decodes; without them the grass keeps today's
+        // colours and never flashes.
+        // The moment's colour: "teal", "gold", "ember", "orange".
+        public var glowTone: String?
+        // The change counter: when it moves, the grass glows brighter once and
+        // eases back (Live Activities can't loop or keep time themselves).
+        public var glowSeq: Int?
+        // A fill over the whole session (Reset): the bar runs from fillFrom to
+        // fillTo while the clock counts the part; paused, it stands at fillValue.
+        public var fillFrom: Date?
+        public var fillTo: Date?
+        public var fillValue: Double?
 
         public init(
             phase: String,
@@ -143,7 +156,12 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             hrSeq: Int? = nil,
             distanceKm: Double? = nil,
             runKind: String? = nil,
-            runPhase: String? = nil
+            runPhase: String? = nil,
+            glowTone: String? = nil,
+            glowSeq: Int? = nil,
+            fillFrom: Date? = nil,
+            fillTo: Date? = nil,
+            fillValue: Double? = nil
         ) {
             self.phase = phase
             self.label = label
@@ -172,6 +190,11 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             self.distanceKm = distanceKm
             self.runKind = runKind
             self.runPhase = runPhase
+            self.glowTone = glowTone
+            self.glowSeq = glowSeq
+            self.fillFrom = fillFrom
+            self.fillTo = fillTo
+            self.fillValue = fillValue
         }
     }
 

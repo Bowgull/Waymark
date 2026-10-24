@@ -36,6 +36,7 @@ import { setWorldBackdrop } from '@/world/worldStore'
 
 import '@/design/pickers.css'
 import './session.css'
+import { hardRunGlow, runWalkGlow, zone2Glow } from '@/lib/lockGlow'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 import { NarutoEpisodeCard } from './NarutoEpisodeCard'
 import { checkMaxHrBump } from '@/lib/maxHrBump'
@@ -629,6 +630,12 @@ export function RunSessionView({
     ...(rwPos && !rwPos.done && rwPos.segment.round > 0 ? { stepIndex: rwPos.segment.round, stepTotal: prescription?.runWalk?.rounds ?? 0 } : {}),
     // A hard run's piece (page 76): RUN HARD 3 OF 6, EASY JOG (teal), TEMPO, 5K.
     ...(hard && hSeg ? { runPhase: phaseWord(hSeg.kind), ...(hSeg.round > 0 ? { stepIndex: hSeg.round, stepTotal: hard.reps } : {}) } : {}),
+    // Page 82: the moment's colour and the change counter (each piece; Zone 2: the run's time reached).
+    ...(hard && hPos
+      ? hardRunGlow(hPos.index, hSeg != null && phaseTone(hSeg.kind) === 'teal', zone === 'over')
+      : rwPos
+        ? runWalkGlow(rwPos.index, !rwPos.done && rwPos.segment.kind !== 'run', zone)
+        : zone2Glow(zone, remaining === 0 && elapsed > 0)),
   }
   const rwWalking = (!!rwPos && !rwPos.done && rwPos.segment.kind !== 'run') || (hSeg != null && phaseTone(hSeg.kind) === 'teal')
   const runLiveConfig: LiveActivityConfig | null =

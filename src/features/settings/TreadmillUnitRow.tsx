@@ -27,7 +27,7 @@ export function TreadmillUnitRow() {
     })
   }
   return (
-    <SRow label="Treadmill speed" sub="Hard runs inside.">
+    <SRow label="Treadmill speed">
       <span className="st-useg" role="group" aria-label="Treadmill speed">
         {PLATES.map(p => {
           const on = unit === p.u
