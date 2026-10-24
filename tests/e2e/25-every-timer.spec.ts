@@ -38,8 +38,9 @@ test('Active Recovery walk: a grass timer (no ring, no rounded cards): READY, th
   await grassToStart(page).tap()
   await expect(page.getByRole('img', { name: 'MOVING', exact: true })).toBeVisible()
   await expect(page.getByText('NEXT · HIP MOBILITY')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Pause' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Skip' })).toHaveCount(0)
+  // the old Pause / Skip buttons are gone (the grass itself is labelled "Tap to pause…")
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Skip', exact: true })).toHaveCount(0)
   // a swipe up moves on to the hips
   await swipeUpGrass(page)
   await expect(page.getByText('NEXT · HIP MOBILITY')).toHaveCount(0)
