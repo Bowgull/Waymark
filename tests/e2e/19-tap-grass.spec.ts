@@ -141,14 +141,14 @@ test('Items 4-5: a running session is only the strip; Today opens the next to-do
   await expect(todayRow(page, bag.id)).toHaveCount(0)
   await expect(todayRow(page, other.id)).toBeVisible()
   // The open row moved on from the running one to the first row still to do.
-  const firstToDo = page.locator('.td-row:not(.is-done):not(.is-skip)').first()
+  const firstToDo = page.locator('.td-row:not(.is-done):not(.is-skip):not(.is-missed)').first()
   await expect(firstToDo.locator('.td-rowhit')).toHaveAttribute('aria-expanded', 'true')
 
   // A fresh Today (a new open, no auto-resume) opens the first row still to do, never the running one.
   await gotoToday(page)
   await expect(strip).toBeVisible()
   await expect(todayRow(page, bag.id)).toHaveCount(0)
-  await expect(page.locator('.td-row:not(.is-done):not(.is-skip)').first().locator('.td-rowhit')).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('.td-row:not(.is-done):not(.is-skip):not(.is-missed)').first().locator('.td-rowhit')).toHaveAttribute('aria-expanded', 'true')
 
   // Program (page 73): today's day opens; the running session's row opens to its lines, with no RESUME or ENTER.
   await page.getByRole('link', { name: 'program' }).tap()

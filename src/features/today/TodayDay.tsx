@@ -169,7 +169,7 @@ function TodayRow({ s, open, onToggle, onStart, onHold, onEndEarly, changeFor, w
     <div ref={rowRef} className="td-roww">
       <PlanRow
         session={s}
-        className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}`}
+        className={`td-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${s.status === 'missed' ? ' is-missed' : ''}`}
         hitClassName="td-rowhit"
         on={cursorId === s.id}
         open={open}
