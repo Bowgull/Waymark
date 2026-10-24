@@ -79,6 +79,7 @@ import { athleteTimeZone, localDayIn, noteAppOpen } from './timeZone'
 import { templateFromDose } from '../lib/brain/doses'
 import { GOAL_5K_SEC, HARD_NOTES, hardLabel, parseFiveK } from '../lib/brain/hardRuns'
 import { parseUnit } from '../lib/runSpeed'
+import { unlockOffer } from '../lib/comboTiers'
 import { fiveKTests, postRunFacts } from './fiveK'
 
 type Bindings = {
@@ -1877,40 +1878,25 @@ app.post('/api/sessions/:id/rate-combos', async (c) => {
 app.post('/api/sessions/:id/suggest-unlocks', async (c) => {
   const db = createDB(c.env)
 
-  const TIER_ORDER = ['foundation', 'weapons', 'flow', 'deception', 'mastery']
   const allCombos = await db.select().from(combos)
 
-  // Find current tier (highest tier with unlocked combos)
-  let currentTierIdx = 0
-  for (let i = TIER_ORDER.length - 1; i >= 0; i--) {
-    if (allCombos.some(c => c.tier === TIER_ORDER[i] && c.unlocked === 1)) {
-      currentTierIdx = i
-      break
-    }
-  }
-
-  const currentTier = TIER_ORDER[currentTierIdx]
-  const currentTierCombos = allCombos.filter(c => c.tier === currentTier && c.unlocked === 1)
-  const mastered = currentTierCombos.filter(c => c.masteryScore >= 9)
+  // His tier: the highest the coach unlocked (knee and elbow combos open by their switch, so they don't count)
+  const { tier, next, mastered, of, offer } = unlockOffer(allCombos)
 
   // Need >= 60% mastered to suggest next tier
-  if (currentTierCombos.length === 0 || mastered.length / currentTierCombos.length < 0.6) {
+  if (of === 0 || mastered / of < 0.6) {
     return c.json({ suggestions: [], message: null })
   }
 
-  const nextTierIdx = currentTierIdx + 1
-  if (nextTierIdx >= TIER_ORDER.length) {
+  if (!next) {
     return c.json({ suggestions: [], message: 'All tiers mastered!' })
   }
 
-  const nextTier = TIER_ORDER[nextTierIdx]
-  const suggestions = allCombos
-    .filter(c => c.tier === nextTier && c.unlocked === 0)
-    .map(c => ({ id: c.id, text: c.text, tier: c.tier, techniques: c.techniques }))
+  const suggestions = offer.map(c => ({ id: c.id, text: c.text, tier: c.tier, techniques: c.techniques }))
 
   return c.json({
     suggestions,
-    message: `You've mastered ${mastered.length}/${currentTierCombos.length} ${currentTier} combos. Ready to unlock ${nextTier}?`,
+    message: `You've mastered ${mastered}/${of} ${tier} combos. Ready to unlock ${next}?`,
   })
 })
 

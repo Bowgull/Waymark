@@ -2,6 +2,7 @@
 // run under node.
 
 import type { SessionIconKey } from '@/design/sessionIconKeys'
+import { openedBySwitch } from '@/lib/comboTiers'
 
 export interface LibraryExercise {
   id: string
@@ -228,9 +229,12 @@ export function tierViews(combos: ReadonlyArray<LibraryCombo>): TierView[] {
     .filter(t => t.combos.length > 0)
 }
 
-/** The tier that opens with Bagwork: the highest tier with an unlocked combo. */
+/**
+ * The tier that opens with Bagwork: the highest tier the coach unlocked (an
+ * open knee or elbow combo waits on its Settings switch, so it doesn't count).
+ */
 export function currentTier(tiers: ReadonlyArray<TierView>): string | null {
-  const open = tiers.filter(t => !t.locked)
+  const open = tiers.filter(t => t.combos.some(c => c.unlocked && !openedBySwitch(c)))
   return open.length ? open[open.length - 1].tier : null
 }
 
