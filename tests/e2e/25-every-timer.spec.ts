@@ -99,10 +99,11 @@ test('Foundation hold, swipe down: restarts the hold; again within 3 s, the step
     if (await breathe.isVisible()) await page.clock.fastForward(3500)
     await page.waitForTimeout(250)
   }
-  const where = async () => [
-    await page.locator('.wm-board .ss-row [role=img]').first().getAttribute('aria-label'),
-    await page.locator('.wm-board .tm-note').first().textContent().catch(() => null),
-  ]
+  // the move's name and its set / side / rep line, read at once (a move may have no line)
+  const where = () => page.evaluate(() => [
+    document.querySelector('.wm-board .ss-row [role=img]')?.getAttribute('aria-label') ?? null,
+    document.querySelector('.wm-board .tm-note')?.textContent ?? null,
+  ])
   const first = await where()
   await grassToStart(page).tap()
   await swipeUpGrass(page)

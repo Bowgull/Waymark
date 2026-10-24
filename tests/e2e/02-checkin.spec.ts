@@ -77,16 +77,22 @@ test('Morning check-in: a rough morning names what is off trend, a bad back asks
     ['SLEEP', '4, or less'], ['SLEEP QUALITY', '1, poor'], ['ENERGY', '1, empty'], ['SORENESS', '5, cooked'],
     ['STRESS', '5, maxed'], ['MOOD', '1, low'], ['BACK TODAY', '2, sore'],
   ]
+  // a new card ignores a bounce for 300 ms (CheckInDeck CARD_SETTLE_MS)
+  const settle = () => page.waitForTimeout(350)
   for (const [title, tile] of rough) {
     await expect(deck.getByRole('img', { name: title, exact: true })).toBeVisible()
+    await settle()
     await deck.getByRole('button', { name: tile, exact: true }).tap()
   }
   // Back today at 2 or under: the back-notes card.
   await expect(deck.getByRole('img', { name: 'WHAT BOTHERS IT?' })).toBeVisible()
+  await settle()
   await deck.getByRole('textbox').fill('Bending forward')
   await deck.getByRole('button', { name: 'NEXT' }).tap()
+  await settle()
   await deck.getByRole('button', { name: '3+', exact: true }).tap()
   await expect(deck.getByRole('img', { name: 'HERB', exact: true })).toBeVisible()
+  await settle()
   await deck.getByRole('button', { name: '9, most', exact: true }).tap()
 
   // The verdict names what is off trend. With the demo seed's short history one
