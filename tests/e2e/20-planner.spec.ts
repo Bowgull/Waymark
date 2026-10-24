@@ -109,6 +109,8 @@ test('Hold: the command window (REPLACE / SKIP, 44 pt lines); a tap outside clos
   await expect(skip).toBeVisible()
   for (const b of [replace, skip]) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44)
   await expect(replace.locator('.pl-cur')).toHaveCount(1)
+  // the lift's own click is swallowed for 400 ms (swallowReleaseClick); a real tap outside comes later
+  await page.waitForTimeout(450)
   await page.mouse.click(8, 8)
   await expect(cmd).toBeHidden()
   // Nothing changed.

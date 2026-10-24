@@ -43,6 +43,8 @@ test('Morning check-in: nine cards, the herb 0-9 card, GOOD TO GO, and the row o
   for (const [i, [title, tile]] of GOOD.entries()) {
     await expect(deck.getByRole('img', { name: title, exact: true })).toBeVisible()
     await expect(deck.getByText(`${i + 1} of 9`)).toBeVisible()
+    // a new card ignores a bounce for 300 ms (CheckInDeck CARD_SETTLE_MS)
+    await page.waitForTimeout(350)
     if (title === 'HERB') {
       // Page 51: ten tiles, 0 (none) to 9 (most), two rows of five.
       const herb = deck.getByRole('group', { name: 'Herb' })

@@ -186,6 +186,11 @@ export function SessionFrame({ title, count, icon, right, onEnd, onEndAndLog, cl
   // A double tap never lands on what the first tap just put under the finger (freshPress).
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => (rootRef.current ? watchFreshControls(rootRef.current) : undefined), [])
+  // Pops drop in under the session's top row while one is up (design.css: no :has() on body, page 59).
+  useEffect(() => {
+    document.body.dataset.session = ''
+    return () => { delete document.body.dataset.session }
+  }, [])
   // page 31 draws the set screen over the forest (the clearing, as the MT log)
   useEffect(() => {
     if (!forest) return

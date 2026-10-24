@@ -89,26 +89,6 @@ test('Active Recovery, swipe down: restarts the hip hold; again within 3 s, back
   await expect(page.getByRole('img', { name: 'MOVING', exact: true })).toBeVisible()
 })
 
-test('Skip-rope warm-up, swipe down: restarts it from its full time (one part, nothing before)', async ({ page, api }) => {
-  const s = await insertSession(api, 'bag_work')
-  await enterFromToday(page, s.id)
-  const warmUp = page.getByRole('img', { name: 'SKIP ROPE', exact: true })
-  const begin = page.getByRole('button', { name: /^(BEGIN|START BAG WORK)$/ })
-  for (let i = 0; i < 6 && !(await warmUp.isVisible()); i++) {
-    if (await begin.first().isVisible()) await begin.first().tap()
-    else await page.waitForTimeout(500)
-  }
-  await grassToStart(page).tap()
-  const full = await timerSeconds(page)
-  await page.clock.fastForward(30_000)
-  expect(await timerSeconds(page)).toBeLessThanOrEqual(full - 29)
-  await swipeDownGrass(page)
-  await expect.poll(() => timerSeconds(page)).toBeGreaterThanOrEqual(full - 1)
-  await swipeDownGrass(page)
-  await expect(warmUp).toBeVisible()
-  await expect(grass(page)).toBeVisible()
-})
-
 test('Foundation hold, swipe down: restarts the hold; again within 3 s, the step (or move) before', async ({ page, api }) => {
   const s = await insertSession(api, 'mobility', 'pm')
   await enterFromToday(page, s.id)

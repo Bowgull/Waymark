@@ -154,7 +154,7 @@ test('START: get ready, work, rest from the lock card state; hold the grass 3 s 
   await expect(page.getByRole('img', { name: 'Next 2 of 2' })).toBeVisible()
 
   // tap the grass: paused
-  const grass = page.getByRole('button', { name: /^Timer\. Tap to pause\. Swipe up to skip\. Hold for 3 seconds to end\.$/ })
+  const grass = page.getByRole('button', { name: /^Timer\. Tap to pause\. Swipe up to skip\. Swipe down to go back\. Hold for 3 seconds to end\.$/ })
   await grass.tap()
   await expect.poll(async () => (await activity(page))?.isPaused).toBe(true)
   await expect(page.getByRole('img', { name: 'PAUSED' })).toBeVisible()

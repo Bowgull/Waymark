@@ -357,7 +357,7 @@
     pointer-events: none;
   }
   /* on a session screen they drop in under its top row, so a press on × or ‹ TODAY never lands on a pop */
-  body:has(.tm-screen) .wm-pop-host { top: calc(env(safe-area-inset-top) + 54px); }
+  body[data-session] .wm-pop-host { top: calc(env(safe-area-inset-top) + 54px); }
   .wm-pop {
     pointer-events: auto;
     display: flex;
