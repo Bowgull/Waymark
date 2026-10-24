@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { FlapLabel, useReducedMotion } from '@/design'
 import { tapHaptic } from '@/lib/haptics'
 import { ZONE_TINT, type HrZone } from '@/lib/hrZoneState'
+import { grassBounce } from './freshPress'
 import { drawGrass, grassGrid, type GrassMode, type GrassParams } from '@/lib/timers/grassScene'
 import { getItem as storageGet, setItem as storageSet } from '@/lib/safeStorage'
 import { FINISHING_AFTER_MS, GRASS_HOLD_MS, HEAT_RGB, HOLD_GRACE_MS, HOLD_LOG_DELAY_MS, holdReleaseLeft, HOLD_SLOP_PX, HOLD_TAP_MS, progressOf, pullAmount, releaseAction, settlePull, swellBreath, swellK, trackRemainingMs, zoneEase, type Heat, type TimerKind, type TimerTrack } from '@/lib/timers/timerLook'
@@ -156,6 +157,8 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, onBack, stat
   })
   useEffect(() => () => clearHoldTimers(), [])
   const tap = () => {
+    // The bounce of a press on another control (LOG SET, START RUN) never pauses the timer.
+    if (grassBounce(boxRef.current)) return
     if (stateRef.current === 'ready' && handlers.current.onTap && !taught) { storageSet(GRASS_TAUGHT_KEY, '1'); setTaught(true) }
     handlers.current.onTap?.()
   }

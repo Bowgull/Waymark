@@ -9,6 +9,7 @@ const END_SLOP_PX = 40
 import { setWorldBackdrop } from '@/world/worldStore'
 
 import { SessionEndedContext, getSessionNav } from './endedContext'
+import { watchFreshControls } from './freshPress'
 import { sentenceCase, useEaseAway } from './boardAway'
 
 import './timers.css'
@@ -182,6 +183,9 @@ export function SessionFrame({ title, count, icon, right, onEnd, onEndAndLog, cl
   }
   // Unmounted mid-way (the phase moved on underneath): still end, at once.
   useEffect(() => () => leave(), [])
+  // A double tap never lands on what the first tap just put under the finger (freshPress).
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => (rootRef.current ? watchFreshControls(rootRef.current) : undefined), [])
   // page 31 draws the set screen over the forest (the clearing, as the MT log)
   useEffect(() => {
     if (!forest) return
@@ -190,7 +194,7 @@ export function SessionFrame({ title, count, icon, right, onEnd, onEndAndLog, cl
   }, [forest])
   return (
     <SessionEndedContext.Provider value={ended}>
-    <div className={`tm-screen${forest ? ' is-forest' : ''}${paused ? ' is-paused' : ''}${ended ? ' is-ended' : ''} ${className}`}>
+    <div ref={rootRef} className={`tm-screen${forest ? ' is-forest' : ''}${paused ? ' is-paused' : ''}${ended ? ' is-ended' : ''} ${className}`}>
       {!forest && <div className="tm-ground" aria-hidden />}
       {forest && <div className="tm-forest-scrim" aria-hidden />}
       {grass}
