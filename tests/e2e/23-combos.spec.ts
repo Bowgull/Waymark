@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
-import { gotoToday, insertSession } from './support/helpers'
+import { gotoToday, insertSession, todayISO } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -104,10 +104,10 @@ test('Bag Work asks COACH / HYBRID / CUSTOM; COACH plans the kru\'s arc', async 
   await expect(board.locator('.bb-rnd').nth(1).locator('.cmb-strikes')).toHaveCount(1)
   await expect(board.locator('.bb-rnd').nth(1)).toContainText(/SWITCH\s*KICK/)
   // (no screenshot: the coach's round count follows the test athlete's readiness, set by earlier specs)
-  const before = (await api.get<Array<{ type: string }>>(`/api/sessions/today?date=${new Date().toISOString().slice(0, 10)}`)).length
+  const before = (await api.get<Array<{ type: string }>>(`/api/sessions/today?date=${todayISO()}`)).length
   await board.getByRole('button', { name: 'Add' }).tap()
   await expect(board).toBeHidden()
-  await expect.poll(async () => (await api.get<Array<{ type: string }>>(`/api/sessions/today?date=${new Date().toISOString().slice(0, 10)}`)).length).toBeGreaterThan(before)
+  await expect.poll(async () => (await api.get<Array<{ type: string }>>(`/api/sessions/today?date=${todayISO()}`)).length).toBeGreaterThan(before)
 })
 
 test('HYBRID: fill a round from the picker (gold edge), the rest say coach fills; SAVE ROUTINE', async ({ page }) => {
