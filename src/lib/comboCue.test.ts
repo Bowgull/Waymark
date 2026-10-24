@@ -25,7 +25,7 @@ assert.equal(deriveCue('Snap the switch fast and hard.'), 'SNAP THE SWITCH FAST'
 // ── comboCue: the approved Library content (page 60) wins, then the hand-picked cue, then the tip ──
 
 assert.equal(comboCue({ id: 'combo-f01', formTips: 'anything at all' }), 'TURN THE REAR HIP', 'page 60 content')
-assert.equal(comboCue({ id: 'combo-w10', formTips: 'x' }), 'HIP DRIVES THE KNEE', "page 60's example")
+assert.equal(comboCue({ id: 'combo-w11', formTips: 'x' }), 'CLOSE THE GAP', "page 60's example")
 assert.equal(comboCue({ id: 'combo-new', formTips: 'Snap the foot back fast.' }), 'SNAP THE FOOT BACK')
 assert.equal(comboCue({ id: 'combo-new', formTips: '' }), '')
 assert.equal(comboCue(null), '')
@@ -56,6 +56,6 @@ for (const [id, cue] of Object.entries(COMBO_CUE_CONTENT)) {
   assert.ok(cue.split(' ').length <= CUE_MAX_WORDS && cue.length <= CUE_MAX_CHARS, `${id}: fits the flap (${cue})`)
   assert.ok(allIds.has(id), `${id} is a combo`)
 }
-assert.equal(Object.keys(COMBO_CUE_CONTENT).length, 55)
+assert.equal(Object.keys(COMBO_CUE_CONTENT).length, 72)
 
 console.log(`comboCue: ok (${allIds.size} combos)`)

@@ -129,10 +129,12 @@ console.log('libraryModel tests passed')
     tech('tech-jab', 'Jab', 'Punch', ['Jab', 'Double Jab', 'Jab x 3', 'Feint Jab']),
     tech('tech-cross', 'Cross', 'Punch', ['Cross', 'Body Cross']),
     tech('tech-roundhouse', 'Rear Roundhouse', 'Kick', ['Rear Roundhouse', 'Right Kick', 'Body Kick', 'Rear Kick']),
-    tech('tech-switch-kick', 'Switch Kick', 'Kick', ['Switch Kick', 'Left Kick', 'Left Body Kick']),
+    tech('tech-switch-kick', 'Switch Kick', 'Kick', ['Switch Kick']),
+    tech('tech-left-kick', 'Left Kick', 'Kick', ['Left Kick']),
     tech('tech-teep', 'Teep', 'Kick', ['Teep', 'Lead Teep', 'Fake Teep', 'Feint Teep']),
   ]
-  assert.equal(techniqueFor('Left Kick', T)?.id, 'tech-switch-kick', '"Left Kick" is the switch kick')
+  assert.equal(techniqueFor('Left Kick', T)?.id, 'tech-left-kick', '"Left Kick" is the step-through kick, not the switch kick')
+  assert.equal(techniqueFor('Switch Kick', T)?.id, 'tech-switch-kick')
   assert.equal(techniqueFor('JAB × 3', T)?.id, 'tech-jab')
   assert.equal(techniqueFor('Body kick', T)?.id, 'tech-roundhouse')
   assert.equal(techniqueFor('Superman Punch', T), null)

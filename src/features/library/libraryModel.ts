@@ -66,7 +66,7 @@ export interface LibraryTechnique {
   id: string
   name: string
   kind: string
-  /** JSON array: the combo names that mean this one ("Left Kick" is the switch kick). */
+  /** JSON array: the combo names that mean this one ("Lead Teep" is also "Teep"). */
   aliases: string
   /** 0040 (page 65): the one cue line when it isn't the cue's first sentence. */
   cueLine?: string | null
@@ -374,7 +374,7 @@ export function aliasesOf(t: Pick<LibraryTechnique, 'aliases'>): string[] {
   }
 }
 
-/** The technique a combo's strike name means ("Left Kick" → Switch Kick; "Jab × 3" → Jab). */
+/** The technique a combo's strike name means ("Teep" → Lead Teep; "Jab × 3" → Jab). */
 export function techniqueFor(strike: string, techniques: ReadonlyArray<LibraryTechnique>): LibraryTechnique | null {
   const k = strikeKey(strike)
   return techniques.find(t => strikeKey(t.name) === k || aliasesOf(t).some(a => strikeKey(a) === k)) ?? null
@@ -385,7 +385,7 @@ export function combosUsing<C extends Pick<LibraryCombo, 'text'>>(t: LibraryTech
   return combos.filter(c => comboStrikes(c.text).some(s => techniqueFor(s, techniques)?.id === t.id))
 }
 
-/** "Kick · also Right Kick, Body Kick": the kind and the other combo names that mean it. */
+/** "Kick · also Teep, Fake Teep": the kind and the other combo names that mean it. */
 export function techniqueSub(t: LibraryTechnique): string {
   const others = aliasesOf(t).filter(a => strikeKey(a) !== strikeKey(t.name))
   return others.length ? `${t.kind} · also ${others.join(', ')}` : t.kind
