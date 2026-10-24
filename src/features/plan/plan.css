@@ -17,10 +17,7 @@
 .pl-row.is-skip .wm-flap .wm-cell { color: rgba(240, 230, 192, 0.66) !important; }
 .pl-row.is-skip .wm-sicon { opacity: 0.4; filter: grayscale(1); }
 .pl-row.is-skip .nmw::after { content: ''; position: absolute; left: -2px; right: -2px; top: 50%; height: 2px; background: #9c5a40; box-shadow: 0 0 4px rgba(156, 90, 64, 0.5); }
-/* the hold: the row darkens a little and a thin gold line traces its foot over 500 ms; let go early and both ease back */
-.pl-row::after { content: ''; position: absolute; left: 0; bottom: 0; height: 1.5px; width: 0; background: #e8c878; opacity: 0.9; transition: width var(--t-quick) var(--ease-in); pointer-events: none; }
-.pl-row.is-press { background-color: rgba(0, 0, 0, 0.28); transition: background-color var(--t-tap) ease-out; }
-.pl-row.is-press::after { width: 100%; transition: width 500ms linear; }
+/* the hold shows nothing while it waits: a tap is just a tap; at 500 ms the command window opens with a buzz */
 /* the game-menu highlight: the name turns gold */
 .pl-row.is-on .nmw .wm-flap .wm-cell { color: #e8c878 !important; }
 
@@ -99,7 +96,7 @@ body.pl-pickopen .pl-row > .pl-cur, body.pl-pickopen .pl-dr > .pl-cur { display:
 @media (prefers-reduced-motion: reduce) {
   .pl-cur { animation: none; }
   .pl-cmd, .pl-cmd.is-out, .pl-veil.is-dim, .pl-veil.is-dim.is-out { animation: none; }
-  .pl-row, .pl-row::after, .pl-row.is-press, .pl-row.is-press::after { transition: none; }
+  .pl-row { transition: none; }
 }
 /* page 76: COACH PICKS ↔ EVERYTHING ↔ RUNS swap in the same window: the new list settles in 180 ms (page 59 --t-quick, ease-out), transform and opacity only */
 .pl-view { animation: pl-viewin var(--t-quick) var(--ease-out) both; }
