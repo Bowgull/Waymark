@@ -183,3 +183,16 @@ export function effortWord(rpe: number): string {
 export function momentLine(sessionName: string, rpe: number): string {
   return `${sessionName.toUpperCase()} · RPE ${Math.round(rpe)}`
 }
+
+// Page 84: every timer, the new way.
+
+/** The hero clock's size: as asked, but a clock of 10:00 or more (one more digit) steps down to 96. */
+export function heroPx(px: number, seconds: number): number {
+  return Math.floor(Math.max(0, seconds) / 60) >= 10 ? Math.min(px, 96) : px
+}
+
+/** m:ss for the NEXT line ("1:00", "21:30"). */
+export function shortTime(sec: number): string {
+  const s = Math.max(0, Math.round(sec))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}

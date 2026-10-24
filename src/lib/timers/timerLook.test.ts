@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 
 import { flipFrames } from '../../design/flap'
 import { cellGlyph, grassGrid, timerCell, zoneCell } from './grassScene'
+import { heroPx, shortTime } from './timerLook'
 import {
   clockDigits, comboStrikes, effortWord, heatFor, momentLine,
   ENDED_SHOW_MS, PULL_SETTLE_MS, progressOf, pullAmount, releaseAction, settlePull, shownSeconds, swellK, workLabel,
@@ -177,6 +178,23 @@ test('the run grass: the zone tints it; the bend lies flat behind the wave, unto
   assert.deepEqual(far, timerCell(0.02, 0.02, 1, base, 1))
   // at full the whole band lies flat
   for (const [x, y] of [[0, 0], [1, 0], [0.5, 0.5], [0, 1]]) assert.equal(zoneCell(x, y, 1, { ...base, wave: 1, wx: 0.5, wy: 0.9 }, 1).ch, '_', `${x},${y}`)
+})
+
+test('page 84: the hero clock keeps its size under 10:00 and steps down to 96 from 10:00; the NEXT line\'s m:ss', () => {
+  assert.equal(heroPx(120, 599), 120)
+  assert.equal(heroPx(120, 600), 96)
+  assert.equal(heroPx(92, 860), 92)
+  assert.equal(heroPx(112, 2052), 96)
+  assert.equal(shortTime(60), '1:00')
+  assert.equal(shortTime(1290), '21:30')
+})
+
+// the warning orange (page 81) mixes into the run's grass cell
+test('page 81: the interval timer\'s orange turns the grass orange', () => {
+  const base = { progress: 0.5, mode: 'work' as const }
+  const plain = zoneCell(0.2, 0.5, 1, { ...base, zone: [0, 0, 0] }, 1)
+  const orange = zoneCell(0.2, 0.5, 1, { ...base, orange: 1 }, 1)
+  assert.ok(orange.c[0] > orange.c[2] && orange.c[0] - orange.c[2] > plain.c[0] - plain.c[2] - 1)
 })
 
 console.log(`timerLook: ${passed} passed`)

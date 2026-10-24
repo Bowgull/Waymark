@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { enterFromToday, insertSession } from './support/helpers'
+import { enterFromToday, grass, insertSession, swipeUpGrass } from './support/helpers'
 import { GOOD_MORNING, setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -9,14 +9,16 @@ const DUMBBELL_MAIN = /^(Goblet Squat|Dumbbell Row|DB Overhead Press|DB Romanian
 interface WorkoutSet { id: string; isWarmup: number; weightKg: number | null; reps: number; completedAt: number | null }
 interface Workout { exercises: Array<{ section: string; exercise: { name: string; equipment: string }; sets: WorkoutSet[] }> }
 
-/** Tap through the warm-up sets (LOG SET, then NEXT SET past the rest) until `until` shows. */
+/** Tap through the warm-up sets (LOG SET, then a swipe up the rest's grass) until `until` shows. */
 async function stepUntil(page: Page, until: () => Promise<boolean>, max = 60) {
   for (let i = 0; i < max; i++) {
     if (await until()) return
     // Block Zero asks how many reps were left after a working set (one tap, rest starts).
     const effort = page.getByRole('group', { name: 'Reps left' })
     if (await effort.isVisible()) { await effort.getByRole('button').nth(1).tap(); continue }
-    for (const name of ['LOG SET', 'NEXT SET', 'NEXT EXERCISE', 'NEXT', 'CONTINUE']) {
+    // page 84: the rest (and the rope warm-up) have no button; a swipe up the grass moves on
+    if (await grass(page).isVisible()) { await swipeUpGrass(page); await page.waitForTimeout(250); continue }
+    for (const name of ['LOG SET', 'NEXT EXERCISE', 'NEXT', 'CONTINUE']) {
       const b = page.getByRole('button', { name, exact: true })
       if (await b.isVisible()) { await b.tap(); break }
     }

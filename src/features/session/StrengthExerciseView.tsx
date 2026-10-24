@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { FlapLabel } from '@/design'
 import { FormVideoLink } from '@/components/FormVideoLink'
-import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
+import { CountRow, GrassZone, HeroClock, PhaseWord, SessionButton, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { mediumHaptic } from '@/lib/haptics'
 import { calculatePlates } from '@/lib/plateMath'
 import { assessStrengthSet, shouldShowStrengthRealityMark } from '@/lib/trainingReality'
@@ -98,22 +98,25 @@ export function StrengthExerciseView({
       endsAtMs: !restState.isPaused && restState.endsAtMs ? restState.endsAtMs : null,
       remainingMs: restState.secondsRemaining * 1000,
     }
+    // Page 84: the lift small on top, REST / OVER, the clock 120 teal, NEXT / 3 / OF 4 under it
+    // (out of the top bar). No NEXT SET button: a swipe up the grass moves on (Josh, 2026-10-23).
+    const nextSet = currentSet && currentSet.setNumber < currentSet.totalSets ? currentSet.setNumber + 1 : null
     return (
       <SessionFrame
         title={sessionTitle}
-        count={currentSet ? `${currentSet.setNumber}/${currentSet.totalSets}` : undefined}
         onEnd={onExit}
         paused={!!restState.isPaused}
         grass={<GrassZone track={track} kind="rest" state={restState.isPaused ? 'paused' : 'running'} onTap={restState.onTogglePause} onSkip={onNextSet} />}
       >
-        <div className="tm-center" style={{ marginTop: 16 }}>
-          <span className="wm-label" style={{ lineHeight: 1 }}>Resting after</span>
-          <div style={{ marginTop: 8 }}><FlapLabel text={exerciseName} size="md" fit /></div>
-        </div>
-        <TimerFace seconds={shown} kind="rest" tone="teal" label={restState.isOvertime ? 'OVER' : 'REST'} labelTone="teal" track={track} />
-        <div className="tm-wide" style={{ marginTop: 16 }}>
-          <SessionButton label="NEXT SET" primary onClick={onNextSet} />
-        </div>
+        <TimerColumn>
+          <div className="tm-topx">
+            <small>RESTING AFTER</small>
+            <FlapLabel text={exerciseName} size="sm" fit />
+          </div>
+          <PhaseWord text={restState.isOvertime ? 'OVER' : 'REST'} tone="teal" />
+          <HeroClock seconds={shown} kind="rest" tint="rest" track={track} px={120} />
+          {nextSet != null && currentSet && <CountRow label="NEXT" n={nextSet} of={currentSet.totalSets} tone="teal" />}
+        </TimerColumn>
       </SessionFrame>
     )
   }

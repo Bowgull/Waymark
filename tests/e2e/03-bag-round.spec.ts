@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { enterFromToday, grass, grassPaused, grassToStart, insertSession, timerSeconds } from './support/helpers'
+import { enterFromToday, grass, grassPaused, grassToStart, insertSession, timerSeconds, swipeUpGrass } from './support/helpers'
 
 /**
  * The bag round (page 55 layout 1) on a test clock: READY, then the round in
@@ -18,12 +18,14 @@ test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
   const phase = (name: string) => page.getByRole('img', { name, exact: true })
 
   // A session may open on its preview / skip-rope warm-up first (the warm-up starts on the grass, page 71).
-  const begin = page.getByRole('button', { name: /^(BEGIN|START BAG WORK|SKIP WARM UP)$/ })
+  const begin = page.getByRole('button', { name: /^(BEGIN|START BAG WORK)$/ })
   const round1 = page.getByRole('img', { name: /^Round 1 of \d+$/ })
   const warmUp = page.getByRole('img', { name: 'SKIP ROPE', exact: true })
   for (let i = 0; i < 6 && !(await round1.isVisible()); i++) {
     if (await begin.first().isVisible()) await begin.first().tap()
     else if (await warmUp.isVisible() && await grassToStart(page).isVisible()) await grassToStart(page).tap()
+    // page 84: no SKIP WARM UP button; a swipe up the grass moves on
+    else if (await warmUp.isVisible() && await grass(page).isVisible()) await swipeUpGrass(page)
     else await page.waitForTimeout(500)
   }
 

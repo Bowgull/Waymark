@@ -1,5 +1,6 @@
 export { GrassZone } from './GrassZone'
 export type { TimerTrack } from '@/lib/timers/timerLook'
-export { RoundClock, TimerFace } from './TimerFace'
+export { CountRow, HeroClock, NextLine, PhaseWord, RoundClock, TimerColumn, TimerFace, type HeroTint } from './TimerFace'
+export { heroPx, shortTime } from '@/lib/timers/timerLook'
 export { CloseWindow, ComboStrikes, EndButton, EndControl, Pips, SessionButton, SessionFrame } from './SessionFrame'
 export { sentenceCase, useEaseAway } from './boardAway'

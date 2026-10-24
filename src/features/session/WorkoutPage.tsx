@@ -47,7 +47,7 @@ import { markHandoff } from '@/app/liveHandoff'
 import { logger } from '@/lib/logger'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/Toast'
-import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
+import { GrassZone, HeroClock, PhaseWord, SessionButton, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { FlapLabel, SESSION_ICON_NAME, armCascade, sessionIconFor } from '@/design'
 import { heatFor, momentLine, workLabel } from '@/lib/timers/timerLook'
 import { talkTestDue, TALK_TEST_WEEKS } from '@/lib/blockZero/talkTest'
@@ -279,10 +279,11 @@ type RoundPhase = 'ready' | 'fighting' | 'rest'
 
 /**
  * The skip-rope warm-up before bag work or strength (page 31 "Rope warm-up"):
- * WARM UP with the rope icon, SKIP ROPE and its line, the clock on the grass.
+ * WARM UP with the rope icon, SKIP ROPE and its line small on top, the word
+ * over the hero clock (page 84), the grass under it.
  * Before you start: READY, and the grass starts it (page 71, no start button).
- * Running: SKIP, then FINISH with the heat in the last 10 s; SKIP WARM UP moves
- * on (so does a swipe up the grass).
+ * Running: SKIP, then FINISH with the heat in the last 10 s; a swipe up the
+ * grass moves on (no button copies the gesture).
  */
 function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersist, onExit }: {
   durationSec: number
@@ -343,16 +344,15 @@ function SkipWarmupTimer({ durationSec, onComplete, description, resume, onPersi
       paused={running && timer.isPaused}
       grass={<GrassZone track={track} kind="work" mode={running ? 'work' : 'ready'} heat={heat} state={!running ? 'ready' : timer.isPaused ? 'paused' : 'running'} onTap={running ? togglePause : handleStart} onSkip={running ? onComplete : undefined} />}
     >
-      <div className="tm-center" style={{ marginTop: 14 }}>
-        <FlapLabel text="SKIP ROPE" size="md" />
-        {description && <p className="wm-prose is-dim" style={{ margin: '8px 22px 0' }}>{description}</p>}
-      </div>
-      <TimerFace seconds={shown} kind="work" heat={heat} label={running ? workLabel('SKIP', shown) : 'READY'} labelTone="gold" track={track} compact />
-      {running && (
-        <div className="tm-wide">
-          <SessionButton label="SKIP WARM UP" onClick={onComplete} />
+      {/* page 84: SKIP ROPE and its line small on top, the word over the clock (120); a swipe up the grass skips it */}
+      <TimerColumn>
+        <div className="tm-topx">
+          <FlapLabel text="SKIP ROPE" size="sm" />
+          {description && <p>{description}</p>}
         </div>
-      )}
+        <PhaseWord text={running ? workLabel('SKIP', shown) : 'READY'} tone="gold" className={heat ? `is-${heat}` : ''} />
+        <HeroClock seconds={shown} kind="work" heat={heat} track={track} px={120} />
+      </TimerColumn>
     </SessionFrame>
   )
 }

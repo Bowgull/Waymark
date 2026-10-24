@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
-import { enterFromToday, gotoToday, grassToStart, insertSession, tapWaybookLine, todayRow } from './support/helpers'
+import { enterFromToday, grass, gotoToday, grassToStart, insertSession, tapWaybookLine, todayRow, swipeUpGrass } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 import { mockWeather } from './support/weather'
@@ -130,13 +130,15 @@ test('The Waybook box: CLOSE and tap outside fold it; the words are kept as a DR
 /** Into a bag round, working. */
 async function intoRound(page: Page, id: string) {
   await enterFromToday(page, id)
-  const begin = page.getByRole('button', { name: /^(BEGIN SESSION|BEGIN|START BAG WORK|SKIP WARM UP)$/ })
+  const begin = page.getByRole('button', { name: /^(BEGIN SESSION|BEGIN|START BAG WORK)$/ })
   const round1 = page.getByRole('img', { name: /^Round 1 of \d+$/ })
   const warmUp = page.getByRole('img', { name: 'SKIP ROPE', exact: true })
   // the skip-rope warm-up and the round both start on the grass (page 71)
   for (let i = 0; i < 6 && !(await round1.isVisible()); i++) {
     if (await begin.first().isVisible()) await begin.first().tap()
     else if (await warmUp.isVisible() && await grassToStart(page).isVisible()) await grassToStart(page).tap()
+    // page 84: no SKIP WARM UP button; a swipe up the grass moves on
+    else if (await warmUp.isVisible() && await grass(page).isVisible()) await swipeUpGrass(page)
     else await page.waitForTimeout(500)
   }
   await grassToStart(page).tap()

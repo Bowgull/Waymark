@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 
 import {
-  clampSetup, clockAt, cueSchedule, DEFAULT_SETUP, doneWord, elapsedSec, LAST_KEY, loadLast, mmss, padBack, padPush, padShow, padValue,
+  clampSetup, clockAt, countFor, cueSchedule, leftText, nextWords, DEFAULT_SETUP, doneWord, elapsedSec, LAST_KEY, loadLast, mmss, padBack, padPush, padShow, padValue,
   parseSaved, partClip, pauseClock, phaseWord, plan, positionAt, resumeClock, saveLast, startClock, stepDown, stepUp, totalLine, totalSec,
   valueText, warnLen, type IntervalSetup,
 } from './intervalTimer'
@@ -204,6 +204,22 @@ test('lock card: ROUND n OF N, the part\'s end, the phase colour, the counter pe
   const g = intervalActivityState(positionAt(p, 1), c, 8)
   assert.equal(g.label, 'GET READY')
   assert.equal(g.phase, 'rest')
+})
+
+test('page 83: ROUND at work, NEXT resting and getting ready; NEXT · REST only into a rest; the time left', () => {
+  const p = plan(S)
+  assert.deepEqual(countFor(positionAt(p, 1), 8), { label: 'NEXT', n: 1, tone: 'teal' })
+  assert.deepEqual(countFor(positionAt(p, 12), 8), { label: 'ROUND', n: 1, tone: 'gold' })
+  assert.deepEqual(countFor(positionAt(p, 41), 8), { label: 'NEXT', n: 2, tone: 'teal' })
+  assert.deepEqual(countFor(positionAt(p, totalSec(S)), 8), { label: 'ROUND', n: 8, tone: 'gold' })
+  assert.equal(nextWords(p, positionAt(p, 12)), 'NEXT · REST 0:15')
+  assert.equal(nextWords(p, positionAt(p, 41)), null)
+  assert.equal(nextWords(p, positionAt(p, 1)), null)
+  assert.equal(nextWords(p, positionAt(p, totalSec(S) - 1)), null) // the last round: no rest after it
+  assert.equal(nextWords(plan({ rounds: 3, work: 20, rest: 0 }), positionAt(plan({ rounds: 3, work: 20, rest: 0 }), 12)), null)
+  assert.equal(leftText(S, 0), '5:55')
+  assert.equal(leftText(S, 109.4), '4:06')
+  assert.equal(leftText(S, 9999), '0:00')
 })
 
 console.log(`intervalTimer: ${passed} passed`)

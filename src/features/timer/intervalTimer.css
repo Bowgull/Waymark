@@ -32,14 +32,6 @@
 .it-key.is-bk { font-size: 20px; color: #e8c878; }
 .it-key.is-ok { font: 800 15px var(--font-mono); letter-spacing: 0.14em; color: #141008; background: linear-gradient(180deg, #d9b45e 0 50%, #c8a24e 50% 100%); box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5); }
 
-/* the running screen (page 81): the clock takes the phase colour over about a second */
-.it-run { --it-clk: #f3dc94; }
-.it-run.c-rest { --it-clk: #a6ecd8; }
-.it-run.c-warn { --it-clk: #ffb27a; }
-.it-run.c-pause { --it-clk: rgba(240, 230, 192, 0.74); }
-.it-run .tm-clock .wm-cell:not(.is-gap):not(.is-pad) { color: var(--it-clk) !important; transition: color 1s var(--ease-out); }
-.it-phase { margin-bottom: 4px; }
-.it-rof { display: flex; justify-content: center; }
 /* the warning orange on the phase plate */
 .wm-flap.it-orange .wm-cell:not(.is-gap):not(.is-pad) { color: #141008; text-shadow: none; background: linear-gradient(180deg, #e0904a 0 50%, #cf7f3a 50% 100%); }
 .wm-flap.it-orange .wm-leaf { background: #e0904a; }
@@ -47,5 +39,4 @@
 @media (prefers-reduced-motion: reduce) {
   .it-settle, .it-pad, .it-pad.is-out { animation: none; }
   .it-val, .it-key { transition: none; }
-  .it-run .tm-clock .wm-cell { transition: none !important; }
 }

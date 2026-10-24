@@ -278,3 +278,25 @@ export function loadLast(get: (k: string) => string | null): IntervalSetup {
 export function saveLast(set: (k: string, v: string) => void, s: IntervalSetup): void {
   set(LAST_KEY, JSON.stringify(clampSetup(s)))
 }
+
+// ─── Page 83: how the running timer reads ──────────────────────
+
+/** The count under the clock: ROUND n (gold) at work, NEXT n (teal) resting or getting ready. */
+export function countFor(pos: IntervalPosition, rounds: number): { label: 'ROUND' | 'NEXT'; n: number; tone: 'gold' | 'teal' } {
+  if (pos.done) return { label: 'ROUND', n: rounds, tone: 'gold' }
+  const { part } = pos
+  if (part.ph === 'work') return { label: 'ROUND', n: part.round, tone: 'gold' }
+  return { label: 'NEXT', n: part.ph === 'rest' ? Math.min(rounds, part.round + 1) : part.round, tone: 'teal' }
+}
+
+/** "NEXT · REST 0:15" while working into a rest; nothing resting, getting ready, or into another round. */
+export function nextWords(parts: IntervalPart[], pos: IntervalPosition): string | null {
+  if (pos.done || pos.part.ph !== 'work') return null
+  const n = parts[pos.index + 1]
+  return n && n.ph === 'rest' ? `NEXT · REST ${mmss(n.len)}` : null
+}
+
+/** The whole timer left ("4:06"), from `elapsed` seconds in. */
+export function leftText(s: IntervalSetup, elapsed: number): string {
+  return mmss(Math.max(0, Math.ceil(totalSec(s) - elapsed - 1e-9)))
+}

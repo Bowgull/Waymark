@@ -84,6 +84,8 @@ export interface ActivityState {
   fillTo?: number
   /** Paused with a whole-session fill: how full it stands (0..1). */
   fillValue?: number
+  /** Page 84: the 5K test's open piece. The card counts up from startedAt; paused, pausedRemaining is the time in. */
+  countsUp?: boolean
 }
 
 /** Default painted icon for a Live Activity session type. */

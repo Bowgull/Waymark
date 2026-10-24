@@ -72,6 +72,7 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         CAPPluginMethod(name: "ackUploaded", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "discard", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cues", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pieces", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "intervalStart", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "intervalPause", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "intervalResume", returnType: CAPPluginReturnPromise),
@@ -176,6 +177,12 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
     private var nudgeLastAt: Int?
     private var pendingNudge: (word: String, kmh: Double)?
     private lazy var cueAudio = RunCueAudio()
+
+    // Page 84: a Run-Walk's or hard run's pieces on the run clock, so the lock card counts the piece.
+    private struct RunPiece { let start: Int; let sec: Int; let open: Bool; let est: Int; let phase: String; let word: String?; let round: Int; let total: Int; let seq: Int }
+    private var runPieces: [RunPiece] = []
+    private var pieceClock = 0
+    private var pieceIndex = -1
 
     // Page 81: the interval timer.
     private struct IntervalPart { let ph: String; let len: Double; let round: Int; let start: Double }
@@ -460,7 +467,74 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         }
     }
 
+    /// Page 84: { pieces: [{ startSec, sec, open, estSec, phase, word?, round, total, seq }], clockSec }.
+    /// Sent with the run clock now (again after a skip or a resume): the card moves on at each piece.
+    @objc func pieces(_ call: CAPPluginCall) {
+        let list: [RunPiece] = (call.getArray("pieces", JSObject.self) ?? []).compactMap { o in
+            guard let start = (o["startSec"] as? NSNumber)?.intValue else { return nil }
+            return RunPiece(
+                start: start,
+                sec: (o["sec"] as? NSNumber)?.intValue ?? 0,
+                open: (o["open"] as? Bool) ?? false,
+                est: (o["estSec"] as? NSNumber)?.intValue ?? 0,
+                phase: (o["phase"] as? String) ?? "active",
+                word: o["word"] as? String,
+                round: (o["round"] as? NSNumber)?.intValue ?? 0,
+                total: (o["total"] as? NSNumber)?.intValue ?? 0,
+                seq: (o["seq"] as? NSNumber)?.intValue ?? 0
+            )
+        }
+        let clock = max(0, Int((call.getDouble("clockSec") ?? 0).rounded()))
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.runPieces = list
+            self.pieceClock = clock
+            // The app's card is current: the recorder moves it on from the next piece.
+            self.pieceIndex = self.pieceAt(clock)
+            call.resolve()
+        }
+    }
+
+    private func pieceAt(_ clock: Int) -> Int {
+        guard !runPieces.isEmpty else { return -1 }
+        for (i, p) in runPieces.enumerated() where p.open || clock < p.start + p.sec { return i }
+        return runPieces.count   // past the last piece
+    }
+
+    /// One second of the piece clock (not paused): a new piece moves the card on (in the background only).
+    private func stepPieces(now: Double) {
+        guard !runPieces.isEmpty else { return }
+        pieceClock += 1
+        let i = pieceAt(pieceClock)
+        guard i != pieceIndex else { return }
+        pieceIndex = i
+        guard isBackground, i >= 0, i < runPieces.count else { return }
+        let p = runPieces[i]
+        let into = Double(pieceClock - p.start)
+        let len = Double(p.open ? max(1, p.est) : max(1, p.sec))
+        Task {
+            guard let activity = Activity<WaymarkActivityAttributes>.activities.first(where: { $0.attributes.sessionType == "run" || $0.attributes.sessionType == "running" }) else { return }
+            var st = activity.content.state
+            guard st.phase != "complete" else { return }
+            let started = Date(timeIntervalSince1970: now - into)
+            st.phase = p.phase
+            st.startedAt = started
+            st.endsAt = started.addingTimeInterval(len)
+            st.countsUp = p.open ? true : nil
+            st.isPaused = false
+            st.pausedRemaining = nil
+            st.runPhase = p.word
+            st.stepIndex = p.round > 0 ? p.round : nil
+            st.stepTotal = p.round > 0 ? p.total : nil
+            st.glowSeq = p.seq
+            await activity.update(ActivityContent(state: st, staleDate: st.timerStaleDate))
+        }
+    }
+
     private func clearCues() {
+        runPieces = []
+        pieceClock = 0
+        pieceIndex = -1
         cueList = []
         cuePlayed = []
         cueClock = 0
@@ -769,7 +843,10 @@ public class WaymarkRunRecorderPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralMan
         stepZone(hr: hr, now: now)
         // EASE OFF: one buzz. In the app the screen gives it; locked, the recorder does.
         if !wasOver && zone == "over" && isBackground { buzz() }
-        if !r.paused { stepCues(distance: r.outdoor ? r.distance : 0) }
+        if !r.paused {
+            stepCues(distance: r.outdoor ? r.distance : 0)
+            stepPieces(now: now)
+        }
         if !isBackground {
             var tick: [String: Any] = ["t": now * 1000, "elapsedSec": Int((now - r.startedAt).rounded()), "movingSec": r.moving.reduce(0, +), "distanceM": r.outdoor ? r.distance : 0, "link": link, "zone": zone]
             tick["hr"] = Self.nn(hr)

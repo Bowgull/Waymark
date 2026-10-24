@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 
 import { test, expect, type Api } from './fixtures'
-import { addDaysISO, enterFromToday, insertSession, todayISO } from './support/helpers'
+import { addDaysISO, enterFromToday, grass, insertSession, swipeUpGrass, todayISO } from './support/helpers'
 import { setMorning } from './support/data'
 
 /**
@@ -231,13 +231,15 @@ test('The × on a non-run session: 3 s, then END AND LOG closes it; DISCARD puts
 
 async function intoBagRound(page: Page, id: string) {
   await enterFromToday(page, id)
-  const begin = page.getByRole('button', { name: /^(BEGIN SESSION|BEGIN|START BAG WORK|SKIP WARM UP)$/ })
+  const begin = page.getByRole('button', { name: /^(BEGIN SESSION|BEGIN|START BAG WORK)$/ })
   const round1 = page.getByRole('img', { name: /^Round 1 of \d+$/ })
   const toStart = page.getByRole('button', { name: 'Timer. Tap to start.', exact: true })
   const warmUp = page.getByRole('img', { name: 'SKIP ROPE', exact: true })
   for (let i = 0; i < 6 && !(await round1.isVisible()); i++) {
     if (await begin.first().isVisible()) await begin.first().tap()
     else if (await warmUp.isVisible() && await toStart.isVisible()) await toStart.tap()
+    // page 84: no SKIP WARM UP button; a swipe up the grass moves on
+    else if (await warmUp.isVisible() && await grass(page).isVisible()) await swipeUpGrass(page)
     else await page.waitForTimeout(500)
   }
   await toStart.tap()

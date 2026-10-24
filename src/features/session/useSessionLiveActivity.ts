@@ -172,5 +172,6 @@ function stateKey(s: ActivityState): string {
     s.fillFrom != null ? Math.round(s.fillFrom) : '',
     s.fillTo != null ? Math.round(s.fillTo) : '',
     s.fillValue != null ? s.fillValue.toFixed(3) : '',
+    s.countsUp ? 'up' : '',
   ].join('|')
 }

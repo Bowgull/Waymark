@@ -388,7 +388,8 @@ public class WaymarkLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             glowSeq: Self.intValue(dict["glowSeq"]),
             fillFrom: Self.dateValue(dict["fillFrom"]),
             fillTo: Self.dateValue(dict["fillTo"]),
-            fillValue: (dict["fillValue"] as? NSNumber)?.doubleValue
+            fillValue: (dict["fillValue"] as? NSNumber)?.doubleValue,
+            countsUp: dict["countsUp"] as? Bool
         )
     }
 

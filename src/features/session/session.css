@@ -141,3 +141,11 @@
 .ss-post1 { margin: 4px 0 2px; font: 600 14px/1.45 var(--font-body); color: #e2e8e2; }
 .ss-grid4.is-one { grid-template-columns: 1fr; }
 @media (prefers-reduced-motion: reduce) { .ss-nudge { animation: none; } }
+
+/* page 84: a run's column (the word, the hero clock, the count, the heart, pace / speed, NEXT): the
+   heart keeps its size but gives back its box's air (mockup .hshow84), the stats read at 28 */
+.tm-gx.is-run .ss-live { margin-top: 4px; }
+.tm-gx.is-run .ss-hshow { margin: -20px -8px -20px -14px; }
+.tm-gx.is-run .ss-spd { margin-top: 4px; }
+.tm-gx.is-run .ss-st2 .wm-flap.is-lg { font-size: 28px; }
+.tm-gx.is-run .ss-nudge { margin-top: 6px; }

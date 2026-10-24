@@ -128,7 +128,9 @@ test('START: get ready, work, rest from the lock card state; hold the grass 3 s 
   await expect(page.getByRole('timer')).toBeVisible()
   await expect(page.getByRole('img', { name: 'INTERVAL TIMER' })).toBeVisible()
   await expect(page.getByRole('img', { name: 'GET READY' })).toBeVisible()
-  await expect(page.getByRole('img', { name: 'ROUND 1 OF 2' })).toBeVisible()
+  // page 83: NEXT 1 OF 2 under the clock while getting ready, the whole time left under that
+  await expect(page.getByRole('img', { name: 'Next 1 of 2' })).toBeVisible()
+  await expect(page.getByText('1:00 LEFT')).toBeVisible()
   await expect.poll(async () => (await activity(page))?.label).toBe('GET READY')
   expect((await activity(page))?.glowTone).toBe('teal')
 
@@ -142,11 +144,14 @@ test('START: get ready, work, rest from the lock card state; hold the grass 3 s 
   await expect.poll(async () => (await activity(page))?.label).toBe('WORK')
   expect(await activity(page)).toMatchObject({ phase: 'active', round: 1, roundTotal: 2, glowTone: 'gold', glowSeq: 2 })
   await expect(page.getByRole('img', { name: 'WORK' })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Round 1 of 2' })).toBeVisible()
+  await expect(page.getByText('NEXT · REST 0:10')).toBeVisible()
 
   // rest (teal)
   await page.clock.fastForward(20_000)
   await expect.poll(async () => (await activity(page))?.label).toBe('REST')
   expect(await activity(page)).toMatchObject({ phase: 'rest', glowTone: 'teal', glowSeq: 3 })
+  await expect(page.getByRole('img', { name: 'Next 2 of 2' })).toBeVisible()
 
   // tap the grass: paused
   const grass = page.getByRole('button', { name: /^Timer\. Tap to pause\. Hold for 3 seconds to end\.$/ })

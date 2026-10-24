@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { FlapLabel, SessionIcon, type SessionIconKey } from '@/design'
-import { GrassZone, SessionButton, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
+import { GrassZone, HeroClock, PhaseWord, SessionButton, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { mobilitySteps, type MobilityStep } from '@/lib/foundation'
 import type { EngineState } from '@/lib/sessionResume'
 import { useWakeLock } from '@/lib/wakeLock'
@@ -338,15 +338,13 @@ export function MobilityExerciseView({
         />
       }
     >
+      {/* page 84: the move's board stays on top at its size; the word over the clock (104). No END EARLY or
+          DONE: a swipe up the grass moves on, and a finished hold moves on by itself. */}
       {board}
-      <TimerFace seconds={shown} kind="hold" tone="teal" label={label} labelTone="teal" track={running ? track : undefined} compact />
-      {running && (
-        <div className="tm-wide">
-          {done
-            ? <SessionButton label="DONE" primary onClick={advanceStep} />
-            : <SessionButton label="END EARLY" onClick={advanceStep} />}
-        </div>
-      )}
+      <TimerColumn>
+        <PhaseWord text={label} tone="teal" />
+        <HeroClock seconds={shown} kind="hold" tint="rest" track={running ? track : undefined} px={104} />
+      </TimerColumn>
     </SessionFrame>
   )
 }

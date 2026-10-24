@@ -1,9 +1,9 @@
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
 import { FlapLabel, useReducedMotion, type FlapTone } from '@/design'
 import { SessionEndedContext } from './endedContext'
 import { roundClockText } from '@/lib/timers/bagRound'
-import { clockDigits, HEAT_RED_SCALE, swellBreath, swellK, swellStyle, trackRemainingMs, type Heat, type TimerKind, type TimerTrack } from '@/lib/timers/timerLook'
+import { clockDigits, HEAT_RED_SCALE, heroPx, swellBreath, swellK, swellStyle, trackRemainingMs, type Heat, type TimerKind, type TimerTrack } from '@/lib/timers/timerLook'
 
 interface TimerFaceProps {
   /** Whole seconds shown. */
@@ -157,5 +157,151 @@ export function RoundClock({ seconds: liveSeconds, kind, heat, tone = 'ink', tra
     >
       <FlapLabel text={text} size="xl" tone={heat ? 'ink' : tone} className={heat ? `is-${heat}` : ''} />
     </div>
+  )
+}
+
+// ─── Page 84: every timer, the new way ────────────────────────
+// Top to bottom: the phase word (md, 26 px), the clock as the hero in the
+// phase colour (M:SS, no leading zero), the count in the bag round's language
+// (ROUND gold / NEXT teal, the number on an xl flap sized to its digits, OF 6),
+// then a small mono NEXT and time-left line. The grass stays at the bottom and
+// nothing sits on it (TimerColumn keeps the column above it).
+
+/** The clock's colour (page 84 `.tm` --clk): gold work, teal rest and holds, clay, the timer's orange, paused. */
+export type HeroTint = 'work' | 'rest' | 'clay' | 'warn' | 'pause'
+
+
+interface HeroClockProps {
+  seconds: number
+  kind: TimerKind
+  /** Work timers, last 10 s: yellow, orange, red (red grows 6%). */
+  heat?: Heat | null
+  tint?: HeroTint
+  /** For the 5 s swell of holds and rest. */
+  track?: TimerTrack
+  /** 120 (nothing else to read), 112 Run-Walk, 104 holds, 96 hard runs, 92 bag. */
+  px?: number
+}
+
+/**
+ * The hero clock (page 84): M:SS on xl flap tiles in the phase colour, the
+ * colon between them. Heat, the rest / hold swell and the held-× freeze are
+ * the calm clock's. Only the digit that changes flips.
+ */
+export function HeroClock({ seconds: liveSeconds, kind, heat, tint = 'work', track, px = 120 }: HeroClockProps) {
+  const ended = useContext(SessionEndedContext)
+  const [stoppedAt, setStoppedAt] = useState<number | null>(null)
+  if (ended && stoppedAt == null) setStoppedAt(liveSeconds)
+  const seconds = ended && stoppedAt != null ? stoppedAt : liveSeconds
+  const reduced = useReducedMotion()
+  const clockRef = useRef<HTMLDivElement>(null)
+  const noPhase = useRef<HTMLDivElement>(null)
+  const live = useRef(track)
+  useLayoutEffect(() => { live.current = track })
+  const nearEnd = kind !== 'work' && track != null && seconds <= 6 && seconds > 0
+  useClockSwell(clockRef, noPhase, nearEnd, kind, live, reduced)
+  const s = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0))
+  const m = String(Math.floor(s / 60)), ss = String(s % 60).padStart(2, '0')
+  const red = heat === 'hr'
+  const digit = heat ? `is-${heat}` : ''
+  return (
+    <div
+      ref={clockRef}
+      className={`tm-hero t-${tint}${heat ? ' is-heat' : ''}${red ? ' is-red' : ''}`}
+      data-no-cascade
+      role="timer"
+      aria-label={`${Math.floor(s / 60)} minutes ${s % 60} seconds`}
+      style={{ '--px': `${heroPx(px, s)}px`, transform: red ? `scale(${HEAT_RED_SCALE})` : undefined } as CSSProperties}
+    >
+      <FlapLabel text={m} size="xl" className={digit} />
+      <span className="tm-hero-colon" aria-hidden>:</span>
+      <FlapLabel text={ss} size="xl" className={digit} />
+    </div>
+  )
+}
+
+/**
+ * The phase word over the clock (page 84, md at 26 px): FIGHT, REST, HOLD...
+ * Held through it reads ENDED (clay). A new word settles in (no letter flips).
+ */
+export function PhaseWord({ text, tone = 'gold', className = '' }: { text: string; tone?: FlapTone; className?: string }) {
+  const ended = useContext(SessionEndedContext)
+  const word = ended ? 'ENDED' : text
+  return (
+    <div className="tm-word">
+      <span key={word + tone + className} className="tm-settle">
+        <FlapLabel text={word} size="md" tone={ended ? 'clay' : className ? 'ink' : tone} className={ended ? '' : className} animate={false} />
+      </span>
+    </div>
+  )
+}
+
+/**
+ * The count in the bag round's language (page 84): ROUND (gold) while working,
+ * NEXT (teal) while resting, the number on an xl flap sized to its digits,
+ * then OF 6. `beside` is the bag's column next to its clock (the digit 58).
+ */
+export function CountRow({ label, n, of, tone = 'gold', beside = false, className = '' }: { label: string; n: number; of: number; tone?: 'gold' | 'teal'; beside?: boolean; className?: string }) {
+  return (
+    <div className={`tm-count${beside ? ' is-beside' : ''} is-${tone}`} role="img" aria-label={`${label === 'NEXT' ? 'Next' : 'Round'} ${n} of ${of}`}>
+      <span className="tm-count-l">{label}</span>
+      <span key={n} className="tm-settle"><FlapLabel text={String(n)} size="xl" tone={className ? 'ink' : tone} className={`tm-count-n ${className}`.trim()} animate={false} /></span>
+      <small>OF {of}</small>
+    </div>
+  )
+}
+
+/** The small mono line under it all (page 84): "NEXT · REST 1:00 · 11:40 LEFT", resting just "9:12 LEFT". */
+export function NextLine({ lead, next, left }: { /** A small word before it all (the treadmill's other unit, "7.8 mph"). */ lead?: string | null; next?: string | null; left?: string | null }) {
+  const parts = [lead, next, left ? `${left} LEFT` : null].filter((p): p is string => !!p)
+  if (parts.length === 0) return null
+  return (
+    <div className="tm-next">
+      {parts.map((p, i) => <span key={i}>{i > 0 && <i aria-hidden>·</i>}{p}</span>)}
+    </div>
+  )
+}
+
+
+/**
+ * The column above the grass (page 84): everything centred between the top
+ * bar and the grass, with the grass's own room left empty under it, so
+ * nothing ever sits on the grass. If a phone is too short for the column, the
+ * clock steps down until it fits (the content above it keeps its size).
+ */
+export function TimerColumn({ grass = 0.44, children, className = '' }: { grass?: number; children: ReactNode; className?: string }) {
+  const boxRef = useRef<HTMLDivElement>(null)
+  const innerRef = useRef<HTMLDivElement>(null)
+  const [k, setK] = useState(1)
+  const kRef = useRef(1)
+  useLayoutEffect(() => {
+    const box = boxRef.current, inner = innerRef.current
+    if (!box || !inner) return
+    const fit = () => {
+      const avail = box.clientHeight, need = inner.offsetHeight
+      const clock = inner.querySelector<HTMLElement>('.tm-hero')
+      const ch = clock?.offsetHeight ?? 0
+      if (!clock || ch <= 0 || avail <= 0) return
+      const excess = need - avail
+      let next = kRef.current
+      if (excess > 0.5) next = kRef.current * Math.max(0.5, (ch - excess) / ch)
+      else if (excess < -6 && kRef.current < 1) next = Math.min(1, kRef.current * ((ch - excess - 4) / ch))
+      next = Math.round(next * 1000) / 1000
+      if (next !== kRef.current) { kRef.current = next; setK(next) }
+    }
+    fit()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(fit)
+    ro.observe(box)
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [])
+  return (
+    <>
+      <div ref={boxRef} className={`tm-gx ${className}`.trim()} style={{ '--hk': k } as CSSProperties}>
+        <div ref={innerRef} className="tm-gx-in">{children}</div>
+      </div>
+      <div className="tm-gspace" style={{ '--gh': grass } as CSSProperties} aria-hidden />
+    </>
   )
 }

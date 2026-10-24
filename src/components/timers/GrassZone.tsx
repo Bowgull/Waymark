@@ -78,7 +78,7 @@ interface GrassZoneProps {
 }
 
 /**
- * The half-screen glyph grass of every timer (page 19 `.grasshalf`): 47% of the
+ * The half-screen glyph grass of every timer (page 19 `.grasshalf`): 44% (page 84) of the
  * screen, faded in at its top edge, the giant tap zone. Tap pauses; swipe up
  * skips (a beam rises with the pull, a full pull skips on release, letting go
  * early settles back); the blades part around the finger with a light under it

@@ -281,6 +281,10 @@ private func clockText(_ s: WaymarkActivityAttributes.ContentState) -> Text {
     if s.isPaused, let remaining = s.pausedRemaining {
         return Text(formatDuration(remaining))
     }
+    // Page 84: the 5K test's open piece counts up from its start.
+    if s.countsUp == true {
+        return Text(timerInterval: s.startedAt...s.startedAt.addingTimeInterval(6 * 3600), countsDown: false)
+    }
     return Text(timerInterval: safeRange(s), countsDown: true)
 }
 
@@ -626,7 +630,7 @@ private struct LAInfo {
         isInterval = context.attributes.sessionType == "interval_timer"
         let s = context.state
         let timer = s.phase != "complete" && s.phase != "exercise" && s.phase != "ready"
-        timeUp = timer && !s.isPaused && (context.isStale || s.endsAt <= now)
+        timeUp = timer && !s.isPaused && s.countsUp != true && (context.isStale || s.endsAt <= now)
     }
 
     var phase: String { state.phase }
@@ -729,6 +733,8 @@ private struct LAInfo {
         if !state.isPaused, let from = state.fillFrom, let to = state.fillTo, to > from { return .timer(from...to) }
         if state.isPaused, let remaining = state.pausedRemaining {
             let total = max(1, state.endsAt.timeIntervalSince(state.startedAt))
+            // Page 84: counting up, pausedRemaining is the time in.
+            if state.countsUp == true { return .value(remaining / total) }
             return .value(1 - remaining / total)
         }
         return .timer(safeRange(state))

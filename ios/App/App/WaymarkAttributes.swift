@@ -128,6 +128,10 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
         public var fillFrom: Date?
         public var fillTo: Date?
         public var fillValue: Double?
+        // Page 84: the 5K test's open piece. The clock counts up from
+        // startedAt (endsAt is only the grass's planned end); paused,
+        // pausedRemaining holds the time in.
+        public var countsUp: Bool?
 
         public init(
             phase: String,
@@ -161,7 +165,8 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             glowSeq: Int? = nil,
             fillFrom: Date? = nil,
             fillTo: Date? = nil,
-            fillValue: Double? = nil
+            fillValue: Double? = nil,
+            countsUp: Bool? = nil
         ) {
             self.phase = phase
             self.label = label
@@ -195,6 +200,7 @@ public struct WaymarkActivityAttributes: ActivityAttributes {
             self.fillFrom = fillFrom
             self.fillTo = fillTo
             self.fillValue = fillValue
+            self.countsUp = countsUp
         }
     }
 
@@ -219,6 +225,8 @@ public extension WaymarkActivityAttributes.ContentState {
         case "complete", "exercise", "ready":
             return nil
         default:
+            // An open piece counting up never runs out.
+            if countsUp == true { return nil }
             return isPaused ? nil : endsAt
         }
     }

@@ -34,22 +34,24 @@ test('Run-walk: warm-up, ready card, then run and walk intervals', async ({ page
   test.skip(rw.rounds === 0, `capped to an easy walk by the run guards: ${prescription.targetDesc}`)
 
   // Its brisk-walk lead-in first, when there is one.
+  // Page 84: the count sits under the clock in the bag round's language (ROUND n OF 6, walking NEXT).
   const count = (w: string) => page.getByRole('img', { name: w, exact: true })
   if (rw.warmupSec > 0) {
-    await expect(count('WARM-UP')).toBeVisible()
+    await expect(count(`Next 1 of ${rw.rounds}`)).toBeVisible()
     await page.clock.fastForward(rw.warmupSec * 1000 + 500)
   }
-  await expect(count(`RUN 1/${rw.rounds}`)).toBeVisible()
+  await expect(count(`Round 1 of ${rw.rounds}`)).toBeVisible()
   const runLeft = await timerSeconds(page)
   expect(runLeft).toBeLessThanOrEqual(rw.runSec)
   expect(runLeft).toBeGreaterThan(rw.runSec - 5)
   await expect(page).toHaveScreenshot('run-walk-run.png', { mask: [page.getByRole('timer')] })
 
   await page.clock.fastForward(rw.runSec * 1000)
-  await expect(count(`WALK 1/${rw.rounds}`)).toBeVisible()
+  if (rw.rounds > 1) await expect(count(`Next 2 of ${rw.rounds}`)).toBeVisible()
+  else await expect(count('WALK')).toBeVisible()
   expect(await timerSeconds(page)).toBeLessThanOrEqual(rw.walkSec)
   await expect(page).toHaveScreenshot('run-walk-walk.png', { mask: [page.getByRole('timer')] })
 
   await page.clock.fastForward(rw.walkSec * 1000)
-  await expect(count(`RUN 2/${rw.rounds}`)).toBeVisible()
+  if (rw.rounds > 1) await expect(count(`Round 2 of ${rw.rounds}`)).toBeVisible()
 })

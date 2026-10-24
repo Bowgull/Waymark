@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { CentredCard, FlapLabel, SessionIcon } from '@/design'
-import { GrassZone, SessionButton, SessionFrame, sentenceCase, TimerFace, useEaseAway, type TimerTrack } from '@/components/timers'
+import { CountRow, GrassZone, HeroClock, NextLine, PhaseWord, SessionButton, SessionFrame, sentenceCase, shortTime, TimerColumn, useEaseAway, type TimerTrack } from '@/components/timers'
 import { HeartContainer } from '@/components/heart/HeartContainer'
 import { useToast } from '@/components/ui/Toast'
 import { EARLY_END_REASONS } from '@/components/ui/departures'
@@ -16,7 +16,7 @@ import { runRecorder, type StrapLink } from '@/lib/runRecorder'
 import { summarizeRecording, type RunRecording } from '@/lib/runRecording'
 import { uploadRecording } from '@/lib/runRecordingUpload'
 import { cancelRunWalkCues, scheduleRunWalkCues } from '@/lib/notifications'
-import { runWalkAt, runWalkCount, runWalkCueTimes, runWalkSegments, runWalkWord, type RunWalkShape } from '@/lib/timers/runWalk'
+import { runWalkAt, runWalkCueTimes, runWalkSegments, runWalkWord, type RunWalkShape } from '@/lib/timers/runWalk'
 import { assessRunCompletion, shouldShowRunRealityMark } from '@/lib/trainingReality'
 import { parseDurationToSec } from '@/lib/duration'
 import { NARUTO_NETFLIX_URL, ONEPACE_URL, type IndoorMedia } from '@/lib/onePace'
@@ -37,11 +37,12 @@ import { setWorldBackdrop } from '@/world/worldStore'
 import '@/design/pickers.css'
 import './session.css'
 import { hardRunGlow, runWalkGlow, zone2Glow } from '@/lib/lockGlow'
+import { pieceTimes, type RecorderPiece, type RunPiece } from '@/lib/runPieceActivity'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 import { NarutoEpisodeCard } from './NarutoEpisodeCard'
 import { checkMaxHrBump } from '@/lib/maxHrBump'
 import { parseFiveK, type HardPlan } from '@/lib/brain/hardRuns'
-import { hardAt, hardCues, hardSegments, nextWords, nudgeTargets, nudgeWord, phaseTone, phaseWord, pieceOf, type HardSegment } from '@/lib/runCues'
+import { hardAt, hardCues, hardSegments, nextWords, nudgeTargets, nudgeWord, phaseTone, phaseWord, type HardSegment } from '@/lib/runCues'
 import { altMph, BASE_INCLINE, mmss, paceFlap, paceUnitWord, speedFlap, speedUnitWord, type TreadmillUnit } from '@/lib/runSpeed'
 import { useTreadmillUnit } from '@/lib/treadmillUnit'
 import { postRunShort, type PostRunFacts } from '@/lib/postRun'
@@ -554,6 +555,19 @@ export function RunSessionView({
     // cueKey holds every input that matters
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cueKey])
+  // Page 84: the pieces, for the recorder to move the lock card on at each one while the phone is
+  // locked (sent with the run clock now, again after a skip or a resume, as the cues are).
+  const pieceKey = (hardSegs || segments) && phase === 'running' && stopwatch?.state === 'running' && runId ? `${runId}:${stopwatch.startedAtMs}` : null
+  useEffect(() => {
+    if (!pieceKey || !stopwatch) return
+    const clockSec = Math.floor(stopwatchElapsedMs(stopwatch, Date.now()) / 1000)
+    const list: RecorderPiece[] = hardSegs && hard
+      ? hardSegs.map((h, i) => ({ startSec: h.startSec, sec: Number.isFinite(h.sec) ? h.sec : 0, open: !Number.isFinite(h.sec), estSec: hard.pieces[i]?.sec ?? h.sec, phase: phaseTone(h.kind) === 'teal' ? 'rest' as const : 'active' as const, word: phaseWord(h.kind), round: h.round, total: h.round > 0 ? hard.reps : 0, seq: i + 1 }))
+      : (segments ?? []).map((g, i) => ({ startSec: g.startSec, sec: g.sec, open: false, estSec: g.sec, phase: g.kind === 'run' ? 'active' as const : 'rest' as const, round: g.round, total: g.round > 0 ? (prescription?.runWalk?.rounds ?? 0) : 0, seq: i + 1 }))
+    void runRecorder().pieces({ pieces: list, clockSec }).catch(() => {})
+    // pieceKey holds every input that matters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pieceKey])
   // A nudge shows for 6 s.
   useEffect(() => {
     if (!nudge) return
@@ -637,6 +651,9 @@ export function RunSessionView({
         ? runWalkGlow(rwPos.index, !rwPos.done && rwPos.segment.kind !== 'run', zone)
         : zone2Glow(zone, remaining === 0 && elapsed > 0)),
   }
+  const livePiece: RunPiece | null = hard && hSeg
+    ? { startSec: hSeg.startSec, sec: hSeg.sec, estSec: hard.pieces[hPos?.index ?? 0]?.sec ?? 1500 }
+    : rwPos && !rwPos.done ? { startSec: rwPos.segment.startSec, sec: rwPos.segment.sec } : null
   const rwWalking = (!!rwPos && !rwPos.done && rwPos.segment.kind !== 'run') || (hSeg != null && phaseTone(hSeg.kind) === 'teal')
   const runLiveConfig: LiveActivityConfig | null =
     phase === 'running' && runStartedAtMs > 0
@@ -648,12 +665,16 @@ export function RunSessionView({
             iconKey: runIconKey,
             label: isIndoor ? indoorLabel : runTypeLabel,
             detail: indoorDetail,
-            startedAt: runStartedAtMs,
-            endsAt: runPaused
-              ? nowMs + remaining * 1000
-              : runStartedAtMs + timerEstimate * 1000,
-            isPaused: runPaused,
-            pausedRemaining: runPaused ? remaining : undefined,
+            // Page 84: the piece you're in (a Run-Walk's run or walk, a hard run's piece), as the
+            // app counts it; one countdown for the whole run otherwise. The open 5 km counts up.
+            ...(livePiece
+              ? { ...pieceTimes(livePiece, runStartedAtMs, elapsed, runPaused), isPaused: runPaused }
+              : {
+                  startedAt: runStartedAtMs,
+                  endsAt: runPaused ? nowMs + remaining * 1000 : runStartedAtMs + timerEstimate * 1000,
+                  isPaused: runPaused,
+                  pausedRemaining: runPaused ? remaining : undefined,
+                }),
             ...runExtras,
           },
         }
@@ -803,12 +824,6 @@ export function RunSessionView({
         <FlapLabel text={strapOn ? String(live.hr) : '---'} size="lg" className={strapOn ? `ss-hrn${zone === 'gold' ? ' is-gold' : over ? ' is-over' : ''}` : 'ss-dashes'} />
         <span className="ss-u">BPM</span>
       </span>
-      {!isIndoor && !hard && (
-        <span className="ss-stt">
-          <FlapLabel text={(live.distanceM / 1000).toFixed(2)} size="lg" />
-          <span className="ss-u">KM</span>
-        </span>
-      )}
     </div>
   )
   // ─── A hard run (page 76 §4): RUN HARD / EASY JOG big with "3 of 6", the piece's clock, the heart,
@@ -825,16 +840,20 @@ export function RunSessionView({
     remainingMs: (hp?.up ? Math.max(0, hDur - hShown) : hShown) * 1000,
   }
   const kmh = hs?.kmh ?? hard?.speeds.easy ?? 0
-  const of = hs ? pieceOf(hs, hard?.reps ?? 0) : null
+  // Page 84: the piece word over the clock (96), ROUND / 3 / OF 6 under it (the jog after it: NEXT),
+  // the heart, pace / KM or speed / incline, then NEXT · EASY JOG 2:00 · 18:40 LEFT. Tempo has no count.
+  const hLast = hardSegs ? hardSegs[hardSegs.length - 1] : null
+  const hEnd = hLast ? hLast.startSec + hLast.sec : Infinity
+  const hLeft = Number.isFinite(hEnd) ? shortTime(Math.max(0, hEnd - elapsed)) : null
+  const hNext = hardSegs && hp && hs && !hEasy && hs.sec !== Infinity && hardSegs[hp.index + 1] ? `NEXT · ${nextWords(hardSegs, hp.index).toUpperCase()}` : null
+  const hCount = hs && hs.round > 0 && (hs.kind === 'hard' || hs.kind === 'jog')
+    ? (hs.kind === 'hard' ? { label: 'ROUND', n: hs.round, tone: 'gold' as const } : hs.round < (hard?.reps ?? 0) ? { label: 'NEXT', n: hs.round + 1, tone: 'teal' as const } : null)
+    : null
   const hardMid = hard && hp && (
-    <div className="ss-runmid is-hard">
-      <div className="ss-phase">
-        {over
-          ? <FlapLabel text="EASE OFF" size="md" tone="clay" />
-          : <FlapLabel text={hs ? phaseWord(hs.kind) : 'DONE'} size="md" tone={hs ? phaseTone(hs.kind) : 'gold'} />}
-        {of && <small className="ss-of">{of}</small>}
-      </div>
-      <TimerFace big seconds={hShown} kind={hEasy ? 'rest' : 'work'} tone={hEasy ? 'teal' : undefined} heat={over ? null : hHeat} track={hTrack} />
+    <TimerColumn className="is-run">
+      <PhaseWord text={over ? 'EASE OFF' : hs ? phaseWord(hs.kind) : 'DONE'} tone={over ? 'clay' : hs ? phaseTone(hs.kind) : 'gold'} className={!over && hHeat ? `is-${hHeat}` : ''} />
+      <HeroClock seconds={hShown} kind={hEasy ? 'rest' : 'work'} heat={over ? null : hHeat} tint={over ? 'clay' : hEasy ? 'rest' : 'work'} track={hTrack} px={96} />
+      {hCount && <CountRow label={hCount.label} n={hCount.n} of={hard.reps} tone={hCount.tone} />}
       {heartRow}
       {isIndoor ? (
         <div className="ss-spd">
@@ -850,17 +869,32 @@ export function RunSessionView({
       {nudge && !isIndoor && (
         <div className="ss-nudge" role="status"><FlapLabel text={nudgeWord(nudge.n).flap} size="xs" tone="clay" animate={false} /><span>{nudgeWord(nudge.n).to}</span><FlapLabel text={paceFlap(nudge.kmh, unit)} size="xs" animate={false} /></div>
       )}
-      <div className="ss-piece2">
-        {isIndoor && altMph(kmh, unit) && <span className="ss-mph">{altMph(kmh, unit)}</span>}
-        <span className="ss-nx">NEXT</span><span>{hardSegs && hp && hs?.sec !== Infinity ? nextWords(hardSegs, hp.index) : 'done'}</span>
-      </div>
-    </div>
+      <NextLine lead={isIndoor ? altMph(kmh, unit) : null} next={hNext} left={hLeft} />
+    </TimerColumn>
+  )
+  // Page 84, Zone 2 / Walk or Bike and Run-Walk: the word over the clock (Zone 2 112, 96 from 10:00;
+  // Run-Walk 112), Run-Walk's ROUND / 2 / OF 6 (walking: NEXT), the heart, then KM small (Zone 2
+  // outside) or NEXT · WALK 1:00 · 21:30 LEFT.
+  const rwSeg = seg && rwPos ? rwPos : null
+  const rwNextSeg = rwSeg && segments ? segments[rwSeg.index + 1] : null
+  const rwCount = seg && seg.round > 0
+    ? (seg.kind === 'run' ? { label: 'ROUND', n: seg.round, tone: 'gold' as const } : seg.round < rounds ? { label: 'NEXT', n: seg.round + 1, tone: 'teal' as const } : null)
+    : seg && seg.kind === 'warmup' && rounds > 0 ? { label: 'NEXT', n: 1, tone: 'teal' as const } : null
+  const easyMid = (
+    <TimerColumn className="is-run">
+      <PhaseWord text={label} tone={labelTone} className={!over && heat ? `is-${heat}` : ''} />
+      <HeroClock seconds={shown} kind={walking ? 'rest' : 'work'} heat={over ? null : heat} tint={over ? 'clay' : walking ? 'rest' : 'work'} track={track} px={112} />
+      {rwCount && <CountRow label={rwCount.label} n={rwCount.n} of={rounds} tone={rwCount.tone} />}
+      {heartRow}
+      {segments
+        ? <NextLine next={seg && !walking && rwNextSeg ? `NEXT · ${runWalkWord(rwNextSeg.kind)} ${shortTime(rwNextSeg.sec)}` : null} left={shortTime(Math.max(0, remaining))} />
+        : !isIndoor && <div className="tm-next">{(live.distanceM / 1000).toFixed(2)} KM</div>}
+    </TimerColumn>
   )
   return (
     <>
       <SessionFrame
         title={runTitle}
-        count={hard ? undefined : seg ? runWalkCount(seg, rounds) : walkOnly ? 'EASY' : 'RUN'}
         onEnd={onExit}
         onEndAndLog={openLog}
         closeHead={walkOnly ? sentenceCase(WALK_ONLY_NAME) : prescription?.runWalk ? 'Run-walk' : sentenceCase(runTypeLabel)}
@@ -868,12 +902,7 @@ export function RunSessionView({
         grass={hard ? <GrassZone track={hTrack} kind={hEasy ? 'rest' : 'work'} heat={hHeat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} zone={zone} hold={{ onHeld: openLog, held: logging }} />
           : <GrassZone track={track} kind={walking ? 'rest' : 'work'} heat={heat} state={runPaused && !logging ? 'paused' : 'running'} onTap={toggleRunPause} zone={zone} hold={{ onHeld: openLog, held: logging }} />}
       >
-        {hardMid || (
-          <div className="ss-runmid">
-            <TimerFace big seconds={shown} kind={walking ? 'rest' : 'work'} tone={walking ? 'teal' : undefined} heat={over ? null : heat} label={label} labelTone={labelTone} track={track} />
-            {heartRow}
-          </div>
-        )}
+        {hardMid || easyMid}
       </SessionFrame>
       {logging && (
         // Log your run (page 74): filled by itself, no helper text. A tap outside (or CLOSE) puts

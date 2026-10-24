@@ -34,8 +34,11 @@ public struct PauseTimerIntent: LiveActivityIntent {
             // Pause only applies to a running timer (not the exercise card or a complete frame).
             guard !state.isPaused, state.phase != "complete", state.phase != "exercise" else { continue }
 
-            let remaining = max(0, state.endsAt.timeIntervalSince(Date()))
-            pausedRemainingMs = remaining * 1000.0
+            // Page 84: an open piece counting up keeps the time in instead.
+            let remaining = state.countsUp == true
+                ? max(0, Date().timeIntervalSince(state.startedAt))
+                : max(0, state.endsAt.timeIntervalSince(Date()))
+            pausedRemainingMs = state.countsUp == true ? nil : remaining * 1000.0
             // Copy the state and change only what pause changes, so fields such
             // as exerciseName survive.
             var newState = state
@@ -76,9 +79,21 @@ public struct ResumeTimerIntent: LiveActivityIntent {
             guard state.isPaused, let remaining = state.pausedRemaining else { continue }
 
             let now = Date()
+            var newState = state
+            if state.countsUp == true {
+                // Page 84: counting up from where it stood.
+                let len = max(1, state.endsAt.timeIntervalSince(state.startedAt))
+                newState.startedAt = now.addingTimeInterval(-remaining)
+                newState.endsAt = newState.startedAt.addingTimeInterval(len)
+                newState.isPaused = false
+                newState.pausedRemaining = nil
+                newState.endPending = false
+                await activity.update(ActivityContent(state: newState, staleDate: newState.timerStaleDate))
+                resumedEndsAt = newState.endsAt
+                continue
+            }
             let newEndsAt = now.addingTimeInterval(remaining)
             resumedEndsAt = newEndsAt
-            var newState = state
             // Page 82: a whole-session fill moves on by the time spent paused
             // (the pause began where the old end minus what was left).
             if let from = state.fillFrom, let to = state.fillTo {

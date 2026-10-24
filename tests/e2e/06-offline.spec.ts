@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { enterFromToday, insertSession } from './support/helpers'
+import { enterFromToday, grass, insertSession, swipeUpGrass } from './support/helpers'
 import { serveBundle } from './support/bundle'
 import type { Api } from './fixtures'
 
@@ -20,7 +20,9 @@ async function midSession(page: Page, api: Api) {
   await enterFromToday(page, s.id)
   await page.getByRole('button', { name: 'LOG SET', exact: true }).tap()
   await expect.poll(() => loggedSets(api, s.id)).toBe(1)
-  await page.getByRole('button', { name: 'NEXT SET', exact: true }).tap()
+  // page 84: no NEXT SET button on the rest; a swipe up the grass moves on
+  await expect(grass(page)).toBeVisible()
+  await swipeUpGrass(page)
   await expect(page.getByText(/^Warmup 2 of \d+/)).toBeVisible()
   return s
 }

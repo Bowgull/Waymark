@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { GrassZone, Pips, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
+import { CountRow, GrassZone, HeroClock, NextLine, PhaseWord, SessionFrame, shortTime, TimerColumn, type TimerTrack } from '@/components/timers'
 import {
   scheduleRoundCuesUntil,
   scheduleRestCuesUntil,
@@ -232,6 +232,12 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
     ? { durationSec: timer.durationSec, endsAtMs: timer.isPaused ? null : timer.endsAtMs, remainingMs: timer.secondsRemaining * 1000 }
     : { durationSec: skipSession.roundDurSec, endsAtMs: null, remainingMs: skipSession.roundDurSec * 1000 }
 
+  // The whole session left (page 84's NEXT line): this part, then the rounds and rests after it.
+  const roundsAfter = Math.max(0, totalRounds - currentRound)
+  const leftSec = resting
+    ? shownSec + roundsAfter * skipSession.roundDurSec + Math.max(0, roundsAfter - 1) * SKIP_REST_SEC
+    : shownSec + roundsAfter * (SKIP_REST_SEC + skipSession.roundDurSec)
+
   function togglePause() {
     if (skipping) { if (roundTimer.isPaused) resumeRound(); else pauseRound() }
     else if (resting) { if (restTimer.isPaused) resumeRest(); else pauseRest() }
@@ -244,7 +250,6 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
   return (
     <SessionFrame
       title="SKIP ROPE"
-      count={`${currentRound}/${totalRounds}`}
       onEnd={onExit}
       paused={paused}
       grass={
@@ -259,16 +264,15 @@ export function SkipRopeView({ skipSession, onComplete, onExit, resume, onPersis
         />
       }
     >
-      <Pips total={totalRounds} now={currentRound - 1} />
-      <TimerFace
-        seconds={shownSec}
-        kind={resting ? 'rest' : 'work'}
-        heat={heat}
-        tone={resting ? 'teal' : 'ink'}
-        label={label}
-        labelTone={resting ? 'teal' : 'gold'}
-        track={track}
-      />
+      {/* page 84: the word over the clock (120), ROUND / NEXT under it (the pips and the top-bar count go), the NEXT line */}
+      <TimerColumn>
+        <PhaseWord text={label} tone={resting ? 'teal' : 'gold'} className={heat ? `is-${heat}` : ''} />
+        <HeroClock seconds={shownSec} kind={resting ? 'rest' : 'work'} heat={heat} tint={resting ? 'rest' : 'work'} track={track} px={120} />
+        {resting
+          ? <CountRow label="NEXT" n={Math.min(totalRounds, currentRound + 1)} of={totalRounds} tone="teal" />
+          : <CountRow label="ROUND" n={currentRound} of={totalRounds} tone="gold" />}
+        <NextLine next={!resting && !isLastRound ? `NEXT · REST ${shortTime(SKIP_REST_SEC)}` : null} left={shortTime(leftSec)} />
+      </TimerColumn>
     </SessionFrame>
   )
 }

@@ -50,8 +50,8 @@
 .wm-flap.is-hr .wm-cell:not(.is-gap):not(.is-pad) { color: #fff0ea; background: linear-gradient(180deg, #d0483a 0 50%, #ad3428 50% 100%); }
 .wm-flap.is-hr .wm-leaf { background: #d0483a; }
 
-/* the grass: the bottom 47%, faded in at its top edge; the giant tap zone */
-.tm-grass { position: absolute; left: 0; right: 0; bottom: 0; height: 47%; z-index: 1; cursor: pointer; touch-action: none; outline: none; -webkit-tap-highlight-color: transparent; -webkit-mask-image: linear-gradient(transparent, #000 12%); mask-image: linear-gradient(transparent, #000 12%); }
+/* the grass: the bottom 44% (page 84), faded in at its top edge; the giant tap zone */
+.tm-grass { position: absolute; left: 0; right: 0; bottom: 0; height: 44%; z-index: 1; cursor: pointer; touch-action: none; outline: none; -webkit-tap-highlight-color: transparent; -webkit-mask-image: linear-gradient(transparent, #000 12%); mask-image: linear-gradient(transparent, #000 12%); }
 .tm-grass canvas { display: block; }
 .tm-ghint { position: absolute; left: 0; right: 0; bottom: 34px; z-index: 3; display: flex; justify-content: space-between; padding: 0 22px; pointer-events: none; font: 800 12.5px/1 var(--font-body); letter-spacing: 0.22em; color: rgba(240, 230, 192, 0.55); text-shadow: 0 1px 4px #000; }
 /* page 71: the first time a timer waits, TAP THE GRASS TO START sits in a small box mid-grass */
@@ -96,4 +96,60 @@
 @media (prefers-reduced-motion: reduce) {
   .tm-fin-h, .tm-fin-w, .tm-fin-w.is-on { transition: none; }
   .wm-card.is-leaving, .wm-scrim:has(.wm-card.is-leaving) { animation-duration: 1ms; }
+}
+
+/* ── page 84: every timer, the new way (the phase word, the hero clock, the count, the NEXT line) ── */
+.tm-gx { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0 16px 6px; }
+.tm-gx-in { display: flex; flex-direction: column; align-items: center; width: 100%; }
+/* the grass's own room under the column (a share of the whole screen); taps fall through to the grass */
+.tm-gspace { flex: none; height: calc((100% + env(safe-area-inset-top)) * var(--gh, 0.44)); }
+.tm-ui .tm-gspace { pointer-events: none; }
+.tm-settle { display: inline-flex; animation: tm-settle 150ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both; }
+@keyframes tm-settle { from { opacity: 0.25; transform: translateY(-3px); } }
+
+/* the phase word: md at 26 px */
+.tm-word { display: flex; justify-content: center; margin: 0 0 2px; }
+.tm-word .wm-flap.is-md { font-size: 26px; }
+
+/* the hero clock: M:SS, the colon between, in the phase colour; heat keeps its own tiles */
+.tm-hero { --clk: #f3dc94; display: flex; justify-content: center; align-items: center; gap: 2px; margin: 0; transition: transform 0.4s ease; }
+.tm-hero.t-rest { --clk: #a6ecd8; }
+.tm-hero.t-clay { --clk: #e8946e; }
+.tm-hero.t-warn { --clk: #ffb27a; }
+.tm-hero.t-pause { --clk: rgba(240, 230, 192, 0.74); }
+.tm-hero .wm-flap.is-xl { font-size: calc(var(--px, 120px) * var(--hk, 1)); gap: 6px; }
+.tm-hero:not(.is-heat) .wm-cell:not(.is-gap):not(.is-pad) { color: var(--clk) !important; transition: color 1s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+.tm-hero-colon { font: 800 calc(var(--px, 120px) * var(--hk, 1) * 0.7) var(--font-mono); line-height: 1; color: var(--clk); margin: 0 -2px; transition: color 1s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+
+/* the count, in the bag round's language */
+.tm-count { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 6px; }
+.tm-count-l { font: 800 13px var(--font-body); letter-spacing: 0.3em; margin-left: 0.3em; color: #e8c878; }
+.tm-count.is-teal .tm-count-l { color: #9ee0c6; }
+.tm-count .wm-flap.tm-count-n { font-size: 46px; gap: 3px; }
+.tm-count small { font: 800 17px var(--font-mono); color: rgba(240, 230, 192, 0.75); }
+/* beside the clock (the bag): a column, the digit 58 */
+.tm-count.is-beside { flex-direction: column; gap: 5px; margin: 0; }
+.tm-count.is-beside .wm-flap.tm-count-n { font-size: 58px; }
+.tm-count.is-beside small { font-size: 15px; }
+.tm-pair { display: flex; align-items: center; justify-content: center; gap: 14px; }
+
+/* NEXT · REST 1:00 · 11:40 LEFT */
+.tm-next { display: flex; justify-content: center; flex-wrap: wrap; gap: 0 14px; margin-top: 14px; font: 700 15px var(--font-mono); letter-spacing: 0.1em; color: rgba(240, 230, 192, 0.78); text-align: center; }
+.tm-next i { font-style: normal; color: rgba(240, 230, 192, 0.35); margin-right: 14px; }
+
+/* on top of the clock: a small label and a name (strength rest, the warm-ups, the recovery walk) */
+.tm-topx { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 4px; text-align: center; }
+.tm-topx small { font: 800 11px var(--font-body); letter-spacing: 0.26em; color: rgba(240, 230, 192, 0.6); }
+.tm-topx p { margin: 0; font: 500 13.5px/1.45 var(--font-body); color: #a9b8b0; max-width: 300px; }
+/* the move's board on top (holds, rolling) */
+.tm-brd { align-self: stretch; padding: 10px 12px; margin-bottom: 8px; background: rgba(7, 12, 10, 0.8); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.25); text-align: center; display: flex; flex-direction: column; gap: 5px; align-items: center; }
+.tm-brd small { font: 700 12px var(--font-mono); letter-spacing: 0.1em; color: #9ee0c6; }
+.tm-brd p { margin: 0; font: 500 13px/1.4 var(--font-body); color: #b8c6be; }
+/* a button under it all (NEXT SET, SKIP WARM UP, END EARLY) */
+.tm-sbtn { margin-top: 8px; display: flex; justify-content: center; }
+.tm-sbtn > .wm-btn { width: auto; min-width: 180px; min-height: 48px; padding: 0 22px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-settle { animation: none; }
+  .tm-hero, .tm-hero .wm-cell, .tm-hero-colon { transition: none !important; }
 }

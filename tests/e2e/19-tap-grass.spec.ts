@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { enterFromToday, epochOf, gotoToday, grass, grassPaused, grassToStart, insertSession, openDay, todayISO, todayRow } from './support/helpers'
+import { enterFromToday, epochOf, gotoToday, grass, grassPaused, grassToStart, insertSession, openDay, todayISO, todayRow, swipeUpGrass } from './support/helpers'
 import { setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -49,17 +49,17 @@ test('Item 1-3: a hold starts on the grass (boxed hint the first time), pauses a
   await expect(page.getByRole('button', { name: /^START/ })).toHaveCount(0)
   await expect(hint(page)).toHaveText('TAP THE GRASS TO START')
   await expect(hint(page)).toHaveClass(/is-mid/)
-  // The clock stays where it is; END EARLY only once it runs.
+  // The clock stays where it is. Page 84: no END EARLY, ever (a swipe up the grass moves on).
   await expect(page.getByRole('timer')).toBeVisible()
   await expect(page.getByRole('button', { name: 'END EARLY' })).toHaveCount(0)
 
-  // Tap: it runs. The quiet TAP · PAUSE at the foot; END EARLY appears.
+  // Tap: it runs. The quiet TAP · PAUSE at the foot; still no END EARLY.
   await grassToStart(page).tap()
   await expect(grass(page)).toBeVisible()
   await expect(page.getByRole('img', { name: 'HOLD', exact: true })).toBeVisible()
   await expect(hint(page)).toHaveText('TAP · PAUSE')
   await expect(hint(page)).not.toHaveClass(/is-mid/)
-  await expect(page.getByRole('button', { name: 'END EARLY' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'END EARLY' })).toHaveCount(0)
 
   // Tap: paused, PAUSED · TAP TO GO ON. The clock stands still.
   await grass(page).tap()
@@ -114,12 +114,14 @@ async function holdX(page: Page) {
 /** Into a bag round, working (the warm-up and the round both start on the grass). */
 async function intoRound(page: Page, id: string) {
   await enterFromToday(page, id)
-  const begin = page.getByRole('button', { name: /^(BEGIN SESSION|BEGIN|START BAG WORK|SKIP WARM UP)$/ })
+  const begin = page.getByRole('button', { name: /^(BEGIN SESSION|BEGIN|START BAG WORK)$/ })
   const round1 = page.getByRole('img', { name: /^Round 1 of \d+$/ })
   const warmUp = page.getByRole('img', { name: 'SKIP ROPE', exact: true })
   for (let i = 0; i < 8 && !(await round1.isVisible()); i++) {
     if (await begin.first().isVisible()) await begin.first().tap()
     else if (await warmUp.isVisible() && await grassToStart(page).isVisible()) await grassToStart(page).tap()
+    // page 84: no SKIP WARM UP button; a swipe up the grass moves on
+    else if (await warmUp.isVisible() && await grass(page).isVisible()) await swipeUpGrass(page)
     else await page.waitForTimeout(500)
   }
   await grassToStart(page).tap()

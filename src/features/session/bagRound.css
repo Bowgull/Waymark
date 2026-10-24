@@ -5,7 +5,7 @@
 .tm-screen.bw .tm-ground { background: linear-gradient(#0a120e, #070c0a 55%); }
 .tm-screen.bw.is-rest .tm-ground { background: linear-gradient(#0a1614, #070c0b 55%); }
 
-/* the top bar: × and BAG WORK on the left, the phase flap on the right */
+/* the top bar: ‹ TODAY and BAG WORK on the left, the × on the right (page 84: the phase word moved over the clock) */
 .tm-screen.bw .tm-stop { flex: none; justify-content: flex-start; gap: 10px; height: 44px; padding: 8px 16px 0; box-sizing: border-box; }
 .tm-screen.bw .tm-stop > :last-child { margin-left: auto; }
 
@@ -40,7 +40,9 @@
 .bw-lab { font: 800 13px var(--font-body); letter-spacing: 0.3em; margin-left: 0.3em; color: #e8c878; }
 .bw.is-rest .bw-lab { color: #9ee0c6; }
 .bw-round small { font: 800 15px var(--font-mono); color: rgba(240, 230, 192, 0.7); }
-.wm-flap.bw-digit { font-size: 64px; gap: 3px; }
+.wm-flap.bw-digit { font-size: 58px; gap: 3px; }
+/* page 84: the phase word over the clock and the round (md, 26) */
+.tm-screen.bw .tm-word { flex: none; margin: 0 0 2px; }
 .tm-rclock { display: flex; justify-content: center; align-items: center; transition: transform 0.4s ease; }
 .tm-rclock .wm-flap { font-size: inherit; gap: 4px; }
 

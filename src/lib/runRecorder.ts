@@ -16,6 +16,7 @@ import { dueCue, NUDGE_START, nudgeClips, stepNudge, type Cue, type Nudge, type 
 import { playClips } from './cuePlayer'
 import { mediumHaptic } from './haptics'
 import type { TreadmillUnit } from './runSpeed'
+import type { RecorderPiece } from './runPieceActivity'
 
 /**
  * The strap, as Settings and the run screen show it.
@@ -105,6 +106,8 @@ export interface RunRecorderApi {
   discard(runId?: string): Promise<void>
   /** A hard run's cues from the clock now on (sent again after a skip, the test's 5 km, a relaunch). Empty: none. */
   cues(c: RecorderCues): Promise<void>
+  /** Page 84: the run's pieces from the clock now on, so the lock card moves on at each one while locked. */
+  pieces(p: { pieces: RecorderPiece[]; clockSec: number }): Promise<void>
   onTick(cb: (tick: RunTick) => void): () => void
   onStrap(cb: (status: StrapStatus) => void): () => void
 }
@@ -124,6 +127,7 @@ interface NativePlugin {
   ackUploaded(opts: { runId: string }): Promise<void>
   discard(opts: { runId?: string }): Promise<void>
   cues(opts: RecorderCues): Promise<void>
+  pieces(opts: { pieces: RecorderPiece[]; clockSec: number }): Promise<void>
   addListener(event: 'tick', cb: (t: RunTick) => void): Promise<PluginListenerHandle>
   addListener(event: 'strap', cb: (s: StrapStatus) => void): Promise<PluginListenerHandle>
 }
@@ -151,6 +155,7 @@ function nativeRecorder(): RunRecorderApi {
     discard: runId => p.discard({ runId }),
     // Infinity does not cross the bridge: an open piece ends at 1e9.
     cues: c => p.cues({ ...c, nudge: c.nudge.map(n => ({ ...n, toSec: Number.isFinite(n.toSec) ? n.toSec : 1e9 })) }),
+    pieces: o => p.pieces(o),
     onTick: cb => listen('tick', cb),
     onStrap: cb => listen('strap', cb),
   }
@@ -305,6 +310,8 @@ function mockRecorder(): RunRecorderApi {
       const now = dueCue(c.cues, played, cueClock)
       if (now && run && !run.paused) { played.add(now.index); void playClips(now.cue.clips) }
     },
+    // The web's lock card is the app's own state (window.__wmActivity): nothing to move on.
+    async pieces() {},
     onTick(cb) { ticks.add(cb); return () => { ticks.delete(cb) } },
     onStrap(cb) { straps.add(cb); return () => { straps.delete(cb) } },
   }

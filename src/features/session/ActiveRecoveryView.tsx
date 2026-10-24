@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
-import { RingTimer } from '@/components/RingTimer'
+import { FlapLabel } from '@/design'
+import { GrassZone, HeroClock, NextLine, PhaseWord, SessionButton, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api'
 import {
@@ -444,11 +445,96 @@ export function ActiveRecoveryView({
     },
   })
 
+  // ───── Page 84: the three timed blocks are grass timers, like Foundation ─────
+  // The word over the clock, the move's board on top (hips, rolling) with "2 OF 5" in the top
+  // bar, NEXT small under it. The grass starts, pauses (tap) and moves on (swipe up); a held ×
+  // ends. No button copies the grass; the only one left is NEXT / FINISH once a timed step has
+  // run out, since those don't move on by themselves.
+  const trackOf = (t: TimerSnap | null, totalSec: number, leftMs: number): TimerTrack => ({
+    durationSec: t?.durationSec ?? totalSec,
+    endsAtMs: t && t.state === 'running' ? t.endsAtMs : null,
+    remainingMs: leftMs,
+  })
+  if (phase === 'walk') {
+    const track = trackOf(walkTimer, walkSec, walkRemainingMs)
+    const done = walkReachedTarget
+    return (
+      <SessionFrame
+        title="RECOVERY"
+        onEnd={onExit}
+        paused={walkPaused}
+        grass={<GrassZone track={track} kind="hold" state={!walkRunning ? 'ready' : walkPaused ? 'paused' : 'running'} onTap={!walkRunning ? startWalkTimer : done ? undefined : () => toggleWalkPause()} onSkip={walkRunning ? startHipBlock : undefined} />}
+      >
+        <TimerColumn>
+          <div className="tm-topx">
+            <FlapLabel text="WALK OR BIKE" size="sm" />
+            <p>Easy pace, pain-free. You can talk the whole way.</p>
+          </div>
+          <PhaseWord text={done ? 'DONE' : walkRunning ? 'MOVING' : 'READY'} tone="teal" />
+          <HeroClock seconds={walkRunning ? walkSecondsLeft : walkSec} kind="hold" tint="rest" track={walkRunning ? track : undefined} px={120} />
+          <NextLine next="NEXT · HIP MOBILITY" />
+          {done && <div className="tm-sbtn"><SessionButton label="NEXT" primary onClick={startHipBlock} /></div>}
+        </TimerColumn>
+      </SessionFrame>
+    )
+  }
+  if (phase === 'hip' && currentHipStep && currentHipStep.movement.mode === 'hold' && (currentHipStep.movement.holdSec ?? 0) > 0) {
+    const movement = currentHipStep.movement
+    const holdSec = movement.holdSec ?? 0
+    const track = trackOf(hipTimer, holdSec, hipRemainingMs)
+    return (
+      <SessionFrame
+        title="RECOVERY"
+        count={`${currentHipStep.index + 1} OF ${HIP_MOBILITY_MOVEMENTS.length}`}
+        onEnd={onExit}
+        paused={hipPaused}
+        grass={<GrassZone track={track} kind="hold" state={!hipRunning ? 'ready' : hipPaused ? 'paused' : 'running'} onTap={!hipRunning ? startHipHold : hipReachedTarget ? undefined : () => toggleHipPause()} onSkip={hipRunning ? advanceHip : undefined} />}
+      >
+        <TimerColumn>
+          <div className="tm-brd">
+            <FlapLabel text={movement.name.toUpperCase()} size="md" fit />
+            {currentHipStep.side && <small>{currentHipStep.side === 'left' ? 'LEFT SIDE' : 'RIGHT SIDE'}</small>}
+            {movement.cue && <p>{movement.cue}</p>}
+          </div>
+          <PhaseWord text={hipReachedTarget ? 'DONE' : hipRunning ? 'HOLD' : 'READY'} tone="teal" />
+          <HeroClock seconds={hipRunning ? hipSecondsLeft : holdSec} kind="hold" tint="rest" track={hipRunning ? track : undefined} px={104} />
+          {hipReachedTarget && <div className="tm-sbtn"><SessionButton label="NEXT" primary onClick={advanceHip} /></div>}
+        </TimerColumn>
+      </SessionFrame>
+    )
+  }
+  if (phase === 'roll' && currentRollStep) {
+    const track = trackOf(rollTimer, currentRollStep.area.sec, rollRemainingMs)
+    const next = rollSteps[rollIdx + 1]
+    const nextLine = !next ? null
+      : next.areaIndex === currentRollStep.areaIndex ? `NEXT · ${next.side === 'right' ? 'RIGHT SIDE' : 'LEFT SIDE'}`
+        : `NEXT · ${next.area.name.toUpperCase()}`
+    return (
+      <SessionFrame
+        title="RECOVERY"
+        count={`${currentRollStep.areaIndex + 1} OF ${FOAM_ROLLING_AREAS.length}`}
+        onEnd={onExit}
+        paused={rollPaused}
+        grass={<GrassZone track={track} kind="hold" state={rollPaused ? 'paused' : 'running'} onTap={rollReachedTarget ? undefined : () => toggleRollPause()} onSkip={skipRollZone} />}
+      >
+        <TimerColumn>
+          <div className="tm-brd">
+            <FlapLabel text={currentRollStep.area.name.toUpperCase()} size="md" fit />
+            <small>{currentRollStep.side === 'left' ? 'LEFT SIDE' : currentRollStep.side === 'right' ? 'RIGHT SIDE' : 'BOTH SIDES'}</small>
+            {currentRollStep.area.cue && <p>{currentRollStep.area.cue}</p>}
+          </div>
+          <PhaseWord text={rollReachedTarget ? 'DONE' : 'ROLLING'} tone="teal" />
+          <HeroClock seconds={rollSecondsLeft} kind="hold" tint="rest" track={track} px={104} />
+          <NextLine next={nextLine} />
+          {rollReachedTarget && <div className="tm-sbtn"><SessionButton label="FINISH" primary onClick={finishFoam} /></div>}
+        </TimerColumn>
+      </SessionFrame>
+    )
+  }
+
   // Counter
   let counter: string | undefined
-  if (phase === 'walk') {
-    counter = 'Walk or Bike'
-  } else if (phase === 'hip' && currentHipStep) {
+  if (phase === 'hip' && currentHipStep) {
     counter = `Hip ${currentHipStep.index + 1} of ${HIP_MOBILITY_MOVEMENTS.length}`
   } else if (phase === 'roll' && currentRollStep) {
     counter = `Roll ${currentRollStep.areaIndex + 1} of ${FOAM_ROLLING_AREAS.length}`
@@ -517,71 +603,6 @@ export function ActiveRecoveryView({
         Begin
       </Button>
     )
-  } else if (phase === 'walk') {
-    // The same timed step as a foam-rolling zone: the ring, Pause and Skip (audit #15).
-    body = (
-      <div className="mx-auto flex max-w-md flex-col items-center animate-fade-in">
-        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
-          Walk or Bike · {RESET_WALK_MIN} min
-        </p>
-        <h2 className="mt-1 text-display-lg text-center leading-[1.1] text-foreground">
-          Easy Walk or Bike
-        </h2>
-        <p className="mt-3 text-center text-sm leading-relaxed text-foreground/85">
-          Easy pace, pain-free. You can talk the whole way.
-        </p>
-
-        <div className="mt-8 rounded-2xl border border-teal/20 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(74,202,170,0.08)]">
-          <RingTimer
-            totalSeconds={walkSec}
-            secondsRemaining={walkRunning ? walkSecondsLeft : walkSec}
-            label={walkReachedTarget ? 'Done' : walkRunning ? (walkPaused ? undefined : 'Moving') : 'Ready'}
-            accentColor={ACCENT}
-            isComplete={walkReachedTarget}
-            isPaused={walkPaused}
-            onTogglePause={walkRunning && !walkReachedTarget ? () => toggleWalkPause() : undefined}
-          />
-        </div>
-      </div>
-    )
-    footer = !walkRunning ? (
-      <Button
-        onClick={startWalkTimer}
-        size="lg"
-        className="w-full"
-        style={{ backgroundColor: ACCENT, color: '#020A08' }}
-      >
-        Start Timer
-      </Button>
-    ) : walkReachedTarget ? (
-      <Button
-        onClick={startHipBlock}
-        size="lg"
-        className="w-full"
-        style={{ backgroundColor: ACCENT, color: '#020A08' }}
-      >
-        Next
-      </Button>
-    ) : (
-      <div className="flex w-full gap-2">
-        <Button
-          onClick={() => toggleWalkPause()}
-          size="lg"
-          variant="secondary"
-          className="flex-1"
-        >
-          {walkPaused ? 'Resume' : 'Pause'}
-        </Button>
-        <Button
-          onClick={startHipBlock}
-          size="lg"
-          className="flex-1"
-          style={{ backgroundColor: ACCENT, color: '#020A08' }}
-        >
-          Skip
-        </Button>
-      </div>
-    )
   } else if (phase === 'hip' && currentHipStep) {
     const movement = currentHipStep.movement
     const side = currentHipStep.side
@@ -604,25 +625,7 @@ export function ActiveRecoveryView({
         </p>
 
         <div className="mt-8 flex justify-center">
-          {movement.mode === 'hold' && movement.holdSec ? (
-            <div className="rounded-2xl border border-teal/20 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(74,202,170,0.08)]">
-              <RingTimer
-                totalSeconds={movement.holdSec}
-                secondsRemaining={hipRunning ? hipSecondsLeft : movement.holdSec}
-                label={
-                  hipReachedTarget ? 'Done' : hipRunning ? 'Hold' : 'Ready'
-                }
-                accentColor={ACCENT}
-                isComplete={hipReachedTarget}
-                isPaused={hipPaused}
-                onTogglePause={
-                  hipRunning && !hipReachedTarget
-                    ? () => toggleHipPause()
-                    : undefined
-                }
-              />
-            </div>
-          ) : (
+          {(
             <div className="flex flex-col items-center gap-3 rounded-2xl border border-gold/15 bg-deep-forest/50 px-10 py-8">
               <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
                 Reps
@@ -720,60 +723,6 @@ export function ActiveRecoveryView({
       >
         Start Timer
       </Button>
-    )
-  } else if (phase === 'roll' && currentRollStep) {
-    body = (
-      <div className="mx-auto flex max-w-md flex-col items-center animate-fade-in">
-        <p className="font-cinzel text-[11px] uppercase tracking-[0.28em] text-gold/60">
-          Foam Rolling · {currentRollStep.areaIndex + 1} of{' '}
-          {FOAM_ROLLING_AREAS.length}
-        </p>
-        <h2 className="mt-1 text-display-lg text-center leading-[1.1] text-foreground">
-          {currentRollStep.area.name}
-        </h2>
-        {currentRollStep.side && (
-          <p className="mt-1 font-cinzel text-sm uppercase tracking-[0.2em] text-gold/60">
-            {currentRollStep.side === 'left' ? 'Left side' : 'Right side'}
-          </p>
-        )}
-        <p className="mt-3 text-center text-sm leading-relaxed text-foreground/85">
-          {currentRollStep.area.cue}
-        </p>
-
-        <div className="mt-8 rounded-2xl border border-teal/20 bg-deep-forest/60 p-5 shadow-[inset_0_1px_0_rgba(74,202,170,0.08)]">
-          <RingTimer
-            totalSeconds={currentRollStep.area.sec}
-            secondsRemaining={rollSecondsLeft}
-            label={rollPaused ? undefined : 'Rolling'}
-            accentColor={ACCENT}
-            isComplete={rollReachedTarget}
-            isPaused={rollPaused}
-            onTogglePause={
-              rollReachedTarget ? undefined : () => toggleRollPause()
-            }
-          />
-        </div>
-      </div>
-    )
-    footer = (
-      <div className="flex w-full gap-2">
-        <Button
-          onClick={() => toggleRollPause()}
-          size="lg"
-          variant="secondary"
-          className="flex-1"
-        >
-          {rollPaused ? 'Resume' : 'Pause'}
-        </Button>
-        <Button
-          onClick={skipRollZone}
-          size="lg"
-          className="flex-1"
-          style={{ backgroundColor: ACCENT, color: '#020A08' }}
-        >
-          {isLastRollStep ? 'Finish' : 'Skip'}
-        </Button>
-      </div>
     )
   } else {
     // done

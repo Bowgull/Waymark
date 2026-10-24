@@ -1,8 +1,7 @@
-import { Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 import { FlapLabel } from '@/design'
-import { GrassZone, RoundClock, SessionFrame, type TimerTrack } from '@/components/timers'
-import { SessionEndedContext } from '@/components/timers/endedContext'
+import { GrassZone, PhaseWord, RoundClock, SessionFrame, type TimerTrack } from '@/components/timers'
 import { heavyHaptic } from '@/lib/haptics'
 import {
   soundRoundStart,
@@ -394,7 +393,6 @@ export function BagWorkRoundView({
   return (
     <SessionFrame
       title="BAG WORK"
-      right={<BagPhaseFlap phase={phase} heat={heat} seconds={shownSec} />}
       onEnd={onExit}
       paused={paused}
       className={`bw${resting ? ' is-rest' : ''}`}
@@ -441,6 +439,8 @@ export function BagWorkRoundView({
           </div>
         )}
       </div>
+      {/* page 84: FIGHT / FINISH / REST / READY moves from the top right to over the clock */}
+      <BagPhaseWord phase={phase} heat={heat} seconds={shownSec} />
       <div className="bw-pair">
         <div className="bw-round" role="img" aria-label={`${resting ? 'Next round' : 'Round'} ${shownRound} of ${totalRounds}`}>
           <span className="bw-lab">{resting ? 'NEXT' : 'ROUND'}</span>
@@ -454,6 +454,7 @@ export function BagWorkRoundView({
           heat={heat}
           tone={resting ? 'teal' : 'ink'}
           track={track}
+          px={92}
         />
       </div>
       <div className="bw-gspace" aria-hidden />
@@ -463,15 +464,12 @@ export function BagWorkRoundView({
 }
 
 /**
- * Top right (page 55): FIGHT in gold, FINISH in the heat for the last 10 s,
- * REST in teal; ENDED once the × has been held through.
+ * Over the clock (page 84; was top right, page 55): FIGHT in gold, FINISH in
+ * the heat for the last 10 s, REST in teal, READY; ENDED once the × has been
+ * held through (PhaseWord).
  */
-function BagPhaseFlap({ phase, heat, seconds }: { phase: RoundPhase; heat: Heat | null; seconds: number }) {
-  const ended = useContext(SessionEndedContext)
-  if (ended) return <FlapLabel text="ENDED" size="sm" tone="clay" />
-  if (phase === 'rest') return <FlapLabel text="REST" size="sm" tone="teal" />
-  if (phase === 'fighting') {
-    return <FlapLabel text={workLabel('FIGHT', seconds)} size="sm" tone={heat ? 'ink' : 'gold'} className={heat ? `is-${heat}` : ''} />
-  }
-  return <FlapLabel text="READY" size="sm" tone="gold" />
+function BagPhaseWord({ phase, heat, seconds }: { phase: RoundPhase; heat: Heat | null; seconds: number }) {
+  if (phase === 'rest') return <PhaseWord text="REST" tone="teal" />
+  if (phase === 'fighting') return <PhaseWord text={workLabel('FIGHT', seconds)} tone="gold" className={heat ? `is-${heat}` : ''} />
+  return <PhaseWord text="READY" tone="gold" />
 }

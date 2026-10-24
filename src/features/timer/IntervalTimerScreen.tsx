@@ -2,16 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { FlapLabel, useEdgeBack } from '@/design'
-import { GrassZone, SessionFrame, TimerFace, type TimerTrack } from '@/components/timers'
+import { CountRow, GrassZone, HeroClock, NextLine, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { playClips } from '@/lib/cuePlayer'
 import { intervalIsNative, intervalNative } from '@/lib/intervalNative'
 import { endLiveActivity } from '@/lib/liveActivity'
 import { intervalActivityState, INTERVAL_SESSION_LABEL } from '@/lib/timers/intervalActivity'
-import { clockAt, cueSchedule, doneWord, elapsedSec, partClip, pauseClock, phaseWord, plan, positionAt, resumeClock, startClock, type IntervalClock, type IntervalSetup } from '@/lib/timers/intervalTimer'
+import { clockAt, countFor, cueSchedule, doneWord, leftText, nextWords, elapsedSec, partClip, pauseClock, phaseWord, plan, positionAt, resumeClock, startClock, type IntervalClock, type IntervalSetup } from '@/lib/timers/intervalTimer'
 import { ENDED_SHOW_MS } from '@/lib/timers/timerLook'
 import { useSessionLiveActivity, type LiveActivityConfig } from '@/features/session/useSessionLiveActivity'
 
-import '@/features/session/session.css'
 import './intervalTimer.css'
 
 /** How long DONE · 8 ROUNDS shows before Settings (page 81). */
@@ -126,21 +125,20 @@ export function IntervalTimerScreen({ setup, onClose }: { setup: IntervalSetup; 
     endsAtMs: paused || done || ended ? null : now + pos.left * 1000,
     remainingMs: (done ? 0 : pos.left) * 1000,
   }
-  const tint = done ? ' c-done' : paused ? ' c-pause' : warn ? ' c-warn' : working ? '' : ' c-rest'
-  // The phase plate over the clock (page 81): GET READY / REST teal, WORK gold, orange near the end,
+    // The phase plate over the clock (page 81): GET READY / REST teal, WORK gold, orange near the end,
   // PAUSED, DONE · 8 ROUNDS, ENDED once held through. It settles in; no letter flips on a tap.
   const plate = ended ? { text: 'ENDED', tone: 'clay' as const, cls: '' }
     : done ? { text: doneWord(setup.rounds), tone: 'gold' as const, cls: '' }
       : paused ? { text: 'PAUSED', tone: 'dim' as const, cls: '' }
         : { text: phaseWord(part.ph), tone: (working ? 'gold' : 'teal') as 'gold' | 'teal', cls: warn ? 'it-orange' : '' }
-  const rof = `ROUND ${part.round} OF ${setup.rounds}`
+  const count = countFor(pos, setup.rounds)
 
   const screen = (
     <SessionFrame
       title="INTERVAL TIMER"
       onEndHeld={endNow}
       paused={paused && !ended}
-      className={`it-run${tint}`}
+      className="it-run"
       grass={
         <GrassZone
           track={track}
@@ -155,15 +153,15 @@ export function IntervalTimerScreen({ setup, onClose }: { setup: IntervalSetup; 
         />
       }
     >
-      <div className="ss-runmid it-mid" data-interval data-phase={done ? 'done' : part.ph} data-warn={warn ? '1' : '0'}>
-        <div className="ss-phase it-phase">
-          <span key={plate.text + plate.cls} className="it-settle"><FlapLabel text={plate.text} size="md" tone={plate.cls ? 'ink' : plate.tone} className={plate.cls} animate={false} /></span>
+      {/* page 83: the phase word over the clock (120), ROUND / NEXT under it, then NEXT · REST 0:15 · 4:06 LEFT */}
+      <TimerColumn className="it-mid">
+        <div className="tm-word" data-interval data-phase={done ? 'done' : part.ph} data-warn={warn ? '1' : '0'}>
+          <span key={plate.text + plate.cls} className="tm-settle"><FlapLabel text={plate.text} size="md" tone={plate.cls ? 'ink' : plate.tone} className={plate.cls} animate={false} /></span>
         </div>
-        <TimerFace big seconds={shown} kind="work" tone="ink" />
-        <div className="it-rof">
-          <span key={rof} className="it-settle"><FlapLabel text={rof} size="sm" animate={false} /></span>
-        </div>
-      </div>
+        <HeroClock seconds={shown} kind="work" tint={done ? 'work' : paused ? 'pause' : warn ? 'warn' : working ? 'work' : 'rest'} px={120} />
+        <CountRow label={count.label} n={count.n} of={setup.rounds} tone={count.tone} />
+        <NextLine next={done ? null : nextWords(parts, pos)} left={done ? '0:00' : leftText(setup, elapsedSec(clock, now))} />
+      </TimerColumn>
       {paused && <span className="sr-only" role="status">Paused</span>}
     </SessionFrame>
   )
