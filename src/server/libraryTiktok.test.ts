@@ -31,8 +31,10 @@ for (const id of ['combo-w01', 'combo-w06', 'combo-w04', 'combo-w02', 'combo-d06
 }
 
 const db = new Database(':memory:')
-for (const f of files) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
-db.exec(seed)
+// the Library as 0041 found it: 0051 (no overhands, 2026-10-25) later drops w12 and the Overhand page
+const TRIM = readFileSync(join(ROOT, 'drizzle/0051_drop_overhand.sql'), 'utf8').split(/\r?\n/).filter(l => l.trim() && !l.startsWith('--'))
+for (const f of files.filter(n => n !== '0051_drop_overhand.sql')) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
+db.exec(seed.split(/\r?\n/).filter(l => !TRIM.includes(l)).join('\n'))
 const count = () => ['combos', 'techniques'].map(t => (db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n)
 const before = count()
 db.exec(MIGRATION)

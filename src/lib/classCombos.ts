@@ -89,8 +89,22 @@ export function splitComboText(text: string): string[] {
 
 const REPEAT = /^(.*?)\s*[×x]\s*(\d)$/
 const MULT: Record<string, number> = { double: 2, triple: 3 }
-// The same strike under two names: the app's plain "Hook" is the lead hook.
-const SAME_AS: Record<string, string> = { 'lead hook': 'hook' }
+// The same strike under two names: the app's plain "Hook" is the lead hook. The
+// library names kicks by leg and teeps by leg (0050), so the words he writes in a
+// class note ("teep", "right kick", "roundhouse") still mean the library's strike.
+const SAME_AS: Record<string, string> = {
+  'lead hook': 'hook',
+  'teep': 'lead teep',
+  'right kick': 'body kick',
+  'right body kick': 'body kick',
+  'roundhouse': 'body kick',
+  'rear roundhouse': 'body kick',
+  'rear kick': 'body kick',
+  'right low kick': 'low kick',
+  'right leg kick': 'low kick',
+  'left leg kick': 'inside low kick',
+  'inside leg kick': 'inside low kick',
+}
 
 /** One strike as the plain strikes it stands for: "Double jab" → jab, jab; "Jab × 3" → jab x3; "Lead hook" → hook. */
 export function expandStrike(strike: string): string[] {

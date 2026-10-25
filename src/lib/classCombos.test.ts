@@ -7,6 +7,7 @@ import {
   comboLine,
   comboTextFor,
   deriveTechniques,
+  lookupTechnique,
   guardAiExtraction,
   matchKey,
   mergeExtractions,
@@ -131,6 +132,17 @@ const NOTE = 'Teeps to the body to start. Then jab, cross, lead hook on the pads
   assert.equal(tierFor(['Double jab', 'Cross', 'Hook', 'Cross']), 'flow', 'five strikes or more')
   assert.equal(matchKey(['Lead hook', 'Cross']), matchKey(['Hook', 'Cross']), 'the lead hook is the hook')
   assert.equal(matchKey(['Jab × 3']), matchKey(['Jab', 'Jab', 'Jab']))
+}
+
+// the library names kicks and teeps by leg (0050): what he writes in class still means them
+{
+  const LIB = deriveTechniques(['Jab → Jab → Lead Teep', 'Jab → Body Kick', 'Jab → Cross → Low Kick', 'Inside Low Kick → Cross → Hook → Low Kick'])
+  for (const typed of ['teep', 'right kick', 'roundhouse', 'rear roundhouse', 'rear kick', 'right low kick', 'left leg kick']) {
+    assert.ok(lookupTechnique(typed, LIB), `"${typed}" is a strike the library knows`)
+  }
+  assert.equal(matchKey(['Jab', 'Jab', 'Teep']), matchKey(['Jab', 'Jab', 'Lead Teep']), 'a teep is the lead teep')
+  assert.equal(matchKey(['Jab', 'Right kick']), matchKey(['Jab', 'Body Kick']), 'the right kick is the body kick')
+  assert.equal(lookupTechnique('overhand', LIB), null, 'no overhands (0051)')
 }
 
 // ─── tiers: feints and defensive moves (page 80 grades by these) ──

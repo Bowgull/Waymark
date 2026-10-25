@@ -15,8 +15,8 @@ async function main() {
   const NOW = 1_800_000_000
   // the migration's content is there: techniques, run types, combo videos, the tidy-ups
   const tech = await db.select().from(techniques)
-  assert.equal(tech.length, 27)
-  assert.ok(tech.some(t => t.id === 'tech-left-kick' && JSON.parse(t.aliases).includes('Left Kick')), '"Left Kick" is its own kick (0050)')
+  assert.equal(tech.length, 26)
+  assert.ok(tech.some(t => t.id === 'tech-left-kick' && JSON.parse(t.aliases).includes('Left Kick')), '"Left Kick" is its own kick (0050; 0051 drops the Overhand page)')
   assert.ok(tech.some(t => t.id === 'tech-switch-kick' && !JSON.parse(t.aliases).includes('Left Kick')), 'not the switch kick')
   assert.equal((await db.select().from(runTypes)).length, 7)
 
