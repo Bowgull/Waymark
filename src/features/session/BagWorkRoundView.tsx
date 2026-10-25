@@ -182,8 +182,9 @@ export function BagWorkRoundView({
       round: roundIndex,
       sub: phase,
       timer: phase === 'fighting' ? roundSnapshot() : phase === 'rest' ? restSnapshot() : null,
+      ...(toFinisher ? { toFinisher: true as const } : {}),
     })
-  }, [onPersist, phase, roundIndex, roundSnapshot, restSnapshot, roundTimer.isRunning, roundTimer.isPaused, roundTimer.endsAtMs, restTimer.isRunning, restTimer.isPaused, restTimer.endsAtMs])
+  }, [toFinisher, onPersist, phase, roundIndex, roundSnapshot, restSnapshot, roundTimer.isRunning, roundTimer.isPaused, roundTimer.endsAtMs, restTimer.isRunning, restTimer.isPaused, restTimer.endsAtMs])
 
   useWakeLock(
     (phase === 'fighting' && roundTimer.isRunning && !roundTimer.isPaused) ||

@@ -11,7 +11,7 @@ import { isStaleCue, type EngineState } from '@/lib/sessionResume'
 import { finisherGlow } from '@/lib/lockGlow'
 import { backStep } from '@/lib/timers/timerLook'
 import { backTargetSec, clockAt, elapsedSec, pauseClock, positionAt, resumeClock, skipTargetSec, startClock, type IntervalClock } from '@/lib/timers/intervalTimer'
-import { FINISHER_DONE_WORD, finisherCues, finisherParts, nextAfterSet, setCount, setLine, setOfPart, type FinisherPlan, type FinisherSet } from '@/lib/coach/bagFinisher'
+import { FINISHER_DONE_WORD, FINISHER_NEXT_WORD, finisherCues, logEnded, logJumped, logRanTo, newFinisherLog, type FinisherLog, finisherParts, nextAfterSet, setCount, setLine, setOfPart, type FinisherPlan, type FinisherSet } from '@/lib/coach/bagFinisher'
 import { useWakeLock } from '@/lib/wakeLock'
 
 import { bagBack } from './bagBacks'
@@ -20,7 +20,7 @@ import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiv
 import './bagRound.css'
 import './bagFinisher.css'
 
-/** DONE · FINISHER shows this long (the done chime), then the cool-down (page 86). */
+/** DONE · FINISHER shows this long (the done chime), then the combo ratings. */
 const DONE_SHOW_MS = 2600
 
 type FinisherState = Extract<EngineState, { kind: 'finisher' }>
@@ -39,6 +39,10 @@ interface BagFinisherViewProps {
   onExit?: () => void
   /** A second swipe down in the first set (page 85): back into the last round's rest. */
   onBackToRounds?: (paused: boolean) => void
+  /** The log so far (kept on the phone until the session is finished). */
+  log?: FinisherLog | null
+  /** Called whenever a set is done or skipped, or the finisher is ended. */
+  onLog?: (log: FinisherLog) => void
 }
 
 /**
@@ -64,12 +68,12 @@ export function FinisherSetCard({ set, lead }: { set: FinisherSet; lead?: string
  * last 10 s turn orange (plate, clock, grass). A 20 s rest between sets is
  * teal and shows only the next set, where the combo would be (its last 5 s
  * orange). The grass is red through a set. At the end DONE · FINISHER and
- * NEXT · COOL-DOWN, the done chime, then on. Tap the grass to pause, swipe up
+ * NEXT · COMBO RATINGS, the done chime, then on. Tap the grass to pause, swipe up
  * for the next part, swipe down to restart it (again within 3 s: the part
  * before), hold the grass 3 s to end the finisher; the × leaves as on every
  * timer.
  */
-export function BagFinisherView({ plan, startAtMs, resume, onPersist, onDone, onExit, onBackToRounds }: BagFinisherViewProps) {
+export function BagFinisherView({ plan, startAtMs, resume, onPersist, onDone, onExit, onBackToRounds, log: savedLog, onLog }: BagFinisherViewProps) {
   const parts = useMemo(() => finisherParts(plan), [plan])
   const cues = useMemo(() => finisherCues(parts), [parts])
   const [clock, setClock] = useState<IntervalClock>(() => resume?.clock ?? startClock(startAtMs))
@@ -79,6 +83,19 @@ export function BagFinisherView({ plan, startAtMs, resume, onPersist, onDone, on
   const paused = clock.pausedAtMs != null
   const pos = positionAt(parts, elapsedSec(clock, now))
   const done = pos.done || ended
+
+  // The log: each set done (its time ran out) or skipped (swiped past, or held through before it).
+  const logRef = useRef<FinisherLog>(savedLog && savedLog.sets.length === plan.sets.length ? savedLog : newFinisherLog(plan))
+  const onLogRef = useRef(onLog)
+  useLayoutEffect(() => { onLogRef.current = onLog })
+  const writeLog = useCallback((next: FinisherLog) => { logRef.current = next; onLogRef.current?.(next) }, [])
+  // Time running on (also with the app away or the screen off) passes sets as done; a jump has already moved `at`.
+  const runIdx = pos.done && !ended ? parts.length : pos.index
+  useEffect(() => {
+    if (ended) return
+    const l = logRef.current
+    if (runIdx > l.at) writeLog(logRanTo(l, parts, runIdx))
+  }, [runIdx, ended, parts, writeLog])
 
   // Cues duck other audio only while they play; nothing left ducked when the view goes.
   useEffect(() => () => { void deactivateSessionAudio() }, [])
@@ -167,8 +184,12 @@ export function BagFinisherView({ plan, startAtMs, resume, onPersist, onDone, on
   const skip = useCallback(() => {
     if (done) return
     const t = Date.now()
-    jumpTo(skipTargetSec(parts, elapsedSec(clock, t)), t)
-  }, [done, parts, clock, jumpTo])
+    const el = elapsedSec(clock, t)
+    const target = skipTargetSec(parts, el)
+    const to = positionAt(parts, target)
+    writeLog(logJumped(logRef.current, parts, positionAt(parts, el).index, to.done ? parts.length : to.index, true))
+    jumpTo(target, t)
+  }, [done, parts, clock, jumpTo, writeLog])
 
   /**
    * A swipe down (page 85): the part from its full length; another within 3 s
@@ -190,17 +211,19 @@ export function BagFinisherView({ plan, startAtMs, resume, onPersist, onDone, on
     }
     const target = backTargetSec(parts, elapsedSec(clock, t), step)
     const to = positionAt(parts, target)
+    writeLog(logJumped(logRef.current, parts, at.index, to.index, false))
     heard.current = { index: to.index, tick: to.shown }
     if (to.part.ph === 'work') soundRoundStart()
     else soundRoundEnd()
     jumpTo(target, t)
-  }, [done, parts, clock, jumpTo, onBackToRounds])
+  }, [done, parts, clock, jumpTo, onBackToRounds, writeLog])
 
   /** Held through on the grass (3 s): the finisher ends here. */
   const endNow = useCallback(() => {
     if (done) return
+    writeLog(logEnded(logRef.current, parts, positionAt(parts, elapsedSec(clock, Date.now())).index))
     setEnded(true)
-  }, [done])
+  }, [done, parts, clock, writeLog])
 
   // ─── the lock card ───
   const { part } = pos
@@ -250,7 +273,7 @@ export function BagFinisherView({ plan, startAtMs, resume, onPersist, onDone, on
     : paused ? { text: 'PAUSED', tone: 'dim' as const, cls: '' }
       : { text: working ? set.name : 'REST', tone: (working ? 'red' : 'teal') as 'red' | 'teal', cls: warn ? 'fin-orange' : '' }
   const tone = paused ? 'pause' : warn ? 'warn' : working ? 'red' : 'rest'
-  const next = done ? ['NEXT · COOL-DOWN'] : working ? nextAfterSet(plan, part.round - 1) : []
+  const next = done ? [FINISHER_NEXT_WORD] : working ? nextAfterSet(plan, part.round - 1) : []
 
   return (
     <SessionFrame

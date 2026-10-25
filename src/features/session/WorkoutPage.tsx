@@ -57,7 +57,7 @@ import { ActiveRecoveryView } from './ActiveRecoveryView'
 import { BagPreviewCard } from './BagPreviewCard'
 import { BagWorkRoundView } from './BagWorkRoundView'
 import { BagFinisherView } from './BagFinisherView'
-import { finisherTotalSec, type FinisherPlan } from '@/lib/coach/bagFinisher'
+import { finisherLogKey, finisherParts, finisherTotalSec, logRanTo, newFinisherLog, parseFinisherLog, type FinisherLog, type FinisherPlan } from '@/lib/coach/bagFinisher'
 import { BreatheScreen } from './BreatheScreen'
 import { ComboRatingScreen } from './ComboRatingScreen'
 import { ComboUnlockSuggestion } from './ComboUnlockSuggestion'
@@ -379,6 +379,16 @@ function normalizePhase(type: string, phase: string): Phase {
   }
 }
 
+/** Page 86: the finisher's log, kept on the phone until the session is finished. */
+function readFinisherLog(sessionId: string | undefined): FinisherLog | null {
+  if (!sessionId) return null
+  try { return parseFinisherLog(JSON.parse(storageGetItem(finisherLogKey(sessionId)) ?? 'null')) } catch { return null }
+}
+
+function writeFinisherLog(sessionId: string, log: FinisherLog): void {
+  storageSetItem(finisherLogKey(sessionId), JSON.stringify(log))
+}
+
 function resumeStorage(): StorageLike | null {
   try {
     return typeof window === 'undefined' ? null : window.localStorage
@@ -554,6 +564,7 @@ export function WorkoutPage() {
     clearLiveSession(s, id)
     storageRemoveItem(`waymark_close_note:${id}`)
     storageRemoveItem(roundSecsKey(id))
+    storageRemoveItem(finisherLogKey(id))
     storageRemoveItem(carryKey(id))
     void cancelAllCues()
     if (sessionType === 'running' || sessionType === 'foundation_run') void runRecorder().discard().catch(() => {})
@@ -750,6 +761,7 @@ export function WorkoutPage() {
         let rounds: RoundSpec[] | undefined
         let restAutoEnds = true
         let finisherSec: number | null = null
+        let finisherPlan: FinisherPlan | null = null
         let serverPosition: { phase: Phase; exerciseIdx: number; setIdx: number } = { phase: 'exercise', exerciseIdx: 0, setIdx: 0 }
         // The entrance's length line: the plan's own minutes, else the coach's planning minutes (as Today shows them).
         const showLength = (minutes: number | null | undefined, roundCount?: number | null) => setEntranceDetail(entranceLine({
@@ -798,7 +810,8 @@ export function WorkoutPage() {
           setBagData(data)
           showLength(data.plannedMin, data.rounds.length)
           rounds = data.rounds.map(r => ({ durationSec: r.durationSec, restSec: r.restSec }))
-          finisherSec = data.finisher && data.finisher.sets.length > 0 ? finisherTotalSec(data.finisher) : null
+          finisherPlan = data.finisher && data.finisher.sets.length > 0 ? data.finisher : null
+          finisherSec = finisherPlan ? finisherTotalSec(finisherPlan) : null
         } else if (session.type === 'running') {
           let data = await get('run-workout', () => apiFetch<RunWorkoutData>(`/api/sessions/${id}/run-workout`))
           if (live && !data.runSession) {
@@ -866,7 +879,7 @@ export function WorkoutPage() {
         const saved = loadResume(resumeStorage(), id!)
         if (saved && saved.engine === engineForType(session.type)) {
           // After a launch it comes back paused where it was last saved; RESUME carries on from there.
-          const restore = () => applyResume(session.type, relaunch ? pauseAt(saved, saved.savedAt) : saved, { rounds, restAutoEnds, setCounts, finisherSec })
+          const restore = () => applyResume(session.type, relaunch ? pauseAt(saved, saved.savedAt) : saved, { rounds, restAutoEnds, setCounts, finisherSec, finisherPlan })
           if (relaunch || resumeDecision(saved, Date.now()) === 'ask') {
             setStaleResume(saved)
             pendingRestoreRef.current = restore
@@ -895,7 +908,7 @@ export function WorkoutPage() {
     }
 
     /** Bring the save up to now (elapsed phases advance) and put it back. */
-    function applyResume(type: string, saved: SessionResumeState, ctx: { rounds?: RoundSpec[]; restAutoEnds: boolean; setCounts: number[]; finisherSec?: number | null }) {
+    function applyResume(type: string, saved: SessionResumeState, ctx: { rounds?: RoundSpec[]; restAutoEnds: boolean; setCounts: number[]; finisherSec?: number | null; finisherPlan?: FinisherPlan | null }) {
       const now = Date.now()
       const rollSecs = type === 'active_recovery' ? rollStepSecs() : undefined
       const { state, completed } = restoreForNow(saved, now, { rounds: ctx.rounds, restAutoEnds: ctx.restAutoEnds, setCounts: ctx.setCounts, rollSecs, finisherSec: ctx.finisherSec })
@@ -912,6 +925,11 @@ export function WorkoutPage() {
         set = Math.min(Math.max(0, set), (ctx.setCounts[ex] ?? 1) - 1)
       }
       const es = state.engineState
+      if (completed && es?.kind === 'finisher' && ctx.finisherPlan && saved.sessionId) {
+        // The finisher ran out with the app away: every set it passed counts as done.
+        const plan = ctx.finisherPlan
+        writeFinisherLog(saved.sessionId, logRanTo(readFinisherLog(saved.sessionId) ?? newFinisherLog(plan), finisherParts(plan), finisherParts(plan).length))
+      }
       if (completed) {
         nextPhase = type === 'bag_work' ? 'combo-rating' : 'complete'
       } else if (nextPhase === 'bag-finisher' && es?.kind !== 'finisher') {
@@ -997,10 +1015,12 @@ export function WorkoutPage() {
       // one key per tap of Finish, and the server finishes a session once.
       await flushOutbox({ force: true, onlySessionId: id })
       const roundSecs = sessionType === 'bag_work' || sessionType === 'skip_rope' ? parseRoundSecs(storageGetItem(roundSecsKey(id))) : null
+      // Page 86: the finisher's log (the server marks a set never reached as skipped).
+      const finisherLog = sessionType === 'bag_work' ? readFinisherLog(id) : null
       const result = await queueWrite({
         method: 'POST',
         path: `/api/sessions/${id}/complete`,
-        body: { rpe, notes, completedAt: Math.floor(Date.now() / 1000), ...(roundSecs ? { roundSecs } : {}), ...(endReason ? { endReason } : {}) },
+        body: { rpe, notes, completedAt: Math.floor(Date.now() / 1000), ...(roundSecs ? { roundSecs } : {}), ...(finisherLog ? { finisherLog } : {}), ...(endReason ? { endReason } : {}) },
         sessionId: id,
         kind: 'finish',
         key: finishKeyRef.current,
@@ -1017,6 +1037,7 @@ export function WorkoutPage() {
       clearLiveSession(resumeStorage(), id)
       storageRemoveItem(`waymark_close_note:${id}`)
       storageRemoveItem(roundSecsKey(id))
+      storageRemoveItem(finisherLogKey(id))
       storageRemoveItem(carryKey(id))
       void cancelAllCues()
       // Let the Live Activity show its finish card for 4s before it dismisses
@@ -1462,6 +1483,8 @@ export function WorkoutPage() {
             onPersist={persistEngine}
             onDone={handleBagWorkComplete}
             onExit={leaveSession}
+            log={readFinisherLog(id!)}
+            onLog={l => writeFinisherLog(id!, l)}
             onBackToRounds={paused => {
               // Swiped back past the first set: the last round's rest, from its full length.
               const last = rounds.length - 1

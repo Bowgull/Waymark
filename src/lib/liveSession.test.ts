@@ -40,6 +40,10 @@ assert.equal(mmss(-5), '0:00')
   assert.deepEqual(s.lines, [{ name: 'ROUNDS 1–2', detail: 'DONE' }, { name: 'ROUND 3', detail: '1:42 LEFT' }])
   assert.deepEqual(savedSummary(bag('ready', 0, null)).lines, [{ name: 'ROUND 1', detail: 'READY' }])
   assert.equal(savedSummary(bag('rest', 0, 30_000)).where, 'in round 2')
+  // Page 86: killed in the last round's rest, with the finisher next.
+  const last = bag('rest', 5, 30_000)
+  const lastFin = { ...last, engineState: { ...(last.engineState as Extract<SessionResumeState['engineState'], { kind: 'rounds' }>), toFinisher: true as const } }
+  assert.deepEqual(savedSummary(lastFin), { where: 'before the finisher', lines: [{ name: 'ROUNDS 1–6', detail: 'DONE' }, { name: 'REST BEFORE THE FINISHER', detail: '0:30 LEFT' }] })
   const strength: SessionResumeState = { v: 1, sessionId: 's2', engine: 'strength', phase: 'exercise', exerciseIdx: 1, setIdx: 2, roundIdx: 0, savedAt: T0, engineState: { kind: 'strength', restTimer: null } }
   assert.deepEqual(savedSummary(strength), { where: 'at set 3', lines: [{ name: 'EXERCISE 2', detail: 'SET 3' }] })
   assert.deepEqual(savedSummary({ ...strength, phase: 'combo-rating' }).lines[1], { name: 'COMBO RATINGS', detail: 'TO DO' })

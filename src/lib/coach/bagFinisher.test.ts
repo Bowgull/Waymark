@@ -19,6 +19,15 @@ import {
   setLine,
   setOfPart,
   type FinisherPlan,
+  finalFinisherLog,
+  logEnded,
+  logJumped,
+  logRanTo,
+  newFinisherLog,
+  parseFinisherLog,
+  plannedFinisherSec,
+  readinessAfterLast,
+  type FinisherLog,
 } from './bagFinisher'
 
 let passed = 0
@@ -106,11 +115,11 @@ test('the timer reads it: orange the last 10 s of a set and the last 5 s of a re
   assert.equal(skipTargetSec(parts, 140), 175, 'past the last set: done')
 })
 
-test('the words: NEXT · REST 0:20 and the next set; NEXT · COOL-DOWN after the last; 1 OF 3', () => {
+test('the words: NEXT · REST 0:20 and the next set; NEXT · COMBO RATINGS after the last; 1 OF 3', () => {
   const p = plan()
   assert.deepEqual(nextAfterSet(p, 0), ['NEXT · REST 0:20', 'SWITCH KICK'])
   assert.deepEqual(nextAfterSet(p, 1), ['NEXT · REST 0:20', 'LEAD TEEP'])
-  assert.deepEqual(nextAfterSet(p, 2), ['NEXT · COOL-DOWN'])
+  assert.deepEqual(nextAfterSet(p, 2), ['NEXT · COMBO RATINGS'])
   assert.equal(setCount(p, 1), '1 OF 3')
   assert.equal(setCount(plan({ groups: KNEES }), 4), '4 OF 4')
 })
@@ -136,6 +145,67 @@ test('the stored plan reads back; anything else is no finisher', () => {
   assert.equal(parseFinisher({ readiness: 'ok', sets: [{ ...p.sets[0], key: 'head_kick' }] }), null)
   assert.equal(parseFinisher({ readiness: 'ok', sets: [{ ...p.sets[0], sec: 0 }] }), null)
   assert.equal(parseFinisher({ readiness: 'ok', sets: p.sets })?.restSec, 20, 'a missing rest is the 20 s')
+})
+
+test('the log: time running out marks a set done; a swipe past marks it skipped; held through skips the rest', () => {
+  const p = plan()
+  const parts = finisherParts(p)
+  const statuses = (l: FinisherLog) => l.sets.map(s => s.status)
+  let l = newFinisherLog(p)
+  assert.deepEqual(statuses(l), [null, null, null])
+  assert.deepEqual(l.sets[0], { key: 'body_kick', name: 'BODY KICK', goal: 20, sec: 45, status: null }, 'each set keeps its goal and time')
+  l = logRanTo(l, parts, 1) // set 1 ran out into its rest
+  assert.deepEqual(statuses(l), ['done', null, null])
+  l = logRanTo(l, parts, 2)
+  l = logJumped(l, parts, 2, 3, true) // set 2 swiped past
+  assert.deepEqual(statuses(l), ['done', 'skipped', null])
+  assert.equal(l.at, 3)
+  l = logRanTo(l, parts, 3) // nothing more passed by the jump itself
+  assert.deepEqual(statuses(l), ['done', 'skipped', null])
+  const ended = logEnded(l, parts, 3) // held through in the rest before set 3
+  assert.deepEqual(statuses(ended), ['done', 'skipped', 'skipped'])
+  assert.equal(ended.ended, true)
+  // the last set ran out: all of it passed; a skip past the end does not count as done
+  const full = logRanTo(logRanTo(newFinisherLog(p), parts, 4), parts, parts.length)
+  assert.deepEqual(statuses(full), ['done', 'done', 'done'])
+  const skippedLast = logJumped(logRanTo(newFinisherLog(p), parts, 4), parts, 4, parts.length, true)
+  assert.deepEqual(statuses(logRanTo(skippedLast, parts, parts.length)), ['done', 'done', 'skipped'])
+  // back into a set and done again: done
+  const back = logJumped(logJumped(logRanTo(newFinisherLog(p), parts, 0), parts, 0, 1, true), parts, 1, 0, false)
+  assert.deepEqual(statuses(logRanTo(back, parts, 1)), ['done', null, null])
+})
+
+test('the log as sent: a set never reached is skipped and the finisher counts as ended; it reads back', () => {
+  const p = plan()
+  const sent = finalFinisherLog(logRanTo(newFinisherLog(p), finisherParts(p), 1))
+  assert.deepEqual(sent.sets.map(s => s.status), ['done', 'skipped', 'skipped'])
+  assert.equal(sent.ended, true)
+  const whole = finalFinisherLog(logRanTo(newFinisherLog(p), finisherParts(p), 99))
+  assert.equal(whole.ended, false)
+  assert.deepEqual(parseFinisherLog(JSON.parse(JSON.stringify(sent))), sent)
+  assert.equal(parseFinisherLog({ readiness: 'ok', ended: false, sets: [] }), null)
+  assert.equal(parseFinisherLog({ readiness: 'ok', ended: false, sets: [{ key: 'head_kick', goal: 20, sec: 45, status: 'done' }] }), null)
+})
+
+test('the coach reads the last one: a skipped set or an ended finisher never pushes the size up', () => {
+  const p = plan({ readiness: 'ok' })
+  const parts = finisherParts(p)
+  const full = finalFinisherLog(logRanTo(newFinisherLog(p), parts, 99))
+  const skipped = finalFinisherLog(logJumped(newFinisherLog(p), parts, 0, 1, true))
+  const ended = finalFinisherLog(logEnded(newFinisherLog(p), parts, 0))
+  assert.equal(readinessAfterLast('high', null), 'high', 'no finisher before: today decides')
+  assert.equal(readinessAfterLast('high', full), 'high', 'all of it done: today decides')
+  assert.equal(readinessAfterLast('high', skipped), 'ok', 'a set skipped: no bigger than last time')
+  assert.equal(readinessAfterLast('high', ended), 'ok', 'ended early: no bigger than last time')
+  assert.equal(readinessAfterLast('ok', skipped), 'ok')
+  assert.equal(readinessAfterLast('low', skipped), 'low', 'today can still bring it down')
+})
+
+test('planned length before the start: the dose level sizes it with the default switches', () => {
+  assert.equal(plannedFinisherSec('HOLD'), 175)
+  assert.equal(plannedFinisherSec(undefined), 175)
+  assert.equal(plannedFinisherSec('EASE'), 3 * 25 + 2 * 20)
+  assert.equal(plannedFinisherSec('PUSH'), 3 * 65 + 2 * 20)
 })
 
 console.log(`bagFinisher: ${passed} passed`)

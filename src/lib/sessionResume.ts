@@ -43,7 +43,7 @@ export type EngineState =
   /** Skip-rope warm-up before bag work or strength. */
   | { kind: 'warmup'; timer: TimerSnap | null }
   /** Bag work and skip rope: round, round sub-phase and its timer. */
-  | { kind: 'rounds'; round: number; sub: RoundSub; timer: TimerSnap | null }
+  | { kind: 'rounds'; round: number; sub: RoundSub; timer: TimerSnap | null; /** Page 86: this is the last round and the finisher follows its rest. */ toFinisher?: true }
   /** Foundation holds (mobility and the Zone 2 warm-up): step within the set. */
   | { kind: 'hold'; stepIdx: number; timer: TimerSnap | null }
   /** Runs: sub-phase, the clock, the indoor choice and the log draft. */
@@ -225,7 +225,7 @@ function sanitizeEngineState(es: unknown): EngineState | null {
       return { kind: 'warmup', timer: validTimerOrNull(e.timer) }
     case 'rounds': {
       const sub = e.sub === 'fighting' || e.sub === 'rest' ? e.sub : 'ready'
-      return { kind: 'rounds', round: Number.isInteger(e.round) ? e.round as number : 0, sub, timer: sub === 'ready' ? null : validTimerOrNull(e.timer) }
+      return { kind: 'rounds', round: Number.isInteger(e.round) ? e.round as number : 0, sub, timer: sub === 'ready' ? null : validTimerOrNull(e.timer), ...(e.toFinisher === true ? { toFinisher: true as const } : {}) }
     }
     case 'hold':
       return { kind: 'hold', stepIdx: Number.isInteger(e.stepIdx) ? e.stepIdx as number : 0, timer: validTimerOrNull(e.timer) }
