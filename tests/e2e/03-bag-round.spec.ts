@@ -157,10 +157,10 @@ test('Bag finisher: the last rest, a set, its last 10 s, the rest, done', async 
   await swipeDownGrass(page)
   await expect(phase('BODY KICK')).toBeVisible()
 
-  // Up through every part to the end: DONE · FINISHER, NEXT · COOL-DOWN, then the ratings.
+  // Up through every part to the end: DONE · FINISHER, NEXT · COMBO RATINGS, then the ratings.
   for (let i = 0; i < 8 && (await word.getAttribute('data-phase')) !== 'done'; i++) await swipeUpGrass(page)
   await expect(phase('DONE · FINISHER')).toBeVisible()
-  await expect(page.locator('.tm-next')).toHaveText('NEXT · COOL-DOWN')
+  await expect(page.locator('.tm-next')).toHaveText('NEXT · COMBO RATINGS')
   await page.clock.fastForward(3_000)
   await expect(word).toHaveCount(0)
 })

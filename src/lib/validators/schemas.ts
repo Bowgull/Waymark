@@ -14,6 +14,13 @@ export const completeSessionSchema = z.object({
   roundSecs: z.array(z.number().int().min(0).max(3600)).max(40).optional(),
   // Ended early (bag work, rope): the one-tap reason. "no_time" holds the next dose; it never reads as too hard.
   endReason: z.enum(['no_time', 'rough', 'pain', 'other']).nullable().optional(),
+  // Bag work's finisher (page 86): each set done or skipped, with its goal and time; checked again by parseFinisherLog.
+  finisherLog: z.object({
+    readiness: z.enum(['low', 'ok', 'high']),
+    ended: z.boolean(),
+    sets: z.array(z.object({ key: z.string().max(24), name: z.string().max(24), goal: z.number().int(), sec: z.number().int(), status: z.enum(['done', 'skipped']).nullable() })).min(1).max(6),
+    at: z.number().int().min(0).optional(),
+  }).optional(),
 })
 
 export const strengthSetSchema = z.object({

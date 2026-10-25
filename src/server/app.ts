@@ -54,7 +54,7 @@ import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
 import { bagBuilder, bagPool } from './routes/bagBuilder'
 import { parseBagSpec, roundsForSpec, planCoachRounds, STAGE_ROUND_TYPE } from '../lib/coach/bagArc'
-import { finisherReadiness, parseFinisher, planFinisher, techniqueGroups } from '../lib/coach/bagFinisher'
+import { finalFinisherLog, finisherReadiness, finisherTotalSec, parseFinisher, parseFinisherLog, planFinisher, readinessAfterLast, techniqueGroups, type FinisherLog } from '../lib/coach/bagFinisher'
 import { pendingReviews } from './linkHealth'
 import {
   blockStartDay,
@@ -421,6 +421,20 @@ async function missingExerciseIds(db: DrizzleDB, exerciseIds: string[]) {
   return exerciseIds.filter(id => !known.has(id))
 }
 
+/** Page 86: the log of the last finished bag session's finisher (context_json.finisherLog), or null. */
+async function lastFinisherLog(db: DrizzleDB, notSessionId: string): Promise<FinisherLog | null> {
+  const rows = await db.select({ id: sessions.id, contextJson: sessions.contextJson }).from(sessions)
+    .where(and(eq(sessions.type, 'bag_work'), eq(sessions.status, 'completed')))
+    .orderBy(desc(sessions.completedAt))
+    .limit(10)
+  for (const r of rows) {
+    if (r.id === notSessionId) continue
+    const log = parseFinisherLog(parseJson<{ finisherLog?: unknown }>(r.contextJson, {}).finisherLog)
+    if (log) return log
+  }
+  return null
+}
+
 async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
   const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
   const rounds = await db.select().from(bagWorkRounds).where(eq(bagWorkRounds.sessionId, sessionId))
@@ -446,12 +460,13 @@ async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
 
   // What was planned and, once done, each round as it went (seconds per round, from the finish).
   // The rope warm-up and the rounds (audit #23): the same minutes as the row's.
-  const plannedMin = rounds.length > 0 ? bagMinutes(rounds) : null
-  const ctx = parseJson<{ roundSecs?: unknown; finisher?: unknown }>(session?.contextJson ?? null, {})
+  const ctx = parseJson<{ roundSecs?: unknown; finisher?: unknown; finisherLog?: unknown }>(session?.contextJson ?? null, {})
   const roundSecs = parseRoundSecs(JSON.stringify(ctx.roundSecs ?? null))
-  // Page 86: the coach's finisher after the last round (written when the session started).
+  // Page 86: the coach's finisher after the last round (written when the session started), and its log once done.
   const finisher = rounds.length > 0 ? parseFinisher(ctx.finisher) : null
-  return { session, rounds: result, plannedMin, roundSecs, finisher }
+  const finisherLog = finisher ? parseFinisherLog(ctx.finisherLog) : null
+  const plannedMin = rounds.length > 0 ? bagMinutes(rounds, finisher ? finisherTotalSec(finisher) : 0) : null
+  return { session, rounds: result, plannedMin, roundSecs, finisher, finisherLog }
 }
 
 interface RunSessionInput {
@@ -1457,11 +1472,13 @@ app.post('/api/sessions/:id/complete', async (c) => {
 
   // Bag work and rope keep the seconds of each round with the session (the done summary reads them).
   const roundSecs = (session.type === 'bag_work' || session.type === 'skip_rope') && body.roundSecs && body.roundSecs.length > 0 ? body.roundSecs : null
+  // Page 86: the finisher's log (each set done or skipped, its goal and time) for the coach's next sizing.
+  const finisherLog = session.type === 'bag_work' && body.finisherLog ? parseFinisherLog(body.finisherLog) : null
   // Notes (D12): finishing never wipes them. The athlete's words also go to
   // context_json.userNotes (the injury rule reads them); a run's category tag
   // in the notes column stays put.
   const kept = notesOnComplete(session.notes, body.notes)
-  const ctxPatch: Record<string, unknown> = { ...(roundSecs ? { roundSecs } : {}), ...(kept.userNotes ? { userNotes: kept.userNotes } : {}), ...(body.endReason ? { endReason: body.endReason } : {}) }
+  const ctxPatch: Record<string, unknown> = { ...(roundSecs ? { roundSecs } : {}), ...(finisherLog ? { finisherLog: finalFinisherLog(finisherLog) } : {}), ...(kept.userNotes ? { userNotes: kept.userNotes } : {}), ...(body.endReason ? { endReason: body.endReason } : {}) }
   await db.update(sessions).set({
     status: 'completed',
     completedAt,
@@ -1753,7 +1770,9 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
   // Page 86: the finisher after the last round. COACH and HYBRID get it, sized by the bag dose's level
   // (today's readiness folded in); KNEES on in Settings adds the rear knee. CUSTOM: nothing added.
   const [userSettings] = await db.select().from(settings).limit(1)
-  const finisher = planFinisher({ mode: spec?.mode ?? 'coach', readiness: finisherReadiness(bag?.level), groups: techniqueGroups(userSettings?.enabledTechniques) })
+  // The last finisher he did: a set skipped or one ended early never lets the size go up.
+  const lastFinisher = await lastFinisherLog(db, sessionId)
+  const finisher = planFinisher({ mode: spec?.mode ?? 'coach', readiness: readinessAfterLast(finisherReadiness(bag?.level), lastFinisher), groups: techniqueGroups(userSettings?.enabledTechniques) })
   const ctxPatch: Record<string, unknown> = finisher ? { finisher } : {}
 
   type NewRound = { roundType: string; durationSec: number; restSec: number; rationale: string; comboIds: string[] }

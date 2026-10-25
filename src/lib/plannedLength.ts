@@ -131,9 +131,14 @@ export const BAG_WARMUP_SEC = 300
 export const BAG_ROUND_SEC = 180
 export const BAG_REST_SEC = 60
 
-/** Bag minutes: the rope warm-up, the rounds and the rests between them. 4 rounds: 20 min. */
-export function bagMinutes(rounds: number | ReadonlyArray<{ durationSec: number; restSec?: number | null }>): number {
+/**
+ * Bag minutes: the rope warm-up, the rounds and the rests between them. 4 rounds: 20 min.
+ * With the finisher (page 86, `finisherSec`: its sets and rests) the last round's rest
+ * leads into it, so that rest counts too.
+ */
+export function bagMinutes(rounds: number | ReadonlyArray<{ durationSec: number; restSec?: number | null }>, finisherSec = 0): number {
   const list = typeof rounds === 'number' ? Array.from({ length: Math.max(0, rounds) }, () => ({ durationSec: BAG_ROUND_SEC, restSec: BAG_REST_SEC })) : rounds
-  const sec = list.reduce((t, r, i) => t + r.durationSec + (i < list.length - 1 ? Math.max(0, r.restSec ?? 0) : 0), 0)
-  return Math.max(1, Math.round((BAG_WARMUP_SEC + sec) / 60))
+  const fin = list.length > 0 && finisherSec > 0
+  const sec = list.reduce((t, r, i) => t + r.durationSec + (i < list.length - 1 || fin ? Math.max(0, r.restSec ?? 0) : 0), 0)
+  return Math.max(1, Math.round((BAG_WARMUP_SEC + sec + (fin ? finisherSec : 0)) / 60))
 }

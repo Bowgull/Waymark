@@ -72,8 +72,11 @@ export function savedSummary(state: SessionResumeState): { where: string; lines:
     const done = e.sub === 'rest' ? e.round + 1 : e.round
     const lines: SavedLineOut[] = []
     if (done > 0) lines.push({ name: done === 1 ? 'ROUND 1' : `ROUNDS 1–${done}`, detail: 'DONE' })
-    if (e.sub === 'rest') lines.push({ name: `REST BEFORE ROUND ${e.round + 2}`, detail: e.timer ? `${mmss(timerRemainingMs(e.timer, at))} LEFT` : 'PAUSED' })
+    // Page 86: the last round's rest leads into the finisher, not another round.
+    const beforeFinisher = e.sub === 'rest' && e.toFinisher === true
+    if (e.sub === 'rest') lines.push({ name: beforeFinisher ? 'REST BEFORE THE FINISHER' : `REST BEFORE ROUND ${e.round + 2}`, detail: e.timer ? `${mmss(timerRemainingMs(e.timer, at))} LEFT` : 'PAUSED' })
     else lines.push({ name: `ROUND ${e.round + 1}`, detail: e.timer ? `${mmss(timerRemainingMs(e.timer, at))} LEFT` : 'READY' })
+    if (beforeFinisher) return { where: 'before the finisher', lines }
     return { where: `in round ${e.sub === 'rest' ? e.round + 2 : e.round + 1}`, lines }
   }
   if (e?.kind === 'run') {
