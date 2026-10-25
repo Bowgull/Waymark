@@ -11,7 +11,7 @@ import {
   finisherParts,
   finisherReadiness,
   finisherTotalSec,
-  kneesOn,
+  techniqueGroups,
   nextAfterSet,
   parseFinisher,
   planFinisher,
@@ -24,7 +24,9 @@ import {
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; console.log(`ok: ${name}`) }
 
-const plan = (o: Partial<Parameters<typeof planFinisher>[0]> = {}): FinisherPlan => planFinisher({ mode: 'coach', readiness: 'ok', knees: false, ...o })!
+const G = (s: string) => new Set(s.split(','))
+const KNEES = G('boxing,kicks,defensive,knees')
+const plan = (o: Partial<Parameters<typeof planFinisher>[0]> = {}): FinisherPlan => planFinisher({ mode: 'coach', readiness: 'ok', groups: G('boxing,kicks,defensive'), ...o })!
 
 test('readiness from the bag dose: an ease or less LOW, a hold OK, finishers earned HIGH, none OK', () => {
   assert.equal(finisherReadiness('REST'), 'low')
@@ -55,23 +57,27 @@ test('the sets in order: body kick right, switch kick left, lead teep; no head k
 })
 
 test('KNEES on: the rear knee joins as the last set, its goal half again (30 on an OK day)', () => {
-  const on = plan({ knees: true })
+  const on = plan({ groups: KNEES })
   assert.deepEqual(on.sets.map(s => s.name), ['BODY KICK', 'SWITCH KICK', 'LEAD TEEP', 'REAR KNEE'])
   assert.equal(on.sets[3].goal, 30)
   assert.equal(on.sets[3].sec, 45)
-  assert.equal(plan({ knees: true, readiness: 'low' }).sets[3].goal, 15)
-  assert.equal(plan({ knees: true, readiness: 'high' }).sets[3].goal, 45)
-  assert.equal(plan({ knees: false }).sets.length, 3)
-  assert.equal(kneesOn('boxing,kicks,defensive'), false)
-  assert.equal(kneesOn('boxing,kicks,knees'), true)
-  assert.equal(kneesOn(' knees '), true)
-  assert.equal(kneesOn(null), false)
+  assert.equal(plan({ groups: KNEES, readiness: 'low' }).sets[3].goal, 15)
+  assert.equal(plan({ groups: KNEES, readiness: 'high' }).sets[3].goal, 45)
+  assert.equal(plan({ groups: G('boxing,kicks,defensive') }).sets.length, 3)
+  assert.equal(techniqueGroups('boxing,kicks,defensive').has('knees'), false)
+  assert.equal(techniqueGroups('boxing,kicks,knees').has('knees'), true)
+  assert.equal(techniqueGroups(' knees ').has('knees'), true)
+  assert.deepEqual([...techniqueGroups(null)].sort(), ['boxing', 'defensive', 'kicks'], 'nothing saved: the defaults')
+  // the switches decide: KICKS off leaves the teep, nothing on leaves no finisher
+  assert.deepEqual(plan({ groups: G('boxing,defensive') }).sets.map(s => s.key), ['lead_teep'])
+  assert.deepEqual(plan({ groups: G('boxing,defensive,knees') }).sets.map(s => s.key), ['lead_teep', 'rear_knee'])
+  assert.equal(planFinisher({ mode: 'coach', readiness: 'ok', groups: G('boxing') }), null)
 })
 
 test('COACH and HYBRID get it; CUSTOM stays exactly as he built it', () => {
-  assert.ok(planFinisher({ mode: 'coach', readiness: 'ok', knees: false }))
-  assert.ok(planFinisher({ mode: 'hybrid', readiness: 'low', knees: true }))
-  assert.equal(planFinisher({ mode: 'custom', readiness: 'high', knees: true }), null)
+  assert.ok(planFinisher({ mode: 'coach', readiness: 'ok', groups: G('boxing,kicks,defensive') }))
+  assert.ok(planFinisher({ mode: 'hybrid', readiness: 'low', groups: G('boxing,kicks,defensive,knees') }))
+  assert.equal(planFinisher({ mode: 'custom', readiness: 'high', groups: G('boxing,kicks,defensive,knees') }), null)
 })
 
 test('20 s rests between sets, none after the last', () => {
@@ -83,7 +89,7 @@ test('20 s rests between sets, none after the last', () => {
     ['work', 45, 1, 0], ['rest', 20, 1, 45], ['work', 45, 2, 65], ['rest', 20, 2, 110], ['work', 45, 3, 130],
   ])
   assert.equal(finisherTotalSec(p), 175)
-  assert.equal(finisherParts(plan({ knees: true })).length, 7)
+  assert.equal(finisherParts(plan({ groups: KNEES })).length, 7)
 })
 
 test('the timer reads it: orange the last 10 s of a set and the last 5 s of a rest; a rest shows the set coming', () => {
@@ -106,7 +112,7 @@ test('the words: NEXT · REST 0:20 and the next set; NEXT · COOL-DOWN after the
   assert.deepEqual(nextAfterSet(p, 1), ['NEXT · REST 0:20', 'LEAD TEEP'])
   assert.deepEqual(nextAfterSet(p, 2), ['NEXT · COOL-DOWN'])
   assert.equal(setCount(p, 1), '1 OF 3')
-  assert.equal(setCount(plan({ knees: true }), 4), '4 OF 4')
+  assert.equal(setCount(plan({ groups: KNEES }), 4), '4 OF 4')
 })
 
 test('the bells: each set starts, warns at 10 s and ends; each rest warns at 5 s', () => {
@@ -121,7 +127,7 @@ test('the bells: each set starts, warns at 10 s and ends; each rest warns at 5 s
 })
 
 test('the stored plan reads back; anything else is no finisher', () => {
-  const p = plan({ knees: true, readiness: 'high' })
+  const p = plan({ groups: KNEES, readiness: 'high' })
   assert.deepEqual(parseFinisher(JSON.parse(JSON.stringify(p))), p)
   assert.equal(parseFinisher(null), null)
   assert.equal(parseFinisher({}), null)

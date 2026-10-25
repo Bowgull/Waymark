@@ -54,7 +54,7 @@ import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
 import { bagBuilder, bagPool } from './routes/bagBuilder'
 import { parseBagSpec, roundsForSpec, planCoachRounds, STAGE_ROUND_TYPE } from '../lib/coach/bagArc'
-import { finisherReadiness, kneesOn, parseFinisher, planFinisher } from '../lib/coach/bagFinisher'
+import { finisherReadiness, parseFinisher, planFinisher, techniqueGroups } from '../lib/coach/bagFinisher'
 import { pendingReviews } from './linkHealth'
 import {
   blockStartDay,
@@ -1753,7 +1753,7 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
   // Page 86: the finisher after the last round. COACH and HYBRID get it, sized by the bag dose's level
   // (today's readiness folded in); KNEES on in Settings adds the rear knee. CUSTOM: nothing added.
   const [userSettings] = await db.select().from(settings).limit(1)
-  const finisher = planFinisher({ mode: spec?.mode ?? 'coach', readiness: finisherReadiness(bag?.level), knees: kneesOn(userSettings?.enabledTechniques) })
+  const finisher = planFinisher({ mode: spec?.mode ?? 'coach', readiness: finisherReadiness(bag?.level), groups: techniqueGroups(userSettings?.enabledTechniques) })
   const ctxPatch: Record<string, unknown> = finisher ? { finisher } : {}
 
   type NewRound = { roundType: string; durationSec: number; restSec: number; rationale: string; comboIds: string[] }

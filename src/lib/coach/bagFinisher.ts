@@ -52,10 +52,12 @@ export const FINISHER_SIZE: Readonly<Record<FinisherReadiness, { goal: number; s
 /** Knees go half again over the kicks (30 on an OK day). */
 const KNEE_GOAL_K = 1.5
 
-const SETS: ReadonlyArray<Omit<FinisherSet, 'goal' | 'sec'>> = [
-  { key: 'body_kick', name: 'BODY KICK', side: 'RIGHT LEG' },
-  { key: 'switch_kick', name: 'SWITCH KICK', side: 'LEFT LEG' },
-  { key: 'lead_teep', name: 'LEAD TEEP', side: 'FRONT LEG' },
+// Each set follows its Settings switch (Josh, 2026-10-25: an injury or a focus
+// turns a group off, and the finisher leaves those sets out).
+const SETS: ReadonlyArray<Omit<FinisherSet, 'goal' | 'sec'> & { group: string }> = [
+  { key: 'body_kick', name: 'BODY KICK', side: 'RIGHT LEG', group: 'kicks' },
+  { key: 'switch_kick', name: 'SWITCH KICK', side: 'LEFT LEG', group: 'kicks' },
+  { key: 'lead_teep', name: 'LEAD TEEP', side: 'FRONT LEG', group: 'defensive' },
 ]
 const KNEE: Omit<FinisherSet, 'goal' | 'sec'> = { key: 'rear_knee', name: 'REAR KNEE', side: 'RIGHT LEG' }
 
@@ -71,18 +73,21 @@ export function finisherReadiness(level: Level | null | undefined): FinisherRead
   return 'ok'
 }
 
-/** The finisher the coach adds, or null (CUSTOM: exactly his session, nothing added). */
-export function planFinisher(opts: { mode: BagMode; readiness: FinisherReadiness; knees: boolean }): FinisherPlan | null {
+/**
+ * The finisher the coach adds, or null (CUSTOM: exactly his session, nothing
+ * added; or every set's group switched off). `groups` is his Settings switches.
+ */
+export function planFinisher(opts: { mode: BagMode; readiness: FinisherReadiness; groups: ReadonlySet<string> }): FinisherPlan | null {
   if (opts.mode === 'custom') return null
   const size = FINISHER_SIZE[opts.readiness]
-  const sets: FinisherSet[] = SETS.map(s => ({ ...s, goal: size.goal, sec: size.sec }))
-  if (opts.knees) sets.push({ ...KNEE, goal: Math.round(size.goal * KNEE_GOAL_K), sec: size.sec })
-  return { readiness: opts.readiness, sets, restSec: FINISHER_REST_SEC }
+  const sets: FinisherSet[] = SETS.filter(s => opts.groups.has(s.group)).map(s => ({ key: s.key, name: s.name, side: s.side, goal: size.goal, sec: size.sec }))
+  if (opts.groups.has('knees')) sets.push({ ...KNEE, goal: Math.round(size.goal * KNEE_GOAL_K), sec: size.sec })
+  return sets.length ? { readiness: opts.readiness, sets, restSec: FINISHER_REST_SEC } : null
 }
 
-/** KNEES switched on in Settings (the comma list of technique keys). */
-export function kneesOn(enabledTechniques: string | null | undefined): boolean {
-  return (enabledTechniques ?? '').split(',').map(s => s.trim()).includes('knees')
+/** His Settings switches (the comma list of technique keys; none saved: the defaults, knees and elbows off). */
+export function techniqueGroups(enabledTechniques: string | null | undefined): Set<string> {
+  return new Set((enabledTechniques ?? 'boxing,kicks,defensive').split(',').map(s => s.trim()).filter(Boolean))
 }
 
 /** context_json.finisher as stored, or null when it isn't one. */
