@@ -22,8 +22,11 @@ const files = readdirSync(join(ROOT, 'drizzle')).filter(n => n.endsWith('.sql'))
 assert.equal(files[files.indexOf('0049_combos_bag_builder.sql') + 1], '0050_kru_combos.sql', '0050 follows 0049')
 
 const db = new Database(':memory:')
-for (const f of files) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
-db.exec(seed)
+// as 0050 left it: 0051 (no overhands) comes after, at the end
+const TRIM = readFileSync(join(ROOT, 'drizzle/0051_drop_overhand.sql'), 'utf8')
+const trimLines = TRIM.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('--'))
+for (const f of files.filter(n => n !== '0051_drop_overhand.sql')) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
+db.exec(seed.split(/\r?\n/).filter(l => !trimLines.includes(l)).join('\n'))
 // his own progress on a combo the pass renames
 db.prepare('UPDATE combos SET mastery_score = 7, is_favourite = 1, unlocked = 1 WHERE id = ?').run('combo-fl01')
 const count = () => ['combos', 'techniques'].map(t => (db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n)
@@ -90,4 +93,16 @@ for (const c of added) {
   assert.ok(c.cue && c.cue.split(' ').length <= 4 && c.cue.length <= 20, `${c.id}: cue fits the flap`)
 }
 
-console.log('libraryKru (0050) tests passed')
+// ── 0051: no overhands (Josh, 2026-10-25) ──
+for (const l of trimLines) assert.ok(seed.includes(l), `seed.sql has: ${l.slice(0, 80)}`)
+db.exec(TRIM)
+db.exec(TRIM)
+const after = db.prepare('SELECT * FROM combos').all() as Combo[]
+const techAfter = db.prepare('SELECT * FROM techniques').all() as LibraryTechnique[]
+assert.deepEqual([after.length, techAfter.length], [70, 26], 'two combos and the Overhand page gone, twice applied')
+assert.ok(after.every(c => !/overhand/i.test(c.text)), 'no combo throws an overhand')
+assert.ok(!techAfter.some(t => t.id === 'tech-overhand'))
+assert.deepEqual(after.filter(c => strikes(c).includes('Left Kick')).map(c => c.id), ['combo-m12'], 'Left Kick: after the step-back hook')
+for (const c of after) for (const s of strikes(c)) if (!FOOTWORK.has(s)) assert.ok(techniqueFor(s, techAfter), `${c.id}: "${s}" has no technique`)
+
+console.log('libraryKru (0050, 0051) tests passed')
