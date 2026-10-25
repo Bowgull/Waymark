@@ -157,10 +157,17 @@ test('Bag finisher: the last rest, a set, its last 10 s, the rest, done', async 
   await swipeDownGrass(page)
   await expect(phase('BODY KICK')).toBeVisible()
 
-  // Up through every part to the end: DONE · FINISHER, NEXT · COOL-DOWN, then the ratings.
-  for (let i = 0; i < 8 && (await word.getAttribute('data-phase')) !== 'done'; i++) await swipeUpGrass(page)
-  await expect(phase('DONE · FINISHER')).toBeVisible()
-  await expect(page.locator('.tm-next')).toHaveText('NEXT · COOL-DOWN')
+  // Up through every part to the end: DONE · FINISHER (NEXT · COOL-DOWN), then on to the ratings by itself.
+  // Never swipe a grass that has gone: once DONE shows (or the finisher has already moved on), stop.
+  const ratings = page.getByRole('dialog', { name: 'Rate your combos' })
+  let sawDone = false
+  for (let i = 0; i < 10; i++) {
+    if (await phase('DONE · FINISHER').isVisible()) { sawDone = true; break }
+    if ((await word.count()) === 0 || (await grass(page).count()) === 0) break
+    await swipeUpGrass(page)
+  }
+  if (sawDone) await expect(page.locator('.tm-next')).toHaveText('NEXT · COOL-DOWN')
   await page.clock.fastForward(3_000)
   await expect(word).toHaveCount(0)
+  await expect(ratings).toBeVisible()
 })
