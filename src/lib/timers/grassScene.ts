@@ -65,6 +65,8 @@ export interface GrassParams {
   wy?: number
   /** Page 81: the interval timer's warning orange through the grass (0..1, eased by the caller). */
   orange?: number
+  /** Page 86: the bag finisher's red through the grass in a set (0..1, eased by the caller); the orange goes over it. */
+  red?: number
 }
 
 /** The pull's beam of light up the grass above the finger at (fx, fy), as strong as the pull k. */
@@ -122,10 +124,13 @@ const TEALD: RGB = [30, 138, 104], GOLDD: RGB = [150, 118, 52], EMBER: RGB = [23
 const CLAYD: RGB = [C.clay[0] * 0.6, C.clay[1] * 0.6, C.clay[2] * 0.6]
 /** Page 81's warning orange (the mockup's ORD / OR). */
 const ORANGED: RGB = [150, 72, 24], ORANGE: RGB = [246, 162, 84]
+/** Page 86's finisher red (the mockup's RDD / RD). */
+const REDD: RGB = [122, 38, 30], RED: RGB = [242, 110, 94]
 
 /**
  * The run's grass (page 74 `timerZone`): the timer cell, then the zone's tint
- * (the rest teal showing through, gold to watch it, ember over the line), then
+ * (the rest teal showing through, gold to watch it, ember over the line), the
+ * finisher's red and the warning orange over it (pages 86, 81), then
  * the finish hold's bend: a soft wave from the thumb, the blades leaning then
  * lying flat with a smoothstep fall-off behind the front, a bright crest on it.
  */
@@ -138,6 +143,11 @@ export function zoneCell(x: number, y: number, t: number, p: GrassParams, now: n
     if (z[0] > 0) col = mix(col, mix(TEALD, C.teal, Math.min(1, l * 1.4)), z[0])
     if (z[1] > 0) col = mix(col, mix(GOLDD, C.gold, Math.min(1, l * 1.3)), z[1])
     if (z[2] > 0) col = mix(col, l > 0.5 ? mix(EMBER, EMBERH, (l - 0.5) * 2) : mix(CLAYD, C.clay, l * 2), z[2])
+  }
+  const rd = p.red ?? 0
+  if (rd > 0) {
+    const l = (0.3 * col[0] + 0.59 * col[1] + 0.11 * col[2]) / 255
+    col = mix(col, mix(REDD, RED, Math.min(1, l * 1.4 + 0.1)), rd)
   }
   const o = p.orange ?? 0
   if (o > 0) {
@@ -180,7 +190,7 @@ export function grassGrid(width: number, height: number, font = 14): { cols: num
 export function drawGrass(g: CanvasRenderingContext2D, grid: { cols: number; rows: number; cw: number; ch: number }, t: number, p: GrassParams, now: number): void {
   g.clearRect(0, 0, grid.cols * grid.cw, grid.rows * grid.ch)
   for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
-    const out = cellGlyph((p.zone || p.wave || p.orange ? zoneCell : timerCell)(c / grid.cols, r / grid.rows, t, p, now))
+    const out = cellGlyph((p.zone || p.wave || p.orange || p.red ? zoneCell : timerCell)(c / grid.cols, r / grid.rows, t, p, now))
     if (!out) continue
     g.fillStyle = out.fill
     g.fillText(out.glyph, c * grid.cw, r * grid.ch)

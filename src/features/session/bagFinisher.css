@@ -1,0 +1,31 @@
+/* The bag finisher (page 86, approved 2026-10-25). Values are the mockup's (86-bag-finisher.html);
+   its red is the design tokens' --sf-red (plate) and --sf-red-clock (digits, GOAL, FINISHER words). */
+
+/* the top bar's count: 1 OF 3, small mono (the mockup's [data-of]) */
+.fin-of { min-width: 44px; text-align: right; font: 700 13px var(--font-mono); color: #e8dcb4; white-space: nowrap; }
+
+/* the leg over the set's name, and the set where the combo would sit (NSET) */
+.fin-top { align-self: stretch; display: flex; flex-direction: column; align-items: center; }
+.fin-side { font: 800 11px var(--font-body); letter-spacing: 0.26em; color: rgba(240, 230, 192, 0.6); margin-bottom: 6px; text-align: center; }
+.fin-nset { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 18px; }
+.fin-nset .fin-side { margin-bottom: 0; }
+.fin-gl { font: 700 15px var(--font-mono); letter-spacing: 0.1em; color: #e8dcb4; }
+
+/* GOAL 20 under the clock (the round's ROUND / OF language): the word in the clock's colour, the number on an ink plate */
+.tm-count.fin-goal .tm-count-l { color: var(--sf-red-clock, #f27c6c); }
+.tm-count.fin-goal.is-warn .tm-count-l { color: #ffb27a; }
+.tm-count.fin-goal.is-pause .tm-count-l { color: rgba(240, 230, 192, 0.74); }
+.tm-count.fin-goal .tm-count-l { transition: color 1s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+
+/* the warning orange on the set's plate (the interval timer's, page 81) */
+.wm-flap.fin-orange .wm-cell:not(.is-gap):not(.is-pad) { color: #141008; text-shadow: none; background: linear-gradient(180deg, #e0904a 0 50%, #cf7f3a 50% 100%); }
+.wm-flap.fin-orange .wm-leaf { background: #e0904a; }
+
+/* NEXT · FINISHER on the last round's rest: FINISHER in the red */
+.fin-rd { color: var(--sf-red-clock, #f27c6c); font-weight: 700; }
+/* the last round's rest: the first set sits right over REST, as the next combo would */
+.bw-zone.is-fin { justify-content: flex-end; padding-bottom: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-count.fin-goal .tm-count-l { transition: none; }
+}

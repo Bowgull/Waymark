@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 import { FlapLabel } from '@/design'
-import { GrassZone, PhaseWord, RoundClock, SessionFrame, type TimerTrack } from '@/components/timers'
+import { GrassZone, HeroClock, PhaseWord, RoundClock, SessionFrame, type TimerTrack } from '@/components/timers'
 import { heavyHaptic } from '@/lib/haptics'
 import {
   soundRoundStart,
@@ -23,7 +23,10 @@ import { freshSnap } from '@/lib/timers/swipeBack'
 import { bagGlow } from '@/lib/lockGlow'
 import { backStep, comboStrikes, heatFor, workLabel, type Heat } from '@/lib/timers/timerLook'
 import { useWakeLock } from '@/lib/wakeLock'
+import type { FinisherPlan } from '@/lib/coach/bagFinisher'
 
+import { bagBack } from './bagBacks'
+import { FinisherSetCard } from './BagFinisherView'
 import { useRestTimer } from './useRestTimer'
 import { useSessionLiveActivity, type LiveActivityConfig } from './useSessionLiveActivity'
 
@@ -83,16 +86,15 @@ interface BagWorkRoundViewProps {
    * as on a resume (its cues scheduled there).
    */
   onBackRound?: (state: Extract<EngineState, { kind: 'rounds' }>) => void
+  /**
+   * Page 86: the coach's finisher after the last round. The last round then
+   * has its rest too, showing the first set where the next combo would sit
+   * (NEXT · FINISHER); as that rest ends, `onFinisher` with its real end.
+   */
+  finisher?: FinisherPlan | null
+  onFinisher?: (startAtMs: number) => void
 }
 
-/**
- * The last swipe down's time (page 85: another within 3 s goes back again).
- * Kept outside the view: going back into an earlier round mounts that round's
- * own view, and the 3 s carry across.
- */
-let lastBagBackAt: number | null = null
-/** Swipes back this session (module-level like lastBagBackAt: it outlives a round's remount); the lock card flashes on each. */
-let bagBacks = 0
 
 /** The combos of a round as its board shows them: the first stacked, the others on THEN. */
 function roundView(r: RoundData | null | undefined): BagRoundView {
@@ -131,12 +133,17 @@ export function BagWorkRoundView({
   onPersist,
   onRoundDone,
   onBackRound,
+  finisher,
+  onFinisher,
 }: BagWorkRoundViewProps) {
   const roundTimer = useRestTimer()
   const restTimer = useRestTimer()
 
   const isLastRound = round.roundNumber >= totalRounds
   const roundIndex = round.roundNumber - 1
+  // Page 86: the last round's rest leads into the finisher.
+  const toFinisher = isLastRound && !!finisher && finisher.sets.length > 0 && !!onFinisher && round.restSec > 0
+  const restAfter = !isLastRound || toFinisher
 
   // Cues duck other audio only while they play (lib/sessionAudio); make sure
   // nothing is left ducked when the view goes.
@@ -156,7 +163,7 @@ export function BagWorkRoundView({
     const t = resume.timer
     if (resume.sub === 'fighting') {
       restoreRound(t)
-      if (t.state === 'running') void scheduleRoundCuesUntil(t.endsAtMs, isLastRound ? null : round.restSec)
+      if (t.state === 'running') void scheduleRoundCuesUntil(t.endsAtMs, restAfter ? round.restSec : null)
       else { void cancelRoundActiveCues(); void cancelRestCues() }
     } else if (resume.sub === 'rest') {
       restoreRest(t)
@@ -164,7 +171,7 @@ export function BagWorkRoundView({
       if (t.state === 'running') void scheduleRestCuesUntil(t.endsAtMs)
       else void cancelRestCues()
     }
-  }, [isLastRound, restoreRest, restoreRound, resume, round.restSec, roundIndex])
+  }, [restAfter, restoreRest, restoreRound, resume, round.restSec, roundIndex])
 
   // Save on every change: phase and the running timer's end (or what is left).
   const roundSnapshot = roundTimer.snapshot
@@ -188,7 +195,7 @@ export function BagWorkRoundView({
     soundRoundStart()
     roundTimer.start(round.durationSec)
     // The whole round + rest timeline at once: JS sleeps while locked.
-    void scheduleRoundCuesUntil(Date.now() + round.durationSec * 1000, isLastRound ? null : round.restSec)
+    void scheduleRoundCuesUntil(Date.now() + round.durationSec * 1000, restAfter ? round.restSec : null)
     onPhaseChange('fighting')
   }
 
@@ -202,7 +209,7 @@ export function BagWorkRoundView({
     onRoundDone?.(roundIndex, natural ? round.durationSec : Math.max(0, Math.min(round.durationSec, round.durationSec - Math.max(0, roundTimer.secondsRemaining))))
     roundTimer.stop()
     void cancelRoundActiveCues()
-    if (isLastRound) {
+    if (!restAfter) {
       void cancelRestCues()
       onComplete()
     } else {
@@ -211,14 +218,17 @@ export function BagWorkRoundView({
       if (!natural) void scheduleRestCuesUntil(endedAt + round.restSec * 1000)
       onPhaseChange('rest')
     }
-  }, [isLastRound, onComplete, onPhaseChange, onRoundDone, restTimer, round.durationSec, round.restSec, roundIndex, roundTimer])
+  }, [restAfter, onComplete, onPhaseChange, onRoundDone, restTimer, round.durationSec, round.restSec, roundIndex, roundTimer])
 
   const handleRestDone = useCallback((natural = false) => {
     if (natural && !isStaleCue(restTimer.endsAtMs, Date.now())) soundRoundStart()
+    // The finisher starts at the rest's real end (not when JS woke up).
+    const endedAt = natural && restTimer.endsAtMs > 0 ? restTimer.endsAtMs : Date.now()
     restTimer.stop()
     void cancelRestCues()
-    onNextRound()
-  }, [onNextRound, restTimer])
+    if (toFinisher) onFinisher?.(endedAt)
+    else onNextRound()
+  }, [onFinisher, onNextRound, restTimer, toFinisher])
 
   useEffect(() => {
     // Use <= 0 so a locked-screen jump past zero still fires
@@ -260,13 +270,14 @@ export function BagWorkRoundView({
   const lockSize = useMemo(() => lockComboSize(views.map(v => v.now)), [views])
   const nowCombo = firstCombo(round)
   const nextCombo = firstCombo(nextRound)
+  const firstSet = toFinisher ? finisher!.sets[0] : null
   const laCombo = {
     stepIndex: round.roundNumber,
     stepTotal: totalRounds,
     round: round.roundNumber,
     roundTotal: totalRounds,
     combo: nowCombo ? comboStrikes(nowCombo.text) : undefined,
-    nextCombo: nextCombo ? comboStrikes(nextCombo.text) : undefined,
+    nextCombo: nextCombo ? comboStrikes(nextCombo.text) : firstSet ? [firstSet.name] : undefined,
     comboSize: lockSize,
   }
   const activityConfig: LiveActivityConfig | null =
@@ -281,7 +292,7 @@ export function BagWorkRoundView({
             ...laCombo,
             fromClass: !!nowCombo?.fromClass,
             // page 82: gold, orange in the last 10 s (colour only); flashes as the round starts
-            ...bagGlow(round.roundNumber, false, !roundTimer.isPaused && roundTimer.secondsRemaining <= 10, bagBacks),
+            ...bagGlow(round.roundNumber, false, !roundTimer.isPaused && roundTimer.secondsRemaining <= 10, bagBack.count),
             startedAt: roundTimer.startedAtMs,
             endsAt: roundTimer.endsAtMs,
             isPaused: roundTimer.isPaused,
@@ -297,10 +308,10 @@ export function BagWorkRoundView({
             state: {
               phase: 'rest',
               label: 'Rest',
-              detail: nextCombo?.text ?? `Next: Round ${round.roundNumber + 1}`,
+              detail: nextCombo?.text ?? (firstSet ? 'Next: Finisher' : `Next: Round ${round.roundNumber + 1}`),
               ...laCombo,
               fromClass: !!nextCombo?.fromClass,
-              ...bagGlow(round.roundNumber, true, false, bagBacks),
+              ...bagGlow(round.roundNumber, true, false, bagBack.count),
               startedAt: restTimer.startedAtMs,
               endsAt: restTimer.endsAtMs,
               isPaused: restTimer.isPaused,
@@ -318,7 +329,7 @@ export function BagWorkRoundView({
   }
   function resumeRound(newEndsAtMs?: number) {
     const endsAt = roundTimer.resume(newEndsAtMs)
-    if (endsAt > Date.now()) void scheduleRoundCuesUntil(endsAt, isLastRound ? null : round.restSec)
+    if (endsAt > Date.now()) void scheduleRoundCuesUntil(endsAt, restAfter ? round.restSec : null)
   }
   function pauseRest(pausedRemainingMs?: number) {
     void cancelRestCues()
@@ -332,7 +343,7 @@ export function BagWorkRoundView({
   function restartCurrentPhase() {
     if (phase === 'fighting') {
       roundTimer.start(round.durationSec)
-      void scheduleRoundCuesUntil(Date.now() + round.durationSec * 1000, isLastRound ? null : round.restSec)
+      void scheduleRoundCuesUntil(Date.now() + round.durationSec * 1000, restAfter ? round.restSec : null)
     } else if (phase === 'rest') {
       restTimer.start(round.restSec)
       void scheduleRestCuesUntil(Date.now() + round.restSec * 1000)
@@ -375,8 +386,10 @@ export function BagWorkRoundView({
     : { durationSec: round.durationSec, endsAtMs: null, remainingMs: round.durationSec * 1000 }
   // Rest shows the round coming: its number, its combo, its cue.
   const boardRound = resting && nextRound ? nextRound : round
-  const board = roundView(boardRound)
-  const cue = comboCue(firstCombo(boardRound))
+  // Page 86: the last round's rest shows just the finisher's first set where the next combo would be.
+  const finisherNext = resting && firstSet != null
+  const board = finisherNext ? { now: [], then: [] } : roundView(boardRound)
+  const cue = finisherNext ? null : comboCue(firstCombo(boardRound))
   const showCue = !!cue && !heat && cueShown(phase, fighting ? round.durationSec - roundTimer.secondsRemaining : 0)
   const shownRound = resting && nextRound ? nextRound.roundNumber : round.roundNumber
 
@@ -417,9 +430,9 @@ export function BagWorkRoundView({
    */
   function back() {
     const t = Date.now()
-    const step = backStep(lastBagBackAt, t)
-    lastBagBackAt = t
-    bagBacks++
+    const step = backStep(bagBack.at, t)
+    bagBack.at = t
+    bagBack.count++
     const allRounds = rounds ?? []
     const to = roundsBack({ round: roundIndex, sub: phase }, step, r => allRounds[r]?.restSec ?? 0)
     if (to.sub === 'ready') return
@@ -440,7 +453,7 @@ export function BagWorkRoundView({
     if (to.sub === 'fighting') {
       restTimer.stop()
       roundTimer.restore(freshSnap(wasPaused ? 'paused' : 'running', round.durationSec, t))
-      if (!wasPaused) void scheduleRoundCuesUntil(t + round.durationSec * 1000, isLastRound ? null : round.restSec)
+      if (!wasPaused) void scheduleRoundCuesUntil(t + round.durationSec * 1000, restAfter ? round.restSec : null)
     } else {
       roundTimer.stop()
       restTimer.restore(freshSnap(wasPaused ? 'paused' : 'running', round.restSec, t))
@@ -472,7 +485,8 @@ export function BagWorkRoundView({
         />
       }
     >
-      <div ref={zoneRef} className="bw-zone" style={zoneStyle}>
+      <div ref={zoneRef} className={`bw-zone${finisherNext ? ' is-fin' : ''}`} style={zoneStyle}>
+        {finisherNext && <FinisherSetCard set={firstSet} />}
         {board.now.length > 0 && (
           <div className={`bw-stack${heat ? ' is-dim' : ''}`} role="img" aria-label={board.now.join(', ')}>
             {board.now.map((strike, i) => (
@@ -505,21 +519,29 @@ export function BagWorkRoundView({
       {/* page 84: FIGHT / FINISH / REST / READY moves from the top right to over the clock */}
       <BagPhaseWord phase={phase} heat={heat} seconds={shownSec} />
       <div className="bw-pair">
-        <div className="bw-round" role="img" aria-label={`${resting ? 'Next round' : 'Round'} ${shownRound} of ${totalRounds}`}>
-          <span className="bw-lab">{resting ? 'NEXT' : 'ROUND'}</span>
-          <FlapLabel text={String(shownRound)} size="xl" tone={resting ? 'teal' : 'gold'} className="bw-digit" />
-          <small>OF {totalRounds}</small>
-        </div>
+        {!finisherNext && (
+          <div className="bw-round" role="img" aria-label={`${resting ? 'Next round' : 'Round'} ${shownRound} of ${totalRounds}`}>
+            <span className="bw-lab">{resting ? 'NEXT' : 'ROUND'}</span>
+            <FlapLabel text={String(shownRound)} size="xl" tone={resting ? 'teal' : 'gold'} className="bw-digit" />
+            <small>OF {totalRounds}</small>
+          </div>
+        )}
         {/* page 71: no START ROUND; the clock waits at the round's length and the grass starts it */}
-        <RoundClock
-          seconds={shownSec}
-          kind={resting ? 'rest' : 'work'}
-          heat={heat}
-          tone={resting ? 'teal' : 'ink'}
-          track={track}
-          px={92}
-        />
+        {finisherNext
+          // page 86: the last rest's clock alone, page 84's hero (teal digits, 104)
+          ? <HeroClock seconds={shownSec} kind="rest" tint={paused ? 'pause' : 'rest'} track={track} px={104} />
+          : (
+            <RoundClock
+              seconds={shownSec}
+              kind={resting ? 'rest' : 'work'}
+              heat={heat}
+              tone={resting ? 'teal' : 'ink'}
+              track={track}
+              px={92}
+            />
+          )}
       </div>
+      {finisherNext && <div className="tm-next bw-next"><span>NEXT · <b className="fin-rd">FINISHER</b></span></div>}
       <div className="bw-gspace" aria-hidden />
       {paused && <span className="sr-only" role="status"><FlapLabel text="PAUSED" size="xs" /></span>}
     </SessionFrame>

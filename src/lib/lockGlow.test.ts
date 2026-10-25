@@ -3,7 +3,7 @@
 // change counter that makes the grass flash once (and only at a real change).
 import assert from 'node:assert/strict'
 
-import { bagGlow, flashes, hardRunGlow, holdsGlow, intervalGlow, resetGlow, ropeGlow, runWalkGlow, strengthGlow, zone2Glow, zoneTone } from './lockGlow'
+import { bagGlow, finisherGlow, flashes, hardRunGlow, holdsGlow, intervalGlow, resetGlow, ropeGlow, runWalkGlow, strengthGlow, zone2Glow, zoneTone } from './lockGlow'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; console.log(`ok: ${name}`) }
@@ -81,6 +81,17 @@ test('Interval timer: gold work, teal rest and get ready, orange near the end (c
 test('no previous state: nothing to flash from; zone tones', () => {
   assert.equal(flashes(null, resetGlow(1)), false)
   assert.deepEqual(['in', 'gold', 'over', 'none'].map(z => zoneTone(z as 'in')), ['teal', 'gold', 'ember', 'gold'])
+})
+
+test('Bag finisher (page 86): red sets, teal rests, orange near the end; each part flashes, the orange never', () => {
+  assert.equal(finisherGlow(0, false, false).glowTone, 'red')
+  assert.equal(finisherGlow(1, true, false).glowTone, 'teal')
+  assert.equal(finisherGlow(0, false, true).glowTone, 'orange')
+  assert.equal(flashes(finisherGlow(0, false, false), finisherGlow(1, true, false)), true)
+  assert.equal(flashes(finisherGlow(0, false, false), finisherGlow(0, false, true)), false)
+  // from the last round's rest into the first set, and a restart of the same set (a swipe back)
+  assert.equal(flashes(bagGlow(6, true, false), finisherGlow(0, false, false)), true)
+  assert.equal(flashes(finisherGlow(2, false, false, 0), finisherGlow(2, false, false, 1)), true)
 })
 
 console.log(`lockGlow: ${passed} passed`)

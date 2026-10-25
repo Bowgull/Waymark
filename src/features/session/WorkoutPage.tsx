@@ -50,12 +50,14 @@ import { useToast } from '@/components/ui/Toast'
 import { GrassZone, HeroClock, PhaseWord, SessionButton, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { FlapLabel, SESSION_ICON_NAME, armCascade, sessionIconFor } from '@/design'
 import { heatFor, momentLine, workLabel } from '@/lib/timers/timerLook'
-import { previousSetPosition, type BackRun } from '@/lib/timers/swipeBack'
+import { freshSnap, previousSetPosition, type BackRun } from '@/lib/timers/swipeBack'
 import { talkTestDue, TALK_TEST_WEEKS } from '@/lib/blockZero/talkTest'
 
 import { ActiveRecoveryView } from './ActiveRecoveryView'
 import { BagPreviewCard } from './BagPreviewCard'
 import { BagWorkRoundView } from './BagWorkRoundView'
+import { BagFinisherView } from './BagFinisherView'
+import { finisherTotalSec, type FinisherPlan } from '@/lib/coach/bagFinisher'
 import { BreatheScreen } from './BreatheScreen'
 import { ComboRatingScreen } from './ComboRatingScreen'
 import { ComboUnlockSuggestion } from './ComboUnlockSuggestion'
@@ -185,6 +187,8 @@ interface BagRoundData {
 interface BagWorkoutData {
   session: SessionData
   rounds: BagRoundData[]
+  /** Page 86: the coach's finisher after the last round (COACH and HYBRID; none in CUSTOM). */
+  finisher?: FinisherPlan | null
   /** The planned length (min), from the prescription (the server sends it). */
   plannedMin?: number | null
 }
@@ -275,7 +279,7 @@ interface MtClassWorkoutData {
 
 // ─── Phases ────────────────────────────────────────────────────
 
-type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-warmup' | 'fr-run'
+type Phase = 'entrance' | 'exercise' | 'rest' | 'breathe' | 'mark-earned' | 'complete' | 'bag-preview' | 'bag-warmup' | 'bag-finisher' | 'strength-warmup-skip' | 'combo-rating' | 'combo-unlock' | 'fr-warmup' | 'fr-run'
 type RoundPhase = 'ready' | 'fighting' | 'rest'
 
 /**
@@ -367,7 +371,7 @@ function normalizePhase(type: string, phase: string): Phase {
     case 'foundation_run':
       return phase === 'fr-run' ? 'fr-run' : 'fr-warmup'
     case 'bag_work':
-      return phase === 'bag-preview' || phase === 'bag-warmup' || phase === 'combo-rating' ? phase : 'exercise'
+      return phase === 'bag-preview' || phase === 'bag-warmup' || phase === 'bag-finisher' || phase === 'combo-rating' ? phase : 'exercise'
     case 'strength':
       return phase === 'strength-warmup-skip' || phase === 'rest' ? phase : 'exercise'
     default:
@@ -434,6 +438,8 @@ export function WorkoutPage() {
   const [setIdx, setSetIdx] = useState(0)
   const [roundIdx, setRoundIdx] = useState(0)
   const [roundPhase, setRoundPhase] = useState<RoundPhase>('ready')
+  /** Page 86: when the bag finisher starts (the last round's rest's real end). */
+  const [finisherStartMs, setFinisherStartMs] = useState(0)
   const [phase, setPhase] = useState<Phase>('entrance')
   const [submitting, setSubmitting] = useState(false)
   const [unlockSuggestions, setUnlockSuggestions] = useState<{ suggestions: UnlockSuggestion[]; message: string } | null>(null)
@@ -743,6 +749,7 @@ export function WorkoutPage() {
         let setCounts: number[] = []
         let rounds: RoundSpec[] | undefined
         let restAutoEnds = true
+        let finisherSec: number | null = null
         let serverPosition: { phase: Phase; exerciseIdx: number; setIdx: number } = { phase: 'exercise', exerciseIdx: 0, setIdx: 0 }
         // The entrance's length line: the plan's own minutes, else the coach's planning minutes (as Today shows them).
         const showLength = (minutes: number | null | undefined, roundCount?: number | null) => setEntranceDetail(entranceLine({
@@ -791,6 +798,7 @@ export function WorkoutPage() {
           setBagData(data)
           showLength(data.plannedMin, data.rounds.length)
           rounds = data.rounds.map(r => ({ durationSec: r.durationSec, restSec: r.restSec }))
+          finisherSec = data.finisher && data.finisher.sets.length > 0 ? finisherTotalSec(data.finisher) : null
         } else if (session.type === 'running') {
           let data = await get('run-workout', () => apiFetch<RunWorkoutData>(`/api/sessions/${id}/run-workout`))
           if (live && !data.runSession) {
@@ -858,7 +866,7 @@ export function WorkoutPage() {
         const saved = loadResume(resumeStorage(), id!)
         if (saved && saved.engine === engineForType(session.type)) {
           // After a launch it comes back paused where it was last saved; RESUME carries on from there.
-          const restore = () => applyResume(session.type, relaunch ? pauseAt(saved, saved.savedAt) : saved, { rounds, restAutoEnds, setCounts })
+          const restore = () => applyResume(session.type, relaunch ? pauseAt(saved, saved.savedAt) : saved, { rounds, restAutoEnds, setCounts, finisherSec })
           if (relaunch || resumeDecision(saved, Date.now()) === 'ask') {
             setStaleResume(saved)
             pendingRestoreRef.current = restore
@@ -887,10 +895,10 @@ export function WorkoutPage() {
     }
 
     /** Bring the save up to now (elapsed phases advance) and put it back. */
-    function applyResume(type: string, saved: SessionResumeState, ctx: { rounds?: RoundSpec[]; restAutoEnds: boolean; setCounts: number[] }) {
+    function applyResume(type: string, saved: SessionResumeState, ctx: { rounds?: RoundSpec[]; restAutoEnds: boolean; setCounts: number[]; finisherSec?: number | null }) {
       const now = Date.now()
       const rollSecs = type === 'active_recovery' ? rollStepSecs() : undefined
-      const { state, completed } = restoreForNow(saved, now, { rounds: ctx.rounds, restAutoEnds: ctx.restAutoEnds, setCounts: ctx.setCounts, rollSecs })
+      const { state, completed } = restoreForNow(saved, now, { rounds: ctx.rounds, restAutoEnds: ctx.restAutoEnds, setCounts: ctx.setCounts, rollSecs, finisherSec: ctx.finisherSec })
       let nextPhase = normalizePhase(type, state.phase)
       let ex = state.exerciseIdx
       let set = state.setIdx
@@ -906,6 +914,9 @@ export function WorkoutPage() {
       const es = state.engineState
       if (completed) {
         nextPhase = type === 'bag_work' ? 'combo-rating' : 'complete'
+      } else if (nextPhase === 'bag-finisher' && es?.kind !== 'finisher') {
+        // A finisher save without its clock (or a session without one now): back to the rounds' end.
+        nextPhase = 'combo-rating'
       }
       if (es?.kind === 'strength' && nextPhase === 'rest' && es.restTimer) {
         restoreRest(es.restTimer)
@@ -1440,6 +1451,32 @@ export function WorkoutPage() {
 
     if (closing) return closeScreen
 
+    // Page 86: the finisher after the last round, before the ratings (the cool-down as now).
+    if (phase === 'bag-finisher' && bagData.finisher && bagData.finisher.sets.length > 0) {
+      return (
+        <>
+          <BagFinisherView
+            plan={bagData.finisher}
+            startAtMs={finisherStartMs || Date.now()}
+            resume={engineResume?.kind === 'finisher' ? engineResume : null}
+            onPersist={persistEngine}
+            onDone={handleBagWorkComplete}
+            onExit={leaveSession}
+            onBackToRounds={paused => {
+              // Swiped back past the first set: the last round's rest, from its full length.
+              const last = rounds.length - 1
+              const st = { kind: 'rounds' as const, round: last, sub: 'rest' as const, timer: freshSnap(paused ? 'paused' : 'running', rounds[last].restSec, Date.now()) }
+              setEngineResume(st)
+              setRoundIdx(last)
+              setRoundPhase('rest')
+              setPhase('exercise')
+            }}
+          />
+          <ToastContainer />
+        </>
+      )
+    }
+
     return currentRound ? (
       <>
         <BagWorkRoundView
@@ -1457,6 +1494,11 @@ export function WorkoutPage() {
           onComplete={handleBagWorkComplete}
           onExit={leaveSession}
           onRoundDone={recordRoundSec}
+          finisher={bagData.finisher ?? null}
+          onFinisher={startAt => {
+            setFinisherStartMs(startAt)
+            setPhase('bag-finisher')
+          }}
           // Page 85: swiped back into an earlier round, it mounts on that round's state like a resume.
           onBackRound={st => {
             setEngineResume(st)

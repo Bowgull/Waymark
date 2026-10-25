@@ -70,6 +70,18 @@ export type EngineState =
     }
   /** MT class log: the unsaved form. */
   | { kind: 'mt'; draft: Record<string, string> }
+  /**
+   * Page 86, the bag finisher after the last round: one wall clock for all its
+   * sets and rests (the interval timer's: its start, when paused, time paused).
+   */
+  | { kind: 'finisher'; clock: FinisherClockSnap }
+
+/** The finisher's clock (lib/timers/intervalTimer IntervalClock). */
+export interface FinisherClockSnap {
+  startedAtMs: number
+  pausedAtMs: number | null
+  pausedMs: number
+}
 
 export interface SessionResumeState {
   v: 1
@@ -245,6 +257,12 @@ function sanitizeEngineState(es: unknown): EngineState | null {
     }
     case 'mt':
       return { kind: 'mt', draft: e.draft && typeof e.draft === 'object' ? e.draft as Record<string, string> : {} }
+    case 'finisher': {
+      const c = e.clock as Record<string, unknown> | null | undefined
+      const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
+      if (!c || !num(c.startedAtMs) || !num(c.pausedMs) || !(c.pausedAtMs == null || num(c.pausedAtMs))) return null
+      return { kind: 'finisher', clock: { startedAtMs: c.startedAtMs as number, pausedAtMs: (c.pausedAtMs as number | null | undefined) ?? null, pausedMs: Math.max(0, c.pausedMs as number) } }
+    }
     default:
       return null
   }
@@ -340,8 +358,10 @@ export interface RoundsPosition {
 }
 
 export interface RoundsAdvance extends RoundsPosition {
-  /** The last round's time ran out: the session moves on to its close. */
+  /** The last round's time ran out: the session moves on to its close (or its finisher). */
   completed: boolean
+  /** With a finisher (page 86): when the last round's rest ran out, the finisher's start. */
+  finisherAtMs?: number
   /** Phase ends crossed while away (newest last). Only fresh ones get a cue. */
   crossed: Array<{ type: 'round_end' | 'rest_end'; atMs: number }>
 }
@@ -355,9 +375,11 @@ export function advanceRounds(
   rounds: RoundSpec[],
   pos: RoundsPosition,
   nowMs: number,
-  opts: { restAutoEnds?: boolean } = {},
+  opts: { restAutoEnds?: boolean; finisher?: boolean } = {},
 ): RoundsAdvance {
   const restAutoEnds = opts.restAutoEnds ?? true
+  // Page 86: with a finisher the last round has its rest too, and the finisher starts as it ends.
+  const lastRest = opts.finisher === true
   let { round, sub, timer } = pos
   const crossed: RoundsAdvance['crossed'] = []
   for (let guard = 0; guard < rounds.length * 2 + 2; guard++) {
@@ -365,13 +387,16 @@ export function advanceRounds(
     const endedAt = timer.endsAtMs
     if (sub === 'fighting') {
       crossed.push({ type: 'round_end', atMs: endedAt })
-      if (round >= rounds.length - 1) {
-        return { round, sub: 'fighting', timer: null, completed: true, crossed }
+      if (round >= rounds.length - 1 && !(lastRest && rounds[round].restSec > 0)) {
+        return { round, sub: 'fighting', timer: null, completed: true, crossed, ...(lastRest ? { finisherAtMs: endedAt } : {}) }
       }
       sub = 'rest'
       timer = timerStartAt(endedAt, rounds[round].restSec)
     } else if (sub === 'rest' && restAutoEnds) {
       crossed.push({ type: 'rest_end', atMs: endedAt })
+      if (round >= rounds.length - 1) {
+        return { round, sub: 'rest', timer: null, completed: true, crossed, ...(lastRest ? { finisherAtMs: endedAt } : {}) }
+      }
       round += 1
       sub = 'ready'
       timer = null
@@ -484,12 +509,17 @@ export function advanceRoll(stepSecs: number[], rollIdx: number, timer: TimerSna
 export function restoreForNow(
   state: SessionResumeState,
   nowMs: number,
-  ctx: { rounds?: RoundSpec[]; restAutoEnds?: boolean; setCounts?: number[]; rollSecs?: number[] } = {},
+  ctx: { rounds?: RoundSpec[]; restAutoEnds?: boolean; setCounts?: number[]; rollSecs?: number[]; finisherSec?: number | null } = {},
 ): { state: SessionResumeState; completed: boolean } {
   const es = state.engineState
   if (!es) return { state, completed: false }
+  const finisherSec = ctx.finisherSec != null && ctx.finisherSec > 0 ? ctx.finisherSec : null
   if (es.kind === 'rounds' && ctx.rounds) {
-    const adv = advanceRounds(ctx.rounds, { round: es.round, sub: es.sub, timer: es.timer }, nowMs, { restAutoEnds: ctx.restAutoEnds })
+    const adv = advanceRounds(ctx.rounds, { round: es.round, sub: es.sub, timer: es.timer }, nowMs, { restAutoEnds: ctx.restAutoEnds, finisher: finisherSec != null })
+    // Page 86: the rounds ran out while away; the finisher runs on from the last rest's end.
+    if (adv.completed && adv.finisherAtMs != null && finisherSec != null) {
+      return restoreForNow({ ...state, phase: 'bag-finisher', roundIdx: adv.round, engineState: { kind: 'finisher', clock: { startedAtMs: adv.finisherAtMs, pausedAtMs: null, pausedMs: 0 } } }, nowMs, ctx)
+    }
     return {
       state: {
         ...state,
@@ -498,6 +528,12 @@ export function restoreForNow(
       },
       completed: adv.completed,
     }
+  }
+  if (es.kind === 'finisher' && finisherSec != null) {
+    // Its clock is wall time: once all of it has gone by, on to the ratings.
+    const c = es.clock
+    const elapsedMs = (c.pausedAtMs ?? nowMs) - c.startedAtMs - c.pausedMs
+    return { state: { ...state, phase: 'bag-finisher' }, completed: elapsedMs >= finisherSec * 1000 }
   }
   if (es.kind === 'strength' && ctx.setCounts && state.phase === 'rest') {
     const pos = clampStrengthPosition({ exerciseIdx: state.exerciseIdx, setIdx: state.setIdx }, ctx.setCounts)

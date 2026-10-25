@@ -85,3 +85,82 @@ test('Bag round: ready, work, last 10 s, rest', async ({ page, api }) => {
   await grassToStart(page).tap()
   await expect(phase('FIGHT')).toBeVisible()
 })
+
+/**
+ * The bag finisher (page 86): a COACH session gets it after the last round.
+ * The last round's rest shows the first set where the next combo would be
+ * (NEXT · FINISHER); then each set is a red time box with GOAL under it,
+ * orange its last 10 s, a teal 20 s rest showing only the next set, and
+ * DONE · FINISHER before the ratings. The grass moves it on (no buttons).
+ */
+test('Bag finisher: the last rest, a set, its last 10 s, the rest, done', async ({ page, api }) => {
+  test.setTimeout(180_000)
+  const bag = await insertSession(api, 'bag_work')
+  await enterFromToday(page, bag.id)
+  const phase = (name: string) => page.getByRole('img', { name, exact: true })
+  const word = page.locator('[data-finisher]')
+
+  // Through the preview and the warm-up to round 1, as above.
+  const begin = page.getByRole('button', { name: /^(BEGIN|START BAG WORK)$/ })
+  const round1 = page.getByRole('img', { name: /^Round 1 of \d+$/ })
+  const warmUp = page.getByRole('img', { name: 'SKIP ROPE', exact: true })
+  for (let i = 0; i < 6 && !(await round1.isVisible()); i++) {
+    if (await begin.first().isVisible()) await begin.first().tap()
+    else if (await warmUp.isVisible() && await grassToStart(page).isVisible()) await grassToStart(page).tap()
+    else if (await warmUp.isVisible() && await grass(page).isVisible()) await swipeUpGrass(page)
+    else await page.waitForTimeout(500)
+  }
+  const total = Number(/of (\d+)$/.exec((await round1.getAttribute('aria-label')) ?? '')?.[1] ?? 0)
+  expect(total).toBeGreaterThan(0)
+
+  // Every round: start it on the grass, swipe up to its rest; every rest but the last, up to the next round.
+  for (let r = 1; r <= total; r++) {
+    await expect(page.getByRole('img', { name: `Round ${r} of ${total}`, exact: true })).toBeVisible()
+    await grassToStart(page).tap()
+    await expect(phase('FIGHT')).toBeVisible()
+    await swipeUpGrass(page)
+    await expect(phase('REST')).toBeVisible()
+    if (r < total) await swipeUpGrass(page)
+  }
+
+  // The last round's rest: just the first set, where the next combo would be, and NEXT · FINISHER.
+  await expect(page.getByRole('img', { name: /^BODY KICK, RIGHT LEG, 0:\d\d · GOAL \d+$/ })).toBeVisible()
+  await expect(page.locator('.bw-next')).toHaveText('NEXT · FINISHER')
+  await expect(page.locator('.wm-card')).toHaveCount(0) // no list card anywhere
+
+  // Set 1: FINISHER on its red, 1 OF n, the set's name over the clock, GOAL under it; no END / SKIP / NEXT buttons.
+  await swipeUpGrass(page)
+  await expect(word).toHaveAttribute('data-phase', 'work')
+  await expect(phase('FINISHER')).toBeVisible()
+  await expect(phase('BODY KICK')).toBeVisible()
+  await expect(page.locator('.fin-of')).toHaveText(/^1 OF [34]$/)
+  await expect(page.getByRole('img', { name: /^Goal (10|20|30)$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(END|END EARLY|SKIP|NEXT|NEXT SET)$/ })).toHaveCount(0)
+  const setSec = await timerSeconds(page)
+  expect([25, 45, 65]).toContain(setSec)
+
+  // Its last 10 s: orange (the plate and the clock), the set's name stays.
+  await page.clock.fastForward((setSec - 8) * 1000)
+  await expect(word).toHaveAttribute('data-warn', '1')
+  await expect(phase('BODY KICK')).toBeVisible()
+
+  // The rest: 20 s, teal, only the next set.
+  await page.clock.fastForward(10_000)
+  await expect(word).toHaveAttribute('data-phase', 'rest')
+  await expect(phase('REST')).toBeVisible()
+  await expect(page.getByRole('img', { name: /^NEXT: SWITCH KICK, LEFT LEG, / })).toBeVisible()
+  expect(await timerSeconds(page)).toBeLessThanOrEqual(20)
+
+  // Swipe down: the rest from full; again within 3 s: back into set 1.
+  await swipeDownGrass(page)
+  await expect(word).toHaveAttribute('data-phase', 'rest')
+  await swipeDownGrass(page)
+  await expect(phase('BODY KICK')).toBeVisible()
+
+  // Up through every part to the end: DONE · FINISHER, NEXT · COOL-DOWN, then the ratings.
+  for (let i = 0; i < 8 && (await word.getAttribute('data-phase')) !== 'done'; i++) await swipeUpGrass(page)
+  await expect(phase('DONE · FINISHER')).toBeVisible()
+  await expect(page.locator('.tm-next')).toHaveText('NEXT · COOL-DOWN')
+  await page.clock.fastForward(3_000)
+  await expect(word).toHaveCount(0)
+})
