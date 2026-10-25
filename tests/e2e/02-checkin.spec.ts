@@ -54,12 +54,14 @@ test('Morning check-in: nine cards, the herb 0-9 card, GOOD TO GO, and the row o
       await expect(deck.getByText('Last 24 h · 0 none, 9 most')).toBeVisible()
       await expect(deck).toHaveScreenshot('checkin-herb-card.png')
     }
+    await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
     await deck.getByRole('button', { name: tile, exact: true }).tap()
   }
 
   // The verdict card.
   await expect(deck.getByRole('img', { name: 'GOOD TO GO' })).toBeVisible()
   await expect(deck).toHaveScreenshot('checkin-good-to-go.png')
+  await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
   await deck.getByRole('button', { name: 'TO TODAY' }).tap()
   await expect(deck).toBeHidden()
 
@@ -88,6 +90,7 @@ test('Morning check-in: a rough morning names what is off trend, a bad back asks
   await expect(deck.getByRole('img', { name: 'WHAT BOTHERS IT?' })).toBeVisible()
   await settle()
   await deck.getByRole('textbox').fill('Bending forward')
+  await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
   await deck.getByRole('button', { name: 'NEXT' }).tap()
   await settle()
   await deck.getByRole('button', { name: '3+', exact: true }).tap()
@@ -101,6 +104,7 @@ test('Morning check-in: a rough morning names what is off trend, a bad back asks
   await expect(deck.getByRole('img', { name: /^(GOOD TO GO|EASING TODAY)$/ })).toBeVisible()
   // The brain names the numbers (coach brain P2): "Slept 4 h with energy 1.", or what is off trend.
   await expect(deck.getByText(/off trend|Slept \d+(\.\d)? h/).first()).toBeVisible()
+  await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
   await deck.getByRole('button', { name: 'TO TODAY' }).tap()
   await expect(page.getByRole('button', { name: /^Morning Report, logged\./ })).toBeVisible()
 
@@ -125,6 +129,7 @@ test('Morning check-in: comes back until all nine are in, at the first unanswere
   // Three answers, each saved as it is given.
   for (const [title, tile] of GOOD.slice(0, 3)) {
     await expect(deck.getByRole('img', { name: title, exact: true })).toBeVisible()
+    await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
     await deck.getByRole('button', { name: tile, exact: true }).tap()
   }
   await expect(deck.getByText('4 of 9')).toBeVisible()
@@ -133,6 +138,7 @@ test('Morning check-in: comes back until all nine are in, at the first unanswere
   expect(partial).toMatchObject({ sleepHours: 8, sleepQuality: 4, soreness: null })
 
   // Closed (page 61): the answers are kept and the Morning Report row reads CHECK IN · 3 OF 9.
+  await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
   await deck.getByRole('button', { name: 'Close', exact: true }).tap()
   await expect(deck).toBeHidden()
   await expect(page.getByRole('button', { name: /^Morning Report, not logged yet, 3 of 9\./ })).toBeVisible()
@@ -144,6 +150,7 @@ test('Morning check-in: comes back until all nine are in, at the first unanswere
   await expect(deck).toBeVisible({ timeout: 20_000 })
   await expect(deck.getByText('4 of 9')).toBeVisible()
   await expect(deck.getByRole('img', { name: 'SORENESS', exact: true })).toBeVisible()
+  await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
   await deck.getByRole('button', { name: 'Close', exact: true }).tap()
   await expect(deck).toBeHidden()
 
@@ -158,9 +165,11 @@ test('Morning check-in: comes back until all nine are in, at the first unanswere
   // The rest of the nine: GOOD TO GO, and the row reads LOGGED.
   for (const [title, tile] of GOOD.slice(3)) {
     await expect(deck.getByRole('img', { name: title, exact: true })).toBeVisible()
+    await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
     await deck.getByRole('button', { name: tile, exact: true }).tap()
   }
   await expect(deck.getByRole('img', { name: 'GOOD TO GO' })).toBeVisible()
+  await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
   await deck.getByRole('button', { name: 'TO TODAY' }).tap()
   await expect(page.getByRole('button', { name: /^Morning Report, logged\./ })).toBeVisible()
 
@@ -187,6 +196,7 @@ test('Morning check-in: a PASS counts for re-opening (approved 2026-10-21), LOGG
   await page.waitForTimeout(350)
   await deck.getByRole('button', { name: /^PASS/ }).tap()
   await expect(deck.getByRole('img', { name: /^(GOOD TO GO|EASING TODAY)$/ })).toBeVisible()
+  await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
   await deck.getByRole('button', { name: 'TO TODAY' }).tap()
   await expect(deck).toBeHidden()
   await expect(page.getByRole('button', { name: /^Morning Report, not logged yet, 8 of 9\./ })).toBeVisible()
@@ -200,5 +210,6 @@ test('Morning check-in: a PASS counts for re-opening (approved 2026-10-21), LOGG
   await page.getByRole('button', { name: /^Morning Report, not logged yet/ }).tap()
   await expect(deck).toBeVisible()
   await expect(deck.getByRole('img', { name: 'HERB', exact: true })).toBeVisible()
+  await page.waitForTimeout(350) // a new card ignores a bounce for 300 ms
   await deck.getByRole('button', { name: 'Close', exact: true }).tap()
 })
