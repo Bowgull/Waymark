@@ -727,6 +727,8 @@ lines.push(...readFileSync('src/db/libraryTiktok.sql', 'utf8').split('\n').filte
 lines.push(...readFileSync('src/db/libraryKru.sql', 'utf8').split('\n').filter(l => l.trim()))
 // Then no overhands (0051, Josh 2026-10-25).
 lines.push(...readFileSync('src/db/libraryTrim.sql', 'utf8').split('\n').filter(l => l.trim()))
+// Then only his level open: knees and elbows by tier, four beginner combos (0052, Josh 2026-10-25).
+lines.push(...readFileSync('src/db/libraryLevels.sql', 'utf8').split('\n').filter(l => l.trim()))
 
 const sql = lines.join('\n')
 writeFileSync('src/db/seed.sql', sql)

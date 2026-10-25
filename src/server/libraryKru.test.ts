@@ -22,11 +22,13 @@ const files = readdirSync(join(ROOT, 'drizzle')).filter(n => n.endsWith('.sql'))
 assert.equal(files[files.indexOf('0049_combos_bag_builder.sql') + 1], '0050_kru_combos.sql', '0050 follows 0049')
 
 const db = new Database(':memory:')
-// as 0050 left it: 0051 (no overhands) comes after, at the end
+// as 0050 left it: 0051 (no overhands) and 0052 (only his level open) come after, at the end
 const TRIM = readFileSync(join(ROOT, 'drizzle/0051_drop_overhand.sql'), 'utf8')
 const trimLines = TRIM.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('--'))
-for (const f of files.filter(n => n !== '0051_drop_overhand.sql')) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
-db.exec(seed.split(/\r?\n/).filter(l => !trimLines.includes(l)).join('\n'))
+const LEVELS = readFileSync(join(ROOT, 'drizzle/0052_close_combos_by_tier.sql'), 'utf8')
+const levelLines = LEVELS.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('--'))
+for (const f of files.filter(n => !['0051_drop_overhand.sql', '0052_close_combos_by_tier.sql'].includes(n))) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
+db.exec(seed.split(/\r?\n/).filter(l => !trimLines.includes(l) && !levelLines.includes(l)).join('\n'))
 // his own progress on a combo the pass renames
 db.prepare('UPDATE combos SET mastery_score = 7, is_favourite = 1, unlocked = 1 WHERE id = ?').run('combo-fl01')
 const count = () => ['combos', 'techniques'].map(t => (db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n)
@@ -105,4 +107,23 @@ assert.ok(!techAfter.some(t => t.id === 'tech-overhand'))
 assert.deepEqual(after.filter(c => strikes(c).includes('Left Kick')).map(c => c.id), ['combo-m12'], 'Left Kick: after the step-back hook')
 for (const c of after) for (const s of strikes(c)) if (!FOOTWORK.has(s)) assert.ok(techniqueFor(s, techAfter), `${c.id}: "${s}" has no technique`)
 
-console.log('libraryKru (0050, 0051) tests passed')
+// ── 0052: only his level open; knees and elbows by tier, beginner ones in Fundamentals (Josh, 2026-10-25) ──
+for (const l of levelLines) assert.ok(seed.includes(l), `seed.sql has: ${l.slice(0, 80)}`)
+db.exec(LEVELS)
+db.exec(LEVELS)
+const lv = db.prepare('SELECT * FROM combos').all() as Combo[]
+assert.equal(lv.length, 74, 'four beginner combos, applied twice')
+const close = (c: Combo) => /knees|elbows/.test(c.techniques)
+// a tier is open when the coach opened one of its other combos (here Flow, from fl01 above)
+const openTiers = new Set(lv.filter(c => c.unlocked === 1 && !close(c)).map(c => c.tier))
+assert.deepEqual([...openTiers].sort(), ['flow', 'foundation'])
+for (const c of lv) {
+  if (c.tier === 'foundation') assert.equal(c.unlocked, 1, `${c.id}: Fundamentals stay open`)
+  else if (close(c)) assert.equal(c.unlocked, openTiers.has(c.tier) ? 1 : 0, `${c.id}: a ${c.tier} knee or elbow combo opens with its tier`)
+}
+assert.equal(lv.find(c => c.id === 'combo-m07')!.unlocked, 0, 'the Mastery elbow combo is shut')
+assert.deepEqual(lv.filter(c => c.tier === 'foundation' && close(c)).map(c => c.text).sort(), ['Jab → Rear Elbow', 'Jab → Rear Knee', 'Rear Elbow', 'Rear Knee'])
+assert.deepEqual([lv.find(c => c.id === 'combo-fl01')!.mastery_score, lv.find(c => c.id === 'combo-fl01')!.unlocked], [7, 1], 'his own unlock and mastery are kept')
+for (const c of lv) for (const s of strikes(c)) if (!FOOTWORK.has(s)) assert.ok(techniqueFor(s, techAfter), `${c.id}: "${s}" has no technique`)
+
+console.log('libraryKru (0050, 0051, 0052) tests passed')

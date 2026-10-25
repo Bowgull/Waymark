@@ -103,7 +103,7 @@ test('A combo: five dots and "N of 15 to mastered", WATCH from 0:08, the teal cu
   await expect(top.locator('.lib-pf rect')).toHaveAttribute('fill', '#111')
   await expect(top.locator('.lib-vline')).toHaveText('0:26')
   await expect(top.getByRole('link', { name: 'also on YouTube ›' })).toHaveAttribute('href', 'https://www.youtube.com/watch?v=SOgUZwx5bw4&t=8')
-  await expect(page.locator('.lib-cuef').getByRole('img', { name: 'TURN THE HIP OVER' })).toBeVisible()
+  await expect(page.locator('.lib-cuef').getByRole('img', { name: 'JAB, THEN KICK' })).toBeVisible()
   // the per-tier coach hint is cut
   await expect(page.getByText(/it comes up more until it is Solid/)).toHaveCount(0)
   const more = await openMore(page)

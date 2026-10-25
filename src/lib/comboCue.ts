@@ -99,6 +99,11 @@ export const COMBO_CUES: Readonly<Record<string, string>> = {
   'combo-m10': 'HOOK LOADS THE KICK',
   'combo-m11': 'DIP, THEN RISE',
   'combo-m12': 'STEP BACK, THEN KICK',
+  // Only his level open (2026-10-25)
+  'combo-f11': 'KNEE THROUGH THE BAG',
+  'combo-f12': 'JAB, THEN KNEE',
+  'combo-f13': 'SHORT AND SHARP',
+  'combo-f14': 'STEP IN, ELBOW',
 }
 
 /** Sentences that only say where a combo comes from, not how to throw it. */

@@ -79,7 +79,7 @@ import { athleteTimeZone, localDayIn, noteAppOpen } from './timeZone'
 import { templateFromDose } from '../lib/brain/doses'
 import { GOAL_5K_SEC, HARD_NOTES, hardLabel, parseFiveK } from '../lib/brain/hardRuns'
 import { parseUnit } from '../lib/runSpeed'
-import { unlockOffer } from '../lib/comboTiers'
+import { DEFAULT_TECHNIQUES, unlockOffer } from '../lib/comboTiers'
 import { fiveKTests, postRunFacts } from './fiveK'
 
 type Bindings = {
@@ -1878,10 +1878,11 @@ app.post('/api/sessions/:id/rate-combos', async (c) => {
 app.post('/api/sessions/:id/suggest-unlocks', async (c) => {
   const db = createDB(c.env)
 
-  const allCombos = await db.select().from(combos)
+  const [allCombos, [userSettings]] = await Promise.all([db.select().from(combos), db.select().from(settings).limit(1)])
+  const enabled = new Set((userSettings?.enabledTechniques ?? DEFAULT_TECHNIQUES).split(',').filter(Boolean))
 
-  // His tier: the highest the coach unlocked (knee and elbow combos open by their switch, so they don't count)
-  const { tier, next, mastered, of, offer } = unlockOffer(allCombos)
+  // His tier: the highest the coach unlocked; only combos his Settings switches allow count toward it
+  const { tier, next, mastered, of, offer } = unlockOffer(allCombos, enabled)
 
   // Need >= 60% mastered to suggest next tier
   if (of === 0 || mastered / of < 0.6) {

@@ -84,8 +84,10 @@ assert.deepEqual(tiers[0].combos.map(c => c.id), ['a', 'b', 'c', 'z'])
 assert.equal(currentTier(tiers), 'foundation')
 assert.equal(currentTier(tierViews([C('x', 'foundation', 1), C('y', 'weapons', 1)])), 'weapons')
 assert.equal(currentTier(tierViews([C('x', 'foundation', 0)])), null)
-// an open elbow combo in Mastery waits on its Settings switch: Bagwork still opens on his tier
-assert.equal(currentTier(tierViews([C('x', 'foundation', 1), { ...C('m', 'mastery', 1), techniques: 'boxing,elbows' }])), 'foundation')
+// knee and elbow combos open with their tier (0052): a locked Mastery elbow combo doesn't move Bagwork
+assert.equal(currentTier(tierViews([C('x', 'foundation', 1), { ...C('m', 'mastery', 0), techniques: 'boxing,elbows' }])), 'foundation')
+// a combo from class in Weapons doesn't move Bagwork off his level
+assert.equal(currentTier(tierViews([C('x', 'foundation', 1), { ...C('cls', 'weapons', 1), source: 'class' }])), 'foundation')
 assert.equal(matchCombo(C('a', 'foundation', 1), 'fundamentals'), true)
 assert.equal(matchCombo(C('a', 'foundation', 1), 'cross'), true)
 assert.equal(matchCombo(C('a', 'foundation', 1), 'kick'), false)

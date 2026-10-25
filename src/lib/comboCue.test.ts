@@ -56,6 +56,6 @@ for (const [id, cue] of Object.entries(COMBO_CUE_CONTENT)) {
   assert.ok(cue.split(' ').length <= CUE_MAX_WORDS && cue.length <= CUE_MAX_CHARS, `${id}: fits the flap (${cue})`)
   assert.ok(allIds.has(id), `${id} is a combo`)
 }
-assert.equal(Object.keys(COMBO_CUE_CONTENT).length, 70)
+assert.equal(Object.keys(COMBO_CUE_CONTENT).length, 74)
 
 console.log(`comboCue: ok (${allIds.size} combos)`)
