@@ -1,0 +1,14 @@
+-- Only the level he is on is open (Josh, 2026-10-25). Knee and elbow combos
+-- open with their tier like every combo, and still wait on their Settings
+-- switch. Turning KNEES or ELBOWS on starts with beginner single strikes in
+-- Fundamentals; the harder ones open when the coach unlocks their tier.
+--
+-- Locks the library's knee and elbow combos in any tier the coach hasn't
+-- opened (a tier is open when one of its other combos is). Combos he added
+-- himself or from a class keep their state. Mastery, favourites and ratings
+-- are not touched. Four beginner combos are added (INSERT OR IGNORE).
+UPDATE combos SET unlocked = 0 WHERE source IS NULL AND (techniques LIKE '%knees%' OR techniques LIKE '%elbows%') AND tier NOT IN (SELECT tier FROM combos WHERE unlocked = 1 AND techniques NOT LIKE '%knees%' AND techniques NOT LIKE '%elbows%');
+INSERT OR IGNORE INTO combos (id, text, tier, level, unlocked, mastery_score, techniques, form_tips, is_favourite, times_sharp, created_at, cue, coach_hint) VALUES ('combo-f11', 'Rear Knee', 'foundation', 'foundation', 1, 0, 'knees', 'Rise onto the ball of the standing foot. | The knee goes forward through the bag, not just up. | Hands up, or on the bag.', 0, 0, 1792900000, 'KNEE THROUGH THE BAG', 'Open. In your Fundamentals rounds once KNEES is on in Settings; rate it after each round to build mastery.');
+INSERT OR IGNORE INTO combos (id, text, tier, level, unlocked, mastery_score, techniques, form_tips, is_favourite, times_sharp, created_at, cue, coach_hint) VALUES ('combo-f12', 'Jab → Rear Knee', 'foundation', 'foundation', 1, 0, 'boxing,knees', 'The jab brings their hands up. | Rear knee straight through the middle.', 0, 0, 1792900000, 'JAB, THEN KNEE', 'Open. In your Fundamentals rounds once KNEES is on in Settings; rate it after each round to build mastery.');
+INSERT OR IGNORE INTO combos (id, text, tier, level, unlocked, mastery_score, techniques, form_tips, is_favourite, times_sharp, created_at, cue, coach_hint) VALUES ('combo-f13', 'Rear Elbow', 'foundation', 'foundation', 1, 0, 'elbows', 'Turn the hip like a cross, elbow level. | Open hand, loose shoulder. | The other hand stays up.', 0, 0, 1792900000, 'SHORT AND SHARP', 'Open. In your Fundamentals rounds once ELBOWS is on in Settings; rate it after each round to build mastery.');
+INSERT OR IGNORE INTO combos (id, text, tier, level, unlocked, mastery_score, techniques, form_tips, is_favourite, times_sharp, created_at, cue, coach_hint) VALUES ('combo-f14', 'Jab → Rear Elbow', 'foundation', 'foundation', 1, 0, 'boxing,elbows', 'Jab, then step in close. | The rear elbow comes over the top.', 0, 0, 1792900000, 'STEP IN, ELBOW', 'Open. In your Fundamentals rounds once ELBOWS is on in Settings; rate it after each round to build mastery.');
