@@ -127,7 +127,7 @@ export async function metricOffenders(page: Page): Promise<string[]> {
 
 /** The grass under a running timer (tap: pause; swipe up: skip). */
 export function grass(page: Page): Locator {
-  return page.getByRole('button', { name: /^Timer\. Tap to pause/ })
+  return page.getByRole('button', { name: /^(Timer|Finisher)\. Tap to pause/ })
 }
 
 /** The grass under a timer that hasn't started (page 71: no START button; the grass starts it). */
@@ -137,7 +137,7 @@ export function grassToStart(page: Page): Locator {
 
 /** The grass while paused (page 71: PAUSED · TAP TO GO ON). */
 export function grassPaused(page: Page): Locator {
-  return page.getByRole('button', { name: /^Timer paused\. Tap to go on/ })
+  return page.getByRole('button', { name: /^(Timer|Finisher) paused\. Tap to go on/ })
 }
 
 /** Page 71: tap the grass to start a timed step (holds, rounds, the warm-up). */
