@@ -86,9 +86,9 @@ test('After class: write it, find the combos, ADD TO BAG and NOT NOW', async ({ 
   const added = combos.find(c => c.text === 'Double Jab → Cross → Low Kick')
   expect(added).toMatchObject({ unlocked: 1, source: 'class', tier: 'weapons' })
   expect(added?.classDate).toBeTruthy()
-  expect(combos.find(c => c.text === 'Jab → Jab → Teep')?.unlocked).toBe(0)
+  expect(combos.find(c => c.text === 'Jab → Jab → Lead Teep')?.unlocked).toBe(0)
   const lib = await api.get<{ declined: string[] }>('/api/class-combos/library')
-  expect(lib.declined).toContain('jab > jab > teep')
+  expect(lib.declined).toContain('jab > jab > lead teep')
 
   // Section 3 (page 80): in the Library list a combo row is only its strikes and its difficulty
   // (Weapons reads MEDIUM); where it came from shows on the combo's own page.
