@@ -15,6 +15,7 @@
 //   Run-Walk         the zone's colour while running, teal walking; each switch
 //   Tempo/Intervals  gold RUN HARD, teal EASY JOG, ember well over; each piece
 //   Bag work         gold round, teal rest, orange last 10 s; round and rest start
+//   Bag finisher     red set, teal rest, orange near the end; each set and rest (page 86)
 //   Strength         teal; when the rest ends
 //   Holds/Foundation teal hold, gold move; when each hold ends
 //   Skip rope        gold rope, teal rest; each change
@@ -23,7 +24,7 @@
 
 import type { HrZone } from './hrZoneState'
 
-export type GlowTone = 'teal' | 'gold' | 'ember' | 'orange'
+export type GlowTone = 'teal' | 'gold' | 'ember' | 'orange' | 'red'
 
 export interface LockGlow {
   glowTone: GlowTone
@@ -57,6 +58,17 @@ export function hardRunGlow(index: number, easy: boolean, over: boolean): LockGl
 export function bagGlow(round: number, resting: boolean, lastTen: boolean, backs = 0): LockGlow {
   const r = Math.max(1, round)
   return { glowTone: lastTen ? 'orange' : resting ? 'teal' : 'gold', glowSeq: 2 * r - 1 + (resting ? 1 : 0) + 1000 * backs }
+}
+
+/**
+ * The bag finisher (page 86): part `index` (0-based: set, rest, set…), red
+ * in a set, teal resting, orange near the end (colour only). `backs` counts
+ * swipes back as bag work's, so a restart of the same part still flashes.
+ * Kept clear of the rounds' counters (100 000 on), so the change from the last
+ * round's rest into the first set flashes too.
+ */
+export function finisherGlow(index: number, resting: boolean, warn: boolean, backs = 0): LockGlow {
+  return { glowTone: warn ? 'orange' : resting ? 'teal' : 'red', glowSeq: 100_000 + Math.max(0, index) + 1000 * backs }
 }
 
 /** Skip rope: as bag work, without the orange (`backs` as bag work's). */

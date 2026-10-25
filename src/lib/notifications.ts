@@ -34,6 +34,10 @@ const CUE_STRENGTH_REST_END = 4005 // strength set rest over
 const CUE_RUN_WALK_BASE = 4100
 const CUE_RUN_WALK_MAX = 40
 const CUE_RUN_WALK_IDS = Array.from({ length: CUE_RUN_WALK_MAX }, (_, i) => CUE_RUN_WALK_BASE + i)
+// Page 86: the bag finisher's whole timeline (4 sets: start, last 10 s, end; 3 rests: last 5 s).
+const CUE_FINISHER_BASE = 4200
+const CUE_FINISHER_MAX = 24
+const CUE_FINISHER_IDS = Array.from({ length: CUE_FINISHER_MAX }, (_, i) => CUE_FINISHER_BASE + i)
 
 const REDEPLOY_WARN_ID = 5000
 const REDEPLOY_DAY_ID = 5001
@@ -403,7 +407,7 @@ export async function scheduleRedeployReminders(buildTime: number): Promise<void
 // a cue no longer plays twice with the app open. In the background the OS
 // presents them as usual, sound included.
 
-const CUE_IDS = new Set([CUE_FINISH_WARN, CUE_ROUND_END, CUE_REST_WARN, CUE_REST_END, CUE_STRENGTH_REST_END, ...CUE_RUN_WALK_IDS])
+const CUE_IDS = new Set([CUE_FINISH_WARN, CUE_ROUND_END, CUE_REST_WARN, CUE_REST_END, CUE_STRENGTH_REST_END, ...CUE_RUN_WALK_IDS, ...CUE_FINISHER_IDS])
 
 export function isCueNotificationId(id: number): boolean {
   return CUE_IDS.has(id)
@@ -579,6 +583,56 @@ export async function cancelRunWalkCues(): Promise<void> {
   } catch {
     // nothing pending
   }
+}
+
+/** A finisher cue: a set's bell, its last 10 s, its end; a rest's last 5 s. */
+export type FinisherCueKind = 'set' | 'set_warn' | 'set_end' | 'rest_warn'
+
+const FINISHER_CUE: Readonly<Record<FinisherCueKind, { body: string; sound: string }>> = {
+  set: { body: 'Go.', sound: 'round_start.caf' },
+  set_warn: { body: 'Finish.', sound: 'finish_warning.caf' },
+  set_end: { body: 'Rest.', sound: 'round_end.caf' },
+  rest_warn: { body: 'Get ready.', sound: 'rest_warning.caf' },
+}
+
+/**
+ * The bag finisher's bells (page 86) at their wall-clock times from its
+ * (virtual) start, all at once: JS sleeps while the phone is locked. The
+ * sounds are the bag rounds' own. Call again after a pause, skip or back.
+ */
+export function finisherCueSpecs(startedAtMs: number, cues: Array<{ atSec: number; kind: FinisherCueKind }>, nowMs: number): CueSpec[] {
+  return cues
+    .slice(0, CUE_FINISHER_MAX)
+    .map((c, i) => ({ id: CUE_FINISHER_BASE + i, ...FINISHER_CUE[c.kind], at: new Date(startedAtMs + c.atSec * 1000) }))
+    .filter(s => s.at.getTime() > nowMs)
+}
+
+/** Reschedules run one after another (two quick swipes can't interleave their cancels and schedules). */
+let finisherCueChain: Promise<void> = Promise.resolve()
+
+export async function scheduleFinisherCues(startedAtMs: number, cues: Array<{ atSec: number; kind: FinisherCueKind }>): Promise<void> {
+  if (!isNative) return
+  const run = finisherCueChain.then(async () => {
+    await cancelFinisherCuesNow()
+    await scheduleCues(finisherCueSpecs(startedAtMs, cues, Date.now()))
+  })
+  finisherCueChain = run.catch(() => {})
+  return run
+}
+
+async function cancelFinisherCuesNow(): Promise<void> {
+  try {
+    await LocalNotifications.cancel({ notifications: CUE_FINISHER_IDS.map(id => ({ id })) })
+  } catch {
+    // nothing pending
+  }
+}
+
+export async function cancelFinisherCues(): Promise<void> {
+  if (!isNative) return
+  const run = finisherCueChain.then(cancelFinisherCuesNow)
+  finisherCueChain = run.catch(() => {})
+  return run
 }
 
 // Register action types + listen for "I'm Up" taps

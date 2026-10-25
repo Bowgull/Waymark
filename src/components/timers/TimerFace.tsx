@@ -167,8 +167,8 @@ export function RoundClock({ seconds: liveSeconds, kind, heat, tone = 'ink', tra
 // then a small mono NEXT and time-left line. The grass stays at the bottom and
 // nothing sits on it (TimerColumn keeps the column above it).
 
-/** The clock's colour (page 84 `.tm` --clk): gold work, teal rest and holds, clay, the timer's orange, paused. */
-export type HeroTint = 'work' | 'rest' | 'clay' | 'warn' | 'pause'
+/** The clock's colour (page 84 `.tm` --clk): gold work, teal rest and holds, clay, the timer's orange, paused, the finisher's red (page 86). */
+export type HeroTint = 'work' | 'rest' | 'clay' | 'warn' | 'pause' | 'red'
 
 
 interface HeroClockProps {

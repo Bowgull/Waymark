@@ -46,6 +46,7 @@ export function pauseAt(state: SessionResumeState, atMs: number): SessionResumeS
     case 'run': engineState = { ...e, stopwatch: stopwatchPausedAt(e.stopwatch, atMs) }; break
     case 'recovery': engineState = { ...e, hipTimer: timerPausedAt(e.hipTimer, atMs), rollTimer: timerPausedAt(e.rollTimer, atMs) }; break
     case 'mt': break
+    case 'finisher': engineState = e.clock.pausedAtMs != null ? e : { ...e, clock: { ...e.clock, pausedAtMs: Math.max(e.clock.startedAtMs, atMs) } }; break
   }
   return { ...state, engineState }
 }
@@ -66,6 +67,7 @@ export function savedSummary(state: SessionResumeState): { where: string; lines:
   const at = state.savedAt
   if (state.phase === 'combo-rating') return { where: 'at the combo ratings', lines: [{ name: 'ROUNDS', detail: 'ALL DONE' }, { name: 'COMBO RATINGS', detail: 'TO DO' }] }
   if (state.phase === 'complete' || state.phase === 'mark-earned') return { where: 'at the close', lines: [{ name: 'SESSION', detail: 'TO CLOSE' }] }
+  if (e?.kind === 'finisher') return { where: 'in the finisher', lines: [{ name: 'ROUNDS', detail: 'ALL DONE' }, { name: 'FINISHER', detail: 'TO DO' }] }
   if (e?.kind === 'rounds') {
     const done = e.sub === 'rest' ? e.round + 1 : e.round
     const lines: SavedLineOut[] = []

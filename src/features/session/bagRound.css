@@ -49,3 +49,5 @@
 @media (prefers-reduced-motion: reduce) {
   .bw-stack, .tm-rclock { transition: none; }
 }
+/* page 86: NEXT · FINISHER under the clock on the last round's rest (page 84's NEXT line) */
+.tm-next.bw-next { flex: none; margin-top: 0; padding-bottom: 8px; }

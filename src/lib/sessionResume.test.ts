@@ -338,4 +338,32 @@ function killAndReopen(st: Omit<SessionResumeState, 'v' | 'savedAt'>, awayMs: nu
   assert.equal((r.state.engineState as Extract<EngineState, { kind: 'mt' }>).draft.weakness, 'dropping the right hand')
 }
 
+{
+  // Page 86, the bag finisher: with one, the last round has its rest too, and the finisher starts at its end.
+  const last = { round: 2, sub: 'fighting' as const, timer: timerStart(180, T0) }
+  const r = advanceRounds(BAG, last, T0 + 200 * S, { finisher: true })
+  assert.deepEqual({ round: r.round, sub: r.sub, completed: r.completed }, { round: 2, sub: 'rest', completed: false })
+  const done = advanceRounds(BAG, last, T0 + 300 * S, { finisher: true })
+  assert.equal(done.completed, true)
+  assert.equal(done.finisherAtMs, T0 + 225 * S, 'the finisher starts as the last rest ends (180 + 45)')
+  assert.equal(advanceRounds(BAG, last, T0 + 300 * S).finisherAtMs, undefined, 'no finisher: the close, as before')
+
+  // Killed in the last rest and back later: the finisher, running from the rest's end.
+  const k = killAndReopen(base('bag_work', { kind: 'rounds', round: 2, sub: 'rest', timer: timerStart(45, T0) }, { phase: 'exercise', roundIdx: 2 }), 60 * S, { rounds: BAG, finisherSec: 175 })
+  assert.equal(k.state.phase, 'bag-finisher')
+  assert.equal(k.completed, false)
+  const fin = k.state.engineState as Extract<EngineState, { kind: 'finisher' }>
+  assert.deepEqual(fin.clock, { startedAtMs: T0 + 45 * S, pausedAtMs: null, pausedMs: 0 })
+
+  // Killed in the finisher: it runs on by the wall clock; once all of it has gone by, the ratings.
+  const clock = { startedAtMs: T0, pausedAtMs: null, pausedMs: 0 }
+  const mid = killAndReopen(base('bag_work', { kind: 'finisher', clock }, { phase: 'bag-finisher' }), 100 * S, { rounds: BAG, finisherSec: 175 })
+  assert.deepEqual({ phase: mid.state.phase, completed: mid.completed }, { phase: 'bag-finisher', completed: false })
+  assert.deepEqual((mid.state.engineState as Extract<EngineState, { kind: 'finisher' }>).clock, clock, 'the clock survives the save')
+  assert.equal(killAndReopen(base('bag_work', { kind: 'finisher', clock }, { phase: 'bag-finisher' }), 200 * S, { rounds: BAG, finisherSec: 175 }).completed, true)
+  // Paused: never runs out.
+  const held = { startedAtMs: T0, pausedAtMs: T0 + 30 * S, pausedMs: 0 }
+  assert.equal(killAndReopen(base('bag_work', { kind: 'finisher', clock: held }, { phase: 'bag-finisher' }), 99_999 * S, { rounds: BAG, finisherSec: 175 }).completed, false)
+}
+
 console.log('sessionResume tests passed')

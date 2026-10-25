@@ -78,6 +78,12 @@ interface GrassZoneProps {
    * takes the warning orange, easing over about 1 s (instant with Reduce Motion).
    */
   orange?: boolean
+  /**
+   * Page 86, the bag finisher: the grass is red through a set, easing in and
+   * out over about 1 s like the orange (instant with Reduce Motion); the
+   * orange of the last 10 s goes over it.
+   */
+  red?: boolean
 }
 
 /**
@@ -87,7 +93,7 @@ interface GrassZoneProps {
  * early settles back); the blades part around the finger with a light under it
  * and a drag leaves a fading wake.
  */
-export function GrassZone({ track, kind, mode, heat, onTap, onSkip, onBack, state = 'running', label, band, zone, hold, holdWords = ['HOLD · FINISH', 'FINISHING'], orange = false }: GrassZoneProps) {
+export function GrassZone({ track, kind, mode, heat, onTap, onSkip, onBack, state = 'running', label, band, zone, hold, holdWords = ['HOLD · FINISH', 'FINISHING'], orange = false, red = false }: GrassZoneProps) {
   const reduced = useReducedMotion()
   // Page 71: the first time, TAP THE GRASS TO START sits in a small box mid-grass; after the
   // grass has started a timer once on this phone it is the quiet line at the foot.
@@ -111,14 +117,14 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, onBack, stat
     const now = performance.now()
     tint.current = { from: zoneEase(t.from, t.to, now - t.at, reduced), to, at: now }
   }, [zone, reduced])
-  // Page 81: the orange, eased the same way (one channel of the same ease).
-  const orangeT = useRef<{ from: readonly [number, number, number]; to: readonly [number, number, number]; at: number }>({ from: [orange ? 1 : 0, 0, 0], to: [orange ? 1 : 0, 0, 0], at: -1e9 })
+  // Page 81: the orange, eased the same way (one channel of the same ease); page 86's red is the second channel.
+  const orangeT = useRef<{ from: readonly [number, number, number]; to: readonly [number, number, number]; at: number }>({ from: [orange ? 1 : 0, red ? 1 : 0, 0], to: [orange ? 1 : 0, red ? 1 : 0, 0], at: -1e9 })
   useLayoutEffect(() => {
-    const to: readonly [number, number, number] = [orange ? 1 : 0, 0, 0], t = orangeT.current
-    if (to[0] === t.to[0]) return
+    const to: readonly [number, number, number] = [orange ? 1 : 0, red ? 1 : 0, 0], t = orangeT.current
+    if (to[0] === t.to[0] && to[1] === t.to[1]) return
     const now = performance.now()
     orangeT.current = { from: zoneEase(t.from, t.to, now - t.at, reduced), to, at: now }
-  }, [orange, reduced])
+  }, [orange, red, reduced])
   // The finish hold: when it started (null: not holding), where an early let-go eases back from, and fired.
   const hd = useRef<{ start: number | null; from: number; at: number; full: boolean; wx: number; wy: number; timers: number[] }>({ start: null, from: 0, at: -1e9, full: false, wx: 0.5, wy: 0.9, timers: [] })
   const [finishing, setFinishing] = useState(false)
@@ -194,7 +200,7 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, onBack, stat
       last = now
       const { track: tr, kind: k, mode: m, heat: h } = live.current
       const zt = zoneEase(tn.from, tn.to, pnow - tn.at, reduced)
-      const ok = zoneEase(on.from, on.to, pnow - on.at, reduced)[0]
+      const [ok, rk] = zoneEase(on.from, on.to, pnow - on.at, reduced)
       const remaining = trackRemainingMs(tr)
       const calm = k !== 'work'
       const params: GrassParams = {
@@ -207,6 +213,7 @@ export function GrassZone({ track, kind, mode, heat, onTap, onSkip, onBack, stat
         ...(zt[0] > 0 || zt[1] > 0 || zt[2] > 0 ? { zone: zt } : {}),
         ...(wave > 0 ? { wave, wx: hd.current.wx, wy: hd.current.wy } : {}),
         ...(ok > 0 ? { orange: ok } : {}),
+        ...(rk > 0 ? { red: rk } : {}),
       }
       const st = settle.current
       if (st) {

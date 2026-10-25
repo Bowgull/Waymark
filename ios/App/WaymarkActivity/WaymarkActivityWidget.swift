@@ -100,15 +100,18 @@ extension Color {
     static let wmGlowGold = Color(wmHex: 0xE8C878)
     static let wmGlowEmber = Color(wmHex: 0xEC8A5E)
     static let wmGlowOrange = Color(wmHex: 0xF0A060)
+    // Page 86: the bag finisher's own red (its clock digits).
+    static let wmGlowRed = Color(wmHex: 0xF27C6C)
 }
 
-// glowTone from the app ("teal", "gold", "ember", "orange").
+// glowTone from the app ("teal", "gold", "ember", "orange", "red").
 private func glowColor(_ raw: String?) -> Color? {
     switch raw {
     case "teal": return .wmGlowTeal
     case "gold": return .wmGlowGold
     case "ember": return .wmGlowEmber
     case "orange": return .wmGlowOrange
+    case "red": return .wmGlowRed
     default: return nil
     }
 }

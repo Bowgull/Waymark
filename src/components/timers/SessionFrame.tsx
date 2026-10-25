@@ -136,6 +136,8 @@ let sessionScreens = 0
 interface SessionFrameProps {
   /** The session on a flap (BAG WORK, WARM UP, STRENGTH A…). */
   title: string
+  /** The title's plate (page 86: the bag finisher's FINISHER on its red). Ink by default. */
+  titleTone?: FlapTone
   /** Right side: a count flap (3/6) or the session icon. */
   count?: string
   icon?: SessionIconKey
@@ -167,7 +169,7 @@ interface SessionFrameProps {
  * the stop row (× end tile, the session on a flap, a count or the icon), the
  * body, and on timers the half-screen grass. Paused dims the whole screen.
  */
-export function SessionFrame({ title, count, icon, right, onEnd, onEndAndLog, closeHead, grass, forest = false, paused = false, children, overlay, className = '', onEndHeld }: SessionFrameProps) {
+export function SessionFrame({ title, titleTone = 'ink', count, icon, right, onEnd, onEndAndLog, closeHead, grass, forest = false, paused = false, children, overlay, className = '', onEndHeld }: SessionFrameProps) {
   // Held through: ENDED flips in place (the timer's phase word, or the title on a screen with no
   // timer) and the clock stops; the session leaves once it has been read (page 19 `.xbtn`).
   const [ended, setEnded] = useState(false)
@@ -212,7 +214,7 @@ export function SessionFrame({ title, count, icon, right, onEnd, onEndAndLog, cl
           {onEnd ? <button type="button" className="tm-back" onClick={stepOut}>‹ TODAY</button> : <span />}
           {onEndHeld
             ? <span className="tm-title"><FlapLabel text={title} size="sm" fit animate={false} /></span>
-            : <FlapLabel text={ended && !grass ? 'ENDED' : title} size="sm" tone={ended && !grass ? 'clay' : 'ink'} />}
+            : <FlapLabel text={ended && !grass ? 'ENDED' : title} size="sm" tone={ended && !grass ? 'clay' : titleTone} />}
           <span className="tm-stop-r">
             {right ?? (icon ? <SessionIcon kind={icon} size={40} /> : count ? <FlapLabel text={count} size="sm" /> : null)}
             {onEnd ? <EndControl head={closeHead ?? sentenceCase(title)} onEnd={onEnd} onEndAndLog={onEndAndLog} onEndStart={startEnd} /> : <EndButton onHeld={onEndHeld} />}

@@ -54,6 +54,7 @@ import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
 import { bagBuilder, bagPool } from './routes/bagBuilder'
 import { parseBagSpec, roundsForSpec, planCoachRounds, STAGE_ROUND_TYPE } from '../lib/coach/bagArc'
+import { finisherReadiness, parseFinisher, planFinisher, techniqueGroups } from '../lib/coach/bagFinisher'
 import { pendingReviews } from './linkHealth'
 import {
   blockStartDay,
@@ -446,8 +447,11 @@ async function buildBagWorkResponse(db: DrizzleDB, sessionId: string) {
   // What was planned and, once done, each round as it went (seconds per round, from the finish).
   // The rope warm-up and the rounds (audit #23): the same minutes as the row's.
   const plannedMin = rounds.length > 0 ? bagMinutes(rounds) : null
-  const roundSecs = parseRoundSecs(JSON.stringify(parseJson<{ roundSecs?: unknown }>(session?.contextJson ?? null, {}).roundSecs ?? null))
-  return { session, rounds: result, plannedMin, roundSecs }
+  const ctx = parseJson<{ roundSecs?: unknown; finisher?: unknown }>(session?.contextJson ?? null, {})
+  const roundSecs = parseRoundSecs(JSON.stringify(ctx.roundSecs ?? null))
+  // Page 86: the coach's finisher after the last round (written when the session started).
+  const finisher = rounds.length > 0 ? parseFinisher(ctx.finisher) : null
+  return { session, rounds: result, plannedMin, roundSecs, finisher }
 }
 
 interface RunSessionInput {
@@ -1746,6 +1750,12 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
     ],
   }
 
+  // Page 86: the finisher after the last round. COACH and HYBRID get it, sized by the bag dose's level
+  // (today's readiness folded in); KNEES on in Settings adds the rear knee. CUSTOM: nothing added.
+  const [userSettings] = await db.select().from(settings).limit(1)
+  const finisher = planFinisher({ mode: spec?.mode ?? 'coach', readiness: finisherReadiness(bag?.level), groups: techniqueGroups(userSettings?.enabledTechniques) })
+  const ctxPatch: Record<string, unknown> = finisher ? { finisher } : {}
+
   type NewRound = { roundType: string; durationSec: number; restSec: number; rationale: string; comboIds: string[] }
   const writeRounds = async (list: NewRound[]) => {
     for (let r = 0; r < list.length; r++) {
@@ -1768,7 +1778,7 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
 
   if (spec && spec.mode !== 'coach') {
     // HYBRID: his rounds kept, the coach fills the rest on the kru's arc. CUSTOM: exactly his; the coach says nothing.
-    if (spec.mode === 'hybrid' && rules.reason) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: spec.rounds } }) }).where(eq(sessions.id, sessionId))
+    if (spec.mode === 'hybrid' && rules.reason) ctxPatch.coach = { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: spec.rounds }
     const planned = roundsForSpec(spec, pool, { finishers: !noFinishers, nowSec })
     await writeRounds(planned.map(r => ({ roundType: r.roundType, durationSec: r.durationSec, restSec: r.restSec, rationale: '', comboIds: r.comboIds })))
   } else {
@@ -1783,7 +1793,7 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
         console.warn('[start-bag-work] prescription failed', err)
       }
     }
-    if (rules.reason) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: rules.maxRounds } }) }).where(eq(sessions.id, sessionId))
+    if (rules.reason) ctxPatch.coach = { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: rules.maxRounds }
 
     if (prescribed && prescribed.rounds.length >= 3) {
       await writeRounds(governBagRounds(prescribed.rounds, rules).map(r => ({
@@ -1807,7 +1817,11 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
     }
   }
 
-  await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
+  await db.update(sessions).set({
+    status: 'in_progress',
+    startedAt: nowSec,
+    ...(Object.keys(ctxPatch).length > 0 ? { contextJson: mergeContext(session.contextJson, ctxPatch) } : {}),
+  }).where(eq(sessions.id, sessionId))
   return c.json(await buildBagWorkResponse(db, sessionId))
 })
 

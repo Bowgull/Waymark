@@ -6,7 +6,7 @@ import { cancelFlip, fadeLabel, flipLabel, isFlipping, openLabel, setLanded, wri
 import { useReducedMotion } from './motion'
 
 export type FlapSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
-export type FlapTone = 'ink' | 'gold' | 'teal' | 'clay' | 'dim' | 'struck'
+export type FlapTone = 'ink' | 'gold' | 'teal' | 'clay' | 'dim' | 'struck' | 'red'
 
 export interface FlapLabelProps {
   text: string

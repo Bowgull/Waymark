@@ -15,6 +15,11 @@
   --sf-teal2: #3a6658;
   --sf-clay: #9c5a40;
   --sf-clay2: #864a34;
+  /* page 86: the bag finisher's own red (plate, light ink at 4.5:1, its clock digits) */
+  --sf-red: #a8443a;
+  --sf-red2: #94392f;
+  --sf-red-ink: #f8ece0;
+  --sf-red-clock: #f27c6c;
   --sf-mark: #c9a656;
   --sf-good-edge: #5fa08c;
   --sf-good-ink: #8fd4b8;
@@ -142,6 +147,12 @@
     background: linear-gradient(180deg, var(--sf-clay) 0 50%, var(--sf-clay2) 50% 100%);
   }
   .wm-flap.is-clay .wm-leaf { background: var(--sf-clay); }
+  .wm-flap.is-red .wm-cell:not(.is-gap):not(.is-pad) {
+    color: var(--sf-red-ink);
+    text-shadow: none;
+    background: linear-gradient(180deg, var(--sf-red) 0 50%, var(--sf-red2) 50% 100%);
+  }
+  .wm-flap.is-red .wm-leaf { background: var(--sf-red); }
   .wm-flap.is-dim .wm-cell { color: rgba(240, 230, 192, 0.74); }
   .wm-flap.is-struck .wm-cell { color: rgba(240, 230, 192, 0.42); }
 

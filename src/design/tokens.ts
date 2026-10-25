@@ -13,6 +13,12 @@ export const FLAP = {
   teal2: '#3a6658',
   clay: '#9c5a40',
   clay2: '#864a34',
+  /** Page 86, the bag finisher's own red: its plate (two halves) and the light ink on it. */
+  red: '#a8443a',
+  red2: '#94392f',
+  redInk: '#f8ece0',
+  /** The finisher's clock digits and GOAL word. */
+  redClock: '#f27c6c',
   /** The small brass sun / moon beside the AM / PM flap. */
   mark: '#c9a656',
 } as const

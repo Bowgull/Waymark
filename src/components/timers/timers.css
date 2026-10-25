@@ -120,6 +120,7 @@
 .tm-hero.t-clay { --clk: #e8946e; }
 .tm-hero.t-warn { --clk: #ffb27a; }
 .tm-hero.t-pause { --clk: rgba(240, 230, 192, 0.74); }
+.tm-hero.t-red { --clk: var(--sf-red-clock, #f27c6c); }
 .tm-hero .wm-flap.is-xl { font-size: calc(var(--px, 120px) * var(--hk, 1)); gap: 6px; }
 .tm-hero:not(.is-heat) .wm-cell:not(.is-gap):not(.is-pad) { color: var(--clk) !important; transition: color 1s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
 .tm-hero-colon { font: 800 calc(var(--px, 120px) * var(--hk, 1) * 0.7) var(--font-mono); line-height: 1; color: var(--clk); margin: 0 -2px; transition: color 1s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
