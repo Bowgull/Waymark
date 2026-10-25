@@ -34,5 +34,7 @@ assert.deepEqual([kneesOn.mastered, kneesOn.of, kneesOn.offer.length], [2, 4, 0]
 assert.equal(currentComboTier([C('a', 'foundation', 1), C('w', 'weapons', 1, 'kicks')]), 'weapons')
 assert.equal(currentComboTier([C('a', 'foundation', 0)]), 'foundation')
 assert.equal(unlockOffer([C('m', 'mastery', 1, 'kicks', 9)]).next, null)
+// a class combo he added in Weapons sits there without moving his level
+assert.equal(currentComboTier([C('a', 'foundation', 1), { ...C('cls', 'weapons', 1, 'boxing,kicks'), source: 'class' }]), 'foundation')
 
 console.log('comboTiers tests passed')
