@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import { glowRow, showPop } from '@/design'
-import { apiFetch } from '@/lib/api'
+import { logger } from '@/lib/logger'
+import { classLogWrite } from '@/lib/logWrites'
+import { queueWrite } from '@/lib/outboxSync'
 import type { EngineState } from '@/lib/sessionResume'
 import { setWorldBackdrop } from '@/world/worldStore'
 
@@ -21,6 +23,8 @@ interface MtLog {
 
 interface MtClassLogViewProps {
   mtLog: MtLog
+  /** The session: the log goes out in order with its writes, before the finish. */
+  sessionId?: string | null
   /** Planned class length (a fixed hour; kept for callers). */
   plannedMin?: number | null
   /** The block (kept for callers; the class type is never refused). */
@@ -40,7 +44,7 @@ const COULDNT_SAVE = "Couldn't save. Check your connection."
  * centred board over the forest. Everything is saved with SAVE CLASS LOG; the
  * type is his record of the class, never refused (coach-brain §14).
  */
-export function MtClassLogView({ mtLog, onComplete, onExit, resume, onPersist }: MtClassLogViewProps) {
+export function MtClassLogView({ mtLog, sessionId = null, onComplete, onExit, resume, onPersist }: MtClassLogViewProps) {
   const draft = resume?.draft ?? {}
   const [classType, setClassType] = useState<ClassTypeValue>(() => defaultClassType(draft.classType ?? mtLog.classType))
   const [note, setNote] = useState(draft.weakness ?? mtLog.weakness ?? '')
@@ -65,7 +69,13 @@ export function MtClassLogView({ mtLog, onComplete, onExit, resume, onPersist }:
     setSaving(true)
     setError(null)
     try {
-      await apiFetch(`/api/mt-class-logs/${mtLog.id}`, { method: 'PATCH', body: JSON.stringify(classLogPatch({ classType, note })) })
+      // Through the outbox: with no signal it is kept on this phone and the session goes on.
+      const result = await queueWrite(classLogWrite(mtLog.id, sessionId, classLogPatch({ classType, note })))
+      if (result === 'rejected') throw new Error('class log refused by the server')
+      if (result === 'queued') {
+        logger.warn('session', 'mt class log queued', { mtLogId: mtLog.id }, 'Class log save failed. Kept on this phone, retrying.')
+        showPop("No connection. Class log saved on this phone. It syncs when you're back online.", 'info')
+      }
       onComplete()
     } catch (err) {
       console.error('Failed to save MT class log:', err)

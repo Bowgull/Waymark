@@ -92,6 +92,16 @@ assert.ok(!isRetryableStatus(400) && !isRetryableStatus(404) && !isRetryableStat
   const left = loadOutbox(storage)
   assert.deepEqual(left.map(e => e.id), ['p2'], 'a write queued during the flush is kept')
 
+  // DISCARD during a flush (dropSessionWrites): the dropped writes stay dropped.
+  const dropStorage = memoryStorage()
+  saveOutbox(dropStorage, [setWrite('x1', 's1'), setWrite('x2', 's1'), setWrite('k1', 's2')].reduce((q, w) => enqueue(q, w, 0), [] as OutboxEntry[]))
+  const dropped = await flushStoredOutbox(dropStorage, async (e) => {
+    if (e.id === 'x1') saveOutbox(dropStorage, loadOutbox(dropStorage).filter(w => w.sessionId !== 's1'))
+    return { ok: false, retry: true, error: 'offline' }
+  }, 10)
+  assert.deepEqual(loadOutbox(dropStorage).map(e => e.id), ['k1'], 'a session dropped mid-flush does not come back')
+  assert.equal(dropped.pending, 1)
+
   storage.data.set('waymark_outbox_v1', 'not json')
   assert.deepEqual(loadOutbox(storage), [], 'corrupt storage reads as empty')
 

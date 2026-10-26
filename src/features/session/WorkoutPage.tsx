@@ -14,7 +14,7 @@ import { asksEffort, effortWrite } from '@/features/blockZero/effort'
 import { setPlace } from '@/lib/setPlace'
 import { typicalRpe } from '@/lib/coach/sessions'
 import { kgToLbs } from '@/lib/units'
-import { carryKey, carryStart, nextRungAfter, parseCarry, withEffort, withLogged, type LiftCarry } from '@/lib/timers/setWeight'
+import { carryKey, carryStart, nextRungAfter, parseCarry, setNeedsWeight, withEffort, withLogged, type LiftCarry } from '@/lib/timers/setWeight'
 import { LADDER_MAX_SETS } from '@/lib/brain/doses'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd, cancelAllCues } from '@/lib/notifications'
 import { loadOutbox } from '@/lib/outbox'
@@ -704,12 +704,17 @@ export function WorkoutPage() {
     },
     onCompleteSet: () => {
       if (phase !== 'exercise') return
-      const prescribed = strengthData?.exercises[exerciseIdx]?.sets[setIdx]
+      // The effort card is open: this set is logged and waits on its tap, so the lock button waits too.
+      if (effortFor) return
+      const exercise = strengthData?.exercises[exerciseIdx]
+      const prescribed = exercise?.sets[setIdx]
       const { weightKg, reps } = pendingSetValuesRef.current
       const finalReps = reps > 0 ? reps : prescribed?.reps ?? 0
       if (finalReps <= 0) return
       const finalWeightKg =
         weightKg != null ? weightKg : prescribed?.weightKg ?? null
+      // Same wait as LOG SET (m11): a loadable working set at no weight is not logged from the lock screen.
+      if (setNeedsWeight(exercise?.exercise?.equipment, prescribed?.isWarmup === 1, finalWeightKg ?? 0)) return
       // From the lock screen: no card to answer, so rest starts as before.
       handleSetComplete(finalWeightKg, finalReps, { fromLockScreen: true })
     },
@@ -1194,15 +1199,18 @@ export function WorkoutPage() {
     function handleFrWarmupSetDone() {
       if (!frCurrentExercise) return
       setHoldBackInto(null)
-      apiFetch(`/api/mobility-exercises/${frCurrentExercise.id}`, {
-        method: 'PATCH', body: JSON.stringify({ completed: 1 }),
-      }).catch((e) => {
-        const message = e instanceof Error ? e.message : String(e)
-        logger.warn('session', 'Zone 2 warmup complete flag persist failed', { exerciseId: frCurrentExercise.id, message }, 'Zone 2 warmup flag did not persist. UI advanced anyway.')
-      })
-
       const isLastSet = (setIdx + 1) >= frTotalSets
       const isLastExercise = exerciseIdx >= frTotalExercises - 1
+
+      // Done only after its last set: a resume from the server alone must not skip the sets still to do.
+      if (isLastSet) {
+        apiFetch(`/api/mobility-exercises/${frCurrentExercise.id}`, {
+          method: 'PATCH', body: JSON.stringify({ completed: 1 }),
+        }).catch((e) => {
+          const message = e instanceof Error ? e.message : String(e)
+          logger.warn('session', 'Zone 2 warmup complete flag persist failed', { exerciseId: frCurrentExercise.id, message }, 'Zone 2 warmup flag did not persist. UI advanced anyway.')
+        })
+      }
 
       if (isLastSet && isLastExercise) {
         // Warmup done → start the run
@@ -1278,7 +1286,11 @@ export function WorkoutPage() {
 
     function handleMobilitySetDone() {
       setHoldBackInto(null)
-      if (currentExercise) {
+      const isLastSet = setIdx >= totalSets - 1
+      const isLastExercise = exerciseIdx >= totalExercises - 1
+
+      // Done only after its last set: a resume from the server alone must not skip the sets still to do.
+      if (currentExercise && isLastSet) {
         apiFetch(`/api/mobility-exercises/${currentExercise.id}`, {
           method: 'PATCH',
           body: JSON.stringify({ completed: 1 }),
@@ -1287,9 +1299,6 @@ export function WorkoutPage() {
           logger.warn('session', 'mobility complete flag persist failed', { exerciseId: currentExercise.id, message }, 'Mobility complete flag did not persist. UI advanced anyway.')
         })
       }
-
-      const isLastSet = setIdx >= totalSets - 1
-      const isLastExercise = exerciseIdx >= totalExercises - 1
 
       if (isLastSet && isLastExercise) {
         setPhase('mark-earned')
@@ -1335,6 +1344,7 @@ export function WorkoutPage() {
       <>
         <MtClassLogView
           mtLog={mtData.mtLog}
+          sessionId={id ?? null}
           plannedMin={mtData.plannedMin ?? null}
           blockType={mtData.session.blockType ?? null}
           onComplete={() => setPhase('mark-earned')}
@@ -1667,6 +1677,8 @@ export function WorkoutPage() {
   }
 
   function startStrengthRest() {
+    // Rest starts once per set: no effort card is left open to pop on the next one.
+    setEffortFor(null)
     const restSec = currentSet?.restSec ?? 60
     restTimer.start(restSec)
     void scheduleStrengthRestEnd(Date.now() + restSec * 1000)

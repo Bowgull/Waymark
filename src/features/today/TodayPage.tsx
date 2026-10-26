@@ -7,6 +7,7 @@ import { clearResume, loadResume } from '@/lib/sessionResume'
 import { clearLiveSession, readLiveSession, takeLaunch } from '@/lib/liveSession'
 import { localActiveSession } from '@/lib/workoutCache'
 import { logger } from '@/lib/logger'
+import { START_TIMEOUT_MS } from '@/lib/startSession'
 import { endAllLiveActivities } from '@/lib/liveActivity'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
@@ -363,7 +364,15 @@ export function TodayPage() {
     }
   }
 
+  // One start at a time: a second ENTER while a start is in flight does nothing (no workout made twice).
+  const startingRef = useRef(false)
   async function handleStart(id: string) {
+    if (startingRef.current) return
+    startingRef.current = true
+    try { await startOnce(id) } finally { startingRef.current = false }
+  }
+
+  async function startOnce(id: string) {
     const session = sessions.find((s) => s.id === id)
     if (!session) {
       logger.warn('session', 'Enter pressed for unknown session', { id }, 'Enter tapped but session id not in today list. Stale UI state.')
@@ -393,7 +402,7 @@ export function TodayPage() {
           mt_class: `/api/sessions/${id}/start-mt-class`,
         }
         const startEndpoint = typeEndpoints[session.type] ?? `/api/sessions/${id}/start-strength`
-        await apiFetch(startEndpoint, { method: 'POST' })
+        await apiFetch(startEndpoint, { method: 'POST', timeoutMs: START_TIMEOUT_MS })
         navigate(`/session/${id}`)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)

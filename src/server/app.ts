@@ -8,6 +8,7 @@ import { cors } from 'hono/cors'
 import { createDB } from '../db/client'
 import { CONSISTENCY_SPAN, weeksConsistency } from '../lib/ledgerConsistency'
 import { blockReadinessFor } from './readiness'
+import { dropLaterBagStarts, dropLaterMobilityStarts, dropLaterStrengthStarts } from './startOnce'
 import { ledgerGoalBoards } from './ledgerData'
 import { activeRecoverySessions, athleteEstimates, bagWorkRoundCombos, bagWorkRounds, blockTests, bodyMetrics, coachingOutputs, comboPerformance, combos, dailyLogs, exercises, journalEntries, mtClassLogs, postureSessionExercises, runSessions, runTypes, techniques, sessions, settings, skipRopeSessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, userProfile, weekAdjustments, weekPlans, weeklyJournals } from '../db/schema'
 import { athleteDayFrom, isoToEpochDay, mondayOf, TODAY_HEADER, TZ_HEADER } from '../lib/dates'
@@ -374,11 +375,10 @@ function brainSummary(dose: StoredDose) {
   }
 }
 
-/** Mobility rows with their own prescription (reps, sides, notes, section). */
+/** Mobility rows with their own prescription (reps, sides, notes, section). One batch; a double start keeps the first (startOnce.ts). */
 async function insertMobilityRows(db: DrizzleDB, sessionId: string, rows: MobilityExerciseTemplate[]) {
-  for (let i = 0; i < rows.length; i++) {
-    const t = rows[i]
-    await db.insert(postureSessionExercises).values({
+  if (rows.length === 0) return
+  await db.batch(rows.map((t, i) => db.insert(postureSessionExercises).values({
       id: crypto.randomUUID(),
       sessionId,
       exerciseId: t.exerciseId,
@@ -390,8 +390,8 @@ async function insertMobilityRows(db: DrizzleDB, sessionId: string, rows: Mobili
       perSide: t.perSide ? 1 : 0,
       notes: t.notes ?? null,
       section: t.section,
-    })
-  }
+    })) as unknown as Parameters<typeof db.batch>[0])
+  await dropLaterMobilityStarts(db, sessionId)
 }
 
 /** Block week for a session without a strength week: its week plan, else the active block's training week. */
@@ -1330,19 +1330,20 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
   const maxMap = new Map(maxes.map(m => [m.exerciseId, m.weightKg]))
   const equipmentById = equipmentMap(await db.select({ id: exercises.id, equipment: exercises.equipment }).from(exercises))
 
-  // Create exercises and sets
+  // Create exercises and sets: one batch with the session's update, so a crash never leaves half a workout.
+  const writes: unknown[] = []
   for (let exIdx = 0; exIdx < template.exercises.length; exIdx++) {
     const tex = template.exercises[exIdx]
     const exId = crypto.randomUUID()
 
-    await db.insert(strengthSessionExercises).values({
+    writes.push(db.insert(strengthSessionExercises).values({
       id: exId,
       sessionId,
       exerciseId: tex.exerciseId,
       orderIndex: exIdx,
       section: tex.section,
       notes: tex.notes ?? null,
-    })
+    }))
 
     const trainingMax = maxMap.get(tex.exerciseId) ?? null
     const equipment = equipmentById.get(tex.exerciseId) ?? 'none'
@@ -1365,7 +1366,7 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
     const rows = [...ramp, ...planned]
     for (let setIdx = 0; setIdx < rows.length; setIdx++) {
       const r = rows[setIdx]
-      await db.insert(strengthSets).values({
+      writes.push(db.insert(strengthSets).values({
         id: crypto.randomUUID(),
         sessionExerciseId: exId,
         setNumber: setIdx + 1,
@@ -1377,18 +1378,21 @@ app.post('/api/sessions/:id/start-strength', async (c) => {
         isWarmup: r.isWarmup ? 1 : 0,
         restSec: r.restSec,
         createdAt: nowSec,
-      })
+      }))
     }
   }
 
   // Mark session as in_progress. Keep what the brain decided on the session.
   const brain = dose ? brainSummary(dose) : null
   const coach = { loadReasons }
-  await db.update(sessions).set({
+  writes.push(db.update(sessions).set({
     status: 'in_progress',
     startedAt: nowSec,
     contextJson: mergeContext(session.contextJson, { ...(brain ? { brain } : {}), coach }),
-  }).where(eq(sessions.id, sessionId))
+  }).where(eq(sessions.id, sessionId)))
+  await db.batch(writes as unknown as Parameters<typeof db.batch>[0])
+  // A double tap's second start: the first-made workout stays (startOnce.ts).
+  await dropLaterStrengthStarts(db, sessionId)
 
   const workout = await buildWorkoutResponse(db, sessionId)
   return c.json({ ...workout, ...(brain ? { brain } : {}), coach })
@@ -1658,24 +1662,23 @@ app.post('/api/sessions/:id/start-foundation-run', async (c) => {
 
   const prescription = await getRunPrescription(db, { ...session, notes: 'zone2' }, athleteDay(c))
 
-  // Create run session (Zone 2)
-  const runId = crypto.randomUUID()
+  // Create run session (Zone 2). One per session (idx_run_session): a double start keeps the first.
   await db.insert(runSessions).values({
-    id: runId,
+    id: crypto.randomUUID(),
     sessionId,
     runType: 'zone2',
     planWeek: null,
     plannedDurationSec: prescription?.targetDurSec ?? null,
     isIndoor: 0,
-  })
+  }).onConflictDoNothing()
 
   // Dynamic warm-up (walk, swings, ankle rocks, hip circles, march), before the run.
-  await insertMobilityRows(db, sessionId, FR_WARMUP_TEMPLATE)
+  if (existingCooldown.length === 0) await insertMobilityRows(db, sessionId, FR_WARMUP_TEMPLATE)
 
   await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-  const [run] = await db.select().from(runSessions).where(eq(runSessions.id, runId))
+  const [run] = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
   const mobilityResponse = await buildMobilityWorkoutResponse(db, sessionId)
 
   return c.json({ session: updated, runSession: run, prescription, postureExercises: mobilityResponse.exercises })
@@ -1839,9 +1842,11 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
     const focus = focusOf(planned)
     if (focus.length > 0) ctxPatch.bagFocus = focus
   }
+  // One batch with the session's update, so a crash never leaves half the rounds.
+  const writes: unknown[] = []
   for (let r = 0; r < planned.length; r++) {
     const roundId = crypto.randomUUID()
-    await db.insert(bagWorkRounds).values({
+    writes.push(db.insert(bagWorkRounds).values({
       id: roundId,
       sessionId,
       roundNumber: r + 1,
@@ -1850,17 +1855,20 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
       roundType: planned[r].roundType,
       coachRationale: '',
       createdAt: nowSec,
-    })
+    }))
     for (let ci = 0; ci < planned[r].comboIds.length; ci++) {
-      await db.insert(bagWorkRoundCombos).values({ id: crypto.randomUUID(), roundId, comboId: planned[r].comboIds[ci], orderIndex: ci })
+      writes.push(db.insert(bagWorkRoundCombos).values({ id: crypto.randomUUID(), roundId, comboId: planned[r].comboIds[ci], orderIndex: ci }))
     }
   }
 
-  await db.update(sessions).set({
+  writes.push(db.update(sessions).set({
     status: 'in_progress',
     startedAt: nowSec,
     ...(Object.keys(ctxPatch).length > 0 ? { contextJson: mergeContext(session.contextJson, ctxPatch) } : {}),
-  }).where(eq(sessions.id, sessionId))
+  }).where(eq(sessions.id, sessionId)))
+  await db.batch(writes as unknown as Parameters<typeof db.batch>[0])
+  // A double tap's second start: the first-made rounds stay (startOnce.ts).
+  await dropLaterBagStarts(db, sessionId)
   return c.json(await buildBagWorkResponse(db, sessionId))
 })
 
@@ -2005,20 +2013,20 @@ app.post('/api/sessions/:id/start-run', async (c) => {
   // Get prescription from running plan
   const prescription = await getRunPrescription(db, session, athleteDay(c))
 
-  const runId = crypto.randomUUID()
+  // One per session (idx_run_session): a double start keeps the first and answers with it.
   await db.insert(runSessions).values({
-    id: runId,
+    id: crypto.randomUUID(),
     sessionId,
     runType: prescription?.runType ?? 'easy',
     planWeek: prescription?.weekNumber ?? null,
     plannedDurationSec: prescription?.targetDurSec ?? null,
     isIndoor: 0,
-  })
+  }).onConflictDoNothing()
 
   await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-  const [run] = await db.select().from(runSessions).where(eq(runSessions.id, runId))
+  const [run] = await db.select().from(runSessions).where(eq(runSessions.sessionId, sessionId))
   return c.json({ session: updated, runSession: run, prescription })
 })
 
@@ -2130,12 +2138,12 @@ app.post('/api/sessions/:id/start-skip-rope', async (c) => {
   const ropeNote = roundCount < ROPE_ROUNDS ? (injuryEased ? state.injuryAction.note : null) ?? read.why ?? 'Easy day.' : null
   if (ropeNote) await db.update(sessions).set({ contextJson: mergeContext(session.contextJson, { coach: { note: ropeNote, roundCount } }) }).where(eq(sessions.id, sessionId))
 
-  const skipId = crypto.randomUUID()
-  await db.insert(skipRopeSessions).values({ id: skipId, sessionId, roundCount, roundDurSec: ROPE_ROUND_SEC })
+  // One per session (idx_skip_session): a double start keeps the first and answers with it.
+  await db.insert(skipRopeSessions).values({ id: crypto.randomUUID(), sessionId, roundCount, roundDurSec: ROPE_ROUND_SEC }).onConflictDoNothing()
   await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-  const [skip] = await db.select().from(skipRopeSessions).where(eq(skipRopeSessions.id, skipId))
+  const [skip] = await db.select().from(skipRopeSessions).where(eq(skipRopeSessions.sessionId, sessionId))
   return c.json({ session: updated, skipSession: skip })
 })
 
@@ -2166,12 +2174,12 @@ app.post('/api/sessions/:id/start-recovery', async (c) => {
     return c.json({ session, recoverySession: existing[0] })
   }
 
-  const recId = crypto.randomUUID()
-  await db.insert(activeRecoverySessions).values({ id: recId, sessionId, hipMobility: 0, foamRolling: 0 })
+  // One per session (idx_recovery_session): a double start keeps the first and answers with it.
+  await db.insert(activeRecoverySessions).values({ id: crypto.randomUUID(), sessionId, hipMobility: 0, foamRolling: 0 }).onConflictDoNothing()
   await db.update(sessions).set({ status: 'in_progress', startedAt: nowSec }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-  const [rec] = await db.select().from(activeRecoverySessions).where(eq(activeRecoverySessions.id, recId))
+  const [rec] = await db.select().from(activeRecoverySessions).where(eq(activeRecoverySessions.sessionId, sessionId))
   return c.json({ session: updated, recoverySession: rec })
 })
 
@@ -2227,8 +2235,8 @@ app.post('/api/sessions/:id/start-mt-class', async (c) => {
     ? state.injuryAction.note
     : report.readinessEase ? `${report.reason ?? 'A rough morning.'} ${CLASS_EASE_LINE}` : null
 
-  const logId = crypto.randomUUID()
-  await db.insert(mtClassLogs).values({ id: logId, sessionId })
+  // One per session (idx_mt_session): a double start keeps the first and answers with it.
+  await db.insert(mtClassLogs).values({ id: crypto.randomUUID(), sessionId }).onConflictDoNothing()
   await db.update(sessions).set({
     status: 'in_progress',
     startedAt: nowSec,
@@ -2236,7 +2244,7 @@ app.post('/api/sessions/:id/start-mt-class', async (c) => {
   }).where(eq(sessions.id, sessionId))
 
   const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId))
-  const [mt] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.id, logId))
+  const [mt] = await db.select().from(mtClassLogs).where(eq(mtClassLogs.sessionId, sessionId))
   return c.json({ session: updated, mtLog: mt, plannedMin: plannedClassMin(updated ?? session), ...(mtNote ? { coach: { note: mtNote } } : {}) })
 })
 

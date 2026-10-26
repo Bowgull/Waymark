@@ -11,6 +11,8 @@ import { logger } from '@/lib/logger'
 import { soundRoundEnd, soundRoundStart } from '@/lib/sounds'
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
 import { newIdempotencyKey } from '@/lib/api'
+import { keepForRetry, runLogWrite } from '@/lib/logWrites'
+import { pendingWrites, queueWrite, type QueueResult } from '@/lib/outboxSync'
 import { enteredOver, heartState, nextZone, ZONE_START, type HrZone, type ZoneTracker } from '@/lib/hrZoneState'
 import { runRecorder, type StrapLink } from '@/lib/runRecorder'
 import { summarizeRecording, type RunRecording } from '@/lib/runRecording'
@@ -408,20 +410,37 @@ export function RunSessionView({
         recRef.current = rec
         await uploadRecording(rec)
       }
-      const res = await apiFetch<{ post?: PostRunFacts | null } | null>(`/api/run-sessions/${runSession.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          // Page 76: the 5K test's time for the 5 km (it sets the next 4 weeks' speeds).
-          ...(hard?.kind === 'test' ? { fiveKSec: parseFiveK(fiveK) } : {}),
-          distanceKm, durationSec, paceSecKm,
-          isIndoor: isIndoor ? 1 : 0,
-          onePaceArc: isIndoor && media === 'one_pace' && onePaceArc ? onePaceArc : undefined,
-          onePaceEp: isIndoor && media === 'one_pace' && onePaceEp ? onePaceEp : undefined,
-          avgHr: Number.isFinite(avgHrNum) ? avgHrNum : undefined,
-          maxHr: Number.isFinite(maxHrNum) ? maxHrNum : undefined,
-          ...(showRunRealityMark ? { shortReason: endReason } : {}),
-        }),
+      const write = runLogWrite(runSession.id, runSession.sessionId ?? null, {
+        // Page 76: the 5K test's time for the 5 km (it sets the next 4 weeks' speeds).
+        ...(hard?.kind === 'test' ? { fiveKSec: parseFiveK(fiveK) } : {}),
+        distanceKm, durationSec, paceSecKm,
+        isIndoor: isIndoor ? 1 : 0,
+        onePaceArc: isIndoor && media === 'one_pace' && onePaceArc ? onePaceArc : undefined,
+        onePaceEp: isIndoor && media === 'one_pace' && onePaceEp ? onePaceEp : undefined,
+        avgHr: Number.isFinite(avgHrNum) ? avgHrNum : undefined,
+        maxHr: Number.isFinite(maxHrNum) ? maxHrNum : undefined,
+        ...(showRunRealityMark ? { shortReason: endReason } : {}),
       })
+      // Sent straight when nothing of this session waits on the phone (its answer carries the
+      // line after SAVE RUN); otherwise, or with no signal, through the outbox behind those
+      // writes and before the finish. Queued, the finish goes on as if saved.
+      let res: { post?: PostRunFacts | null } | null = null
+      let result: QueueResult = 'sent'
+      if (pendingWrites(write.sessionId ?? undefined) === 0) {
+        try {
+          res = await apiFetch<{ post?: PostRunFacts | null } | null>(write.path, { method: write.method, body: JSON.stringify(write.body) })
+        } catch (err) {
+          if (!keepForRetry(err)) throw err
+          result = await queueWrite(write)
+        }
+      } else {
+        result = await queueWrite(write)
+      }
+      if (result === 'rejected') throw new Error('run log refused by the server')
+      if (result === 'queued') {
+        logger.warn('session', 'run log queued', { runSessionId: runSession.id }, 'Run log save failed. Kept on this phone, retrying.')
+        showToast("No connection. Run saved on this phone. It syncs when you're back online.", 'warning')
+      }
 
       // A recorded run can raise his max HR (the ingest's sustained max): say so once.
       const maxHrBumped = recorded ? await checkMaxHrBump(showToast) : false
@@ -482,7 +501,8 @@ export function RunSessionView({
       setSaving(false)
       window.setTimeout(closeSaved, SAVED_MS)
     } catch (e) {
-      console.error('Failed to save run:', e)
+      logger.warn('session', 'run log save failed', { runSessionId: runSession.id, message: e instanceof Error ? e.message : String(e) }, 'PATCH /run-sessions/:id failed. Run not saved.')
+      showToast("Run didn't save. Try again.", 'warning')
       setSaving(false)
     }
   }

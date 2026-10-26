@@ -2,6 +2,9 @@
 // start route per type that Today's ENTER uses, then the session screen.
 import { apiFetch } from '@/lib/api'
 
+/** A start writes the whole workout (strength: the brain's dose, every set), so it gets longer than the 10 s default. */
+export const START_TIMEOUT_MS = 30_000
+
 export const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'bag_conditioning', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
 
 export function startEndpoint(id: string, type: string): string {
@@ -19,16 +22,25 @@ export function startEndpoint(id: string, type: string): string {
   return byType[type] ?? `/api/sessions/${id}/start-strength`
 }
 
+// One start per session at a time: a second tap while one is in flight shares it.
+const starting = new Map<string, Promise<string>>()
+
 /** Starts (or resumes) a session and returns the route to open. Throws when the start route refuses. */
-export async function startSession(s: { id: string; type: string; status: string }): Promise<string> {
-  if (s.status !== 'in_progress') {
-    if (WORKOUT_SESSION_TYPES.includes(s.type)) {
-      await apiFetch(startEndpoint(s.id, s.type), { method: 'POST' })
-    } else {
-      await apiFetch(`/api/sessions/${s.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'in_progress', startedAt: Math.floor(Date.now() / 1000) }) })
+export function startSession(s: { id: string; type: string; status: string }): Promise<string> {
+  const inFlight = starting.get(s.id)
+  if (inFlight) return inFlight
+  const run = (async () => {
+    if (s.status !== 'in_progress') {
+      if (WORKOUT_SESSION_TYPES.includes(s.type)) {
+        await apiFetch(startEndpoint(s.id, s.type), { method: 'POST', timeoutMs: START_TIMEOUT_MS })
+      } else {
+        await apiFetch(`/api/sessions/${s.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'in_progress', startedAt: Math.floor(Date.now() / 1000) }) })
+      }
     }
-  }
-  return `/session/${s.id}`
+    return `/session/${s.id}`
+  })().finally(() => { starting.delete(s.id) })
+  starting.set(s.id, run)
+  return run
 }
 
 /** Today's board, or Program's day board on today: can this row be started from here? */

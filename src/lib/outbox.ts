@@ -183,13 +183,16 @@ export async function flushStoredOutbox(
   const queue = loadOutbox(storage)
   if (queue.length === 0) return { sent: 0, pending: 0, dead: 0 }
   const { queue: remaining, dead, summary } = await flushQueue(queue, send, nowMs, opts)
-  // Writes queued while this flush ran (another tap) must survive the save.
+  // Writes queued while this flush ran (another tap) must survive the save,
+  // and writes dropped while it ran (DISCARD) must stay dropped.
   const latest = loadOutbox(storage)
+  const latestIds = new Set(latest.map(e => e.id))
+  const kept = remaining.filter(e => latestIds.has(e.id))
   const handled = new Set(queue.map(e => e.id))
   const added = latest.filter(e => !handled.has(e.id))
-  saveOutbox(storage, [...remaining, ...added])
+  saveOutbox(storage, [...kept, ...added])
   for (const d of dead) pushDead(storage, d)
-  return { ...summary, pending: remaining.length + added.length }
+  return { ...summary, pending: kept.length + added.length }
 }
 
 /** Test hook: forget the in-memory fallback. */
