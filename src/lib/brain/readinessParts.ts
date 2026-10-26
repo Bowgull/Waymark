@@ -24,6 +24,9 @@
 import { KEY_TYPES } from '../keyTypes'
 import { kgToLbs } from '../units'
 import { patternOf } from './loadLevels'
+import { isLandmine } from '../landmine'
+import { getStrengthTemplate } from '../strengthTemplates'
+import { LIFT_LABELS } from './weekBuilder'
 import type { AthleteModel, ModelCheckIn, ModelSession, ModelSet } from './types'
 
 export type PartKey = 'habit' | 'engine' | 'strength' | 'back'
@@ -57,7 +60,7 @@ export interface ReadinessIn {
   talkTests: ReadonlyArray<{ day: number; bpm: number }>
   /** Days with a back-related ease (a morning cap or an ease that named the back, a back swap). */
   backEaseDays: readonly number[]
-  /** The move once the coach has set it: the Monday Fighter Block 1 starts. */
+  /** The move once the coach has set it: the Monday The Campaign starts. */
   move?: { monday: number; lighterFrom: number } | null
 }
 
@@ -261,8 +264,19 @@ function enginePart(inp: ReadinessIn): ReadinessPart {
 
 // ─── Strength ────────────────────────────────────────────────
 
-const PATTERNS = ['squat', 'hinge', 'press', 'pull'] as const
-type Pattern = (typeof PATTERNS)[number]
+const ALL_PATTERNS = ['squat', 'hinge', 'press', 'pull'] as const
+type Pattern = (typeof ALL_PATTERNS)[number]
+
+/**
+ * The patterns the plan's two lifts train as main lifts (rebuild Phase 2:
+ * Strength A and B only). A pattern no lift trains as a main lift can't hold
+ * the block back; when the lifts gain it (a pull), it counts again.
+ */
+function planPatterns(): Pattern[] {
+  const mains = LIFT_LABELS.flatMap(l => getStrengthTemplate(1, 3, 'block_zero', l).exercises.filter(e => e.section === 'main' && !isLandmine(e.exerciseId)).map(e => patternOf(e.exerciseId)))
+  return ALL_PATTERNS.filter(p => mains.includes(p))
+}
+const PATTERNS: readonly Pattern[] = planPatterns()
 
 /** A short name for a lift ("front squat", "DB RDL", "bench"). */
 export function liftShort(exerciseId: string): string {
@@ -273,7 +287,8 @@ export function liftShort(exerciseId: string): string {
 }
 
 function strengthPart(inp: ReadinessIn): ReadinessPart {
-  const main = inp.sets.filter(s => !s.isWarmup && s.logged && s.section === 'main' && s.day >= inp.blockStart && s.day <= inp.today)
+  // The landmine is a helper with its own numbers (rebuild Phase 5): the big lifts carry the strength part.
+  const main = inp.sets.filter(s => !s.isWarmup && s.logged && s.section === 'main' && !isLandmine(s.exerciseId) && s.day >= inp.blockStart && s.day <= inp.today)
   const status = new Map<Pattern, { in: boolean; known: boolean; kg: number | null; lift: string | null }>()
   for (const p of PATTERNS) {
     const mine = main.filter(s => patternOf(s.exerciseId) === p)
@@ -291,11 +306,11 @@ function strengthPart(inp: ReadinessIn): ReadinessPart {
   const recent = main.filter(s => s.day > inp.today - 28)
   const share = recent.length ? recent.filter(s => s.rir != null).length / recent.length : 0
   const done = PATTERNS.filter(p => status.get(p)!.in)
-  const isIn = done.length === 4 && share >= RIR_LOGGED_SHARE
-  const score = 0.8 * (done.length / 4) + 0.2 * clamp01(share / RIR_LOGGED_SHARE)
+  const isIn = done.length === PATTERNS.length && share >= RIR_LOGGED_SHARE
+  const score = 0.8 * (done.length / PATTERNS.length) + 0.2 * clamp01(share / RIR_LOGGED_SHARE)
   const missing = PATTERNS.filter(p => !status.get(p)!.in)
   let line: string
-  if (isIn) line = 'Squat, hinge, press and pull all have working weights you\'ve done 3 × 8 at.'
+  if (isIn) line = `${listWords([...PATTERNS]).replace(/^./, c => c.toUpperCase())} all have working weights you've done 3 × 8 at.`
   else if (missing.length > 0) line = `${listWords(missing.map(p => p[0].toUpperCase() + p.slice(1)))} to go: 3 × 8 at a weight that leaves a rep or more.`
   else line = `Reps left logged on ${Math.round(share * 100)}% of sets. It needs 9 in 10.`
   const weights = PATTERNS.map(p => status.get(p)!).filter(s => s.in && s.kg != null && s.lift).map((s, i) => `${i === 0 ? liftShort(s.lift!).replace(/^./, c => c.toUpperCase()) : liftShort(s.lift!)} ${kgToLbs(s.kg!)}${i === 0 ? ' lb' : ''}`)
@@ -365,7 +380,7 @@ export function readinessParts(inp: ReadinessIn): ReadinessReport {
   } else if (move) {
     flap = 'READY'
     tone = 'teal'
-    line = `Fighter Block 1 starts ${dayLabel(move.monday)}`
+    line = `The Campaign starts ${dayLabel(move.monday)}`
   } else if (allIn) {
     flap = minMet ? 'READY' : '4 OF 4 IN'
     tone = minMet ? 'teal' : 'gold'
@@ -381,8 +396,8 @@ export function readinessParts(inp: ReadinessIn): ReadinessReport {
     } else line = `${listWords(left.map(p => p.name))} to go`
   }
   const foot = move
-    ? `Fighter Block 1 starts ${dayLabel(move.monday)}. Until then the week is lighter, and its sets give the new starting weights. UNDO on that Monday keeps you in Block Zero.`
-    : 'When all four are in, Fighter Block 1 starts the Monday after, with a lighter week first. You\'ll see it as a rune on that Monday.'
+    ? `The Campaign starts ${dayLabel(move.monday)}. Until then the week is lighter. UNDO on that Monday keeps you in Block Zero.`
+    : 'When all four are in, The Campaign starts the Monday after, with a lighter week first. You\'ll see it as a rune on that Monday.'
   return { week, daysIn, minMet, parts, inCount, allIn, ready, lagging, breakDays, flap, tone, line, foot, move }
 }
 

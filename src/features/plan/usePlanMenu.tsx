@@ -9,6 +9,7 @@ import { sessionDisplayName, type DayBoardSession } from '@/features/dayboard/ro
 import type { ChangeViewIn } from '@/features/coach/changeView'
 import type { PickAction } from '@/lib/coach'
 import type { BagSpec } from '@/lib/coach/bagArc'
+import type { Level } from '@/lib/brain/doses'
 import { prefetchBagPool } from '@/features/combos/combosClient'
 
 import { ActBody, Cmd, PicksBody, RuneBody, WhyBody, type PickRow, type ReasonChoice } from './CommandWindow'
@@ -25,7 +26,7 @@ import { BagBuilder } from './BagBuilder'
 const REPLACE_WHY: ReadonlyArray<ReasonChoice> = REPLACE_WHY_TILES.map(t => ({ label: t.label, code: t.value }))
 const SKIP_WHY: ReadonlyArray<ReasonChoice> = SKIP_WHY_TILES.map(t => ({ label: t.label, code: t.value }))
 
-interface CoachPickJson extends PickRow { timeSlot: 'am' | 'pm'; flexibleTimeSlot: boolean; action?: PickAction; bag?: { rounds: number; finishers: boolean } }
+interface CoachPickJson extends PickRow { timeSlot: 'am' | 'pm'; flexibleTimeSlot: boolean; action?: PickAction; bag?: { rounds: number; finishers: boolean; level?: Level | null } }
 
 type Win =
   | { kind: 'act'; s: DayBoardSession; anchor: DOMRect }

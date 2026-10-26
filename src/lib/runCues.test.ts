@@ -73,8 +73,9 @@ assert.equal(segs.length, 14)
 }
 // Steady hard: "Halfway." in the middle.
 {
-  const st = hardPlan({ kind: 'steady', weeksSince: 1, fiveK: null, easyPaceSecKm: null, maxHr: null, lineBpm: 147, ease: false, capSec: null }).plan
+  const st = hardPlan({ kind: 'steady', weeksSince: 0, fiveK: null, easyPaceSecKm: null, maxHr: null, lineBpm: 147, ease: false, capSec: null }).plan
   const cues = hardCues(hardSegments(st), false, null)
+  // 15 min the first week after the speeds were set (page 93: 15 to 20 min).
   assert.ok(cues.some(c => c.clips.includes('halfway') && c.atSec === 600 + 450))
 }
 // The test: its 5 km counts up until he finishes it; the cues stop there and come again after.

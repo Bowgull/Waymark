@@ -22,6 +22,8 @@ export type ResumeEngine =
   | 'skip_rope'
   | 'active_recovery'
   | 'mt_class'
+  /** Page 93: Bag Conditioning (its interval clock is kept as the finisher's: kind 'finisher'). */
+  | 'bag_conditioning'
 
 /** A countdown. Running stores its end; paused stores what was left. */
 export type TimerSnap =
@@ -117,7 +119,7 @@ export const STALE_CUE_MS = 2000
 const NON_RESUMABLE_PHASES = new Set(['entrance'])
 
 const ENGINES = new Set<ResumeEngine>([
-  'strength', 'bag_work', 'mobility', 'foundation_run', 'running', 'skip_rope', 'active_recovery', 'mt_class',
+  'strength', 'bag_work', 'mobility', 'foundation_run', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'bag_conditioning',
 ])
 
 export function resumeKey(sessionId: string): string {

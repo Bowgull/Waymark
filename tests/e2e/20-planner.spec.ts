@@ -75,7 +75,8 @@ test('Program: the week as a day list, one day open at a time, a session opens t
   const days = page.getByRole('list', { name: 'Days of the week' })
   await expect(days.getByRole('listitem')).toHaveCount(7, { timeout: 20_000 })
   await expect(page.getByRole('tablist', { name: 'Weeks' }).getByRole('tab')).toHaveCount(2)
-  await expect(page.locator('.pg-wsub')).toHaveText(/^Block Zero · (week \d+|lead-in)$/)
+  // Page 93: the line under THIS WEEK is the app's own week line ("Week 3. ...").
+  await expect(page.locator('.pg-wsub')).toHaveText(/^Week \d+\. |^Block Zero · (week \d+|lead-in)$/)
   // Gone: the week numbers, "of 6", RPE copy, Prev / Next.
   await expect(page.locator('.pg-week')).not.toContainText(/ of \d|RPE|Prev|Next ›|Not prepared/)
   // Today's date on a gold flap, the cursor on it.

@@ -6,8 +6,10 @@ import { loadSummary, type SummaryData } from '@/features/dayboard/summaryData'
 import { iconFor, rowStatus, sessionDisplayName, type DayBoardSession } from '@/features/dayboard/rowState'
 import type { RuneState } from '@/lib/coach/changes'
 import { tapHaptic } from '@/lib/haptics'
+import { runNameLine } from '@/lib/runNameLine'
 import { useTreadmillUnit } from '@/lib/treadmillUnit'
 
+import { Cmd } from './CommandWindow'
 import { PixelCursor } from './PixelCursor'
 import { planLines, type LinesOpts } from './planLines'
 import './plan.css'
@@ -83,6 +85,9 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
   const skipped = status === 'skipped'
   const done = status === 'done'
   const name = sessionDisplayName(s).toUpperCase()
+  // Page 93: on an open run row, a tap on its name shows one plain line (tap away to close).
+  const nameLine = s.type === 'foundation_run' || s.type === 'running' ? runNameLine(name) : null
+  const [say, setSay] = useState<{ anchor: DOMRect; closing: boolean } | null>(null)
 
   // The lines, read once the row first opens (the summary's own endpoints).
   const key = `${s.id}:${s.status}`
@@ -103,6 +108,9 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
     window.clearTimeout(hold.current.t)
     hold.current = null
   }
+
+  // Page 93: a line with a why (the PRESS line) opens one plain line in the command window; a tap away closes it.
+  const [explain, setExplain] = useState<{ label: string; text: string; anchor: DOMRect; closing: boolean } | null>(null)
 
   const ready = data?.key === key
   // Page 76: every speed and pace follows the treadmill unit in Settings.
@@ -144,13 +152,27 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
         role="button"
         tabIndex={0}
         aria-expanded={open}
-        onClick={() => { if (held.current) { held.current = false; return } onTap() }}
+        onClick={e => {
+          if (held.current) { held.current = false; return }
+          if (open && nameLine && e.target instanceof Element && e.target.closest('.nmw')) {
+            const hit = e.currentTarget.getBoundingClientRect()
+            setSay({ anchor: hit, closing: false })
+            return
+          }
+          onTap()
+        }}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap() } }}
       >
         <SessionIcon kind={iconFor(s)} size={40} label={name} />
-        <span className="pl-nm"><span className="nmw"><FlapLabel text={name} size="md" len={11} /></span></span>
+        <span className="pl-nm"><span className="nmw"><FlapLabel text={name} size={name.length > 11 ? 'sm' : 'md'} len={name.length > 11 ? undefined : 11} /></span></span>
         <span className="pl-mins">{mins}</span>
       </div>
+      {say && nameLine && (
+        <Cmd anchor={say.anchor} place="below" closing={say.closing} onLeft={() => setSay(null)} onDismiss={() => setSay(x => x && { ...x, closing: true })} label={name}>
+          <div className="pl-hdr"><FlapLabel text={name} size="xs" tone="gold" animate={false} /></div>
+          <p className="pl-say">{nameLine}</p>
+        </Cmd>
+      )}
       <Expand open={open} className="pl-ols">
         <div className="pl-lines" onClick={e => e.stopPropagation()}>
           {change && !skipped && (
@@ -161,14 +183,28 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
           )}
           {!ready && <div className="pl-ol"><span className="lb" /><span className="v is-dim">Reading the plan.</span></div>}
           {lines.map((l, i) => (
-            <div key={`${l.label}-${i}`} className="pl-ol">
+            <div
+              key={`${l.label}-${i}`}
+              className="pl-ol"
+              {...(l.explain ? {
+                role: 'button', tabIndex: 0, 'aria-label': `${l.label}: why`, style: { cursor: 'pointer' },
+                onClick: (e: React.MouseEvent<HTMLDivElement>) => { void tapHaptic(); setExplain({ label: l.label, text: l.explain!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) },
+                onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExplain({ label: l.label, text: l.explain!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) } },
+              } : {})}
+            >
               <span className="lb">{l.label}</span>
-              <span className="v">{l.value}{l.tick && <> <b className="ck">✓</b></>}{l.mark === 'up' && <> <b className="up">↑</b></>}{l.mark === 'down' && <> <b className="dn">↓</b></>}</span>
+              <span className="v">{l.value}{l.tick && <> <b className="ck">✓</b></>}{l.mark === 'up' && <> <b className="up">↑</b></>}{l.mark === 'down' && <> <b className="dn">↓</b></>}{l.explain && <> <b className="pl-more">›</b></>}</span>
             </div>
           ))}
           {extra}
         </div>
       </Expand>
+      {explain && (
+        <Cmd anchor={explain.anchor} place="below" closing={explain.closing} onLeft={() => setExplain(null)} onDismiss={() => setExplain(x => (x ? { ...x, closing: true } : x))} label={`${explain.label}: why`}>
+          <div className="pl-hdr"><FlapLabel text={explain.label} size="xs" tone="gold" animate={false} /></div>
+          <p className="pl-say">{explain.text}</p>
+        </Cmd>
+      )}
     </div>
   )
 }

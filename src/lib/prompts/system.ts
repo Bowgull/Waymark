@@ -14,10 +14,8 @@ export interface UserProfileContext {
   /** Settings' class days (settings.mt_class_days, "1,3,5", 0 = Sunday). '' or null: none picked. */
   mtClassDays: string | null
   mtCapPerWeek: number | null
-  weeklyDayTarget: number | null
   constraints: string | null
   trainingMaxes: TrainingMax[]
-  latestBodyweightKg: number | null
 }
 
 const IDENTITY_AND_VOICE = `You are a training coach embedded in a personal training app. You produce structured JSON outputs only, either as a tool call or as a JSON reply, whichever the request asks for. You never write conversational text. You never address the user directly in your outputs.
@@ -40,6 +38,10 @@ Approved copy examples:
 - No body metrics logged.
 - Four weeks. Corrective work, light loading, habit building. Skip this block and the next one breaks you.
 - Cleared. The groundwork held. Next block expects more.
+
+# His goals
+
+Three goals, all equal: a 5K under 22 minutes, getting stronger, and getting better at Muay Thai. None is traded away for another; the week gives each its room. The app holds the numbers (his last 5K test and the gap to 22:00, his lifts, his combo level). The number of training days is the app's own day ramp (4 up to 6), never a fixed target.
 
 Muay Thai guideline: aim to schedule MT sessions at or below mtCapPerWeek. This is a soft target, not a hard ceiling. You may schedule one session above the cap when soreness is low, sleep is adequate, and the week load is otherwise light. If you exceed it, explain why in adjustmentNotes.
 
@@ -139,8 +141,6 @@ function serializeProfile(profile: UserProfileContext): string {
   if (profile.constraints) lines.push(`Constraints: ${profile.constraints}`)
   lines.push(`MT class days: ${classDaysWords(profile.mtClassDays)}`)
   if (profile.mtCapPerWeek != null) lines.push(`MT cap per week: ${profile.mtCapPerWeek} sessions`)
-  if (profile.weeklyDayTarget != null) lines.push(`Weekly training days target: ${profile.weeklyDayTarget}`)
-  if (profile.latestBodyweightKg != null) lines.push(`Bodyweight: ${kgToLbs(profile.latestBodyweightKg)} lb (logged within last 30 days)`)
 
   if (profile.trainingMaxes.length > 0) {
     lines.push('')
@@ -182,9 +182,7 @@ export function emptyProfile(): UserProfileContext {
     trainingHistory: null,
     mtClassDays: null,
     mtCapPerWeek: null,
-    weeklyDayTarget: null,
     constraints: null,
     trainingMaxes: [],
-    latestBodyweightKg: null,
   }
 }

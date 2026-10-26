@@ -1,11 +1,20 @@
-// Hard runs toward the 5K (page 76, approved by Josh 2026-10-23).
+// Hard runs toward the 5K (page 76, approved 2026-10-23; rebuild
+// Phase 3, page 93).
 //
 // - Goal: 5 km under 22:00.
-// - Weeks 1 to 3 of the block: every run easy (Zone 2 at his line; the run
-//   keeps the name its dose gives it).
-// - From week 4: two hard runs a week, the rest easy (about 80/20). One
-//   TEMPO (about 15 min at a speed that's hard but holdable) and one
-//   RUN HARD / EASY JOG (2 min hard, 2 min jog, 5 to 8 times).
+// - Weeks 1 to 3: every run easy (Zone 2 at his line; the run keeps the name
+//   its dose gives it). Hard runs once he runs 10 minutes straight.
+// - How many follows how often he runs (the week builder's day step): one
+//   hard run a week while he runs 3 times a week, the second at 4. Below 3
+//   runs, none. The rest easy, so the running stays mostly easy (with 3 runs
+//   and one hard, by time about four fifths of it). TEMPO: steady and hard,
+//   15 to 20 min in the middle. INTERVALS: 2 min hard, 2 min jog, 5 to 8 times.
+// - Hard runs are judged on their own targets (done in full, heart under
+//   their top), never against the easy line, so easy runs keep growing.
+// - A missed hard run is just missed: it never turns the week's easy run hard.
+// - Between tests the Tempo and Intervals speeds nudge up 1.5% after two hard
+//   runs in a row done in full well inside their range (heart 5 or more under
+//   the top), 3% at most. Heart rate only: no strap, no nudge. A test resets them.
 // - A 5K test when he is ready and the week allows (Josh, 2026-10-23: not a
 //   fixed slot): from week 4, about 3+ weeks after the last test (or after
 //   hard runs began), his recent hard runs done at their speeds and under the
@@ -13,9 +22,7 @@
 //   the day after a class or another hard day. Typically every 4 to 6 weeks.
 //   It takes one hard run's place as a coach change (rune, KEEP, UNDO). Its
 //   time sets the speeds (and outdoor paces) after it.
-// - MT classes and bag work are hard days too: a week with two or more of
-//   them is a heavy week and keeps one hard run. A tired week keeps one hard
-//   run as well, never none.
+// - A tired week keeps one hard run, never none.
 // - Every piece has a treadmill speed and incline 1; outside, the same speed
 //   is a pace to hold.
 // - Hard runs have their own heart range: teal in range, gold near the top,
@@ -116,6 +123,8 @@ export interface WeekRun {
   status: 'planned' | 'done' | 'gone'
   /** His own pick or move, held by an UNDO, started, or a past day: the coach leaves its kind. */
   fixed: boolean
+  /** The week's longer Zone 2 Run: it stays easy while another run can be the hard one. */
+  long?: boolean
 }
 
 export interface WeekRunsIn {
@@ -137,6 +146,13 @@ export interface WeekRunsIn {
   busyDays?: number[]
   /** Weeks since the speeds were set: one hard run alternates by it. */
   weeksSince?: number
+  /**
+   * The most hard runs the week builder left room for (the day step and the
+   * hard-day cap; rebuild Phase 2). Missing: the plan's two.
+   */
+  maxHard?: number | null
+  /** Heavy-leg lifts (day and slot): no hard run in the 48 h after one (rebuild Phase 2). */
+  liftAt?: ReadonlyArray<{ day: number; slot: 'am' | 'pm' }>
 }
 
 export interface WeekRunsOut {
@@ -153,46 +169,59 @@ export interface WeekRunsOut {
 
 const isHard = (k: WeekRunKind) => k !== 'easy'
 
-/** The hard runs the week aims for: none before week 4, two, one on a heavy or tired week (never none). */
-export function hardTarget(week: number, heavy: boolean, tired: boolean): number {
+/**
+ * The hard runs the week aims for: none before week 4, two, one on a heavy or
+ * tired week (never none), and never more than the week builder left room
+ * for (1 at 3 runs a week, 2 at 4; none below 3 runs).
+ */
+export function hardTarget(week: number, heavy: boolean, tired: boolean, maxHard: number | null = null): number {
   if (!hardWeek(week)) return 0
-  return heavy || tired ? 1 : 2
+  const n = heavy || tired ? 1 : 2
+  return maxHard == null ? n : Math.min(n, Math.max(0, maxHard))
 }
+
+/** Hours from a lift to a morning run on `day` (SLOT: am 8, pm 18). */
+const liftToRunH = (lift: { day: number; slot: 'am' | 'pm' }, day: number) => (day * 24 + 8) - (lift.day * 24 + (lift.slot === 'pm' ? 18 : 8))
 
 /** Two or more classes and bag sessions in the week: a heavy week. */
 export function heavyWeek(classDays: readonly number[], bagDays: readonly number[]): boolean {
   return classDays.length + bagDays.length >= 2
 }
 
-function pickHard(runs: WeekRun[], need: number, fixedHardDays: number[], hardDays: readonly number[]): WeekRun[] {
+function pickHard(runs: WeekRun[], need: number, fixedHardDays: number[], hardDays: readonly number[], liftAt: ReadonlyArray<{ day: number; slot: 'am' | 'pm' }> = []): WeekRun[] {
   if (need <= 0) return []
-  const free = runs.filter(r => r.status === 'planned' && !r.fixed).sort((a, b) => a.day - b.day)
-  if (free.length <= need) return free
+  // Never in the 48 h after heavy legs (a lift that evening, after the run, is a doubled morning: fine).
+  const rested = (r: WeekRun) => !liftAt.some(l => { const h = liftToRunH(l, r.day); return h > 0 && h < 48 })
+  const free = runs.filter(r => r.status === 'planned' && !r.fixed && rested(r)).sort((a, b) => a.day - b.day)
+  // Never two hard runs on back-to-back days (review T4): a set with one is not a choice.
+  const apart = (set: WeekRun[]) => {
+    const days = [...fixedHardDays, ...set.map(r => r.day)].sort((a, b) => a - b)
+    return days.every((d, i) => i === 0 || d - days[i - 1] >= 2)
+  }
   const cost = (set: WeekRun[]) => {
     const days = [...fixedHardDays, ...set.map(r => r.day)].sort((a, b) => a - b)
     let c = 0
     for (const r of set) {
+      if (r.long) c += 5
       if (hardDays.includes(r.day)) c += 2
       if (hardDays.includes(r.day - 1)) c += 1
     }
-    for (let i = 1; i < days.length; i++) {
-      const gap = days[i] - days[i - 1]
-      if (gap < 2) c += 3
-      c -= gap * 0.1
-    }
+    for (let i = 1; i < days.length; i++) c -= (days[i] - days[i - 1]) * 0.1
     // An earlier first pick breaks a tie.
-    c += set.reduce((n, r) => n + (r.day - free[0].day) * 0.001, 0)
+    c += set.reduce((n, r) => n + (r.day - (free[0]?.day ?? 0)) * 0.001, 0)
     return c
   }
   let best: WeekRun[] = []
   let bestCost = Infinity
-  if (need === 1) {
-    for (const a of free) { const c = cost([a]); if (c < bestCost) { best = [a]; bestCost = c } }
-  } else {
-    for (let i = 0; i < free.length; i++) for (let j = i + 1; j < free.length; j++) {
-      const c = cost([free[i], free[j]])
-      if (c < bestCost) { best = [free[i], free[j]]; bestCost = c }
-    }
+  const sets: WeekRun[][] = []
+  for (let i = 0; i < free.length; i++) {
+    sets.push([free[i]])
+    if (need >= 2) for (let j = i + 1; j < free.length; j++) sets.push([free[i], free[j]])
+  }
+  // The most hard runs that fit, then the cheapest.
+  for (const set of sets.filter(apart).filter(x => x.length <= need)) {
+    const c = cost(set) - set.length * 100
+    if (c < bestCost) { best = set; bestCost = c }
   }
   return best
 }
@@ -203,11 +232,13 @@ function assign(inp: WeekRunsIn, target: number, withTest: boolean): { kinds: Re
   for (const r of inp.runs) out[r.id] = r.fixed || r.status !== 'planned' ? r.kind : 'easy'
   if (target === 0) return { kinds: out, testId: null }
   const fixedHard = live.filter(r => (r.fixed || r.status === 'done') && isHard(r.kind))
-  const chosen = pickHard(live, target - fixedHard.length, fixedHard.map(r => r.day), [...inp.classDays, ...inp.bagDays])
+  // A missed or skipped hard run is just missed: it still fills its place, so the week's easy run stays easy.
+  const goneHard = inp.runs.filter(r => r.status === 'gone' && isHard(r.kind))
+  const chosen = pickHard(live, target - fixedHard.length - goneHard.length, fixedHard.map(r => r.day), [...inp.classDays, ...inp.bagDays], inp.liftAt ?? [])
   // The kinds the week wants: steady hard, then run hard / jog; one hard run alternates week to week.
   const one: HardKind = (inp.weeksSince ?? inp.week) % 2 === 1 ? 'steady' : 'intervals'
   const want: HardKind[] = target >= 2 ? ['steady', 'intervals'] : [one]
-  const have = new Set(fixedHard.map(r => r.kind))
+  const have = new Set([...fixedHard, ...goneHard].map(r => r.kind))
   const left = want.filter(k => !have.has(k))
   const sorted = chosen.sort((a, b) => a.day - b.day)
   for (const r of sorted) out[r.id] = left.shift() ?? 'intervals'
@@ -237,11 +268,14 @@ function assign(inp: WeekRunsIn, target: number, withTest: boolean): { kinds: Re
  * class or bag session where the week allows.
  */
 export function planWeekRuns(inp: WeekRunsIn): WeekRunsOut {
-  const heavy = heavyWeek(inp.classDays, inp.bagDays)
-  const target = inp.hold ? 0 : hardTarget(inp.week, heavy, inp.tired)
+  // With the week builder's room (maxHard) the hard-day cap already counted the classes and hard bag
+  // work: a heavy week doesn't take a hard run off again (rebuild Phase 2). A tired week still does.
+  const heavy = inp.maxHard == null && heavyWeek(inp.classDays, inp.bagDays)
+  const max = inp.maxHard ?? null
+  const target = inp.hold ? 0 : hardTarget(inp.week, heavy, inp.tired, max)
   const placed = assign(inp, target, !!inp.test && target > 0)
-  const baseline = assign(inp, hardTarget(inp.week, false, false), false).kinds
-  const fewer = target < hardTarget(inp.week, false, false)
+  const baseline = assign(inp, hardTarget(inp.week, false, false, max), false).kinds
+  const fewer = target < hardTarget(inp.week, false, false, max)
   const n = inp.classDays.length + inp.bagDays.length
   const why = !fewer ? null : inp.hold ? inp.hold : inp.tired
     ? 'A tired week: one hard run, the rest easy.'
@@ -349,9 +383,9 @@ export function repsFor(weeksSince: number): number {
   return Math.min(8, 5 + weekIndex(weeksSince))
 }
 
-/** Steady hard minutes: 13, 15, 17, 19 through the weeks after the speeds were set. */
+/** Steady hard minutes (page 93: "15 to 20 minutes of it in the middle"): 15, 17, 19, 20 through the weeks after the speeds were set. */
 export function steadyMinFor(weeksSince: number): number {
-  return 13 + 2 * weekIndex(weeksSince)
+  return Math.min(20, 15 + 2 * weekIndex(weeksSince))
 }
 
 export function piecesFor(kind: HardKind, sp: HardSpeeds, reps: number, steadyMin: number, warmSec = WARM_SEC): HardPiece[] {
@@ -367,6 +401,49 @@ export function piecesFor(kind: HardKind, sp: HardSpeeds, reps: number, steadyMi
 
 export const totalOf = (pieces: readonly HardPiece[]) => pieces.reduce((n, p) => n + p.sec, 0)
 
+// ─── Speeds that move between tests (rebuild Phase 3) ────────
+
+/** One nudge: 1.5% faster. At most two between tests (3%); a test resets them. */
+export const NUDGE_STEP = 0.015
+export const NUDGE_MAX = 2
+/** Well inside the range: the highest heart rate this far under the top (heart rate only, 2026-10-26). */
+export const NUDGE_UNDER_BPM = 5
+
+export interface HardResult {
+  day: number
+  kind: 'tempo' | 'intervals' | '5k_test'
+  completed: boolean
+  maxHr: number | null
+  top: number | null
+  rpe: number | null
+}
+
+/** A hard run done in full, well inside its range: its highest heart rate 5 or more under the top. No heart data: never. */
+export function wellInside(r: HardResult): boolean {
+  if (!r.completed || r.maxHr == null || !(r.maxHr > 0) || r.top == null) return false
+  return r.maxHr <= r.top - NUDGE_UNDER_BPM
+}
+
+/**
+ * Nudges since the speeds were set: one for each two hard runs in a row done
+ * well inside their range (Tempo and Intervals after `sinceDay`; the pair then
+ * starts again), two at most. A run that wasn't resets the pair.
+ */
+export function nudgesSince(results: readonly HardResult[], sinceDay: number | null): number {
+  let n = 0
+  let inRow = 0
+  for (const r of [...results].sort((a, b) => a.day - b.day)) {
+    if (r.kind === '5k_test' || (sinceDay != null && r.day <= sinceDay)) continue
+    if (wellInside(r)) { inRow++; if (inRow === 2) { n++; inRow = 0 } } else inRow = 0
+  }
+  return Math.min(NUDGE_MAX, n)
+}
+
+/** The 5K the hard-run speeds come from after `nudges`: each one 1.5% faster. */
+export function nudgedFiveKSec(fiveKSec: number, nudges: number): number {
+  return Math.round(fiveKSec / (1 + NUDGE_STEP * Math.max(0, Math.min(NUDGE_MAX, nudges))))
+}
+
 export interface HardDoseIn {
   kind: HardKind
   /** Weeks since the speeds were set (the last test, or the first hard run). */
@@ -380,14 +457,19 @@ export interface HardDoseIn {
   ease: boolean
   /** The run caps (110% of the longest run in 30 days, the week's budget): fewer reps or minutes to fit. */
   capSec: number | null
+  /** Nudges since the speeds were set (nudgesSince): Tempo and Intervals 1.5% faster each. Never the test. */
+  nudges?: number
 }
 
 /** One hard run's plan: its pieces at the test's speeds, the heart range, and why it is shorter when it is. */
 export function hardPlan(inp: HardDoseIn): { plan: HardPlan; why: string[] } {
-  const fiveKSec = inp.fiveK?.sec ?? estimateFiveKSec(inp.easyPaceSecKm)
+  const baseSec = inp.fiveK?.sec ?? estimateFiveKSec(inp.easyPaceSecKm)
+  const nudges = inp.kind === 'test' ? 0 : Math.max(0, Math.min(NUDGE_MAX, inp.nudges ?? 0))
+  const fiveKSec = nudgedFiveKSec(baseSec, nudges)
   const easyKmh = inp.easyPaceSecKm && inp.easyPaceSecKm > 0 ? 3600 / inp.easyPaceSecKm : null
   const speeds = speedsFrom(fiveKSec, easyKmh)
   const why: string[] = []
+  if (nudges > 0) why.push(nudges === 1 ? 'A little faster: your last two hard runs sat well inside their range.' : 'A little faster again: your hard runs keep sitting well inside their range.')
   let reps = repsFor(inp.weeksSince)
   let steadyMin = steadyMinFor(inp.weeksSince)
   if (inp.ease && inp.kind !== 'test') {

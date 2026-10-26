@@ -6,7 +6,6 @@ import { eq } from 'drizzle-orm'
 import { coachingOutputs, exercises, settings, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInputs } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
-import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_INSIGHT, type InsightOutput } from './prompts/tools'
 import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
 import type { createDB } from '../db/client'
@@ -149,7 +148,6 @@ export async function runLedgerInsights(
     db.select({ mtClassDays: settings.mtClassDays }).from(settings).limit(1).then(rows => rows[0] ?? null),
   ])
 
-  const latestBodyweightKg = await getLatestBodyweightKg(db)
 
   const profile: UserProfileContext = {
     goals: profileRow?.goals ?? null,
@@ -158,10 +156,8 @@ export async function runLedgerInsights(
     trainingHistory: profileRow?.trainingHistory ?? null,
     mtClassDays: settingsRow?.mtClassDays ?? null,
     mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
-    weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
     trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
-    latestBodyweightKg,
   }
 
   const systemBlocks = buildSystemPrompt(profile, null)

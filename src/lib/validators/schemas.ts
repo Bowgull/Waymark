@@ -14,6 +14,12 @@ export const completeSessionSchema = z.object({
   roundSecs: z.array(z.number().int().min(0).max(3600)).max(40).optional(),
   // Ended early (bag work, rope): the one-tap reason. "no_time" holds the next dose; it never reads as too hard.
   endReason: z.enum(['no_time', 'rough', 'pain', 'other']).nullable().optional(),
+  // Bag Conditioning (page 93): each timer part done or skipped (null: never reached); checked again by parseConditioningLog.
+  conditioningLog: z.object({
+    parts: z.array(z.enum(['done', 'skipped']).nullable()).max(400),
+    ended: z.boolean().optional(),
+    at: z.number().int().min(0).optional(),
+  }).optional(),
   // Bag work's finisher (page 86): each set done or skipped, with its goal and time; checked again by parseFinisherLog.
   finisherLog: z.object({
     readiness: z.enum(['low', 'ok', 'high']),

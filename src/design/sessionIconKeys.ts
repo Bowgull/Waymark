@@ -29,6 +29,8 @@ export function sessionIconFor(type: string, runCategory?: string | null): Sessi
   switch (type) {
     case 'strength': return 'strength'
     case 'bag_work': return 'bag'
+    // page 93: Bag Conditioning keeps the bag
+    case 'bag_conditioning': return 'bag'
     case 'mt_class': return 'mt'
     case 'foundation_run': return 'zone2'
     case 'running': return runCategory === 'zone2' || runCategory == null ? 'zone2' : 'run'

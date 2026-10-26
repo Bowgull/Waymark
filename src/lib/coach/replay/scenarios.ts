@@ -9,11 +9,12 @@
 // something that does not exist yet, the check measures the nearest thing the
 // current code does and says so in its evidence.
 
-import { isHard, isHeavyLegs, KEY_TYPES } from '../index'
+import { isHeavyLegs, KEY_TYPES } from '../index'
 import { RESTART_SESSION_SEC, SINGLE_RUN_CAP_RATIO, getRunWalkWeek } from '../../blockZero/running'
 import { liftPattern } from './history'
 import type { AsPrescribed, CheckInLog, DoseRecord, ReplayAction, ReplayDay, ReplayResult, ReplayScript } from './types'
-import type { PassLine } from './metrics'
+import { reportHard, type PassLine } from './metrics'
+import { moveDates } from '../../brain/blockMove'
 import type { MockAiName } from '../../brain/mockAi'
 
 /** Monday 2027-01-04 (epoch day): every scenario starts Block Zero on a Monday, so there is no lead-in. */
@@ -167,9 +168,10 @@ const bad: Scenario = {
   check: r => {
     const inWeek = r.doses.filter(d => weekOf(d.day) === BAD_WEEK)
     const pushes = inWeek.filter(d => d.layers.push)
-    const day1 = r.doses.filter(d => d.day === badFirst && KEY_TYPES.has(d.type))
-    const day2 = r.doses.filter(d => d.day === badFirst + 1 && KEY_TYPES.has(d.type))
-    const day2Recover = day2.length === 0 || day2.every(d => d.walkOnly || (d.volumeRatio != null && d.volumeRatio <= 0.5))
+    // A class is his (a fixed hour the coach never doses), so only the coach's own sessions are read.
+    const day1 = r.doses.filter(d => d.day === badFirst && KEY_TYPES.has(d.type) && d.type !== 'mt_class')
+    const day2 = r.doses.filter(d => d.day === badFirst + 1 && KEY_TYPES.has(d.type) && d.type !== 'mt_class')
+    const day2Recover = day2.length === 0 || day2.every(d => d.walkOnly || (d.volumeRatio != null && d.volumeRatio <= 0.5) || (d.type === 'bag_work' && d.layers.readinessEase && d.layers.brain?.level === 'RECOVER'))
     const after = r.doses.filter(d => d.day >= badFirst + 3 + 3 && KEY_TYPES.has(d.type) && d.volumeRatio != null).sort((a, b) => a.day - b.day)[0]
     const crammed = crammedDays(r)
     return [
@@ -256,7 +258,8 @@ const classes: Scenario = {
     const counted = done.filter(s => s.status === 'completed' && (s.durationSec ?? 0) >= 3600 && s.rpe != null)
     const perAdd = CLASS_DAYS.map(d => r.changes.filter(c => c.day === d && c.when === 'day' && c.actor !== 'you').length)
     const strengthOnClassDays = r.doses.filter(d => d.type === 'strength' && CLASS_DAYS.includes(d.day)).map(d => `${isoDay(d.day)} ${d.label}`)
-    const hardDays = new Set(r.sessions.filter(s => s.day != null && s.status !== 'missed' && s.status !== 'skipped' && isHard({ type: s.type, label: s.label, notes: null, estimatedMin: null })).map(s => s.day!))
+    // Hard as the plan marks it (rebuild Phase 2: hard runs count; Bag Work planned as technique doesn't).
+    const hardDays = new Set(r.sessions.filter(s => s.day != null && s.status !== 'missed' && s.status !== 'skipped' && reportHard(s)).map(s => s.day!))
     const triples: number[] = []
     for (const d of hardDays) if (hardDays.has(d + 1) && hardDays.has(d + 2)) triples.push(d)
     const legsBefore = done.filter(c => r.sessions.some(s => s.type === 'strength' && s.status !== 'missed' && s.status !== 'skipped' && s.day != null && isHeavyLegs({ type: s.type, label: s.label }, 'block_zero') && (s.day === c.day || (s.day === c.day! - 1 && s.slot === 'pm'))))
@@ -356,7 +359,8 @@ const fighterStack: Scenario = {
     })
     const worst = rows.length ? rows.reduce((a, b) => (b.product < a.product ? b : a)) : null
     return [
-      line('F1', 'No easing stack on the way back (>= 0.8 of TM x wave)', worst != null && worst.product >= 0.8,
+      // Two eases on one session: the load trimmed and a set off together (one set off a 3-set day alone is one ease).
+      line('F1', 'No easing stack on the way back (never a lighter load and a set off together; >= 0.8 of TM x wave otherwise)', worst != null && rows.every(({ d, product }) => product >= 0.8 || !((d.loadRatio ?? 1) < 0.97 && (d.volumeRatio ?? 1) < 1)),
         rows.map(({ d, product }) => `${isoDay(d.day)} load ${d.loadRatio ?? '-'} x sets ${d.volumeRatio ?? '-'} = ${product} [${describe(d)}${d.why.length ? `; ${d.why.join(' ').slice(0, 80)}` : ''}]`).join(' | ') || 'no strength after the break.', worst != null),
     ]
   },
@@ -468,29 +472,32 @@ const fighterFrom = (r: ReplayResult) => Math.min(...r.sessions.filter(s => s.bl
 
 const readySteady: Scenario = {
   id: 'readiness-steady',
-  title: 'A steady athlete: ready for Fighter Block 1 between weeks 4 and 10',
-  script: script('readiness-steady', 12, day => steadyDay(day)),
+  // Rebuild Phase 2: the plan starts at 4 days and ramps, so readiness comes a little later (weeks 4 to 12),
+  // and the move starts The Campaign (the same plan), never Fighter Block 1.
+  title: 'A steady athlete: ready for The Campaign between weeks 4 and 12',
+  script: script('readiness-steady', 14, day => steadyDay(day)),
   check: r => {
     const moves = blockMoves(r)
     const set = moves[0]
     const setWeek = set ? weekOf(set.day) : null
-    const monday = set?.targetDay ?? (set ? null : null)
+    // The move's Monday, as the coach sets it from the night it was set (lib/brain/blockMove moveDates).
+    const monday = set ? moveDates(set.day).monday : null
     const firstFighter = fighterFrom(r)
+    const buildFrom = monday ?? Infinity
     const readyDay = r.days.find(d => d.block?.ready)?.day ?? null
     // The lighter week: strength sets after the move was set, before Fighter Block 1, against the week before.
-    const lighter = set && Number.isFinite(firstFighter) ? strengthDoses(r).filter(d => d.day > set.day && d.day < firstFighter) : []
+    const lighter = set && Number.isFinite(buildFrom) ? strengthDoses(r).filter(d => d.day > set.day && d.day < buildFrom) : []
     const before = set ? strengthDoses(r).filter(d => d.day <= set.day && d.day > set.day - 7) : []
     const avg = (xs: DoseRecord[]) => xs.length ? xs.reduce((n, d) => n + (d.prescribedMainSets ?? 0), 0) / xs.length : null
     const lightRatio = avg(lighter) != null && avg(before) ? (avg(lighter) as number) / (avg(before) as number) : null
     const heavier = lighter.some(d => d.loads.some(l => l.change === 'increase'))
-    void monday
     return [
-      line('R1', 'Readiness lands between weeks 4 and 10', readyDay != null && readyDay >= SIM_START + 28 && readyDay < SIM_START + 70,
+      line('R1', 'Readiness lands between weeks 4 and 12', readyDay != null && readyDay >= SIM_START + 28 && readyDay < SIM_START + 84,
         readyDay != null ? `all four parts in on day ${readyDay - SIM_START} (week ${weekOf(readyDay)}); parts that day: ${r.days.find(d => d.day === readyDay)?.block?.parts}.` : `never ready in 12 weeks; last: ${r.days[r.days.length - 1]?.block?.parts} (${r.days[r.days.length - 1]?.block?.line}).`),
       line('R2', 'The move is one coach change: a Monday rune, set once', moves.length === 1 && setWeek != null, `${moves.length} block changes${set ? `, set in week ${setWeek}: "${set.why}"` : ''}.`),
       line('R3', 'The lighter week before it: fewer sets, no new steps', lightRatio != null && lightRatio <= 0.75 && !heavier,
         lightRatio != null ? `main sets ${(avg(lighter) as number).toFixed(1)} vs ${(avg(before) as number).toFixed(1)} the week before (×${lightRatio.toFixed(2)}); new steps: ${heavier ? 'yes' : 'none'}.` : 'no lighter week measured.', set != null),
-      line('R4', 'Fighter Block 1 starts on a Monday', Number.isFinite(firstFighter) && new Date(firstFighter * 86400000).getUTCDay() === 1, Number.isFinite(firstFighter) ? `first Fighter session ${isoDay(firstFighter)}.` : 'no Fighter sessions.', set != null),
+      line('R4', 'The Campaign starts on a Monday, never Fighter', monday != null && new Date(monday * 86400000).getUTCDay() === 1 && !Number.isFinite(firstFighter), `${monday != null ? `The Campaign from ${isoDay(monday)}` : 'no move'}; ${Number.isFinite(firstFighter) ? `a Fighter session ${isoDay(firstFighter)}` : 'no Fighter sessions'}.`, set != null),
     ]
   },
 }

@@ -233,7 +233,31 @@ export interface NightInputs {
   temp?: readonly TempState[]
 }
 
-export interface NightRead { state: ReadinessState; why: string | null; confidence: ReadConfidence }
+export interface NightRead {
+  state: ReadinessState
+  why: string | null
+  confidence: ReadConfidence
+  /** The graded return after a sick stretch (rebuild Phase 8): easy days, no hard run or 5K test. */
+  returning?: boolean
+}
+
+/** Easy days after a sick stretch: one per sick day, at most this many. */
+export const SICK_RETURN_MAX_DAYS = 3
+
+/**
+ * The graded return after being sick (rebuild Phase 8, audit #8): once a
+ * sick state has ended, one easy day per sick day (at most 3), no hard run
+ * or test. Null outside that window.
+ */
+export function sickReturn(temp: readonly TempState[] | undefined, day: number): TempState | null {
+  for (const s of [...(temp ?? [])].reverse()) {
+    if (s.kind !== 'sick' || s.untilDay >= day) continue
+    const days = Math.min(SICK_RETURN_MAX_DAYS, s.untilDay - s.fromDay + 1)
+    if (day <= s.untilDay + days) return s
+    return null
+  }
+  return null
+}
 
 const DAY_WORD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -241,7 +265,8 @@ const DAY_WORD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
  * The night's ceiling for `day`: yesterday's state (FRESH may push; AMBER or
  * RED yesterday is AMBER today until the morning says otherwise). Days ahead
  * are GREEN. While a sick state from his notes runs, RED (recover or rest);
- * it ends on its own (tempStates.ts), so it never sticks.
+ * it ends on its own (tempStates.ts), so it never sticks. After it, a graded
+ * return: AMBER at most, one day per sick day (up to 3), no hard runs.
  */
 export function nightRead(inp: NightInputs, day: number): NightRead {
   const sick = inp.temp ? activeState(inp.temp, 'sick', day) : null
@@ -249,6 +274,15 @@ export function nightRead(inp: NightInputs, day: number): NightRead {
     const from = DAY_WORD[((sick.mentions[sick.mentions.length - 1] % 7) + 11) % 7]
     return { state: 'RED', why: `Sick, per your note on ${from}. Recover until it passes.`, confidence: 'partial' }
   }
+  const read = morningRead(inp, day)
+  // Just over being sick: easy days first (never above AMBER), whatever the morning says.
+  if (day >= inp.today && sickReturn(inp.temp, day)) {
+    return { state: lowerState(read.state, 'AMBER'), why: read.state === 'RED' ? read.why : 'Just over being sick: easy days first, no hard runs.', confidence: read.confidence, returning: true }
+  }
+  return read
+}
+
+function morningRead(inp: NightInputs, day: number): NightRead {
   if (day > inp.today) return { state: 'GREEN', why: null, confidence: 'none' }
   const opts = (d: number) => ({ sickSkip: inp.sickDays.has(d) || inp.sickDays.has(d - 1), notes: inp.notesByDay.get(d) ?? null })
   const y = readinessState(inp.checkIns, day - 1, opts(day - 1))

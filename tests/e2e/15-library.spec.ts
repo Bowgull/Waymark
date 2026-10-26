@@ -38,9 +38,14 @@ test('The list: no NEW KIND, Bagwork in words, compact rows; the Waybook keeps i
   expect(Math.round(row!.height)).toBe(46)
   expect(await techniques.locator('img').first().evaluate(i => (i as HTMLImageElement).width)).toBe(32)
 
-  // Bagwork's tiers: "N of M mastered"
+  // Bagwork, mine first by type (page 93): HANDS, KICKS, TEEPS with counts, then one LOCKED head, folded
   await page.getByRole('button', { name: 'bagwork', exact: true }).tap()
-  await expect(page.getByRole('button', { name: /^FUNDAMENTALS \d+ of \d+ mastered$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^HANDS \d+$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^KNEES \d+$/ })).toHaveCount(0)
+  const locked = page.getByRole('button', { name: /^LOCKED Locked \d+$/ })
+  await expect(locked).toHaveAttribute('aria-expanded', 'false')
+  await locked.tap()
+  await expect(page.getByRole('button', { name: /^WEAPONS Locked \d+$/ })).toBeVisible()
   await page.getByRole('button', { name: 'Back to the Library' }).tap()
 
   // Techniques: each with its kind and how many combos use it, most used first

@@ -1,7 +1,8 @@
 // His bag sessions (page 80, approved by Josh 2026-10-23).
 //
-//   GET  /api/bag/pool              his combos (unlocked, switched on in Settings) and his saved routines:
-//                                   the builder reads both before he taps (nothing loads after a tap)
+//   GET  /api/bag/pool              his combos (unlocked, switched on in Settings), his saved routines,
+//                                   his last sessions' focus pairs (page 93) and his Settings switches:
+//                                   the builder reads them before he taps (nothing loads after a tap)
 //   POST /api/bag/routines          { id?, name, mode, rounds, roundSec, restSec }: SAVE ROUTINE (the same id
 //                                   or the same name updates it)
 //
@@ -9,12 +10,12 @@
 // phone, and the start route when the session begins).
 
 import { Hono } from 'hono'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { createDB } from '../../db/client'
-import { bagRoutines, combos, settings } from '../../db/schema'
-import { LIMITS, parseRoutineRow, type BagRoutine, type PoolCombo } from '../../lib/coach/bagArc'
+import { bagRoutines, comboPerformance, combos, sessions, settings } from '../../db/schema'
+import { LIMITS, parseRoutineRow, type BagRoutine, type FocusHistory, type PoolCombo } from '../../lib/coach/bagArc'
 
 type Bindings = { DB: D1Database }
 type DB = ReturnType<typeof createDB>
@@ -32,7 +33,31 @@ export async function bagPool(db: DB): Promise<PoolCombo[]> {
   const enabled = new Set((userSettings?.enabledTechniques ?? DEFAULT_TECHNIQUES).split(',').filter(Boolean))
   return rows
     .filter(c => { const t = c.techniques.split(',').filter(Boolean); return t.length === 0 || t.every(x => enabled.has(x)) })
-    .map(c => ({ id: c.id, text: c.text, tier: c.tier, difficultyOverride: c.difficultyOverride ?? null, masteryScore: c.masteryScore, createdAt: c.createdAt, source: c.source ?? null, isFavourite: c.isFavourite }))
+    .map(c => ({ id: c.id, text: c.text, tier: c.tier, difficultyOverride: c.difficultyOverride ?? null, masteryScore: c.masteryScore, createdAt: c.createdAt, source: c.source ?? null, isFavourite: c.isFavourite, unlockedAt: c.unlockedAt ?? null }))
+}
+
+/**
+ * Page 93: the focus pairs of his last bag sessions (context_json.bagFocus), newest first,
+ * each with how he rated them, so the coach keeps A and B about 3 sessions or until both rate SHARP.
+ */
+export async function bagFocusHistory(db: DB, notSessionId: string | null = null): Promise<FocusHistory[]> {
+  const rows = await db.select({ id: sessions.id, contextJson: sessions.contextJson }).from(sessions)
+    .where(and(eq(sessions.type, 'bag_work'), eq(sessions.status, 'completed')))
+    .orderBy(desc(sessions.completedAt))
+    .limit(6)
+  const out: FocusHistory[] = []
+  for (const r of rows) {
+    if (r.id === notSessionId) continue
+    let raw: unknown = null
+    try { raw = (JSON.parse(r.contextJson ?? '{}') as { bagFocus?: unknown }).bagFocus } catch { raw = null }
+    if (!Array.isArray(raw)) break
+    const ids = raw.filter((x): x is string => typeof x === 'string').slice(0, 2)
+    if (ids.length === 0) break
+    const rated = await db.select({ comboId: comboPerformance.comboId, rating: comboPerformance.rating }).from(comboPerformance)
+      .where(eq(comboPerformance.sessionId, r.id))
+    out.push({ ids, ratings: Object.fromEntries(rated.filter(x => ids.includes(x.comboId)).map(x => [x.comboId, x.rating])) })
+  }
+  return out
 }
 
 export async function listRoutines(db: DB): Promise<BagRoutine[]> {
@@ -42,8 +67,9 @@ export async function listRoutines(db: DB): Promise<BagRoutine[]> {
 
 bagBuilder.get('/pool', async (c) => {
   const db = createDB(c.env)
-  const [pool, routines] = await Promise.all([bagPool(db), listRoutines(db)])
-  return c.json({ combos: pool, routines })
+  const [pool, routines, history, [userSettings]] = await Promise.all([bagPool(db), listRoutines(db), bagFocusHistory(db), db.select().from(settings).limit(1)])
+  const groups = (userSettings?.enabledTechniques ?? DEFAULT_TECHNIQUES).split(',').filter(Boolean)
+  return c.json({ combos: pool, routines, history, groups })
 })
 
 const routineSchema = z.object({

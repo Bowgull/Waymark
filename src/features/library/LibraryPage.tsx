@@ -14,9 +14,9 @@ import {
   EXERCISE_GROUPS,
   GROUPS,
   bagCount,
+  bagShelves,
   bookPages,
   comboStrikes,
-  currentTier,
   entryDateLine,
   entryParagraphs,
   equipmentName,
@@ -32,8 +32,6 @@ import {
   muscleBadges,
   techniqueHits,
   techniqueFor,
-  tierCount,
-  tierViews,
   type BookPage,
   type GroupKey,
   type LibraryCombo,
@@ -48,8 +46,9 @@ import './library.css'
 
 // The Library (page 21 + page 39, approved): over the rune arch. The list is
 // page 39's six groups (painted icon, flap name, count); a group opens on its
-// own board (page 21 "An exercise, opened"); Bagwork opens to its tiers with
-// mastery A (five brass dots, the anvil); the Waybook opens as an old book
+// own board (page 21 "An exercise, opened"); Bagwork opens mine first, by type
+// (page 93: HANDS, KICKS, TEEPS, KNEES and ELBOWS when on, then one folded
+// LOCKED head by level); the Waybook opens as an old book
 // page (page 21 B), behind Face ID when that's on (page 21 "Locked").
 // The Library holds no history and no PRs; combos unlock only after a bag
 // session, never from here; the Waybook is read-only.
@@ -144,12 +143,14 @@ function PlainRow({ name, sub, onOpen }: { name: string; sub: string; onOpen: ()
 }
 
 /** A group's head when it's open (page 21): ▾, the name on a padded flap, the count. */
-function GroupHead({ name, count, len, size = 'md', open = true, locked = false, onClick }: { name: string; count?: string; len: number; size?: 'md' | 'sm'; open?: boolean; locked?: boolean; onClick?: () => void }) {
+function GroupHead({ name, count, len, size = 'md', open = true, locked = false, className, onClick }: { name: string; count?: string; len: number; size?: 'md' | 'sm'; open?: boolean; locked?: boolean; className?: string; onClick?: () => void }) {
   return (
-    <button type="button" className="lib-grp" onClick={onClick} disabled={!onClick} aria-expanded={open}>
+    <button type="button" className={`lib-grp${className ? ` ${className}` : ''}`} onClick={onClick} disabled={!onClick} aria-expanded={open}>
       <span className="lib-chev" aria-hidden>{open ? '▾' : '▸'}</span>
       <FlapLabel text={name} size={size} len={len} />
-      {locked ? <span className="lib-lock" aria-label="Locked">⚿</span> : count != null && <span className="lib-cnt">{count}</span>}
+      {/* page 93: a locked head shows the lock and its count (an older locked tier: the lock alone) */}
+      {locked && <span className="lib-lock" aria-label="Locked">⚿</span>}
+      {count != null && <span className="lib-cnt">{count}</span>}
     </button>
   )
 }
@@ -224,8 +225,11 @@ export function LibraryPage() {
   const [search, setSearch] = useState('')
   // a search group shown whole (its header was tapped)
   const [allOf, setAllOf] = useState<string | null>(null)
-  // undefined: Bagwork opens on the current tier (the highest with an unlocked combo)
-  const [openTier, setOpenTier] = useState<string | null | undefined>(undefined)
+  // page 93: Bagwork's one open group (a weapon, or 'locked'), and the level open under LOCKED; all folded at first
+  const [openShelf, setOpenShelf] = useState<string | null>(null)
+  const [openLevel, setOpenLevel] = useState<string | null>(null)
+  // his Settings switches: KNEES and ELBOWS groups show only when on (read with the list)
+  const [enabled, setEnabled] = useState<ReadonlySet<string>>(() => new Set(['boxing', 'kicks', 'defensive']))
   const unlocked = useWaybookUnlocked()
   // page 80: + COMBO's window, and the combos he just added (NEW, at the top, easing in)
   const [adding, setAdding] = useState(false)
@@ -249,8 +253,10 @@ export function LibraryPage() {
       apiFetch<LibraryCombo[]>('/api/combos').catch(() => [] as LibraryCombo[]),
       apiFetch<LibraryTechnique[]>('/api/library/techniques').catch(() => [] as LibraryTechnique[]),
       apiFetch<LibraryRun[]>('/api/library/runs').catch(() => [] as LibraryRun[]),
-    ]).then(([ex, co, te, ru]) => {
+      apiFetch<{ enabledTechniques?: string | null } | null>('/api/settings').catch(() => null),
+    ]).then(([ex, co, te, ru, st]) => {
       if (!live) return
+      if (st?.enabledTechniques) setEnabled(new Set(st.enabledTechniques.split(',').filter(Boolean)))
       // an item folded into another (Spiderman + T-Spine) is not listed
       setExercises(Array.isArray(ex) ? ex.filter(listed) : [])
       setCombos(Array.isArray(co) ? co : [])
@@ -274,7 +280,7 @@ export function LibraryPage() {
     return () => { live = false }
   }, [unlocked, entriesLoaded])
 
-  const tiers = useMemo(() => tierViews(combos.filter(c => !freshIds.has(c.id))), [combos, freshIds])
+  const shelves = useMemo(() => bagShelves(combos.filter(c => !freshIds.has(c.id)), enabled), [combos, freshIds, enabled])
   const counts = useMemo(() => exerciseCounts(exercises), [exercises])
   // page 52: each technique with how many combos use it, most used first
   const techRows = useMemo(() => techniques
@@ -286,7 +292,8 @@ export function LibraryPage() {
   function go(key: GroupKey | null) {
     setSearch('')
     setAllOf(null)
-    setOpenTier(undefined)
+    setOpenShelf(null)
+    setOpenLevel(null)
     // page 61: a group or the Waybook pages are a step in history, so web back and the edge swipe close them
     if (key) setParams({ open: key })
     else if (historyIdx() > 0 && open) navigate(-1)
@@ -301,7 +308,8 @@ export function LibraryPage() {
   /** "and 23 more ›" on a technique's MORE (page 65): the list, searching for it. */
   function searchFor(q: string) {
     setAllOf(null)
-    setOpenTier(undefined)
+    setOpenShelf(null)
+    setOpenLevel(null)
     setParams({})
     setSearch(q)
   }
@@ -395,7 +403,6 @@ export function LibraryPage() {
   }
 
   if (open === 'bag') {
-    const shownTier = openTier === undefined ? currentTier(tiers) : openTier
     return (
       <div className="lib-root is-deep">
         <BackHeader onBack={back} />
@@ -410,25 +417,31 @@ export function LibraryPage() {
                 <ComboLine text={f.text} level={f.level} />
               </div>
             ))}
-            {tiers.map(t => {
-              const isOpen = !t.locked && shownTier === t.tier
+            {/* page 93: mine first, by type; one group open at a time */}
+            {shelves.mine.map(g => {
+              const isOpen = openShelf === g.key
               return (
-                <Fragment key={t.tier}>
-                  <GroupHead
-                    name={t.name}
-                    size="sm"
-                    len={12}
-                    open={isOpen}
-                    locked={t.locked}
-                    count={tierCount(t)}
-                    onClick={t.locked ? undefined : () => setOpenTier(isOpen ? null : t.tier)}
-                  />
-                  {isOpen && t.combos.map(c => (
-                    <ComboRow key={c.id} combo={c} onOpen={() => openItem('bag', c.id)} />
-                  ))}
+                <Fragment key={g.key}>
+                  <GroupHead name={g.name} size="sm" len={12} open={isOpen} count={String(g.combos.length)} onClick={() => setOpenShelf(isOpen ? null : g.key)} />
+                  {isOpen && g.combos.map(c => <ComboRow key={c.id} combo={c} onOpen={() => openItem('bag', c.id)} />)}
                 </Fragment>
               )
             })}
+            {shelves.lockedCount > 0 && (
+              <>
+                <GroupHead name="LOCKED" size="sm" len={12} open={openShelf === 'locked'} locked count={String(shelves.lockedCount)}
+                  onClick={() => { setOpenShelf(openShelf === 'locked' ? null : 'locked'); setOpenLevel(null) }} />
+                {openShelf === 'locked' && shelves.locked.map(t => {
+                  const isOpen = openLevel === t.tier
+                  return (
+                    <Fragment key={t.tier}>
+                      <GroupHead name={t.name} size="sm" len={12} open={isOpen} locked count={String(t.combos.length)} className="is-sub" onClick={() => setOpenLevel(isOpen ? null : t.tier)} />
+                      {isOpen && t.combos.map(c => <ComboRow key={c.id} combo={c} onOpen={() => openItem('bag', c.id)} />)}
+                    </Fragment>
+                  )
+                })}
+              </>
+            )}
           </Board>
         </div>
         {adding && <NewComboWindow source="mine" onAdded={added} onClose={() => setAdding(false)} />}

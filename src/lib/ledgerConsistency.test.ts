@@ -44,7 +44,7 @@ assert.equal(v.tone, 'gold')
 assert.deepEqual([v.done, v.toCome, v.missed], [18, 18, 10])
 assert.equal(v.nextAt, 33, '70% of 46')
 // open: the four groups
-assert.equal(v.nextLine, 'Do 15 of your next 18 to reach the next block.')
+assert.equal(v.nextLine, 'Do 15 of your next 18 to reach The Campaign.')
 assert.equal(v.nextSmall, 'Longest break: 4 days (sick). Keep breaks under a week.')
 assert.deepEqual(v.am, { done: 17, of: 22 })
 assert.deepEqual(v.pm, { done: 1, of: 6 })
@@ -65,7 +65,7 @@ assert.deepEqual(v.after, { back: 7, of: 10 })
   assert.equal(w.flap, 'ON TRACK')
   assert.equal(w.tone, 'teal')
   assert.equal(dayLabel(START + 41), 'Sun 6 Dec')
-  assert.equal(w.nextLine, 'On track to reach the next block on Sun 6 Dec.')
+  assert.equal(w.nextLine, 'On track to reach The Campaign on Sun 6 Dec.')
 }
 
 // a break is open: days with nothing done

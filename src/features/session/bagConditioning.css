@@ -1,0 +1,15 @@
+/* Bag Conditioning (page 93): the bag round's layout (bagRound.css) on page 81's
+   interval timer: one move stacked big, the effort word over it, the cue on
+   the teal flap, ROUND n OF N beside the clock. Motion is page 59's. */
+
+/* a move's words, one under another: · between a move and its side, › between the steps of a drill */
+.bc-sep { display: block; font: 900 20px/18px var(--font-mono); height: 18px; color: rgba(232, 200, 120, 0.8); }
+.bc-sep.is-arrow { color: #e8c878; transform: rotate(90deg); text-shadow: 0 0 6px rgba(232, 200, 120, 0.5); }
+.bw.is-rest .bc-sep.is-arrow { color: #8fd4b8; text-shadow: 0 0 6px rgba(143, 212, 184, 0.5); }
+
+/* a rest's own job ("10 PUSH-UPS FIRST"), small under what's next */
+.bc-task { flex: none; font: 800 12px var(--font-body); letter-spacing: 0.2em; color: #9ee0c6; }
+
+/* the warning orange on the plate (page 81's .it-orange) */
+.wm-flap.bc-orange .wm-cell:not(.is-gap):not(.is-pad) { color: #141008; text-shadow: none; background: linear-gradient(180deg, #e0904a 0 50%, #cf7f3a 50% 100%); }
+.wm-flap.bc-orange .wm-leaf { background: #e0904a; }

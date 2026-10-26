@@ -28,9 +28,9 @@ const MIN_MINUTES = 5
 const MAX_MINUTES = 240
 
 /** Planning minutes when a session has no logged duration. */
-const DEFAULT_MIN: Record<string, number> = { strength: 55, foundation_run: 25, running: 30, bag_work: 30, skip_rope: 15 }
+const DEFAULT_MIN: Record<string, number> = { strength: 55, foundation_run: 25, running: 30, bag_work: 30, bag_conditioning: 30, skip_rope: 15 }
 /** Effort when none was logged. */
-const DEFAULT_RPE: Record<string, number> = { strength: 7, foundation_run: 4, running: 5, bag_work: 6, skip_rope: 5, mt_class: 7 }
+const DEFAULT_RPE: Record<string, number> = { strength: 7, foundation_run: 4, running: 5, bag_work: 6, bag_conditioning: 6, skip_rope: 5, mt_class: 7 }
 
 /** A class's default effort from the type he logged (never what the coach thinks should be taught). */
 export function classDefaultRpe(classType: string | null | undefined): number {
@@ -47,7 +47,7 @@ export function rpeFromHr(avgHr: number, maxHr: number): number {
 
 export function poolOf(type: string): LoadPool | null {
   if (type === 'strength') return 'strength'
-  if (type === 'foundation_run' || type === 'running' || type === 'bag_work' || type === 'mt_class' || type === 'skip_rope') return 'endurance'
+  if (type === 'foundation_run' || type === 'running' || type === 'bag_work' || type === 'bag_conditioning' || type === 'mt_class' || type === 'skip_rope') return 'endurance'
   return null
 }
 
@@ -189,7 +189,7 @@ export function buildLevels(inp: LevelInputs): Record<LevelDomain, DomainLevel> 
 
 /** Skip or swap reasons that say "how I feel", not "no time". */
 export const FEEL_REASONS: ReadonlySet<string> = new Set(['rough_day', 'low_sleep', 'tired', 'sick', 'illness', 'too_sore', 'sore', 'pain', 'injury', 'rough'])
-const HEAVINESS: Record<string, number> = { strength: 3, bag_work: 3, mt_class: 3, running: 2, foundation_run: 1, skip_rope: 1, mobility: 0, active_recovery: 0 }
+const HEAVINESS: Record<string, number> = { strength: 3, bag_work: 3, bag_conditioning: 3, mt_class: 3, running: 2, foundation_run: 1, skip_rope: 1, mobility: 0, active_recovery: 0 }
 export const OWN_EASE_DAYS = 7
 
 export function domainOf(type: string): OwnEase['domain'] | null {

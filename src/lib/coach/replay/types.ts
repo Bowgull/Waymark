@@ -23,6 +23,26 @@ export interface LoggedLift {
   sets: LoggedSet[]
 }
 
+/**
+ * A true athlete (trueAthlete.ts, rebuild Phase 1): how he really lifts, runs
+ * and misses, answered from his own hidden numbers. Each hook is optional.
+ */
+export interface AthleteHooks {
+  /**
+   * One main working set at the prescribed weight: the reps he gets and the reps left he taps.
+   * `feel`: the reps he really had left (the tap tops out at 3+); a find-your-weight climb
+   * stops at the first set that felt about 3 left, as the note asks (rebuild Phase 4).
+   */
+  set?: (s: { exerciseId: string; weightKg: number | null; reps: number; setNumber: number; day: number }) => { reps: number; rir: number; feel?: number }
+  /** A run as prescribed: what he logs. */
+  run?: (r: { day: number; type: string; notes: string | null; targetDurSec: number | null; runWalk: { runSec: number; walkSec: number; rounds: number; warmupSec: number } | null; z2CeilingBpm: number | null; walkOnly: boolean }) =>
+    { durationSec: number; distanceKm: number; avgHr: number | null; maxHr: number | null; fiveKSec?: number }
+  /** He misses this planned session (it stays planned and turns missed overnight). */
+  misses?: (day: number, type: string) => boolean
+  /** His true 8-rep max (kg) for a lift on a day, for the report. */
+  trueKg?: (exerciseId: string, day: number) => number
+}
+
 /** How a simulated athlete lifts: every prescribed working set at the prescribed weight. */
 export interface AsPrescribed {
   rir: number
@@ -76,9 +96,13 @@ export type ReplayAction =
     runFactor?: number
     /** Ad-hoc add when nothing of this type is planned today (his own pick). Default true. */
     addIfMissing?: boolean
+    /** A true athlete answers the sets and the run (rebuild Phase 1). */
+    athlete?: AthleteHooks
   }
   | { kind: 'skip'; at: LocalMinute; type: string; reason: string; detail?: string | null }
   | { kind: 'add'; at: LocalMinute; type: string; slot: 'am' | 'pm'; label?: string }
+  /** Settings saved from the phone (PATCH /api/settings), e.g. new class days (rebuild Phase 1). */
+  | { kind: 'settings'; at: LocalMinute; patch: Record<string, unknown> }
   /** The raven (page 58): apply its plan, or answer FEELS BETTER. */
   | { kind: 'body'; at: LocalMinute; answer: 'apply' | 'better' }
   /**
@@ -95,6 +119,8 @@ export type ReplayAction =
     runFactor?: number
     skipTypes?: string[]
     notes?: string
+    /** A true athlete: his sets, his runs, the sessions he misses (rebuild Phase 1). */
+    athlete?: AthleteHooks
   }
 
 export interface ReplayDay {
@@ -170,6 +196,12 @@ export interface DoseRecord {
   /** Strength: any main-lift set with RIR was on file before this session. */
   rirOnFile: boolean
   why: string[]
+  /** The session's planned minutes as started (warm-ups, ramps and moves included), or null. Rebuild Phase 1. */
+  plannedMin?: number | null
+  /** A run's logged distance (km), or null. */
+  loggedKm?: number | null
+  /** Strength: the true 8-rep max (kg) per main lift on the day, when a true athlete ran it. */
+  trueKg?: Record<string, number>
 }
 
 export interface ChangeRecord {
@@ -213,7 +245,7 @@ export interface ReplayResult {
   changes: ChangeRecord[]
   aiCalls: AiCallRecord[]
   /** Every session at the end, for checks over the plan. */
-  sessions: Array<{ id: string; day: number | null; type: string; label: string | null; slot: string | null; status: string; source: string | null; contextJson: string | null; rpe: number | null; durationSec: number | null; blockType?: string | null }>
+  sessions: Array<{ id: string; day: number | null; type: string; label: string | null; slot: string | null; status: string; source: string | null; contextJson: string | null; rpe: number | null; durationSec: number | null; blockType?: string | null; notes?: string | null }>
   errors: string[]
   /** The nightly decisions (coach brain P3, coach_decisions rows). */
   decisions?: Array<{

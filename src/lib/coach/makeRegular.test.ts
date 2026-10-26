@@ -52,4 +52,8 @@ assert(free!.expiresOnDay === NEXT + 7 && !free!.question.includes('!'), 'lapses
 const blocked = makeRegularAsk(two[0], ctx({ todayEpochDay: NEXT - 1, sessions: [], injury: { region: 'shoulder', reason: 'Shoulder flagged.' } }), NEXT)
 assert(blocked === null, 'no safe slot (injury flag on bag work): no ask')
 
+// Review R3: an extra class on an unpicked day is never made regular (class days come only from Settings).
+const cls = (day: number): AddedSession => ({ type: 'mt_class', label: 'MT Class', notes: null, epochDay: day, timeSlot: 'pm', status: 'completed', rpe: 7 })
+assert(makeRegularCandidates([cls(MON + 2), cls(MON + 9)], MON + 7).length === 0, 'classes are never made regular')
+
 console.log('makeRegular tests passed')

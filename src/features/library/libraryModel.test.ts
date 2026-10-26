@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 
 import {
   bagCount,
+  bagShelves,
+  mainWeapon,
   cueSplit,
   exerciseMeta,
   lastSetWhen,
@@ -200,3 +202,35 @@ assert.equal(techniqueMeta({ kind: 'Punch' }, 0), 'Punch')
 assert.equal(masteryWords(6), '6 of 15 to mastered')
 assert.equal(masteryWords(9), 'Mastered')
 console.log('libraryModel: page 65 ok')
+
+// ─── page 93: Bagwork mine first, by type ──
+{
+  assert.equal(mainWeapon('Jab → Cross → Hook'), 'hands')
+  assert.equal(mainWeapon('Jab → Body Kick'), 'kicks')
+  assert.equal(mainWeapon('Lead Teep → Jab → Cross'), 'teeps')
+  assert.equal(mainWeapon('Lead Teep → Switch Kick'), 'kicks', 'a kick and a teep: once, under KICKS')
+  assert.equal(mainWeapon('Lead Teep → Step In → Rear Knee'), 'knees', 'a knee wins')
+  assert.equal(mainWeapon('Left Knee → Rear Elbow'), 'elbows', 'an elbow wins')
+  assert.equal(mainWeapon('Wall Slip → Cross'), 'hands')
+
+  const K = (id: string, text: string, tier: string, unlocked: number, techniques: string): LibraryCombo => ({ id, text, tier, level: tier, unlocked, masteryScore: 0, techniques, formTips: '', isFavourite: 0, timesSharp: 0 })
+  const lib = [
+    K('f01', 'Jab → Cross', 'foundation', 1, 'boxing'), K('f04', 'Jab → Cross → Hook → Cross', 'foundation', 1, 'boxing'),
+    K('f07', 'Lead Teep', 'foundation', 1, 'defensive'), K('f09', 'Body Kick', 'foundation', 1, 'kicks'),
+    K('f11', 'Rear Knee', 'foundation', 1, 'knees'), K('f12', 'Jab → Rear Knee', 'foundation', 1, 'boxing,knees'), K('f13', 'Rear Elbow', 'foundation', 1, 'elbows'),
+    K('w01', 'Jab → Body Kick', 'weapons', 1, 'boxing,kicks'), K('w20', 'Lead Teep → Switch Kick', 'weapons', 0, 'kicks,defensive'),
+    K('w10', 'Jab → Cross → Left Knee', 'weapons', 0, 'boxing,knees'), K('m10', 'Cross → Hook → Head Kick', 'mastery', 0, 'boxing,kicks'),
+  ]
+  const off = bagShelves(lib, new Set(['boxing', 'kicks', 'defensive']))
+  assert.deepEqual(off.mine.map(g => g.name), ['HANDS', 'KICKS', 'TEEPS'], 'knees and elbows only when their switch is on')
+  assert.deepEqual(off.mine[0].combos.map(c => c.id), ['f01', 'f04'], 'the shortest first')
+  assert.deepEqual(off.mine[1].combos.map(c => c.id), ['f09', 'w01'], 'easiest level first')
+  assert.deepEqual(off.locked.map(t => [t.name, t.combos.length]), [['WEAPONS', 2], ['MASTERY', 1]], 'below: locked by level, knee combos too')
+  assert.equal(off.lockedCount, 3)
+  assert.ok(!off.mine.flatMap(g => g.combos).some(c => c.id === 'f11'), 'an unlocked knee waits for KNEES')
+  const knees = bagShelves(lib, new Set(['boxing', 'kicks', 'defensive', 'knees']))
+  assert.deepEqual(knees.mine.map(g => g.name), ['HANDS', 'KICKS', 'TEEPS', 'KNEES'])
+  assert.deepEqual(knees.mine[3].combos.map(c => c.id), ['f11', 'f12'], 'only the beginner knees join; harder ones stay locked')
+  assert.equal(knees.lockedCount, 3)
+}
+console.log('libraryModel: page 93 ok')

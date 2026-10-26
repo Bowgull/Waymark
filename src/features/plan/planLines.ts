@@ -8,12 +8,14 @@
 // data is SessionSummary's (the per-type endpoints) and the row's own dose.
 
 import { foundationLevel, foundationMinutes } from '../../lib/foundation'
+import { ARM_BLOCK_IDS, PRESS_IDS, isLandmine } from '../../lib/landmine'
 import { RESET_WALK_MIN, resetMinutes } from '../../lib/activeRecoveryTemplate'
 import type { SummaryData } from '../dayboard/summaryData'
 import type { RunPlace } from '../weather/runPlace'
 import { fiveKText, hardKindOf, speedsFrom, toGoalText, GOAL_5K_SEC, type HardPlan } from '../../lib/brain/hardRuns'
 import { BASE_INCLINE, paceText, speedText, type TreadmillUnit } from '../../lib/runSpeed'
 import { postRunLine } from '../../lib/postRun'
+import { blockResults, doneBlockLines, movesLine, planFromContext, templateById, workoutLine } from '../../lib/coach/bagConditioning'
 import { actualMinutes, continuousRunMin, liftLoad, plannedRowMinutes, rowStatus, runWalkShapeFor, shortLift, strengthDiffLines, type DayBoardSession, type WorkoutExercise } from '../dayboard/rowState'
 
 export interface PlanLine {
@@ -22,6 +24,8 @@ export interface PlanLine {
   mark?: 'up' | 'down'
   /** A teal ✓ closes the value. */
   tick?: boolean
+  /** One plain line behind a tap on this line (page 93: why this press). */
+  explain?: string
 }
 
 export interface LinesOpts {
@@ -71,20 +75,36 @@ function liftName(ex: WorkoutExercise): string {
   return shortLift(ex.label || ex.name || ex.exercise?.name || 'Lift').toUpperCase()
 }
 
+/** The arm block's words on its one ARMS line (page 93: "chin-ups 3×5, curls, grip"). */
+const ARM_WORD: Readonly<Record<string, string>> = {
+  'ex-chin-up-band': 'chin-ups', 'ex-chin-up-negative': 'chin-ups', 'ex-chin-up': 'chin-ups', 'ex-dips': 'dips', 'ex-close-grip-bench': 'close-grip press',
+  'ex-hammer-curl': 'hammer curls', 'ex-suitcase-carry': 'grip', 'ex-wrist-curl': 'wrist curls',
+  // Strength B's second pull (2026-10-26): in the arm block there, a main lift on A.
+  'ex-db-row': 'rows',
+}
+
 function strengthTodo(data: Extract<SummaryData, { kind: 'strength' }>): PlanLine[] {
   const out: PlanLine[] = []
   const core: string[] = []
+  const arms: string[] = []
   for (const ex of data.exercises) {
     if (ex.section === 'warmup') continue
     if (ex.section === 'core') { core.push(shortLift(ex.label || ex.name || ex.exercise?.name || '').toLowerCase()); continue }
     const sr = ex.prescription?.setsReps ?? ''
-    const change = data.brainLifts?.find(l => l.exerciseId === ex.exerciseId)?.change
+    // Page 93: the arm block is one line; the first move carries its sets and reps.
+    if (ARM_BLOCK_IDS.has(ex.exerciseId) || (ex.section === 'accessory' && ARM_WORD[ex.exerciseId])) { arms.push(arms.length === 0 && sr ? `${ARM_WORD[ex.exerciseId]} ${sr}` : ARM_WORD[ex.exerciseId]); continue }
+    const brain = data.brainLifts?.find(l => l.exerciseId === ex.exerciseId)
     const load = liftLoad(ex)
-    out.push({ label: liftName(ex), value: `${sr}${sr ? ' · ' : ''}${/\d$/.test(load) ? `${load} lb` : load}`, ...(change === 'increase' ? { mark: 'up' as const } : change === 'decrease' ? { mark: 'down' as const } : {}) })
+    const value = `${sr}${sr ? ' · ' : ''}${/\d$/.test(load) ? `${load} lb` : load}`
+    const mark = brain?.change === 'increase' ? { mark: 'up' as const } : brain?.change === 'decrease' ? { mark: 'down' as const } : {}
+    // The press the coach picked: one PRESS line, which press first, and why behind a tap (page 93).
+    if (PRESS_IDS.has(ex.exerciseId)) out.push({ label: 'PRESS', value: `${isLandmine(ex.exerciseId) ? 'landmine' : 'overhead'} · ${value}`, ...mark, ...(brain?.explain ? { explain: brain.explain } : {}) })
+    else out.push({ label: liftName(ex), value, ...mark })
   }
   const min = data.plannedMin != null ? `~${data.plannedMin} min` : null
   if (core.length > 0) out.push({ label: 'CORE', value: [core.filter(Boolean).join(', '), min].filter(Boolean).join(' · ') })
   else if (min) out.push({ label: 'TIME', value: min })
+  if (arms.length > 0) out.push({ label: 'ARMS', value: arms.join(', ') })
   return out
 }
 
@@ -225,6 +245,25 @@ export function planLines(s: DayBoardSession, data: SummaryData | null, opts: Li
       else out.push({ label: 'ABOUT', value: `~${bag?.plannedMin ?? plannedRowMinutes(s, opts.weekNumber)} min` })
       if (bag?.firstCombo) out.push({ label: 'FIRST', value: bag.firstCombo })
       if (done) doneLine(null)
+      break
+    }
+    case 'bag_conditioning': {
+      // Page 93: WORKOUT, WHAT, MOVES, JUMPS (none) before; done, each block's mark, then minutes and effort.
+      const cond = data?.kind === 'conditioning' ? data : null
+      const plan = cond?.plan ?? planFromContext(s.contextJson)
+      if (done) {
+        if (plan && cond?.log) out.push(...doneBlockLines(blockResults(plan, cond.log)))
+        doneLine(null)
+        break
+      }
+      if (plan) {
+        out.push({ label: 'WORKOUT', value: workoutLine(plan) })
+        const what = templateById(plan.templateId)?.what
+        if (what) out.push({ label: 'WHAT', value: what })
+        const moves = movesLine(plan)
+        if (moves) out.push({ label: 'MOVES', value: moves })
+      } else out.push({ label: 'ABOUT', value: `~${cond?.plannedMin ?? plannedRowMinutes(s, opts.weekNumber)} min` })
+      out.push({ label: 'JUMPS', value: 'none' })
       break
     }
     case 'skip_rope': {

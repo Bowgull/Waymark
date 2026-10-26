@@ -2,7 +2,7 @@
 // start route per type that Today's ENTER uses, then the session screen.
 import { apiFetch } from '@/lib/api'
 
-export const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
+export const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'bag_conditioning', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
 
 export function startEndpoint(id: string, type: string): string {
   const byType: Record<string, string> = {
@@ -10,6 +10,7 @@ export function startEndpoint(id: string, type: string): string {
     mobility: `/api/sessions/${id}/start-mobility`,
     strength: `/api/sessions/${id}/start-strength`,
     bag_work: `/api/sessions/${id}/start-bag-work`,
+    bag_conditioning: `/api/sessions/${id}/start-bag-conditioning`,
     running: `/api/sessions/${id}/start-run`,
     skip_rope: `/api/sessions/${id}/start-skip-rope`,
     active_recovery: `/api/sessions/${id}/start-recovery`,

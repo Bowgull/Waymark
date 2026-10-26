@@ -8,6 +8,10 @@ import { migratedSqlite } from './db'
 import { runReplay } from './driver'
 import { SIM_START, STEADY } from '../../lib/coach/replay/scenarios'
 import type { ReplayScript } from '../../lib/coach/replay/types'
+import { setFixedWeekForTests } from '../onePlan'
+
+// These stories are written on the old fixed Block Zero week (rebuild Phase 2 keeps it for them).
+setFixedWeekForTests(true)
 
 const script: ReplayScript = {
   name: 'driver-smoke',

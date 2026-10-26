@@ -9,7 +9,6 @@ import { coachingOutputs, exercises, settings, trainingBlocks, trainingMaxes, us
 import { anthropicCall, getStructuredOutput, jsonFormatFor } from '../../lib/anthropic'
 import { MODELS } from '../../lib/models'
 import { buildSystemPrompt, type UserProfileContext } from '../../lib/prompts/system'
-import { getLatestBodyweightKg } from '../../lib/bodyMetrics'
 import {
   BLOCK_ZERO_TOOL,
   assessmentFromModel,
@@ -95,7 +94,6 @@ export async function runBlockZeroAssessment(
     .innerJoin(exercises, eq(trainingMaxes.exerciseId, exercises.id)))
     .filter(t => blockStartSec != null && t.updatedAt >= blockStartSec)
 
-  const latestBodyweightKg = await getLatestBodyweightKg(db)
 
   const profile: UserProfileContext = {
     goals: profileRow?.goals ?? null,
@@ -104,10 +102,8 @@ export async function runBlockZeroAssessment(
     trainingHistory: profileRow?.trainingHistory ?? null,
     mtClassDays: settingsRow?.mtClassDays ?? null,
     mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
-    weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
     trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
-    latestBodyweightKg,
   }
 
   const systemBlocks = buildSystemPrompt(profile, null)

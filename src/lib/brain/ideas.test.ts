@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { buildAthleteModel } from './athleteModel'
 import { strengthDose, runDose, type DoseCtx, type StrengthIn } from './doses'
-import { readinessState, nightRead } from './readiness'
+import { readinessState, nightRead, sickReturn } from './readiness'
 import { tempStates, activeState, namedEnd } from './tempStates'
 import { buildLevels, buildLoad, classDefaultRpe, rpeFromHr, sessionLoads } from './loadLevels'
 import { hoursAfter, spacingCosts, violations, type OutlineSession } from './outline'
@@ -71,6 +71,13 @@ const ctxFor = (ev: ModelEvents, day: number, over: Partial<DoseCtx> = {}): Dose
   assert.equal(nightRead(inp, MON + 1).state, 'RED', 'while sick: recover or rest')
   const later = { ...inp, today: MON + 5, temp: tempStates([{ day: MON, text: 'Sick, fever last night' }], MON + 5) }
   assert.notEqual(nightRead(later, MON + 5).state, 'RED', 'the sick state has ended by itself')
+  // Rebuild Phase 8: the graded return. Sick Mon to Wed (3 days): Thu, Fri and Sat easy, no hard runs; Sunday as the morning says.
+  const back = (day: number) => nightRead({ ...inp, today: day, temp: tempStates([{ day: MON, text: 'Sick, fever last night' }], day) }, day)
+  for (const d of [MON + 3, MON + 4, MON + 5]) assert.deepEqual([back(d).state, back(d).returning], ['AMBER', true], `day ${d - MON}: easy, back from sick`)
+  assert.ok(/Just over being sick/.test(back(MON + 3).why ?? ''), back(MON + 3).why ?? '')
+  assert.notEqual(back(MON + 6).returning, true, 'one easy day per sick day, then the morning decides')
+  const short = tempStates([{ day: MON, text: 'sick with a cold' }, { day: MON + 1, text: 'Feeling better today' }], MON + 1)
+  assert.deepEqual([sickReturn(short, MON + 1) != null, sickReturn(short, MON + 2) != null], [true, false], 'one sick day: one easy day')
   console.log('ok: 8 short states expire')
 }
 
@@ -150,9 +157,14 @@ const ctxFor = (ev: ModelEvents, day: number, over: Partial<DoseCtx> = {}): Dose
   assert.ok(hinge.some(v => /heavy hinge the morning after Monday's class/.test(v)), hinge.join('; '))
   assert.deepEqual(violations([s('c', 'mt_class', MON, 'pm'), s('b', 'strength', MON + 1, 'pm', 'Strength B')], 'block_zero', MON).filter(v => /hinge/.test(v)), [], '24 h later is fine')
   assert.deepEqual(violations([s('c', 'mt_class', MON, 'pm'), s('b', 'strength', MON + 1, 'am', 'Strength C')], 'block_zero', MON).filter(v => /hinge/.test(v)), [], 'Strength C is not a hinge day')
-  const costs = spacingCosts([s('l', 'strength', MON, 'pm', 'Strength A'), s('r', 'running', MON + 1, 'am', null, 'tempo')], 'block_zero', MON)
-  assert.ok(costs.some(c => /hard run the day after/.test(c.why)), 'a hard run the day after heavy legs costs a little')
-  const order = spacingCosts([s('r', 'running', MON, 'am'), s('l', 'strength', MON, 'pm', 'Strength A')], 'block_zero', MON)
+  // Rebuild Phase 2: a hard run in the 48 h after heavy legs is a limit, the 24 h edge included.
+  const legs = violations([s('l', 'strength', MON, 'am', 'Strength A'), s('r', 'running', MON + 1, 'am', null, 'tempo')], 'block_zero', MON)
+  assert.ok(legs.some(v => /within 48 h after Monday's heavy legs/.test(v)), legs.join('; '))
+  assert.ok(violations([s('l', 'strength', MON, 'am', 'Strength A'), s('r', 'running', MON + 2, 'am', null, 'tempo')], 'block_zero', MON).every(v => !/48 h/.test(v)), '48 h later is fine')
+  assert.ok(violations([s('r', 'running', MON, 'am', null, 'tempo'), s('l', 'strength', MON, 'pm', 'Strength A')], 'block_zero', MON).every(v => !/48 h|holds/.test(v)), 'a doubled morning keeps the rules')
+  assert.ok(violations([s('r', 'running', MON, 'am', null, 'tempo'), s('l', 'strength', MON + 1, 'am', 'Strength A'), s('c', 'mt_class', MON + 2, 'pm'), s('t', 'running', MON + 4, 'am', null, 'intervals'), s('b', 'bag_work', MON + 5, 'am')], 'block_zero', MON, 4).some(v => /hard days \(cap 4\)/.test(v)), 'over the cap')
+  assert.ok(violations([s('e', 'foundation_run', MON, 'am'), s('k', 'bag_conditioning', MON, 'pm')], 'block_zero', MON).every(v => !/holds/.test(v)), 'an easy run and evening Bag Conditioning share a day')
+  const order = spacingCosts([s('r', 'foundation_run', MON, 'am'), s('l', 'strength', MON, 'pm', 'Strength A')], 'block_zero', MON)
   assert.ok(order.some(c => /lift first/.test(c.why)), 'a shared day: lift first')
   console.log('ok: 2 interference spacing')
 }
@@ -164,8 +176,12 @@ const ctxFor = (ev: ModelEvents, day: number, over: Partial<DoseCtx> = {}): Dose
   const sets = [...lift(done[0], 'ex-bench-press', 95, 2), ...lift(done[1], 'ex-bench-press', 95, 2), ...lift(done[2], 'ex-bench-press', 95, 3)]
   const ev = events({ sessions: done, sets, checkIns: steady(MON - 14, MON) })
   const m = buildAthleteModel(ev, MON)
-  const rules = strengthDose(ctxFor(ev, MON), strengthIn())
-  assert.equal(rules.lifts[0].level, 'HOLD', 'one easy session: the rules hold')
+  // Rebuild Phase 4: one easy session (3+ on the last set) steps up in the rules themselves.
+  assert.equal(strengthDose(ctxFor(ev, MON), strengthIn()).lifts[0].level, 'PROGRESS', 'one easy session: the rules step up at once')
+  assert.equal(pushRoom({ sessionType: 'strength', rulesDose: { level: 'PROGRESS', strength: strengthDose(ctxFor(ev, MON), strengthIn()) }, state: 'GREEN', confidence: 'full', model: m, checkIns: ev.checkIns, today: MON, backFlag: false, injuryFlag: false }).blocked, 'no numbers support a push', 'nothing left above it on a GREEN day')
+  // The push room as before, on a lift held by its own numbers (3+ last time, held by one step a week).
+  const rules = strengthDose(ctxFor(ev, MON), strengthIn({ steppedThisWeek: ['ex-bench-press'] }))
+  assert.equal(rules.lifts[0].level, 'HOLD', 'one step a week: the rules hold')
   const g = { sessionType: 'strength', rulesDose: { level: rules.level, strength: rules }, state: 'GREEN' as const, confidence: 'full' as const, model: m, checkIns: ev.checkIns, today: MON, backFlag: false, injuryFlag: false }
   const room = pushRoom(g)
   assert.deepEqual(room.levels, ['PROGRESS'], 'GREEN: up to PROGRESS, no further')

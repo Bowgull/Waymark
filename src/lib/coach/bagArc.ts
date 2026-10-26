@@ -1,19 +1,27 @@
-// Bag sessions planned three ways (page 80, approved by Josh 2026-10-23).
+// Bag sessions planned three ways (page 80, approved 2026-10-23; the
+// round plan inside them from page 93, approved 2026-10-25).
 //
-// COACH: the coach plans every round on a kru's arc: a warm-up round of
-// basics; technique rounds while he's fresh (a combo he just added goes here
-// first, alone, then with one more combo he's still learning); pressure rounds
-// with his hardest and longest combos at pace (then elbows and knees); a
-// finisher of kicks and knees, the last 30 s all out. No two rounds are the
-// same. HYBRID: the coach sets the rounds, their length and rest; the rounds
-// he filled stay his, the coach fills the rest on the same arc. CUSTOM: every
-// round, its length, the rest and the combos are his; the coach changes
-// nothing. Hybrid and Custom can be saved as routines.
+// COACH: the coach plans every round the way a kru teaches a bag session
+// (research: bag-round-structure.md). Two focus combos, A and B, drilled for
+// the whole session and kept about 3 sessions, or until both rate SHARP:
+//   WARM-UP    rhythm: jab, lead teep, a light body kick (the basics he owns)
+//   TECHNIQUE  learn A, slow and clean, the whole round; then learn B
+//   TECHNIQUE  further in (A and B 3 strikes or more): A and B as one string
+//   PRESSURE   A and B at pace, the last 30 s all out; then a free round
+// The app's four stage words stay; the round's focus is in its round type and
+// its one cue (the teal flap). A NEW combo (one he added, or one the coach's
+// unlock card opened, in the last two weeks) is always A: it is learnt slow
+// before it is thrown at pace. The page 86 finisher (counted kick and teep
+// sets) follows the last round; it is not a round. HYBRID: the coach sets the
+// rounds, their length and rest; the rounds he filled stay his, the coach fills
+// the rest on the same plan. CUSTOM: every round, its length, the rest and the
+// combos are his; the coach changes nothing. Hybrid and Custom can be saved as
+// routines.
 //
 // Pure: the builder on the phone and the start route on the server both run
 // it. The coach only ever picks from his own combos: it never makes one up.
 
-import { categoryOf, comboLevel, expandStrike, splitComboText, type ComboLevel } from '../classCombos'
+import { comboLevel, expandStrike, splitComboText, type ComboLevel } from '../classCombos'
 import type { BagRoundType } from './bag'
 
 export type BagStage = 'warmup' | 'technique' | 'pressure' | 'finisher'
@@ -21,10 +29,6 @@ export type BagMode = 'coach' | 'hybrid' | 'custom'
 
 /** The round labels (the only words on the builder's rounds). */
 export const STAGE_WORDS: Readonly<Record<BagStage, string>> = { warmup: 'WARM-UP', technique: 'TECHNIQUE', pressure: 'PRESSURE', finisher: 'FINISHER' }
-/** The finisher's line in the builder. */
-export const FINISHER_LINE = 'KICKS · LAST 30 S ALL OUT'
-/** Each stage as the round types the bag rounds already carry. */
-export const STAGE_ROUND_TYPE: Readonly<Record<BagStage, BagRoundType>> = { warmup: 'warmup', technique: 'technical_flow', pressure: 'combo_practice', finisher: 'conditioning' }
 
 /** The coach's own round and rest (the app's bag rounds: 3 min, 1 min rest). */
 export const COACH_ROUND_SEC = 180
@@ -43,9 +47,11 @@ export interface PoolCombo {
   createdAt: number
   source?: string | null
   isFavourite?: number
+  /** Unix seconds: when the coach's unlock card opened it (0060). */
+  unlockedAt?: number | null
 }
 
-/** Days a combo he added (typed or from class) counts as new. */
+/** Days a combo he added (typed or from class), or the coach opened, counts as new. */
 export const NEW_DAYS = 14
 /** Mastered at 9 of 15 (the Library's MASTERED_AT); close from 6. */
 export const MASTERED_AT = 9
@@ -53,10 +59,11 @@ export const CLOSE_AT = 6
 
 export type PoolTag = 'new' | 'close' | null
 
-/** NEW: one he added in the last two weeks, not mastered yet. CLOSE: 6-8 of 15. */
+/** NEW: one he added, or the coach's unlock card opened, in the last two weeks, not mastered yet. CLOSE: 6-8 of 15. */
 export function poolTag(c: PoolCombo, nowSec: number): PoolTag {
   const his = c.source === 'mine' || c.source === 'class'
-  if (his && nowSec - c.createdAt <= NEW_DAYS * 86400 && c.masteryScore < MASTERED_AT) return 'new'
+  const since = his ? c.createdAt : c.unlockedAt ?? null
+  if (since != null && nowSec - since <= NEW_DAYS * 86400 && c.masteryScore < MASTERED_AT) return 'new'
   if (c.masteryScore >= CLOSE_AT && c.masteryScore < MASTERED_AT) return 'close'
   return null
 }
@@ -78,21 +85,61 @@ export function pickerGroups(pool: ReadonlyArray<PoolCombo>, nowSec: number, q =
   }
 }
 
+// ─── the round plan (page 93) ─────────────────────────────────
+
 /**
- * The kru's arc for n rounds: round 1 the warm-up; the finisher last (when the
- * day allows one); the first half of what's between is technique, the rest
- * pressure.
+ * What a round asks for. RHYTHM: the warm-up basics. LEARN: one combo slow and
+ * clean the whole round, exit after each. LINK: A then B as one string. PACE: A
+ * at pace (a 6-round day before the link). PRESSURE: A and B at pace, the last
+ * 30 s all out. FREE: a fight round, mix in A and B, check after every combo.
  */
-export function kruArc(n: number, finishers = true): BagStage[] {
+export type RoundFocus = 'rhythm' | 'learn' | 'link' | 'pace' | 'pressure' | 'free'
+
+/** The stage word each focus sits under (the app's four words stay). */
+export const FOCUS_STAGE: Readonly<Record<RoundFocus, BagStage>> = { rhythm: 'warmup', learn: 'technique', link: 'technique', pace: 'pressure', pressure: 'pressure', free: 'pressure' }
+
+/** Each focus as the round type the bag rounds carry (bag_work_rounds.round_type). */
+export const FOCUS_ROUND_TYPE: Readonly<Record<RoundFocus, BagRoundType>> = { rhythm: 'warmup', learn: 'learn', link: 'link', pace: 'pace', pressure: 'pressure', free: 'free' }
+
+/**
+ * The rounds' focus for n rounds (bag-round-structure.md): rhythm, learn A,
+ * learn B, link (or A at pace early on), pressure, free. Shorter days drop the
+ * link, then the free round; longer ones add free rounds.
+ */
+export function roundPlan(n: number, linked = false): RoundFocus[] {
   if (n <= 0) return []
-  if (n === 1) return ['warmup']
-  const fin = finishers && n >= 3
-  const mid = n - 1 - (fin ? 1 : 0)
-  const tech = Math.ceil(mid / 2)
-  const out: BagStage[] = ['warmup']
-  for (let i = 0; i < mid; i++) out.push(i < tech ? 'technique' : 'pressure')
-  if (fin) out.push('finisher')
-  return out
+  const six: RoundFocus[] = ['rhythm', 'learn', 'learn', linked ? 'link' : 'pace', 'pressure', 'free']
+  if (n >= 6) return [...six, ...Array.from({ length: n - 6 }, () => 'free' as const)]
+  if (n === 5) return ['rhythm', 'learn', 'learn', 'pressure', 'free']
+  if (n === 4) return ['rhythm', 'learn', 'learn', 'pressure']
+  return six.slice(0, n)
+}
+
+/** The stage words for n rounds (the builder's labels; no finisher round: the finisher is page 86's sets). */
+export function kruArc(n: number): BagStage[] {
+  return roundPlan(n).map(f => FOCUS_STAGE[f])
+}
+
+/** The stage a stored round type sits under (older sessions' types too); null for Custom's rounds (no labels). */
+export function stageOfRoundType(t: string | null | undefined): BagStage | null {
+  switch (t) {
+    case 'warmup': return 'warmup'
+    case 'learn': case 'link': case 'technical_flow': case 'drill_isolation': return 'technique'
+    case 'pace': case 'pressure': case 'free': case 'combo_practice': case 'power': return 'pressure'
+    case 'conditioning': return 'finisher'
+    default: return null
+  }
+}
+
+/** The one cue a round shows on its teal flap (CUE · …): the combo's own on a learn round, the round's job otherwise. */
+export function roundCue(roundType: string | null | undefined, comboCue: string): string {
+  switch (roundType) {
+    case 'warmup': return 'RELAX, BOUNCE'
+    case 'link': return 'ONE STRING, NO STOP'
+    case 'pace': case 'pressure': return 'LAST 30 S ALL OUT'
+    case 'free': return 'CHECK AFTER EACH'
+    default: return comboCue
+  }
 }
 
 export interface PlannedRound {
@@ -101,108 +148,124 @@ export interface PlannedRound {
   comboIds: string[]
   /** He filled it (the gold edge). */
   mine: boolean
+  /** What the round asks for (null in Custom). */
+  focus?: RoundFocus | null
 }
 
-const setKey = (ids: ReadonlyArray<string>) => [...ids].sort().join('|')
-const hasClose = (c: PoolCombo) => splitComboText(c.text).some(s => { const k = categoryOf(s); return k === 'knees' || k === 'elbows' })
-const hasKick = (c: PoolCombo) => splitComboText(c.text).some(s => { const k = categoryOf(s); return k === 'kicks' || k === 'knees' || /\bteep\b/i.test(s) })
+/** A focus pair from an earlier session (newest first): its combo ids and how each was rated. */
+export interface FocusHistory {
+  ids: string[]
+  /** Combo id → that session's rating (1 STRUGGLED, 2 SOLID, 3 SHARP). */
+  ratings: Readonly<Record<string, number>>
+}
 
-/** Each stage's rounds, in the order the coach hands them out. */
-function stageQueues(pool: ReadonlyArray<PoolCombo>, nowSec: number): Record<BagStage, string[][]> {
-  const byLevel = (a: PoolCombo, b: PoolCombo) => comboLevel(a) - comboLevel(b) || strikeCount(a) - strikeCount(b)
-  const fresh = pool.filter(c => poolTag(c, nowSec) === 'new').sort((a, b) => b.createdAt - a.createdAt)
-  const freshIds = new Set(fresh.map(c => c.id))
-  const learning = pool.filter(c => !freshIds.has(c.id) && c.masteryScore < MASTERED_AT).sort((a, b) => a.masteryScore - b.masteryScore || byLevel(a, b))
-  const known = pool.filter(c => !freshIds.has(c.id) && c.masteryScore >= MASTERED_AT).sort(byLevel)
-  const learnList = learning.length > 0 ? learning : known
+/** A focus pair is kept about this many sessions (or until both rate SHARP), then one is swapped. */
+export const FOCUS_SESSIONS = 3
 
-  // Warm-up: the basics, easiest and best known first.
-  // (a new combo waits for its technique round: not in the warm-up, not at pace yet)
-  const settled = pool.filter(c => !freshIds.has(c.id))
-  const base = settled.length > 0 ? settled : [...pool]
-  const basics = [...base].sort((a, b) => comboLevel(a) - comboLevel(b) || b.masteryScore - a.masteryScore || strikeCount(a) - strikeCount(b))
-  const warmup = [basics.slice(0, 3).map(c => c.id)]
+/** A single strike that makes a rhythm warm-up (jab, lead teep, body kick...). */
+const RHYTHM_ORDER = [/^jab\b/i, /\bteep\b/i, /\bbody kick\b/i, /\bkick\b/i, /\bcross\b/i, /\bknee\b/i]
 
-  // Technique: each new combo alone, then with one more he's learning; then the learning ones in pairs.
-  const technique: string[][] = []
-  let li = 0
-  const nextLearn = (not: string) => {
-    for (let k = 0; k < learnList.length; k++) {
-      const c = learnList[(li + k) % learnList.length]
-      if (c.id !== not) { li = (li + k + 1) % Math.max(1, learnList.length); return c.id }
+/**
+ * The session's two focus combos, A then B (page 93): the pair from last time
+ * is kept until it has had about 3 sessions or both rated SHARP; then one is
+ * swapped (the sharper, then the longer-drilled), the other stays. A NEW combo
+ * comes in first, as A. Then the ones he is still learning, easiest first;
+ * when everything is mastered, the easiest he knows. A combo just swapped out
+ * doesn't come straight back.
+ */
+export function pickFocus(pool: ReadonlyArray<PoolCombo>, nowSec: number, history: ReadonlyArray<FocusHistory> = []): string[] {
+  const inPool = new Set(pool.map(c => c.id))
+  const byLevel = (a: PoolCombo, b: PoolCombo) => comboLevel(a) - comboLevel(b) || strikeCount(a) - strikeCount(b) || a.id.localeCompare(b.id)
+  const last = history[0]
+  const streak = (id: string) => { let n = 0; for (const h of history) { if (!h.ids.includes(id)) break; n++ } return n }
+  let keep = (last?.ids ?? []).filter(id => inPool.has(id)).slice(0, 2)
+  const out: string[] = []
+  const dropped = new Set<string>()
+  if (keep.length === 2) {
+    const sharp = keep.filter(id => last!.ratings[id] === 3)
+    const tired = keep.some(id => streak(id) >= FOCUS_SESSIONS)
+    if (sharp.length === 2 || tired) {
+      // swap one: the sharper, then the one drilled longer, then the first
+      const [go] = [...keep].sort((x, y) => Number(last!.ratings[y] === 3) - Number(last!.ratings[x] === 3) || streak(y) - streak(x) || keep.indexOf(x) - keep.indexOf(y))
+      dropped.add(go)
+      keep = keep.filter(id => id !== go)
     }
-    return null
   }
-  for (const f of fresh) {
-    technique.push([f.id])
-    const l = nextLearn(f.id)
-    if (l) technique.push([f.id, l])
+  const fresh = pool.filter(c => poolTag(c, nowSec) === 'new').sort((a, b) => (b.unlockedAt ?? b.createdAt) - (a.unlockedAt ?? a.createdAt) || byLevel(a, b))
+  // a NEW combo always gets a learn round: it goes first, ahead of a kept one
+  const newFirst = fresh.find(c => !keep.includes(c.id) && !dropped.has(c.id))
+  if (newFirst && keep.length >= 2) keep = keep.slice(0, 1)
+  if (newFirst) out.push(newFirst.id)
+  for (const id of keep) if (out.length < 2 && !out.includes(id)) out.push(id)
+  const learning = pool.filter(c => c.masteryScore < MASTERED_AT).sort((a, b) => byLevel(a, b) || a.masteryScore - b.masteryScore)
+  const known = pool.filter(c => c.masteryScore >= MASTERED_AT).sort(byLevel)
+  for (const list of [fresh, learning, known]) {
+    for (const c of list) {
+      if (out.length >= 2) break
+      if (!out.includes(c.id) && !dropped.has(c.id)) out.push(c.id)
+    }
   }
-  for (let k = 0; k + 1 < learnList.length; k += 2) technique.push([learnList[k].id, learnList[k + 1].id])
-  for (const c of learnList) technique.push([c.id])
+  // a pool of two: the one swapped out comes back rather than a round with nothing
+  for (const id of dropped) if (out.length < 2 && !out.includes(id)) out.push(id)
+  return out
+}
 
-  // Pressure: the hardest and longest at pace, two a round, then elbows and knees, then the rest.
-  const hard = [...base].sort((a, b) => comboLevel(b) - comboLevel(a) || strikeCount(b) - strikeCount(a) || b.masteryScore - a.masteryScore)
-  const pressure: string[][] = []
-  const used = new Set<string>()
-  const pairFrom = (list: PoolCombo[]) => {
-    const free = list.filter(c => !used.has(c.id)).slice(0, 2)
-    if (free.length === 0) return
-    free.forEach(c => used.add(c.id))
-    pressure.push(free.map(c => c.id))
+/** The warm-up's basics: up to three single strikes he owns (jab, lead teep, body kick), else his easiest best-known combos. */
+function rhythmIds(pool: ReadonlyArray<PoolCombo>, nowSec: number, focus: ReadonlyArray<string>): string[] {
+  // a new combo waits for its learn round: not in the warm-up
+  const settled = pool.filter(c => poolTag(c, nowSec) !== 'new')
+  const base = settled.length > 0 ? settled : [...pool]
+  // one strike each ("Jab × 3" is a jab)
+  const singles = base.filter(c => splitComboText(c.text).length === 1)
+  const picked: PoolCombo[] = []
+  for (const re of RHYTHM_ORDER) {
+    const hit = singles.find(c => !picked.includes(c) && re.test(c.text))
+    if (hit && picked.length < 3) picked.push(hit)
   }
-  pairFrom(hard)
-  pairFrom(hard.filter(hasClose))
-  for (let k = 0; k < hard.length; k++) pairFrom(hard)
-  for (let k = 0; k + 1 < hard.length; k++) pressure.push([hard[k].id, hard[k + 1].id])
-
-  // Finisher: kicks and knees, short ones first.
-  const kicks = pool.filter(hasKick).sort((a, b) => strikeCount(a) - strikeCount(b) || comboLevel(a) - comboLevel(b))
-  const finisher = kicks.length > 0 ? [kicks.slice(0, 2).map(c => c.id), ...kicks.slice(2).map(c => [c.id])] : [hard.slice(0, 1).map(c => c.id)]
-
-  return { warmup, technique, pressure, finisher }
+  if (picked.length >= 2) return picked.map(c => c.id)
+  const basics = [...base].sort((a, b) => comboLevel(a) - comboLevel(b) || b.masteryScore - a.masteryScore || strikeCount(a) - strikeCount(b))
+  const notFocus = basics.filter(c => !focus.includes(c.id))
+  return (notFocus.length > 0 ? notFocus : basics).slice(0, 2).map(c => c.id)
 }
 
 /**
- * The coach's rounds on the arc. `keep` holds rounds already filled (Hybrid:
- * his); the coach fills the others so that no two rounds hold the same combos
- * (when his pool has enough of them).
+ * The coach's rounds (page 93). `keep` holds rounds already filled (Hybrid:
+ * his); the coach fills the others on the same plan with the session's A and
+ * B (`history`: earlier sessions' pairs, newest first, so a pair carries on).
  */
-export function planCoachRounds(pool: ReadonlyArray<PoolCombo>, opts: { rounds: number; finishers: boolean; nowSec: number; keep?: Readonly<Record<number, ReadonlyArray<string>>> }): PlannedRound[] {
-  const arc = kruArc(opts.rounds, opts.finishers)
-  const q = stageQueues(pool, opts.nowSec)
+export function planCoachRounds(pool: ReadonlyArray<PoolCombo>, opts: { rounds: number; nowSec: number; keep?: Readonly<Record<number, ReadonlyArray<string>>>; history?: ReadonlyArray<FocusHistory> }): PlannedRound[] {
   const keep = opts.keep ?? {}
-  const taken = new Set<string>()
-  arc.forEach((_, i) => { const k = keep[i]; if (k && k.length > 0) taken.add(setKey(k)) })
-  const next: Record<BagStage, number> = { warmup: 0, technique: 0, pressure: 0, finisher: 0 }
-  const fallback = [...pool].sort((a, b) => a.masteryScore - b.masteryScore)
-  return arc.map((stage, i) => {
+  const [a, b] = pickFocus(pool, opts.nowSec, opts.history ?? [])
+  const byId = new Map(pool.map(c => [c.id, c]))
+  const linked = a != null && b != null && strikeCount(byId.get(a)!) >= 3 && strikeCount(byId.get(b)!) >= 3
+  const plan = roundPlan(opts.rounds, linked)
+  const rhythm = rhythmIds(pool, opts.nowSec, [a, b].filter(Boolean))
+  let learnt = 0
+  return plan.map((focus, i) => {
+    const stage = FOCUS_STAGE[focus]
     const mineIds = keep[i]
-    if (mineIds && mineIds.length > 0) return { stage, comboIds: [...mineIds], mine: true }
-    if (pool.length === 0) return { stage, comboIds: [], mine: false }
-    const queue = q[stage]
-    let pick: string[] | null = null
-    while (next[stage] < queue.length) {
-      const cand = queue[next[stage]++]
-      if (cand.length > 0 && !taken.has(setKey(cand))) { pick = cand; break }
-    }
-    // the stage ran out: any one or two of his combos not used as a round yet
-    if (!pick) {
-      outer: for (const a of fallback) {
-        if (!taken.has(setKey([a.id]))) { pick = [a.id]; break }
-        for (const b of fallback) if (b.id !== a.id && !taken.has(setKey([a.id, b.id]))) { pick = [a.id, b.id]; break outer }
-      }
-    }
-    // a pool too small to keep every round different: the stage's first again
-    pick ??= queue[0] ?? [fallback[0].id]
-    taken.add(setKey(pick))
-    return { stage, comboIds: pick, mine: false }
+    if (focus === 'learn') learnt++
+    if (mineIds && mineIds.length > 0) return { stage, comboIds: [...mineIds], mine: true, focus }
+    if (pool.length === 0 || a == null) return { stage, comboIds: [], mine: false, focus }
+    const both = b != null ? [a, b] : [a]
+    const ids = focus === 'rhythm' ? rhythm
+      : focus === 'learn' ? [learnt === 2 && b != null ? b : a]
+      : focus === 'pace' ? [a]
+      : both
+    return { stage, comboIds: ids, mine: false, focus }
   })
 }
 
-/** Hybrid: his rounds kept as he filled them; the coach fills the empty ones on the arc. */
-export function planHybridRounds(pool: ReadonlyArray<PoolCombo>, opts: { rounds: number; finishers: boolean; nowSec: number; picked: Readonly<Record<number, ReadonlyArray<string>>> }): PlannedRound[] {
-  return planCoachRounds(pool, { rounds: opts.rounds, finishers: opts.finishers, nowSec: opts.nowSec, keep: opts.picked })
+/** The session's A and B as planned (the combos the coach's learn rounds hold), to keep for next time. */
+export function focusOf(rounds: ReadonlyArray<Pick<PlannedRound, 'comboIds' | 'focus' | 'mine'>>): string[] {
+  const out: string[] = []
+  for (const r of rounds) if (r.focus === 'learn' && !r.mine) for (const id of r.comboIds) if (!out.includes(id)) out.push(id)
+  return out.slice(0, 2)
+}
+
+/** Hybrid: his rounds kept as he filled them; the coach fills the empty ones on the same plan. */
+export function planHybridRounds(pool: ReadonlyArray<PoolCombo>, opts: { rounds: number; nowSec: number; picked: Readonly<Record<number, ReadonlyArray<string>>>; history?: ReadonlyArray<FocusHistory> }): PlannedRound[] {
+  return planCoachRounds(pool, { rounds: opts.rounds, nowSec: opts.nowSec, keep: opts.picked, history: opts.history })
 }
 
 /** Custom: exactly his rounds; an empty round stays empty. The coach adds nothing. */
@@ -258,20 +321,20 @@ export function parseBagSpec(raw: unknown): BagSpec | null {
   }
 }
 
-/** The rounds to write when the session starts, from his choice (Coach without a choice is the AI's or the arc). */
-export function roundsForSpec(spec: BagSpec, pool: ReadonlyArray<PoolCombo>, opts: { finishers: boolean; nowSec: number }): Array<PlannedRound & { roundType: BagRoundType; durationSec: number; restSec: number }> {
+/** The rounds to write when the session starts, from his choice (Coach: the coach's plan; `history`: earlier sessions' A and B). */
+export function roundsForSpec(spec: BagSpec, pool: ReadonlyArray<PoolCombo>, opts: { nowSec: number; history?: ReadonlyArray<FocusHistory> }): Array<PlannedRound & { roundType: BagRoundType; durationSec: number; restSec: number }> {
   const known = new Set(pool.map(c => c.id))
   // only his own combos that are still in his pool
   const picked = Object.fromEntries(Object.entries(spec.picked).map(([k, ids]) => [k, ids.filter(id => known.has(id))]))
   const rounds = spec.mode === 'custom'
     ? planCustomRounds({ rounds: spec.rounds, picked })
     : spec.mode === 'hybrid'
-      ? planHybridRounds(pool, { rounds: spec.rounds, finishers: opts.finishers, nowSec: opts.nowSec, picked })
-      : planCoachRounds(pool, { rounds: spec.rounds, finishers: opts.finishers, nowSec: opts.nowSec })
+      ? planHybridRounds(pool, { rounds: spec.rounds, nowSec: opts.nowSec, picked, history: opts.history })
+      : planCoachRounds(pool, { rounds: spec.rounds, nowSec: opts.nowSec, history: opts.history })
   return rounds.map(r => ({
     ...r,
-    roundType: r.stage ? STAGE_ROUND_TYPE[r.stage] : 'combo_practice',
-    durationSec: spec.mode === 'coach' && r.stage === 'warmup' ? 150 : spec.roundSec,
+    roundType: r.focus ? FOCUS_ROUND_TYPE[r.focus] : 'custom',
+    durationSec: spec.roundSec,
     restSec: spec.restSec,
   }))
 }

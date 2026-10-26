@@ -8,6 +8,7 @@ import { getStrengthTemplate } from '../../lib/strengthTemplates'
 import { ROPE_ROUNDS } from '../../lib/plannedLength'
 import type { SessionIconKey } from '../../design/sessionIconKeys'
 import { fiveKText, hardKindOf } from '../../lib/brain/hardRuns'
+import { planFromContext } from '../../lib/coach/bagConditioning'
 
 export { cycleWeeks } from '../../lib/programWeeks'
 
@@ -147,6 +148,8 @@ export function dayLine(list: ReadonlyArray<DayBoardSession>, weekNumber: number
     }
     case 'bag_work': { const r = bagRounds(main.doseJson); return r ? `Bag · ${r} × 3 min` : `Bag · ~${plannedRowMinutes(main, weekNumber)} min` }
     case 'mt_class': return 'MT class'
+    // page 93: "Bag conditioning · 3 rounds" (its plan once picked), else its minutes
+    case 'bag_conditioning': { const p = planFromContext(main.contextJson); return p ? `Bag conditioning · ${p.rounds} round${p.rounds === 1 ? '' : 's'}` : `Bag conditioning · ~${plannedRowMinutes(main, weekNumber)} min` }
     case 'active_recovery': return `${sentenceCase(sessionDisplayName(main))} · ~${plannedRowMinutes(main, weekNumber)} min`
     case 'skip_rope': return `Skip rope · ${ROPE_ROUNDS} × 3 min`
     case 'mobility': return `Foundation · ~${plannedRowMinutes(main, weekNumber)} min`

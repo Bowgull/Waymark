@@ -4,7 +4,7 @@
 
 import { ApiError, apiFetch, idempotencyHeaders } from '@/lib/api'
 import type { LevelKey } from '@/lib/classCombos'
-import type { BagRoutine, PoolCombo } from '@/lib/coach/bagArc'
+import type { BagRoutine, FocusHistory, PoolCombo } from '@/lib/coach/bagArc'
 import { queueWrite } from '@/lib/outboxSync'
 
 export { cachedBagLibrary, refreshBagLibrary } from '@/features/session/classCombosClient'
@@ -42,6 +42,10 @@ export async function addTypedCombo(strikes: string[], opts: { source: 'mine' | 
 export interface BagPoolData {
   combos: PoolCombo[]
   routines: BagRoutine[]
+  /** Page 93: his last sessions' A and B, newest first (the coach keeps a pair about 3 sessions). */
+  history?: FocusHistory[]
+  /** His Settings switches (the finisher row follows them). */
+  groups?: string[]
 }
 
 let pool: BagPoolData | null = null
@@ -65,7 +69,7 @@ export function subscribePool(fn: () => void): () => void {
 /** Read his pool and routines ahead (the picks window opening is the moment). Quiet on failure. */
 export function prefetchBagPool(): Promise<BagPoolData | null> {
   inflight ??= apiFetch<BagPoolData>('/api/bag/pool')
-    .then(p => { if (p && Array.isArray(p.combos)) setPool({ combos: p.combos, routines: Array.isArray(p.routines) ? p.routines : [] }); return pool })
+    .then(p => { if (p && Array.isArray(p.combos)) setPool({ combos: p.combos, routines: Array.isArray(p.routines) ? p.routines : [], history: Array.isArray(p.history) ? p.history : [], groups: Array.isArray(p.groups) ? p.groups : undefined }); return pool })
     .catch(() => pool)
     .finally(() => { inflight = null })
   return inflight

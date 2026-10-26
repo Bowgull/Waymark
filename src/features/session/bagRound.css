@@ -25,6 +25,9 @@
 .bw-dn { display: block; font: 900 22px/18px var(--font-mono); height: 18px; color: #e8c878; transform: rotate(90deg); text-shadow: 0 0 6px rgba(232, 200, 120, 0.5); }
 .bw.is-rest .bw-dn { color: #8fd4b8; text-shadow: 0 0 6px rgba(143, 212, 184, 0.5); }
 
+/* page 93: the stage word over the combo (WARM-UP, NEXT · TECHNIQUE); its room always stays */
+.bw-side { flex: none; height: 14px; margin-bottom: -4px; font: 800 11px/14px var(--font-body); letter-spacing: 0.26em; color: rgba(240, 230, 192, 0.6); }
+
 /* the cue: shown at the bell and in rest; its space always stays */
 .bw-cue { flex: none; display: flex; justify-content: center; align-items: center; min-height: 26px; }
 .bw-cue.is-hidden, .bw-then.is-hidden { visibility: hidden; }

@@ -18,20 +18,26 @@
 //   its planned reps at or under the target effort. A miss never adds weight.
 
 export type LoadUnit = 'lb' | 'kg'
-export type LoadEquipment = 'barbell' | 'dumbbell' | 'machine' | 'none'
+export type LoadEquipment = 'barbell' | 'dumbbell' | 'machine' | 'landmine' | 'none'
 export type SnapDirection = 'nearest' | 'up' | 'down'
 
 const LB_PER_KG = 2.20462
 const BAR: Record<LoadUnit, number> = { lb: 45, kg: 20 }
-/** Smallest loadable change, in the unit. Barbell = the smallest plate pair. */
+/**
+ * Smallest loadable change, in the unit. Barbell = the smallest plate pair.
+ * Landmine (rebuild Phase 5): one plate on the bar end, 2.5 lb until he says
+ * his gym's smallest plate is bigger.
+ */
 export const LOAD_STEP: Record<LoadUnit, Record<Exclude<LoadEquipment, 'none'>, number>> = {
-  lb: { barbell: 5, dumbbell: 5, machine: 5 },
-  kg: { barbell: 2.5, dumbbell: 2, machine: 2.5 },
+  lb: { barbell: 5, dumbbell: 5, machine: 5, landmine: 2.5 },
+  kg: { barbell: 2.5, dumbbell: 2, machine: 2.5, landmine: 1.25 },
 }
 
 /** Loading kind from the library's equipment string ("barbell,bench", "bodyweight,dumbbell"). */
 export function loadEquipment(equipment: string | null | undefined): LoadEquipment {
   const tokens = (equipment ?? '').toLowerCase().split(',').map(t => t.trim())
+  // A landmine's weight is what slides onto the bar end, never the bar itself (rebuild Phase 5).
+  if (tokens.includes('landmine')) return 'landmine'
   for (const t of tokens) {
     if (t === 'barbell' || t === 'ez-bar' || t === 'trap_bar' || t === 'trap-bar' || t === 'blocks') return 'barbell'
     if (t === 'dumbbell' || t === 'kettlebell') return 'dumbbell'
@@ -57,6 +63,11 @@ export function bodyweightOk(equipment: string | null | undefined): boolean {
  * at bodyweight, else "find your weight" (a loadable lift with no weight yet).
  */
 export function loadLabel(kg: number | null | undefined, equipment: string | null | undefined, fromKg?: number | null): string {
+  if (loadEquipment(equipment) === 'landmine') {
+    if (kg == null || !(kg > 0)) return 'bar only'
+    const lbs = Math.round(kg * LB_PER_KG * 2) / 2
+    return String(lbs)
+  }
   if (kg == null || !(kg > 0)) return bodyweightOk(equipment) ? 'BW' : 'find your weight'
   const top = Math.round(kg * LB_PER_KG)
   const from = fromKg != null && fromKg > 0 ? Math.round(fromKg * LB_PER_KG) : null
@@ -96,7 +107,26 @@ export function snapLoadKg(kg: number, equipment: LoadEquipment, opts: { unit?: 
     const snapped = v <= bar ? bar : bar + roundTo(v - bar, step, opts.direction ?? 'nearest')
     return fromUnit(Math.max(bar, snapped), unit)
   }
+  // The landmine's empty bar is 0 on the bar end: it can snap to bar only.
+  if (equipment === 'landmine') return fromUnit(Math.max(0, roundTo(v, step, opts.direction ?? 'nearest')), unit)
   return fromUnit(Math.max(step, roundTo(v, step, opts.direction ?? 'nearest')), unit)
+}
+
+/**
+ * The plates to grab for a weight in lb (page 93): a barbell's per side once
+ * the 45 lb bar is off, a landmine's all on its one bar end. "Bar only" at
+ * the empty bar.
+ */
+export function plateLine(lbs: number, equipment: LoadEquipment): string | null {
+  if (equipment !== 'barbell' && equipment !== 'landmine') return null
+  let rest = equipment === 'barbell' ? (lbs - BAR.lb) / 2 : lbs
+  if (!(rest > 0.01)) return 'Bar only'
+  const out: string[] = []
+  for (const p of [45, 35, 25, 10, 5, 2.5]) {
+    const n = Math.floor(rest / p + 1e-9)
+    if (n > 0) { out.push(`${n}× ${p}`); rest -= n * p }
+  }
+  return out.join('  ·  ')
 }
 
 /**
@@ -109,6 +139,26 @@ export function snapIncreaseKg(fromKg: number, toKg: number, equipment: LoadEqui
   const up = snapLoadKg(toKg, equipment, { unit, direction: 'up' })
   if (up > from + 1e-6) return up
   return fromUnit(toUnit(from, unit) + LOAD_STEP[unit][equipment], unit)
+}
+
+/**
+ * A find-your-weight rung (rebuild Phase 4): the ladder climbs by the larger
+ * of a big step (lower +10%, upper +5%) and a fixed jump (a barbell 20 lb
+ * lower / 10 lb upper, 10 lb a dumbbell or a stack), so a returner's ladder
+ * reaches his weight in a few sets instead of crawling up from the bar.
+ */
+export const LADDER_JUMP_LB: Readonly<Record<'upper' | 'lower', Record<Exclude<LoadEquipment, 'none'>, number>>> = {
+  upper: { barbell: 10, dumbbell: 10, machine: 10, landmine: 5 },
+  lower: { barbell: 20, dumbbell: 10, machine: 20, landmine: 5 },
+}
+
+/** The next ladder rung above `fromKg` (kg), snapped to what can be loaded. */
+export function ladderRungKg(fromKg: number, equipment: LoadEquipment, region: 'upper' | 'lower'): number {
+  if (equipment === 'none' || !(fromKg > 0)) return fromKg
+  const pct = region === 'lower' ? 0.1 : 0.05
+  const byPct = snapIncreaseKg(fromKg, fromKg * (1 + pct), equipment)
+  const byJump = snapIncreaseKg(fromKg, fromKg + LADDER_JUMP_LB[region][equipment] / LB_PER_KG, equipment)
+  return Math.max(byPct, byJump)
 }
 
 /** Snap by the rule's direction: increase → next step up, decrease → step down, hold → nearest. */
@@ -134,7 +184,8 @@ const DUMBBELL_RAMP = [{ pct: 0.5, reps: 5 }, { pct: 0.75, reps: 3 }]
  * work load is the bar or a light dumbbell, or the lift isn't loaded.
  */
 export function warmupRamp(firstHeavyKg: number | null | undefined, equipment: LoadEquipment, unit: LoadUnit = 'lb'): RampSet[] {
-  if (firstHeavyKg == null || !(firstHeavyKg > 0) || equipment === 'none') return []
+  // A landmine is light at the hand: the first set is its warm-up.
+  if (firstHeavyKg == null || !(firstHeavyKg > 0) || equipment === 'none' || equipment === 'landmine') return []
   const work = snapLoadKg(firstHeavyKg, equipment, { unit })
   const workU = toUnit(work, unit)
   let plan: Array<{ pct: number; reps: number }>

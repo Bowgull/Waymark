@@ -64,7 +64,7 @@ export interface NextBlockView {
   foot: string
 }
 
-export const NEXT_BLOCK_FOOT = 'All four done, and at least 4 weeks in: Fighter Block 1 starts the Monday after, with a lighter week first.'
+export const NEXT_BLOCK_FOOT = 'All four done, and at least 4 weeks in: The Campaign starts the Monday after, with a lighter week first.'
 
 /** One plain line per part: what is left, from the part's own numbers. `firstRunMin`: his first run's length, before any run. */
 export function plainPartLine(p: ReadinessPart, ctx: { daysIn: number; firstRunMin?: number | null } = { daysIn: 1 }): string {

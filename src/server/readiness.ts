@@ -8,27 +8,25 @@
 //   when all four parts are in and 4 weeks are done, the coach sets the move:
 //   a lighter week (the doses read it, server/brain.ts), and a change row on
 //   the Monday after (Dagaz rune, UNDO = "stay in Block Zero" until it
-//   starts). On that Monday, Block Zero ends, Fighter Block 1 starts, and the
-//   new training maxes (90% of e1RM from the lighter week's sets) are written
-//   as a change row with UNDO.
-// - finishBlockMove (nightly, after the re-plan): the TM change's UNDO runs
-//   until the first Fighter strength session starts.
+//   starts). On that Monday The Campaign starts: the same one plan goes on
+//   (rebuild Phase 2: never the old Fighter week, no training maxes; the
+//   weights keep coming from his reps left). The block is renamed, its weeks
+//   keep counting, and the move is not set again.
+// - finishBlockMove (nightly, after the re-plan): a TM change from an older
+//   move keeps its UNDO until the first strength session starts.
 
-import { and, desc, eq, gte, inArray, lt, lte } from 'drizzle-orm'
-import { coachingOutputs, sessions, strengthSessionExercises, strengthSets, trainingBlocks, trainingMaxes, weekAdjustments } from '../db/schema'
+import { and, desc, eq, gte, lte } from 'drizzle-orm'
+import { coachingOutputs, sessions, trainingBlocks, weekAdjustments } from '../db/schema'
 import type { createDB } from '../db/client'
 import { buildAthleteModel } from '../lib/brain/athleteModel'
 import { readinessParts, readinessSummary, dayLabel, type ReadinessReport } from '../lib/brain/readinessParts'
-import { e1rmsFromSets, moveDates, MOVE_AGAIN_AFTER_DAYS, startingMaxes } from '../lib/brain/blockMove'
-import { NEXT_BLOCK_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS } from '../lib/blockZero/endGate'
+import { moveDates, MOVE_AGAIN_AFTER_DAYS } from '../lib/brain/blockMove'
+import { NEXT_BLOCK_NAME, NEXT_BLOCK_SHOW } from '../lib/blockZero/endGate'
 import { readChangeRow, slotStart } from '../lib/coach'
-import { kgToLbs } from '../lib/units'
 import { getActiveBlock } from './blockZeroData'
-import { blockStartDay, startedAtForLocalDay, trainingWeekFor } from './coachData'
-import { createTrainingBlock, endActiveBlocks } from './blocks'
+import { blockStartDay, trainingWeekFor } from './coachData'
 import { loadModelEvents } from './athleteModel'
 import { pmStart, recordChanges } from './changes'
-import { liftShort } from '../lib/brain/readinessParts'
 
 type DB = ReturnType<typeof createDB>
 type Block = NonNullable<Awaited<ReturnType<typeof getActiveBlock>>>
@@ -128,11 +126,13 @@ export async function runBlockMove(db: DB, today: number, nowSec: number): Promi
   if (!block || block.blockType !== 'block_zero') return { action: 'none', changes: 0 }
   const m = await loadMove(db, block.id)
 
-  // The Monday has come: Fighter Block 1 starts.
+  // The Monday has come: The Campaign starts.
   if (m && m.undoneAt == null && !m.move.applied && today >= m.move.monday) {
-    const applied = await applyMove(db, block, m.id, m.move, today, nowSec)
-    return { action: 'moved', changes: applied.tmChangeId ? 1 : 0 }
+    await applyMove(db, block, m.id, m.move, nowSec)
+    return { action: 'moved', changes: 0 }
   }
+  // Moved already: The Campaign runs on (one plan; nothing to set again).
+  if (m && m.undoneAt == null && m.move.applied) return { action: 'none', changes: 0 }
 
   // No maximum: a week more of Block Zero whenever its last week is reached.
   let runway = false
@@ -159,63 +159,32 @@ export async function setBlockMove(db: DB, block: Block, today: number, nowSec: 
   const [changeId] = await recordChanges(db, [{
     setId: crypto.randomUUID(), actor: 'coach', kind: 'block', targetSessionId: null, sessionType: 'strength', adjustmentType: 'block_move',
     before: { show: 'BLOCK ZERO', day: monday, sessions: [] },
-    after: { show: 'FIGHTER BLOCK 1', day: monday, sessions: [], put: { line: 'You stay in Block Zero.', dim: 'The coach looks again next week.' } },
-    why: `Habit, engine, strength and back are all in. ${NEXT_BLOCK_NAME} starts ${dayLabel(monday)}, after a lighter week.`,
+    after: { show: NEXT_BLOCK_SHOW, day: monday, sessions: [], put: { line: 'You stay in Block Zero.', dim: 'The coach looks again next week.' } },
+    why: `Habit, engine, strength and back are all in. The Campaign starts ${dayLabel(monday)}, after a lighter week.`,
     detail: habit?.line ?? null,
     undoUntil: monday * 86400,
     extraSource: { rule: 'block_move', parts: (report ? readinessSummary(report) : ''), lighterFrom },
   }], nowSec)
   const move: StoredMove = { blockId: block.id, readyDay: today, lighterFrom, monday, changeId: changeId ?? null, parts: (report ? readinessSummary(report) : ''), applied: null }
   await db.insert(coachingOutputs).values({ id: crypto.randomUUID(), kind: MOVE_KIND, model: 'rules', scopeWeekPlanId: null, scopeSessionId: null, inputHash: block.id, outputJson: JSON.stringify(move), tokensIn: 0, tokensOut: 0, cachedTokensIn: 0, createdAt: nowSec })
-  console.log(`[readiness] move set: lighter from ${lighterFrom}, ${NEXT_BLOCK_NAME} on ${monday} (${move.parts})`)
+  console.log(`[readiness] move set: lighter from ${lighterFrom}, ${NEXT_BLOCK_NAME} from ${monday} (${move.parts})`)
   return move
 }
 
-/** The Monday: new maxes from the lighter week (a change row with UNDO), Block Zero ends, Fighter Block 1 starts. */
-async function applyMove(db: DB, block: Block, rowId: string, move: StoredMove, today: number, nowSec: number): Promise<{ nextBlockId: string | null; tmChangeId: string | null }> {
-  // The lighter week's logged main sets give the e1RMs; the athlete model fills the lifts it didn't touch.
-  const done = await db.select({ id: sessions.id }).from(sessions)
-    .where(and(eq(sessions.type, 'strength'), eq(sessions.status, 'completed'), gte(sessions.scheduledDate, move.lighterFrom), lt(sessions.scheduledDate, move.monday)))
-  const sse = done.length ? await db.select().from(strengthSessionExercises).where(inArray(strengthSessionExercises.sessionId, done.map(d => d.id))) : []
-  const main = sse.filter(e => e.section === 'main')
-  const setRows = main.length ? await db.select().from(strengthSets).where(inArray(strengthSets.sessionExerciseId, main.map(e => e.id))) : []
-  const byId = new Map(main.map(e => [e.id, e.exerciseId]))
-  const fromSets = e1rmsFromSets(setRows.filter(s => s.isWarmup !== 1 && s.completedAt != null).map(s => ({ exerciseId: byId.get(s.sessionExerciseId) ?? '', weightKg: s.weightKg, reps: s.reps, rir: s.rir })))
-  const start = blockStartDay(block)
-  const events = await loadModelEvents(db, start, today - 1)
-  const model = buildAthleteModel(events, today - 1, { fromDay: start })
-  const fromModel = new Map(Object.values(model.lifts).filter(l => l.e1rmKg != null).map(l => [l.exerciseId, l.e1rmKg as number]))
-  const maxes = startingMaxes(fromSets, fromModel)
-  const current = new Map((await db.select().from(trainingMaxes)).map(t => [t.exerciseId, t.weightKg]))
-
-  await endActiveBlocks(db, nowSec, today)
-  const next = await createTrainingBlock(db, { name: NEXT_BLOCK_NAME, blockType: 'fighter', totalWeeks: FIGHTER_DEFAULT_TOTAL_WEEKS, nowSec, startedAt: startedAtForLocalDay(move.monday) })
-
-  let tmChangeId: string | null = null
-  const writes = maxes.filter(x => current.get(x.exerciseId) !== x.kg)
-  if (writes.length > 0) {
-    for (const w of writes) {
-      if (current.has(w.exerciseId)) await db.update(trainingMaxes).set({ weightKg: w.kg, updatedAt: nowSec }).where(eq(trainingMaxes.exerciseId, w.exerciseId))
-      else await db.insert(trainingMaxes).values({ id: crypto.randomUUID(), exerciseId: w.exerciseId, weightKg: w.kg, updatedAt: nowSec })
-    }
-    const list = writes.map((w, i) => `${liftShort(w.exerciseId)} ${kgToLbs(w.kg)}${i === 0 ? ' lb' : ''}`).join(', ')
-    const [id] = await recordChanges(db, [{
-      setId: crypto.randomUUID(), actor: 'coach', kind: 'tm', targetSessionId: null, sessionType: 'strength', adjustmentType: 'tm_update',
-      // A lift with no max before keeps its first one on UNDO (there is nothing to put back).
-      before: { show: 'OLD MAXES', day: today, sessions: [], effects: [{ kind: 'tm', lifts: writes.map(w => ({ exerciseId: w.exerciseId, kg: current.get(w.exerciseId) ?? w.kg })) }] },
-      after: { show: 'NEW MAXES', day: today, sessions: [], effects: [{ kind: 'tm', lifts: writes.map(w => ({ exerciseId: w.exerciseId, kg: w.kg })) }], put: { line: 'Your maxes are as they were.', dim: 'The coach leaves them this block.' } },
-      why: `Starting weights for ${NEXT_BLOCK_NAME}, 90% of last week's best sets: ${list}.`,
-      detail: null,
-      undoUntil: null,
-      weekPlanId: null,
-    }], nowSec)
-    tmChangeId = id ?? null
-  }
-  const applied = { at: nowSec, nextBlockId: next?.id ?? null, tmChangeId, watched: false }
+/**
+ * The Monday: The Campaign starts (rebuild Phase 2). The same block and the
+ * same one plan go on, renamed; no Fighter block and no training maxes (the
+ * weights keep coming from his reps left).
+ */
+async function applyMove(db: DB, block: Block, rowId: string, move: StoredMove, nowSec: number): Promise<void> {
+  await db.update(trainingBlocks).set({ name: BUILD_NAME }).where(eq(trainingBlocks.id, block.id))
+  const applied = { at: nowSec, nextBlockId: block.id, tmChangeId: null, watched: true }
   await db.update(coachingOutputs).set({ outputJson: JSON.stringify({ ...move, applied }) }).where(eq(coachingOutputs.id, rowId))
-  console.log(`[readiness] ${NEXT_BLOCK_NAME} started ${today}: ${writes.length} maxes written`)
-  return { nextBlockId: applied.nextBlockId, tmChangeId }
+  console.log(`[readiness] The Campaign started on ${move.monday}`)
 }
+
+/** The block's name once The Campaign starts. */
+export const BUILD_NAME = 'The Campaign'
 
 /** After the re-plan made the new block's sessions: the TM change stays undoable until the first strength session starts. */
 export async function finishBlockMove(db: DB, today: number): Promise<void> {

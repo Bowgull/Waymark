@@ -15,6 +15,10 @@ import { undoChange } from './changes'
 import { prepareWeek } from './weeklyPass'
 import { athleteTimeZone, localDayIn, noteAppOpen } from './timeZone'
 import { testDb } from './testDb'
+import { setFixedWeekForTests } from './onePlan'
+
+// These stories are written on the old fixed Block Zero week (rebuild Phase 2 keeps it for them).
+setFixedWeekForTests(true)
 
 const MON = isoToEpochDay('2027-01-04')
 const nowSec = (day: number, h = 7) => day * 86400 + h * 3600
@@ -35,7 +39,8 @@ assert.ok(strength, 'Monday has Strength A')
 const dose = parseDose(strength.doseJson)
 assert.ok(dose?.strength, 'its dose is stored')
 assert.equal(dose.state, 'GREEN', 'a steady week: GREEN')
-assert.ok(dose.strength.lifts.every(l => l.workUp), 'nothing lifted yet: find your weight')
+assert.ok(dose.strength.lifts.filter(l => !l.exerciseId.includes('landmine') && !l.exerciseId.startsWith('ex-lm-')).every(l => l.workUp), 'nothing lifted yet: find your weight')
+assert.ok(dose.strength.lifts.filter(l => l.exerciseId === 'ex-landmine-press').every(l => l.weightKg == null && !l.workUp), 'the landmine press starts with the bar only')
 const run = week.find(s => s.type === 'foundation_run' && s.scheduledDate === MON + 1)
 assert.equal(parseDose(run?.doseJson)?.run?.rounds, 6, 'the first run-walk: 6 rounds')
 assert.ok(week.filter(s => s.type === 'foundation_run').every(s => parseDose(s.doseJson)?.run != null), 'every run-walk has a dose')

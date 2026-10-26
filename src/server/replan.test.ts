@@ -48,7 +48,7 @@ for (const [id, day, sec] of [['r1', LAST - 10, 1080], ['r2', LAST - 5, 1020], [
 }
 
 // Block Zero from Wednesday; the start week as an older lead-in planned it: no strength.
-const block = await createTrainingBlock(db, { name: 'Block Zero', blockType: 'block_zero', totalWeeks: 6, nowSec: nowSec(START - 1), startedAt: startedAtForLocalDay(START) })
+await createTrainingBlock(db, { name: 'Block Zero', blockType: 'block_zero', totalWeeks: 6, nowSec: nowSec(START - 1), startedAt: startedAtForLocalDay(START) })
 const plan = [[START, 'mobility', 'Foundation'], [START + 1, 'mobility', 'Foundation'], [START + 1, 'foundation_run', 'Run-Walk'], [START + 2, 'mobility', 'Foundation'],
   [START + 3, 'mobility', 'Foundation'], [START + 3, 'foundation_run', 'Run-Walk'], [START + 4, 'mobility', 'Foundation']] as const
 for (const [i, [day, type, label]] of plan.entries()) {
@@ -62,19 +62,19 @@ assert.equal(r.changes, 1, 'one coach change: the first strength session')
 const rows = await db.select().from(sessions)
 const added = rows.find(s => s.type === 'strength' && s.blockType === 'block_zero')
 assert.ok(added, 'a strength session this week')
-assert.deepEqual([added.label, added.scheduledDate, added.timeSlot, added.source, added.status], ['Strength B', START + 2, 'am', 'coach', 'planned'], 'Strength B on Friday morning (Thursday holds a run; today is never touched)')
+// Rebuild Phase 4: Strength A has the dumbbell row (his history) as a main lift now, so A and B tie on what
+// the coach knows (the row, the RDL) and A, first, wins.
+assert.deepEqual([added.label, added.scheduledDate, added.timeSlot, added.source, added.status], ['Strength A', START + 2, 'am', 'coach', 'planned'], 'Strength A on Friday morning (Thursday holds a run; today is never touched)')
 const sDose = parseDose(added.doseJson)?.strength
-const rdl = sDose?.lifts.find(l => l.exerciseId === 'ex-db-rdl')
-assert.ok(rdl, 'the hinge is the DB RDL (the barbell hinge starts later, on the ladder)')
-// 2026-10-23: months off, every lift finds its weight from light; 35 lb less ~15% (30 lb) is only the top.
-assert.deepEqual([rdl.workUp, rdl.sets, rdl.reps, rdl.targetRir], [true, 4, 8, 3], 'DB RDL: find your weight, 4 × 8')
-assert.deepEqual(rdl.setWeightsKg?.map(lb), [20, 25, 30, 30], 'from a light 20 lb, never over 30 lb')
-const pulldown = sDose?.accessories?.find(a => a.exerciseId === 'ex-lat-pulldown')
-assert.deepEqual([pulldown?.workUp, pulldown?.setWeightsKg?.map(lb)], [true, [20, 25]], 'an accessory finds its weight too: the stack from a light 20 lb')
-assert.equal(sDose?.accessories?.some(a => a.exerciseId === 'ex-bird-dogs'), false, 'a bodyweight core move gets no weight')
+const row = sDose?.lifts.find(l => l.exerciseId === 'ex-db-row')
+assert.ok(row, 'the row is the dumbbell row (the bent-over row comes later, on the ladder)')
+// 2026-10-23: months off, every lift finds its weight from light; 30 lb less ~15% (25 lb) is only the top.
+assert.deepEqual([row.workUp, row.sets, row.reps, row.targetRir], [true, 4, 10, 3], 'DB row: find your weight, 4 × 10')
+assert.deepEqual(row.setWeightsKg?.map(lb), [20, 25, 25, 25], 'from a light 20 lb, never over 25 lb')
+assert.equal(sDose?.accessories?.some(a => a.exerciseId === 'ex-dead-bugs'), false, 'a bodyweight core move gets no weight')
 const [change] = await db.select().from(weekAdjustments).where(eq(weekAdjustments.targetSessionId, added.id))
 assert.ok(change && change.actor === 'coach' && change.kind === 'add' && change.undoUntil != null, 'a coach change row with UNDO')
-assert.ok(/^Strength B on Friday: strength starts this week, not next Monday/.test(change.why ?? ''), `plain why: ${change.why}`)
+assert.ok(/^Strength A on Friday: strength starts this week, not next Monday/.test(change.why ?? ''), `plain why: ${change.why}`)
 
 for (const id of ['w2', 'w5']) {
   const run = rows.find(s => s.id === id)

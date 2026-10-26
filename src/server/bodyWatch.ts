@@ -60,7 +60,7 @@ import {
 } from '../lib/coach/bodyWatch'
 import { applyContext, injuryFlag, mondayOf, nameToken, readChangeRow, slotStart, type CoachEase, type SkipSignal } from '../lib/coach'
 import { getActiveBlock } from './blockZeroData'
-import { blockDayPlan, loadTemplateExtras, mtClassDays, trainingWeekFor, weekStamps } from './coachData'
+import { blockDayPlan, trainingWeekFor, weekStamps } from './coachData'
 import { pmStart, recordChanges, snap, type NewChange } from './changes'
 
 type DB = ReturnType<typeof createDB>
@@ -168,12 +168,10 @@ export async function loadPlanSessions(db: DB, from: number, to: number, today: 
     })
   }
   // Days not made yet: the template stands in (the week is prepared on Sunday or from Program).
-  const mtDays = await mtClassDays(db)
-  const extras = await loadTemplateExtras(db, block.id)
   for (let d = Math.max(from, today); d <= to; d++) {
     if (rows.some(r => r.scheduledDate === d && (r.source == null || r.source === 'template'))) continue
     const week = await weekOf(d)
-    const plan = blockDayPlan(block, d, week, mtDays, extras)
+    const plan = await blockDayPlan(db, block, d, week, Math.floor(Date.now() / 1000), { store: false })
     for (const e of plan.entries) {
       out.push({ id: null, day: d, type: e.type, label: blockZero || 'extra' in e ? e.label : null, notes: e.runCategory ?? null, timeSlot: e.timeSlot, status: 'planned', week, blockZero, plan: null, row: null })
     }

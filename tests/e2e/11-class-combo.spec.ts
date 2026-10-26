@@ -91,9 +91,10 @@ test('After class: write it, find the combos, ADD TO BAG and NOT NOW', async ({ 
   expect(lib.declined).toContain('jab > jab > lead teep')
 
   // Section 3 (page 80): in the Library list a combo row is only its strikes and its difficulty
-  // (Weapons reads MEDIUM); where it came from shows on the combo's own page.
+  // (Weapons reads MEDIUM); where it came from shows on the combo's own page. Page 93: it sits
+  // in his own combos by type (a low kick: KICKS).
   await page.goto('/library?open=bag')
-  await page.getByRole('button', { name: /WEAPONS/ }).first().tap()
+  await page.getByRole('button', { name: /^KICKS \d+$/ }).tap()
   const row = page.locator('.lib-combo').filter({ has: page.getByLabel('DOUBLE JAB, CROSS, LOW KICK', { exact: true }) })
   await expect(row).toBeVisible()
   await expect(row.getByRole('img', { name: 'MEDIUM' })).toBeVisible()

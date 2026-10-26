@@ -125,4 +125,10 @@ export const TM_FROM_E1RM_ADJUST = 0.85
 
 /** Fighter default length, as POST /api/blocks creates it. */
 export const FIGHTER_DEFAULT_TOTAL_WEEKS = 12
-export const NEXT_BLOCK_NAME = 'Fighter Block 1'
+/**
+ * After Block Zero (rebuild Phase 2): the same one plan goes on as build
+ * weeks, never the old Fighter week. The name the move's lines use.
+ */
+export const NEXT_BLOCK_NAME = 'The Campaign'
+/** The rune's word for it. */
+export const NEXT_BLOCK_SHOW = 'THE CAMPAIGN'

@@ -6,16 +6,16 @@
 
 import { and, desc, eq, gte, inArray, lt, lte } from 'drizzle-orm'
 import { sessions, settings, trainingBlocks, userProfile, weekPlans } from '../db/schema'
-import { getBlockZeroTemplate, getDayTemplate, strengthBlockWeek, WEEKLY_TEMPLATE, type TemplateSession } from '../lib/weeklyTemplate'
+import { strengthBlockWeek, type TemplateSession } from '../lib/weeklyTemplate'
+import { MIN_STEP, STEP_SHAPE, dayEntries, type PlanEntry } from '../lib/brain/weekBuilder'
+import { parseShape, weekShapeFor, type StoredWeek } from './onePlan'
 import {
   KEY_TYPES,
-  LEAD_IN_CONTEXT,
   checkSessionChange,
   coachEaseFrom,
   countsFromDay,
   inLeadIn,
   pickWeekPlan,
-  planDayTemplate,
   startedAtForLocalDay,
   injuryActionFor,
   injuryFlag,
@@ -96,15 +96,13 @@ export async function mtClassDays(db: DB): Promise<Set<number>> {
   return new Set(parseClassDays(row?.mt))
 }
 
-/** Key sessions in a normal week of the block's template (for the half-done rule). */
-function plannedKeyPerWeek(blockType: BlockKind, mtDays: Set<number>): number {
-  const week = blockType === 'block_zero' ? getBlockZeroTemplate(2) : WEEKLY_TEMPLATE
-  let n = 0
-  for (let dow = 0; dow <= 6; dow++) {
-    const day = blockType === 'block_zero' ? week[dow] ?? [] : getDayTemplate('fighter', 1, dow, mtDays)
-    n += day.filter(s => KEY_TYPES.has(s.type)).length
-  }
-  return n
+/**
+ * Key sessions in a normal week (for the half-done rule): the one plan's
+ * first step (4 training days; rebuild Phase 2, page 93). The week builder
+ * ramps from there, so a week left with fewer than 2 done reads as half done.
+ */
+function plannedKeyPerWeek(): number {
+  return STEP_SHAPE[MIN_STEP].days
 }
 
 /** Training week of `day` for a block: paused through gaps (lib/coach/weekCounter). */
@@ -117,7 +115,7 @@ export async function trainingWeekFor(db: DB, block: Block, day: number, todayDa
     completedKeyDays: await loadCompletedKeyDays(db, todayDay),
     day,
     todayDay,
-    plannedKeyPerWeek: plannedKeyPerWeek(kind, await mtClassDays(db)),
+    plannedKeyPerWeek: plannedKeyPerWeek(),
   })
 }
 
@@ -221,9 +219,13 @@ export async function addTemplateExtra(db: DB, extra: TemplateExtra, nowSec: num
   else await db.insert(settings).values({ id: 'default', templateExtras: JSON.stringify(list), createdAt: nowSec, updatedAt: nowSec })
 }
 
-/** A day's template plus the sessions made regular on that weekday. */
-export function dayTemplateWithExtras(blockType: string, weekNumber: number, dow: number, mtDays: Set<number>, extras: TemplateExtra[], base: TemplateSession[] = getDayTemplate(blockType, weekNumber, dow, mtDays)) {
-  const add = extras.filter(e => e.dayOfWeek === dow).map(e => ({
+/**
+ * Sessions made regular on a weekday, as template entries. Classes never:
+ * class days come only from Settings (review R3), so an old "made regular"
+ * class on an unpicked day is left out.
+ */
+export function extrasForDay(dow: number, extras: TemplateExtra[]): Array<TemplateSession & { extra: true }> {
+  return extras.filter(e => e.dayOfWeek === dow && e.type !== 'mt_class').map(e => ({
     timeSlot: e.timeSlot,
     type: e.type,
     label: e.label ?? e.type,
@@ -231,26 +233,36 @@ export function dayTemplateWithExtras(blockType: string, weekNumber: number, dow
     ...(e.type === 'running' && (e.notes === 'zone2' || e.notes === 'progression') ? { runCategory: e.notes as 'zone2' | 'progression' } : {}),
     extra: true as const,
   }))
-  return [...base, ...add]
 }
 
 export interface BlockDayPlan {
-  entries: ReturnType<typeof dayTemplateWithExtras>
+  entries: Array<(PlanEntry | (TemplateSession & { extra: true })) & { plan?: PlanEntry['plan'] }>
   leadIn: boolean
+  weekPlanId: string | null
+  shape: StoredWeek | null
 }
 
 /**
- * What a block's day holds from the template: nothing before the start, the
- * lead-in day in a Block Zero lead-in (no extras), else the week's template
- * with the sessions made regular. Shared by generate-today, the back-fill,
- * the week preparation and BEGIN (D1).
+ * What a block's day holds (rebuild Phase 2: the one plan's week for every
+ * block, never the old Fighter week): nothing before the start, else the
+ * week's stored build (made now when the week has none) and the sessions made
+ * regular on that weekday. Shared by generate-today, the back-fill, the week
+ * preparation, BEGIN and the previews of days not made yet. A preview passes
+ * `store: false`: it never keeps a week's shape (only making the days does).
  */
-export function blockDayPlan(block: Block, epochDay: number, weekNumber: number, mtDays: Set<number>, extras: TemplateExtra[]): BlockDayPlan {
-  const day = planDayTemplate({ blockType: blockKind(block.blockType), startDay: blockStartDay(block), epochDay, weekNumber, mtDays })
-  if (day.beforeStart) return { entries: [], leadIn: false }
-  if (day.leadIn) return { entries: day.sessions.map(s => ({ ...s })), leadIn: true }
+export async function blockDayPlan(db: DB, block: Block, epochDay: number, weekNumber: number, nowSec: number, o: { store?: boolean } = {}): Promise<BlockDayPlan> {
+  const start = blockStartDay(block)
+  if (epochDay < start) return { entries: [], leadIn: false, weekPlanId: null, shape: null }
+  const monday = mondayOf(epochDay)
+  const weekPlanId = await resolveWeekPlan(db, block.id, weekNumber, monday, nowSec, { autoGenerated: true })
+  if (!weekPlanId) return { entries: [], leadIn: false, weekPlanId: null, shape: null }
+  const extras = await loadTemplateExtras(db, block.id)
+  const shape = await weekShapeFor(db, {
+    blockId: block.id, blockStart: start, monday, week: weekNumber, planId: weekPlanId, nowSec, blockType: block.blockType,
+    extras: extras.map(e => ({ dayOfWeek: e.dayOfWeek, timeSlot: e.timeSlot, type: e.type, label: e.label, notes: e.notes })),
+  }, o)
   const dow = new Date(epochDay * DAY_SEC * 1000).getUTCDay()
-  return { entries: dayTemplateWithExtras(block.blockType, weekNumber, dow, mtDays, extras, day.sessions), leadIn: false }
+  return { entries: [...dayEntries(shape, dow), ...extrasForDay(dow, extras)], leadIn: false, weekPlanId, shape }
 }
 
 // ─── Template sessions for a day ──────────────────────────────
@@ -266,40 +278,63 @@ export async function generateDaySessions(db: DB, epochDay: number, todayDay: nu
   if (!block) return []
   // Days before the start get no sessions, ever (D1).
   if (epochDay < blockStartDay(block)) return []
-  const mtDays = await mtClassDays(db)
-  const blockType = block.blockType
   const tw = await trainingWeekFor(db, block, epochDay, todayDay)
   const { weekNumber, strengthWeek } = weekStamps(block, tw)
-  const plan = blockDayPlan(block, epochDay, weekNumber, mtDays, await loadTemplateExtras(db, block.id))
+  const plan = await blockDayPlan(db, block, epochDay, weekNumber, nowSec)
   if (plan.entries.length === 0) return []
-  const weekPlanId = await resolveWeekPlan(db, block.id, weekNumber, mondayOf(epochDay), nowSec, { autoGenerated: true })
-  const isBlockZero = blockType === 'block_zero'
-  // A template class sits in his chosen slot for that day (page 70); ANY keeps the template's.
+  return insertDayEntries(db, block, epochDay, plan.entries, { weekPlanId: plan.weekPlanId, strengthWeek, nowSec })
+}
+
+/** Insert a day's planned entries as template sessions (the one creation path, and a re-shape's new days). */
+export async function insertDayEntries(db: DB, block: Block, epochDay: number, entries: BlockDayPlan['entries'], o: { weekPlanId: string | null; strengthWeek: number; nowSec: number }): Promise<SessionRow[]> {
+  // A class sits in his chosen slot for that day (page 70); ANY keeps the plan's.
   const daySlot = (await mtClassSlots(db))[new Date(epochDay * 86400000).getUTCDay()]
   const ids: string[] = []
-  for (const entry of plan.entries) {
+  for (const entry of entries) {
     const id = crypto.randomUUID()
     ids.push(id)
+    const plan = 'plan' in entry && entry.plan ? entry.plan : null
     await db.insert(sessions).values({
       id,
       type: entry.type,
-      // Block Zero labels carry the strength day (A/B/C) so a moved session keeps its content
-      label: isBlockZero || 'extra' in entry ? entry.label : null,
-      weekPlanId,
+      // Labels carry the strength day (A/B) so a moved session keeps its content
+      label: entry.label,
+      weekPlanId: o.weekPlanId,
       scheduledDate: epochDay,
       timeSlot: entry.type === 'mt_class' && (daySlot === 'am' || daySlot === 'pm') ? daySlot : entry.timeSlot,
-      blockWeek: entry.type === 'strength' ? strengthWeek : null,
-      blockType,
+      blockWeek: entry.type === 'strength' ? o.strengthWeek : null,
+      blockType: block.blockType,
       status: 'planned',
       // Tag running sessions with their category so start-run can determine prescription
       notes: entry.type === 'running' ? (entry.runCategory ?? null) : null,
       source: 'template',
-      // Lead-in sessions are optional (Part B): no asks, no completion count.
-      ...(plan.leadIn ? { contextJson: JSON.stringify(LEAD_IN_CONTEXT) } : {}),
-      createdAt: nowSec,
+      // Bag Work technique or not, Bag Conditioning's planned minutes and effort (the week builder's plan mark).
+      // Bag Conditioning: the workout the coach picked (the Muay Thai track's start route reads conditioningPick).
+      ...(plan ? { contextJson: JSON.stringify({ plan, ...(entry.type === 'bag_conditioning' && plan.workoutId ? { conditioningPick: { templateId: plan.workoutId } } : {}) }) } : {}),
+      createdAt: o.nowSec,
     })
   }
-  return ids.length > 0 ? db.select().from(sessions).where(inArray(sessions.id, ids)) : []
+  return dedupeDay(db, epochDay, ids)
+}
+
+/**
+ * Two screens asking at once can make a day's plan twice (review T8). After
+ * inserting, every racer picks the same keeper for each session it made (the
+ * first made, then the smallest id) and takes every other copy off, its own
+ * or the other racer's, so the day ends with one set whichever finishes last.
+ */
+async function dedupeDay(db: DB, epochDay: number, mine: string[]): Promise<SessionRow[]> {
+  const rows = await db.select().from(sessions).where(and(eq(sessions.scheduledDate, epochDay), eq(sessions.source, 'template'), eq(sessions.status, 'planned')))
+  const keyOf = (r: SessionRow) => `${r.type}|${r.label ?? ''}|${r.timeSlot ?? ''}|${r.notes ?? ''}`
+  const first = (a: SessionRow, b: SessionRow) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1)
+  const keep = new Map<string, string>()
+  for (const r of [...rows].sort(first)) { const k = keyOf(r); if (!keep.has(k)) keep.set(k, r.id) }
+  // Only the sessions this insert made a copy of: older rows of other kinds are left alone.
+  const touched = new Set(rows.filter(r => mine.includes(r.id)).map(keyOf))
+  const spare = rows.filter(r => touched.has(keyOf(r)) && keep.get(keyOf(r)) !== r.id).map(r => r.id)
+  if (spare.length) await db.delete(sessions).where(inArray(sessions.id, spare))
+  const left = mine.filter(id => !spare.includes(id))
+  return left.length > 0 ? db.select().from(sessions).where(inArray(sessions.id, left)) : []
 }
 
 /**
@@ -347,17 +382,36 @@ export async function loadInjuryFlag(db: DB, day: number): Promise<InjuryFlag | 
 
 // ─── Placement context ────────────────────────────────────────
 
+/**
+ * The stored build of a calendar week, without making one: the block's week
+ * plan whose stored week is that Monday's (a week made early can carry another
+ * week number, so the Monday decides).
+ */
+export async function storedWeekPlan(db: DB, blockId: string, monday: number): Promise<{ id: string; shape: StoredWeek } | null> {
+  const plans = await db.select({ id: weekPlans.id, shape: weekPlans.shapeJson }).from(weekPlans).where(eq(weekPlans.blockId, blockId)).orderBy(desc(weekPlans.createdAt))
+  for (const p of plans) {
+    const s = parseShape(p.shape)
+    if (s && s.monday === monday) return { id: p.id, shape: s }
+  }
+  return null
+}
+
+export async function storedShape(db: DB, blockId: string, _weekNumber: number, monday: number): Promise<StoredWeek | null> {
+  void _weekNumber
+  return (await storedWeekPlan(db, blockId, monday))?.shape ?? null
+}
+
 export function toSessionLike(r: Pick<SessionRow, 'id' | 'type' | 'label' | 'notes' | 'scheduledDate' | 'timeSlot' | 'status'>): SessionLike {
   return { id: r.id, type: r.type, label: r.label, notes: r.notes, epochDay: r.scheduledDate as number, timeSlot: r.timeSlot === 'pm' ? 'pm' : 'am', status: r.status }
 }
 
-export async function planWeekLoad(blockType: BlockKind, weekNumber: number, mtDays: Set<number>, extras: TemplateExtra[] = []): Promise<number> {
+/** The planned load of a week from its stored build (null: the week has none yet). */
+export function planWeekLoad(blockType: BlockKind, weekNumber: number, shape: StoredWeek | null): number | null {
+  if (!shape) return null
   let total = 0
-  for (let dow = 0; dow <= 6; dow++) {
-    for (const s of dayTemplateWithExtras(blockType, weekNumber, dow, mtDays, extras)) {
-      if (!KEY_TYPES.has(s.type)) continue
-      total += plannedLoad({ type: s.type, label: s.label, notes: s.runCategory ?? null, estimatedMin: null }, blockType, weekNumber)
-    }
+  for (const s of shape.entries) {
+    if (!KEY_TYPES.has(s.type)) continue
+    total += s.plan?.minutes != null && s.plan.effort != null ? s.plan.minutes * s.plan.effort : plannedLoad({ type: s.type, label: s.label, notes: s.runCategory ?? null, estimatedMin: null }, blockType, weekNumber)
   }
   return total
 }
@@ -376,7 +430,6 @@ export async function loadPlacementContext(db: DB, targetDay: number, todayDay: 
   const classes = await db.select({ day: sessions.scheduledDate }).from(sessions)
     .where(and(eq(sessions.type, 'mt_class'), inArray(sessions.status, ['completed', 'in_progress']), gte(sessions.scheduledDate, todayDay - HISTORY_DAYS), lt(sessions.scheduledDate, todayDay)))
   const [profile] = await db.select({ cap: userProfile.mtCapPerWeek }).from(userProfile).where(eq(userProfile.id, 'default'))
-  const mtDays = await mtClassDays(db)
   const easeDays = rows
     .filter(r => r.scheduledDate != null && r.status === 'planned' && coachEaseFrom(r.contextJson) != null)
     .map(r => r.scheduledDate as number)
@@ -397,7 +450,7 @@ export async function loadPlacementContext(db: DB, targetDay: number, todayDay: 
       weeksSinceRampStart: weeksSinceRampStart(classes.map(c => c.day).filter((d): d is number => d != null), targetDay),
       profileCap: profile?.cap ?? null,
     },
-    planWeekLoad: block && !leadIn ? await planWeekLoad(kind, weekNumber, mtDays, await loadTemplateExtras(db, block.id)) : null,
+    planWeekLoad: block && !leadIn ? planWeekLoad(kind, weekNumber, await storedShape(db, block.id, weekNumber, monday)) : null,
     injury: await loadInjuryFlag(db, todayDay),
   }
 }

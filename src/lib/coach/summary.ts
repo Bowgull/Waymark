@@ -35,8 +35,8 @@ function sentence(c: LineChange, refDay: number): string {
     const lead = `${own.charAt(0).toUpperCase()}${own.slice(1)}'s main lifts are in`
     return c.into.day === refDay ? `${lead} ${midName(c.into.name)} today.` : `${lead} ${nameOnDay(c.into.name, c.into.day, refDay)}.`
   }
-  // The move to the next block (coach-brain §8): "Fighter Block 1 starts Monday."
-  if (c.kind === 'block') return `Fighter Block 1 starts ${relativeDay(c.day, refDay)}.`
+  // The move to The Campaign (coach-brain §8; rebuild Phase 2: never the old Fighter week).
+  if (c.kind === 'block') return `The Campaign starts ${relativeDay(c.day, refDay)}.`
   const after = c.after.show.toLowerCase()
   const own = midName(c.name)
   return c.day === refDay ? `${own.charAt(0).toUpperCase()}${own.slice(1)} is ${after} today.` : `${nameOnDay(c.name, c.day, refDay)}: ${after}.`

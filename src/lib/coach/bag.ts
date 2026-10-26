@@ -5,7 +5,11 @@
 
 import type { BlockKind } from './sessions'
 
+// Older sessions (and the AI's prescriptions) carry the first six; the coach's
+// rounds since page 93 carry their focus (lib/coach/bagArc RoundFocus); Custom's
+// rounds are 'custom' (no stage word).
 export type BagRoundType = 'warmup' | 'technical_flow' | 'drill_isolation' | 'combo_practice' | 'power' | 'conditioning'
+  | 'learn' | 'link' | 'pace' | 'pressure' | 'free' | 'custom'
 
 export interface BagGovernanceInput {
   blockType: BlockKind

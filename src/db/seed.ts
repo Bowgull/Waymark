@@ -729,6 +729,14 @@ lines.push(...readFileSync('src/db/libraryKru.sql', 'utf8').split('\n').filter(l
 lines.push(...readFileSync('src/db/libraryTrim.sql', 'utf8').split('\n').filter(l => l.trim()))
 // Then only his level open: knees and elbows by tier, four beginner combos (0052, Josh 2026-10-25).
 lines.push(...readFileSync('src/db/libraryLevels.sql', 'utf8').split('\n').filter(l => l.trim()))
+// Then the fighter arm block, calves, shins, Copenhagen and Nordic (0057, page 93, approved 2026-10-25).
+lines.push(...readFileSync('src/db/libraryStrength.sql', 'utf8').split('\n').filter(l => l.trim()))
+// Then the landmine moves (0058, landmine.md, approved 2026-10-25).
+lines.push(...readFileSync('src/db/libraryLandmine.sql', 'utf8').split('\n').filter(l => l.trim()))
+// Then Jab → Body Kick and Hook → Low Kick into Fundamentals (0054, 2026-10-26).
+lines.push(...readFileSync('src/db/libraryKicks.sql', 'utf8').split('\n').filter(l => l.trim()))
+// Then the videos for the fighter strength rows (0059, rebuild Phase 8).
+lines.push(...readFileSync('src/db/libraryStrengthVideos.sql', 'utf8').split('\n').filter(l => l.trim()))
 
 const sql = lines.join('\n')
 writeFileSync('src/db/seed.sql', sql)

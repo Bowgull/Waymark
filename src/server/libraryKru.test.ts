@@ -1,7 +1,8 @@
 // Run: tsx src/server/libraryKru.test.ts
 // 0050, the kru pass (approved by Josh 2026-10-24), on a real in-memory
 // database: every migration, then the seed (the Library as production has it),
-// then 0050 once more, as wrangler would apply it on top. Kicks and teeps are
+// then 0050 once more, as wrangler would apply it on top (0051, 0052 and 0054
+// after it). Kicks and teeps are
 // named the way a kru calls them, 19 combos are added, Axe Kick and Spinning
 // Back Kick are gone, and his mastery, favourites and unlocks are left alone.
 import assert from 'node:assert/strict'
@@ -27,8 +28,11 @@ const TRIM = readFileSync(join(ROOT, 'drizzle/0051_drop_overhand.sql'), 'utf8')
 const trimLines = TRIM.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('--'))
 const LEVELS = readFileSync(join(ROOT, 'drizzle/0052_close_combos_by_tier.sql'), 'utf8')
 const levelLines = LEVELS.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('--'))
-for (const f of files.filter(n => !['0051_drop_overhand.sql', '0052_close_combos_by_tier.sql'].includes(n))) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
-db.exec(seed.split(/\r?\n/).filter(l => !trimLines.includes(l) && !levelLines.includes(l)).join('\n'))
+// and 0054 (two kick combos into Fundamentals) after those
+const KICKS = readFileSync(join(ROOT, 'drizzle/0054_kick_combos_fundamentals.sql'), 'utf8')
+const kickLines = KICKS.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('--'))
+for (const f of files.filter(n => !['0051_drop_overhand.sql', '0052_close_combos_by_tier.sql', '0054_kick_combos_fundamentals.sql'].includes(n))) db.exec(readFileSync(join(ROOT, 'drizzle', f), 'utf8').replace(/--> statement-breakpoint/g, '').replace(/INSERT INTO `__new_\w+`[^;]*;/g, ''))
+db.exec(seed.split(/\r?\n/).filter(l => !trimLines.includes(l) && !levelLines.includes(l) && !kickLines.includes(l)).join('\n'))
 // his own progress on a combo the pass renames
 db.prepare('UPDATE combos SET mastery_score = 7, is_favourite = 1, unlocked = 1 WHERE id = ?').run('combo-fl01')
 const count = () => ['combos', 'techniques'].map(t => (db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n)
@@ -126,4 +130,24 @@ assert.deepEqual(lv.filter(c => c.tier === 'foundation' && close(c)).map(c => c.
 assert.deepEqual([lv.find(c => c.id === 'combo-fl01')!.mastery_score, lv.find(c => c.id === 'combo-fl01')!.unlocked], [7, 1], 'his own unlock and mastery are kept')
 for (const c of lv) for (const s of strikes(c)) if (!FOOTWORK.has(s)) assert.ok(techniqueFor(s, techAfter), `${c.id}: "${s}" has no technique`)
 
-console.log('libraryKru (0050, 0051, 0052) tests passed')
+// ── 0054: Jab → Body Kick and Hook → Low Kick into Fundamentals (2026-10-26) ──
+for (const l of kickLines) {
+  assert.match(l, /^UPDATE combos SET .+ WHERE id = 'combo-w(01|13)';$/, `by id only: ${l.slice(0, 80)}`)
+  assert.ok(seed.includes(l), `seed.sql has: ${l.slice(0, 80)}`)
+}
+assert.doesNotMatch(KICKS, /\b(DROP|ALTER|INSERT|DELETE)\b/, 'content only')
+db.prepare('UPDATE combos SET mastery_score = 4, is_favourite = 1, unlocked = 0 WHERE id = ?').run('combo-w13')
+db.exec(KICKS)
+db.exec(KICKS)
+const k = new Map((db.prepare('SELECT * FROM combos').all() as Array<Combo & { level: string; coach_hint: string | null }>).map(c => [c.id, c]))
+assert.equal(k.size, 74, 'nothing added or removed')
+for (const id of ['combo-w01', 'combo-w13']) {
+  const c = k.get(id)!
+  assert.deepEqual([c.tier, c.level, c.unlocked], ['foundation', 'foundation', 1], `${id}: in Fundamentals, open`)
+  assert.equal(c.coach_hint, 'Open. In your Fundamentals rounds; rate it after each round to build mastery.')
+}
+assert.deepEqual([k.get('combo-w01')!.text, k.get('combo-w13')!.text], ['Jab → Body Kick', 'Hook → Low Kick'])
+assert.deepEqual([k.get('combo-w13')!.mastery_score, k.get('combo-w13')!.is_favourite], [4, 1], 'his mastery and favourite are kept')
+assert.ok(/kicks/.test(k.get('combo-w01')!.techniques) && /kicks/.test(k.get('combo-w13')!.techniques), 'still behind the KICKS switch')
+
+console.log('libraryKru (0050, 0051, 0052, 0054) tests passed')

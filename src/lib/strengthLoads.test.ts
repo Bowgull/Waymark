@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { kgToLbs, lbsToKg } from './units'
-import { accessoryIncrementKg, accessoryLoadKg, accessoryProgression, bodyweightOk, loadEquipment, loadLabel, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp } from './strengthLoads'
+import { accessoryIncrementKg, accessoryLoadKg, accessoryProgression, bodyweightOk, loadEquipment, loadLabel, plateLine, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp } from './strengthLoads'
 
 const lb = (kg: number) => kgToLbs(kg)
 
@@ -100,6 +100,27 @@ assert.equal(accessoryLoadKg(null, 'accessory'), null)
   assert.equal(accessoryProgression(hit.map(s => ({ ...s, loadFeedback: 'too_heavy' })), 2, opts)!.type, 'hold_current')
   assert.equal(accessoryProgression(hit.map(s => ({ ...s, rir: 2 })), 2, opts)!.type, 'weight_increase')
   assert.equal(accessoryProgression([], 2, opts), null)
+}
+
+// Rebuild Phase 5: the landmine. The weight is what slides onto the bar end; bar only is 0; one 2.5 lb plate a step.
+{
+  assert.equal(loadEquipment('landmine'), 'landmine')
+  assert.equal(loadEquipment('landmine,barbell'), 'landmine', 'never read as a full barbell (45 lb when the hand feels 20)')
+  assert.equal(bodyweightOk('landmine'), false, 'it gets a weight row and a weight from the coach')
+  assert.equal(lb(snapLoadKg(lbsToKg(11), 'landmine')), 10, '11 lb on the bar end: 10')
+  assert.equal(Math.round(snapLoadKg(lbsToKg(1), 'landmine') * 100), 0, 'under a plate: the bar only')
+  assert.equal(Math.round(snapIncreaseKg(lbsToKg(10), lbsToKg(10.2), 'landmine') * 2.20462 * 10) / 10, 12.5, 'one plate up: 2.5 lb')
+  assert.equal(loadLabel(null, 'landmine'), 'bar only')
+  assert.equal(loadLabel(lbsToKg(10), 'landmine'), '10')
+  assert.equal(loadLabel(lbsToKg(12.5), 'landmine'), '12.5')
+  assert.deepEqual(warmupRamp(lbsToKg(25), 'landmine'), [], 'no ramp: the first set is its warm-up')
+  // The plate line (page 93): one bar end for the landmine, per side for a barbell.
+  assert.equal(plateLine(0, 'landmine'), 'Bar only')
+  assert.equal(plateLine(10, 'landmine'), '1× 10')
+  assert.equal(plateLine(17.5, 'landmine'), '1× 10  ·  1× 5  ·  1× 2.5')
+  assert.equal(plateLine(45, 'barbell'), 'Bar only')
+  assert.equal(plateLine(135, 'barbell'), '1× 45')
+  assert.equal(plateLine(20, 'dumbbell'), null)
 }
 
 console.log('strengthLoads tests passed')

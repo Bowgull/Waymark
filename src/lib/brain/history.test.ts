@@ -134,7 +134,7 @@ const block = (over: Partial<ModelEvents> = {}) => events({ ...over, sessions: [
   })
   const [hinge, press] = sb.lifts
   assert.deepEqual([hinge.exerciseId, lbOf(hinge.weightKg), hinge.sets, hinge.targetRir, hinge.workUp], ['ex-db-rdl', 20, 4, 3, true], 'DB RDL: find your weight, 4 × 8 from 20 lb')
-  assert.deepEqual(hinge.setWeightsKg?.map(lbOf), [20, 25, 30, 30], 'it climbs, and stops at the top (30 lb), never over it')
+  assert.deepEqual(hinge.setWeightsKg?.map(lbOf), [20, 30, 30, 30], 'it climbs a ladder rung (10 lb), and stops at the top (30 lb), never over it')
   assert.ok(hinge.why && /20 lb/.test(hinge.why) && /30 lb/.test(hinge.why) && /35 lb/.test(hinge.why) && /months off/.test(hinge.why), `plain why in lb: ${hinge.why}`)
   assert.ok(press.workUp && lbOf(press.weightKg) === 45, 'the barbell press: find your weight from the empty bar')
   // Accessories the same way: light start, his history the top; bodyweight moves get no weight.
@@ -159,6 +159,10 @@ const block = (over: Partial<ModelEvents> = {}) => events({ ...over, sessions: [
 {
   const L = (lb: number) => lb * LB
   assert.deepEqual(workUpLadder(L(45), 4, 'ex-bench-press', 'barbell').map(lbOf), [45, 50, 55, 60], 'no history: climbs a step a set')
+  // Rebuild Phase 4: a main lift's ladder climbs by rungs (a barbell 10 lb upper / 20 lb lower, a dumbbell 10 lb).
+  assert.deepEqual(workUpLadder(L(45), 4, 'ex-bench-press', 'barbell', null, 'ladder').map(lbOf), [45, 55, 65, 75], 'bench: 10 lb rungs')
+  assert.deepEqual(workUpLadder(L(45), 4, 'ex-front-squat', 'barbell', null, 'ladder').map(lbOf), [45, 65, 85, 105], 'front squat: 20 lb rungs')
+  assert.deepEqual(workUpLadder(L(20), 4, 'ex-goblet-squat', 'dumbbell', null, 'ladder').map(lbOf), [20, 30, 40, 50], 'goblet squat: 10 lb rungs')
   assert.deepEqual(workUpLadder(L(20), 4, 'ex-db-row', 'dumbbell', L(25)).map(lbOf), [20, 25, 25, 25], 'his old weight is the top, never passed')
   assert.deepEqual(workUpLadder(L(20), 3, 'ex-db-ohp', 'dumbbell', L(15)).map(lbOf), [15, 15, 15], 'a top under the light start: starts at the top')
   assert.deepEqual(workUpLadder(null, 2, 'ex-bird-dogs', 'none'), [null, null], 'nothing to load')
@@ -205,7 +209,7 @@ const block = (over: Partial<ModelEvents> = {}) => events({ ...over, sessions: [
 {
   const model = buildAthleteModel(block(), START + 1, { fromDay: START, seed })
   const pick = firstStrengthPick(model, 1)
-  assert.equal(pick.label, 'Strength B', 'the day whose lifts it knows best: the hinge day (DB RDL from his history)')
+  assert.equal(pick.label, 'Strength A', 'the day whose lifts it knows best: A has the DB row and the press slot with history (rebuild Phase 4)')
   assert.ok(/this week/.test(pick.why) && /4 months off/.test(pick.why), `plain why: ${pick.why}`)
   assert.equal(firstStrengthPick(buildAthleteModel(events(), START + 1), 1).label, 'Strength A', 'nothing known: A first')
 
@@ -218,8 +222,8 @@ const block = (over: Partial<ModelEvents> = {}) => events({ ...over, sessions: [
   })
   const r = solveOutline(inp())
   const add = r.changes.find(c => c.kind === 'add')
-  assert.ok(add && add.kind === 'add' && add.type === 'strength' && add.day === START + 2, `Strength B goes in on the first free day: ${JSON.stringify(add)}`)
-  assert.ok(add && /^Strength B on Friday: strength starts this week/.test(add.why), `why: ${add?.why}`)
+  assert.ok(add && add.kind === 'add' && add.type === 'strength' && add.day === START + 2, `Strength A goes in on the first free day: ${JSON.stringify(add)}`)
+  assert.ok(add && /^Strength A on Friday: strength starts this week/.test(add.why), `why: ${add?.why}`)
   assert.equal(r.violationsAfter.length, 0, 'every limit kept')
   assert.ok(!solveOutline(inp({ firstAddDay: START + 3 })).changes.some(c => c.kind === 'add' && c.day < START + 3), 'never before the first add day')
   assert.equal(solveOutline(inp({ strengthStart: null })).changes.filter(c => c.kind === 'add').length, 0, 'no strengthStart: no add')

@@ -49,7 +49,7 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
     }, new Map<string, ComboForRating>()).values()
   )
   // Default all to 'solid' (2)
-  const [ratings, setRatings] = useState<Map<string, number>>(() => new Map(combos.map(c => [c.comboId, 2])))
+  const [ratings, setRatings] = useState<Map<string, number>>(() => new Map(uniqueCombos.map(c => [c.comboId, 2])))
   const [idx, setIdx] = useState(0)
   const [lit, setLit] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -65,7 +65,8 @@ export function ComboRatingScreen({ sessionId, combos, onComplete }: ComboRating
     setSubmitting(true)
     setSaveError(null)
     try {
-      const ratingData = combos.map(c => ({
+      // one rating per combo, however many rounds it was in (page 93)
+      const ratingData = uniqueCombos.map(c => ({
         roundId: c.roundId,
         comboId: c.comboId,
         rating: final.get(c.comboId) ?? 2,

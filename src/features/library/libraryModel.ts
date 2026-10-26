@@ -238,6 +238,74 @@ export function currentTier(tiers: ReadonlyArray<TierView>): string | null {
   return open.length ? open[open.length - 1].tier : null
 }
 
+// ─── Bagwork, mine first by type (page 93, approved 2026-10-25) ──
+
+export type WeaponKey = 'hands' | 'kicks' | 'teeps' | 'knees' | 'elbows'
+
+/** The groups on top, in order, with their flap names (knees and elbows only when their switch is on). */
+export const WEAPON_GROUPS: ReadonlyArray<{ key: WeaponKey; name: string }> = [
+  { key: 'hands', name: 'HANDS' },
+  { key: 'kicks', name: 'KICKS' },
+  { key: 'teeps', name: 'TEEPS' },
+  { key: 'knees', name: 'KNEES' },
+  { key: 'elbows', name: 'ELBOWS' },
+]
+
+/**
+ * A combo's main weapon (page 93): an elbow or a knee in it wins, then a kick,
+ * then a teep, else hands. A combo with a kick and a teep sits once, under KICKS.
+ */
+export function mainWeapon(text: string): WeaponKey {
+  const strikes = comboStrikes(text).map(s => s.toLowerCase())
+  if (strikes.some(s => /\belbow/.test(s))) return 'elbows'
+  if (strikes.some(s => /\bknee/.test(s))) return 'knees'
+  if (strikes.some(s => /\b(kick|roundhouse)\b/.test(s))) return 'kicks'
+  if (strikes.some(s => /\bteep\b/.test(s))) return 'teeps'
+  return 'hands'
+}
+
+/** Every group the combo uses is switched on in Settings (no groups: always). */
+function comboSwitchedOn(c: Pick<LibraryCombo, 'techniques'>, enabled: ReadonlySet<string>): boolean {
+  return (c.techniques ?? '').split(',').filter(Boolean).every(g => enabled.has(g))
+}
+
+export interface WeaponView {
+  key: WeaponKey
+  name: string
+  combos: LibraryCombo[]
+}
+
+export interface BagShelves {
+  /** On top: what he can use now, by main weapon (empty groups left out). */
+  mine: WeaponView[]
+  /** Below, folded under one LOCKED head: the locked combos by level. */
+  locked: TierView[]
+  /** The LOCKED head's count. */
+  lockedCount: number
+}
+
+/**
+ * Bagwork in the Library, mine first by type (page 93): on top the combos he
+ * can use now (unlocked, every group switched on) by main weapon, KNEES and
+ * ELBOWS only when their switch is on; below, every locked combo by level. A
+ * combo unlocked but switched off sits in neither (it comes back with its
+ * switch). Inside a group: easiest first, then the shortest, then the seed's
+ * order.
+ */
+export function bagShelves(combos: ReadonlyArray<LibraryCombo>, enabled: ReadonlySet<string>): BagShelves {
+  const open = combos.filter(c => c.unlocked && comboSwitchedOn(c, enabled))
+  const order = new Map(combos.map((c, i) => [c.id, i]))
+  const byEase = (a: LibraryCombo, b: LibraryCombo) => levelRank(a.tier) - levelRank(b.tier) || comboStrikes(a.text).length - comboStrikes(b.text).length || (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
+  const mine = WEAPON_GROUPS
+    .filter(g => (g.key !== 'knees' || enabled.has('knees')) && (g.key !== 'elbows' || enabled.has('elbows')))
+    .map(g => ({ ...g, combos: open.filter(c => mainWeapon(c.text) === g.key).sort(byEase) }))
+    .filter(g => g.combos.length > 0)
+  const locked = tierViews(combos.filter(c => !c.unlocked))
+  return { mine, locked, lockedCount: locked.reduce((n, t) => n + t.combos.length, 0) }
+}
+
+const levelRank = (tier: string) => { const i = (TIER_ORDER as readonly string[]).indexOf(tier); return i < 0 ? TIER_ORDER.length : i }
+
 // ─── Exercises ────────────────────────────────────────────────
 
 /** "rear_delts" → "Rear Delts"; short words stay upper case ("ab" → "AB"). */

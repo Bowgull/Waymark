@@ -14,7 +14,8 @@ import { asksEffort, effortWrite } from '@/features/blockZero/effort'
 import { setPlace } from '@/lib/setPlace'
 import { typicalRpe } from '@/lib/coach/sessions'
 import { kgToLbs } from '@/lib/units'
-import { carryKey, editedStartKg, parseCarry, withLogged, type LiftCarry } from '@/lib/timers/setWeight'
+import { carryKey, carryStart, nextRungAfter, parseCarry, withEffort, withLogged, type LiftCarry } from '@/lib/timers/setWeight'
+import { LADDER_MAX_SETS } from '@/lib/brain/doses'
 import { scheduleStrengthRestEnd, cancelStrengthRestEnd, cancelAllCues } from '@/lib/notifications'
 import { loadOutbox } from '@/lib/outbox'
 import { rollStepSecs } from '@/lib/activeRecoveryTemplate'
@@ -58,6 +59,8 @@ import { BagPreviewCard } from './BagPreviewCard'
 import { BagWorkRoundView } from './BagWorkRoundView'
 import { BagFinisherView } from './BagFinisherView'
 import { finisherLogKey, finisherParts, finisherTotalSec, logRanTo, newFinisherLog, parseFinisherLog, type FinisherLog, type FinisherPlan } from '@/lib/coach/bagFinisher'
+import { conditioningLogKey, parseConditioningLog, planMinutes, type ConditioningLog, type ConditioningPlan } from '@/lib/coach/bagConditioning'
+import { BagConditioningView } from './BagConditioningView'
 import { BreatheScreen } from './BreatheScreen'
 import { ComboRatingScreen } from './ComboRatingScreen'
 import { ComboUnlockSuggestion } from './ComboUnlockSuggestion'
@@ -389,6 +392,12 @@ function writeFinisherLog(sessionId: string, log: FinisherLog): void {
   storageSetItem(finisherLogKey(sessionId), JSON.stringify(log))
 }
 
+/** Page 93: Bag Conditioning's log (each part done or skipped), kept on the phone until the session is finished. */
+function readConditioningLog(sessionId: string | undefined, parts: number): ConditioningLog | null {
+  if (!sessionId) return null
+  try { return parseConditioningLog(JSON.parse(storageGetItem(conditioningLogKey(sessionId)) ?? 'null'), parts) } catch { return null }
+}
+
 function resumeStorage(): StorageLike | null {
   try {
     return typeof window === 'undefined' ? null : window.localStorage
@@ -439,6 +448,8 @@ export function WorkoutPage() {
   const [bagData, setBagData] = useState<BagWorkoutData | null>(null)
   const [runData, setRunData] = useState<RunWorkoutData | null>(null)
   const [skipData, setSkipData] = useState<SkipWorkoutData | null>(null)
+  // page 93: Bag Conditioning's plan (kept by the server once started) and its log so far
+  const [condData, setCondData] = useState<{ plan: ConditioningPlan; log: ConditioningLog | null } | null>(null)
   const [recoveryData, setRecoveryData] = useState<RecoveryWorkoutData | null>(null)
   const [mtData, setMtData] = useState<MtClassWorkoutData | null>(null)
   const [foundationRunData, setFoundationRunData] = useState<FoundationRunWorkoutData | null>(null)
@@ -502,7 +513,7 @@ export function WorkoutPage() {
     writeLiveSession(resumeStorage(), {
       sessionId: id,
       type: sessionType,
-      name: (sessionLabel ?? SESSION_ICON_NAME[icon]).toUpperCase(),
+      name: (sessionLabel ?? (sessionType === 'bag_conditioning' ? 'Bag Conditioning' : SESSION_ICON_NAME[icon])).toUpperCase(),
       icon,
       roundTotal: liveRoundsRef.current,
       startedAtMs: startedAtRef.current,
@@ -565,6 +576,7 @@ export function WorkoutPage() {
     storageRemoveItem(`waymark_close_note:${id}`)
     storageRemoveItem(roundSecsKey(id))
     storageRemoveItem(finisherLogKey(id))
+    storageRemoveItem(conditioningLogKey(id))
     storageRemoveItem(carryKey(id))
     void cancelAllCues()
     if (sessionType === 'running' || sessionType === 'foundation_run') void runRecorder().discard().catch(() => {})
@@ -830,6 +842,17 @@ export function WorkoutPage() {
             rounds = Array.from({ length: data.skipSession.roundCount }, () => ({ durationSec: data.skipSession!.roundDurSec, restSec: SKIP_REST_SEC }))
             restAutoEnds = false
           }
+        } else if (session.type === 'bag_conditioning') {
+          // page 93: its plan is picked once at the start and kept
+          type CondRes = { plan: ConditioningPlan | null; started: boolean; log: ConditioningLog | null }
+          let data = await get('bag-conditioning', () => apiFetch<CondRes>(`/api/sessions/${id}/bag-conditioning`))
+          if (live && !data.started) {
+            data = keep('bag-conditioning', await apiFetch<CondRes>(`/api/sessions/${id}/start-bag-conditioning`, { method: 'POST' }))
+          }
+          if (data.plan) {
+            setCondData({ plan: data.plan, log: readConditioningLog(id, data.plan.parts.length) ?? data.log })
+            showLength(planMinutes(data.plan), data.plan.rounds)
+          }
         } else if (session.type === 'active_recovery') {
           let data = await get('recovery-workout', () => apiFetch<RecoveryWorkoutData>(`/api/sessions/${id}/recovery-workout`))
           if (live && !data.recoverySession) {
@@ -1017,10 +1040,12 @@ export function WorkoutPage() {
       const roundSecs = sessionType === 'bag_work' || sessionType === 'skip_rope' ? parseRoundSecs(storageGetItem(roundSecsKey(id))) : null
       // Page 86: the finisher's log (the server marks a set never reached as skipped).
       const finisherLog = sessionType === 'bag_work' ? readFinisherLog(id) : null
+      // Page 93: Bag Conditioning's per-part log (the server reads the blocks and kicks from it).
+      const conditioningLog = sessionType === 'bag_conditioning' && condData ? readConditioningLog(id, condData.plan.parts.length) : null
       const result = await queueWrite({
         method: 'POST',
         path: `/api/sessions/${id}/complete`,
-        body: { rpe, notes, completedAt: Math.floor(Date.now() / 1000), ...(roundSecs ? { roundSecs } : {}), ...(finisherLog ? { finisherLog } : {}), ...(endReason ? { endReason } : {}) },
+        body: { rpe, notes, completedAt: Math.floor(Date.now() / 1000), ...(roundSecs ? { roundSecs } : {}), ...(finisherLog ? { finisherLog } : {}), ...(conditioningLog ? { conditioningLog } : {}), ...(endReason ? { endReason } : {}) },
         sessionId: id,
         kind: 'finish',
         key: finishKeyRef.current,
@@ -1038,6 +1063,7 @@ export function WorkoutPage() {
       storageRemoveItem(`waymark_close_note:${id}`)
       storageRemoveItem(roundSecsKey(id))
       storageRemoveItem(finisherLogKey(id))
+      storageRemoveItem(conditioningLogKey(id))
       storageRemoveItem(carryKey(id))
       void cancelAllCues()
       // Let the Live Activity show its finish card for 4s before it dismisses
@@ -1360,6 +1386,26 @@ export function WorkoutPage() {
     )
   }
 
+  // ─── Bag Conditioning (page 93) ─────────────────────────────
+
+  if (sessionType === 'bag_conditioning' && condData) {
+    if (closing) return closeScreen
+    return (
+      <>
+        <BagConditioningView
+          plan={condData.plan}
+          resume={engineResume?.kind === 'finisher' ? engineResume : null}
+          onPersist={persistEngine}
+          onDone={() => setPhase('mark-earned')}
+          onExit={leaveSession}
+          log={condData.log}
+          onLog={l => { if (id) storageSetItem(conditioningLogKey(id), JSON.stringify(l)) }}
+        />
+        <ToastContainer />
+      </>
+    )
+  }
+
   // ─── Active recovery workout ───────────────────────────────
   // ActiveRecoveryView (Reset) has no approved in-session mockup yet: unchanged.
 
@@ -1386,8 +1432,10 @@ export function WorkoutPage() {
     const totalRounds = rounds.length
     const currentRound = rounds[roundIdx]
 
-    // Collect all combos for rating screen
-    const allCombosForRating = rounds.flatMap(r =>
+    // Collect the combos for the rating screen: one card each (page 93). The warm-up's rhythm
+    // basics aren't rated when the session has other rounds (A and B are what he drilled).
+    const ratedRounds = rounds.some(r => r.roundType !== 'warmup') ? rounds.filter(r => r.roundType !== 'warmup') : rounds
+    const allCombosForRating = ratedRounds.flatMap(r =>
       r.combos.filter(rc => rc.combo).map(rc => ({
         comboId: rc.combo!.id,
         roundId: r.id,
@@ -1633,8 +1681,31 @@ export function WorkoutPage() {
       void queueWrite(effortWrite(target.setId, rir, id ?? null)).then(result => {
         if (result === 'rejected') logger.warn('session', 'set effort refused', { setId: target.setId, rir }, 'Server refused the RIR save.')
       })
+      // Rebuild Phase 4: the tap moves the next set (3+: a step up; a climb stops at about 3 left).
+      if (currentExercise) {
+        loggedKgRef.current = withEffort(loggedKgRef.current ?? {}, currentExercise.exerciseId, rir)
+        if (id) storageSetItem(carryKey(id), JSON.stringify(loggedKgRef.current))
+        addRungAfter(target.setId, rir)
+      }
     }
     startStrengthRest()
+  }
+
+  /** The ladder keeps going: a last climbing set that still read 3+ gets one more set at the next rung. */
+  function addRungAfter(setId: string, rir: number) {
+    if (!currentExercise || !strengthData) return
+    const sets = currentExercise.sets
+    if (sets[sets.length - 1]?.id !== setId) return
+    const kg = loggedKgRef.current?.[currentExercise.exerciseId]?.work?.kg ?? null
+    const next = nextRungAfter(sets, kg, rir, currentExercise.exerciseId, currentExercise.exercise?.equipment, LADDER_MAX_SETS)
+    if (next == null) return
+    const last = sets[sets.length - 1]
+    const row: SetData = { id: crypto.randomUUID(), setNumber: last.setNumber + 1, weightKg: next, reps: last.plannedReps ?? last.reps, plannedWeightKg: next, plannedReps: last.plannedReps ?? last.reps, isWarmup: 0, restSec: last.restSec }
+    const exId = currentExercise.id
+    setStrengthData(d => d ? { ...d, exercises: d.exercises.map(e => (e.id === exId ? { ...e, sets: [...e.sets, row] } : e)) } : d)
+    void queueWrite({ method: 'POST', path: `/api/strength-sets/${setId}/rung`, body: { id: row.id, weightKg: next }, sessionId: id ?? null, kind: 'set', key: `rung-${row.id}` }).then(result => {
+      if (result === 'rejected') logger.warn('session', 'ladder set refused', { setId }, 'Server refused the extra ladder set.')
+    })
   }
 
   function handleNextSet() {
@@ -1665,6 +1736,11 @@ export function WorkoutPage() {
     }
   })()
 
+  // Where this set starts from the last one (his change, a 3+ step up, a climb that stopped).
+  const startFrom = currentExercise && currentSet
+    ? carryStart(loggedKgRef.current?.[currentExercise.exerciseId], { isWarmup: currentSet.isWarmup === 1, plannedKg: currentSet.weightKg ?? null }, currentExercise.exerciseId, currentExercise.exercise?.equipment ?? null)
+    : null
+
   const suggestionDisplay = (() => {
     if (!currentExercise) return undefined
     // One weight per lift: a set the coach planned a weight for shows that weight, no "Try N lb?" beside it.
@@ -1693,7 +1769,8 @@ export function WorkoutPage() {
           totalSets: totalSetsForExercise,
           isWarmup: currentSet.isWarmup === 1,
           suggestedWeightKg: currentSet.weightKg,
-          editedWeightKg: currentExercise ? editedStartKg(loggedKgRef.current?.[currentExercise.exerciseId], { isWarmup: currentSet.isWarmup === 1, plannedKg: currentSet.weightKg ?? null }) : null,
+          editedWeightKg: startFrom?.kg ?? null,
+          tryWeightKg: startFrom?.up ? startFrom.kg : null,
           carryWeightKg: currentExercise ? (loggedKgRef.current?.[currentExercise.exerciseId]?.kg
             ?? currentExercise.sets.slice(0, setIdx).reverse().find(s => s.weightKg != null && s.weightKg > 0)?.weightKg
             // His last session, only from inside this block (months off: the dose starts him light instead).

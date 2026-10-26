@@ -66,6 +66,8 @@
 }
 .lib-grp:first-child { border-top: 0; }
 .lib-grp:disabled { cursor: default; }
+/* page 93: a level under the LOCKED head sits in a little */
+.lib-grp.is-sub { padding-left: 18px; }
 .lib-chev { font: 800 15px var(--font-mono); color: rgba(240, 230, 192, 0.6); width: 14px; flex: none; }
 .lib-cnt { font: 800 13px/1 var(--font-mono); padding: 5px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.35); color: #c9b27a; }
 .lib-lock { font: 800 14px var(--font-mono); color: rgba(240, 230, 192, 0.6); }

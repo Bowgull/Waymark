@@ -6,7 +6,6 @@ import { desc, eq } from 'drizzle-orm'
 import { coachingOutputs, combos as combosTable, dailyLogs, exercises, mtClassLogs, sessions, settings, trainingMaxes, userProfile } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
-import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_BAG_PRESCRIPTION, type BagPrescriptionOutput } from './prompts/tools'
 import type { createDB } from '../db/client'
 import { MODELS } from './models'
@@ -177,7 +176,6 @@ export async function runBagPrescription(
 
   const recentMtNotes = recentMtNoteLines(mtLogs)
 
-  const latestBodyweightKg = await getLatestBodyweightKg(db)
 
   const profile: UserProfileContext = {
     goals: profileRow?.goals ?? null,
@@ -186,10 +184,8 @@ export async function runBagPrescription(
     trainingHistory: profileRow?.trainingHistory ?? null,
     mtClassDays: userSettings?.mtClassDays ?? null,
     mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
-    weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
     trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
-    latestBodyweightKg,
   }
 
   const systemBlocks = buildSystemPrompt(profile, null)

@@ -57,7 +57,7 @@ export interface ModelSet {
   /** Logged by him (completed_at set). Pre-filled sets he never touched are not. */
   logged: boolean
   /** Loading kind from the library ('barbell' | 'dumbbell' | 'machine' | 'none'). */
-  equipment: 'barbell' | 'dumbbell' | 'machine' | 'none'
+  equipment: 'barbell' | 'dumbbell' | 'machine' | 'landmine' | 'none'
 }
 
 export interface ModelRun {
@@ -81,6 +81,14 @@ export interface ModelRun {
   rungSec?: number | null
   /** Its dose was an easy walk or bike (no running): it never moves the run rung (audit #8). */
   walkOnly?: boolean
+  /**
+   * A hard run (Tempo, Intervals, the 5K test; rebuild Phase 3): judged on its own targets, never
+   * against the easy line, and kept out of the easy-run rung. Its heart top from its dose.
+   */
+  hard?: 'tempo' | 'intervals' | '5k_test' | null
+  hardTop?: number | null
+  /** The week's longer Zone 2 Run (the week plan's long mark): it grows on its own path. */
+  long?: boolean
 }
 
 export interface ModelBag {
@@ -231,6 +239,19 @@ export interface RunObservation {
   struggled: boolean
 }
 
+/** A hard run judged on its own targets (rebuild Phase 3): done in full, heart under its top. */
+export interface HardObservation {
+  day: number
+  sessionId: string
+  kind: 'tempo' | 'intervals' | '5k_test'
+  /** Done as planned: not cut short, nine tenths of it or more. */
+  completed: boolean
+  /** The highest heart rate and the run's top (null: no strap, or no top on file). */
+  maxHr: number | null
+  top: number | null
+  rpe: number | null
+}
+
 export interface RunEstimate extends Confidence {
   /** Talk-test line (bpm) and where it came from. */
   lineBpm: number
@@ -262,7 +283,20 @@ export interface RunEstimate extends Confidence {
   runsWithHr: number
   runs: number
   lastRunHadHr: boolean | null
+  /** The last easy runs (hard runs are never in here: they have their own targets). */
   recent: RunObservation[]
+  /** The last hard runs (Tempo, Intervals, 5K tests), oldest first. */
+  hardRecent?: HardObservation[]
+  /**
+   * The week's longer Zone 2 Run: the length the last one aimed at, and how many good ones
+   * (handled, not cut short) in a row at that length. Null before the first.
+   */
+  long?: { lastSec: number; goodInRow: number; lastDay: number } | null
+  /**
+   * The longest run in 30 days other than the week's longer run (run-walks and hard runs
+   * included): an easy run shorter than this is no new load, so it may catch up faster.
+   */
+  catchUpSec?: number | null
 }
 
 export interface BagEstimate extends Confidence {

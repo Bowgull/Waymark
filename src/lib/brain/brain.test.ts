@@ -5,7 +5,7 @@
 // limits, at most 2 changes).
 import assert from 'node:assert/strict'
 import { buildAthleteModel } from './athleteModel'
-import { bagDose, liftSignal, liftTargets, runDose, strengthDose, templateFromDose, type DoseCtx, type RunIn, type StrengthIn } from './doses'
+import { LONG_CAP_MIN, bagDose, capRunDose, liftSignal, liftTargets, nextContinuous, runDose, strengthDose, templateFromDose, type DoseCtx, type RunIn, type StrengthIn } from './doses'
 import { backDaySwap, chooseSlot, preferTrapBar, ravenSwap } from './progression'
 import { lowerState, readinessState } from './readiness'
 import { classTarget, solveOutline, violations, type OutlineIn, type OutlineSession } from './outline'
@@ -133,6 +133,17 @@ const lifted = (days: number[], w: number, rir: number, extra: Partial<{ planW: 
   assert.ok(red.lifts.every(l => l.level === 'RECOVER' && l.sets === 1) && red.accessorySets === 1, 'RED: one easy set each')
 }
 {
+  // One ease only (rebuild Phase 8): a lift already at EASE (1 left last time) on an AMBER morning is one set off, not two.
+  const ev = events(lifted([MON - 21, MON - 14, MON - 7], 95, 2))
+  const calm = strengthDose(ctxFor(ev, MON), strengthIn()).lifts[0]
+  const both = strengthDose(ctxFor(ev, MON, { state: 'AMBER', stateWhy: 'Sleep off.' }), strengthIn()).lifts[0]
+  assert.deepEqual([calm.level, both.level, both.sets], ['EASE', 'EASE', calm.sets], 'EASE and AMBER: the one set EASE takes, no second')
+  const long = { kind: 'continuous' as const, plannedSec: 1800, longestLast30Sec: 3600, weekly: { lastWeekRunSec: 9000, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 3 } }
+  const eased = runDose(ctxFor(events(), MON, { levelCap: 'EASE' }), runIn(long))
+  const run = runDose(ctxFor(events(), MON, { state: 'AMBER', levelCap: 'EASE' }), runIn(long))
+  assert.deepEqual([eased.runSec, run.runSec], [1440, 1440], 'a continuous run: the EASE trim only (80%), not 80% and then 90%')
+}
+{
   // He lowered the weight mid-session: EASE, from the weight he used.
   const sess = [MON - 14, MON - 7].map(d => session(d, 'strength'))
   const sets = [...lift(sess[0], 'ex-goblet-squat', [{ w: 40, reps: 8, rir: 2 }, { w: 40, reps: 8, rir: 2 }]), ...lift(sess[1], 'ex-goblet-squat', [{ w: 35, reps: 8, rir: 1, planW: 40 }, { w: 35, reps: 8, rir: 1, planW: 40 }])]
@@ -249,6 +260,66 @@ function runIn(over: Partial<RunIn> = {}): RunIn {
   assert.ok(once.runTotalSec <= 360, 'a run already went up this week: no second rise')
 }
 
+// ─── Rebuild Phase 3: graduation, catching up, the longer run, time off ─
+{
+  const tt = [{ day: MON - 20, bpm: 150 }]
+  const z = (day: number, sec: number, over: Partial<ModelRun> = {}) => {
+    const s = session(day, 'foundation_run', { rpe: 4 })
+    return { s, r: run(s, { durationSec: sec, plannedDurationSec: sec, pieceSec: sec, rungSec: sec, avgHr: 140, ...over }) }
+  }
+  const ev = (xs: Array<{ s: ModelSession; r: ModelRun }>, extra: Partial<ModelEvents> = {}) => events({ sessions: xs.map(x => x.s), runs: xs.map(x => x.r), talkTests: tt, ...extra })
+  // Graduation: two good runs at 4:00 pieces; the last run-walk ran 12+ min, so the first continuous run is 12 min.
+  const rw = [z(MON - 9, 1500, { pieceSec: 240, rungSec: 240 }), z(MON - 2, 1500, { pieceSec: 240, rungSec: 240 })]
+  const grad = runDose(ctxFor(ev(rw), MON), runIn({ longestLast30Sec: 1500, lastRunSec: 5 * 240 }))
+  assert.deepEqual([grad.walkSec, grad.rounds, grad.runSec], [0, 1, 720], 'graduation: 12 min straight')
+  assert.ok(grad.why[0].startsWith('12 minutes straight'), grad.why[0])
+  assert.equal(runDose(ctxFor(ev(rw), MON), runIn({ longestLast30Sec: 1500, lastRunSec: 4 * 150 })).runSec, 600, 'a shorter run-walk: 10 min')
+  // After time off the rung decays under 10 minutes: run-walk pieces again, and two good ones graduate him again.
+  const off = [z(MON - 78, 1500), z(MON - 75, 1500)]
+  const back = buildAthleteModel(ev(off), MON)
+  assert.ok(back.run.rungSec < 600, `decayed to ${back.run.rungSec}`)
+  const after = [...off, z(MON - 4, 1500, { pieceSec: 240, rungSec: 240 }), z(MON - 2, 1500, { pieceSec: 240, rungSec: 240 })]
+  const again = runDose(ctxFor(ev(after), MON), runIn({ longestLast30Sec: 1500, lastRunSec: 5 * 240 }))
+  assert.equal(again.walkSec, 0, 'never stuck under continuous running: the top rung graduates again')
+
+  // Easy runs grow at least 2 minutes a rise.
+  assert.equal(nextContinuous(720), 840)
+  // Catching up: easy runs well under a 30-minute hard run grow by a quarter at a time, even twice in a week.
+  const t = session(MON - 3, 'running', { rpe: 6, notes: 'tempo' })
+  const hard = { s: t, r: run(t, { durationSec: 1800, plannedDurationSec: 1800, pieceSec: null, hard: 'tempo' as const, hardTop: 167 }) }
+  const easy2 = [z(MON - 5, 960), hard, z(MON - 1, 960)]
+  const cu = runDose(ctxFor(ev(easy2), MON), runIn({ longestLast30Sec: 1800, lastRunSec: 960, riseThisWeek: true, weekly: { lastWeekRunSec: 6000, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 2 } }))
+  assert.equal(cu.level, 'PROGRESS')
+  assert.equal(cu.runSec, 1200, '16 min to 20: a quarter more, the weekly rise limit not read')
+  // Never past the runs he already does.
+  const near = [z(MON - 5, 1680), hard, z(MON - 1, 1680)]
+  assert.equal(buildAthleteModel(ev(near), MON).run.catchUpSec, 1800)
+  const cu2 = runDose(ctxFor(ev(near), MON), runIn({ longestLast30Sec: 1800, lastRunSec: 1680, weekly: { lastWeekRunSec: 8000, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 2 } }))
+  assert.deepEqual([cu2.level, cu2.runSec], ['HOLD', 1680], 'its next step would pass them: back to one rise a week (it rose 5 days ago)')
+  // The hard run between two easy runs doesn't read as a struggle: the easy run still grows.
+  assert.equal(runDose(ctxFor(ev(easy2), MON), runIn({ longestLast30Sec: 1800, weekly: { lastWeekRunSec: 6000, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 2 } })).level, 'PROGRESS')
+
+  // The longer Zone 2 Run: 5 min over the easy run; 5 more after two good ones; past an hour, about 75 min with its warm-up at most.
+  const base = [z(MON - 9, 1500), z(MON - 5, 1500)]
+  const wk = { lastWeekRunSec: 9000, thisWeekSoFarSec: 0, sessionsLeftThisWeek: 1 }
+  const first = runDose(ctxFor(ev(base), MON), runIn({ longestLast30Sec: 2400, weekly: wk, long: null }))
+  assert.ok(first.long && first.runSec >= 1500 + 300, `first longer run: ${first.runSec}`)
+  assert.ok(first.why.some(w => /longer run this week/.test(w)))
+  const step = runDose(ctxFor(ev(base), MON), runIn({ longestLast30Sec: 3000, weekly: wk, long: { lastSec: 2700, goodInRow: 2 } }))
+  assert.equal(step.runSec, 3000, 'two good ones at 45 min: 50 min')
+  assert.ok(step.why.some(w => /5 minutes more after two good ones/.test(w)))
+  assert.equal(runDose(ctxFor(ev(base), MON), runIn({ longestLast30Sec: 3000, weekly: wk, long: { lastSec: 2700, goodInRow: 1 } })).runSec, 2700, 'one good one: held')
+  assert.equal(runDose(ctxFor(ev(base), MON), runIn({ longestLast30Sec: 3000, weekly: wk, long: { lastSec: 2700, goodInRow: 0 } })).runSec, 2400, 'a rough one: 5 min less')
+  assert.equal(runDose(ctxFor(ev(base), MON), runIn({ longestLast30Sec: 4000, weekly: { ...wk, lastWeekRunSec: 20000 }, long: { lastSec: 3600, goodInRow: 2 } })).runSec, 3900, 'past an hour, 5 min at a time (2026-10-26)')
+  assert.equal(runDose(ctxFor(ev(base), MON), runIn({ longestLast30Sec: 6000, weekly: { ...wk, lastWeekRunSec: 30000 }, long: { lastSec: 4500, goodInRow: 2 } })).runSec, 4500, 'never over 75 min')
+  // The 110% guard binds it like every run.
+  assert.equal(runDose(ctxFor(ev(base), MON), runIn({ longestLast30Sec: 2000, weekly: wk, long: { lastSec: 2700, goodInRow: 2 } })).runSec, 2160, '110% of 33 min')
+  // The cap with the warm-up (capRunDose): the longer run's is 75 minutes, every other run's 60.
+  const top = runDose(ctxFor(ev(base), MON), runIn({ longestLast30Sec: 6000, weekly: { ...wk, lastWeekRunSec: 30000 }, long: { lastSec: 4500, goodInRow: 2 } }))
+  assert.equal(capRunDose(top, 300, LONG_CAP_MIN).runSec, 4200, '75 min with a 5 min warm-up: 70 min of running')
+  assert.equal(capRunDose(top, 300).runSec, 3300, 'the 60-minute cap for any other run')
+}
+
 // ─── Bag ─────────────────────────────────────────────────────
 {
   const first = bagDose(ctxFor(events(), MON), { maxRounds: 6 })
@@ -268,7 +339,8 @@ const os = (id: string, type: string, day: number, over: Partial<OutlineSession>
 const bzWeek = (monday: number): OutlineSession[] => [
   os('a', 'strength', monday, { label: 'Strength A' }), os('r1', 'foundation_run', monday + 1),
   os('b', 'strength', monday + 2, { label: 'Strength B' }), os('r2', 'foundation_run', monday + 3),
-  os('c', 'strength', monday + 4, { label: 'Strength C' }), os('r3', 'foundation_run', monday + 5),
+  // Rebuild Phase 2: two lifts (C's lunges count as heavy legs, so Friday holds an easy run instead).
+  os('c', 'foundation_run', monday + 4), os('r3', 'foundation_run', monday + 5),
 ]
 const outlineIn = (over: Partial<OutlineIn> = {}): OutlineIn => ({
   today: MON + 7, monday: MON + 7, blockType: 'block_zero', blockStart: MON, sessions: bzWeek(MON + 7), classDays: [1, 3, 5], classCap: 3, classHeld: false,
@@ -276,10 +348,14 @@ const outlineIn = (over: Partial<OutlineIn> = {}): OutlineIn => ({
 })
 {
   assert.equal(violations(bzWeek(MON), 'block_zero', MON).length, 0, 'the template week keeps every limit')
+  // A missed Monday is not the week's rest day: a session on every other day breaks the rest rule (rebuild Phase 3 fix).
+  const full = [os('m', 'strength', MON, { status: 'missed' }), ...[1, 2, 3, 4, 5, 6].map(i => os(`r${i}`, 'foundation_run', MON + i))]
+  assert.ok(violations(full, 'block_zero', MON).includes('no rest day'), 'no planned rest day')
+  assert.ok(!violations(full.slice(0, 6), 'block_zero', MON).includes('no rest day'), 'Sunday free: rest kept')
   assert.equal(classTarget({ ...outlineIn(), monday: MON }), 0, 'no class in the block\'s first week')
   const r = solveOutline(outlineIn())
   const add = r.changes.find(c => c.kind === 'add')
-  assert.ok(add && add.day === MON + 7 + 4, 'week 2: a class on Friday (Strength C, no heavy legs)')
+  assert.ok(add && add.day === MON + 7 + 4, 'week 2: a class on Friday (no heavy legs there)')
   assert.ok(r.changes.length <= 2, 'at most 2 changes')
   assert.equal(r.violationsAfter.length, 0, 'every limit kept')
   assert.ok(add && /Friday/.test(add.why), `why names the day: ${add?.why}`)

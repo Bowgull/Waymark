@@ -1,7 +1,5 @@
 import { test, expect } from './fixtures'
 import type { Api } from './fixtures'
-import { dayRow } from './support/helpers'
-import { GOOD_MORNING } from './support/data'
 
 /**
  * Class days (coach brain P4; coach-brain §9, page 70 layout A, approved 2026-10-21):
@@ -9,8 +7,9 @@ import { GOOD_MORNING } from './support/data'
  *   per day; a tap goes OFF → AM → PM → ANY → OFF; the lit tile shows its mark
  *   inside it (sun AM teal, moon PM clay, both ANY gold, nothing OFF); no slot
  *   row under the days; the sub line reads as approved.
- * - The nightly pass places a class on a class day as a coach change: a Dagaz
- *   rune on that day, one plain why, UNDO that takes it off.
+ * - Rebuild Phase 2 (page 93): the week holds its classes on the Settings
+ *   class days itself; new class days re-shape the week that night with no
+ *   rune (he made the change).
  *
  * Runs last: the second test runs the nightly pass for a day two weeks ahead
  * (the scratch backend is started with --test-scheduled), which rolls the
@@ -83,7 +82,7 @@ async function weekChanges(api: Api, monday: string) {
   return (await api.get<{ changes: Array<{ id: string; day: number; actor: string; kind: string; session: { id: string | null; type: string }; why: string; lock: string }> }>(`/api/weeks/${monday}/changes?today=${monday}`)).changes
 }
 
-test('the coach places a class on a class day: a Dagaz rune on Program, one plain why, UNDO takes it off', async ({ page, api, request }) => {
+test('the week holds a class on a class day; new class days re-shape the week that night with no rune (page 93)', async ({ api, request }) => {
   await api.patch('/api/settings', { mtClassDays: '1,3,5', mtClassSlots: 'mon:pm,wed:pm,fri:pm' })
   // A Monday two weeks ahead: nothing planned there yet. He checked in the day before (he's active).
   const now = new Date()
@@ -94,38 +93,28 @@ test('the coach places a class on a class day: a Dagaz rune on Program, one plai
   await api.post('/api/daily-logs', { date: iso(sunday), sleepHours: 8, sleepQuality: 4, energy: 4, soreness: 2, stress: 2, mood: 4, backToday: 4 })
   await nightly(request, iso(monday))
 
-  const add = (await weekChanges(api, iso(monday))).find(c => c.kind === 'add' && c.session.type === 'mt_class')
-  expect(add, 'a class placed on a class day').toBeTruthy()
-  expect(add!.actor).toBe('coach')
-  expect(add!.why).toMatch(/^Of your class days, (Monday|Wednesday|Friday)/)
-  expect(add!.why).not.toMatch(/night/i)
-  expect(add!.lock).toBe('open')
-  const dayIso = iso(new Date(add!.day * 86400000))
+  const weekClasses = async () => {
+    const out: Array<{ id: string; dow: number }> = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday)
+      d.setUTCDate(d.getUTCDate() + i)
+      const rows = await api.get<Array<{ id: string; type: string; status: string }>>(`/api/sessions/today?date=${iso(d)}`)
+      for (const r of rows) if (r.type === 'mt_class' && r.status !== 'skipped') out.push({ id: r.id, dow: d.getUTCDay() })
+    }
+    return out
+  }
+  // Rebuild Phase 2: the one plan's week puts the class in itself (only on Settings days); no coach "add" rune.
+  const placed = await weekClasses()
+  expect(placed.length, 'a class in the week').toBeGreaterThan(0)
+  expect(placed.every(c => [1, 3, 5].includes(c.dow))).toBe(true)
+  expect((await weekChanges(api, iso(monday))).filter(c => c.kind === 'add' && c.session.type === 'mt_class')).toHaveLength(0)
 
-  // That Monday (the phone's clock moved there), on Program (page 73): the class day's row carries
-  // the Dagaz rune; the rune opens the why-line with KEEP and UNDO; UNDO puts it back (an added
-  // session: no REDO, the window shows the put-back line).
-  // All nine check-in answers for that morning, so the deck stays closed.
-  await api.post('/api/daily-logs', { date: iso(monday), ...GOOD_MORNING })
-  const [y, m, d] = iso(monday).split('-').map(Number)
-  await page.clock.setSystemTime(new Date(y, m - 1, d, 10, 0, 0))
-  await page.goto('/program')
-  const row = dayRow(page, add!.day)
-  await expect(row).toBeVisible({ timeout: 20_000 })
-  await expect(row).toHaveAttribute('aria-label', /The coach changed it\./)
-  await expect(row.locator('.wm-rune')).toBeAttached()
-  await row.getByRole('button', { name: 'What the coach changed' }).tap()
-  const win = page.getByRole('dialog', { name: 'What the coach changed' })
-  await expect(win).toBeVisible()
-  await expect(win.locator('.pl-say')).toHaveText(/Of your class days/)
-  await expect(win.getByRole('button', { name: 'Keep' })).toBeVisible()
-  await win.getByRole('button', { name: 'Undo' }).tap()
-  await expect(win.locator('.pl-say')).not.toHaveText(/Of your class days/)
-  await expect(win.locator('.pl-say')).toHaveText(/\w/)
-  await expect(win.getByRole('button', { name: 'Redo' })).toHaveCount(0)
-
-  // UNDO took the class off the week, and the coach leaves the week as it is.
-  await expect.poll(async () => (await weekChanges(api, iso(monday))).find(c => c.id === add!.id)?.lock).toBe('undone')
-  const left = await api.get<Array<{ id: string }>>(`/api/sessions/today?date=${dayIso}`)
-  expect(left.some(s => s.id === add!.session.id)).toBe(false)
+  // New class days: that night the week re-shapes quietly, classes only on the new days.
+  await api.patch('/api/settings', { mtClassDays: '2,4', mtClassSlots: 'tue:pm,thu:pm' })
+  await nightly(request, iso(monday))
+  const after = await weekClasses()
+  expect(after.length).toBeGreaterThan(0)
+  expect(after.every(c => [2, 4].includes(c.dow))).toBe(true)
+  expect((await weekChanges(api, iso(monday))).filter(c => c.session.type === 'mt_class' && c.actor === 'coach')).toHaveLength(0)
+  await api.patch('/api/settings', { mtClassDays: '1,3,5', mtClassSlots: 'mon:pm,wed:pm,fri:pm' })
 })

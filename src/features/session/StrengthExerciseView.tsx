@@ -5,6 +5,7 @@ import { FormVideoLink } from '@/components/FormVideoLink'
 import { CountRow, GrassZone, HeroClock, PhaseWord, SessionButton, SessionFrame, TimerColumn, type TimerTrack } from '@/components/timers'
 import { mediumHaptic } from '@/lib/haptics'
 import { calculatePlates } from '@/lib/plateMath'
+import { loadEquipment, plateLine } from '@/lib/strengthLoads'
 import { assessStrengthSet, shouldShowStrengthRealityMark } from '@/lib/trainingReality'
 import { setLbsToKg, setNeedsWeight, startSetLbs, stepSetLbs } from '@/lib/timers/setWeight'
 
@@ -31,8 +32,10 @@ export interface StrengthSetInput {
   suggestedWeightKg: number | null
   /** No planned load: this lift's last logged weight (this session, else last session). */
   carryWeightKg?: number | null
-  /** He changed the last working set at this same planned load: start here (m12). */
+  /** He changed the last working set at this same planned load, or tapped it: start here (m12). */
   editedWeightKg?: number | null
+  /** The start is a step up after a "3+" (rebuild Phase 4): "Try N lb?" under the steppers. */
+  tryWeightKg?: number | null
   targetReps: number
   restSec: number
 }
@@ -200,13 +203,16 @@ function SetBoard({
     onLiveValuesChange?.(setLbsToKg(weight), reps)
   }, [weight, reps, onLiveValuesChange])
 
-  const isBarbell = equipment?.toLowerCase().includes('barbell') ?? false
+  const isLandmine = loadEquipment(equipment) === 'landmine'
+  const isBarbell = !isLandmine && (equipment?.toLowerCase().includes('barbell') ?? false)
   const plates = useMemo(() => {
+    // Page 93: a landmine's plates all go on its one bar end ("1× 10"), "Bar only" at 0.
+    if (isLandmine) return weight == null ? null : plateLine(weight, 'landmine')
     if (!isBarbell || weight == null || weight <= 0) return null
     const r = calculatePlates(weight)
     if (r.plateCounts.length === 0) return 'Bar only'
     return r.plateCounts.map(p => `${p.count}× ${p.weight === Math.floor(p.weight) ? p.weight : p.weight.toFixed(1)}`).join('  ·  ')
-  }, [weight, isBarbell])
+  }, [weight, isBarbell, isLandmine])
   const noted = shouldShowStrengthRealityMark(assessStrengthSet({
     plannedWeightKg: set.suggestedWeightKg,
     plannedReps: set.targetReps,
@@ -217,6 +223,9 @@ function SetBoard({
   // m11: a loadable working set (dumbbell, kettlebell, cable, machine) needs its weight; one he can do at bodyweight does not.
   const needsWeight = setNeedsWeight(equipment, set.isWarmup, weight)
   const blocked = reps <= 0 || needsWeight
+  // After a "3+": the next set starts a step up, said once under the steppers (page 93).
+  const tryLbs = set.tryWeightKg != null ? startSetLbs(set.tryWeightKg, equipment) : null
+  const tryUp = tryLbs != null && weight === tryLbs
 
   function log() {
     if (blocked) return
@@ -234,7 +243,7 @@ function SetBoard({
         </div>
         {weight != null && (
           <>
-            <div className="wm-label" style={{ marginBottom: 6 }}>{/kettlebell/i.test(equipment ?? '') ? 'Weight · lbs per bell' : /dumbbell/i.test(equipment ?? '') ? 'Weight · lbs per dumbbell' : 'Weight · lbs'}</div>
+            <div className="wm-label" style={{ marginBottom: 6 }}>{isLandmine ? 'Weight · lbs on the bar end' : /kettlebell/i.test(equipment ?? '') ? 'Weight · lbs per bell' : /dumbbell/i.test(equipment ?? '') ? 'Weight · lbs per dumbbell' : 'Weight · lbs'}</div>
             <div className="wm-stepper" role="group" aria-label="Weight in pounds">
               <button type="button" aria-label="Less weight" disabled={weight <= 0} onClick={() => setWeight(w => (w == null ? w : stepSetLbs(w, -1, equipment)))}>−</button>
               <span className="v" aria-live="polite"><FlapLabel text={String(weight)} size="xl" /></span>
@@ -248,10 +257,11 @@ function SetBoard({
           <span className="v" aria-live="polite"><FlapLabel text={String(reps)} size="xl" /></span>
           <button type="button" aria-label="More reps" onClick={() => setReps(r => r + 1)}>+</button>
         </div>
-        {(plates || (suggestion && !set.isWarmup) || noted || needsWeight) && (
+        {(plates || (suggestion && !set.isWarmup) || noted || needsWeight || tryUp) && (
           <div className="ss-extra">
             {needsWeight && <p className="tm-note">Set the weight you lift.</p>}
             {plates && <p className="tm-note">{plates}</p>}
+            {tryUp && <p className="tm-note">Try {tryLbs}lb?</p>}
             {suggestion && !set.isWarmup && weight !== suggestion.weightLbs && (
               <button type="button" className="ss-linkbtn is-left" onClick={() => setWeight(suggestion.weightLbs)}>Try {suggestion.weightLbs}lb?</button>
             )}

@@ -79,9 +79,10 @@ test('bag: the 5 min rope warm-up, the rounds and the rests between them', () =>
   // Page 86: the coach's finisher counts: the last round's rest, then its sets and rests.
   assert.equal(bagMinutes(4, 175), 24, '4 rounds, the last rest and an OK finisher (3 sets of 0:45, 2 rests)')
   assert.equal(bagMinutes([], 175), 5, 'no rounds: no finisher either')
-  assert.equal(doseMinutes({ type: 'bag_work' }, { bag: { rounds: 4 } }), 24, 'the dose minutes agree (no level: an OK finisher)')
-  assert.equal(doseMinutes({ type: 'bag_work' }, { bag: { rounds: 4, level: 'EASE' } }), 23, 'an easy day: the LOW finisher')
-  assert.equal(doseMinutes({ type: 'bag_work' }, { bag: { rounds: 4, level: 'PROGRESS' } }), 25, 'finishers earned: the HIGH finisher')
+  // page 93: four sets now (REAR TEEP after LEAD TEEP)
+  assert.equal(doseMinutes({ type: 'bag_work' }, { bag: { rounds: 4 } }), 25, 'the dose minutes agree (no level: an OK finisher)')
+  assert.equal(doseMinutes({ type: 'bag_work' }, { bag: { rounds: 4, level: 'EASE' } }), 24, 'an easy day: the LOW finisher')
+  assert.equal(doseMinutes({ type: 'bag_work' }, { bag: { rounds: 4, level: 'PROGRESS' } }), 26, 'finishers earned: the HIGH finisher')
 })
 
 test('Foundation: its routine for the level and day, not a flat 12', () => {
