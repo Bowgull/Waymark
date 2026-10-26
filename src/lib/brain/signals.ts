@@ -3,7 +3,8 @@
 // f.lift.ex-db-rdl.lastRir, f.run.lastU, f.note.12, ...). P2's rules and P3's
 // AI read these; every number a why-line quotes must be one of them (§5.4).
 // Facts only: no readiness state, no PROGRESS / HOLD / EASE (those are P2).
-// Pure.
+// Rebuild Phase 8: his three goals too (goalSignals: the 5K gap, the lift
+// trend, the combo level). Pure.
 
 import { CHECKIN_ITEMS, itemBaseline, noteFlags } from './athleteModel'
 import type { CheckInItem } from './athleteModel'
@@ -117,5 +118,58 @@ export function athleteSignals(model: AthleteModel, events: ModelEvents, today: 
       if (n.source === 'back') flags.push('back')
       if (flags.length) facts.push({ id: `f.note.${i}`, value: flags.join(','), day: n.day })
     })
+  return facts
+}
+
+// ─── His three goals (rebuild Phase 8) ────────────────────────
+
+/** What the goal facts read besides the model: his 5K tests (oldest first) and his combo level. */
+export interface GoalInputs {
+  fiveKTests: ReadonlyArray<{ day: number; sec: number }>
+  /** The combo tier he is on (lib/comboTiers currentComboTier), or null when unknown. */
+  comboTier: string | null
+}
+
+/** A lift's direction over its last exposures: up, flat or down by its heaviest working weight. */
+export function liftTrend(recent: ReadonlyArray<{ topKg: number | null }> | undefined): 'up' | 'flat' | 'down' | null {
+  const tops = (recent ?? []).map(e => e.topKg).filter((k): k is number => k != null && k > 0)
+  if (tops.length < 2) return null
+  const d = tops[tops.length - 1] - tops[0]
+  return d > 0.01 ? 'up' : d < -0.01 ? 'down' : 'flat'
+}
+
+/**
+ * The goals as facts (all three equal, 2026-10-25): the 5K (the last
+ * test and its gap to 22:00), the lift trend, the combo level, and the goal
+ * that lags when one clearly does (the 5K no faster over its last two tests,
+ * or more lifts going down than up). Pure.
+ */
+export function goalSignals(model: AthleteModel, goals: GoalInputs, today: number, goalSec: number): Fact[] {
+  const facts: Fact[] = [{ id: 'f.goal.fiveK.goalSec', value: goalSec, unit: 's' }]
+  const tests = goals.fiveKTests.filter(t => t.day <= today && t.sec > 0)
+  const last = tests[tests.length - 1]
+  facts.push({ id: 'f.goal.fiveK.tests', value: tests.length })
+  if (last) {
+    facts.push({ id: 'f.goal.fiveK.lastSec', value: last.sec, unit: 's', day: last.day }, { id: 'f.goal.fiveK.gapSec', value: Math.max(0, last.sec - goalSec), unit: 's', day: last.day })
+  }
+  const prev = tests[tests.length - 2]
+  if (prev && last) facts.push({ id: 'f.goal.fiveK.changeSec', value: last.sec - prev.sec, unit: 's', day: last.day })
+
+  let up = 0
+  let down = 0
+  let flat = 0
+  for (const l of Object.values(model.lifts)) {
+    const t = liftTrend(l.recent)
+    if (!t) continue
+    facts.push({ id: `f.lift.${l.exerciseId}.trend`, value: t })
+    if (t === 'up') up++
+    else if (t === 'down') down++
+    else flat++
+  }
+  facts.push({ id: 'f.goal.strength.up', value: up }, { id: 'f.goal.strength.flat', value: flat }, { id: 'f.goal.strength.down', value: down })
+  if (goals.comboTier) facts.push({ id: 'f.goal.mt.tier', value: goals.comboTier })
+
+  const lagging = prev && last && last.sec >= prev.sec && last.sec > goalSec ? 'fiveK' : down > up && down >= 2 ? 'strength' : null
+  if (lagging) facts.push({ id: 'f.goal.lagging', value: lagging })
   return facts
 }

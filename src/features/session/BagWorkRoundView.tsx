@@ -17,6 +17,7 @@ import {
   cancelRestCues,
 } from '@/lib/notifications'
 import { comboCue } from '@/lib/comboCue'
+import { STAGE_WORDS, roundCue, stageOfRoundType } from '@/lib/coach/bagArc'
 import { isStaleCue, type EngineState } from '@/lib/sessionResume'
 import { bagComboSize, cueShown, lockComboSize, roundsBack, type BagRoundView } from '@/lib/timers/bagRound'
 import { freshSnap } from '@/lib/timers/swipeBack'
@@ -96,10 +97,29 @@ interface BagWorkRoundViewProps {
 }
 
 
-/** The combos of a round as its board shows them: the first stacked, the others on THEN. */
+/** The free round's word where a combo would be (page 93). */
+const FREE_WORD = 'FREE ROUND'
+/** Room kept over the combo for the stage word (WARM-UP, NEXT · TECHNIQUE), so every round lands on one size. */
+const SIDE_H = 20
+
+/**
+ * The combos of a round as its board shows them: the first stacked, the others
+ * on THEN. Page 93: a free round says FREE ROUND; A and B together (pressure,
+ * link) stack one under the other at the same size; a rhythm warm-up of single
+ * strikes is one stack (JAB › LEAD TEEP › BODY KICK).
+ */
 function roundView(r: RoundData | null | undefined): BagRoundView {
+  if (r?.roundType === 'free') return { now: [FREE_WORD], then: [] }
   const combos = (r?.combos ?? []).filter(rc => rc.combo).map(rc => comboStrikes(rc.combo!.text))
+  if (r?.roundType === 'warmup' && combos.length > 1 && combos.every(c => c.length === 1)) return { now: combos.flat(), then: [] }
+  if ((r?.roundType === 'pressure' || r?.roundType === 'link') && combos.length === 2) return { now: combos[0], also: combos[1], then: [] }
   return { now: combos[0] ?? [], then: combos.slice(1).filter(c => c.length > 0) }
+}
+
+/** The stage word over the combo (null for Custom's rounds). */
+function stageWord(r: RoundData | null | undefined): string | null {
+  const st = stageOfRoundType(r?.roundType)
+  return st ? STAGE_WORDS[st] : null
 }
 
 function firstCombo(r: RoundData | null | undefined) {
@@ -389,8 +409,10 @@ export function BagWorkRoundView({
   const boardRound = resting && nextRound ? nextRound : round
   // Page 86: the last round's rest shows just the finisher's first set where the next combo would be.
   const finisherNext = resting && firstSet != null
-  const board = finisherNext ? { now: [], then: [] } : roundView(boardRound)
-  const cue = finisherNext ? null : comboCue(firstCombo(boardRound))
+  const board: BagRoundView = finisherNext ? { now: [], then: [] } : roundView(boardRound)
+  // page 93: one cue a round on the teal flap (the combo's own on a learn round, the round's job otherwise)
+  const cue = finisherNext ? null : roundCue(boardRound.roundType, comboCue(firstCombo(boardRound))) || null
+  const side = finisherNext ? null : stageWord(boardRound)
   const showCue = !!cue && !heat && cueShown(phase, fighting ? round.durationSec - roundTimer.secondsRemaining : 0)
   const shownRound = resting && nextRound ? nextRound.roundNumber : round.roundNumber
 
@@ -402,7 +424,7 @@ export function BagWorkRoundView({
   useLayoutEffect(() => {
     const z = zoneRef.current
     if (!z) return
-    const fit = () => setComboPx(bagComboSize(views, { width: z.clientWidth, height: z.clientHeight }))
+    const fit = () => setComboPx(bagComboSize(views, { width: z.clientWidth, height: z.clientHeight - SIDE_H }))
     fit()
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(fit)
@@ -488,18 +510,19 @@ export function BagWorkRoundView({
     >
       <div ref={zoneRef} className={`bw-zone${finisherNext ? ' is-fin' : ''}`} style={zoneStyle}>
         {finisherNext && <FinisherSetCard set={firstSet} />}
-        {board.now.length > 0 && (
-          <div className={`bw-stack${heat ? ' is-dim' : ''}`} role="img" aria-label={board.now.join(', ')}>
-            {board.now.map((strike, i) => (
+        {!finisherNext && <div className="bw-side">{side ? `${resting && nextRound ? 'NEXT · ' : ''}${side}` : ''}</div>}
+        {[board.now, board.also ?? []].filter(st => st.length > 0).map((stack, k) => (
+          <div key={k} className={`bw-stack${heat ? ' is-dim' : ''}`} role="img" aria-label={stack.join(', ')}>
+            {stack.map((strike, i) => (
               <Fragment key={i}>
                 {i > 0 && <span className="bw-dn" aria-hidden>›</span>}
                 <FlapLabel text={strike} size="xl" className="bw-strike" />
               </Fragment>
             ))}
           </div>
-        )}
+        ))}
         <div className={`bw-cue${showCue ? '' : ' is-hidden'}`} aria-hidden={!showCue}>
-          {cue && <FlapLabel text={cue} size="sm" tone={resting ? 'teal' : 'gold'} />}
+          {cue && <FlapLabel text={`CUE · ${cue}`} size="xs" tone="teal" />}
         </div>
         {board.then.length > 0 && (
           <div className={`bw-then${heat ? ' is-hidden' : ''}`} aria-hidden={!!heat}>

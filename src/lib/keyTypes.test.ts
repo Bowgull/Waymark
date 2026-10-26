@@ -8,7 +8,7 @@ import { KEY_TYPES as COACH_KEY_TYPES } from './coach'
 import { KEY_SESSION_TYPES, HARD_TYPES } from './blockZero'
 import { COUNTED_TYPES } from './ledgerConsistency'
 
-assert.deepEqual([...KEY_TYPES].sort(), ['bag_work', 'foundation_run', 'mt_class', 'running', 'skip_rope', 'strength'])
+assert.deepEqual([...KEY_TYPES].sort(), ['bag_conditioning', 'bag_work', 'foundation_run', 'mt_class', 'running', 'skip_rope', 'strength'], 'page 93: Bag Conditioning is training too')
 assert.equal(COACH_KEY_TYPES, KEY_TYPES, 'the coach rules read lib/keyTypes')
 assert.equal(KEY_SESSION_TYPES, KEY_TYPES, 'the end gate reads lib/keyTypes')
 assert.equal(HARD_TYPES, KEY_TYPES, 'the guardrails read lib/keyTypes')

@@ -9,7 +9,9 @@
 // a copy of a backup (scripts/replay.mts) or a migrated in-memory one (tests).
 import type Database from 'better-sqlite3'
 import { and, eq, inArray,} from 'drizzle-orm'
-import {  sessions, strengthSessionExercises, strengthSets, trainingMaxes, weekPlans } from '../../db/schema'
+import {  exercises, sessions, strengthSessionExercises, strengthSets, trainingMaxes, weekPlans } from '../../db/schema'
+import { LADDER_MAX_SETS } from '../../lib/brain/doses'
+import { carryStart, nextRungAfter, withEffort, withLogged, type LiftCarry } from '../../lib/timers/setWeight'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../db/schema'
 import { d1Shim } from './d1Shim'
@@ -24,7 +26,12 @@ import { readinessSummary } from '../../lib/brain/readinessParts'
 import { getStrengthTemplate, getWeekPercentage } from '../../lib/strengthTemplates'
 import { getRunWalkWeek } from '../../lib/blockZero/running'
 import { isoOf, withMergedLifts } from '../../lib/coach'
+import { CLASS_MINUTES } from '../../lib/coach/sessions'
+import { plannedStrengthMinutes, strengthExtraSec } from '../../lib/plannedLength'
+import { doseJsonMinutes } from '../../lib/brain/doseMinutes'
+import { runWarmupSec } from '../../lib/foundation'
 import type {
+  AthleteHooks,
   AiCallRecord, AsPrescribed, ChangeRecord, DayRecord, DoseLayers, DoseRecord, LoggedLift, ReplayAction, ReplayResult, ReplayScript,
 } from '../../lib/coach/replay/types'
 import { liftPattern } from '../../lib/coach/replay/history'
@@ -35,7 +42,7 @@ const API_KEY = 'replay-only-not-a-secret'
 const AI_KEY = 'replay-offline'
 const DAY_MS = 86400000
 /** Session length a simulated athlete takes, by type (a class is a fixed hour). */
-const TYPICAL_MIN: Record<string, number> = { strength: 50, foundation_run: 28, running: 30, mt_class: 60, bag_work: 30, skip_rope: 15, mobility: 10, active_recovery: 20 }
+const TYPICAL_MIN: Record<string, number> = { strength: 50, foundation_run: 28, running: 30, mt_class: 60, bag_work: 30, bag_conditioning: 30, skip_rope: 15, mobility: 10, active_recovery: 20 }
 
 type App = { fetch: (req: Request, env: unknown, ctx: unknown) => Response | Promise<Response> }
 type SessionRow = typeof sessions.$inferSelect
@@ -172,6 +179,20 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     return row ?? null
   }
 
+  /** A started strength session's planned minutes: every set (the main lifts' ramps included) and the moves between exercises. */
+  async function strengthMinutes(sessionId: string): Promise<number | null> {
+    const exRows = (await db.select().from(strengthSessionExercises).where(eq(strengthSessionExercises.sessionId, sessionId))).sort((a, b) => a.orderIndex - b.orderIndex)
+    // The ramps are stored as warm-up rows already: every row's set and rest, plus the moves between exercises.
+    const all = []
+    for (const ex of exRows) {
+      const sets = (await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, ex.id))).sort((a, b) => a.setNumber - b.setNumber)
+      all.push(...sets.map(st => ({ isWarmup: st.isWarmup, restSec: st.restSec })))
+    }
+    const base = plannedStrengthMinutes(all)
+    // The ramps are rows already: only the moves between rows (a new station, or the next move of a circuit).
+    return base == null ? null : Math.round(base + strengthExtraSec(exRows.map(e => ({ section: e.section ?? 'main', ramp: false }))) / 60)
+  }
+
   /** The ease layers on a started session: since coach brain P2, one dose with one level (dose_json). */
   async function layersFor(s: SessionRow, day: number): Promise<DoseLayers> {
     const state = await loadSessionCoachState(db, s, day)
@@ -193,7 +214,7 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     }
   }
 
-  async function logStrength(sessionId: string, lifts: LoggedLift[] | AsPrescribed, atSec: number) {
+  async function logStrength(sessionId: string, lifts: LoggedLift[] | AsPrescribed, atSec: number, day: number, athlete?: AthleteHooks) {
     const exRows = await db.select().from(strengthSessionExercises).where(eq(strengthSessionExercises.sessionId, sessionId))
     const used = new Set<number>()
     for (const ex of exRows.sort((a, b) => a.orderIndex - b.orderIndex)) {
@@ -202,10 +223,35 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
         .sort((a, b) => a.setNumber - b.setNumber)
       if (!Array.isArray(lifts)) {
         // A simulated athlete: every prescribed set, as prescribed (or short / heavier / lighter).
-        for (const st of sets) {
-          const w = st.weightKg == null ? null : Math.round(st.weightKg * (lifts.weightFactor ?? 1) * 100) / 100
-          const reps = Math.max(0, (st.reps ?? 0) - (lifts.repsShort ?? 0))
-          await call('PATCH', `/api/strength-sets/${st.id}`, { weightKg: w, reps, rir: ex.section === 'main' ? lifts.rir : null, completedAt: atSec })
+        // A true athlete follows the set screen (rebuild Phase 4): after a 3+ the next set starts a
+        // step up, a climb stops at about 3 left, and a last climbing set at 3+ gets one more rung.
+        const own = athlete?.set != null && ex.section === 'main'
+        const [lib] = own ? await db.select({ equipment: exercises.equipment }).from(exercises).where(eq(exercises.id, ex.exerciseId)) : []
+        const equipment = lib?.equipment ?? null
+        let carry: Record<string, LiftCarry> = {}
+        const list = [...sets]
+        for (let i = 0; i < list.length; i++) {
+          const st = list[i]
+          let w = st.weightKg == null ? null : Math.round(st.weightKg * (lifts.weightFactor ?? 1) * 100) / 100
+          if (own && w != null) w = carryStart(carry[ex.exerciseId], { isWarmup: false, plannedKg: st.plannedWeightKg ?? st.weightKg }, ex.exerciseId, equipment)?.kg ?? w
+          let reps = Math.max(0, (st.reps ?? 0) - (lifts.repsShort ?? 0))
+          let rir: number | null = ex.section === 'main' ? lifts.rir : null
+          let feel: number | undefined
+          // A true athlete: his own reps and reps left at this weight (rebuild Phase 1).
+          if (own) ({ reps, rir, feel } = athlete!.set!({ exerciseId: ex.exerciseId, weightKg: w, reps: st.reps ?? 0, setNumber: st.setNumber, day }))
+          await call('PATCH', `/api/strength-sets/${st.id}`, { weightKg: w, reps, rir, completedAt: atSec })
+          if (!own) continue
+          // About 3 left on a climb (what he felt, under the 3+ tap): he stays there, as the note asks.
+          const climbing = list.length > 1 && (list[list.length - 1].plannedWeightKg ?? 0) > (list[0].plannedWeightKg ?? 0) + 0.01
+          const stays = climbing && feel != null && feel <= 3.5 ? Math.min(rir ?? 2, 2) : rir
+          carry = withEffort(withLogged(carry, ex.exerciseId, w, { isWarmup: false, plannedKg: st.plannedWeightKg ?? st.weightKg }), ex.exerciseId, stays)
+          if (i === list.length - 1) {
+            const next = nextRungAfter(list.map(x => ({ isWarmup: false, plannedWeightKg: x.plannedWeightKg ?? x.weightKg })), w, stays, ex.exerciseId, equipment, LADDER_MAX_SETS)
+            if (next != null) {
+              const r = await call<typeof st>('POST', `/api/strength-sets/${st.id}/rung`, { id: `${st.id}-r${i + 1}`, weightKg: next })
+              if (r.json && (r.json as { id?: string }).id) list.push(r.json as typeof st)
+            }
+          }
         }
         continue
       }
@@ -286,7 +332,9 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
         why: [...(r.json?.coach?.loadReasons ?? []), ...(r.json?.coach?.notes ?? [])],
       })
       doses.push(base)
-      if (a.lifts) await logStrength(s.id, a.lifts, Math.floor(endMs / 1000))
+      base.plannedMin = await strengthMinutes(s.id)
+      if (a.athlete?.trueKg) base.trueKg = Object.fromEntries(loads.map(l => [l.exerciseId, Math.round(a.athlete!.trueKg!(l.exerciseId, day) * 10) / 10]))
+      if (a.lifts) await logStrength(s.id, a.lifts, Math.floor(endMs / 1000), day, a.athlete)
       await finish(s, a, endMs)
       return
     }
@@ -317,6 +365,16 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
       base.layers.autoEaseReason = p?.autoEase?.reason ?? p?.coach?.reasons?.join(' ') ?? null
       doses.push(base)
       const runId = r.json?.runSession?.id
+      base.plannedMin = p?.targetDurSec != null ? Math.round((p.targetDurSec + (s.type === 'foundation_run' ? runWarmupSec() : 0)) / 60) : null
+      if (runId && a.run === 'as_prescribed' && a.athlete?.run) {
+        // A true athlete: his own time, distance and heart rate (rebuild Phase 1).
+        const mine = a.athlete.run({ day, type: s.type, notes: startedRow?.notes ?? s.notes, targetDurSec: p?.targetDurSec ?? null, runWalk: p?.runWalk ?? null, z2CeilingBpm: p?.z2CeilingBpm ?? null, walkOnly })
+        base.loggedAvgHr = mine.avgHr
+        base.loggedKm = mine.distanceKm
+        await call('PATCH', `/api/run-sessions/${runId}`, { durationSec: mine.durationSec, distanceKm: mine.distanceKm, avgHr: mine.avgHr ?? undefined, maxHr: mine.maxHr ?? undefined, ...(mine.fiveKSec != null ? { fiveKSec: mine.fiveKSec } : {}) })
+        await finish(s, a, startMs + mine.durationSec * 1000 + 5 * 60000)
+        return
+      }
       if (runId && a.run) {
         const plannedSec = p?.targetDurSec ?? a.durationMin * 60
         const run = a.run === 'as_prescribed'
@@ -337,13 +395,15 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
       return
     }
 
-    const startRoute: Record<string, string> = { mt_class: 'start-mt-class', bag_work: 'start-bag-work', mobility: 'start-mobility', skip_rope: 'start-skip-rope', active_recovery: 'start-recovery' }
+    const startRoute: Record<string, string> = { mt_class: 'start-mt-class', bag_work: 'start-bag-work', mobility: 'start-mobility', skip_rope: 'start-skip-rope', active_recovery: 'start-recovery', bag_conditioning: 'start-bag-conditioning' }
     const route = startRoute[s.type]
     if (route) {
       const r = await call<{ mtLog?: { id: string } }>('POST', `/api/sessions/${s.id}/${route}`)
       // A class is a fixed hour: the log card's minutes (G1 #7) as he'd save it.
       if (s.type === 'mt_class' && r.json?.mtLog?.id) await call('PATCH', `/api/mt-class-logs/${r.json.mtLog.id}`, { durationMin: a.durationMin })
     }
+    const [startedRow] = await db.select().from(sessions).where(eq(sessions.id, s.id))
+    base.plannedMin = s.type === 'mt_class' ? CLASS_MINUTES : startedRow ? (doseJsonMinutes(startedRow) ?? plannedOtherMinutes(startedRow)) : null
     doses.push(base)
     await finish(s, a, endMs)
   }
@@ -366,15 +426,19 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     } else if (a.kind === 'planned') {
       const rows = (await db.select().from(sessions).where(and(eq(sessions.scheduledDate, day), eq(sessions.status, 'planned'))))
         .filter(r => !(a.skipTypes ?? []).includes(r.type))
+        // A true athlete misses some: left planned, they turn missed overnight.
+        .filter(r => !a.athlete?.misses?.(day, r.type))
         .sort((x, y) => (x.timeSlot === 'pm' ? 1 : 0) - (y.timeSlot === 'pm' ? 1 : 0))
       for (const r of rows) {
         const slot = r.timeSlot === 'pm' ? 'pm' : 'am'
         const at = slot === 'pm' ? a.pmAt ?? 18 * 60 : a.at
         await doSession(day, {
           kind: 'session', at, type: r.type, slot, durationMin: TYPICAL_MIN[r.type] ?? 30, rpe: a.rpe[r.type] ?? a.rpe.default,
-          lifts: a.lifts, run: 'as_prescribed', runFactor: a.runFactor, notes: a.notes, addIfMissing: false,
+          lifts: a.lifts, run: 'as_prescribed', runFactor: a.runFactor, notes: a.notes, addIfMissing: false, athlete: a.athlete,
         })
       }
+    } else if (a.kind === 'settings') {
+      await call('PATCH', '/api/settings', a.patch)
     } else if (a.kind === 'body') {
       const w = await call<{ alerts?: Array<{ id: string; stage?: string }>; ask?: { id: string } | null; board?: unknown }>('GET', `/api/body/watch?today=${isoOf(day)}`)
       const payload = w.json as unknown as Record<string, unknown> | null
@@ -422,7 +486,7 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
       const did: string[] = []
       for (const a of actions) {
         await doAction(day, a)
-        did.push(a.kind === 'session' ? `${a.type}${a.rpe != null ? ` rpe ${a.rpe}` : ''}` : a.kind === 'skip' ? `skip ${a.type} (${a.reason})` : a.kind === 'add' ? `add ${a.type}` : a.kind)
+        did.push(a.kind === 'session' ? `${a.type}${a.rpe != null ? ` rpe ${a.rpe}` : ''}` : a.kind === 'settings' ? `settings ${JSON.stringify(a.patch)}` : a.kind === 'skip' ? `skip ${a.type} (${a.reason})` : a.kind === 'add' ? `add ${a.type}` : a.kind)
       }
       collectChanges('day', day)
       // Readiness as the day stood (after his check-in).
@@ -455,10 +519,19 @@ export async function runReplay(sqlite: Database.Database, script: ReplayScript,
     doses,
     changes,
     aiCalls,
-    sessions: finalRows.map(r => ({ id: r.id, day: r.scheduledDate, type: r.type, label: r.label, slot: r.timeSlot, status: r.status, source: r.source, contextJson: r.contextJson, rpe: r.rpe, durationSec: r.durationSec, blockType: r.blockType })),
+    sessions: finalRows.map(r => ({ id: r.id, day: r.scheduledDate, type: r.type, label: r.label, slot: r.timeSlot, status: r.status, source: r.source, contextJson: r.contextJson, rpe: r.rpe, durationSec: r.durationSec, blockType: r.blockType, notes: r.notes })),
     errors,
     model: modelFinal,
   }
+}
+
+/** Minutes for a session with no dose minutes: its planned length if stored, else the type's planning estimate. */
+function plannedOtherMinutes(row: SessionRow): number | null {
+  const ctx = (() => { try { return JSON.parse(row.contextJson ?? '{}') as { plannedMin?: number; plan?: { minutes?: number } } } catch { return {} } })()
+  if (typeof ctx.plannedMin === 'number') return ctx.plannedMin
+  // The week builder's plan mark (Bag Conditioning's minutes).
+  if (typeof ctx.plan?.minutes === 'number') return ctx.plan.minutes
+  return TYPICAL_MIN[row.type] ?? null
 }
 
 /** Alert ids anywhere in the body-watch payload that can be applied or answered. */

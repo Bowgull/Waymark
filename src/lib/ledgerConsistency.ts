@@ -232,10 +232,10 @@ export function blockConsistency(rows: ConsistencyRow[], block: ConsistencyBlock
   } else if (rate >= NEXT_BLOCK_RATE) {
     flap = 'ON TRACK'
     tone = 'teal'
-    nextLine = `On track to reach the next block on ${dayLabel(end)}.`
+    nextLine = `On track to reach The Campaign on ${dayLabel(end)}.`
   } else {
     flap = 'AT RISK'
-    nextLine = `Do ${needLeft} of your next ${toCome} to reach the next block.`
+    nextLine = `Do ${needLeft} of your next ${toCome} to reach The Campaign.`
   }
   const brk = longestBreak(due)
   const nextSmall = brk.len >= 2

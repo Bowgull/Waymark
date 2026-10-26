@@ -26,6 +26,8 @@ export const weekPlans = sqliteTable('week_plans', {
   // 0031: the week's "why this week" line and when the coach prepared it.
   whyLine: text('why_line'),
   preparedAt: integer('prepared_at'),
+  // 0053: the one plan's week (lib/brain/weekBuilder.ts): its day step and every session's place.
+  shapeJson: text('shape_json'),
   createdAt: integer('created_at').notNull(),
 }, (t) => [
   index('idx_week_plans_block').on(t.blockId, t.weekNumber),
@@ -326,6 +328,8 @@ export const combos = sqliteTable('combos', {
   tiktokUrl: text('tiktok_url'),
   // 0049 (page 80): his grade after a nudge: 'easy' | 'medium' | 'hard' | 'expert'. NULL = from the tier.
   difficultyOverride: text('difficulty_override'),
+  // 0060 (page 93): when the coach's unlock card opened it (unix seconds); NULL before that. NEW for two weeks.
+  unlockedAt: integer('unlocked_at'),
 }, (t) => [
   index('idx_combos_tier').on(t.tier, t.level),
 ])

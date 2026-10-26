@@ -36,36 +36,41 @@ export function inLighter(day: number, move: { lighterFrom: number; monday: numb
   return move != null && day >= move.lighterFrom && day < move.monday
 }
 
-export const LIGHTER_WHY = 'Lighter week before Fighter Block 1: same weights, fewer sets.'
-const LIGHTER_RUN_WHY = 'Lighter week before Fighter Block 1: same run pieces, fewer rounds.'
-const LIGHTER_BAG_WHY = 'Lighter week before Fighter Block 1: fewer rounds.'
+export const LIGHTER_WHY = 'Lighter week before The Campaign: same weights, fewer sets.'
+const LIGHTER_RUN_WHY = 'Lighter week before The Campaign: same run pieces, fewer rounds.'
+const LIGHTER_BAG_WHY = 'Lighter week before The Campaign: fewer rounds.'
 
-/** Strength: each lift's sets × 0.6 (at least 2, a work-up keeps its sets), weights held, no new steps. */
-export function lighterStrength(d: StrengthDose): StrengthDose {
+/**
+ * Strength: each lift's sets × 0.6 (at least 2, a work-up keeps its sets), weights held, no new steps.
+ * The same for a lighter week his body triggers (lighterWeek.ts), with its own why.
+ */
+export function lighterStrength(d: StrengthDose, lighterWhy: string = LIGHTER_WHY, opts: { oneEase?: boolean } = {}): StrengthDose {
   const lifts = d.lifts.map(l => {
     if (l.workUp) return { ...l, level: minLevel(l.level, 'HOLD') }
     const sets = Math.max(2, Math.round(l.sets * LIGHTER_VOLUME))
-    const held = l.change === 'increase' && l.fromKg != null ? { weightKg: l.fromKg, change: 'hold' as const } : {}
+    // One ease only (a triggered lighter week): the fewer sets are the ease, so a trimmed weight goes back to its base.
+    const back = opts.oneEase && l.change === 'decrease' && l.fromKg != null
+    const held = (l.change === 'increase' || back) && l.fromKg != null ? { weightKg: l.fromKg, change: 'hold' as const } : {}
     return { ...l, sets: Math.min(l.sets, sets), ...held, level: minLevel(l.level, 'HOLD') }
   })
-  return { ...d, lifts, sets: lifts.reduce((n, l) => n + l.sets, 0), level: minLevel(d.level, 'HOLD'), why: [LIGHTER_WHY, ...d.why.filter(w => w !== LIGHTER_WHY)] }
+  return { ...d, lifts, sets: lifts.reduce((n, l) => n + l.sets, 0), level: minLevel(d.level, 'HOLD'), why: [lighterWhy, ...d.why.filter(w => w !== lighterWhy)] }
 }
 
 /** Run: the same run pieces, rounds × 0.6 (at least 2). */
-export function lighterRun(d: RunDose): RunDose {
+export function lighterRun(d: RunDose, lighterWhy: string = LIGHTER_RUN_WHY): RunDose {
   if (d.walkOnly) return d
   if (d.rounds <= 1) {
     const sec = Math.max(60, Math.round((d.runSec * LIGHTER_VOLUME) / 30) * 30)
-    return { ...d, runSec: sec, totalSec: sec, runTotalSec: sec, level: minLevel(d.level, 'HOLD'), why: [LIGHTER_RUN_WHY, ...d.why] }
+    return { ...d, runSec: sec, totalSec: sec, runTotalSec: sec, level: minLevel(d.level, 'HOLD'), why: [lighterWhy, ...d.why] }
   }
   const rounds = Math.max(2, Math.min(d.rounds, Math.round(d.rounds * LIGHTER_VOLUME)))
   const totalSec = runWalkTotalSec({ runSec: d.runSec, walkSec: d.walkSec, rounds, warmupSec: d.warmupSec })
-  return { ...d, rounds, totalSec, runTotalSec: d.runSec * rounds, level: minLevel(d.level, 'HOLD'), why: [LIGHTER_RUN_WHY, ...d.why] }
+  return { ...d, rounds, totalSec, runTotalSec: d.runSec * rounds, level: minLevel(d.level, 'HOLD'), why: [lighterWhy, ...d.why] }
 }
 
 /** Bag: rounds × 0.6 (at least 2), no finishers. */
-export function lighterBag(d: BagDose): BagDose {
-  return { ...d, rounds: Math.max(2, Math.min(d.rounds, Math.round(d.rounds * LIGHTER_VOLUME))), finishers: false, level: minLevel(d.level, 'HOLD'), why: [LIGHTER_BAG_WHY, ...d.why] }
+export function lighterBag(d: BagDose, lighterWhy: string = LIGHTER_BAG_WHY): BagDose {
+  return { ...d, rounds: Math.max(2, Math.min(d.rounds, Math.round(d.rounds * LIGHTER_VOLUME))), finishers: false, level: minLevel(d.level, 'HOLD'), why: [lighterWhy, ...d.why] }
 }
 
 export interface MoveSet { exerciseId: string; weightKg: number | null; reps: number; rir: number | null }

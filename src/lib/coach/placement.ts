@@ -37,6 +37,7 @@ import {
   estimatedMinutes,
   hoursBetween,
   isHard,
+  isHardRun,
   isHeavyLegs,
   isLegInterference,
   isoOf,
@@ -241,7 +242,10 @@ function evaluate(change: SessionChange, ctx: PlacementContext): { refusal: Refu
   }
 
   if (hard) {
-    const other = sameDay.find(s => isHard(s))
+    // A doubled morning (page 93): a hard run, and that day's lift in the evening, run first.
+    const doubled = (x: Pick<SessionLike, 'type' | 'notes' | 'timeSlot'>, y: Pick<SessionLike, 'type' | 'notes' | 'timeSlot'>) =>
+      isHardRun({ type: x.type, notes: x.notes ?? null, estimatedMin: null }) && x.timeSlot === 'am' && y.type === 'strength' && y.timeSlot === 'pm'
+    const other = sameDay.find(s => isHard(s) && !doubled(s, change) && !doubled(change, s))
     if (other) return { refusal: refuse('stacked_hard', `${DAY_NAMES[dow]} already has ${label(other).toLowerCase()}. One hard session a day.`) }
   }
 

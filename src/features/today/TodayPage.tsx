@@ -82,7 +82,7 @@ interface WeekPlanRow { id: string; weekNumber: number; whyLine?: string | null 
 interface WeekPayload { week: WeekPlanRow; sessions: Array<StripSession & { label?: string | null }> }
 
 // Session types that have a dedicated workout engine
-const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
+const WORKOUT_SESSION_TYPES = ['strength', 'mobility', 'bag_work', 'bag_conditioning', 'running', 'skip_rope', 'active_recovery', 'mt_class', 'foundation_run']
 
 export function TodayPage() {
   const navigate = useNavigate()
@@ -386,6 +386,7 @@ export function TodayPage() {
           mobility: `/api/sessions/${id}/start-mobility`,
           strength: `/api/sessions/${id}/start-strength`,
           bag_work: `/api/sessions/${id}/start-bag-work`,
+          bag_conditioning: `/api/sessions/${id}/start-bag-conditioning`,
           running: `/api/sessions/${id}/start-run`,
           skip_rope: `/api/sessions/${id}/start-skip-rope`,
           active_recovery: `/api/sessions/${id}/start-recovery`,

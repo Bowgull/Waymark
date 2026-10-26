@@ -16,6 +16,10 @@ import { answerBody, applyBodyPlan, bodyPlanOf, bodyWatchPayload, gotBodyNote, m
 import { undoChange, weekChangeViews } from './changes'
 import { prepareWeek } from './weeklyPass'
 import { testDb, type TestDB } from './testDb'
+import { setFixedWeekForTests } from './onePlan'
+
+// These stories are written on the old fixed Block Zero week (rebuild Phase 2 keeps it for them).
+setFixedWeekForTests(true)
 
 const D = isoToEpochDay
 const START = D('2026-09-28')

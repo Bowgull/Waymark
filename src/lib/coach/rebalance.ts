@@ -119,7 +119,7 @@ export function runAllowanceBaseSec(lastWeekSec: number, weekBeforeSec: number):
 
 const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const LIVE = new Set(['planned', 'in_progress', 'completed'])
-const CONDITIONING: ReadonlySet<string> = new Set(['foundation_run', 'running', 'bag_work', 'skip_rope', 'mt_class'])
+const CONDITIONING: ReadonlySet<string> = new Set(['foundation_run', 'running', 'bag_work', 'bag_conditioning', 'skip_rope', 'mt_class'])
 
 function dayLong(d: number): string {
   return DAY_LONG[dowOf(d)]

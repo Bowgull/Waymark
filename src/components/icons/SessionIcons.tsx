@@ -110,6 +110,7 @@ export function SessionTypeIcon({ type }: { type: string }) {
     case 'strength': return <StrengthIcon />
     case 'mt_class': return <MtClassIcon />
     case 'bag_work': return <BagWorkIcon />
+    case 'bag_conditioning': return <BagWorkIcon />
     case 'foundation_run': return <RunningIcon />
     case 'running': return <RunningIcon />
     case 'skip_rope': return <SkipRopeIcon />

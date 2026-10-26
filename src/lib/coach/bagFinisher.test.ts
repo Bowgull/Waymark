@@ -8,6 +8,7 @@ import { positionAt, skipTargetSec } from '../timers/intervalTimer'
 import {
   FINISHER_REST_SEC,
   finisherCues,
+  finisherKicks,
   finisherParts,
   finisherReadiness,
   finisherTotalSec,
@@ -58,28 +59,29 @@ test('sized by readiness: LOW goal 10 in 0:25, OK goal 20 in 0:45, HIGH goal 30 
   assert.equal(setLine(plan({ readiness: 'high' }).sets[0]), '1:05 · GOAL 30')
 })
 
-test('the sets in order: body kick right, switch kick left, lead teep; no head kicks', () => {
+test('the sets in order: body kick right, switch kick left, lead teep left, rear teep right (page 93); no head kicks', () => {
   const p = plan()
-  assert.deepEqual(p.sets.map(s => s.name), ['BODY KICK', 'SWITCH KICK', 'LEAD TEEP'])
-  assert.deepEqual(p.sets.map(s => s.side), ['RIGHT LEG', 'LEFT LEG', 'FRONT LEG'])
+  assert.deepEqual(p.sets.map(s => s.name), ['BODY KICK', 'SWITCH KICK', 'LEAD TEEP', 'REAR TEEP'])
+  assert.deepEqual(p.sets.map(s => s.side), ['RIGHT LEG', 'LEFT LEG', 'LEFT LEG', 'RIGHT LEG'], 'one word per leg: no FRONT LEG')
+  assert.deepEqual([p.sets[3].goal, p.sets[3].sec], [p.sets[2].goal, p.sets[2].sec], 'the rear teep: the same time box and goal')
   assert.ok(p.sets.every(s => !/HEAD/.test(s.name)))
 })
 
 test('KNEES on: the rear knee joins as the last set, its goal half again (30 on an OK day)', () => {
   const on = plan({ groups: KNEES })
-  assert.deepEqual(on.sets.map(s => s.name), ['BODY KICK', 'SWITCH KICK', 'LEAD TEEP', 'REAR KNEE'])
-  assert.equal(on.sets[3].goal, 30)
-  assert.equal(on.sets[3].sec, 45)
-  assert.equal(plan({ groups: KNEES, readiness: 'low' }).sets[3].goal, 15)
-  assert.equal(plan({ groups: KNEES, readiness: 'high' }).sets[3].goal, 45)
-  assert.equal(plan({ groups: G('boxing,kicks,defensive') }).sets.length, 3)
+  assert.deepEqual(on.sets.map(s => s.name), ['BODY KICK', 'SWITCH KICK', 'LEAD TEEP', 'REAR TEEP', 'REAR KNEE'])
+  assert.equal(on.sets[4].goal, 30)
+  assert.equal(on.sets[4].sec, 45)
+  assert.equal(plan({ groups: KNEES, readiness: 'low' }).sets[4].goal, 15)
+  assert.equal(plan({ groups: KNEES, readiness: 'high' }).sets[4].goal, 45)
+  assert.equal(plan({ groups: G('boxing,kicks,defensive') }).sets.length, 4)
   assert.equal(techniqueGroups('boxing,kicks,defensive').has('knees'), false)
   assert.equal(techniqueGroups('boxing,kicks,knees').has('knees'), true)
   assert.equal(techniqueGroups(' knees ').has('knees'), true)
   assert.deepEqual([...techniqueGroups(null)].sort(), ['boxing', 'defensive', 'kicks'], 'nothing saved: the defaults')
   // the switches decide: KICKS off leaves the teep, nothing on leaves no finisher
-  assert.deepEqual(plan({ groups: G('boxing,defensive') }).sets.map(s => s.key), ['lead_teep'])
-  assert.deepEqual(plan({ groups: G('boxing,defensive,knees') }).sets.map(s => s.key), ['lead_teep', 'rear_knee'])
+  assert.deepEqual(plan({ groups: G('boxing,defensive') }).sets.map(s => s.key), ['lead_teep', 'rear_teep'])
+  assert.deepEqual(plan({ groups: G('boxing,defensive,knees') }).sets.map(s => s.key), ['lead_teep', 'rear_teep', 'rear_knee'])
   assert.equal(planFinisher({ mode: 'coach', readiness: 'ok', groups: G('boxing') }), null)
 })
 
@@ -95,10 +97,10 @@ test('20 s rests between sets, none after the last', () => {
   assert.equal(FINISHER_REST_SEC, 20)
   const parts = finisherParts(p)
   assert.deepEqual(parts.map(x => [x.ph, x.len, x.round, x.startSec]), [
-    ['work', 45, 1, 0], ['rest', 20, 1, 45], ['work', 45, 2, 65], ['rest', 20, 2, 110], ['work', 45, 3, 130],
+    ['work', 45, 1, 0], ['rest', 20, 1, 45], ['work', 45, 2, 65], ['rest', 20, 2, 110], ['work', 45, 3, 130], ['rest', 20, 3, 175], ['work', 45, 4, 195],
   ])
-  assert.equal(finisherTotalSec(p), 175)
-  assert.equal(finisherParts(plan({ groups: KNEES })).length, 7)
+  assert.equal(finisherTotalSec(p), 240)
+  assert.equal(finisherParts(plan({ groups: KNEES })).length, 9)
 })
 
 test('the timer reads it: orange the last 10 s of a set and the last 5 s of a rest; a rest shows the set coming', () => {
@@ -110,18 +112,19 @@ test('the timer reads it: orange the last 10 s of a set and the last 5 s of a re
   assert.equal(positionAt(parts, 61).warn, true)
   assert.equal(setOfPart(p, positionAt(parts, 50).part).name, 'SWITCH KICK')
   assert.equal(setOfPart(p, positionAt(parts, 10).part).name, 'BODY KICK')
-  assert.equal(positionAt(parts, 175).done, true)
+  assert.equal(positionAt(parts, 240).done, true)
   assert.equal(skipTargetSec(parts, 10), 45, 'a swipe up: the rest')
-  assert.equal(skipTargetSec(parts, 140), 175, 'past the last set: done')
+  assert.equal(skipTargetSec(parts, 200), 240, 'past the last set: done')
 })
 
-test('the words: NEXT · REST 0:20 and the next set; NEXT · COMBO RATINGS after the last; 1 OF 3', () => {
+test('the words: NEXT · REST 0:20 and the next set; NEXT · COMBO RATINGS after the last; 1 OF 4', () => {
   const p = plan()
   assert.deepEqual(nextAfterSet(p, 0), ['NEXT · REST 0:20', 'SWITCH KICK'])
   assert.deepEqual(nextAfterSet(p, 1), ['NEXT · REST 0:20', 'LEAD TEEP'])
-  assert.deepEqual(nextAfterSet(p, 2), ['NEXT · COMBO RATINGS'])
-  assert.equal(setCount(p, 1), '1 OF 3')
-  assert.equal(setCount(plan({ groups: KNEES }), 4), '4 OF 4')
+  assert.deepEqual(nextAfterSet(p, 2), ['NEXT · REST 0:20', 'REAR TEEP'])
+  assert.deepEqual(nextAfterSet(p, 3), ['NEXT · COMBO RATINGS'])
+  assert.equal(setCount(p, 1), '1 OF 4')
+  assert.equal(setCount(plan({ groups: KNEES }), 5), '5 OF 5')
 })
 
 test('the bells: each set starts, warns at 10 s and ends; each rest warns at 5 s', () => {
@@ -129,8 +132,8 @@ test('the bells: each set starts, warns at 10 s and ends; each rest warns at 5 s
   assert.deepEqual(cues.slice(0, 4), [
     { atSec: 0, kind: 'set' }, { atSec: 35, kind: 'set_warn' }, { atSec: 45, kind: 'set_end' }, { atSec: 60, kind: 'rest_warn' },
   ])
-  assert.equal(cues.filter(c => c.kind === 'set').length, 3)
-  assert.equal(cues[cues.length - 1].atSec, 175)
+  assert.equal(cues.filter(c => c.kind === 'set').length, 4)
+  assert.equal(cues[cues.length - 1].atSec, 240)
   // A LOW set of 25 s still warns at 10 s left.
   assert.deepEqual(finisherCues(finisherParts(plan({ readiness: 'low' }))).slice(0, 3).map(c => c.atSec), [0, 15, 25])
 })
@@ -152,33 +155,33 @@ test('the log: time running out marks a set done; a swipe past marks it skipped;
   const parts = finisherParts(p)
   const statuses = (l: FinisherLog) => l.sets.map(s => s.status)
   let l = newFinisherLog(p)
-  assert.deepEqual(statuses(l), [null, null, null])
+  assert.deepEqual(statuses(l), [null, null, null, null])
   assert.deepEqual(l.sets[0], { key: 'body_kick', name: 'BODY KICK', goal: 20, sec: 45, status: null }, 'each set keeps its goal and time')
   l = logRanTo(l, parts, 1) // set 1 ran out into its rest
-  assert.deepEqual(statuses(l), ['done', null, null])
+  assert.deepEqual(statuses(l), ['done', null, null, null])
   l = logRanTo(l, parts, 2)
   l = logJumped(l, parts, 2, 3, true) // set 2 swiped past
-  assert.deepEqual(statuses(l), ['done', 'skipped', null])
+  assert.deepEqual(statuses(l), ['done', 'skipped', null, null])
   assert.equal(l.at, 3)
   l = logRanTo(l, parts, 3) // nothing more passed by the jump itself
-  assert.deepEqual(statuses(l), ['done', 'skipped', null])
+  assert.deepEqual(statuses(l), ['done', 'skipped', null, null])
   const ended = logEnded(l, parts, 3) // held through in the rest before set 3
-  assert.deepEqual(statuses(ended), ['done', 'skipped', 'skipped'])
+  assert.deepEqual(statuses(ended), ['done', 'skipped', 'skipped', 'skipped'])
   assert.equal(ended.ended, true)
   // the last set ran out: all of it passed; a skip past the end does not count as done
-  const full = logRanTo(logRanTo(newFinisherLog(p), parts, 4), parts, parts.length)
-  assert.deepEqual(statuses(full), ['done', 'done', 'done'])
-  const skippedLast = logJumped(logRanTo(newFinisherLog(p), parts, 4), parts, 4, parts.length, true)
-  assert.deepEqual(statuses(logRanTo(skippedLast, parts, parts.length)), ['done', 'done', 'skipped'])
+  const full = logRanTo(logRanTo(newFinisherLog(p), parts, 6), parts, parts.length)
+  assert.deepEqual(statuses(full), ['done', 'done', 'done', 'done'])
+  const skippedLast = logJumped(logRanTo(newFinisherLog(p), parts, 6), parts, 6, parts.length, true)
+  assert.deepEqual(statuses(logRanTo(skippedLast, parts, parts.length)), ['done', 'done', 'done', 'skipped'])
   // back into a set and done again: done
   const back = logJumped(logJumped(logRanTo(newFinisherLog(p), parts, 0), parts, 0, 1, true), parts, 1, 0, false)
-  assert.deepEqual(statuses(logRanTo(back, parts, 1)), ['done', null, null])
+  assert.deepEqual(statuses(logRanTo(back, parts, 1)), ['done', null, null, null])
 })
 
 test('the log as sent: a set never reached is skipped and the finisher counts as ended; it reads back', () => {
   const p = plan()
   const sent = finalFinisherLog(logRanTo(newFinisherLog(p), finisherParts(p), 1))
-  assert.deepEqual(sent.sets.map(s => s.status), ['done', 'skipped', 'skipped'])
+  assert.deepEqual(sent.sets.map(s => s.status), ['done', 'skipped', 'skipped', 'skipped'])
   assert.equal(sent.ended, true)
   const whole = finalFinisherLog(logRanTo(newFinisherLog(p), finisherParts(p), 99))
   assert.equal(whole.ended, false)
@@ -202,10 +205,21 @@ test('the coach reads the last one: a skipped set or an ended finisher never pus
 })
 
 test('planned length before the start: the dose level sizes it with the default switches', () => {
-  assert.equal(plannedFinisherSec('HOLD'), 175)
-  assert.equal(plannedFinisherSec(undefined), 175)
-  assert.equal(plannedFinisherSec('EASE'), 3 * 25 + 2 * 20)
-  assert.equal(plannedFinisherSec('PUSH'), 3 * 65 + 2 * 20)
+  assert.equal(plannedFinisherSec('HOLD'), 240)
+  assert.equal(plannedFinisherSec(undefined), 240)
+  assert.equal(plannedFinisherSec('EASE'), 4 * 25 + 3 * 20)
+  assert.equal(plannedFinisherSec('PUSH'), 4 * 65 + 3 * 20)
+})
+
+test('one weekly kick budget with Bag Conditioning: a spent week lowers the kick sets, or leaves them out', () => {
+  const at = (left: { right: number; left: number }, readiness: 'low' | 'ok' | 'high' = 'ok') => planFinisher({ mode: 'coach', readiness, groups: G('boxing,kicks,defensive'), kicksLeft: left })!
+  assert.deepEqual(at({ right: 200, left: 200 }).sets.map(s => s.goal), [20, 20, 20, 20], 'plenty left: as sized')
+  assert.deepEqual(at({ right: 15, left: 200 }).sets.map(s => [s.key, s.goal, s.sec]), [['body_kick', 10, 25], ['switch_kick', 20, 45], ['lead_teep', 20, 45], ['rear_teep', 20, 45]], 'the right leg steps down')
+  assert.deepEqual(at({ right: 5, left: 0 }).sets.map(s => s.key), ['lead_teep', 'rear_teep'], 'spent: the kick sets come out, the teeps stay')
+  assert.deepEqual(at({ right: 200, left: 25 }, 'high').sets.map(s => s.goal), [30, 20, 30, 30], 'never bigger than today, only smaller')
+  const log = finalFinisherLog(logRanTo(newFinisherLog(plan()), finisherParts(plan()), 3))
+  assert.deepEqual(finisherKicks(log), { right: 20, left: 20 }, 'the done kick sets count, the teeps do not')
+  assert.deepEqual(finisherKicks(null), { right: 0, left: 0 })
 })
 
 console.log(`bagFinisher: ${passed} passed`)

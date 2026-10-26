@@ -23,7 +23,7 @@ export const TRAINING_CATEGORIES: Record<CategoryKey, TrainingCategory> = {
   },
   conditioning: {
     label: 'Conditioning',
-    types: ['foundation_run', 'running', 'mt_class', 'bag_work', 'skip_rope'],
+    types: ['foundation_run', 'running', 'mt_class', 'bag_work', 'bag_conditioning', 'skip_rope'],
     color: '#3BB5CC', // cyan-blue
     icon: mobilityIcon,
   },

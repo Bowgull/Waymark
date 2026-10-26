@@ -20,9 +20,11 @@ import { getStrengthWeekTarget } from '../../lib/blockZero/strength'
 import { estimatedMinutes } from '../../lib/coach/sessions'
 import { bagMinutes, plannedRowStrengthMinutes } from '../../lib/plannedLength'
 import { doseJsonMinutes } from '../../lib/brain/doseMinutes'
+import { fitStrengthToCap } from '../../lib/brain/doses'
 import type { RuneState } from '../../lib/coach/changes'
 import { getRunWalkWeek, runWalkTotalSec } from '../../lib/blockZero/running'
 import { runWarmupSec } from '../../lib/foundation'
+import { planFromContext, planMinutes } from '../../lib/coach/bagConditioning'
 
 // ─── Inputs (the shapes the existing endpoints return) ─────────
 
@@ -98,6 +100,8 @@ export function iconFor(s: Pick<DayBoardSession, 'type' | 'notes'>): SessionIcon
 export function sessionDisplayName(s: Pick<DayBoardSession, 'type' | 'label' | 'notes'>): string {
   const label = s.label?.trim() || null
   if (s.type === 'strength') return label ?? 'Strength'
+  // page 93: the bag's engine session keeps the bag icon but has its own name
+  if (s.type === 'bag_conditioning') return 'Bag Conditioning'
   // page 58: a raven's plan puts an easy bike (or walk) in a run's place.
   if (s.type === 'active_recovery' && label && /^easy (bike|walk)$/i.test(label)) return label
   // page 56: Block Zero's run-walk reads RUN-WALK on its row; a run its dose named (Zone 2 Run, Easy
@@ -521,6 +525,11 @@ export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'l
       return bagMinutes(Array.from({ length: bag.rounds! }, () => ({ durationSec: bag.roundSec!, restSec: bag.restSec ?? 0 })))
     }
   }
+  // Page 93: Bag Conditioning's own plan (kept once started, or the week planner's pick).
+  if (s.type === 'bag_conditioning') {
+    const plan = planFromContext(s.contextJson)
+    if (plan) return planMinutes(plan)
+  }
   // Page 73: the coach's dose when the row carries one (the same minutes its lines and the coach picks show).
   const fromDose = doseJsonMinutes(s)
   if (fromDose != null) return fromDose
@@ -528,7 +537,8 @@ export function plannedRowMinutes(s: Pick<DayBoardSession, 'type' | 'notes' | 'l
   const week = s.blockWeek ?? weekNumber ?? 1
   if (s.type === 'strength' && s.scheduledDate != null) {
     const t = getStrengthTemplate(dowOfEpochDay(s.scheduledDate), week, kind, s.label ?? null)
-    const min = plannedRowStrengthMinutes(t.exercises, { oneSetLess: easedOneSet(s.contextJson) })
+    // Every session is planned at 60 minutes or less: the row reads the template as start cuts it.
+    const min = plannedRowStrengthMinutes(fitStrengthToCap(t.exercises), { oneSetLess: easedOneSet(s.contextJson) })
     if (min != null) return min
   }
   // A run-walk carries no block week: the week's own shape, with eased rounds (X3: ~28 in week 4).
@@ -568,6 +578,9 @@ export function strengthWeekLine(blockType: string | null | undefined, week: num
  */
 export function shortLift(name: string): string {
   if (/romanian deadlift/i.test(name)) return 'RDL'
+  // Page 93: LM PUNCH, LM LUNGE.
+  if (/^landmine reverse lunge$/i.test(name)) return 'LM Lunge'
+  if (/^landmine (?!press)/i.test(name)) return name.replace(/^landmine/i, 'LM')
   return name.split(' ').map((w, i) => (/^[A-Z]{2,3}$/.test(w) ? w : i === 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase())).join(' ')
 }
 

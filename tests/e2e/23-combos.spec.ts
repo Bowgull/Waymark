@@ -85,13 +85,15 @@ test('Library + COMBO: type it, READ IT, fix the clay word, nudge the grade, ADD
 
 test('Library rows: only the strikes and the difficulty, no mastery mark', async ({ page }) => {
   await page.goto('/library?open=bag')
+  // Page 93: his combos sit by type, each group folded until tapped (one open at a time).
+  await page.getByRole('button', { name: /^(HANDS|KICKS|TEEPS|KNEES|ELBOWS) \d+$/ }).first().tap()
   const rows = page.locator('.lib-combo:not(.is-locked)')
   await expect(rows.first()).toBeVisible()
   await expect(rows.first().getByRole('img', { name: /^(EASY|MEDIUM|HARD|EXPERT)$/ })).toBeVisible()
   await expect(page.locator('.lib-combo .lib-dots, .lib-combo .lib-anvil')).toHaveCount(0)
 })
 
-test('Bag Work asks COACH / HYBRID / CUSTOM; COACH plans the kru\'s arc', async ({ page, api }) => {
+test('Bag Work asks COACH / HYBRID / CUSTOM; COACH plans the kru\'s rounds (page 93)', async ({ page, api }) => {
   const modes = await openAddOnToday(page)
   for (const m of ['Coach', 'Hybrid', 'Custom']) await expect(modes.getByRole('button', { name: m })).toBeVisible()
   await expect(modes).toHaveScreenshot('bag-modes.png')
@@ -100,9 +102,13 @@ test('Bag Work asks COACH / HYBRID / CUSTOM; COACH plans the kru\'s arc', async 
   await expect(board.getByRole('img', { name: 'COACH' })).toBeVisible()
   await expect(board.locator('.bb-rnd').first()).toContainText('WARM-UP')
   await expect(board.getByText('TECHNIQUE').first()).toBeVisible()
-  // the new combo goes to the first technique round, alone
+  // the new combo goes to the first technique round, alone, tagged NEW (learn A)
   await expect(board.locator('.bb-rnd').nth(1).locator('.cmb-strikes')).toHaveCount(1)
   await expect(board.locator('.bb-rnd').nth(1)).toContainText(/SWITCH\s*KICK/)
+  await expect(board.locator('.bb-rnd').nth(1).getByRole('img', { name: 'NEW', exact: true })).toBeVisible()
+  // page 86's finisher as one row with its set count (the sets come one at a time in the session)
+  await expect(board.locator('[data-finisher-row]')).toContainText(/\d SETS · GOAL \d+/)
+  await expect(board.getByText('KICKS · LAST 30 S ALL OUT')).toHaveCount(0)
   // (no screenshot: the coach's round count follows the test athlete's readiness, set by earlier specs)
   const before = (await api.get<Array<{ type: string }>>(`/api/sessions/today?date=${todayISO()}`)).length
   await board.getByRole('button', { name: 'Add' }).tap()
@@ -155,7 +161,8 @@ test('CUSTOM: − / + rounds, length and rest; empty rounds "—"; it starts exa
   await modes.getByRole('button', { name: 'Custom' }).tap()
   const board = page.getByRole('dialog', { name: 'Bag work: custom' })
   await expect(board.getByText('WARM-UP')).toHaveCount(0)
-  const rounds = board.locator('.bb-rnd')
+  await expect(board.locator('[data-finisher-row]')).toHaveCount(0)
+  const rounds = board.locator('.bb-rnd:not(.bb-fin)')
   const n = await rounds.count()
   await board.getByRole('button', { name: 'Rounds: more' }).tap()
   await expect(rounds).toHaveCount(n + 1)

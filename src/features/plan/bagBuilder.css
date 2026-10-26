@@ -31,6 +31,10 @@
 .bb-rnd .cs { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .bb-rnd .fill { font: 500 13.5px var(--font-body); color: #9fb3a8; }
 .bb-rnd .note { font: 500 13px var(--font-body); color: #c9b27a; }
+/* page 93: the finisher as one row, its rest in the finisher's red (its flap is wider than ROUND n) */
+.bb-rnd.bb-fin { grid-template-columns: auto 1fr; align-items: center; }
+.bb-rnd .stage.is-red { color: var(--sf-red-clock, #f27c6c); }
+.bb-rnd .cs > .wm-flap { align-self: flex-start; }
 /* a round he filled: the gold edge */
 .bb-rnd.is-mine { box-shadow: -10px 0 0 -8px #e8c878, 0 -1px 0 rgba(255, 255, 255, 0.04); }
 .bb-btns { display: flex; gap: 10px; margin-top: 12px; }

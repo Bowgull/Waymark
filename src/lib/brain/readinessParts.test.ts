@@ -126,7 +126,7 @@ const noPercent = (s: string) => !/%|gate|pass line/i.test(s)
   const inp = athlete({ weeks: 12 }, MON + 32)
   const r = readinessParts({ ...inp, move: { lighterFrom: MON + 32, monday: MON + 35 } })
   assert.equal(r.flap, 'READY')
-  assert.equal(r.line, 'Fighter Block 1 starts Mon 8 Feb')
+  assert.equal(r.line, 'The Campaign starts Mon 8 Feb')
   assert.ok(/UNDO on that Monday keeps you in Block Zero/.test(r.foot))
 }
 

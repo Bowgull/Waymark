@@ -22,7 +22,7 @@ import { modelFromDay } from './athleteModel'
 type DB = ReturnType<typeof createDB>
 
 const short = (id: string) => id.slice(0, 8)
-const NAME: Record<string, string> = { strength: 'Strength', foundation_run: 'Run-Walk', running: 'Run', bag_work: 'Bag Work', mt_class: 'MT Class', skip_rope: 'Skip Rope', mobility: 'Foundation', active_recovery: 'Reset' }
+const NAME: Record<string, string> = { strength: 'Strength', foundation_run: 'Run-Walk', running: 'Run', bag_work: 'Bag Work', bag_conditioning: 'Bag Conditioning', mt_class: 'MT Class', skip_rope: 'Skip Rope', mobility: 'Foundation', active_recovery: 'Reset' }
 const MACHINE_NOTE = /^(zone2|progression|tempo|intervals|long|easy)$/i
 const clip = (t: string, n = 160) => t.trim().replace(/\s+/g, ' ').slice(0, n)
 

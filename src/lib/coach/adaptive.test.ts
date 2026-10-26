@@ -60,6 +60,11 @@ assert(whyThisWeek(bz4, [], { starting: true }).startsWith('Week 4. This week fi
   assert(!stillStarting([run('LEARNING', 'block'), lift('LEARNING', { exposures: 2, seed: null }), lift('KNOWN', { exposures: 4 }), lift('GUESS', { exposures: 0 })]), 'lifts and run read in the block: not starting')
 }
 assert([1, 2, 3, 4, 5, 6].every(w => plainWords(whyThisWeek({ ...bz4, weekNumber: w }, []))), 'no jargon in any Block Zero week line')
+// Rebuild Phase 8: the week line carries his 5K once he has a test (page 93: no new tap window).
+assert(whyThisWeek(bz4, [], { fiveKSec: 1591 }).endsWith('5K: 26:31, 4:31 to go.'), `the 5K part: ${whyThisWeek(bz4, [], { fiveKSec: 1591 })}`)
+assert(whyThisWeek(bz4, [], { fiveKSec: 1310 }).endsWith('5K: 21:50, under 22:00.'), 'under the goal')
+assert(!/5K/.test(whyThisWeek(bz4, [], { fiveKSec: null })), 'no test yet: no 5K part')
+assert(whyThisWeek(bz4, [], { fiveKSec: 1591, shape: '5 days: 2 lifts, 2 runs, your class.' }).includes('5 days: 2 lifts, 2 runs, your class. 5K: 26:31'), 'after the week\'s shape')
 
 assert(whyThisWeek({ ...base, waveEnd: true }, []).includes('New maxes'), 'wave end: the week line says new maxes go in')
 assert(easeDetail('reduce', { type: 'strength' }).now === 'One set less, load 10% lower', 'ease detail in plain words')

@@ -1,0 +1,11 @@
+-- The one plan's week (rebuild Phase 2, page 93 approved 2026-10-25).
+--
+-- week_plans.shape_json: the week the coach built for that calendar week:
+-- its day step (4, 5, 6 days, or 6 with two doubled mornings), why, the class
+-- days it was built from, and every session's day and slot (lib/brain/
+-- weekBuilder.ts). Each day's sessions are made from it, and the next week's
+-- step reads it (lib/brain/dayRamp.ts). NULL: a week planned before the one
+-- plan (it is built fresh when its days are made).
+--
+-- Additive only: one nullable column. No existing row is changed.
+ALTER TABLE `week_plans` ADD `shape_json` text;

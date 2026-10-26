@@ -31,6 +31,8 @@
 .pl-ol .v { font: 500 14px/1.3 var(--font-body); color: #dfe6df; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pl-ol .v.is-dim { color: rgba(223, 230, 223, 0.6); }
 .pl-ol .v b.ck { color: #8fd4b8; font-weight: 800; }
+/* Page 93: a line with one plain line behind a tap (the PRESS line). */
+.pl-ol .v b.pl-more { color: #c9b27a; font-weight: 800; }
 .pl-ol .v b.up { color: #8fd4b8; font: 800 13px var(--font-mono); }
 .pl-ol .v b.dn { color: #d98a68; font: 800 13px var(--font-mono); }
 .pl-ol.is-why { display: flex; gap: 7px; align-items: center; font: 600 14px/1.3 var(--font-body); color: #e6efe9; }

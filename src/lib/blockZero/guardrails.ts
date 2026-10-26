@@ -102,6 +102,7 @@ export const DURATION_BOUNDS: Readonly<Record<string, [number, number]>> = {
   running: [5, 45],
   skip_rope: [5, 30],
   bag_work: [10, 45],
+  bag_conditioning: [15, 60],
   mt_class: [30, 90],
   mobility: [5, 30],
   active_recovery: [10, 45],

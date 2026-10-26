@@ -19,6 +19,7 @@
 // new training maxes at a wave end and sessions added 2+ weeks joining the
 // plan, each applied with its rune and UNDO (the coach never asks).
 
+import { parseShape, shapeLine } from './onePlan'
 import { and, eq, gte, lte } from 'drizzle-orm'
 import { blockTests, coachingOutputs, dailyLogs, sessions, trainingBlocks, weekPlans } from '../db/schema'
 import type { createDB } from '../db/client'
@@ -371,9 +372,10 @@ export async function runWeeklyPass(db: DB, apiKey: string, todayDay: number, no
  * The week line Program shows (page 56 item 16), always in the rules' plain
  * words: from the week's stored read when it has one, else from the block
  * and week alone. Weeks prepared before 0033 carry older wording in why_line;
- * this reads them the new way.
+ * this reads them the new way. `fiveKSec`: his last 5K test by that week's
+ * end (rebuild Phase 8), or null.
  */
-export function weekLineFor(week: Pick<WeekPlanRow, 'weekNumber' | 'analysisJson'>, block: Pick<Block, 'blockType' | 'totalWeeks'>, rows: ReadonlyArray<Pick<SessionRow, 'id' | 'label' | 'contextJson'>> = [], estimates: ReadonlyArray<EstimateLike> | null = null): string {
+export function weekLineFor(week: Pick<WeekPlanRow, 'weekNumber' | 'analysisJson'> & { shapeJson?: string | null }, block: Pick<Block, 'blockType' | 'totalWeeks'>, rows: ReadonlyArray<Pick<SessionRow, 'id' | 'label' | 'contextJson'>> = [], estimates: ReadonlyArray<EstimateLike> | null = null, fiveKSec: number | null = null): string {
   const stored = parseStored(week.analysisJson) as Partial<WeekIntelligence> | null
   const kind = blockKind(block.blockType)
   const signals: WeekSignals = stored?.version === 2 && stored.signals
@@ -393,5 +395,6 @@ export function weekLineFor(week: Pick<WeekPlanRow, 'weekNumber' | 'analysisJson
   const leadIn = rows.length > 0 && rows.some(r => isLeadInContext(r.contextJson))
   // The coach's stored estimates: still finding his starting weights and run (audit 2026-10-23 #18).
   const starting = estimates != null && stillStarting(estimates)
-  return whyThisWeek(signals, eases, { leadIn, starting })
+  const shape = parseShape(week.shapeJson)
+  return whyThisWeek(signals, eases, { leadIn, starting, shape: shape ? shapeLine(shape) : null, fiveKSec })
 }

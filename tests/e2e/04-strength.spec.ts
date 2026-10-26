@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { enterFromToday, grass, insertSession, swipeUpGrass } from './support/helpers'
+import { enterFromToday, gotoToday, grass, insertSession, openRow, swipeUpGrass, todayRow } from './support/helpers'
 import { GOOD_MORNING, setMorning } from './support/data'
 import { makeApiFor } from './support/api'
 
@@ -67,4 +67,42 @@ test('Strength: a dumbbell main lift takes its weight in lb from the stepper', a
     return done.length > 0 ? Math.round((done.at(-1)!.weightKg ?? 0) * 2.20462) : null
   }, { timeout: 10_000 }).toBe(up)
 
+})
+
+// Page 93 (rebuild Phase 5): the landmine on the same set screen. The number is what slides onto
+// the bar end, "Bar only" at 0, one 2.5 lb plate a step, the plates to grab under it.
+test('Strength: the landmine punch reads lbs on the bar end, bar only, then plates', async ({ page, api }) => {
+  await setMorning(api, GOOD_MORNING)
+  const s = await insertSession(api, 'strength', 'pm', { label: 'Strength B' })
+  await enterFromToday(page, s.id)
+  const punch = page.getByRole('img', { name: 'LANDMINE PUNCH' })
+  await stepUntil(page, async () => (await page.getByRole('group', { name: 'Weight in pounds' }).isVisible()) && (await punch.first().isVisible()))
+  await expect(page.getByText('Weight · lbs on the bar end')).toBeVisible()
+  const weight = page.getByRole('group', { name: 'Weight in pounds' })
+  const read = async () => Number(await weight.getByRole('img').first().getAttribute('aria-label'))
+  expect(await read()).toBe(0)
+  await expect(page.getByText('Bar only', { exact: true })).toBeVisible()
+  await weight.getByRole('button', { name: 'More weight' }).tap()
+  expect(await read()).toBe(2.5)
+  await weight.getByRole('button', { name: 'More weight' }).tap()
+  await weight.getByRole('button', { name: 'More weight' }).tap()
+  await weight.getByRole('button', { name: 'More weight' }).tap()
+  expect(await read()).toBe(10)
+  await expect(page.getByText('1× 10', { exact: true })).toBeVisible()
+  // The built reps-left card after LOG SET, as on every lift (no bar-speed tap).
+  await page.getByRole('button', { name: 'LOG SET', exact: true }).tap()
+  await expect(page.getByRole('group', { name: 'Reps left' })).toBeVisible()
+})
+
+// Page 93: Strength A's PRESS line says which press, and one plain line why behind a tap.
+test('Strength: the PRESS line opens why this press', async ({ page, api }) => {
+  await setMorning(api, GOOD_MORNING)
+  const s = await insertSession(api, 'strength', 'pm', { label: 'Strength A' })
+  await gotoToday(page)
+  const row = todayRow(page, s.id)
+  await openRow(row)
+  const press = row.getByRole('button', { name: 'PRESS: why' })
+  await expect(press).toContainText(/landmine · \d×8 · /)
+  await press.tap()
+  await expect(page.getByRole('dialog', { name: 'PRESS: why' })).toContainText('Landmine press while your shoulders and back rebuild.')
 })

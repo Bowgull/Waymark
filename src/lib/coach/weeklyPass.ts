@@ -11,6 +11,7 @@ import type { CoachEaseKind } from './classify'
 import { checkSessionChange, type PlacementContext } from './placement'
 import { RUN_TYPES, dowOf, mondayOf, sessionName, type BlockKind, type SessionLike } from './sessions'
 import { getWeekPercentage } from '../strengthTemplates'
+import { fiveKText, toGoalText } from '../brain/hardRuns'
 import { midName } from './changes'
 
 const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -143,15 +144,24 @@ export function stillStarting(rows: ReadonlyArray<EstimateLike>): boolean {
   return unread * 2 >= lifts.length
 }
 
+/** The week line's 5K part: "5K: 26:31, 4:31 to go." (or "under 22:00"). */
+export function fiveKLine(sec: number): string {
+  return `5K: ${fiveKText(sec)}, ${toGoalText(sec)}.`
+}
+
 /**
  * The week's one line (page 56 item 16): in plain words, what's new against
- * last week and what's next, with the real numbers. No jargon. Shown only on
- * Program's week board, as plain text. When the coach eased a session, one
- * sentence says which and why.
+ * last week and what's next, with the real numbers. No jargon. Shown under
+ * THIS WEEK on Program (page 93), as plain text. Once he has a 5K test, a
+ * short 5K part follows. When the coach eased a session, one sentence says
+ * which and why.
  */
-export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>, opts: { leadIn?: boolean; starting?: boolean } = {}): string {
+export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>, opts: { leadIn?: boolean; starting?: boolean; shape?: string | null; fiveKSec?: number | null } = {}): string {
   const parts: string[] = []
-  if (s.blockType === 'block_zero' && (s.weekNumber <= 1 || opts.starting)) {
+  if (opts.shape) {
+    // The one plan (rebuild Phase 2, page 93): the week's step and what it holds.
+    parts.push(`Week ${s.weekNumber}. ${opts.shape}`)
+  } else if (s.blockType === 'block_zero' && (s.weekNumber <= 1 || opts.starting)) {
     // Audit 2026-10-23 #18: nothing to read reps or heart rate from yet, so don't claim it.
     parts.push(`Week ${s.weekNumber}. This week finds your starting weights and run length.`)
   } else if (s.blockType === 'block_zero') {
@@ -163,6 +173,8 @@ export function whyThisWeek(s: WeekSignals, eases: ReadonlyArray<WeekLineEase>, 
     parts.push(prevPct == null || prevPct === pct ? `Main lifts at ${pct}% of your max this week.` : `New this week: main lifts at ${pct}% of your max, ${pct > prevPct ? 'up' : 'down'} from ${prevPct}%.`)
     parts.push(s.waveEnd ? 'New maxes go in after this week.' : `Next week: ${fighterPct(s.weekNumber + 1)}%.`)
   }
+  // His 5K (rebuild Phase 8): the last test and how far to 22:00, once there is one.
+  if (opts.fiveKSec != null && opts.fiveKSec > 0) parts.push(fiveKLine(opts.fiveKSec))
   const first = eases[0]
   if (first) {
     const why = causes(s).find(c => c.cause === first.cause)?.why

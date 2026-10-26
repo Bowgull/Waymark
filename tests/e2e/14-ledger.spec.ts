@@ -163,5 +163,5 @@ test('Next block in plain words (page 79 §5): N OF 4 DONE, 4 x 6 tiles, Showing
   await expect(parts.nth(3).locator('.nb-say')).toHaveText(/\w/)
   // a tap inside the board doesn't close its line
   await expect(l).toHaveAttribute('aria-expanded', 'true')
-  await expect(board.getByText(/Fighter Block 1 starts/)).toBeVisible()
+  await expect(board.getByText(/The Campaign starts/)).toBeVisible()
 })

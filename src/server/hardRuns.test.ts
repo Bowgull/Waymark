@@ -9,15 +9,19 @@
 // last outside run at the same heart rate.
 import assert from 'node:assert/strict'
 import { eq } from 'drizzle-orm'
-import { runSessions, sessions, settings, userProfile, weekAdjustments } from '../db/schema'
+import { dailyLogs, runSessions, sessions, settings, userProfile, weekAdjustments } from '../db/schema'
 import { isoToEpochDay } from '../lib/dates'
 import { startedAtForLocalDay } from '../lib/coach'
 import { createTrainingBlock } from './blocks'
-import { balanceHardRuns, doseFor, loadBrainInputs, parseDose } from './brain'
+import { balanceHardRuns, doseFor, loadBrainInputs } from './brain'
 import { undoChange } from './changes'
 import { fiveKTests, postRunFacts } from './fiveK'
 import { getActiveBlock } from './blockZeroData'
 import { testDb } from './testDb'
+import { setFixedWeekForTests } from './onePlan'
+
+// These stories are written on the old fixed Block Zero week (rebuild Phase 2 keeps it for them).
+setFixedWeekForTests(true)
 
 const M1 = isoToEpochDay('2027-03-01') // a Monday: week 1
 const M4 = M1 + 21 // week 4
@@ -40,7 +44,8 @@ for (const w of [0, 1, 2]) {
     await db.insert(runSessions).values({ id: `${id}-run`, sessionId: id, runType: 'zone2', durationSec: 2400, distanceKm: 2400 / 420, avgHr: 128, isIndoor: 0 })
   }
 }
-await db.insert(sessions).values({ id: 'mon4', type: 'strength', label: 'Strength A', scheduledDate: M4, timeSlot: 'am', status: 'completed', blockType: 'block_zero', source: 'template', createdAt: M4 * 86400, completedAt: M4 * 86400 + 40000 })
+// The lift sits on Sunday: no hard run in the 48 h after heavy legs (rebuild Phase 2), so Tuesday evening is clear.
+await db.insert(sessions).values({ id: 'mon4', type: 'strength', label: 'Strength A', scheduledDate: M4 - 1, timeSlot: 'am', status: 'completed', blockType: 'block_zero', source: 'template', createdAt: (M4 - 1) * 86400, completedAt: (M4 - 1) * 86400 + 40000 })
 
 // Week 4 as the template plans it (page 76): Tuesday tempo, Thursday easy, Saturday intervals; and two MT classes he booked.
 const runRow = (id: string, day: number, type: string, notes: string | null, label: string, status = 'planned') =>
@@ -68,7 +73,11 @@ assert.match(rune.why ?? '', /^Saturday's hard run goes easy: 2 classes and bag 
 const undone = await undoChange(db, rune.id, TODAY, nowSec(TODAY, 22))
 assert.ok(undone.ok, JSON.stringify(undone))
 assert.deepEqual([(await rowOf('sat')).type, (await rowOf('sat')).notes], ['running', 'intervals'], 'back as planned')
-assert.equal(await balanceHardRuns(db, block, M4, TODAY, inp, nowSec(TODAY, 23), { budget: 2, restDue: null }), 0, 'held for the week')
+// Review T2: his UNDO holds Saturday, but no longer blocks every other ease: the heavy week eases Tuesday instead.
+assert.equal(await balanceHardRuns(db, block, M4, TODAY, inp, nowSec(TODAY, 23), { budget: 2, restDue: null }), 1, 'Saturday held; Tuesday eased')
+assert.deepEqual([(await rowOf('sat')).type, (await rowOf('tue')).type], ['running', 'foundation_run'], 'his pick stays, the other goes easy')
+await undoChange(db, (await db.select().from(weekAdjustments).where(eq(weekAdjustments.targetSessionId, 'tue')))[0].id, TODAY, nowSec(TODAY, 23))
+assert.equal(await balanceHardRuns(db, block, M4, TODAY, inp, nowSec(TODAY, 23), { budget: 2, restDue: null }), 0, 'both held now: nothing more')
 
 // Saturday's dose: speeds a guess until the first test; labelled by its dose.
 const satGuess = await doseFor(db, await rowOf('sat'), TODAY)
@@ -90,7 +99,7 @@ for (const w of [1, 2, 3]) {
   await db.insert(sessions).values({ id: `str${w}`, type: 'strength', label: 'Strength A', scheduledDate: m, timeSlot: 'am', status: 'completed', blockType: 'block_zero', source: 'template', createdAt: m * 86400, completedAt: m * 86400 + 40000 })
 }
 const M8 = M4 + 28
-await db.insert(sessions).values({ id: 'str8', type: 'strength', label: 'Strength A', scheduledDate: M8, timeSlot: 'am', status: 'completed', blockType: 'block_zero', source: 'template', createdAt: M8 * 86400, completedAt: M8 * 86400 + 40000 })
+await db.insert(sessions).values({ id: 'str8', type: 'strength', label: 'Strength A', scheduledDate: M8 - 1, timeSlot: 'am', status: 'completed', blockType: 'block_zero', source: 'template', createdAt: (M8 - 1) * 86400, completedAt: (M8 - 1) * 86400 + 40000 })
 for (const [id, day] of [['h1', M8 - 9], ['h2', M8 - 2]] as const) {
   await runRow(id, day, 'running', 'intervals', 'Intervals', 'completed')
   await db.update(sessions).set({ doseJson: JSON.stringify({ v: 1, run: { hard: { heart: { top: 176 } } } }) }).where(eq(sessions.id, id))
@@ -119,5 +128,13 @@ assert.equal((await db.select().from(sessions).where(eq(sessions.notes, '5k_test
 const [lastEasy] = await db.select().from(runSessions).where(eq(runSessions.id, 'r8-run'))
 const facts = await postRunFacts(db, { ...lastEasy, durationSec: 2340, avgHr: 130 })
 assert.ok(facts && facts.outdoor && !facts.first && facts.sameHrPaceSecKm === 420, JSON.stringify(facts))
+
+// Rebuild Phase 8: away, per his note, the rules keep the run but make it easy (no hard run while away).
+const satHard = await doseFor(db, (await db.select().from(sessions).where(eq(sessions.id, 'sat8')))[0], M8 + 4)
+assert.ok(satHard?.run?.hard, 'at home: Saturday is the hard run')
+await db.insert(dailyLogs).values({ id: 'away8', logDate: M8 + 4, notes: 'Away for work till Sun, hotel gym only.', createdAt: (M8 + 4) * 86400 })
+const satAway = await doseFor(db, (await db.select().from(sessions).where(eq(sessions.id, 'sat8')))[0], M8 + 4)
+assert.ok(satAway?.run && !satAway.run.hard, 'away: an easy run, the hard one waits')
+assert.ok(satAway.why.some(w => /Away, per your note/.test(w)), satAway.why.join(' | '))
 
 console.log('server hardRuns: ok')

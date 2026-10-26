@@ -1,8 +1,12 @@
 // The bag finisher (page 86, approved 2026-10-25): after the last bag round,
 // before the combo ratings, a few timed sets the way Thai camps end bag work.
 //
-// - Sets, in order: BODY KICK (right leg), SWITCH KICK (left leg), LEAD TEEP;
+// - Sets, in order: BODY KICK (right leg), SWITCH KICK (left leg), LEAD TEEP
+//   (left leg), REAR TEEP (right leg, page 93: Damien Trainor's teep sets);
 //   REAR KNEE last, only when KNEES is on in Settings. No head kicks.
+// - The kicks share one weekly budget with Bag Conditioning (lib/coach/
+//   kickBudget): a week already spent lowers a kick set's goal, or leaves it
+//   out, so his shins see the whole week.
 // - Then the combo ratings (no cool-down screen; Josh: "ratings is fine").
 // - Each set is a time box: a clock with GOAL n under it. The app never
 //   counts; he does. The coach sizes it by how ready he is today:
@@ -19,7 +23,7 @@ import { mmss, type IntervalPart } from '../timers/intervalTimer'
 import type { BagMode } from './bagArc'
 
 export type FinisherReadiness = 'low' | 'ok' | 'high'
-export type FinisherSetKey = 'body_kick' | 'switch_kick' | 'lead_teep' | 'rear_knee'
+export type FinisherSetKey = 'body_kick' | 'switch_kick' | 'lead_teep' | 'rear_teep' | 'rear_knee'
 
 export interface FinisherSet {
   key: FinisherSetKey
@@ -40,6 +44,9 @@ export interface FinisherPlan {
   restSec: number
 }
 
+/** Every set the finisher knows (a stored plan or log with another key is not one). */
+export const FINISHER_KEYS: ReadonlyArray<FinisherSetKey> = ['body_kick', 'switch_kick', 'lead_teep', 'rear_teep', 'rear_knee']
+
 /** Rest between sets (page 86). */
 export const FINISHER_REST_SEC = 20
 
@@ -58,8 +65,13 @@ const KNEE_GOAL_K = 1.5
 const SETS: ReadonlyArray<Omit<FinisherSet, 'goal' | 'sec'> & { group: string }> = [
   { key: 'body_kick', name: 'BODY KICK', side: 'RIGHT LEG', group: 'kicks' },
   { key: 'switch_kick', name: 'SWITCH KICK', side: 'LEFT LEG', group: 'kicks' },
-  { key: 'lead_teep', name: 'LEAD TEEP', side: 'FRONT LEG', group: 'defensive' },
+  // one word per leg (page 93): LEFT LEG and RIGHT LEG, no FRONT LEG
+  { key: 'lead_teep', name: 'LEAD TEEP', side: 'LEFT LEG', group: 'defensive' },
+  { key: 'rear_teep', name: 'REAR TEEP', side: 'RIGHT LEG', group: 'defensive' },
 ]
+/** Which leg's shin a kick set spends from the week's budget (teeps and knees don't). */
+const KICK_SIDE: Partial<Record<FinisherSetKey, 'right' | 'left'>> = { body_kick: 'right', switch_kick: 'left' }
+const SIZES_DOWN: ReadonlyArray<FinisherReadiness> = ['high', 'ok', 'low']
 const KNEE: Omit<FinisherSet, 'goal' | 'sec'> = { key: 'rear_knee', name: 'REAR KNEE', side: 'RIGHT LEG' }
 
 /**
@@ -77,13 +89,34 @@ export function finisherReadiness(level: Level | null | undefined): FinisherRead
 /**
  * The finisher the coach adds, or null (CUSTOM: exactly his session, nothing
  * added; or every set's group switched off). `groups` is his Settings switches.
+ * `kicksLeft`: what is left of this week's kick budget, per side; a kick set
+ * steps down to the biggest size that fits it, and is left out when even the
+ * low goal doesn't (none given: no limit).
  */
-export function planFinisher(opts: { mode: BagMode; readiness: FinisherReadiness; groups: ReadonlySet<string> }): FinisherPlan | null {
+export function planFinisher(opts: { mode: BagMode; readiness: FinisherReadiness; groups: ReadonlySet<string>; kicksLeft?: { right: number; left: number } | null }): FinisherPlan | null {
   if (opts.mode === 'custom') return null
   const size = FINISHER_SIZE[opts.readiness]
-  const sets: FinisherSet[] = SETS.filter(s => opts.groups.has(s.group)).map(s => ({ key: s.key, name: s.name, side: s.side, goal: size.goal, sec: size.sec }))
+  const sets: FinisherSet[] = []
+  for (const s of SETS) {
+    if (!opts.groups.has(s.group)) continue
+    const side = KICK_SIDE[s.key]
+    const left = side && opts.kicksLeft ? opts.kicksLeft[side] : Infinity
+    const fit = SIZES_DOWN.slice(SIZES_DOWN.indexOf(opts.readiness)).map(r => FINISHER_SIZE[r]).find(z => z.goal <= left)
+    if (!fit) continue
+    sets.push({ key: s.key, name: s.name, side: s.side, goal: fit.goal, sec: fit.sec })
+  }
   if (opts.groups.has('knees')) sets.push({ ...KNEE, goal: Math.round(size.goal * KNEE_GOAL_K), sec: size.sec })
   return sets.length ? { readiness: opts.readiness, sets, restSec: FINISHER_REST_SEC } : null
+}
+
+/** The kicks a finisher's done sets spent, per side (the goal he counted to). */
+export function finisherKicks(log: Pick<FinisherLog, 'sets'> | null | undefined): { right: number; left: number } {
+  const out = { right: 0, left: 0 }
+  for (const s of log?.sets ?? []) {
+    const side = KICK_SIDE[s.key]
+    if (side && s.status === 'done') out[side] += s.goal
+  }
+  return out
 }
 
 /** His Settings switches (the comma list of technique keys; none saved: the defaults, knees and elbows off). */
@@ -97,7 +130,7 @@ export function parseFinisher(raw: unknown): FinisherPlan | null {
   const r = raw as Record<string, unknown>
   if (r.readiness !== 'low' && r.readiness !== 'ok' && r.readiness !== 'high') return null
   if (!Array.isArray(r.sets)) return null
-  const keys = new Set<string>(['body_kick', 'switch_kick', 'lead_teep', 'rear_knee'])
+  const keys = new Set<string>(FINISHER_KEYS)
   const whole = (v: unknown, lo: number, hi: number): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi ? v : null)
   const sets: FinisherSet[] = []
   for (const s of r.sets.slice(0, 6)) {
@@ -256,7 +289,7 @@ export function parseFinisherLog(raw: unknown): FinisherLog | null {
   for (const s of r.sets) {
     if (!s || typeof s !== 'object') return null
     const x = s as Record<string, unknown>
-    if (typeof x.key !== 'string' || !['body_kick', 'switch_kick', 'lead_teep', 'rear_knee'].includes(x.key)) return null
+    if (typeof x.key !== 'string' || !FINISHER_KEYS.includes(x.key as FinisherSetKey)) return null
     if (typeof x.goal !== 'number' || !Number.isInteger(x.goal) || x.goal < 1 || x.goal > 200) return null
     if (typeof x.sec !== 'number' || !Number.isInteger(x.sec) || x.sec < 5 || x.sec > 600) return null
     const status = x.status === 'done' || x.status === 'skipped' ? x.status : null

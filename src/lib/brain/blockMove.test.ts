@@ -62,8 +62,8 @@ const MON = 20822 // Monday 2027-01-04
 
 // ─── The alarm's one line names the move ─────────────────────
 {
-  const c = { actor: 'coach' as const, kind: 'block' as const, undoneAt: null, seenAt: null, after: { show: 'FIGHTER BLOCK 1', day: MON + 7, sessions: [] }, createdAt: 1, name: 'strength', day: MON + 7, open: true }
-  assert.equal(morningLine([c], MON + 3), 'Fighter Block 1 starts Monday. Tap to see.')
+  const c = { actor: 'coach' as const, kind: 'block' as const, undoneAt: null, seenAt: null, after: { show: 'THE CAMPAIGN', day: MON + 7, sessions: [] }, createdAt: 1, name: 'strength', day: MON + 7, open: true }
+  assert.equal(morningLine([c], MON + 3), 'The Campaign starts Monday. Tap to see.')
 }
 
 console.log('block move tests passed')

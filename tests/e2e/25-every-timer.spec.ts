@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { enterFromToday, grass, grassToStart, insertSession, swipeDownGrass, swipeUpGrass, timerSeconds } from './support/helpers'
+import { enterFromToday, grass, grassToStart, insertSession, swipeDownGrass, swipeUpGrass, timerSeconds, toSetWithAnother } from './support/helpers'
 
 /**
  * Page 84, every timer the new way: the phase word over the hero clock, the
@@ -12,6 +12,8 @@ import { enterFromToday, grass, grassToStart, insertSession, swipeDownGrass, swi
 test('Strength rest: RESTING AFTER the lift, REST over the clock, NEXT n OF m under it; no NEXT SET, the swipe moves on', async ({ page, api }) => {
   const s = await insertSession(api, 'strength')
   await enterFromToday(page, s.id)
+  // Between two sets of one lift (a one-set warm-up move rests with no count: the count is the lift's sets).
+  await toSetWithAnother(page)
   await page.getByRole('button', { name: 'LOG SET', exact: true }).tap()
   await expect(page.getByText('RESTING AFTER')).toBeVisible()
   await expect(page.getByRole('img', { name: 'REST', exact: true })).toBeVisible()

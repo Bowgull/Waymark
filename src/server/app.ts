@@ -25,23 +25,21 @@ import { notesOnComplete } from '../lib/sessionNotes'
 import { bagMinutes, parseRoundSecs, plannedRoundMinutes, plannedStrengthMinutes, ROPE_ROUND_SEC, ROPE_ROUNDS, ropeRounds } from '../lib/plannedLength'
 import { RAMP_REST_SEC, accessoryIncrementKg, accessoryLoadKg, accessoryProgression, loadEquipment, snapForChangeKg, snapIncreaseKg, snapLoadKg, warmupRamp, type LoadEquipment } from '../lib/strengthLoads'
 import { idempotent } from './idempotency'
-import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getStrengthTemplate, getWeekPercentage } from '../lib/strengthTemplates'
 import { BLOCK_ZERO_BASE_WEEKS, CLASS_EASE_LINE, blockZeroTrainingWeek, getRunWalkWeek, isBlockZeroModelRun, mtRampWeek, strengthDayFor, validateTestResult } from '../lib/blockZero'
 import { answerBody, applyBodyPlan, applyPendingBodyPlans, bodyWatchPayload, gotBodyNote, lowerLegOnWatch, markAgainstFlag, ravenLineFor, seenBodyNote } from './bodyWatch'
-import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, governBagRounds, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, isoOf } from '../lib/coach'
+import { CLASS_MINUTES, KEY_TYPES, KNOWN_SESSION_TYPES, isChoosableStart, isPendingStart, startDayOf, startHasLeadIn, applyContext, checkSessionChange, finishLine, kneeSafeOnly, mergeContext, morningLine, pickDayOption, slotStart, strengthLetterFor, withMergedLifts, isoOf } from '../lib/coach'
 import { FIGHTER_DEFAULT_NAME, FIGHTER_DEFAULT_TOTAL_WEEKS, createTrainingBlock, dropEndedBlockPlans, endActiveBlocks, moveBlockZeroStart } from './blocks'
 import { computeAerobicFitness, computeWeeklyZones } from '../lib/historyHrMetrics'
 import { CHART_WEEKS, aerobicWeekly, buildRings, herbMonth, pondReaction, sessionRings, sleepWeek, strengthWeekly, withoutRestartLeftovers, type LedgerRange } from '../lib/ledger'
 import { allBoardRows, boardSuggestions, computeSuggestions, withBlockLabels } from '../lib/sessionSuggestions'
 import { prepareWeek, weekForClient, weekLineFor } from './weeklyPass'
 import { applyTmUpdate } from './coachAsks'
-import { addedWhy, applyPendingMerges, emptyState, lineChanges, markSeen, pmStart, reasonWords, recordChanges, redoChange, rolloverAndFix, snap, undoChange, weekChangeViews } from './changes'
+import { addedWhy, applyPendingMerges, emptyState, lineChanges, markSeen, pmStart, reasonWords, recordChanges, redoChange, rolloverAndFix, snap, takeBackMissedFix, undoChange, weekChangeViews } from './changes'
 import { loadEasyHrCeiling } from '../lib/hrAnalysis'
 import { isZone2Run, stravaPlanLine } from '../lib/stravaMatch'
 import { runSessionReview } from '../lib/sessionReviewAI'
 import { assessRunCompletion, assessStrengthSet } from '../lib/trainingReality'
-import { runBagPrescription } from '../lib/bagPrescriptionAI'
 import { runLedgerInsights, type LedgerInsightData } from '../lib/ledgerInsightsAI'
 import { waybookEntries } from '../lib/waybook'
 import { strava } from './routes/strava'
@@ -52,8 +50,12 @@ import { clearCollectedTrainingData } from './trainingReset'
 import { getActiveBlock, loadMtRamp, listBlockTests, readinessFor, recordCheckSetE1rm, upsertBlockTest } from './blockZeroData'
 import { logs } from './routes/logs'
 import { classCombos } from './routes/classCombos'
-import { bagBuilder, bagPool } from './routes/bagBuilder'
-import { parseBagSpec, roundsForSpec, planCoachRounds, STAGE_ROUND_TYPE } from '../lib/coach/bagArc'
+import { bagBuilder, bagFocusHistory, bagPool } from './routes/bagBuilder'
+import { kicksLeftThisWeek } from './bagConditioning'
+import { bagConditioning, planOf as conditioningPlanOf } from './routes/bagConditioning'
+import { finalConditioningLog, parseConditioningLog } from '../lib/coach/bagConditioning'
+import { COACH_REST_SEC, COACH_ROUND_SEC, focusOf, parseBagSpec, roundsForSpec, type BagSpec } from '../lib/coach/bagArc'
+import { masteryFromRatings, oneRatingPerCombo } from '../lib/comboRatings'
 import { finalFinisherLog, finisherReadiness, finisherTotalSec, parseFinisher, parseFinisherLog, planFinisher, readinessAfterLast, techniqueGroups, type FinisherLog } from '../lib/coach/bagFinisher'
 import { pendingReviews } from './linkHealth'
 import {
@@ -77,10 +79,11 @@ import { coachPicksFor } from './coachPicks'
 import { loadModelEvents } from './athleteModel'
 import { usualStartOf } from '../lib/brain/athleteModel'
 import { athleteTimeZone, localDayIn, noteAppOpen } from './timeZone'
-import { templateFromDose } from '../lib/brain/doses'
-import { GOAL_5K_SEC, HARD_NOTES, hardLabel, parseFiveK } from '../lib/brain/hardRuns'
+import { LADDER_MAX_SETS, templateFromDose } from '../lib/brain/doses'
+import { EACH_SIDE_IDS, PRESS_IDS } from '../lib/landmine'
+import { GOAL_5K_SEC, HARD_NOTES, hardLabel, latestTest, parseFiveK } from '../lib/brain/hardRuns'
 import { parseUnit } from '../lib/runSpeed'
-import { DEFAULT_TECHNIQUES, unlockOffer } from '../lib/comboTiers'
+import { DEFAULT_TECHNIQUES, offerMessage, unlockOffer } from '../lib/comboTiers'
 import { fiveKTests, postRunFacts } from './fiveK'
 
 type Bindings = {
@@ -148,6 +151,7 @@ app.route('/api/logs', logs)
 // first response and writes nothing (lib/idempotency). Must sit before the routes.
 for (const path of [
   '/api/strength-sets/:id',
+  '/api/strength-sets/:id/rung',
   '/api/sessions/:id/complete',
   '/api/sessions/:id/discard',
   '/api/run-sessions/:id/recording',
@@ -169,6 +173,18 @@ app.route('/api/bag', bagBuilder)
 // already set up) went back to the workout without putting the session in
 // progress again, so it ran untracked. Every start route: a session still
 // planned afterwards is in progress from now.
+// Review T7: a missed session started late (the next morning, offline) takes
+// its missed fix back off first, so its lifts aren't done twice that week.
+app.use('/api/sessions/:id/*', async (c, next) => {
+  const id = c.req.param('id')
+  if (id && c.req.method === 'POST' && /\/start-[a-z-]+$/.test(new URL(c.req.url).pathname)) {
+    const db = createDB(c.env)
+    const [row] = await db.select({ status: sessions.status }).from(sessions).where(eq(sessions.id, id))
+    if (row?.status === 'missed') await takeBackMissedFix(db, id, Math.floor(Date.now() / 1000))
+  }
+  await next()
+})
+
 app.use('/api/sessions/:id/*', async (c, next) => {
   await next()
   if (c.req.method !== 'POST' || !/\/start-[a-z-]+$/.test(new URL(c.req.url).pathname) || c.res.status !== 200) return
@@ -177,6 +193,9 @@ app.use('/api/sessions/:id/*', async (c, next) => {
   await createDB(c.env).update(sessions).set({ status: 'in_progress', startedAt: Math.floor(Date.now() / 1000) })
     .where(and(eq(sessions.id, id), eq(sessions.status, 'planned')))
 })
+
+// Page 93: Bag Conditioning's own routes (start, read); its log comes with the finish below.
+app.route('/api/sessions', bagConditioning)
 
 app.onError((err, c) => {
   console.error('[Waymark API Error]', err.message, err.stack)
@@ -268,7 +287,7 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
         wavePercentage: se.section === 'main' ? wavePct : null,
         prescribedWeightKg,
         fromWeightKg,
-        setsReps: targetReps > 0 ? `${setsCount}×${targetReps}` : `${setsCount} sets`,
+        setsReps: setsRepsText(se.exerciseId, setsCount, targetReps),
       },
     })
   }
@@ -278,6 +297,12 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
   // What the coach decided at start stays with the session (its lines keep the ↑ / ↓ and the notes once started).
   const ctx = parseJson<{ brain?: unknown; coach?: unknown }>(session?.contextJson ?? null, {})
   return { session, exercises: result, plannedMin, ...(ctx.brain ? { brain: ctx.brain } : {}), ...(ctx.coach ? { coach: ctx.coach } : {}) }
+}
+
+/** "3×8"; a one-side landmine move "3×8 each" (page 93: LM PUNCH 3×4 each, the press stays "3×8"). */
+function setsRepsText(exerciseId: string, sets: number, reps: number): string {
+  if (!(reps > 0)) return `${sets} sets`
+  return `${sets}×${reps}${EACH_SIDE_IDS.has(exerciseId) && !PRESS_IDS.has(exerciseId) ? ' each' : ''}`
 }
 
 /** A work-up's first planned weight when the working sets climb to a heavier top; else null. */
@@ -325,7 +350,7 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string, todayDay: 
         wavePercentage: tex.section === 'main' ? wavePct : null,
         prescribedWeightKg,
         fromWeightKg: workUpFromKg(workingSets.map(st => st.suggestedWeightKg)),
-        setsReps: targetReps > 0 ? `${setsCount}×${targetReps}` : `${setsCount} sets`,
+        setsReps: setsRepsText(tex.exerciseId, setsCount, targetReps),
       },
     }
   })
@@ -345,7 +370,7 @@ function brainSummary(dose: StoredDose) {
     level: dose.level,
     state: dose.state,
     why: dose.why,
-    lifts: (dose.strength?.lifts ?? []).map(l => ({ exerciseId: l.exerciseId, weightKg: l.weightKg, sets: l.sets, reps: l.reps, targetRir: l.targetRir, change: l.change, workUp: l.workUp, level: l.level, why: l.why })),
+    lifts: (dose.strength?.lifts ?? []).map(l => ({ exerciseId: l.exerciseId, weightKg: l.weightKg, sets: l.sets, reps: l.reps, targetRir: l.targetRir, change: l.change, workUp: l.workUp, level: l.level, why: l.why, ...(l.explain ? { explain: l.explain } : {}) })),
   }
 }
 
@@ -536,10 +561,10 @@ async function getRunPrescription(db: DrizzleDB, session: RunSessionInput, today
       autoEase: { eased: false, reason: null }, coach: { eased: false, reasons: dose.why },
     }
   }
-  const plan = row.notes === 'zone2' || row.type === 'foundation_run' ? ZONE2_PRESCRIPTION : RUNNING_PLAN_TEMPLATE.find(r => r.weekNumber === weekNumber) ?? ZONE2_PRESCRIPTION
+  // Any other easy run (an old row outside the one plan): one easy continuous run at the line.
   return {
-    ...base, runType: plan.runType, targetDurSec: dose.totalSec,
-    targetDesc: `${dose.totalSec !== plan.targetDurSec ? `${Math.round(dose.totalSec / 60)} min today. ` : ''}${plan.targetDesc} ${ceiling}${why ? ` ${why}` : ''}`.trim(),
+    ...base, runType: 'zone2', targetDurSec: dose.totalSec,
+    targetDesc: `Easy run, ${Math.round(dose.totalSec / 60)} min. Talk-test pace: you can speak in full sentences. ${ceiling}${why ? ` ${why}` : ''}`.trim(),
     autoEase: { eased: false, reason: null }, coach: { eased: false, reasons: dose.why },
   }
 }
@@ -1036,7 +1061,7 @@ async function storeNewDose(db: DrizzleDB, id: string, today: number): Promise<v
 /** Plain names for a session type, for the change flaps ("BAG WORK"). */
 const TYPE_WORDS: Record<string, string> = {
   strength: 'Strength', foundation_run: 'Run-Walk', running: 'Run', bag_work: 'Bag Work', skip_rope: 'Skip Rope',
-  mt_class: 'MT Class', mobility: 'Foundation', active_recovery: 'Reset',
+  mt_class: 'MT Class', mobility: 'Foundation', active_recovery: 'Reset', bag_conditioning: 'Bag Conditioning',
 }
 
 const SESSION_STATUSES = new Set(['planned', 'in_progress', 'completed', 'skipped', 'missed'])
@@ -1080,6 +1105,8 @@ app.patch('/api/sessions/:id', async (c) => {
   await db.update(sessions).set(updates).where(eq(sessions.id, id))
 
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id))
+  // Review T7: a missed session logged after all takes its missed fix back off (no lifts done twice).
+  if (before?.status === 'missed' && (body.status === 'completed' || body.status === 'in_progress')) await takeBackMissedFix(db, id, Math.floor(Date.now() / 1000))
 
   // SKIP is instant (page 56 item 3): recorded as his change, then the coach rebalances.
   if (body.status === 'skipped' && row && before && before.status === 'planned' && row.scheduledDate != null) {
@@ -1439,6 +1466,34 @@ app.patch('/api/strength-sets/:id', async (c) => {
   return c.json(e1rmTest ? { ...row, e1rmTest } : row)
 })
 
+/**
+ * Rebuild Phase 4: the find-your-weight ladder keeps going. After the last
+ * set of a work-up still read 3+, the app adds one more set at the next rung
+ * (its own id, so a retry never adds two), up to LADDER_MAX_SETS working sets.
+ */
+app.post('/api/strength-sets/:id/rung', async (c) => {
+  const setId = c.req.param('id')
+  const body = await c.req.json().catch(() => null) as { id?: unknown; weightKg?: unknown } | null
+  const newId = typeof body?.id === 'string' && body.id.length > 0 && body.id.length <= 64 ? body.id : null
+  const weightKg = typeof body?.weightKg === 'number' && Number.isFinite(body.weightKg) && body.weightKg > 0 && body.weightKg < 500 ? body.weightKg : null
+  if (!newId || weightKg == null) return c.json({ error: 'id and weightKg are needed' }, 400)
+  const db = createDB(c.env)
+  const [already] = await db.select().from(strengthSets).where(eq(strengthSets.id, newId))
+  if (already) return c.json(already)
+  const [from] = await db.select().from(strengthSets).where(eq(strengthSets.id, setId))
+  if (!from || from.isWarmup === 1) return c.json({ error: 'set not found' }, 404)
+  const siblings = await db.select().from(strengthSets).where(eq(strengthSets.sessionExerciseId, from.sessionExerciseId))
+  const working = siblings.filter(x => x.isWarmup !== 1)
+  if (working.length >= LADDER_MAX_SETS) return c.json({ error: 'the ladder is full' }, 409)
+  const row = {
+    id: newId, sessionExerciseId: from.sessionExerciseId, setNumber: Math.max(...siblings.map(x => x.setNumber)) + 1,
+    weightKg, reps: from.plannedReps ?? from.reps, plannedWeightKg: weightKg, plannedReps: from.plannedReps ?? from.reps,
+    isWarmup: 0, restSec: from.restSec, createdAt: Math.floor(Date.now() / 1000),
+  }
+  await db.insert(strengthSets).values(row)
+  return c.json(row)
+})
+
 app.post('/api/sessions/:id/complete', async (c) => {
   const sessionId = c.req.param('id')
   const raw = await c.req.json()
@@ -1474,11 +1529,16 @@ app.post('/api/sessions/:id/complete', async (c) => {
   const roundSecs = (session.type === 'bag_work' || session.type === 'skip_rope') && body.roundSecs && body.roundSecs.length > 0 ? body.roundSecs : null
   // Page 86: the finisher's log (each set done or skipped, its goal and time) for the coach's next sizing.
   const finisherLog = session.type === 'bag_work' && body.finisherLog ? parseFinisherLog(body.finisherLog) : null
+  // Page 93: Bag Conditioning's log (each part done or skipped; the blocks and kicks are read from it).
+  const condPlan = session.type === 'bag_conditioning' ? conditioningPlanOf(session.contextJson) : null
+  const condLog = condPlan && body.conditioningLog ? parseConditioningLog(body.conditioningLog, condPlan.parts.length) : null
   // Notes (D12): finishing never wipes them. The athlete's words also go to
   // context_json.userNotes (the injury rule reads them); a run's category tag
   // in the notes column stays put.
   const kept = notesOnComplete(session.notes, body.notes)
-  const ctxPatch: Record<string, unknown> = { ...(roundSecs ? { roundSecs } : {}), ...(finisherLog ? { finisherLog: finalFinisherLog(finisherLog) } : {}), ...(kept.userNotes ? { userNotes: kept.userNotes } : {}), ...(body.endReason ? { endReason: body.endReason } : {}) }
+  const ctxPatch: Record<string, unknown> = { ...(roundSecs ? { roundSecs } : {}), ...(finisherLog ? { finisherLog: finalFinisherLog(finisherLog) } : {}), ...(condLog ? { conditioningLog: finalConditioningLog(condLog) } : {}), ...(kept.userNotes ? { userNotes: kept.userNotes } : {}), ...(body.endReason ? { endReason: body.endReason } : {}) }
+  // Review T7: a missed session logged late (offline, the next morning) takes its missed fix back off.
+  if (session.status === 'missed') await takeBackMissedFix(db, sessionId, nowSec)
   await db.update(sessions).set({
     status: 'completed',
     completedAt,
@@ -1752,87 +1812,47 @@ app.post('/api/sessions/:id/start-bag-work', async (c) => {
   // Page 80: his choice when he added it (COACH / HYBRID / CUSTOM); none = the coach's.
   const spec = parseBagSpec(parseJson<{ bag?: unknown }>(session.contextJson, {}).bag)
 
-  // The brain's dose (coach brain P2): rounds from his tolerance and its uncertainty, finishers only when earned.
+  // The brain's dose (coach brain P2): rounds from his tolerance and its uncertainty.
   const bagDay = session.scheduledDate ?? athleteDay(c)
   const bag = (await doseFor(db, session, bagDay))?.bag
   const rounds = bag?.rounds ?? 4
-  const noFinishers = !(bag?.finishers ?? false)
   const reason = bag?.why[0] ?? null
-  const rules = {
-    noFinishers, maxRounds: rounds, reason,
-    promptLines: [
-      ...(noFinishers ? [`- No power or conditioning rounds today. Finish on technical_flow or combo_practice. Why: ${reason ?? 'technique day'}`] : []),
-      `- At most ${rounds} rounds today.`,
-      ...(session.blockType === 'block_zero' ? ['- Block Zero. Technique and pads level work, never hard rounds.'] : []),
-    ],
-  }
 
   // Page 86: the finisher after the last round. COACH and HYBRID get it, sized by the bag dose's level
   // (today's readiness folded in); KNEES on in Settings adds the rear knee. CUSTOM: nothing added.
+  // Page 93: its kicks share one weekly budget with Bag Conditioning (a spent week lowers the kick sets).
   const [userSettings] = await db.select().from(settings).limit(1)
   // The last finisher he did: a set skipped or one ended early never lets the size go up.
   const lastFinisher = await lastFinisherLog(db, sessionId)
-  const finisher = planFinisher({ mode: spec?.mode ?? 'coach', readiness: readinessAfterLast(finisherReadiness(bag?.level), lastFinisher), groups: techniqueGroups(userSettings?.enabledTechniques) })
+  const kicksLeft = await kicksLeftThisWeek(db, bagDay, sessionId)
+  const finisher = planFinisher({ mode: spec?.mode ?? 'coach', readiness: readinessAfterLast(finisherReadiness(bag?.level), lastFinisher), groups: techniqueGroups(userSettings?.enabledTechniques), kicksLeft })
   const ctxPatch: Record<string, unknown> = finisher ? { finisher } : {}
 
-  type NewRound = { roundType: string; durationSec: number; restSec: number; rationale: string; comboIds: string[] }
-  const writeRounds = async (list: NewRound[]) => {
-    for (let r = 0; r < list.length; r++) {
-      const roundId = crypto.randomUUID()
-      await db.insert(bagWorkRounds).values({
-        id: roundId,
-        sessionId,
-        roundNumber: r + 1,
-        durationSec: list[r].durationSec,
-        restSec: list[r].restSec,
-        roundType: list[r].roundType,
-        coachRationale: list[r].rationale,
-        createdAt: nowSec,
-      })
-      for (let ci = 0; ci < list[r].comboIds.length; ci++) {
-        await db.insert(bagWorkRoundCombos).values({ id: crypto.randomUUID(), roundId, comboId: list[r].comboIds[ci], orderIndex: ci })
-      }
-    }
+  // Page 93: COACH and HYBRID on the kru's plan with two focus combos, kept from the last sessions
+  // (about 3, or until both rate SHARP); CUSTOM exactly his. The coach's plan is the same on every
+  // board (the builder showed this one), so it is rule-built, not the AI's.
+  const coachSpec: BagSpec = spec ?? { mode: 'coach', rounds, roundSec: COACH_ROUND_SEC, restSec: COACH_REST_SEC, picked: {} }
+  const history = await bagFocusHistory(db, sessionId)
+  const planned = roundsForSpec(coachSpec, pool, { nowSec, history })
+  if (coachSpec.mode !== 'custom') {
+    if (reason) ctxPatch.coach = { note: reason, maxRounds: coachSpec.rounds }
+    const focus = focusOf(planned)
+    if (focus.length > 0) ctxPatch.bagFocus = focus
   }
-
-  if (spec && spec.mode !== 'coach') {
-    // HYBRID: his rounds kept, the coach fills the rest on the kru's arc. CUSTOM: exactly his; the coach says nothing.
-    if (spec.mode === 'hybrid' && rules.reason) ctxPatch.coach = { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: spec.rounds }
-    const planned = roundsForSpec(spec, pool, { finishers: !noFinishers, nowSec })
-    await writeRounds(planned.map(r => ({ roundType: r.roundType, durationSec: r.durationSec, restSec: r.restSec, rationale: '', comboIds: r.comboIds })))
-  } else {
-    // COACH: the AI prescription on the kru's arc, inside the rules; offline, the arc itself.
-    const apiKey = (c.env as { ANTHROPIC_API_KEY?: string }).ANTHROPIC_API_KEY
-    let prescribed: Awaited<ReturnType<typeof runBagPrescription>> = null
-    if (apiKey) {
-      try {
-        const todayEpochDay = athleteDay(c)
-        prescribed = await runBagPrescription(db, apiKey, { sessionId, todayEpochDay, rules })
-      } catch (err) {
-        console.warn('[start-bag-work] prescription failed', err)
-      }
-    }
-    if (rules.reason) ctxPatch.coach = { note: rules.reason, noFinishers: rules.noFinishers, maxRounds: rules.maxRounds }
-
-    if (prescribed && prescribed.rounds.length >= 3) {
-      await writeRounds(governBagRounds(prescribed.rounds, rules).map(r => ({
-        roundType: r.roundType,
-        durationSec: r.roundType === 'warmup' ? 150 : 180,
-        restSec: 60,
-        rationale: r.rationale,
-        comboIds: r.comboIds,
-      })))
-    } else {
-      // The kru's arc from his own combos (lib/coach/bagArc): warm-up basics, technique while fresh
-      // (a new combo first), pressure with his hardest, a finisher when the day allows one. No round repeated.
-      const planned = planCoachRounds(pool, { rounds, finishers: !noFinishers, nowSec })
-      await writeRounds(planned.map((r, i) => ({
-        roundType: r.stage ? STAGE_ROUND_TYPE[r.stage] : 'combo_practice',
-        durationSec: r.stage === 'warmup' ? 150 : 180,
-        restSec: 60,
-        rationale: rules.noFinishers && i === planned.length - 1 && rules.reason ? `Finisher out. ${rules.reason}` : '',
-        comboIds: r.comboIds,
-      })))
+  for (let r = 0; r < planned.length; r++) {
+    const roundId = crypto.randomUUID()
+    await db.insert(bagWorkRounds).values({
+      id: roundId,
+      sessionId,
+      roundNumber: r + 1,
+      durationSec: planned[r].durationSec,
+      restSec: planned[r].restSec,
+      roundType: planned[r].roundType,
+      coachRationale: '',
+      createdAt: nowSec,
+    })
+    for (let ci = 0; ci < planned[r].comboIds.length; ci++) {
+      await db.insert(bagWorkRoundCombos).values({ id: crypto.randomUUID(), roundId, comboId: planned[r].comboIds[ci], orderIndex: ci })
     }
   }
 
@@ -1854,7 +1874,8 @@ app.get('/api/sessions/:id/bag-workout', async (c) => {
   return c.json(await buildBagWorkResponse(db, sessionId))
 })
 
-// Rate combos after a bag work session
+// Rate combos after a bag work session: one rating per combo per session (page 93),
+// however many rounds it was in. A retry of the same save adds nothing.
 app.post('/api/sessions/:id/rate-combos', async (c) => {
   const sessionId = c.req.param('id')
   const body = await c.req.json<{ ratings: Array<{ roundId: string; comboId: string; rating: number }> }>()
@@ -1862,8 +1883,12 @@ app.post('/api/sessions/:id/rate-combos', async (c) => {
   const nowSec = Math.floor(Date.now() / 1000)
 
   const newFavourites: string[] = []
+  const ratings = oneRatingPerCombo(Array.isArray(body?.ratings) ? body.ratings : [])
+  const already = new Set((await db.select({ comboId: comboPerformance.comboId }).from(comboPerformance)
+    .where(eq(comboPerformance.sessionId, sessionId))).map(r => r.comboId))
 
-  for (const r of body.ratings) {
+  for (const r of ratings) {
+    if (already.has(r.comboId)) continue
     await db.insert(comboPerformance).values({
       id: crypto.randomUUID(),
       comboId: r.comboId,
@@ -1873,12 +1898,10 @@ app.post('/api/sessions/:id/rate-combos', async (c) => {
       createdAt: nowSec,
     })
 
-    // Recompute mastery score: sum of last 5 ratings
+    // Mastery: the last five sessions' ratings, one per session (lib/comboRatings)
     const recent = await db.select().from(comboPerformance)
       .where(eq(comboPerformance.comboId, r.comboId))
-    recent.sort((a, b) => b.createdAt - a.createdAt)
-    const last5 = recent.slice(0, 5)
-    const masteryScore = last5.reduce((sum, p) => sum + p.rating, 0)
+    const masteryScore = masteryFromRatings(recent)
 
     // Track sharp ratings for auto-favourite
     const [combo] = await db.select().from(combos).where(eq(combos.id, r.comboId))
@@ -1894,7 +1917,7 @@ app.post('/api/sessions/:id/rate-combos', async (c) => {
     await db.update(combos).set(updates).where(eq(combos.id, r.comboId))
   }
 
-  const ratingSummary = `Rated ${body.ratings.length} combo${body.ratings.length === 1 ? '' : 's'}${newFavourites.length > 0 ? `. ${newFavourites.length} new favourite${newFavourites.length === 1 ? '' : 's'}.` : '.'}`
+  const ratingSummary = `Rated ${ratings.length} combo${ratings.length === 1 ? '' : 's'}${newFavourites.length > 0 ? `. ${newFavourites.length} new favourite${newFavourites.length === 1 ? '' : 's'}.` : '.'}`
   await db.insert(coachingOutputs).values({
     id: crypto.randomUUID(),
     kind: 'combo_ratings',
@@ -1914,24 +1937,22 @@ app.post('/api/sessions/:id/suggest-unlocks', async (c) => {
   const [allCombos, [userSettings]] = await Promise.all([db.select().from(combos), db.select().from(settings).limit(1)])
   const enabled = new Set((userSettings?.enabledTechniques ?? DEFAULT_TECHNIQUES).split(',').filter(Boolean))
 
-  // His tier: the highest the coach unlocked; only combos his Settings switches allow count toward it
-  const { tier, next, mastered, of, offer } = unlockOffer(allCombos, enabled)
+  // His tier: the highest the coach unlocked; only combos his Settings switches allow count toward it.
+  // The offer is the next 3 or 4 he can train (page 93), his tier's rest first, kicks and teeps first.
+  const o = unlockOffer(allCombos, enabled)
 
-  // Need >= 60% mastered to suggest next tier
-  if (of === 0 || mastered / of < 0.6) {
+  // Need >= 60% mastered to suggest more
+  if (o.of === 0 || o.mastered / o.of < 0.6) {
     return c.json({ suggestions: [], message: null })
   }
 
-  if (!next) {
-    return c.json({ suggestions: [], message: 'All tiers mastered!' })
+  if (o.offer.length === 0) {
+    return c.json({ suggestions: [], message: o.next ? null : 'All tiers mastered!' })
   }
 
-  const suggestions = offer.map(c => ({ id: c.id, text: c.text, tier: c.tier, techniques: c.techniques }))
+  const suggestions = o.offer.map(c => ({ id: c.id, text: c.text, tier: c.tier, techniques: c.techniques }))
 
-  return c.json({
-    suggestions,
-    message: `You've mastered ${mastered}/${of} ${tier} combos. Ready to unlock ${next}?`,
-  })
+  return c.json({ suggestions, message: offerMessage(o) })
 })
 
 // Unlock combos
@@ -1939,8 +1960,10 @@ app.post('/api/combos/unlock', async (c) => {
   const body = await c.req.json<{ comboIds: string[] }>()
   const db = createDB(c.env)
 
+  // NEW on his bag boards for two weeks from now (combos.unlocked_at, 0060)
+  const nowSec = Math.floor(Date.now() / 1000)
   for (const id of body.comboIds) {
-    await db.update(combos).set({ unlocked: 1 }).where(eq(combos.id, id))
+    await db.update(combos).set({ unlocked: 1, unlockedAt: nowSec }).where(eq(combos.id, id))
   }
 
   return c.json({ success: true, unlocked: body.comboIds.length })
@@ -2527,7 +2550,10 @@ async function weekJson(db: ReturnType<typeof createDB>, blockId: string, weekNu
   // The week line in plain words, what's new and what's next (page 56 item 16).
   const [block] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, week.blockId))
   const estimates = block?.blockType === 'block_zero' ? await db.select({ kind: athleteEstimates.kind, key: athleteEstimates.key, state: athleteEstimates.state, valueJson: athleteEstimates.valueJson }).from(athleteEstimates) : null
-  const whyLine = block ? weekLineFor(week, block, weekSessions, estimates) : week.whyLine
+  // His last 5K test by the week's end (rebuild Phase 8: the week line carries the 5K).
+  const firstDay = weekSessions.find(x => x.scheduledDate != null)?.scheduledDate ?? null
+  const fiveK = firstDay != null ? latestTest(await fiveKTests(db), mondayOf(firstDay) + 6) : null
+  const whyLine = block ? weekLineFor(week, block, weekSessions, estimates, fiveK?.sec ?? null) : week.whyLine
   return { week: { ...weekForClient(week), whyLine }, sessions: weekSessions }
 }
 
@@ -3383,7 +3409,7 @@ app.get('/api/history/category-completion', async (c) => {
   const weeks = Math.max(1, Math.round(days / 7))
   const weeklyTargets: Record<string, { types: string[]; target: number }> = {
     strength: { types: ['strength'], target: 2 },
-    conditioning: { types: ['foundation_run', 'running', 'mt_class', 'bag_work', 'skip_rope'], target: 8 },
+    conditioning: { types: ['foundation_run', 'running', 'mt_class', 'bag_work', 'bag_conditioning', 'skip_rope'], target: 8 },
     recovery: { types: ['active_recovery', 'mobility'], target: 2 },
   }
 

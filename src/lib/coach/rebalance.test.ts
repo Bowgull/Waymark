@@ -47,7 +47,7 @@ assert(tue[0].sessionId === 'strength-2' && tue[0].kind === 'ease' && tue[0].eas
 assert(tue[0].show.before === '3×8' && tue[0].show.after === '2×8' && tue[0].show.logBefore === 'B 3×8', 'flaps: 3×8 -> 2×8, the log reads B 3×8')
 assert(renderWhy(tue[0].why, MON + 2) === "Bag work yesterday on a rough day; one set less so Thursday's run stays easy.", `the why, read on Wednesday: ${renderWhy(tue[0].why, MON + 2)}`)
 assert(renderWhy(tue[0].why, MON + 2, 'log') === "Bag work yesterday on a rough day; one set less so Thursday's run stays easy.", 'the week log reads it against Wednesday too')
-assert(tue[0].detail === 'Block pull and overhead press, same weights.', `detail names the lifts: ${tue[0].detail}`)
+assert(tue[0].detail === 'Landmine punch, block pull, bench press and landmine reverse lunge, same weights.', `detail names the lifts (page 93's Strength B): ${tue[0].detail}`)
 assert(renderWhy(tue[0].put.line, MON + 2) === 'Strength B is 3×8 again.' && tue[0].put.dim === 'The coach leaves it as you set it this week.', 'put back: Strength B is 3×8 again')
 assert(houseVoice(renderWhy(tue[0].why, MON + 2)), 'house voice, no jargon')
 

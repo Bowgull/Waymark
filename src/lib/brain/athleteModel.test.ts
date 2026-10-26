@@ -2,7 +2,7 @@
 // Coach brain P1: the athlete model (coach-brain.md §4, §6.2) on made-up data.
 import assert from 'node:assert/strict'
 import { biasStep, buildAthleteModel, cellOf, isLive, linePrior, modelRows, noteFlags, runDrift, runUnderLine, setE1rm, usualStartOf, workingWeight } from './athleteModel'
-import { athleteSignals } from './signals'
+import { athleteSignals, goalSignals, liftTrend } from './signals'
 import { agedU, bagRoundsFromU, liftDoseFromU, runPieceFromU, rungDecay, stateFromU, strengthDecay } from './uncertainty'
 import type { ModelBag, ModelCheckIn, ModelEvents, ModelRun, ModelSession, ModelSet } from './types'
 
@@ -229,6 +229,47 @@ assert.equal(bagRoundsFromU(6, 0.5, 5), 5, 'never above the cap')
   assert.equal(g.run.recheckWhy, 'No talk test yet.')
 }
 
+// ─── Hard runs and the longer run (rebuild Phase 3) ──────────
+{
+  const tests = [{ day: MON + 1, bpm: 151 }, { day: MON + 3, bpm: 153 }]
+  const e1 = session(MON + 1, 'foundation_run', { rpe: 4 })
+  const e2 = session(MON + 3, 'foundation_run', { rpe: 4 })
+  const easy = (s: ModelSession, piece: number) => run(s, { avgHr: 140, durationSec: piece, plannedDurationSec: piece, pieceSec: piece, rungSec: piece, splits: [{ durationSec: 400, avgHr: 138 }, { durationSec: 400, avgHr: 140 }] })
+  // A Tempo with its heart well over the easy line, effort 8: judged on its own range, not as a struggle.
+  const t = session(MON + 5, 'running', { rpe: 8, notes: 'tempo' })
+  const tempo = run(t, { hard: 'tempo', hardTop: 167, durationSec: 1800, plannedDurationSec: 1800, avgHr: 160, maxHr: 165, pieceSec: null, splits: [{ durationSec: 600, avgHr: 150 }, { durationSec: 900, avgHr: 163 }, { durationSec: 300, avgHr: 150 }] })
+  const m = buildAthleteModel(events({ sessions: [e1, e2, t], talkTests: tests, runs: [easy(e1, 1200), easy(e2, 1200), tempo] }), MON + 5)
+  assert.equal(m.run.rungSec, 1200, 'the easy rung stands: a hard run never trims it')
+  assert.equal(m.run.recent.length, 2, 'the hard run is not in the easy runs')
+  assert.ok(m.run.recent.every(o => !o.struggled))
+  assert.deepEqual(m.run.hardRecent?.map(h => [h.kind, h.completed, h.maxHr, h.top]), [['tempo', true, 165, 167]], 'judged on done and its own top')
+  assert.equal(m.run.longestLast30Sec, 1800, 'it still counts for the 110% guard')
+  // Nor does a hard run raise the easy rung (a 30-minute Tempo is not a 30-minute easy run).
+  const calm = { ...tempo, rpe: 4, avgHr: null, maxHr: null, splits: [] }
+  assert.equal(buildAthleteModel(events({ sessions: [e1, e2, { ...t, rpe: 4 }], talkTests: tests, runs: [easy(e1, 1200), easy(e2, 1200), calm] }), MON + 5).run.rungSec, 1200)
+  // A Tempo cut short: not done.
+  const short = buildAthleteModel(events({ sessions: [e1, e2, t], talkTests: tests, runs: [easy(e1, 1200), easy(e2, 1200), { ...tempo, durationSec: 1300, completionStatus: 'shortened' }] }), MON + 5)
+  assert.equal(short.run.hardRecent?.[0].completed, false)
+  assert.equal(short.run.rungSec, 1200)
+
+  // The longer Zone 2 Run: its own path. Good ones in a row at its length; it never sets the easy rung.
+  const l1 = session(MON + 6, 'foundation_run', { rpe: 4 })
+  const l2 = session(MON + 13, 'foundation_run', { rpe: 4 })
+  const long = (s: ModelSession, sec: number) => ({ ...easy(s, sec), long: true })
+  const ml = buildAthleteModel(events({ sessions: [e1, e2, l1, l2], talkTests: tests, runs: [easy(e1, 1200), easy(e2, 1200), long(l1, 1800), long(l2, 1800)] }), MON + 13)
+  assert.equal(ml.run.rungSec, 1200, 'the easy rung stays the easy runs\' own')
+  assert.deepEqual(ml.run.long && [ml.run.long.lastSec, ml.run.long.goodInRow], [1800, 2])
+  assert.equal(ml.run.catchUpSec, 1200, 'catching up reads every run but the longer one')
+  // A rough longer run breaks the streak.
+  const rough = { ...long(l2, 1800), rpe: 8 }
+  const mr = buildAthleteModel(events({ sessions: [e1, e2, l1, { ...l2, rpe: 8 }], talkTests: tests, runs: [easy(e1, 1200), easy(e2, 1200), long(l1, 1800), rough] }), MON + 13)
+  assert.equal(mr.run.long?.goodInRow, 0)
+  // While he still run-walks, the longer run is a run-walk like the others: it moves the rung.
+  const rw = buildAthleteModel(events({ sessions: [e1, e2], talkTests: tests, runs: [easy(e1, 90), { ...easy(e2, 120), long: true }] }), MON + 3)
+  assert.equal(rw.run.rungSec, 120)
+  assert.equal(rw.run.long, null)
+}
+
 // ─── Bag ─────────────────────────────────────────────────────
 {
   const bags: ModelBag[] = [0, 3, 6].map(i => ({ sessionId: `b${i}`, day: MON + i, status: 'completed', roundsPlanned: 4, roundsRated: 4, ratings: [2, 3, 2, 3], rpe: 6, skipReason: null }))
@@ -339,6 +380,24 @@ assert.equal(bagRoundsFromU(6, 0.5, 5), 5, 'never above the cap')
   assert.equal(new Set(facts.map(x => x.id)).size, facts.length, 'fact ids are unique')
   // Deterministic: the same events give the same model.
   assert.deepEqual(buildAthleteModel(e, MON), m)
+}
+
+// ─── His three goals as facts (rebuild Phase 8) ──────────────
+{
+  assert.equal(liftTrend([{ topKg: 20 }, { topKg: 22.5 }]), 'up')
+  assert.equal(liftTrend([{ topKg: 20 }, { topKg: 20 }]), 'flat')
+  assert.equal(liftTrend([{ topKg: 20 }]), null, 'one exposure: no trend yet')
+  const m = buildAthleteModel(events({ trainingMaxes: [] }), MON)
+  const g = (tests: Array<{ day: number; sec: number }>, tier: string | null) => {
+    const facts = goalSignals(m, { fiveKTests: tests, comboTier: tier }, MON, 1320)
+    return (id: string) => facts.find(x => x.id === id)?.value
+  }
+  const none = g([], 'foundation')
+  assert.deepEqual([none('f.goal.fiveK.goalSec'), none('f.goal.fiveK.tests'), none('f.goal.fiveK.lastSec'), none('f.goal.mt.tier')], [1320, 0, undefined, 'foundation'], 'no test yet: the goal only, no gap')
+  const two = g([{ day: MON - 40, sec: 1650 }, { day: MON - 5, sec: 1591 }, { day: MON + 3, sec: 1500 }], 'weapons')
+  assert.deepEqual([two('f.goal.fiveK.lastSec'), two('f.goal.fiveK.gapSec'), two('f.goal.fiveK.changeSec'), two('f.goal.lagging')], [1591, 271, -59, undefined], 'the last test before today, its gap to 22:00, faster than the one before')
+  const stuck = g([{ day: MON - 40, sec: 1590 }, { day: MON - 5, sec: 1600 }], null)
+  assert.equal(stuck('f.goal.lagging'), 'fiveK', 'no faster over the last two tests: the 5K lags')
 }
 
 console.log('ok: athlete model')

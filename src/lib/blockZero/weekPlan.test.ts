@@ -88,23 +88,26 @@ assert(getStrengthTemplate(4, 2, 'block_zero', 'Strength A').id === 'strength_a'
 assert(a1.exercises.some(e => e.exerciseId === 'ex-goblet-squat' && e.section === 'main'), 'week 1 squat is goblet (back-friendly first)')
 assert(a3.exercises.some(e => e.exerciseId === 'ex-front-squat' && e.section === 'main'), 'week 3 squat is front squat')
 assert(b1.exercises.some(e => e.exerciseId === 'ex-db-rdl' && e.section === 'main'), 'week 1 hinge is DB RDL')
-const mainNotes = a1.exercises.filter(e => e.section === 'main').map(e => e.notes ?? '')
-assert(mainNotes.every(n => n.includes('RPE 6-7')), 'week 1 main lifts carry the RPE 6-7 target in notes')
-assert(a3.exercises.filter(e => e.section === 'main').every(e => e.sets[0].targetReps === 5 && e.sets[0].loadMultiplier === 1.1), 'week 3 starts with a check set of 5 at ~1.1x load')
-const DURABILITY = ['ex-neck-iso-4way', 'ex-wrist-curl', 'ex-reverse-wrist-curl']
-assert(DURABILITY.every(id => a1.exercises.some(e => e.exerciseId === id) && c1.exercises.some(e => e.exerciseId === id)), 'durability on A and C: 4-way neck isometrics, wrist curl, reverse wrist curl')
-assert(a1.exercises.some(e => e.exerciseId === 'ex-single-leg-calf-raise') && c1.exercises.some(e => e.exerciseId === 'ex-tibialis-raise'), 'calf raises on A, tibialis raises on C')
-assert(![...DURABILITY, 'ex-chin-tucks', 'ex-hammer-curl'].some(id => b1.exercises.some(e => e.exerciseId === id)), 'no durability on B (2x per week)')
-assert(![a1, c1].some(t => t.exercises.some(e => e.exerciseId === 'ex-chin-tucks' || e.exerciseId === 'ex-hammer-curl')), 'Phase A stand-ins (chin tucks, hammer curl) are gone')
+// Rebuild Phase 4 (page 93): A and B are the two lifts. The dose sets the sets and weights, so the
+// stale week-3 / week-6 check-set notes and week-6 cut are gone from them (Strength C keeps its own).
+const mainOf = (t: typeof a1) => t.exercises.filter(e => e.section === 'main').map(e => e.exerciseId)
+assert(JSON.stringify(mainOf(a1)) === JSON.stringify(['ex-goblet-squat', 'ex-landmine-press', 'ex-db-row']), `Strength A: squat, the press, the row (${mainOf(a1)})`)
+assert(JSON.stringify(mainOf(b1)) === JSON.stringify(['ex-lm-punch', 'ex-db-rdl', 'ex-bench-press', 'ex-lm-reverse-lunge']), `Strength B: the punch, the hinge, the bench, the lunge (${mainOf(b1)})`)
+assert([a1, b1].every(t => t.exercises.some(e => /row/.test(e.exerciseId))), 'pulling twice a week: a row on A and on B (2026-10-26)')
+assert(!a1.exercises.concat(b1.exercises).some(e => /RPE|check/i.test(e.notes ?? '')), 'no stale week targets in the notes')
+assert(a1.exercises.some(e => e.exerciseId === 'ex-lm-rdl' && e.section === 'warmup'), 'A: a light hinge in the warm-up (the hinge twice a week)')
+const ARMS_A = ['ex-chin-up-band', 'ex-hammer-curl', 'ex-suitcase-carry']
+const ARMS_B = ['ex-db-row', 'ex-dips', 'ex-wrist-curl']
+assert(JSON.stringify(a1.exercises.slice(-3).map(e => e.exerciseId)) === JSON.stringify(ARMS_A), 'A ends with the arm block: chin-ups, hammer curls, grip')
+assert(JSON.stringify(b1.exercises.slice(-3).map(e => e.exerciseId)) === JSON.stringify(ARMS_B), 'B ends with the arm block: the dumbbell row, dips, wrist curls (the row works the same arms as the hammer curls)')
+assert(a1.exercises.concat(b1.exercises).filter(e => /chin-up/.test(e.exerciseId)).length === 1, 'chin-ups once a week, never twice in a lift')
+assert(['ex-single-leg-calf-raise', 'ex-copenhagen-plank'].every(id => a1.exercises.some(e => e.exerciseId === id)), 'A: loaded calves, the Copenhagen plank')
+assert(['ex-nordic-curl', 'ex-bent-knee-calf-raise'].every(id => b1.exercises.some(e => e.exerciseId === id)), 'B: the Nordic, bent-knee calves (the tibialis raise made room for the row)')
+assert(!a1.exercises.concat(b1.exercises).some(e => ['ex-ez-curl', 'ex-tricep-pushdown', 'ex-lateral-raise'].includes(e.exerciseId)), 'no isolation arm work')
+assert(c1.exercises.some(e => e.exerciseId === 'ex-tibialis-raise'), 'Strength C keeps its durability')
 assert(JSON.stringify(c7) === JSON.stringify(c5), 'week 7 strength C is identical to week 5')
 const fighterB = getStrengthTemplate(4, 1, 'fighter')
 assert(fighterB.id === 'strength_b' && fighterB.exercises.some(e => e.exerciseId === 'ex-rdl'), 'Fighter templates unchanged')
-
-const workingSetCount = (t: typeof a1) => t.exercises.filter(e => e.section !== 'warmup').reduce((n, e) => n + e.sets.length, 0)
-const w5 = workingSetCount(getStrengthTemplate(1, 5, 'block_zero'))
-const w6 = workingSetCount(getStrengthTemplate(1, 6, 'block_zero'))
-const cut = 1 - w6 / w5
-assert(cut >= 0.3 && cut <= 0.5, `week 6 volume cut ${(cut * 100).toFixed(0)}% sits in the 30-50% band (R16)`)
 assert(getWeekPercentage(6, 'block_zero') === getWeekPercentage(5, 'block_zero'), 'week 6 holds intensity')
 
 console.log('\nAll Block Zero week plan tests passed')

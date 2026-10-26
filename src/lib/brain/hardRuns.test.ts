@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict'
 import {
   estimateFiveKSec, fiveKText, GOAL_5K_SEC, hardHeart, hardKindOf, hardLabel, hardPlan, hardRunDose, latestTest, testReady,
-  parseFiveK, planWeekRuns, repsFor, speedsFrom, steadyMinFor, toGoalText, totalOf, type WeekRun, type WeekRunsIn,
+  nudgedFiveKSec, nudgesSince, parseFiveK, planWeekRuns, repsFor, speedsFrom, steadyMinFor, toGoalText, totalOf, wellInside,
+  type HardResult, type WeekRun, type WeekRunsIn,
 } from './hardRuns'
 import { tweakRun } from './doses'
 
@@ -87,13 +88,15 @@ assert.deepEqual(planWeekRuns(week(8)).kinds, { tue: 'steady', thu: 'easy', sat:
   const heavyTired = planWeekRuns(week(6, { tired: true, classDays: [MON, MON + 2], bagDays: [MON + 4] }))
   assert.equal(hardIds(heavyTired.kinds).length, 1, 'always at least one hard run')
 }
-// A done hard run counts; a skipped one doesn't (another run takes it).
+// A done hard run counts. A skipped one is just missed (rebuild Phase 3): the easy run stays easy, the other hard run stays.
 {
   const out = planWeekRuns(week(5, { runs: [run('tue', MON + 1, { kind: 'steady', status: 'done', fixed: true }), run('thu', MON + 3), run('sat', MON + 5)] }))
   assert.deepEqual(out.kinds, { tue: 'steady', thu: 'easy', sat: 'intervals' })
   const skipped = planWeekRuns(week(5, { runs: [run('tue', MON + 1, { kind: 'steady', status: 'gone', fixed: true }), run('thu', MON + 3), run('sat', MON + 5)] }))
-  assert.equal(skipped.kinds.thu, 'steady')
-  assert.equal(skipped.kinds.sat, 'intervals')
+  assert.deepEqual(Object.values(skipped.kinds).sort(), ['easy', 'intervals', 'steady'], 'the other hard run stays, one easy run stays easy')
+  // One hard run planned and missed: no other run turns hard.
+  const one = planWeekRuns(week(5, { maxHard: 1, runs: [run('tue', MON + 1, { kind: 'steady', status: 'gone', fixed: true }), run('thu', MON + 3), run('sat', MON + 5)] }))
+  assert.deepEqual([one.kinds.thu, one.kinds.sat], ['easy', 'easy'], 'a missed hard run is just missed')
 }
 // His own (fixed) easy run stays easy.
 assert.equal(planWeekRuns(week(5, { runs: [run('tue', MON + 1, { fixed: true }), run('thu', MON + 3), run('sat', MON + 5)] })).kinds.tue, 'easy')
@@ -125,9 +128,9 @@ assert.ok(Math.abs(estimateFiveKSec(420) - 1638) <= 1, `${estimateFiveKSec(420)}
   assert.equal(hardHeart('intervals', null, 147).top, 176)
 }
 
-// The pieces: run hard 2 min, jog 2 min, 5 the first week after a test, one more each week; steady 15 min in week 5.
+// The pieces: run hard 2 min, jog 2 min, 5 the first week after a test, one more each week; Tempo 15 to 20 min (page 93).
 assert.deepEqual([0, 1, 2, 3, 4, 9].map(repsFor), [5, 6, 7, 8, 8, 8])
-assert.deepEqual([1, 2, 3].map(steadyMinFor), [15, 17, 19])
+assert.deepEqual([0, 1, 2, 3, 9].map(steadyMinFor), [15, 17, 19, 20, 20])
 {
   const { plan, why } = hardPlan({ kind: 'intervals', weeksSince: 1, fiveK: { day: MON - 7, sec: 1668 }, easyPaceSecKm: null, maxHr: 186, lineBpm: 147, ease: false, capSec: null })
   assert.equal(plan.reps, 6)
@@ -150,7 +153,7 @@ assert.deepEqual([1, 2, 3].map(steadyMinFor), [15, 17, 19])
 }
 {
   const { plan } = hardPlan({ kind: 'steady', weeksSince: 1, fiveK: null, easyPaceSecKm: null, maxHr: null, lineBpm: 147, ease: false, capSec: null })
-  assert.deepEqual(plan.pieces.map(p => [p.kind, p.sec / 60]), [['easy', 10], ['steady', 15], ['easy', 5]])
+  assert.deepEqual(plan.pieces.map(p => [p.kind, p.sec / 60]), [['easy', 10], ['steady', 17], ['easy', 5]])
   assert.equal(hardLabel(plan), 'Tempo')
 }
 {
@@ -176,5 +179,41 @@ assert.equal(latestTest([], 40), null)
 assert.equal(parseFiveK('27:48'), 1668)
 assert.equal(parseFiveK('3:00'), null)
 assert.equal(parseFiveK('abc'), null)
+
+// Review T4: never two hard runs on back-to-back days, even when only adjacent run days are free.
+{
+  const M = 20822
+  const run = (id: string, day: number): WeekRun => ({ id, day, kind: 'easy', status: 'planned', fixed: false })
+  const p = planWeekRuns({ week: 6, runs: [run('a', M + 1), run('b', M + 2)], classDays: [], bagDays: [], tired: false })
+  assert.equal(Object.values(p.kinds).filter(k => k !== 'easy').length, 1, 'one hard run, not two in a row')
+  // The 48 h after a lift (rebuild Phase 2): Monday morning's lift keeps Tuesday easy; Wednesday morning is 48 h on.
+  const q = planWeekRuns({ week: 6, runs: [run('t', M + 1), run('w', M + 2), run('f', M + 4)], classDays: [], bagDays: [], tired: false, liftAt: [{ day: M, slot: 'am' }], maxHard: 1 })
+  assert.deepEqual(Object.entries(q.kinds).filter(([, k]) => k !== 'easy').map(([id]) => id), ['w'], 'the hard run waits 48 h after heavy legs')
+  // The week builder's room caps it: maxHard 0 leaves every run easy.
+  assert.equal(Object.values(planWeekRuns({ week: 6, runs: [run('a', M + 1), run('b', M + 4)], classDays: [], bagDays: [], tired: false, maxHard: 0 }).kinds).filter(k => k !== 'easy').length, 0)
+}
+
+// Speeds that move between tests (rebuild Phase 3): two hard runs in a row well inside their range, 1.5% faster; 3% at most; a test resets.
+{
+  const r = (day: number, o: Partial<HardResult> = {}): HardResult => ({ day, kind: 'tempo', completed: true, maxHr: 160, top: 167, rpe: 6, ...o })
+  assert.equal(wellInside(r(1)), true, 'heart 7 under the top')
+  assert.equal(wellInside(r(1, { maxHr: 165 })), false, 'only 2 under')
+  assert.equal(wellInside(r(1, { completed: false })), false, 'not done in full')
+  assert.equal(wellInside(r(1, { maxHr: null, rpe: 3 })), false, 'no heart data: no nudge, however easy it felt')
+  assert.equal(nudgesSince([r(1, { maxHr: null }), r(4, { maxHr: null })], null), 0)
+  assert.equal(nudgesSince([r(1)], null), 0, 'one is not a pair')
+  assert.equal(nudgesSince([r(1), r(4)], null), 1)
+  assert.equal(nudgesSince([r(1), r(4, { maxHr: 170 }), r(8)], null), 0, 'a run over its range breaks the pair')
+  assert.equal(nudgesSince([r(1), r(4), r(8), r(11), r(15), r(18)], null), 2, 'two at most')
+  assert.equal(nudgesSince([r(1), r(4), r(8), r(11)], 5), 1, 'only since the last test')
+  assert.equal(nudgesSince([r(1, { kind: '5k_test' }), r(4)], null), 0, 'the test itself never counts')
+  assert.equal(nudgedFiveKSec(1800, 1), Math.round(1800 / 1.015))
+  const base = hardPlan({ kind: 'steady', weeksSince: 1, fiveK: { day: MON - 7, sec: 1668 }, easyPaceSecKm: null, maxHr: 186, lineBpm: 147, ease: false, capSec: null })
+  const nudged = hardPlan({ kind: 'steady', weeksSince: 1, fiveK: { day: MON - 7, sec: 1668 }, easyPaceSecKm: null, maxHr: 186, lineBpm: 147, ease: false, capSec: null, nudges: 1 })
+  assert.ok(nudged.plan.speeds.steady > base.plan.speeds.steady, `${nudged.plan.speeds.steady} > ${base.plan.speeds.steady}`)
+  assert.ok(nudged.why.some(w => /A little faster/.test(w)))
+  const test = hardPlan({ kind: 'test', weeksSince: 1, fiveK: { day: MON - 7, sec: 1668 }, easyPaceSecKm: null, maxHr: 186, lineBpm: 147, ease: false, capSec: null, nudges: 2 })
+  assert.equal(test.plan.speeds.test, speedsFrom(1668).test, 'the test starts at the last 5K, never nudged')
+}
 
 console.log('hardRuns: ok')

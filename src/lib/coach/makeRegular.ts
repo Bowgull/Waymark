@@ -7,6 +7,7 @@
 // whether to make it part of the plan. The slot it offers is placement-
 // checked against next week. A yes adds it to the plan template for the
 // weeks after; a no changes nothing (and the coach waits 4 weeks to ask again).
+// Never a class: class days come only from Settings (review R3).
 
 import { checkSessionChange, type PlacementContext } from './placement'
 import { DAY_NAMES, dowOf, isoOf, mondayOf, plannedLoad, sessionName, type TimeSlot } from './sessions'
@@ -68,6 +69,8 @@ export function makeRegularCandidates(adds: AddedSession[], lastMonday: number):
   const byKey = new Map<string, AddedSession[]>()
   for (const a of adds) {
     if (a.type === 'mobility' || a.type === 'active_recovery') continue
+    // Classes come only from his Settings class days (review R3): an extra class is never made regular.
+    if (a.type === 'mt_class') continue
     if (!wentWell(a)) continue
     const k = keyOf(a)
     byKey.set(k, [...(byKey.get(k) ?? []), a])

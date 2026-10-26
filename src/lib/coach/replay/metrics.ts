@@ -1,7 +1,8 @@
 // What a replay shows (coach-brain §12.1): the ease stack on every session
 // and the pass lines, measured on what the driver wrote down. Pure.
 
-import { isHeavyLegs, KEY_TYPES } from '../index'
+import { isLandmine } from '../../landmine'
+import { isHeavyLegs, isoOf, KEY_TYPES } from '../index'
 import { RESTART_SESSION_SEC, SINGLE_RUN_CAP_RATIO } from '../../blockZero/running'
 import type { DoseRecord, ReplayResult } from './types'
 
@@ -166,4 +167,154 @@ function modelLiftStates(r: ReplayResult): string {
   if (!r.model) return 'not run'
   if (lifts.length === 0) return 'no lifts logged'
   return lifts.map(l => `${l.key} ${l.state} u=${l.u}`).join(', ')
+}
+
+// ─── The 24-week report (rebuild plan, Phase 1) ──────────────
+
+/** A week's row in the 24-week table. */
+export interface WeekRow {
+  week: number
+  /** Days with a planned key session (Foundation and recovery don't count), and days with one done. */
+  trainingDays: number
+  /** Key sessions the plan held (a doubled morning packs two into one day). */
+  keySessions: number
+  doneDays: number
+  hardDays: number
+  longestHardStreak: number
+  restDays: number
+  runs: number
+  runKm: number
+  longRunMin: number | null
+  hardRuns: number
+  tests: number
+  /** The true athlete's 5K that Monday, seconds. */
+  true5kSec: number | null
+  /** Prescribed main-lift weight against the weight that would leave 2 reps at 8 (1 = right on). */
+  liftRatio: number | null
+  bag: number
+  classes: number
+  longestMin: number | null
+  /** Sessions planned over 60 minutes (started ones, warm-ups and ramps in); the week's longer run over 75. */
+  over60: number
+  /** Spacing breaks: a hard run under 48 h after heavy legs; 3 hard days in a row. */
+  breaks: string[]
+}
+
+const SLOT_H: Record<string, number> = { am: 8, pm: 18 }
+const RUNS = new Set(['foundation_run', 'running'])
+const HARD_RUN = new Set(['tempo', 'intervals', '5k_test'])
+/** Bag Conditioning (built by the Muay Thai track): its own type key. */
+export const BAG_SESSION_TYPES: ReadonlySet<string> = new Set(['bag_work', 'bag_conditioning'])
+
+type Sess = ReplayResult['sessions'][number]
+
+/** The rebuild's hard list (plan §1 "Hard days"): lifts, hard runs, classes, bag work, a hard Bag Conditioning. */
+export function reportHard(s: Pick<Sess, 'type' | 'contextJson'> & { notes?: string | null }): boolean {
+  if (s.type === 'strength' || s.type === 'mt_class') return true
+  // Bag Work is hard unless the week planned it as technique only (rebuild Phase 2).
+  if (s.type === 'bag_work') return !/"plan":\{"hard":false/.test(s.contextJson ?? '')
+  if (s.type === 'running') return HARD_RUN.has(s.notes ?? '')
+  if (s.type === 'bag_conditioning') return /"plan":\{"hard":true/.test(s.contextJson ?? '')
+  return false
+}
+
+/** Heavy legs for the 48-hour rule (plan: squat day, hinge day, and the lunge day while lunges are a main lift). */
+export function reportHeavyLegs(s: Pick<Sess, 'type' | 'label' | 'blockType'>): boolean {
+  if (s.type !== 'strength') return false
+  return isHeavyLegs({ type: s.type, label: s.label }, s.blockType === 'block_zero' ? 'block_zero' : 'fighter') || /Strength C\b/.test(s.label ?? '')
+}
+
+/** The weight that leaves 2 reps at 8 (a 10-rep max) from a true 8-rep max (Epley both ways). */
+export function rir2Weight(true8Kg: number): number {
+  return (true8Kg * (1 + 8 / 30)) / (1 + 10 / 30)
+}
+
+/**
+ * The 24-week table, one row per week from `fromDay` (a Monday). Structure
+ * (days, hard days, rest, classes, bag) reads the plan as it stood at the end
+ * (every session not taken off or missed, as the coach's own rules read a
+ * week); kilometres, lifts and minutes read what was started.
+ */
+export function weeklyReport(r: ReplayResult, opts: { fiveKOn?: (day: number) => number } = {}): WeekRow[] {
+  const rows: WeekRow[] = []
+  const weeks = Math.ceil((r.toDay - r.fromDay + 1) / 7)
+  const notesOf = new Map<string, string | null>(r.sessions.map(s => [s.id, s.notes ?? null]))
+  // What the plan held (taken off excluded), and what filled his days (missed excluded too): counts of
+  // runs, bag and classes read the plan; days, hard days, streaks, rest and spacing read the days.
+  const plan = r.sessions.filter(s => s.day != null && s.status !== 'skipped')
+  const planned = plan.filter(s => s.status !== 'missed')
+  const hardOn = (d: number) => planned.some(s => s.day === d && reportHard(s))
+  for (let w = 0; w < weeks; w++) {
+    const mon = r.fromDay + w * 7
+    const days = Array.from({ length: 7 }, (_, i) => mon + i)
+    const inPlan = plan.filter(s => s.day! >= mon && s.day! <= mon + 6)
+    const inWeek = planned.filter(s => s.day! >= mon && s.day! <= mon + 6)
+    const key = inWeek.filter(s => KEY_TYPES.has(s.type) || BAG_SESSION_TYPES.has(s.type))
+    // The step's days: what the plan held (missed ones too).
+    const trainingDays = new Set(inPlan.filter(s => KEY_TYPES.has(s.type) || BAG_SESSION_TYPES.has(s.type)).map(s => s.day)).size
+    const doneDays = new Set(key.filter(s => s.status === 'completed').map(s => s.day)).size
+    const hard = days.filter(hardOn)
+    let streak = 0
+    let best = 0
+    for (const d of days) { streak = hardOn(d) ? streak + 1 : 0; best = Math.max(best, streak) }
+    const doses = r.doses.filter(d => d.day >= mon && d.day <= mon + 6)
+    const runDoses = doses.filter(d => RUNS.has(d.type))
+    const ratios: number[] = []
+    for (const d of doses.filter(x => x.type === 'strength' && x.trueKg)) {
+      for (const l of d.loads) {
+        const t = d.trueKg?.[l.exerciseId]
+        // The landmine has its own numbers (the bar end, not the hand): not compared with his true barbell strength.
+        if (l.weightKg != null && t && !isLandmine(l.exerciseId)) ratios.push(l.weightKg / rir2Weight(t))
+      }
+    }
+    const breaks: string[] = []
+    // A lift he missed loaded nothing: the coach may make the next run hard.
+    for (const legs of planned.filter(s => s.status !== 'missed' && reportHeavyLegs(s) && s.day! >= mon - 2 && s.day! <= mon + 6)) {
+      for (const run of inWeek.filter(s => s.type === 'running' && HARD_RUN.has(notesOf.get(s.id) ?? ''))) {
+        const h = (run.day! * 24 + SLOT_H[run.slot ?? 'am']) - (legs.day! * 24 + SLOT_H[legs.slot ?? 'am'])
+        if (h > 0 && h < 48) breaks.push(`${isoOf(run.day!)} hard run ${h} h after heavy legs`)
+      }
+    }
+    for (let d = mon - 2; d <= mon + 4; d++) if (d + 2 >= mon && hardOn(d) && hardOn(d + 1) && hardOn(d + 2)) breaks.push(`${isoOf(d)} 3 hard days in a row`)
+    const mins = doses.map(d => d.plannedMin).filter((m): m is number => m != null)
+    // The week's longer Zone 2 Run may reach about 75 minutes with its warm-up (2026-10-26).
+    const longIds = new Set(r.sessions.filter(s => /"long":true/.test(s.contextJson ?? '')).map(s => s.id))
+    const over = doses.filter(d => d.plannedMin != null && d.plannedMin > (longIds.has(d.sessionId) && RUNS.has(d.type) ? 75 : 60)).length
+    rows.push({
+      week: w + 1,
+      trainingDays,
+      keySessions: inPlan.filter(s => KEY_TYPES.has(s.type) || BAG_SESSION_TYPES.has(s.type)).length,
+      doneDays,
+      hardDays: hard.length,
+      longestHardStreak: best,
+      restDays: days.filter(d => !key.some(s => s.day === d)).length,
+      runs: inPlan.filter(s => RUNS.has(s.type)).length,
+      runKm: Math.round(runDoses.reduce((n, d) => n + (d.loggedKm ?? 0), 0) * 10) / 10,
+      longRunMin: runDoses.length ? Math.max(...runDoses.map(d => d.plannedMin ?? 0)) : null,
+      hardRuns: inPlan.filter(s => s.type === 'running' && HARD_RUN.has(notesOf.get(s.id) ?? '')).length,
+      tests: inWeek.filter(s => s.type === 'running' && notesOf.get(s.id) === '5k_test').length,
+      true5kSec: opts.fiveKOn ? opts.fiveKOn(mon) : null,
+      liftRatio: ratios.length ? Math.round((ratios.reduce((a, b) => a + b, 0) / ratios.length) * 100) / 100 : null,
+      bag: inPlan.filter(s => BAG_SESSION_TYPES.has(s.type)).length,
+      classes: inPlan.filter(s => s.type === 'mt_class').length,
+      longestMin: mins.length ? Math.max(...mins) : null,
+      over60: over,
+      breaks,
+    })
+  }
+  return rows
+}
+
+const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`
+
+/** The table as text (scripts/replay-sim.mts --weeks). */
+export function weekTable(rows: WeekRow[]): string {
+  const head = 'wk  days done hard strk rest runs   km  long hardR test   5k   lift bag cls  max >60 breaks'
+  const lines = rows.map(x => [
+    String(x.week).padStart(2), String(x.trainingDays).padStart(5), String(x.doneDays).padStart(4), String(x.hardDays).padStart(4), String(x.longestHardStreak).padStart(4),
+    String(x.restDays).padStart(4), String(x.runs).padStart(4), x.runKm.toFixed(1).padStart(5), String(x.longRunMin ?? '-').padStart(5), String(x.hardRuns).padStart(5),
+    String(x.tests).padStart(4), (x.true5kSec ? mmss(x.true5kSec) : '-').padStart(6), (x.liftRatio?.toFixed(2) ?? '-').padStart(6), String(x.bag).padStart(3), String(x.classes).padStart(3),
+    String(x.longestMin ?? '-').padStart(4), String(x.over60).padStart(3), x.breaks.length ? ` ${x.breaks.length}: ${x.breaks[0]}` : '',
+  ].join(' '))
+  return [head, ...lines].join('\n')
 }

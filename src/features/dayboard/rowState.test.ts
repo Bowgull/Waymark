@@ -255,12 +255,13 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
   const wedB = { type: 'strength', label: 'Strength B', scheduledDate: 20747, blockWeek: 4, blockType: 'block_zero', notes: null }
   assert.equal(plannedRowMinutes(wedB), 60, 'X5: Strength B at 3x8 is ~60 min')
   assert.ok(plannedRowMinutes({ ...wedB, contextJson: '{"coachEase":{"kind":"one_set"}}' }) < 60, 'm6: one set fewer, fewer minutes')
-  assert.ok(plannedRowMinutes({ ...wedB, blockWeek: 1 }) < 60, 'm6: 2x8 in week 1 is shorter than 3x8 in week 4')
+  // Rebuild Phase 4: the lifts no longer change by week (the dose sets the sets), and every row is 60 or less.
+  assert.equal(plannedRowMinutes({ ...wedB, blockWeek: 1 }), plannedRowMinutes(wedB), 'the same plan in week 1 and week 4')
   // Audit #24: Foundation's own routine for its level (week 3: level 2, about 16 min), not a flat 12.
   assert.equal(plannedRowMinutes({ type: 'mobility', label: 'Foundation', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null }), 16)
   // Page 73 (approved 2026-10-22): a row with the brain's dose reads the dose's minutes, the same the coach picks' preview shows.
   assert.equal(plannedRowMinutes({ type: 'foundation_run', label: 'Run-walk', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null, doseJson: JSON.stringify({ run: { totalSec: 26 * 60, runSec: 90, walkSec: 60, rounds: 8, walkOnly: false } }) }), 33, 'run row: the dose total with the ~6.5 min run-walk warm-up (audit #24)')
-  assert.equal(plannedRowMinutes({ type: 'bag_work', label: 'Bag Work', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null, doseJson: JSON.stringify({ bag: { rounds: 5 } }) }), 28, 'bag row: the 5 min rope warm-up, the dose rounds, the rests, and the finisher after the last rest (audit #23, page 86)')
+  assert.equal(plannedRowMinutes({ type: 'bag_work', label: 'Bag Work', scheduledDate: sat, blockWeek: 3, blockType: 'block_zero', notes: null, doseJson: JSON.stringify({ bag: { rounds: 5 } }) }), 29, 'bag row: the 5 min rope warm-up, the dose rounds, the rests, and the finisher after the last rest (audit #23, page 86; page 93 adds the rear teep)')
   const strengthDoseRow = { ...wedB, doseJson: JSON.stringify({ strength: { kind: 'strength', level: 'HOLD', accessorySets: null, holdSets: 2, sets: 2, why: [], lifts: [{ exerciseId: 'a', label: 'DB RDL', slot: null, sets: 2, reps: 8, targetRir: 3, weightKg: 14, workUp: false, change: 'hold', fromKg: 14, level: 'HOLD', u: 0 }] } }) }
   const fromDose = doseJsonMinutes(strengthDoseRow)
   assert.ok(fromDose != null && fromDose > 0, `strength dose minutes: ${fromDose}`)

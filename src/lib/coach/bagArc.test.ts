@@ -1,11 +1,18 @@
 // Run: tsx src/lib/coach/bagArc.test.ts
-// Bag sessions three ways (page 80): the kru's arc (no round repeated, a new
-// combo in technique first), Hybrid's fill, Custom's passthrough, routines.
+// Bag sessions three ways (page 80) with the kru's round plan inside (page 93):
+// rhythm, learn A, learn B, link, pressure, free; two focus combos kept about
+// 3 sessions or until both rate SHARP; a NEW combo learnt first. Hybrid's fill,
+// Custom's passthrough, routines.
 import assert from 'node:assert/strict'
 
 import {
   builderFromRoutine,
+  focusOf,
   kruArc,
+  pickFocus,
+  roundCue,
+  roundPlan,
+  stageOfRoundType,
   parseBagSpec,
   parseRoutineRow,
   pickerGroups,
@@ -35,7 +42,6 @@ const BAG: PoolCombo[] = [
   c('c8', 'Jab → Rear Uppercut → Lead Hook → Rear Elbow → Switch Knee', 'mastery', 1, 90),
   c('c9', 'Teep → Teep', 'foundation', 13, 300),
 ]
-const key = (ids: string[]) => [...ids].sort().join('|')
 
 // ─── tags and the picker's order ──
 {
@@ -50,58 +56,99 @@ const key = (ids: string[]) => [...ids].sort().join('|')
   assert.deepEqual(pickerGroups(BAG, NOW, 'elbow').all.map(x => x.id).sort(), ['c6', 'c8'], 'search the strikes')
 }
 
-// ─── the kru's arc ──
+// ─── the round plan (page 93) ──
 {
-  assert.deepEqual(kruArc(6), ['warmup', 'technique', 'technique', 'pressure', 'pressure', 'finisher'])
-  assert.deepEqual(kruArc(4, false), ['warmup', 'technique', 'technique', 'pressure'], 'no finisher today')
-  assert.deepEqual(kruArc(1), ['warmup'])
-  assert.deepEqual(kruArc(2), ['warmup', 'technique'])
-  assert.deepEqual(kruArc(0), [])
+  assert.deepEqual(roundPlan(6), ['rhythm', 'learn', 'learn', 'pace', 'pressure', 'free'], 'early: A at pace before the pressure round')
+  assert.deepEqual(roundPlan(6, true), ['rhythm', 'learn', 'learn', 'link', 'pressure', 'free'], 'further in: A and B as one string')
+  assert.deepEqual(roundPlan(5), ['rhythm', 'learn', 'learn', 'pressure', 'free'], 'shorter: the link goes first')
+  assert.deepEqual(roundPlan(4), ['rhythm', 'learn', 'learn', 'pressure'], 'then the free round')
+  assert.deepEqual(roundPlan(3), ['rhythm', 'learn', 'learn'])
+  assert.deepEqual(roundPlan(8, true).slice(6), ['free', 'free'], 'longer: more free rounds')
+  assert.deepEqual(roundPlan(0), [])
+  // the app's stage words stay; no finisher round (the finisher is page 86's sets)
+  assert.deepEqual(kruArc(6), ['warmup', 'technique', 'technique', 'pressure', 'pressure', 'pressure'])
+  assert.deepEqual(kruArc(5), ['warmup', 'technique', 'technique', 'pressure', 'pressure'])
+  assert.equal(stageOfRoundType('link'), 'technique')
+  assert.equal(stageOfRoundType('free'), 'pressure')
+  assert.equal(stageOfRoundType('technical_flow'), 'technique', 'older sessions still read')
+  assert.equal(stageOfRoundType('custom'), null, 'Custom: no stage word')
+  // one cue a round: the combo's own on a learn round, the round's job otherwise
+  assert.equal(roundCue('learn', 'TURN THE HIP'), 'TURN THE HIP')
+  assert.equal(roundCue('warmup', 'X'), 'RELAX, BOUNCE')
+  assert.equal(roundCue('free', 'X'), 'CHECK AFTER EACH')
+  assert.equal(roundCue('pressure', 'X'), 'LAST 30 S ALL OUT')
+  for (const t of ['warmup', 'link', 'pressure', 'free']) assert.ok(roundCue(t, '').length <= 20, 'fits the flap')
 }
 
-// ─── COACH: every round different, the new combo in technique first ──
+// ─── COACH: two focus combos drilled, a NEW one learnt first ──
 {
-  const rounds = planCoachRounds(BAG, { rounds: 6, finishers: true, nowSec: NOW })
+  const rounds = planCoachRounds(BAG, { rounds: 6, nowSec: NOW })
   assert.equal(rounds.length, 6)
-  assert.deepEqual(rounds.map(r => r.stage), kruArc(6))
-  const keys = rounds.map(r => key(r.comboIds))
-  assert.equal(new Set(keys).size, 6, 'no two rounds the same')
-  assert.ok(rounds.every(r => r.comboIds.length > 0 && !r.mine))
+  assert.ok(rounds.every(r => !r.mine))
   assert.ok(rounds.every(r => r.comboIds.every(id => BAG.some(b => b.id === id))), 'only his own combos: none made up')
-  // warm-up: basics, not the new one
+  const [a, b] = focusOf(rounds)
+  assert.equal(a, 'c1', 'the NEW combo is A')
+  assert.ok(b && b !== 'c1')
+  assert.deepEqual(rounds[1].comboIds, [a], 'learn A alone')
+  assert.deepEqual(rounds[2].comboIds, [b], 'learn B alone')
+  assert.deepEqual(rounds[3].comboIds, [a, b], 'A and B 3+ strikes: linked')
+  assert.equal(rounds[3].focus, 'link')
+  assert.deepEqual(rounds[4].comboIds, [a, b], 'pressure: A and B at pace')
+  assert.equal(rounds[5].focus, 'free')
+  const distinct = new Set(rounds.slice(1).flatMap(r => r.comboIds))
+  assert.equal(distinct.size, 2, '2 combos the whole session, repeated')
+  // warm-up: the basics (singles he owns), never the new one
   assert.ok(!rounds[0].comboIds.includes('c1'))
   assert.ok(rounds[0].comboIds.every(id => ['c4', 'c7', 'c9'].includes(id)), 'the easiest he knows best')
-  // technique: the new combo alone, then with one more he's learning
-  assert.deepEqual(rounds[1].comboIds, ['c1'])
-  assert.equal(rounds[2].comboIds[0], 'c1')
-  assert.equal(rounds[2].comboIds.length, 2)
-  // pressure: the hardest at pace, distinct between rounds
-  assert.ok(rounds[3].comboIds.includes('c8'), 'the hardest first')
-  const p1 = new Set(rounds[3].comboIds), p2 = rounds[4].comboIds
-  assert.ok(p2.every(id => !p1.has(id)), 'pressure rounds share no combo')
-  assert.ok(!rounds.slice(3).some(r => r.comboIds.includes('c1')), 'the new one is not at pace yet')
-  // finisher: kicks
-  assert.ok(rounds[5].comboIds.every(id => /Kick|Teep|Knee/.test(BAG.find(b => b.id === id)!.text)))
+  // the NEW one is learnt before any round at pace
+  const firstLearn = rounds.findIndex(r => r.focus === 'learn' && r.comboIds.includes('c1'))
+  const firstPace = rounds.findIndex(r => (r.focus === 'pressure' || r.focus === 'pace' || r.focus === 'free') && r.comboIds.includes('c1'))
+  assert.ok(firstLearn >= 0 && firstLearn < firstPace)
 
-  // no new combo: technique works the ones he's learning
-  const noNew = planCoachRounds(BAG.filter(b => b.id !== 'c1'), { rounds: 5, finishers: false, nowSec: NOW })
-  assert.deepEqual(noNew.map(r => r.stage), ['warmup', 'technique', 'technique', 'pressure', 'pressure'])
-  assert.equal(new Set(noNew.map(r => key(r.comboIds))).size, 5)
-  // a long session still repeats no round
-  const long = planCoachRounds(BAG, { rounds: 12, finishers: true, nowSec: NOW })
-  assert.equal(new Set(long.map(r => key(r.comboIds))).size, 12)
+  // early: pairs (2 strikes) are not linked; round 4 is A at pace
+  const pairs: PoolCombo[] = [c('p1', 'Jab → Body Kick', 'weapons', 2, 90), c('p2', 'Hook → Low Kick', 'weapons', 3, 90), c('s1', 'Jab', 'foundation', 12, 300), c('s2', 'Lead Teep', 'foundation', 12, 300), c('s3', 'Body Kick', 'foundation', 12, 300)]
+  const early = planCoachRounds(pairs, { rounds: 6, nowSec: NOW })
+  assert.equal(early[3].focus, 'pace')
+  assert.deepEqual(early[3].comboIds, [early[1].comboIds[0]])
+  assert.deepEqual(early[0].comboIds, ['s1', 's2', 's3'], 'rhythm: jab, lead teep, body kick')
   // nothing unlocked: empty rounds, nothing invented
-  assert.ok(planCoachRounds([], { rounds: 3, finishers: true, nowSec: NOW }).every(r => r.comboIds.length === 0))
+  assert.ok(planCoachRounds([], { rounds: 3, nowSec: NOW }).every(r => r.comboIds.length === 0))
+  // one combo: it is learnt and pressured alone
+  const lone = planCoachRounds([BAG[3]], { rounds: 5, nowSec: NOW })
+  assert.ok(lone.every(r => r.comboIds.length > 0 && r.comboIds.every(id => id === 'c4')))
 }
 
-// ─── HYBRID: his rounds kept, the coach fills the rest on the arc ──
+// ─── the pair carries on: about 3 sessions, or until both rate SHARP ──
 {
-  const rounds = planHybridRounds(BAG, { rounds: 6, finishers: true, nowSec: NOW, picked: { 1: ['c1'], 4: ['c4', 'c9'] } })
-  assert.deepEqual(rounds[1], { stage: 'technique', comboIds: ['c1'], mine: true })
-  assert.deepEqual(rounds[4], { stage: 'pressure', comboIds: ['c4', 'c9'], mine: true })
+  const pool = BAG.filter(b => b.id !== 'c1')
+  const first = pickFocus(pool, NOW)
+  assert.equal(first.length, 2)
+  const h1 = { ids: first, ratings: { [first[0]]: 2, [first[1]]: 3 } }
+  assert.deepEqual(pickFocus(pool, NOW, [h1]), first, 'kept: one SHARP is not both')
+  assert.deepEqual(pickFocus(pool, NOW, [h1, h1]), first, 'kept: 2 sessions')
+  const third = pickFocus(pool, NOW, [h1, h1, h1])
+  assert.equal(third.filter(id => first.includes(id)).length, 1, 'after 3 sessions one is swapped')
+  assert.ok(!third.includes(first[1]), 'the sharper one goes')
+  const sharp = pickFocus(pool, NOW, [{ ids: first, ratings: { [first[0]]: 3, [first[1]]: 3 } }])
+  assert.equal(sharp.filter(id => first.includes(id)).length, 1, 'both SHARP: one is swapped at once')
+  // a NEW combo comes in as A, beside one of the kept pair
+  const withNew = pickFocus(BAG, NOW, [h1])
+  assert.equal(withNew[0], 'c1')
+  assert.ok(first.includes(withNew[1]))
+  // the coach's unlock card makes a combo NEW too (0060)
+  const opened = { ...c('w9', 'Jab → Switch Kick', 'weapons', 0, 90), unlockedAt: NOW - 2 * DAY }
+  assert.equal(poolTag(opened, NOW), 'new')
+  assert.equal(poolTag({ ...opened, unlockedAt: NOW - 20 * DAY }, NOW), null)
+  assert.equal(pickFocus([...pool, opened], NOW, [h1])[0], 'w9')
+}
+
+// ─── HYBRID: his rounds kept, the coach fills the rest on the same plan ──
+{
+  const rounds = planHybridRounds(BAG, { rounds: 6, nowSec: NOW, picked: { 1: ['c1'], 4: ['c4', 'c9'] } })
+  assert.deepEqual(rounds[1], { stage: 'technique', comboIds: ['c1'], mine: true, focus: 'learn' })
+  assert.deepEqual(rounds[4], { stage: 'pressure', comboIds: ['c4', 'c9'], mine: true, focus: 'pressure' })
   assert.ok([0, 2, 3, 5].every(i => !rounds[i].mine && rounds[i].comboIds.length > 0), 'empty rounds: the coach fills')
-  assert.equal(new Set(rounds.map(r => key(r.comboIds))).size, 6, 'the coach repeats none of his rounds')
-  assert.deepEqual(rounds.map(r => r.stage), kruArc(6))
+  assert.deepEqual(rounds.map(r => r.stage), kruArc(6).map((st, i) => (i === 3 ? 'technique' : st)), 'the link sits under TECHNIQUE')
 }
 
 // ─── CUSTOM: exactly his; an empty round stays empty ──
@@ -114,13 +161,13 @@ const key = (ids: string[]) => [...ids].sort().join('|')
     { stage: null, comboIds: [], mine: false },
   ])
   const spec = parseBagSpec({ mode: 'custom', rounds: 4, roundSec: 120, restSec: 60, picked: { 0: ['c4'], 1: ['c2', 'gone'] } })!
-  const written = roundsForSpec(spec, BAG, { finishers: true, nowSec: NOW })
+  const written = roundsForSpec(spec, BAG, { nowSec: NOW })
   assert.deepEqual(written.map(r => [r.comboIds, r.durationSec, r.restSec, r.roundType]), [
-    [['c4'], 120, 60, 'combo_practice'],
-    [['c2'], 120, 60, 'combo_practice'],
-    [[], 120, 60, 'combo_practice'],
-    [[], 120, 60, 'combo_practice'],
-  ], 'his length and rest; a combo no longer in his pool drops; nothing added')
+    [['c4'], 120, 60, 'custom'],
+    [['c2'], 120, 60, 'custom'],
+    [[], 120, 60, 'custom'],
+    [[], 120, 60, 'custom'],
+  ], 'his length and rest; a combo no longer in his pool drops; nothing added; no stage words')
 }
 
 // ─── the stored choice ──
@@ -133,8 +180,9 @@ const key = (ids: string[]) => [...ids].sort().join('|')
   assert.equal(s.restSec, 60)
   assert.deepEqual(s.picked, { 0: ['a', 'b'] })
   assert.deepEqual(parseBagSpec({ mode: 'coach', rounds: 5, picked: { 0: ['a'] } })!.picked, {}, 'coach: nothing of his')
-  const hy = roundsForSpec(parseBagSpec({ mode: 'hybrid', rounds: 5, roundSec: 180, restSec: 60, picked: { 1: ['c1'] } })!, BAG, { finishers: false, nowSec: NOW })
-  assert.deepEqual(hy.map(r => r.roundType), ['warmup', 'technical_flow', 'technical_flow', 'combo_practice', 'combo_practice'])
+  const hy = roundsForSpec(parseBagSpec({ mode: 'hybrid', rounds: 5, roundSec: 180, restSec: 60, picked: { 1: ['c1'] } })!, BAG, { nowSec: NOW })
+  assert.deepEqual(hy.map(r => r.roundType), ['warmup', 'learn', 'learn', 'pressure', 'free'])
+  assert.ok(hy.every(r => r.durationSec === 180 && r.restSec === 60), 'every round 3 min, 1 min rest (the warm-up too)')
 }
 
 // ─── routines: saved with his name, started with everything still his ──

@@ -44,7 +44,7 @@ assert(utcThu === wedLocal + 1 && Math.floor(stored / 86400) === wedLocal, 'Wedn
 
 // ─── The intro template is gone with the lead-in (coach brain P2) ─
 const full = getStrengthTemplate(1, 1, 'block_zero', 'Strength A')
-assert(full.exercises.some(e => e.exerciseId === 'ex-neck-iso-4way'), 'week 1 keeps its durability finisher')
+assert(full.exercises.some(e => e.exerciseId === 'ex-single-leg-calf-raise'), 'week 1 keeps its durability finisher (rebuild Phase 4: calves, Copenhagen)')
 void LEAD_IN_TARGET
 void introStartLoad
 

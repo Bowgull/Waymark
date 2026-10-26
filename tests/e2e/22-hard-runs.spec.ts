@@ -1,5 +1,5 @@
 import { test, expect, type Api } from './fixtures'
-import { enterFromToday, gotoToday, insertSession } from './support/helpers'
+import { enterFromToday, gotoToday, insertSession, openRow, todayRow } from './support/helpers'
 import { setMorning } from './support/data'
 
 /**
@@ -80,4 +80,33 @@ test('A hard run: the ready board in words, then RUN HARD / EASY JOG with SPEED 
   // The recorder plays the first cue (a chime, then "Easy run. Speed ...").
   await expect.poll(async () => page.evaluate(() => ((window as unknown as { __wmCueLog?: string[][] }).__wmCueLog ?? [])[0]?.slice(0, 3).join(',') ?? ''), { timeout: 8000 }).toBe('chime_jog,zone2_run,speed')
   await api.patch('/api/settings', { treadmillUnit: null })
+})
+
+test('Page 93: a tap on an open run\'s name shows its one plain line; a tap away closes it', async ({ page, api }) => {
+  await setMorning(api)
+  const s = await insertSession(api, 'running', 'am', { runCategory: 'tempo', label: 'Tempo' })
+  await gotoToday(page)
+  let row = todayRow(page, s.id)
+  await openRow(row)
+  // The run is a Tempo once he runs 10 min straight, else its easy shape: every one of the four names has its line.
+  const RUN_NAME = /^(TEMPO|ZONE 2 RUN|INTERVALS|RUN-WALK)$/
+  const name = await row.locator('.nmw [role="img"]').first().getAttribute('aria-label')
+  if (!RUN_NAME.test(name ?? '')) {
+    // A recover day or a body plan makes it an Easy Walk or Bike (page 58): not a run name, so no line.
+    // Another run on the board with a run name shows it instead.
+    expect(name).toBe('EASY WALK OR BIKE')
+    await row.locator('.nmw').tap()
+    await expect(page.getByRole('dialog', { name: name! })).toHaveCount(0)
+    row = page.locator('.td-row').filter({ has: page.locator('.nmw').getByRole('img', { name: RUN_NAME }) }).first()
+    test.skip((await row.count()) === 0, 'no run with a run name on the board')
+    await openRow(row)
+  }
+  await row.locator('.nmw').tap()
+  const say = page.getByRole('dialog', { name: /^(TEMPO|ZONE 2 RUN|INTERVALS|RUN-WALK)$/ })
+  await expect(say).toBeVisible()
+  await expect(say.getByText(/^(Steady and hard\. A few words, but no chatting\. 15 to 20 minutes of it in the middle\.|Easy and steady\. You can talk in full sentences the whole way\.|Short hard runs with easy jogs between\. Too hard to talk on the hard parts\.|Run a few minutes, walk one, again\. It builds you to running the whole way\.)$/)).toBeVisible()
+  // The row stays open under it; a tap away closes the line.
+  await expect(row.locator('[role=button]').first()).toHaveAttribute('aria-expanded', 'true')
+  await page.mouse.click(5, 5)
+  await expect(say).toHaveCount(0)
 })

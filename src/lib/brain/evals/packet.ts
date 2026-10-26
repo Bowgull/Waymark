@@ -5,6 +5,7 @@
 // the notes and the notebook. No database, no network, no personal data.
 // Never imported by the app or the Worker.
 
+import { landmineHistory, landmineSessions } from '../../landmine'
 import { buildAthleteModel } from '../athleteModel'
 import { athleteSignals } from '../signals'
 import { bagDose, runDose, strengthDose, LEVELS, levelAbove, type DoseCtx, type Level } from '../doses'
@@ -70,6 +71,7 @@ const dow = (day: number) => ((day % 7) + 11) % 7
 const iso = (day: number) => new Date(day * 86400000).toISOString().slice(0, 10)
 
 export function equipmentOf(id: string): LoadEquipment {
+  if (/^ex-lm-|landmine/.test(id)) return 'landmine'
   if (/db-|goblet|dumbbell|lunge|split-squat/.test(id)) return 'dumbbell'
   if (/glute-bridge|pullup|push-up|plank|dead-bug|bird-dog|hang/.test(id)) return 'none'
   if (/machine|cable|pulldown|leg-press/.test(id)) return 'machine'
@@ -109,7 +111,7 @@ export function historyFor(spec: NightSpec, today: number): ModelEvents {
       sessions.push({ id, type: 'strength', status: 'completed', day: d, slot: 'am', startMin: 400, durationSec: 3000, rpe: rir == null ? 6 : rir >= 3 ? 5 : rir <= 1 ? 8 : 6, skipReason: null, source: 'template', blockType: 'block_zero', notes: null })
       for (const l of mainLifts(label, d)) {
         const eq = equipmentOf(l.exerciseId)
-        const w = eq === 'dumbbell' ? 35 : eq === 'barbell' ? 85 : eq === 'machine' ? 60 : 0
+        const w = eq === 'dumbbell' ? 35 : eq === 'barbell' ? 85 : eq === 'machine' ? 60 : eq === 'landmine' ? 10 : 0
         for (let i = 0; i < 3; i++) sets.push({ sessionId: id, day: d, exerciseId: l.exerciseId, section: 'main', setNumber: i + 1, weightKg: w ? w * LB : null, reps: l.reps || 8, plannedWeightKg: w ? w * LB : null, plannedReps: l.reps || 8, rir, isWarmup: false, logged: true, equipment: eq })
       }
     } else if ([2, 4, 6].includes(dow(d)) && spec.runs !== 'none') {
@@ -152,7 +154,9 @@ export function buildNight(spec: NightSpec): EvalNight {
         const main = mainLifts(t, today)
         for (const l of main) equipment[l.exerciseId] = equipmentOf(l.exerciseId)
         for (const id of ['ex-trap-bar-deadlift', 'ex-front-squat', 'ex-block-pull', 'ex-bent-over-row', 'ex-glute-bridges', 'ex-goblet-squat', 'ex-db-rdl', 'ex-db-row']) equipment[id] = equipmentOf(id)
-        const s = strengthDose(ctx, { kind: 'block_zero', main, fighter: null, tmKg: {}, equipment, steppedThisWeek: [], lastFeltHard: null })
+        const done = new Set(events.sessions.filter(x => x.status === 'completed').map(x => x.id))
+        const s = strengthDose(ctx, { kind: 'block_zero', main, fighter: null, tmKg: {}, equipment, steppedThisWeek: [], lastFeltHard: null,
+          landmineLast: landmineHistory(events.sets, done, today), landmineSessions: landmineSessions(events.sets, done, today) })
         return { level: s.level, strength: s }
       }
       if (type === 'foundation_run') {

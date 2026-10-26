@@ -48,6 +48,8 @@ export interface BagRoundView {
   now: string[]
   /** The round's other combos, each a list of strikes, on the small THEN line(s). */
   then: string[][]
+  /** Page 93: a second combo stacked under the first at the same size (A and B in one round). */
+  also?: string[]
 }
 
 /** Page 55's zone: padding 8 / 14 / 10, 10 between the stack, the cue slot and THEN. */
@@ -104,9 +106,10 @@ export function thenHeight(then: string[][], contentW: number): number {
 /** Whether one view fits a zone `width` × `height` with its combo at `px`. */
 export function viewFits(view: BagRoundView, px: number, width: number, height: number): boolean {
   const maxW = width - 2 * ZONE.sideMargin
-  if (view.now.some(s => flapWidth(s, px, px * 0.05) > maxW)) return false
+  const also = view.also ?? []
+  if ([...view.now, ...also].some(s => flapWidth(s, px, px * 0.05) > maxW)) return false
   const th = thenHeight(view.then, width - 2 * ZONE.padX)
-  const parts = [stackHeight(view.now.length, px), ZONE.cue, th].filter(h => h > 0)
+  const parts = [stackHeight(view.now.length, px), stackHeight(also.length, px), ZONE.cue, th].filter(h => h > 0)
   const h = ZONE.padTop + ZONE.padBottom + parts.reduce((a, b) => a + b, 0) + (parts.length - 1) * ZONE.gap
   // Page 55 lets the zone scroll by a pixel of rounding (scrollHeight <= clientHeight + 1).
   return h <= height + 1.5

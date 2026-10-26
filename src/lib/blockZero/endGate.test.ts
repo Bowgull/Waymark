@@ -18,7 +18,7 @@ function assert(cond: unknown, msg: string): void {
 }
 
 // The end gate and its extensions are gone (coach-brain §8): lib/brain/readinessParts.test.ts covers readiness.
-assert(NEXT_BLOCK_NAME === 'Fighter Block 1' && FIGHTER_DEFAULT_TOTAL_WEEKS === 12, 'the hand-off: Fighter Block 1, 12 weeks')
+assert(NEXT_BLOCK_NAME === 'The Campaign' && FIGHTER_DEFAULT_TOTAL_WEEKS === 12, 'the hand-off: The Campaign (rebuild Phase 2: never the Fighter week)')
 
 // ─── Gate inputs ────────────────────────────────────────────────
 

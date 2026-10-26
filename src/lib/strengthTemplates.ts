@@ -18,6 +18,8 @@ export interface TemplateExercise {
   section: ExerciseSection
   sets: TemplateSet[]
   notes?: string
+  /** False: no warm-up ramp before it (a landmine or bodyweight main lift: its first set is its warm-up). */
+  ramp?: boolean
 }
 
 export interface StrengthTemplate {
@@ -32,6 +34,11 @@ function warmupSets(count: number, reps: number): TemplateSet[] {
 
 function workingSets(count: number, reps: number, restSec: number): TemplateSet[] {
   return Array.from({ length: count }, () => ({ isWarmup: false, targetReps: reps, restSec }))
+}
+
+/** Core and durability moves in a circuit (rebuild Phase 4): a short rest, the other side is the rest. */
+function durabilitySets(count: number, reps: number): TemplateSet[] {
+  return Array.from({ length: count }, () => ({ isWarmup: false, targetReps: reps, restSec: 30 }))
 }
 
 function coreSets(count: number, reps: number): TemplateSet[] {
@@ -193,44 +200,85 @@ function durability(t: StrengthWeekTarget, day: 'A' | 'C'): TemplateExercise[] {
 }
 
 /**
- * Block Zero A (Mon): squat pattern + bench. Goblet squat in weeks 1-2, front
- * squat from week 3 (back-friendly first). Durability finisher.
+ * Strength A (page 93, approved 2026-10-25): squat, the press the coach
+ * picks (landmine first while the shoulders and back rebuild, overhead once
+ * they're solid), the dumbbell row (bent-over once earned). A light landmine
+ * RDL in the warm-up is the week's second hinge. Core, calves and the
+ * Copenhagen plank, then the 10-minute fighter arm block: chin-ups on the
+ * built ladder (reps only), hammer curls, grip. About 50 minutes.
  */
 function buildBlockZeroStrengthA(blockWeek: number, intro = false): StrengthTemplate {
-  const t = intro ? LEAD_IN_TARGET : getStrengthWeekTarget(blockWeek)
   const squat = defaultMainLift('squat', blockWeek)
+  const row = defaultMainLift('row', blockWeek)
   const exercises: TemplateExercise[] = [
-    { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges', section: 'warmup', sets: warmupSets(2, 12), notes: 'Squeeze at the top. Ribs down.' },
-    { exerciseId: 'ex-band-pull-aparts', label: 'Band Pull-Aparts', section: 'warmup', sets: warmupSets(2, 15) },
-    { exerciseId: squat.exerciseId, label: squat.label, section: 'main', sets: blockZeroMainSets(t), notes: mainNote('Brace before each rep. Sit between the hips, chest up.', t) },
-    { exerciseId: 'ex-bench-press', label: 'Bench Press', section: 'main', sets: blockZeroMainSets(t), notes: mainNote(null, t) },
-    { exerciseId: 'ex-db-row', label: 'Dumbbell Row', section: 'accessory', sets: workingSets(t.accessorySets, 10, 75), notes: '10 each arm. Supported on the bench.' },
-    { exerciseId: 'ex-face-pulls', label: 'Face Pulls', section: 'accessory', sets: workingSets(t.accessorySets, 15, 60) },
-    { exerciseId: 'ex-dead-bugs', label: 'Dead Bugs', section: 'core', sets: coreSets(t.coreSets, 10), notes: '10 each side. Back stays flat.' },
+    { exerciseId: 'ex-band-pull-aparts', label: 'Band Pull-Aparts', section: 'warmup', sets: warmupSets(1, 15) },
+    { exerciseId: 'ex-lm-rdl', label: 'Landmine RDL', section: 'warmup', sets: warmupSets(2, 8), notes: 'Light hinge: the bar only, slow. Hips back, shins still.' },
+    { exerciseId: squat.exerciseId, label: squat.label, section: 'main', sets: workingSets(3, 8, 90), notes: 'Brace before each rep. Sit between the hips, chest up.' },
+    { exerciseId: 'ex-landmine-press', label: 'Landmine Press', section: 'main', sets: workingSets(3, 8, 60), ramp: false },
+    { exerciseId: row.exerciseId, label: row.label, section: 'main', sets: workingSets(3, 10, 60), notes: 'Flat back, pull to the lower ribs. Each arm.' },
   ]
-  // The lead-in intro has no durability finisher (Part B).
-  if (!intro) exercises.push(...durability(t, 'A'))
+  // The lead-in intro: the lifts only (Part B).
+  if (intro) return { id: 'strength_a', label: 'Block Zero: A', exercises }
+  exercises.push(
+    { exerciseId: 'ex-dead-bugs', label: 'Dead Bugs', section: 'core', sets: durabilitySets(2, 10), notes: '10 each side. Back stays flat.' },
+    { exerciseId: 'ex-side-plank', label: 'Side Plank', section: 'core', sets: durabilitySets(2, 30), notes: '30s each side.' },
+    { exerciseId: 'ex-single-leg-calf-raise', label: 'Single-Leg Calf Raise', section: 'core', sets: durabilitySets(2, 12), notes: '12 each leg. Full range, 2-3s down.' },
+    { exerciseId: 'ex-copenhagen-plank', label: 'Copenhagen Plank', section: 'core', sets: durabilitySets(2, 20), notes: 'Seconds each side. Knee on the bench to start.' },
+    ...armBlock('A'),
+  )
   return { id: 'strength_a', label: 'Block Zero: A', exercises }
 }
 
 /**
- * Block Zero B (Wed): hinge + overhead press. DB RDL in weeks 1-2, block pull
- * from week 3. Hinge at the hips, never round to reach the floor.
+ * Strength B (page 93): the power block first (the landmine punch: slow and
+ * crisp, fast later; the normal reps-left card), the hinge (DB RDL, then the
+ * block pull or trap bar), the bench, the landmine reverse lunge (the week's
+ * second squat-pattern). The Nordic and the bent-knee calf raise (the tibialis
+ * raise made room for the row), then the arm block: the dumbbell row (pulling
+ * twice a week, 2026-10-26), dips (or the close-grip press), wrist curls.
  */
 function buildBlockZeroStrengthB(blockWeek: number, intro = false): StrengthTemplate {
-  const t = intro ? LEAD_IN_TARGET : getStrengthWeekTarget(blockWeek)
   const hinge = defaultMainLift('hinge', blockWeek)
   const exercises: TemplateExercise[] = [
     { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges', section: 'warmup', sets: warmupSets(2, 12), notes: 'Squeeze at the top. Ribs down.' },
-    { exerciseId: 'ex-face-pulls', label: 'Face Pulls', section: 'warmup', sets: warmupSets(2, 15) },
-    { exerciseId: hinge.exerciseId, label: hinge.label, section: 'main', sets: blockZeroMainSets(t), notes: mainNote('Hips back, spine long. Feel the hamstrings, not the lower back.', t) },
-    { exerciseId: 'ex-ohp', label: 'Overhead Press', section: 'main', sets: blockZeroMainSets(t), notes: mainNote('Squeeze glutes, ribs down. No lean back.', t) },
-    { exerciseId: 'ex-lat-pulldown', label: 'Lat Pulldown', section: 'accessory', sets: workingSets(t.accessorySets, 10, 75) },
-    { exerciseId: 'ex-hamstring-curl', label: 'Hamstring Curl', section: 'accessory', sets: workingSets(t.accessorySets, 10, 60) },
-    { exerciseId: 'ex-bird-dogs', label: 'Bird Dogs', section: 'core', sets: coreSets(t.coreSets, 10), notes: '10 each side. Hold 2s at reach.' },
-    { exerciseId: 'ex-side-plank-lift', label: 'Side Plank Hip Lift', section: 'core', sets: coreSets(t.coreSets, 8), notes: '8 each side.' },
+    { exerciseId: 'ex-lm-punch', label: 'Landmine Punch', section: 'main', sets: workingSets(3, 4, 60), ramp: false },
+    { exerciseId: hinge.exerciseId, label: hinge.label, section: 'main', sets: workingSets(3, 8, 90), notes: 'Hips back, spine long. Feel the hamstrings, not the lower back.' },
+    { exerciseId: 'ex-bench-press', label: 'Bench Press', section: 'main', sets: workingSets(3, 8, 90) },
+    { exerciseId: 'ex-lm-reverse-lunge', label: 'Landmine Reverse Lunge', section: 'main', sets: workingSets(3, 8, 45), ramp: false },
   ]
+  if (intro) return { id: 'strength_b', label: 'Block Zero: B', exercises }
+  exercises.push(
+    { exerciseId: 'ex-nordic-curl', label: 'Nordic Curl', section: 'core', sets: durabilitySets(2, 3), notes: 'As slow as you can control. Hands catch you.' },
+    { exerciseId: 'ex-bent-knee-calf-raise', label: 'Bent-Knee Calf Raise', section: 'core', sets: durabilitySets(2, 12), notes: 'Knees bent, full range, 2-3s down.' },
+    ...armBlock('B'),
+  )
   return { id: 'strength_b', label: 'Block Zero: B', exercises }
+}
+
+/**
+ * The 10-minute fighter arm block at the end of each lift (page 93; it
+ * replaces the isolation arm work). Chin-ups once a week, on Strength A only,
+ * reps only on the built ladder (band, slow lowering, full: the dose picks
+ * the rung). Strength B: the supported dumbbell row (the week's second pull;
+ * hand and knee on the bench spares the low back on the hinge day), then dips,
+ * or the close-grip press when the shoulders say so. Hammer curls on A (B's
+ * row works the same arms); grip on A, wrist curls on B. B's row has its own
+ * weights as an arm-block move, apart from A's main row.
+ */
+export function armBlock(day: 'A' | 'B'): TemplateExercise[] {
+  const curls: TemplateExercise = { exerciseId: 'ex-hammer-curl', label: 'Hammer Curl', section: 'accessory', sets: workingSets(2, 10, 30) }
+  if (day === 'A') {
+    return [
+      { exerciseId: 'ex-chin-up-band', label: 'Chin-Up (Band)', section: 'accessory', sets: workingSets(3, 5, 45), notes: 'Reps only. Full hang at the bottom.' },
+      curls,
+      { exerciseId: 'ex-suitcase-carry', label: 'Grip: Suitcase Carry', section: 'accessory', sets: workingSets(2, 30, 30), notes: '30s each hand. Stand tall, no lean.' },
+    ]
+  }
+  return [
+    { exerciseId: 'ex-db-row', label: 'Dumbbell Row', section: 'accessory', sets: workingSets(3, 10, 45), notes: 'Hand and knee on the bench, flat back, pull to the hip. Each arm.' },
+    { exerciseId: 'ex-dips', label: 'Dips', section: 'accessory', sets: workingSets(3, 6, 45), notes: 'Reps only. Stop short if the shoulder pinches.' },
+    { exerciseId: 'ex-wrist-curl', label: 'Wrist Curl', section: 'accessory', sets: workingSets(2, 15, 30), notes: 'Light. Slow lower to the fingertips.' },
+  ]
 }
 
 /**

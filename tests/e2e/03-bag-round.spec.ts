@@ -133,7 +133,7 @@ test('Bag finisher: the last rest, a set, its last 10 s, the rest, done', async 
   await expect(word).toHaveAttribute('data-phase', 'work')
   await expect(phase('FINISHER')).toBeVisible()
   await expect(phase('BODY KICK')).toBeVisible()
-  await expect(page.locator('.fin-of')).toHaveText(/^1 OF [34]$/)
+  await expect(page.locator('.fin-of')).toHaveText(/^1 OF [45]$/)
   await expect(page.getByRole('img', { name: /^Goal (10|20|30)$/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /^(END|END EARLY|SKIP|NEXT|NEXT SET)$/ })).toHaveCount(0)
   const setSec = await timerSeconds(page)

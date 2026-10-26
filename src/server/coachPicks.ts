@@ -51,8 +51,8 @@ export interface CoachPick {
   lines: PreviewLine[]
   /** + add: the week's next strength pulled to this day, as the board does. */
   action?: PickAction
-  /** Bag Work (page 80): the coach's rounds that day and whether a finisher is on. */
-  bag?: { rounds: number; finishers: boolean }
+  /** Bag Work (page 80): the coach's rounds that day, whether a finisher is on, and the dose's level (page 93: it sizes the finisher's goal). */
+  bag?: { rounds: number; finishers: boolean; level?: string | null }
 }
 
 export interface CoachPicksOut {
@@ -113,7 +113,8 @@ export function previewLines(type: string, dose: StoredDose | null, opts: { week
     if (r.rounds <= 1 && r.walkSec === 0) return [['RUN', `${Math.round(r.runSec / 60)} min · HR ≤${r.hrCeilingBpm}`], ['SHAPE', 'one steady run']]
     return [['RUN', `${Math.round(r.totalSec / 60)} min · HR ≤${r.hrCeilingBpm}`], ['ROUNDS', `${r.rounds} × run ${mmss(r.runSec)}, walk ${mmss(r.walkSec)}`]]
   }
-  if (dose?.bag) return [['ROUNDS', `${dose.bag.rounds} × 3 min · 1 min rest`], ...(dose.bag.finishers ? [['FINISH', 'one hard round'] as PreviewLine] : [])]
+  // page 93: the finisher is counted kick sets after the rounds, not a hard round
+  if (dose?.bag) return [['ROUNDS', `${dose.bag.rounds} × 3 min · 1 min rest`]]
   switch (type) {
     case 'mobility': return [['BLOCKS', 'back, then neck and shoulder'], ['LEVEL', `${foundationLevel(opts.week)} · ~${opts.foundationMin ?? foundationMinutes({ week: opts.week })} min`]]
     case 'active_recovery': return [['EASY', `walk or bike · ${RESET_WALK_MIN} min`], ['THEN', `hips and foam roller · ~${resetMinutes()} min in all`]]
@@ -204,7 +205,7 @@ export async function coachPicksFor(db: DB, q: CoachPicksQuery): Promise<CoachPi
       lines: previewLines(o.type, dose, { week: stamps.weekNumber, slot, rope: { rounds: rope }, foundationMin, equipment: inp.equipment, unit }),
       ...(action ? { action } : {}),
       // Page 80: Bag Work's builder reads the coach's rounds and whether a finisher is on today.
-      ...(dose?.bag ? { bag: { rounds: dose.bag.rounds, finishers: dose.bag.finishers } } : {}),
+      ...(dose?.bag ? { bag: { rounds: dose.bag.rounds, finishers: dose.bag.finishers, level: dose.bag.level } } : {}),
     })
   }
 

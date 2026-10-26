@@ -27,9 +27,18 @@ export interface PickResult {
 
 const LIVE = new Set(['planned', 'in_progress', 'completed'])
 
+/**
+ * The squat or hinge day (A or B; Fighter: every lift). C's lunge counts as
+ * heavy legs before a hard run (rebuild Phase 2) but is still the lightest
+ * lift the day after A or B.
+ */
+function squatOrHinge(s: Pick<SessionLike, 'type' | 'label'>, blockType: PlacementContext['blockType']): boolean {
+  return isHeavyLegs(s, blockType) && !(blockType === 'block_zero' && /Strength C\b/.test(s.label ?? ''))
+}
+
 /** Yesterday loaded the legs (A or B, done or still planned). */
 function heavyYesterday(day: number, week: ReadonlyArray<SessionLike>, blockType: PlacementContext['blockType']): boolean {
-  return week.some(s => s.epochDay === day - 1 && LIVE.has(s.status) && isHeavyLegs(s, blockType))
+  return week.some(s => s.epochDay === day - 1 && LIVE.has(s.status) && squatOrHinge(s, blockType))
 }
 
 /**
@@ -58,7 +67,7 @@ export function strengthToPull(day: number, ctx: PlacementContext): SessionLike 
     .sort((a, b) => a.epochDay - b.epochDay)
   if (later.length === 0) return null
   if (heavyYesterday(day, ctx.sessions, ctx.blockType)) {
-    const light = later.find(s => !isHeavyLegs(s, ctx.blockType))
+    const light = later.find(s => !squatOrHinge(s, ctx.blockType))
     if (light) return light
   }
   return later[0]

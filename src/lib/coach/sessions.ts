@@ -2,7 +2,6 @@
 // hard, which load the legs, and a planning estimate of minutes and load.
 // Pure. Fighter and Block Zero both read these.
 
-import { ZONE2_PRESCRIPTION, RUNNING_PLAN_TEMPLATE } from '../runningPlanTemplate'
 import { getRunWalkWeek, runWalkTotalSec } from '../blockZero/running'
 import { foundationMinutes } from '../foundation'
 import { resetMinutes } from '../activeRecoveryTemplate'
@@ -19,6 +18,8 @@ export const KNOWN_SESSION_TYPES: ReadonlySet<string> = new Set([
   'running',
   'skip_rope',
   'bag_work',
+  // page 93: the bag's engine session, separate from Bag Work (lib/coach/bagConditioning)
+  'bag_conditioning',
   'mt_class',
   'mobility',
   'active_recovery',
@@ -38,6 +39,12 @@ export interface SessionLike {
   label?: string | null
   /** Run category for 'running' ('zone2' | 'progression'), as sessions.notes stores it. */
   notes?: string | null
+  /**
+   * The week builder's mark (context_json.plan.hard): Bag Work planned as
+   * technique only is not hard; Bag Conditioning is hard only when planned so.
+   * Missing: the type's own default.
+   */
+  planHard?: boolean | null
   epochDay: number
   timeSlot: TimeSlot
   status: string
@@ -57,12 +64,16 @@ export function isoOf(epochDay: number): string {
 
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+/** An easy run's planning minutes outside the run-walk weeks (its dose sets the real length). */
+const EASY_RUN_MIN = 20
+
 const TYPE_NAME: Record<string, string> = {
   strength: 'Strength',
   foundation_run: 'Easy run',
   running: 'Run',
   mt_class: 'Muay thai',
   bag_work: 'Bag work',
+  bag_conditioning: 'Bag Conditioning',
   skip_rope: 'Skip rope',
   mobility: 'Foundation',
   active_recovery: 'Reset',
@@ -103,24 +114,27 @@ export function isLongRun(s: Pick<SessionLike, 'type' | 'notes' | 'estimatedMin'
 export const CLASS_MINUTES = 60
 
 /**
- * Hard sessions for the "no two hard sessions on one day" rule (F6, F14):
- * strength, every muay thai class (F1), bag work and long runs. Easy runs,
- * rope, Foundation and recovery are not.
+ * Hard sessions (rebuild plan §1 "Hard days"; review T3): strength, every
+ * muay thai class (F1), Tempo, Intervals and the 5K test, Bag Work unless the
+ * week planned it as technique only, and a Bag Conditioning planned hard.
+ * Easy and long runs (under the heart cap), rope, Foundation and recovery are
+ * not.
  */
-export function isHard(s: Pick<SessionLike, 'type' | 'label' | 'notes' | 'estimatedMin'>): boolean {
-  if (s.type === 'strength' || s.type === 'bag_work' || s.type === 'mt_class') return true
-  return isLongRun(s)
+export function isHard(s: Pick<SessionLike, 'type' | 'label' | 'notes' | 'estimatedMin' | 'planHard'>): boolean {
+  if (s.type === 'strength' || s.type === 'mt_class') return true
+  if (s.type === 'bag_work') return s.planHard !== false
+  if (s.type === 'bag_conditioning') return s.planHard === true
+  return isHardRun(s)
 }
 
 /**
  * Strength that loads the legs heavily. Fighter strength days both carry a
- * squat or deadlift. Block Zero A (squat) and B (hinge); C is row and lunge.
+ * squat or deadlift. Block Zero A (squat), B (hinge) and C too while its
+ * reverse lunge is a main lift (rebuild plan: lunges count as heavy legs).
  */
 export function isHeavyLegs(s: Pick<SessionLike, 'type' | 'label'>, blockType: BlockKind): boolean {
-  if (s.type !== 'strength') return false
-  if (blockType === 'fighter') return true
-  const m = (s.label ?? '').match(/Strength ([ABC])\b/)
-  return m ? m[1] !== 'C' : true
+  void blockType
+  return s.type === 'strength'
 }
 
 /**
@@ -136,10 +150,13 @@ export function isHeavyHinge(s: Pick<SessionLike, 'type' | 'label'>, blockType: 
   return m ? m[1] === 'B' : false
 }
 
-/** A hard run (idea 2): long, progression, tempo or intervals. Block Zero run-walks are easy. */
+/**
+ * A hard run: Tempo, Intervals or the 5K test (review T3). The long run stays
+ * under his heart cap, so it is easy; run-walks and Zone 2 runs are easy.
+ */
 export function isHardRun(s: Pick<SessionLike, 'type' | 'notes' | 'estimatedMin'>): boolean {
   if (s.type !== 'running') return false
-  return isLongRun(s) || s.notes === 'tempo' || s.notes === 'intervals'
+  return s.notes === 'tempo' || s.notes === 'intervals' || s.notes === '5k_test'
 }
 
 /** Sessions heavy legs keep 24 h away from (F6; Josh: no heavy legs before a class): every class, and long runs. */
@@ -165,15 +182,13 @@ export function estimatedMinutes(s: Pick<SessionLike, 'type' | 'notes' | 'estima
     case 'foundation_run':
       return blockType === 'block_zero'
         ? Math.round(runWalkTotalSec(getRunWalkWeek(weekNumber)) / 60)
-        : Math.round((ZONE2_PRESCRIPTION.targetDurSec ?? 2100) / 60)
-    case 'running': {
-      if (s.notes === 'zone2') return Math.round((ZONE2_PRESCRIPTION.targetDurSec ?? 2100) / 60)
-      const plan = RUNNING_PLAN_TEMPLATE.find(r => r.weekNumber === Math.min(Math.max(1, weekNumber), 12))
-      return Math.round((plan?.targetDurSec ?? 1800) / 60)
-    }
+        : EASY_RUN_MIN
+    // A Zone 2 run, else a hard run (Tempo, Intervals, the test: about 30 to 40 minutes).
+    case 'running': return s.notes === 'zone2' || s.notes === 'easy' ? EASY_RUN_MIN : 35
     case 'strength': return blockType === 'block_zero' ? 60 : 75
     case 'mt_class': return CLASS_MINUTES
     case 'bag_work': return 30
+    case 'bag_conditioning': return 30
     case 'skip_rope': return ropeMinutes(ROPE_ROUNDS)
     case 'active_recovery': return resetMinutes()
     case 'mobility': return foundationMinutes({ week: blockType === 'block_zero' ? weekNumber : null })
@@ -186,6 +201,8 @@ const TYPICAL_RPE: Record<string, number> = {
   strength: 7,
   mt_class: 7,
   bag_work: 7,
+  // moderate by default; the hard ones (effort 7+) say so in their plan
+  bag_conditioning: 6,
   running: 5,
   foundation_run: 4,
   skip_rope: 5,

@@ -1,23 +1,26 @@
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Board, FlapLabel, SessionIcon, showPop, useDismissLayer } from '@/design'
-import { comboLevel } from '@/lib/classCombos'
+import { comboLevel, splitComboText } from '@/lib/classCombos'
 import {
   COACH_REST_SEC,
   COACH_ROUND_SEC,
-  FINISHER_LINE,
   LIMITS,
   STAGE_WORDS,
   builderFromRoutine,
   kruArc,
   pickerGroups,
   planCoachRounds,
+  poolTag,
   type BagMode,
   type BagRoutine,
   type BagSpec,
   type PoolCombo,
 } from '@/lib/coach/bagArc'
+import { FINISHER_REST_SEC, finisherReadiness, planFinisher, techniqueGroups } from '@/lib/coach/bagFinisher'
+import type { Level } from '@/lib/brain/doses'
+import { mmss } from '@/lib/timers/intervalTimer'
 import { ComboFlaps, ComboLine, Slate } from '@/features/combos/ComboPieces'
 import { NewComboWindow } from '@/features/combos/NewComboWindow'
 import { poolNow, prefetchBagPool, saveBagRoutine, subscribePool } from '@/features/combos/combosClient'
@@ -27,8 +30,9 @@ import './bagBuilder.css'
 
 // Bag Work (page 80, approved by Josh 2026-10-23): + add or REPLACE → Bag
 // Work asks COACH / HYBRID / CUSTOM, with his saved routines under them.
-// COACH: the coach's rounds on the kru's arc (rounds, length and rest are the
-// coach's). HYBRID: the coach's rounds, length and rest; he taps a round and
+// COACH: the coach's rounds on the kru's plan (page 93: rhythm, learn A, learn
+// B, link, pressure, a free round; rounds, length and rest are the coach's),
+// a NEW combo tagged, then one FINISHER row with its set count (page 86). HYBRID: the coach's rounds, length and rest; he taps a round and
 // adds combos from his list; empty rounds say "coach fills". CUSTOM: rounds,
 // round length and rest with − / +, his combos in each round, "—" when empty;
 // the coach says nothing. SAVE ROUTINE names Hybrid or Custom. His pool and
@@ -50,8 +54,8 @@ export function BagBuilder({ add, dayName, dose, busy, closing, onLeft, onDismis
   add: boolean
   /** "Thursday". */
   dayName: string
-  /** The coach's rounds that day and whether a finisher is on (the pick's dose). */
-  dose: { rounds: number; finishers: boolean }
+  /** The coach's rounds that day (the pick's dose); its level sizes the finisher's goal. */
+  dose: { rounds: number; finishers: boolean; level?: Level | null }
   busy: boolean
   closing: boolean
   onLeft: () => void
@@ -151,18 +155,31 @@ export function BagBuilder({ add, dayName, dose, busy, closing, onLeft, onDismis
   }
 
   // ── the rounds ──
-  const arc = kruArc(b.rounds, dose.finishers)
-  const coachPlan = b.mode === 'custom' ? [] : planCoachRounds(pool, { rounds: b.rounds, finishers: dose.finishers, nowSec, keep: b.mode === 'hybrid' ? b.picked : undefined })
-  const flaps = (ids: ReadonlyArray<string>) => ids.map(id => byId.get(id)).filter((c): c is PoolCombo => c != null).map(c => <ComboFlaps key={c.id} text={c.text} />)
+  const arc = kruArc(b.rounds)
+  const coachPlan = b.mode === 'custom' ? [] : planCoachRounds(pool, { rounds: b.rounds, nowSec, keep: b.mode === 'hybrid' ? b.picked : undefined, history: data?.history })
+  // page 86's finisher as one row (its sets come one at a time in the session); none in Custom
+  const finisher = b.mode === 'custom' ? null : planFinisher({ mode: b.mode, readiness: finisherReadiness(dose.level ?? null), groups: techniqueGroups(data?.groups?.join(',') ?? null) })
+  const flaps = (ids: ReadonlyArray<string>, tagNew = false) => ids.map(id => byId.get(id)).filter((c): c is PoolCombo => c != null).map(c => (
+    <Fragment key={c.id}>
+      {tagNew && poolTag(c, nowSec) === 'new' && <FlapLabel text="NEW" size="xs" tone="teal" animate={false} />}
+      <ComboFlaps text={c.text} />
+    </Fragment>
+  ))
   const rows = Array.from({ length: b.rounds }, (_, i) => {
     const stage = b.mode === 'custom' ? null : arc[i] ?? null
     const mine = b.mode !== 'coach' ? b.picked[i] ?? [] : []
+    const planned = coachPlan[i]
     let cs: ReactNode
     if (mine.length > 0) cs = flaps(mine)
     else if (b.mode === 'custom') cs = <span className="fill">—</span>
-    else if (stage === 'finisher') cs = <span className="note">{FINISHER_LINE}</span>
     else if (b.mode === 'hybrid') cs = <span className="fill">coach fills</span>
-    else cs = flaps(coachPlan[i]?.comboIds ?? [])
+    else if (planned?.focus === 'free') cs = <span className="fill">free · mix in both</span>
+    else if ((planned?.focus === 'rhythm' && planned.comboIds.every(id => splitComboText(byId.get(id)?.text ?? '').length === 1)) || planned?.focus === 'link') {
+      // the warm-up's single strikes, and A and B linked, as one string
+      const text = planned.comboIds.map(id => byId.get(id)?.text).filter(Boolean).join(' → ')
+      cs = text ? <ComboFlaps text={text} /> : null
+    }
+    else cs = flaps(planned?.comboIds ?? [], planned?.focus === 'learn')
     const tap = b.mode !== 'coach'
     return (
       <div key={i} className={`bb-rnd${mine.length > 0 ? ' is-mine' : ''}${tap ? ' is-tap' : ''}`} data-round={i}
@@ -177,6 +194,17 @@ export function BagBuilder({ add, dayName, dose, busy, closing, onLeft, onDismis
       </div>
     )
   })
+  if (finisher) {
+    rows.push(
+      <div key="fin" className="bb-rnd bb-fin" data-finisher-row>
+        <div className="rl">
+          <FlapLabel text="FINISHER" size="xs" tone="red" animate={false} />
+          <span className="stage is-red">{mmss(FINISHER_REST_SEC)} REST</span>
+        </div>
+        <div className="cs"><span className="note">{finisher.sets.length} SETS · GOAL {finisher.sets[0].goal}</span></div>
+      </div>,
+    )
+  }
   const modeWord = b.mode.toUpperCase()
   const setup = b.mode === 'custom'
     ? ([['ROUNDS', `${b.rounds}`, 'rounds'], ['ROUND', `${b.len}:00`, 'len'], ['REST', `${b.rest}:00`, 'rest']] as const).map(([lb, v, k]) => (

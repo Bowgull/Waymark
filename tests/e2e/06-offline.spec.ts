@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { enterFromToday, grass, insertSession, swipeUpGrass } from './support/helpers'
+import { enterFromToday, grass, insertSession, strengthPlace, swipeUpGrass } from './support/helpers'
 import { serveBundle } from './support/bundle'
 import type { Api } from './fixtures'
 
@@ -15,16 +15,19 @@ const loggedSets = async (api: Api, id: string) =>
   (await api.get<Workout>(`/api/sessions/${id}/workout`)).exercises.flatMap(e => e.sets).filter(s => s.completedAt != null).length
 const offlinePill = (page: Page) => page.getByRole('status').getByRole('img', { name: /^OFFLINE/ })
 
+/** One set logged and moved on: returns the session and the place it moved on to. */
 async function midSession(page: Page, api: Api) {
   const s = await insertSession(api, 'strength')
   await enterFromToday(page, s.id)
+  const first = await strengthPlace(page)
   await page.getByRole('button', { name: 'LOG SET', exact: true }).tap()
   await expect.poll(() => loggedSets(api, s.id)).toBe(1)
   // page 84: no NEXT SET button on the rest; a swipe up the grass moves on
   await expect(grass(page)).toBeVisible()
   await swipeUpGrass(page)
-  await expect(page.getByText(/^Warmup 2 of \d+/)).toBeVisible()
-  return s
+  // The next set: the same warm-up move's second set, or the next move (a one-set move, page 93's Strength A).
+  await expect.poll(() => strengthPlace(page)).not.toBe(first)
+  return { s, place: await strengthPlace(page) }
 }
 
 /** BACK IN YOUR SESSION (page 61, 3E): what is saved, then RESUME. */
@@ -39,7 +42,7 @@ test.beforeEach(async ({ context, baseURL }) => {
 })
 
 test('Offline mid-session: the set logs to the outbox, then syncs on reconnect', async ({ page, context, api }) => {
-  const s = await midSession(page, api)
+  const { s } = await midSession(page, api)
 
   await context.setOffline(true)
   await expect(offlinePill(page)).toBeVisible()
@@ -56,24 +59,24 @@ test('Offline mid-session: the set logs to the outbox, then syncs on reconnect',
 test('Offline reload mid-session: the same set comes back', async ({ page, context, api }) => {
   // Capacitor reloads the WebView in place (e.g. after iOS kills its content
   // process): the bundle's /assets/... must still resolve from /session/<id>.
-  const s = await midSession(page, api)
+  const { s, place } = await midSession(page, api)
 
   await context.setOffline(true)
   await page.reload()
   await expect(page).toHaveURL(new RegExp(`/session/${s.id}`))
   // Page 61, 3E: a reload lands on BACK IN YOUR SESSION, paused where it was.
   await backIn(page)
-  await expect(page.getByText(/^Warmup 2 of \d+/)).toBeVisible({ timeout: 15_000 })
+  await expect.poll(() => strengthPlace(page), { timeout: 15_000 }).toBe(place)
   await expect(offlinePill(page)).toBeVisible()
 })
 
 test('Reopened offline mid-session: straight back into it', async ({ page, context, api }) => {
   // Today can't reach the API: it reopens the session saved on the phone.
-  const s = await midSession(page, api)
+  const { s, place } = await midSession(page, api)
 
   await context.setOffline(true)
   await page.goto('/')
   await expect(page).toHaveURL(new RegExp(`/session/${s.id}`), { timeout: 15_000 })
   await backIn(page)
-  await expect(page.getByText(/^Warmup 2 of \d+/)).toBeVisible()
+  await expect.poll(() => strengthPlace(page), { timeout: 15_000 }).toBe(place)
 })

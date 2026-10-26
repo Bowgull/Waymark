@@ -578,7 +578,7 @@ export function ProgramPage() {
           </p>
           <ul className="pg-list">
             {/* How the coach runs Block Zero now (Josh, 2026-10-22): no fixed weeks or percentages. */}
-            {['Every day: Foundation, about 12 minutes. Strength 3 days a week. Easy runs that grow week by week.', 'Classes: the coach suggests one from week 2, then more if your body handles it. Log any class you go to.', 'At least 4 weeks, no set end. When the four parts on Ledger are in, you get a lighter week, then Fighter Block 1.'].map(item => (
+            {['Every day: Foundation, about 12 minutes. Strength twice a week. Easy runs that grow week by week.', 'Classes: on your Settings class days; the coach decides how many each week. Log any class you go to.', 'At least 4 weeks, no set end. When the four parts on Ledger are in, you get a lighter week, then The Campaign.'].map(item => (
               <li key={item} className="wm-prose is-dim">{item}</li>
             ))}
           </ul>
@@ -667,7 +667,8 @@ export function ProgramPage() {
   const isBlockZero = block.blockType === 'block_zero'
   const leadInView = weekNumber === LEAD_IN_WEEK
   // Page 73's copy: "Block Zero · week 4"; no "of 6", no RPE (Block Zero has no set length).
-  const thisSub = leadInView ? 'Block Zero · lead-in' : isBlockZero ? `Block Zero · week ${weekNumber}` : `${block.name} · week ${weekNumber}`
+  // Page 93: the line under THIS WEEK is the app's own week line (the server's, with the 5K once he has a test).
+  const thisSub = weekData?.week.whyLine?.trim() || (leadInView ? 'Block Zero · lead-in' : isBlockZero ? `Block Zero · week ${weekNumber}` : `${block.name} · week ${weekNumber}`)
   const blockStart = startDayOf(block.startedAt)
   const canMoveStart = isBlockZero && blockStart != null && weekNumber === currentWeek && currentWeek <= 1
     && blockStart >= mondayOf(todayEpochDay) && !viewedSessions.some(s => s.status === 'completed' || s.status === 'in_progress')

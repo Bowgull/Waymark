@@ -28,7 +28,7 @@ export const RING_COLOUR: Record<RingKey, string> = { strength: '#c9a656', condi
 
 const RING_TYPES: Record<RingKey, readonly string[]> = {
   strength: ['strength'],
-  condition: ['foundation_run', 'running', 'mt_class', 'bag_work', 'skip_rope'],
+  condition: ['foundation_run', 'running', 'mt_class', 'bag_work', 'bag_conditioning', 'skip_rope'],
   recovery: ['mobility', 'active_recovery'],
 }
 const RING_META: Record<RingKey, Pick<LedgerRing, 'label' | 'icon'>> = {

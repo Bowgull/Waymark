@@ -145,9 +145,10 @@ assert(kgFree(t0) && kgFree(t1), 'transition prompts: no kg')
 
 // ─── System prompt and returned-field units ─────────────────────
 
-const sys = buildSystemPrompt({ ...emptyProfile(), latestBodyweightKg: 80, trainingMaxes: [{ exerciseName: 'Bench Press', weightKg: 60 }] }, null).map(b => b.text).join('\n')
+const sys = buildSystemPrompt({ ...emptyProfile(), trainingMaxes: [{ exerciseName: 'Bench Press', weightKg: 60 }] }, null).map(b => b.text).join('\n')
 assert(sys.includes('Weights in lb only. Never write kg.'), 'voice rule: lb only')
-assert(sys.includes('Bodyweight: 176 lb') && sys.includes('Bench Press: 132 lb'), 'profile bodyweight and training maxes in lb')
+assert(sys.includes('Bench Press: 132 lb'), 'training maxes in lb')
+assert(!/bodyweight:/i.test(sys), 'no body weight in the profile (never track or use body weight)')
 assert(kgFree(sys), 'system prompt: no kg')
 // Audit 2026-10-23 #22: class days come from Settings; none picked says so; no hard-coded "most evenings".
 assert(sys.includes('MT class days: no class days picked') && !/most evenings/.test(sys), 'no class days: said plainly, no evenings claim')

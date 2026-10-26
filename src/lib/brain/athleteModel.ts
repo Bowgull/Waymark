@@ -24,7 +24,7 @@ import { isScheduleReason } from './types'
 import type {
   AdherenceEstimate, AthleteModel, BackEstimate, BagEstimate, BetaCell, ClassEstimate, ClassDay, EstimateRow, EstimateState,
   LiftEstimate, LiftExposure, ModelCheckIn, ModelEvents, ModelSet, RecoveryEstimate, RecoveryItemBaseline,
-  RunEstimate, RunObservation, SlotCellKey,
+  HardObservation, RunEstimate, RunObservation, SlotCellKey,
 } from './types'
 import { betaCell, cellState, clamp, confidence, round, rungDecay, stateFromU, strengthDecay } from './uncertainty'
 import { CONTINUOUS_FROM_SEC, SEED_U, seededU, type HistorySeed, type SeededLift } from './history'
@@ -106,10 +106,15 @@ export const E1RM_ALPHA = 0.3
 export const E1RM_SESSION_CAP = 0.03
 export const BIAS_STEP = 0.25
 export const BIAS_MAX = 1.5
-/** KNOWN: ≥3 RIR sessions in 21 days with last-set e1RMs within ±5%. */
+/**
+ * KNOWN: ≥3 RIR sessions in 21 days whose last-set e1RMs sit within ±5% of
+ * their trend line, the trend no steeper than 1% a day (rebuild Phase 4: a
+ * lift getting steadily stronger stays known).
+ */
 export const LIFT_KNOWN_SESSIONS = 3
 export const LIFT_KNOWN_WINDOW = 21
 export const LIFT_KNOWN_SPREAD = 0.05
+export const LIFT_KNOWN_SLOPE = 0.01
 
 const rirValue = (rir: number) => (rir >= E1RM_MAX_RIR ? RIR_THREE_PLUS_AS : rir)
 
@@ -167,7 +172,14 @@ export function updateLift(state: LiftState, sets: ModelSet[]): void {
   const topKg = weights.length ? Math.max(...weights) : null
   const planned = work.map(s => s.plannedWeightKg ?? 0).filter(w => w > 0)
   const plannedKg = planned.length ? Math.max(...planned) : null
-  const lowered = logged.some(s => s.weightKg != null && s.weightKg > 0 && s.plannedWeightKg != null && s.plannedWeightKg > 0 && s.weightKg < s.plannedWeightKg - 0.5)
+  // Under the plan is lowered, except a find-your-weight climb he stopped: a set
+  // whose rung rose over the last one, kept at the weight he just lifted (rebuild Phase 4).
+  const lowered = logged.some((s, i) => {
+    if (s.weightKg == null || !(s.weightKg > 0) || s.plannedWeightKg == null || !(s.plannedWeightKg > 0) || s.weightKg >= s.plannedWeightKg - 0.5) return false
+    const prev = i > 0 ? logged[i - 1] : null
+    const climb = prev != null && prev.plannedWeightKg != null && s.plannedWeightKg > prev.plannedWeightKg + 0.5
+    return !(climb && prev!.weightKg != null && s.weightKg >= prev!.weightKg - 0.5)
+  })
   const shortSets = logged.filter(s => s.plannedReps != null && s.reps < s.plannedReps)
   const incomplete = shortSets.length > 0 || work.length > logged.length
   // Short on reps while saying 2+ were left: his reporting gap (the bias below learns it), not a missed rep.
@@ -200,6 +212,17 @@ export function updateLift(state: LiftState, sets: ModelSet[]): void {
   })
 }
 
+/** The least-squares line through (day, e1RM) points; one point or one day: their mean. */
+export function trendLine(points: ReadonlyArray<{ day: number; e1rm: number }>): (day: number) => number {
+  const n = points.length
+  const mx = n ? points.reduce((a, p) => a + p.day, 0) / n : 0
+  const my = n ? points.reduce((a, p) => a + p.e1rm, 0) / n : 0
+  const sxx = points.reduce((a, p) => a + (p.day - mx) ** 2, 0)
+  if (n < 2 || sxx === 0) return () => my
+  const slope = points.reduce((a, p) => a + (p.day - mx) * (p.e1rm - my), 0) / sxx
+  return day => my + slope * (day - mx)
+}
+
 function finishLift(state: LiftState, today: number, tmKg: number | null, seeded: boolean = false): LiftEstimate {
   const rirExposures = state.lastSetValues.length
   const last = state.exposures[state.exposures.length - 1] ?? null
@@ -208,7 +231,14 @@ function finishLift(state: LiftState, today: number, tmKg: number | null, seeded
     const lastDay = state.lastSetValues[rirExposures - 1].day
     const recent = state.lastSetValues.filter(v => v.day >= lastDay - LIFT_KNOWN_WINDOW).slice(-LIFT_KNOWN_SESSIONS)
     const m = mean(recent.map(v => v.e1rm)) ?? 0
-    const tight = recent.length >= LIFT_KNOWN_SESSIONS && recent.every(v => Math.abs(v.e1rm - m) <= m * LIFT_KNOWN_SPREAD)
+    // Rebuild Phase 4: known by how well the trend fits, not by the e1RMs sitting flat,
+    // so a lift that keeps getting stronger stays known (a rising lift was flipping back).
+    // A real trend is steady: at most about 1% a day (a returner gains a few % a week), so one
+    // jump of 20% in a few days still reads as LEARNING.
+    const fit = trendLine(recent)
+    const span = recent.length > 1 ? recent[recent.length - 1].day - recent[0].day : 0
+    const steady = span === 0 || Math.abs(fit(recent[recent.length - 1].day) - fit(recent[0].day)) <= m * LIFT_KNOWN_SLOPE * span
+    const tight = recent.length >= LIFT_KNOWN_SESSIONS && steady && recent.every(v => Math.abs(v.e1rm - fit(v.day)) <= m * LIFT_KNOWN_SPREAD)
     evidence = tight ? 'KNOWN' : 'LEARNING'
   }
   // Started from his history: his own sessions in the block never make it more careful than the start was.
@@ -374,17 +404,38 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
   let lastRunDay: number | null = null
   const decayFrom = () => lastRunDay ?? (seedRun ? (seed as HistorySeed).fromDay : null)
   const paces: number[] = []
+  const hardRecent: HardObservation[] = []
+  const longs: Array<{ day: number; sec: number; good: boolean }> = []
+  // Every run counts for the 110% guard, hard ones too (they are runs).
+  let longestAll: number | null = null
+  let catchUp: number | null = null
   for (const r of runs) {
     const dur = r.durationSec != null && r.durationSec >= MIN_RUN_SEC && r.durationSec <= MAX_RUN_SEC ? r.durationSec : null
     const stub = r.durationSec != null && r.durationSec < MIN_RUN_SEC && r.splits.length < 2
     // An easy walk or bike in a run's place (walk-only dose): no running, so no rung, struggle or decay from it.
     if (stub || r.walkOnly) continue
-    const line = lineOn(r.day).bpm
-    const { u, source } = runUnderLine(r, line)
-    const drift = runDrift(r.splits)
     const rpe = r.rpe ?? rpeBySession.get(r.sessionId) ?? null
     const cutShort = r.completionStatus === 'shortened' || r.completionStatus === 'partial'
       || (dur != null && r.plannedDurationSec != null && r.plannedDurationSec > 0 && dur < 0.8 * r.plannedDurationSec)
+    if (dur != null && r.day >= today - 30) longestAll = Math.max(longestAll ?? 0, dur)
+    if (dur != null && r.day >= today - 30 && !(r.long && !r.hard)) catchUp = Math.max(catchUp ?? 0, dur)
+    // A hard run (rebuild Phase 3): judged on its own targets, done and heart under its top, never
+    // against the easy line. It never moves the easy rung or reads as a struggle; it is still a run
+    // (the rung's time-off clock restarts).
+    if (r.hard) {
+      const ratio = dur != null && r.plannedDurationSec != null && r.plannedDurationSec > 0 ? dur / r.plannedDurationSec : null
+      hardRecent.push({
+        day: r.day, sessionId: r.sessionId, kind: r.hard, completed: !cutShort && (ratio == null || ratio >= 0.9),
+        maxHr: r.maxHr, top: r.hardTop ?? null, rpe,
+      })
+      const from = decayFrom()
+      if (from != null) rung = rungDecay(rung, r.day - from, RUNG_PRIOR_SEC)
+      lastRunDay = r.day
+      continue
+    }
+    const line = lineOn(r.day).bpm
+    const { u, source } = runUnderLine(r, line)
+    const drift = runDrift(r.splits)
     const scheduleCut = cutShort && isScheduleReason(r.shortReason)
     const calfShin = flaggedNear(flags, r.day, 'calf_shin')
     const tooFast = u != null && u < 0.7
@@ -402,8 +453,13 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
     // (a continuous run: 20% shorter).
     const aimed = r.rungSec != null && r.rungSec > 0 ? (r.rungSec >= CONTINUOUS_FROM_SEC && dur != null ? Math.min(r.rungSec, dur) : r.rungSec) : null
     const reached = aimed != null ? Math.max(piece ?? 0, aimed) : piece
-    if (reached != null && handled && reached > rung) { rung = reached; rungUpDay = r.day }
-    if (piece != null && struggled) rung = Math.min(rung, rungAfterStruggle(piece))
+    // The longer Zone 2 Run has its own path (rebuild Phase 3): it never sets the easy runs' length.
+    // (While he still run-walks, it is a run-walk like the others and moves the rung as they do.)
+    if (r.long && reached != null && piece != null && piece >= CONTINUOUS_FROM_SEC) longs.push({ day: r.day, sec: reached, good: handled })
+    else {
+      if (reached != null && handled && reached > rung) { rung = reached; rungUpDay = r.day }
+      if (piece != null && struggled) rung = Math.min(rung, rungAfterStruggle(piece))
+    }
     lastRunDay = r.day
     if (u != null && u >= 0.85 && dur != null && r.distanceKm != null && r.distanceKm > 0.5) paces.push(dur / r.distanceKm)
     recent.push({
@@ -435,7 +491,11 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
   else if (lastTest != null && today - lastTest >= RECHECK_DAYS) recheckWhy = `Last talk test ${today - lastTest} days ago.`
   else if (uShare != null && drift != null && uShare < 0.5 && drift < 5 && efforts.length > 0 && (mean(efforts) ?? 10) <= 4) recheckWhy = 'HR sits over the line but stays flat and feels easy: the line may be low.'
   else if (uShare != null && drift != null && uShare >= 0.9 && drift >= 10) recheckWhy = 'HR stays under the line but drifts up: the line may be high.'
-  const longest = recent.filter(o => o.day >= today - 30 && o.durationSec != null).reduce<number | null>((m, o) => Math.max(m ?? 0, o.durationSec as number), null)
+  const longest = longestAll
+  // The longer Zone 2 Run: good ones in a row at the length the last one aimed at.
+  const lastLong = longs[longs.length - 1]
+  let goodInRow = 0
+  for (let i = longs.length - 1; i >= 0 && longs[i].good && longs[i].sec >= (lastLong?.sec ?? 0) - 60; i--) goodInRow++
   const pace = mean(paces.slice(-3))
   return {
     ...conf,
@@ -458,6 +518,9 @@ function buildRun(events: ModelEvents, today: number, flags: Map<number, Set<Not
     runs: recent.length,
     lastRunHadHr,
     recent: recent.slice(-5),
+    hardRecent: hardRecent.slice(-5),
+    long: lastLong ? { lastSec: lastLong.sec, goodInRow, lastDay: lastLong.day } : null,
+    catchUpSec: catchUp,
   }
 }
 

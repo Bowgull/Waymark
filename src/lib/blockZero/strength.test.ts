@@ -78,7 +78,7 @@ assert(!backFriendlyVariation('ex-front-squat', null).swapped, 'no back score: n
 assert(!backFriendlyVariation('ex-bench-press', 1).swapped, 'bench has no swap (no spinal load)')
 
 // Every id the rules reference must exist in the seed or migrations.
-const library = ['src/db/seed.ts', 'drizzle/0022_road_bootcamp.sql', 'drizzle/0026_block_zero_phase_b.sql'].map(f => readFileSync(f, 'utf8')).join('\n')
+const library = ['src/db/seed.ts', 'drizzle/0022_road_bootcamp.sql', 'drizzle/0026_block_zero_phase_b.sql', 'drizzle/0028_logging_safety.sql', 'drizzle/0057_fighter_strength_rows.sql', 'drizzle/0058_landmine_rows.sql'].map(f => readFileSync(f, 'utf8')).join('\n')
 const knownIds = new Set([...library.matchAll(/'(ex-[a-z0-9-]+)'/g)].map(m => m[1]))
 const referenced = new Set<string>()
 for (const [from, to] of Object.entries(BACK_FRIENDLY_SWAPS)) { referenced.add(from); referenced.add(to.exerciseId) }

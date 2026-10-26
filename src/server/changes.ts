@@ -6,7 +6,7 @@
 // records changes, applies the rebalance and an undo, and builds the views
 // the day's back, the week log, the runes and the one quiet line read.
 
-import { and, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
 import { sessions, settings, trainingMaxes, weekAdjustments } from '../db/schema'
 import type { createDB } from '../db/client'
 import {
@@ -49,7 +49,7 @@ import {
 } from '../lib/coach'
 import { rolloverStaleSessionIds } from '../lib/sessionRollover'
 import { getActiveBlock } from './blockZeroData'
-import { addTemplateExtra, blockKind, blockDayPlan, blockStartDay, loadPlacementContext, loadTemplateExtras, mtClassDays, resolveWeekPlan, toSessionLike, trainingWeekFor, weekStamps } from './coachData'
+import { addTemplateExtra, blockKind, blockDayPlan, blockStartDay, loadPlacementContext, resolveWeekPlan, toSessionLike, trainingWeekFor, weekStamps } from './coachData'
 
 type DB = ReturnType<typeof createDB>
 type SessionRow = typeof sessions.$inferSelect
@@ -496,8 +496,6 @@ export async function applyMissedFixes(db: DB, missedIds: string[], todayDay: nu
   const block = await getActiveBlock(db)
   if (!block) return 0
   const kind = blockKind(block.blockType)
-  const mtDays = await mtClassDays(db)
-  const extras = await loadTemplateExtras(db, block.id)
   const pm = await pmStart(db)
   let n = 0
   for (const m of missed) {
@@ -511,7 +509,7 @@ export async function applyMissedFixes(db: DB, missedIds: string[], todayDay: nu
     let nextStrength: { epochDay: number; label: string } | null = null
     for (let d = day + 1; d <= day + 4 && !nextStrength; d++) {
       if (upcomingRows.some(r => r.scheduledDate === d)) continue
-      const plan = blockDayPlan(block, d, mondayOf(d) === mondayOf(day) ? tw.week : nextTw.week, mtDays, extras)
+      const plan = await blockDayPlan(db, block, d, mondayOf(d) === mondayOf(day) ? tw.week : nextTw.week, nowSec, { store: false })
       const str = plan.entries.find(e => e.type === 'strength')
       if (str) nextStrength = { epochDay: d, label: str.label }
     }
@@ -546,9 +544,46 @@ export async function applyMissedFixes(db: DB, missedIds: string[], todayDay: nu
         why: fix.why, detail: fix.detail, weekPlanId: m.weekPlanId,
       }], nowSec)
     }
+    await dropDuplicateMissed(db, m.id)
     n++
   }
   return n
+}
+
+/**
+ * A missed session he logged after all (offline, or the next morning; review
+ * T7): its missed fix comes back off, so its lifts aren't done twice. The
+ * lifts merged into a session still planned leave it; a fix still waiting
+ * for its week is dropped. Quiet: the record is marked undone.
+ */
+export async function takeBackMissedFix(db: DB, sessionId: string, nowSec: number): Promise<number> {
+  const rows = await db.select().from(weekAdjustments)
+    .where(and(eq(weekAdjustments.kind, 'missed'), eq(weekAdjustments.targetSessionId, sessionId), isNull(weekAdjustments.undoneAt)))
+  for (const r of rows) {
+    const change = readChangeRow(r)
+    for (const t of change?.after.sessions ?? []) {
+      const [target] = await db.select().from(sessions).where(eq(sessions.id, t.id))
+      if (target && target.status === 'planned' && mergedLiftsFrom(target.contextJson)) {
+        await db.update(sessions).set({ contextJson: applyContext(target.contextJson, { mergedLifts: null }) }).where(eq(sessions.id, target.id))
+      }
+    }
+    await db.update(weekAdjustments).set({ undoneAt: nowSec }).where(eq(weekAdjustments.id, r.id))
+  }
+  return rows.length
+}
+
+/**
+ * Two screens asking at once can write two missed fixes for one session
+ * (review T8). Every racer keeps the oldest record (then the smallest id)
+ * and drops its own later ones, so UNDO restores the right thing.
+ */
+async function dropDuplicateMissed(db: DB, sessionId: string): Promise<void> {
+  const rows = await db.select({ id: weekAdjustments.id, at: weekAdjustments.createdAt }).from(weekAdjustments)
+    .where(and(eq(weekAdjustments.kind, 'missed'), eq(weekAdjustments.targetSessionId, sessionId), isNull(weekAdjustments.undoneAt)))
+  if (rows.length < 2) return
+  const [keep] = [...rows].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1))
+  const spare = rows.filter(r => r.id !== keep.id).map(r => r.id)
+  if (spare.length) await db.delete(weekAdjustments).where(inArray(weekAdjustments.id, spare))
 }
 
 /** Missed key sessions from last Monday on that have no missed record yet get their fix. */

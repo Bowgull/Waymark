@@ -155,6 +155,8 @@ export function liveLine(live: LiveSession, saved: SessionResumeState | null, no
     const left = timerRemainingMs(e.restTimer, nowMs)
     return { line: `Set ${(saved?.setIdx ?? 0) + 1} · rest`, clock: mmss(left), fill: frac(e.restTimer, left) }
   }
+  // page 86 / 93: an interval clock (the finisher, Bag Conditioning): going, with the time since the start
+  if (e?.kind === 'finisher') return { line: live.type === 'bag_conditioning' ? 'Bag conditioning · going' : 'Finisher · going', clock: since, fill: 0 }
   if (e?.kind === 'warmup') return { line: 'Warm-up', clock: e.timer ? mmss(timerRemainingMs(e.timer, nowMs)) : since, fill: 0 }
   if (e?.kind === 'hold') return { line: `Exercise ${(saved?.exerciseIdx ?? 0) + 1}`, clock: since, fill: 0 }
   if (saved && saved.phase === 'exercise') return { line: `Exercise ${saved.exerciseIdx + 1} · set ${saved.setIdx + 1}`, clock: since, fill: 0 }

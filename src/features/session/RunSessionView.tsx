@@ -98,11 +98,11 @@ function isWalkOnly(p: RunPrescription | null | undefined): boolean {
   return !!p && (p.walkOnly === true || (p.runWalk != null && !(p.runWalk.rounds > 0)))
 }
 
+// Page 93: four run names only (Zone 2 Run, Tempo, Intervals, Run-Walk), and the 5K test.
 const RUN_TYPE_LABELS: Record<string, string> = {
   zone2: 'Zone 2 Run',
-  easy: 'Easy Run',
-  easy_strides: 'Easy + Strides',
-  tempo: 'Tempo Run',
+  easy: 'Zone 2 Run',
+  tempo: 'Tempo',
   intervals: 'Intervals',
   '5k_test': '5K Test',
 }

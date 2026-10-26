@@ -30,13 +30,45 @@ export function plannedStrengthMinutes(sets: ReadonlyArray<PlannedSet>): number 
 export const ROW_RAMP_SETS = 3
 /** Moving between exercises: set up, load the bar, find the bench. */
 export const ROW_TRANSITION_SEC = 120
+/**
+ * Moving on inside a circuit (rebuild Phase 4): the core moves and the arm
+ * block are done at one spot, one after the other, so the next row is a
+ * half minute away, not a new station.
+ */
+export const CIRCUIT_TRANSITION_SEC = 30
+
+/** A row of a strength session as the length estimates read it. */
+export interface LengthRow { section: string; exerciseId?: string; ramp?: boolean }
+
+/** A main lift's warm-up ramp sets: none for a landmine or bodyweight lift, 2 for a dumbbell (lib/strengthLoads), else 3. */
+export function rampSetsFor(r: LengthRow): number {
+  if (r.section !== 'main' || r.ramp === false) return 0
+  return /^ex-(db-|goblet)/.test(r.exerciseId ?? '') ? 2 : ROW_RAMP_SETS
+}
+
+/**
+ * The time around the sets: each main lift's warm-up ramp (not a landmine or
+ * bodyweight lift: `ramp: false`, its first set is its warm-up), and the moves
+ * between rows (a new station, or the next move of the same circuit).
+ */
+export function strengthExtraSec(rows: ReadonlyArray<LengthRow>): number {
+  let sec = 0
+  rows.forEach((r, i) => {
+    sec += rampSetsFor(r) * (WARMUP_SET_SEC + 60)
+    if (i === 0) return
+    const prev = rows[i - 1]
+    const circuit = prev.section === r.section && (r.section === 'core' || r.section === 'accessory' || r.section === 'warmup')
+    sec += circuit ? CIRCUIT_TRANSITION_SEC : ROW_TRANSITION_SEC
+  })
+  return sec
+}
 
 /**
  * The "~60min" on a strength row (m6): every set the template plans, one
  * main set fewer on each main lift when the coach eased it, the main lifts'
  * warm-up ramps and the moves between exercises, to the nearest 5 min.
  */
-export function plannedRowStrengthMinutes(exercises: ReadonlyArray<{ section: string; sets: ReadonlyArray<PlannedSet> }>, opts: { oneSetLess?: boolean } = {}): number | null {
+export function plannedRowStrengthMinutes(exercises: ReadonlyArray<LengthRow & { sets: ReadonlyArray<PlannedSet> }>, opts: { oneSetLess?: boolean } = {}): number | null {
   if (exercises.length === 0) return null
   const sets: PlannedSet[] = []
   let mains = 0
@@ -53,7 +85,8 @@ export function plannedRowStrengthMinutes(exercises: ReadonlyArray<{ section: st
   }
   const base = plannedStrengthMinutes(sets)
   if (base == null) return null
-  const extraSec = mains * ROW_RAMP_SETS * (WARMUP_SET_SEC + 60) + Math.max(0, exercises.length - 1) * ROW_TRANSITION_SEC
+  void mains
+  const extraSec = strengthExtraSec(exercises)
   return Math.max(5, Math.round((base * 60 + extraSec) / 300) * 5)
 }
 
@@ -98,7 +131,7 @@ export function withRoundSec(list: ReadonlyArray<number>, index: number, sec: nu
  */
 export function entranceLine(o: { type: string; rounds?: number | null; week?: number | null; minutes?: number | null }): string | null {
   const min = o.minutes != null && Number.isFinite(o.minutes) && o.minutes > 0 ? `${Math.round(o.minutes)} MIN` : null
-  const lead = (o.type === 'bag_work' || o.type === 'skip_rope') && o.rounds != null && o.rounds > 0
+  const lead = (o.type === 'bag_work' || o.type === 'skip_rope' || o.type === 'bag_conditioning') && o.rounds != null && o.rounds > 0
     ? `${o.rounds} ${o.rounds === 1 ? 'ROUND' : 'ROUNDS'}`
     : o.type === 'strength' && o.week != null && o.week > 0
       ? `WEEK ${o.week}`

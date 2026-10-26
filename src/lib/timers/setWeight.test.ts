@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 
 import { kgToLbs } from '../units'
-import { carryKey, editedStartKg, parseCarry, plannedSetLbs, setLbsToKg, setNeedsWeight, startSetLbs, stepSetLbs, withLogged } from './setWeight'
+import { carryKey, carryStart, editedStartKg, nextRungAfter, parseCarry, plannedSetLbs, setLbsToKg, setNeedsWeight, startSetLbs, stepSetLbs, withEffort, withLogged } from './setWeight'
 
 let passed = 0
 const test = (name: string, fn: () => void) => { fn(); passed++; console.log(`ok: ${name}`) }
@@ -87,6 +87,52 @@ test('m10: the carried weight survives a reload (stored per session)', () => {
   assert.equal(startSetLbs(null, 'cable', back.lat.kg), 50)
   assert.equal(carryKey('s1'), 'waymark_carry_kg:s1')
   assert.deepEqual(parseCarry('not json'), {})
+})
+
+test('rebuild Phase 4: a 3+ starts the next set a step up, once, as a "Try N lb?"', () => {
+  const L = (lb: number) => lb / 2.20462
+  const lbs = (kg: number | null | undefined) => (kg == null ? null : Math.round(kg * 2.20462))
+  let c = withEffort(withLogged({}, 'bp', L(95), { isWarmup: false, plannedKg: L(95) }), 'bp', 3)
+  const up = carryStart(c.bp, { isWarmup: false, plannedKg: L(95) }, 'ex-bench-press', 'barbell')
+  assert.deepEqual([lbs(up?.kg), up?.up], [100, true], 'bench 95 at 3+: 100 next')
+  assert.equal(startSetLbs(L(95), 'barbell', null, up?.kg), 100)
+  // At the step, another 3+ keeps it there (the coach moves the plan next time).
+  c = withEffort(withLogged(c, 'bp', L(100), { isWarmup: false, plannedKg: L(95) }), 'bp', 3)
+  assert.equal(lbs(carryStart(c.bp, { isWarmup: false, plannedKg: L(95) }, 'ex-bench-press', 'barbell')?.kg), 100, 'one step over the plan, not two')
+  // 2 left: as planned.
+  const two = withEffort(withLogged({}, 'bp', L(95), { isWarmup: false, plannedKg: L(95) }), 'bp', 2)
+  assert.equal(carryStart(two.bp, { isWarmup: false, plannedKg: L(95) }, 'ex-bench-press', 'barbell'), null)
+  // Lower body: +5% (goblet 50 → 55 lb dumbbell).
+  const gs = withEffort(withLogged({}, 'gs', L(50), { isWarmup: false, plannedKg: L(50) }), 'gs', 3)
+  assert.equal(lbs(editedStartKg(gs.gs, { isWarmup: false, plannedKg: L(50) }, 'ex-goblet-squat', 'dumbbell')), 55)
+  // Bodyweight moves have no weight to step.
+  assert.equal(carryStart(gs.gs, { isWarmup: false, plannedKg: L(50) }, 'ex-chin-up', 'pull-up bar'), null)
+})
+
+test('rebuild Phase 4: a climb stops at about 3 left, and keeps going while it reads 3+', () => {
+  const L = (lb: number) => lb / 2.20462
+  const lbs = (kg: number | null | undefined) => (kg == null ? null : Math.round(kg * 2.20462))
+  // Rungs 45 → 55 → 65 → 75. 55 read 2: stay at 55 for the rest.
+  const c = withEffort(withLogged({}, 'bp', L(55), { isWarmup: false, plannedKg: L(55) }), 'bp', 2)
+  assert.equal(lbs(editedStartKg(c.bp, { isWarmup: false, plannedKg: L(65) }, 'ex-bench-press', 'barbell')), 55, 'about 3 left: stay there')
+  // 3+ at the rung: the next rung as planned.
+  const easy = withEffort(withLogged({}, 'bp', L(55), { isWarmup: false, plannedKg: L(55) }), 'bp', 3)
+  assert.equal(editedStartKg(easy.bp, { isWarmup: false, plannedKg: L(65) }, 'ex-bench-press', 'barbell'), null)
+  // The last rung still read 3+: one more set a step up, up to the most sets.
+  const sets = [45, 55, 65, 75].map(w => ({ isWarmup: 0, plannedWeightKg: L(w) }))
+  assert.equal(lbs(nextRungAfter(sets, L(75), 3, 'ex-bench-press', 'barbell', 7)), 80)
+  assert.equal(nextRungAfter(sets, L(75), 2, 'ex-bench-press', 'barbell', 7), null, 'about 3 left: done')
+  assert.equal(nextRungAfter([...sets, ...[80, 85, 90].map(w => ({ isWarmup: 0, plannedWeightKg: L(w) }))], L(90), 3, 'ex-bench-press', 'barbell', 7), null, '7 sets: done')
+  assert.equal(nextRungAfter([95, 95, 95].map(w => ({ isWarmup: 0, plannedWeightKg: L(w) })), L(95), 3, 'ex-bench-press', 'barbell', 7), null, 'not a climb: no extra set')
+  assert.equal(lbs(nextRungAfter([{ isWarmup: 1, plannedWeightKg: L(45) }, ...sets], L(75), 3, 'ex-bench-press', 'barbell', 5)), 80, 'warm-ups do not count toward the most sets')
+})
+
+test('rebuild Phase 5: the landmine on the set screen', () => {
+  assert.equal(startSetLbs(null, 'landmine'), 0, 'no plan yet: the bar only, with a weight row')
+  assert.equal(plannedSetLbs(12.5 / 2.20462, 'landmine'), 12.5, 'half pounds show')
+  assert.equal(stepSetLbs(0, 1, 'landmine'), 2.5, 'one 2.5 lb plate a step')
+  assert.equal(stepSetLbs(0, -1, 'landmine'), 0, 'never under the bar')
+  assert.equal(setNeedsWeight('landmine', false, 0), false, 'bar only logs')
 })
 
 console.log(`setWeight: ${passed} passed`)

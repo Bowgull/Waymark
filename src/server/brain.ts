@@ -18,37 +18,43 @@
 // absorbs them.
 
 import { and, desc, eq, gte, inArray, isNull, lt, lte } from 'drizzle-orm'
-import { bodyAlerts, dailyLogs, exercises, runSessions, sessions, settings, trainingMaxes, userProfile, type sessions as SessionsTable } from '../db/schema'
+import { bodyAlerts, coachDecisions, combos, dailyLogs, exercises, runSessions, sessions, settings, trainingMaxes, userProfile, weekAdjustments, type sessions as SessionsTable } from '../db/schema'
 import type { createDB } from '../db/client'
 import { buildAthleteModel, modelSummary, usualStartOf } from '../lib/brain/athleteModel'
 import { activeMove, blockReadinessFor } from './readiness'
 import { inLighter, lighterBag, lighterRun, lighterStrength } from '../lib/brain/blockMove'
+import { TRIGGERED_BAG_WHY, TRIGGERED_RUN_WHY, TRIGGERED_WHY, triggeredLighter } from '../lib/brain/lighterWeek'
 import { candidateClassDays, classLadder, classLean, classSlotChoices, learnedClassSlots } from '../lib/brain/classPicker'
 import { classDaySlots } from '../lib/classSlots'
-import { bagDose, ceilingFor, runDose, strengthDose, tweakBag, tweakRun, tweakStrength, CEILING, LEVELS, levelAbove, minLevel, type BagDose, type DoseCtx, type Level, type RunDose, type StrengthDose, type Tweak } from '../lib/brain/doses'
+import { LONG_CAP_MIN, SESSION_CAP_MIN, bagDose, capRunDose, ceilingFor, runDose, strengthDose, tweakBag, tweakRun, tweakStrength, CEILING, LEVELS, levelAbove, minLevel, type BagDose, type DoseCtx, type Level, type RunDose, type StrengthDose, type Tweak } from '../lib/brain/doses'
 import { hoursAfter, score as outlineScore, solveOutline, violations as outlineViolations, type OutlineChange, type OutlineIn, type OutlineSession } from '../lib/brain/outline'
-import { athleteSignals } from '../lib/brain/signals'
+import { athleteSignals, goalSignals } from '../lib/brain/signals'
+import { currentComboTier } from '../lib/comboTiers'
 import { pushRoom, rangeFor, tweakedWords, type PushRoom } from '../lib/brain/candidates'
 import { arbitrate, DAILY_CALL_CAP, DAY_KEYS, doseWords, MAX_WEEK_ACTIONS, packetFacts, rulesDecision, type AiWeekAction, type Candidate, type DecisionPacket, type FinalDecision, type SolverChange, type WeekScorer, type WeekSession } from '../lib/brain/decision'
 import { callDecision, existingDecision, inputHash, loadRecentNotes, loadStalled, overCap, spendToday, storeDecision, type CallOutcome, type DecisionRecord } from './coachDecision'
 import { applyNotebookOps, loadEvidenceIndex, rebuildNotebook } from './notebook'
 import { evidenceLines, notebookLines } from '../lib/brain/notebook'
 import { lowerState, nightRead, readinessState, STATE_RANK, type NightRead, type ReadinessState } from '../lib/brain/readiness'
-import { tempStates, type TempState } from '../lib/brain/tempStates'
+import { activeState, tempStates, type TempState } from '../lib/brain/tempStates'
 import type { AthleteModel, ModelCheckIn, ModelEvents } from '../lib/brain/types'
+import { landmineHistory, landmineSessions } from '../lib/landmine'
+import { repsLastFrom } from '../lib/brain/progression'
 import { KEY_TYPES } from '../lib/keyTypes'
 import { getRunWalkWeek, isBlockZeroModelRun, weeklyRunCap, type WeeklyRunContext } from '../lib/blockZero'
 import { isHardRun, isHeavyLegs } from '../lib/coach/sessions'
 import { applyContext, coachEaseFrom, injuryActionFor, isoOf, mondayOf, runAllowanceBaseSec, slotStart, withMergedLifts, type InjuryFlag } from '../lib/coach'
 import { getStrengthTemplate, getWaveLoadingSetsReps, getWeekPercentage } from '../lib/strengthTemplates'
 import { bodyweightOk, loadEquipment, type AccessorySetLog, type LoadEquipment } from '../lib/strengthLoads'
-import { RUNNING_PLAN_TEMPLATE, ZONE2_PRESCRIPTION } from '../lib/runningPlanTemplate'
 import { getActiveBlock } from './blockZeroData'
-import { blockKind, blockStartDay, bodyPlanMark, dayHasPlan, generateDaySessions, loadInjuryFlag, resolveWeekPlan, trainingWeekFor, weekStamps } from './coachData'
+import { runWarmupSec } from '../lib/foundation'
+import { blockKind, blockStartDay, bodyPlanMark, dayHasPlan, generateDaySessions, insertDayEntries, loadInjuryFlag, loadTemplateExtras, resolveWeekPlan, storedShape, storedWeekPlan, trainingWeekFor, weekStamps } from './coachData'
+import { FIXED_KEY, classSetting, isHardRow, planOf, reshapeWeek, runsReady } from './onePlan'
+import { STEP_SHAPE, dayEntries } from '../lib/brain/weekBuilder'
 import { loadHistorySeed, loadModelEvents, modelFromDay } from './athleteModel'
 import { CONTINUOUS_FROM_SEC, firstStrengthPick, type HistorySeed } from '../lib/brain/history'
 import { emptyState, loadHeld, loadWeekChanges, pmStart, recordChanges, snap, type NewChange } from './changes'
-import { HARD_NOTES, HARD_START_LABEL, hardKindOf, hardLabel, hardPlan, hardRunDose, hardWeek, isHardLabel, latestTest, planWeekRuns, speedsFrom, estimateFiveKSec, testReady, type RecentHard, type WeekRun, type WeekRunKind } from '../lib/brain/hardRuns'
+import { GOAL_5K_SEC, HARD_NOTES, HARD_START_LABEL, hardKindOf, nudgesSince, hardLabel, hardPlan, hardRunDose, hardWeek, isHardLabel, latestTest, planWeekRuns, speedsFrom, estimateFiveKSec, testReady, type RecentHard, type WeekRun, type WeekRunKind } from '../lib/brain/hardRuns'
 import { fiveKTests } from './fiveK'
 
 type DB = ReturnType<typeof createDB>
@@ -132,6 +138,8 @@ export interface BrainInputs {
   temp: TempState[]
   /** The move to the next block in force (coach-brain §8): its lighter days are dosed lighter. */
   move: { lighterFrom: number; monday: number } | null
+  /** The block's first day: a lighter week his body triggers never comes in its first 3 weeks. */
+  planStart?: number
   /** His history before the block, the model's starting point (lib/brain/history.ts). */
   seed?: HistorySeed | null
 }
@@ -167,6 +175,7 @@ export async function loadBrainInputs(db: DB, today: number): Promise<BrainInput
     equipment: Object.fromEntries(exRows.map(e => [e.id, loadEquipment(e.equipment)])),
     bodyweightIds: exRows.filter(e => bodyweightOk(e.equipment)).map(e => e.id),
     move: await activeMove(db),
+    planStart: fromDay,
     seed,
   }
 }
@@ -214,6 +223,12 @@ export function accessoryLastFrom(events: Pick<ModelEvents, 'sessions' | 'sets'>
   return out
 }
 
+/** Rebuild Phases 4-5: the landmine moves' last two sessions and how many, and the reps-only moves' last session. */
+export function strengthHistoryFrom(events: Pick<ModelEvents, 'sessions' | 'sets'>, before: number) {
+  const done = new Set(events.sessions.filter(x => x.status === 'completed' && x.day < before).map(x => x.id))
+  return { landmineLast: landmineHistory(events.sets, done, before), landmineSessions: landmineSessions(events.sets, done, before), repsLast: repsLastFrom(events.sets, done, before) }
+}
+
 function templateFor(s: Pick<SessionRow, 'scheduledDate' | 'blockWeek' | 'blockType' | 'label' | 'contextJson'>) {
   const day = s.scheduledDate ?? 0
   const kind = s.blockType === 'block_zero' ? 'block_zero' : 'fighter'
@@ -248,7 +263,9 @@ async function runDoseHistory(db: DB, s: Pick<SessionRow, 'id' | 'scheduledDate'
     .where(and(inArray(sessions.type, ['foundation_run', 'running']), gte(sessions.scheduledDate, day - 21), lt(sessions.scheduledDate, day)))
   const doses = rows.filter(r => r.id !== s.id && (r.status === 'completed' || r.status === 'in_progress'))
     // A walk-only dose (an easy walk or bike) ran nothing: it is not the last run (audit #8).
-    .map(r => { const run = parseDose(r.doseJson)?.run; return { day: r.day as number, sec: run && !run.walkOnly && run.runTotalSec > 0 ? run.runTotalSec : null } })
+    // A hard run has its own targets (rebuild Phase 3): it is never the easy run's "last run" or its rise.
+    // Nor is the week's longer run (it grows on its own path).
+    .map(r => { const run = parseDose(r.doseJson)?.run; return { day: r.day as number, sec: run && !run.walkOnly && !run.hard && !run.long && run.runTotalSec > 0 ? run.runTotalSec : null } })
     .filter((r): r is { day: number; sec: number } => r.sec != null)
     .sort((a, b) => a.day - b.day)
   const last = doses[doses.length - 1] ?? null
@@ -331,7 +348,7 @@ function withDecision(d: StoredDose, dec: DoseDecision, inp: BrainInputs, capLow
 }
 
 async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: BrainInputs | undefined, opts: ComputeOpts): Promise<StoredDose | null> {
-  if (!KEY_TYPES.has(s.type) || s.type === 'mt_class' || s.type === 'skip_rope') return null
+  if (!KEY_TYPES.has(s.type) || s.type === 'mt_class' || s.type === 'skip_rope' || s.type === 'bag_conditioning') return null
   const day = s.scheduledDate ?? today
   const inputs = inp ?? await loadBrainInputs(db, today)
   const night = nightState(inputs, day)
@@ -344,7 +361,9 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
   const inj = injuryFrom(s, flag)
   const backToday = inj.action.action === 'back_swap' ? 1 : (inputs.backByDay.get(day) ?? null)
   const plan = bodyPlanMark(s.contextJson)
-  const lighter = inLighter(day, inputs.move)
+  const lightKind = lighterOn(inputs, day)
+  const lighter = lightKind != null
+  const lightWhy = lightKind === 'triggered' ? { strength: TRIGGERED_WHY, run: TRIGGERED_RUN_WHY, bag: TRIGGERED_BAG_WHY } : null
   // The morning after a class (by its real slot): heavy legs or a hard run only on a green morning, else eased (§5.2).
   let capAfterClass: Level | null = levelCap
   let afterClassWhy: string | null = null
@@ -358,10 +377,12 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
       afterClassWhy = 'A class in the last 24 hours and not a green morning: easier today.'
     }
   }
-  const ctx: DoseCtx = { day, state: effective.state, stateWhy: afterClassWhy && effective.why ? `${effective.why} ${afterClassWhy}` : (afterClassWhy ?? effective.why), model: inputs.model, backToday: plan?.op === 'back' ? 1 : backToday, openPlans: inputs.openPlans, levelCap: capAfterClass, levelFloor }
+  // Away, per his note (rebuild Phase 8, audit #12): the rules read it too, not only the AI.
+  const away = tempMode(inputs, day) === 'away'
+  const ctx: DoseCtx = { day, state: effective.state, stateWhy: afterClassWhy && effective.why ? `${effective.why} ${afterClassWhy}` : (afterClassWhy ?? effective.why), model: inputs.model, backToday: plan?.op === 'back' ? 1 : backToday, openPlans: inputs.openPlans, levelCap: capAfterClass, levelFloor, away }
   const base = {
     v: DOSE_VERSION, sessionId: s.id, day, type: s.type, state: effective.state, stateWhy: effective.why,
-    stamp: doseStamp(s, cap, ctx.backToday, inLighter(day, inputs.move), await stampTest(db, s, today)), at: Math.floor(Date.now() / 1000),
+    stamp: doseStamp(s, cap, ctx.backToday, lighter, await stampTest(db, s, today), tempMode(inputs, day)), at: Math.floor(Date.now() / 1000),
     flags: {
       back: (ctx.backToday != null && ctx.backToday <= 2) || inputs.model.back.openPlans > 0 || inj.action.action === 'back_swap',
       injury: inj.action.action !== 'none' || inj.ravenOneSet != null || plan != null || inputs.openPlans.length > 0,
@@ -389,10 +410,11 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
       kind, main, fighter, tmKg: kind === 'block_zero' ? inputs.tmInBlockKg : inputs.tmKg, equipment: inputs.equipment,
       steppedThisWeek: await steppedThisWeek(db, s), lastFeltHard: await lastFeltHard(db, s, inputs),
       accessories, bodyweightIds: inputs.bodyweightIds, accessoryLast: accessoryLastFrom(inputs.events, day),
+      ...strengthHistoryFrom(inputs.events, day),
     })
     const u = dose.lifts.length ? Math.round((dose.lifts.reduce((n, l) => n + l.u, 0) / dose.lifts.length) * 100) / 100 : null
     if (lighter) {
-      const light = lighterStrength(dose)
+      const light = lighterStrength(dose, lightWhy?.strength, { oneEase: lightWhy != null })
       return { ...base, level: light.level, strength: light, facts: { u, modelState: light.lifts[0]?.state ?? null }, why: light.why }
     }
     return { ...base, level: dose.level, strength: dose, facts: { u, modelState: dose.lifts[0]?.state ?? null }, why: dose.why }
@@ -412,7 +434,9 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
     const lastTest = latestTest(tests, day - 1)
     // The raven's plan on this run, or one open for his legs: the easy run its plan shapes.
     const legPlan = plan != null || inputs.openPlans.some(p => LEG_REGIONS.has(p.region))
-    if (kind && !bike && !legPlan && ceilingFor(ctx) !== 'RECOVER' && ceilingFor(ctx) !== 'REST' && inputs.model.run.rungSec >= CONTINUOUS_FROM_SEC) {
+    // Just over being sick, or away (rebuild Phase 8): an easy run in place of a hard one or the test.
+    const returning = night.returning === true
+    if (kind && !bike && !legPlan && !returning && !away && ceilingFor(ctx) !== 'RECOVER' && ceilingFor(ctx) !== 'REST' && inputs.model.run.rungSec >= CONTINUOUS_FROM_SEC) {
       const ease = lighter || ctx.state === 'AMBER' || (ctx.levelCap != null && !levelAbove(ctx.levelCap, 'EASE'))
       // R7 (no run over 110% of the longest in 30 days) and R8 (the week's budget, shared by the runs left):
       // fewer reps or minutes to fit. The test keeps its 5 km (only its warm-up shortens).
@@ -420,30 +444,38 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
       const { plan: hp, why } = hardPlan({
         kind, weeksSince: await weeksSinceSpeeds(db, day, lastTest), fiveK: lastTest, easyPaceSecKm: inputs.model.run.easyPaceSecKm,
         maxHr: inputs.events.profile.maxHr, lineBpm: ceiling.bpm, ease, capSec: Number.isFinite(capSec) ? capSec : null,
+        // Speeds nudge up between tests from his hard runs' own results (rebuild Phase 3).
+        nudges: nudgesSince(inputs.model.run.hardRecent ?? [], lastTest?.day ?? null),
       })
       const level: Level = ease ? 'EASE' : 'HOLD'
-      const whyAll = [...(ease && ctx.stateWhy ? [ctx.stateWhy] : []), ...(lighter ? ['Lighter week before the next block: one rep fewer.'] : []), ...why]
+      const whyAll = [...(ease && ctx.stateWhy ? [ctx.stateWhy] : []), ...(lighter ? [lightWhy ? 'Lighter week: one rep fewer.' : 'Lighter week before The Campaign: one rep fewer.'] : []), ...why]
       const dose = hardRunDose(level, hp, whyAll)
       return { ...base, level, run: dose, facts: { u: inputs.model.run.u, modelState: inputs.model.run.state }, why: whyAll }
     }
     // Block Zero's easy runs (the run-walk, and a plain easy / Zone 2 run) follow the model's rung.
     const runWalk = isBlockZeroModelRun(s) || (kind != null && s.blockType === 'block_zero')
     let plannedSec: number | null = null
-    if (!runWalk) {
-      if (s.type === 'foundation_run' || s.notes === 'zone2') plannedSec = ZONE2_PRESCRIPTION.targetDurSec
-      else plannedSec = RUNNING_PLAN_TEMPLATE.find(r => r.weekNumber === (s.blockWeek ?? 1))?.targetDurSec ?? ZONE2_PRESCRIPTION.targetDurSec
-    }
-    const dose = runDose(ctx, {
+    // An easy run outside the one plan (an old Fighter row): his rung, at least 10 minutes (the fixed
+    // 20-minute Zone 2 run and the 12-week run plan are gone; rebuild Phase 3).
+    if (!runWalk) plannedSec = Math.max(CONTINUOUS_FROM_SEC, Math.round(inputs.model.run.rungSec / 60) * 60)
+    const rawRun = runDose(ctx, {
       kind: runWalk ? 'run_walk' : 'continuous', longestLast30Sec: guards.longestLast30Sec || null, weekly: guards.weekly, hrCeilingBpm: ceiling.bpm,
       maxRungSec: plan?.shapeWeek != null ? getRunWalkWeek(plan.shapeWeek).runSec : null, bike, plannedSec,
       lastRunSec: hist.lastRunSec, riseThisWeek: hist.riseThisWeek,
+      // The week's longer Zone 2 Run (the week plan's long mark): its own path (rebuild Phase 3).
+      ...(planOf(s.contextJson)?.long ? { long: inputs.model.run.long ? { lastSec: inputs.model.run.long.lastSec, goodInRow: inputs.model.run.long.goodInRow } : null } : {}),
     })
+    // Every session 60 minutes or less, the run-walk's warm-up included (rebuild Phase 2).
+    // The week's longer Zone 2 Run alone may reach about 75 minutes (2026-10-26).
+    const dose = capRunDose(rawRun, s.type === 'foundation_run' ? runWarmupSec() : 0, rawRun.long ? LONG_CAP_MIN : SESSION_CAP_MIN)
     // Page 76: every piece has a treadmill speed; an easy run's comes from the last test (or his easy pace).
     const easyKmh = dose.walkOnly ? null : speedsFrom(lastTest?.sec ?? estimateFiveKSec(inputs.model.run.easyPaceSecKm), inputs.model.run.easyPaceSecKm ? 3600 / inputs.model.run.easyPaceSecKm : null).easy
     const withSpeed: RunDose = easyKmh != null ? { ...dose, easyKmh } : dose
-    const whyNotYet = kind && !dose.walkOnly && inputs.model.run.rungSec < CONTINUOUS_FROM_SEC ? ['Hard runs start once you run 10 minutes straight.'] : []
+    const whyNotYet = kind && !dose.walkOnly && inputs.model.run.rungSec < CONTINUOUS_FROM_SEC ? ['Hard runs start once you run 10 minutes straight.']
+      : kind && away ? ['Away, per your note: an easy run, the hard one waits until you are back.']
+        : kind && returning ? ['Just over being sick: an easy run, the hard one waits a few days.'] : []
     if (lighter) {
-      const light = lighterRun(withSpeed)
+      const light = lighterRun(withSpeed, lightWhy?.run)
       return { ...base, level: light.level, run: light, facts: { u: inputs.model.run.u, modelState: inputs.model.run.state }, why: [...whyNotYet, ...light.why] }
     }
     return { ...base, level: dose.level, run: { ...withSpeed, why: [...whyNotYet, ...withSpeed.why] }, facts: { u: inputs.model.run.u, modelState: inputs.model.run.state }, why: [...whyNotYet, ...dose.why] }
@@ -452,19 +484,48 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
   if (s.type === 'bag_work') {
     const early = s.blockType === 'block_zero'
     const raw = bagDose(ctx, { maxRounds: early ? 6 : 8, injuryWhy: inj.action.action === 'technical' ? inj.action.note : null })
-    const dose = lighter ? lighterBag(raw) : raw
+    const dose = lighter ? lighterBag(raw, lightWhy?.bag) : raw
     return { ...base, level: dose.level, bag: dose, facts: { u: inputs.model.bag.u, modelState: inputs.model.bag.state }, why: dose.why }
   }
   return null
 }
 
-function doseStamp(s: Pick<SessionRow, 'type' | 'label' | 'scheduledDate' | 'contextJson'> & { notes?: string | null }, cap: BrainCap | null, backToday: number | null, lighter = false, fiveKSec: number | null = null): string {
+/**
+ * The lighter days in force on `day`: the move's, before The Campaign, or a
+ * lighter week his mornings and sessions triggered (lighterWeek.ts).
+ */
+export function lighterOn(inp: BrainInputs, day: number): 'move' | 'triggered' | null {
+  if (inLighter(day, inp.move)) return 'move'
+  if (inp.move != null || inp.planStart == null) return null
+  return triggeredLighter({ checkIns: inp.checkIns, sessions: inp.events.sessions, model: inp.model, planStart: inp.planStart }, day) ? 'triggered' : null
+}
+
+/** Away, or just over being sick (rebuild Phase 8): either one changes the dose, so it is in the stamp. */
+function tempMode(inp: BrainInputs, day: number): 'away' | 'returning' | null {
+  if (activeState(inp.temp, 'away', day)) return 'away'
+  return nightState(inp, day).returning ? 'returning' : null
+}
+
+function doseStamp(s: Pick<SessionRow, 'type' | 'label' | 'scheduledDate' | 'contextJson'> & { notes?: string | null }, cap: BrainCap | null, backToday: number | null, lighter = false, fiveKSec: number | null = null, temp: string | null = null): string {
   const plan = bodyPlanMark(s.contextJson)
   const ease = coachEaseFrom(s.contextJson)
   // 'fyw': strength doses written before every lift started light (2026-10-23) are written again.
   // A hard run (page 76): its kind and the 5K its speeds come from.
   const hard = s.type === 'running' && hardKindOf({ type: s.type, notes: s.notes ?? null }) ? [`hard:${s.notes}`, fiveKSec] : []
-  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null, ...(lighter ? ['lighter'] : []), ...(s.type === 'strength' ? ['fyw'] : []), ...hard])
+  // Review T6: lifts merged in from a missed day are part of the dose (found from light too), so a merge re-doses.
+  const merged = s.type === 'strength' ? mergedKey(s.contextJson) : null
+  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null, ...(lighter ? ['lighter'] : []), ...(s.type === 'strength' ? ['fyw'] : []), ...hard, ...(merged ? [`merged:${merged}`] : []), ...(temp ? [temp] : [])])
+}
+
+/** The merged lifts on a session (context_json.mergedLifts), as a stable key, or null. */
+function mergedKey(contextJson: string | null | undefined): string | null {
+  if (!contextJson) return null
+  try {
+    const m = (JSON.parse(contextJson) as { mergedLifts?: unknown }).mergedLifts
+    return m == null ? null : JSON.stringify(m)
+  } catch {
+    return null
+  }
 }
 
 /** The 5K a hard run's speeds come from (its stamp), or null. */
@@ -473,11 +534,17 @@ async function stampTest(db: DB, s: Pick<SessionRow, 'type' | 'notes' | 'schedul
   return latestTest(await fiveKTests(db), (s.scheduledDate ?? today) - 1)?.sec ?? null
 }
 
-/** The first hard run on the plan (the day hard runs began), or null. */
-async function hardStartDay(db: DB): Promise<number | null> {
-  const rows = await db.select({ day: sessions.scheduledDate, type: sessions.type, notes: sessions.notes }).from(sessions)
-    .where(and(eq(sessions.type, 'running'), inArray(sessions.notes, ['tempo', 'intervals', '5k_test'])))
-  const days = rows.map(r => r.day).filter((d): d is number => d != null)
+/**
+ * The first hard run on the plan (the day hard runs began), or null. Only
+ * this block's planned hard runs he did count (review T5): an old or ad-hoc
+ * tempo run doesn't make months of hard runs.
+ */
+async function hardStartDay(db: DB, block?: { startedAt: number | null; createdAt: number } | null): Promise<number | null> {
+  const b = block ?? await getActiveBlock(db)
+  const from = b ? blockStartDay(b) : 0
+  const rows = await db.select({ day: sessions.scheduledDate, source: sessions.source }).from(sessions)
+    .where(and(eq(sessions.type, 'running'), inArray(sessions.notes, ['tempo', 'intervals', '5k_test']), eq(sessions.status, 'completed'), gte(sessions.scheduledDate, from)))
+  const days = rows.filter(r => r.source !== 'ad_hoc').map(r => r.day).filter((d): d is number => d != null)
   return days.length ? Math.min(...days) : null
 }
 
@@ -505,7 +572,7 @@ async function recentHardRuns(db: DB, today: number): Promise<RecentHard[]> {
  * computed now and stored. Every start route and preview reads this.
  */
 export async function doseFor(db: DB, s: SessionRow, today: number): Promise<StoredDose | null> {
-  if (!KEY_TYPES.has(s.type) || s.type === 'mt_class' || s.type === 'skip_rope') return null
+  if (!KEY_TYPES.has(s.type) || s.type === 'mt_class' || s.type === 'skip_rope' || s.type === 'bag_conditioning') return null
   const stored = parseDose(s.doseJson)
   if (stored && s.status !== 'planned') return stored
   if (stored) {
@@ -515,7 +582,7 @@ export async function doseFor(db: DB, s: SessionRow, today: number): Promise<Sto
     const flag = await loadInjuryFlag(db, day)
     const backToday = injuryActionFor(s.type, flag).action === 'back_swap' ? 1 : (inp.backByDay.get(day) ?? null)
     const back = bodyPlanMark(s.contextJson)?.op === 'back' ? 1 : backToday
-    if (stored.stamp === doseStamp(s, cap, back, inLighter(day, inp.move), await stampTest(db, s, today)) && stored.day === day) return stored
+    if (stored.stamp === doseStamp(s, cap, back, lighterOn(inp, day) != null, await stampTest(db, s, today), tempMode(inp, day)) && stored.day === day) return stored
     const fresh = await computeDose(db, s, today, inp)
     return fresh ? storeDose(db, s, fresh) : fresh
   }
@@ -568,6 +635,12 @@ export async function capToday(db: DB, day: number, nowSec: number): Promise<num
     const before = parseDose(s.doseJson)
     let ctxJson = s.contextJson
     if (capped && !held.has(s.id) && s.type !== 'mt_class') ctxJson = applyContext(s.contextJson, { brainCap: { state: capped.state, why: capped.why, at: nowSec } satisfies BrainCap })
+    // Review T1: the check-in fixed (energy 1 was a mis-tap): a cap the morning no longer reads lifts, and its rune goes quietly.
+    else if (!capped && brainCapFrom(s.contextJson) != null && !held.has(s.id)) {
+      ctxJson = applyContext(s.contextJson, { brainCap: null })
+      await db.update(weekAdjustments).set({ undoneAt: nowSec })
+        .where(and(eq(weekAdjustments.targetSessionId, s.id), eq(weekAdjustments.actor, 'check_in'), isNull(weekAdjustments.undoneAt)))
+    }
     const next = { ...s, contextJson: ctxJson }
     const dose = await computeDose(db, next, day, inp)
     await db.update(sessions).set({ contextJson: ctxJson }).where(eq(sessions.id, s.id))
@@ -636,7 +709,7 @@ async function classStartTimes(_db: DB, inp: BrainInputs): Promise<ClassTimes> {
 /** Session rows of a week as the outline reads them. */
 function outlineRows(rows: SessionRow[], today: number, held: Set<string>, mine: Set<string>): OutlineSession[] {
   return rows.filter(r => r.scheduledDate != null).map(r => ({
-    id: r.id, type: r.type, label: r.label, notes: r.notes, day: r.scheduledDate as number, slot: r.timeSlot === 'pm' ? 'pm' : 'am', status: r.status, source: r.source, rpe: r.rpe,
+    id: r.id, type: r.type, label: r.label, notes: r.notes, day: r.scheduledDate as number, slot: r.timeSlot === 'pm' ? 'pm' : 'am', status: r.status, source: r.source, rpe: r.rpe, planHard: planOf(r.contextJson)?.hard ?? null,
     locked: r.status !== 'planned' || (r.scheduledDate as number) < today || held.has(r.id) || mine.has(r.id) || r.source === 'ad_hoc' || r.source === 'replace',
   }))
 }
@@ -654,7 +727,7 @@ async function hisSessions(db: DB, monday: number): Promise<Set<string>> {
 }
 
 const DAY3 = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
-const NAME: Record<string, string> = { strength: 'Strength', foundation_run: 'Run-Walk', running: 'Run', bag_work: 'Bag Work', mt_class: 'MT Class', skip_rope: 'Skip Rope' }
+const NAME: Record<string, string> = { strength: 'Strength', foundation_run: 'Run-Walk', running: 'Run', bag_work: 'Bag Work', mt_class: 'MT Class', skip_rope: 'Skip Rope', bag_conditioning: 'Bag Conditioning' }
 
 /** Apply the outline's changes: each a coach change row with its rune and UNDO. */
 async function applyOutline(db: DB, changes: OutlineChange[], rows: SessionRow[], blockId: string, nowSec: number, classTimes: ClassTimes = { am: null, pm: null }): Promise<number> {
@@ -778,16 +851,17 @@ async function weekOutline(db: DB, block: ActiveBlock, w: number, today: number,
   // Strength this week (Josh, 2026-10-21): a Block Zero week with no strength session gets its first one.
   // One he took off with UNDO is not offered again that week.
   const strengthHeld = weekChanges.some(({ change }) => change.actor !== 'you' && change.kind === 'add' && change.sessionType === 'strength' && change.undoneAt != null)
+  const tw = await trainingWeekFor(db, block, Math.max(w, today), today)
   let strengthStart: OutlineIn['strengthStart'] = null
-  if (kind === 'block_zero' && !strengthHeld) {
-    const tw = await trainingWeekFor(db, block, Math.max(w, today), today)
-    strengthStart = firstStrengthPick(inp.model, weekStamps(block, tw).strengthWeek)
-  }
+  if (!strengthHeld) strengthStart = firstStrengthPick(inp.model, weekStamps(block, tw).strengthWeek)
+  // The one plan's week (rebuild Phase 2): its hard-day cap and the classes it holds.
+  const shape = await storedShape(db, block.id, weekStamps(block, tw).weekNumber, w)
   const outlineIn: OutlineIn = {
     today, monday: w, blockType: kind, blockStart: blockStartDay(block), sessions: outlineRows(rows, today, held, mine),
     classDays: ctx.classDays, classDaysSet: ctx.classDaysSet, classSlots: ctx.classSlots, classLean: ctx.classLean,
     classCap: ctx.classCap, classHeld, ladder, model: inp.model, state: nightState(inp, today).state, restDue: opts.restDue,
     strengthStart, ...(opts.firstAddDay != null ? { firstAddDay: opts.firstAddDay } : {}),
+    ...(shape && shape.classKey !== FIXED_KEY ? { hardCap: shape.cap, classTarget: shape.entries.filter(e => e.type === 'mt_class').length } : {}),
   }
   return { rows, held, mine, weekChanges, outlineIn }
 }
@@ -847,44 +921,67 @@ function tiredWeek(inp: BrainInputs, today: number, restDue: string | null): boo
 
 /**
  * The week's hard runs (page 76): which planned runs are hard and which kind
- * (lib/brain/hardRuns.ts planWeekRuns). Where the plan alone says so (week 4
- * on, the test week, a skipped hard run taken by another run) the run quietly
- * becomes what the plan has. Where the coach eases the week (a heavy week of
- * classes and bag work, a tired week), each change is a change row with its
- * rune, KEEP and UNDO; an UNDO holds the run for the week. Block Zero only.
+ * (lib/brain/hardRuns.ts planWeekRuns), for every block (rebuild Phase 2: the
+ * one plan). The week builder sets how many fit (its stored week: the step and
+ * the hard-day cap) and the runs never land in the 48 h after a lift or on
+ * back-to-back days. Where the plan alone says so (week 4 on, the test week, a
+ * skipped hard run taken by another run) the run quietly becomes what the plan
+ * has. Where the coach eases the week (a heavy week of classes and hard bag
+ * work, a tired week), each change is a change row with its rune, KEEP and
+ * UNDO; an UNDO holds that run for the week.
+ *
+ * Review T2: an ease toward an easy run is a safety call, so it goes in even
+ * when the night's 2 visible changes are used, and his UNDO on one run no
+ * longer blocks the coach easing another.
  */
 export async function balanceHardRuns(db: DB, block: ActiveBlock, w: number, today: number, inp: BrainInputs, nowSec: number, opts: { budget: number; restDue: string | null }): Promise<number> {
-  if (blockKind(block.blockType) !== 'block_zero') return 0
-  const week = weekStamps(block, await trainingWeekFor(db, block, Math.max(w, today), today)).weekNumber
+  const stamps = weekStamps(block, await trainingWeekFor(db, block, Math.max(w, today), today))
+  const week = stamps.weekNumber
   const rows = await db.select().from(sessions).where(and(gte(sessions.scheduledDate, w), lte(sessions.scheduledDate, w + 6)))
-  const runRows = rows.filter(r => (r.type === 'foundation_run' || r.type === 'running') && r.scheduledDate != null && r.blockType === 'block_zero')
+  const runRows = rows.filter(r => (r.type === 'foundation_run' || r.type === 'running') && r.scheduledDate != null)
   if (runRows.length === 0 || (!hardWeek(week) && !runRows.some(r => hardKindOf(r)))) return 0
+  const shape = await storedShape(db, block.id, week, w)
   const held = await loadHeld(db, w)
   const mine = await hisSessions(db, w)
   const live = (r: SessionRow) => r.status !== 'skipped' && r.status !== 'missed'
   const runs: WeekRun[] = runRows.map(r => ({
     id: r.id, day: r.scheduledDate as number, kind: hardKindOf(r) ?? 'easy',
     status: r.status === 'completed' || r.status === 'in_progress' ? 'done' : live(r) ? 'planned' : 'gone',
-    fixed: r.status !== 'planned' || (r.scheduledDate as number) < today || held.has(r.id) || mine.has(r.id) || r.source === 'ad_hoc' || r.source === 'replace' || (r.notes != null && r.type === 'running' && !hardKindOf(r)),
+    // A 5K test already placed stays put (it counts as the week's hard run; no quiet flip back and a second rune).
+    fixed: r.status !== 'planned' || (r.scheduledDate as number) < today || held.has(r.id) || mine.has(r.id) || r.source === 'ad_hoc' || r.source === 'replace' || (r.notes != null && r.type === 'running' && !hardKindOf(r)) || hardKindOf(r) === 'test',
+    ...(planOf(r.contextJson)?.long ? { long: true } : {}),
   }))
   const day = (t: string) => rows.filter(r => r.type === t && live(r) && r.scheduledDate != null).map(r => r.scheduledDate as number)
+  // Only hard combat makes a heavy week: Bag Work planned as technique and a steady Bag Conditioning don't.
+  const hardBag = rows.filter(r => (r.type === 'bag_work' || r.type === 'bag_conditioning') && live(r) && r.scheduledDate != null && isHardRow(r)).map(r => r.scheduledDate as number)
+  const liftAt = rows.filter(r => r.type === 'strength' && live(r) && r.scheduledDate != null).map(r => ({ day: r.scheduledDate as number, slot: r.timeSlot === 'pm' ? 'pm' as const : 'am' as const }))
+  // Last week's lifts on Saturday and Sunday reach into this week's 48 h.
+  const before = await db.select().from(sessions).where(and(eq(sessions.type, 'strength'), gte(sessions.scheduledDate, w - 2), lt(sessions.scheduledDate, w)))
+  for (const r of before.filter(live)) liftAt.push({ day: r.scheduledDate as number, slot: r.timeSlot === 'pm' ? 'pm' : 'am' })
   // The raven's plan for a knee, ankle, shin, hip or leg is open: the week's runs stay easy until it settles.
   const legs = inp.openPlans.find(p => LEG_REGIONS.has(p.region))
   const hold = legs ? `${legs.region.charAt(0).toUpperCase()}${legs.region.slice(1)}: hard runs wait until it settles.` : null
   // The 5K test when he is ready and the week allows (not a fixed slot): see testReady.
   const tired = tiredWeek(inp, today, opts.restDue)
   const lastTest = latestTest(await fiveKTests(db), today)
-  const since = lastTest?.day ?? await hardStartDay(db)
-  const ready = runs.some(r => r.kind === 'test') ? { ready: false, why: '' } : testReady({ week, today, sinceDay: since, recent: await recentHardRuns(db, today), rough: tired || legs != null || nightState(inp, today).state === 'RED' })
-  // Classes, bag work and the other hard runs keep the test off their day and the day after (planWeekRuns);
-  // the block's lifting days sit before every run day by design, so they don't.
-  const plan = planWeekRuns({ week, runs, classDays: day('mt_class'), bagDays: day('bag_work'), tired, hold, test: ready.ready ? { why: ready.why } : null, weeksSince: since == null ? 0 : Math.max(0, Math.floor((today - since) / 7)) })
+  const since = lastTest?.day ?? await hardStartDay(db, block)
+  // A test still to come in an earlier week (next week is planned before this week's test is run):
+  // that test sets the speeds first, so none is placed here (no tests in back-to-back weeks).
+  const testAhead = (await db.select({ id: sessions.id }).from(sessions).where(and(eq(sessions.type, 'running'), eq(sessions.notes, '5k_test'), inArray(sessions.status, ['planned', 'in_progress']), gte(sessions.scheduledDate, today), lt(sessions.scheduledDate, w)))).length > 0
+  // A run he held with UNDO this week: no test is placed this week (he said no to the week's change).
+  const ready = testAhead || runs.some(r => r.kind === 'test') || runRows.some(r => held.has(r.id)) ? { ready: false, why: '' } : testReady({ week, today, sinceDay: since, recent: await recentHardRuns(db, today), rough: tired || legs != null || nightState(inp, today).state === 'RED' })
+  // The week builder's room: the hard runs it placed (eased ones are easy), counting the days already past.
+  const maxHard = shape && shape.classKey !== FIXED_KEY ? shape.entries.filter(e => e.role === 'hard_run').length : null
+  const plan = planWeekRuns({
+    week, runs, classDays: day('mt_class'), bagDays: hardBag, tired, hold, test: ready.ready ? { why: ready.why } : null,
+    weeksSince: since == null ? 0 : Math.max(0, Math.floor((today - since) / 7)), maxHard, liftAt,
+    // A morning lift keeps the test off its day; a lift that evening after the run is a doubled morning (fine).
+    busyDays: liftAt.filter(l => l.slot === 'am').map(l => l.day),
+  })
   const pm = await pmStart(db)
   const setId = crypto.randomUUID()
   const records: NewChange[] = []
   let shown = 0
-  // He took an ease back with UNDO: the week keeps the hard runs he chose; no other run is eased instead.
-  const heldWeek = runRows.some(r => held.has(r.id))
   for (const r of runRows) {
     const run = runs.find(x => x.id === r.id)
     if (!run || run.fixed || run.status !== 'planned') continue
@@ -895,7 +992,8 @@ export async function balanceHardRuns(db: DB, block: ActiveBlock, w: number, tod
     // A swap between hard kinds around the test is part of it and stays quiet.
     const was = plan.baseline[r.id]
     const eased = was !== want && (want === 'test' || want === 'easy' || was === 'easy')
-    if (eased && (shown >= opts.budget || heldWeek)) continue
+    // A safety ease (a hard run going easy) always goes in; a test or a run made hard waits for the budget.
+    if (eased && want !== 'easy' && shown >= opts.budget) continue
     const next = { ...r, ...f }
     await db.update(sessions).set(f).where(eq(sessions.id, r.id))
     if (!eased) continue
@@ -922,14 +1020,69 @@ export async function balanceHardRuns(db: DB, block: ActiveBlock, w: number, tod
  */
 export async function fiveKReady(db: DB, inp: BrainInputs, today: number): Promise<{ ready: boolean; why: string }> {
   const block = await getActiveBlock(db)
-  if (!block || blockKind(block.blockType) !== 'block_zero') return { ready: false, why: '' }
+  if (!block) return { ready: false, why: '' }
   const week = weekStamps(block, await trainingWeekFor(db, block, today, today)).weekNumber
-  const since = latestTest(await fiveKTests(db), today)?.day ?? await hardStartDay(db)
+  const since = latestTest(await fiveKTests(db), today)?.day ?? await hardStartDay(db, block)
   const legs = inp.openPlans.some(p => LEG_REGIONS.has(p.region))
   return testReady({ week, today, sinceDay: since, recent: await recentHardRuns(db, today), rough: legs || tiredWeek(inp, today, null) || nightState(inp, today).state === 'RED' })
 }
 
 const LEG_REGIONS = new Set(['knee', 'ankle', 'shin', 'hip', 'leg'])
+
+/**
+ * Class days changed in Settings since a week was built (page 93: "Change your
+ * class days and the week re-shapes that night with no screen and no marks,
+ * because you made the change"): the rest of this week (from today) and next
+ * week are built again around what stays: done and started sessions, his own
+ * adds and moves, anything a change row holds. Quiet: no change rows. Next
+ * week is built again the same way when he first ran 10 minutes straight after
+ * it was built (its hard runs start with it). Returns the weeks re-shaped.
+ */
+export async function reshapeForClassDays(db: DB, block: ActiveBlock, today: number, nowSec: number): Promise<number> {
+  const cls = await classSetting(db)
+  const monday = mondayOf(today)
+  const extras = (await loadTemplateExtras(db, block.id)).map(e => ({ dayOfWeek: e.dayOfWeek, timeSlot: e.timeSlot, type: e.type, label: e.label, notes: e.notes }))
+  let n = 0
+  for (const w of [monday, monday + 7]) {
+    const stamps = weekStamps(block, await trainingWeekFor(db, block, Math.max(w, today), today))
+    const stored = await storedWeekPlan(db, block.id, w)
+    if (!stored || stored.shape.classKey === FIXED_KEY) continue
+    // He ran 10 minutes straight after next week was built (rebuild Phase 3): its hard runs start
+    // with it, not a week later. Quiet as well: the plan's own rule. A week under way stays as it is.
+    const hardsOpen = w > today && stored.shape.runsReady === false && hardWeek(stored.shape.week) && STEP_SHAPE[stored.shape.step].hardRuns > 0 && await runsReady(db)
+    if (stored.shape.classKey === cls.key && !hardsOpen) continue
+    const planId = stored.id
+    const week = stored.shape.week
+    // Every session a live change row names (its target, what it changed, what it made) stays for its UNDO.
+    const holds = new Set((await loadWeekChanges(db, w)).filter(c => c.change.undoneAt == null)
+      .flatMap(c => [c.change.targetSessionId, ...c.change.after.sessions.map(x => x.id), ...(c.change.after.created ?? [])])
+      .filter((id): id is string => id != null))
+    const from = Math.max(w, today)
+    const made = new Set((await db.select({ day: sessions.scheduledDate }).from(sessions).where(and(gte(sessions.scheduledDate, from), lte(sessions.scheduledDate, w + 6)))).map(r => r.day))
+    const { shape: next } = await reshapeWeek(db, { blockId: block.id, blockStart: blockStartDay(block), monday: w, week, planId, nowSec, extras }, from, holds)
+    // Days already made get their new sessions now (Foundation stays as it was); later days are made from the new week as usual.
+    for (let d = from; d <= w + 6; d++) {
+      if (!made.has(d)) continue
+      const have = await db.select({ type: sessions.type }).from(sessions).where(eq(sessions.scheduledDate, d))
+      const entries = dayEntries(next, dow(d)).filter(e => e.type !== 'mobility' || !have.some(h => h.type === 'mobility'))
+      if (entries.length) await insertDayEntries(db, block, d, entries, { weekPlanId: planId, strengthWeek: stamps.strengthWeek, nowSec })
+    }
+    n++
+  }
+  return n
+}
+
+/**
+ * Coach changes a night already wrote for `today` (review T9): a retried
+ * night counts them against its 2, so it never stacks more on the week.
+ */
+async function changesAlreadyTonight(db: DB, today: number): Promise<number> {
+  const [first] = await db.select({ at: coachDecisions.decidedAt }).from(coachDecisions).where(eq(coachDecisions.day, today)).orderBy(coachDecisions.decidedAt).limit(1)
+  if (!first) return 0
+  const rows = await db.select({ id: weekAdjustments.id }).from(weekAdjustments)
+    .where(and(eq(weekAdjustments.actor, 'coach'), gte(weekAdjustments.createdAt, first.at), inArray(weekAdjustments.kind, ['move', 'add', 'skip', 'ease'])))
+  return rows.length
+}
 const DAY_NAMES_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const dow = (d: number) => new Date(d * 86400000).getUTCDay()
 
@@ -987,10 +1140,14 @@ export async function runBrainNight(db: DB, today: number, nowSec: number, opts:
     await generateDaySessions(db, d, today, nowSec)
   }
 
+  // Class days changed: the rest of this week and next re-shape quietly first (rebuild Phase 2).
+  await reshapeForClassDays(db, block, today, nowSec)
+
   const inp = await loadBrainInputs(db, today)
   const ctx = await weekContext(db, inp, today)
-  // At most 2 visible coach changes a night, missed-session records written tonight included.
-  let budget = Math.max(0, MAX_WEEK_ACTIONS - (opts.used ?? 0))
+  // At most 2 visible coach changes a night, missed-session records written tonight included,
+  // and whatever an earlier run of this same night already wrote (review T9).
+  let budget = Math.max(0, MAX_WEEK_ACTIONS - (opts.used ?? 0) - await changesAlreadyTonight(db, today))
   let changes = 0
   let decision: NightDecision | null = null
   for (const w of weeks) {
@@ -1136,6 +1293,9 @@ export async function decideNight(db: DB, x: DecideIn): Promise<NightDecision> {
   }))
   const facts = packetFacts(athleteSignals(inp.model, inp.events, today).filter(f => !f.id.startsWith('f.note.')))
   facts.unshift({ id: 'f.state', value: night.state })
+  // His three goals (rebuild Phase 8): the 5K gap, the lift trend, the combo level.
+  const tierRows = await db.select({ tier: combos.tier, unlocked: combos.unlocked, source: combos.source }).from(combos).catch(() => [])
+  facts.push(...packetFacts(goalSignals(inp.model, { fiveKTests: await fiveKTests(db), comboTier: tierRows.length ? currentComboTier(tierRows) : null }, today, GOAL_5K_SEC)))
   // Block readiness (§8): how many parts are in, and after week 10 the part that lags (the week leans on it).
   const ready = await blockReadinessFor(db, today).catch(() => null)
   if (ready) {
@@ -1143,6 +1303,8 @@ export async function decideNight(db: DB, x: DecideIn): Promise<NightDecision> {
     if (ready.lagging) facts.push({ id: 'f.readiness.lagging', value: ready.lagging })
     if (ready.move) facts.push({ id: 'f.readiness.lighterWeek', value: inLighter(today, ready.move) })
   }
+  // A lighter week his body triggered: the doses are already lighter; never push.
+  if (lighterOn(inp, today) === 'triggered') facts.push({ id: 'f.lighterWeek', value: true })
   const notes = await loadRecentNotes(db, today, inp.temp)
   // The notebook (item 1), rebuilt from its evidence before the AI reads it.
   const index = await loadEvidenceIndex(db, today)

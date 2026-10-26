@@ -126,6 +126,11 @@ export async function loadModelEvents(db: DB, fromDay: number, today: number): P
       // A walk-only dose (an easy walk or bike): no piece, no rung, so it can never reset his run (audit #8).
       const walkOnly = doseRun?.walkOnly === true
       const dosed = doseRun && !walkOnly ? { runSec: doseRun.runSec ?? null, rungSec: doseRun.rungSec ?? null } : null
+      // A hard run (rebuild Phase 3) is judged on its own targets: its kind and its heart top.
+      const hard = s?.type === 'running' && (s.notes === 'tempo' || s.notes === 'intervals' || s.notes === '5k_test') ? s.notes : null
+      const hardTop = hard ? (() => { try { return (JSON.parse(s?.doseJson ?? 'null') as { run?: { hard?: { heart?: { top?: number } } } } | null)?.run?.hard?.heart?.top ?? null } catch { return null } })() : null
+      // The week's longer Zone 2 Run (the week plan's long mark).
+      const long = parse<{ plan?: { long?: boolean } }>(s?.contextJson ?? null, {}).plan?.long === true
       return {
         sessionId: r.sessionId, day: dayOf.get(r.sessionId) as number, type: s?.type ?? 'running',
         durationSec: r.durationSec, plannedDurationSec: r.plannedDurationSec, distanceKm: r.distanceKm, avgHr: r.avgHr, maxHr: r.maxHr,
@@ -135,6 +140,8 @@ export async function loadModelEvents(db: DB, fromDay: number, today: number): P
         pieceSec: walkOnly ? null : runWalk ? dosed?.runSec ?? (s?.type === 'foundation_run' ? getRunWalkWeek(Math.max(1, weekNumber ?? 1)).runSec : null) : null,
         rungSec: runWalk && !walkOnly ? dosed?.rungSec ?? null : null,
         ...(walkOnly ? { walkOnly: true } : {}),
+        ...(hard ? { hard, hardTop } : {}),
+        ...(long ? { long: true } : {}),
       }
     }),
     talkTests: tests.map(t => ({ day: localDayOf(t.recordedAt, tz), bpm: t.value })).filter(t => t.day >= fromDay && t.day <= today),

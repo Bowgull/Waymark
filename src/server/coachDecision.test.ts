@@ -18,6 +18,10 @@ import { createTrainingBlock } from './blocks'
 import { capToday, parseDose, runBrainNight } from './brain'
 import { prepareWeek } from './weeklyPass'
 import { testDb } from './testDb'
+import { setFixedWeekForTests } from './onePlan'
+
+// These stories are written on the old fixed Block Zero week (rebuild Phase 2 keeps it for them).
+setFixedWeekForTests(true)
 
 const MON = isoToEpochDay('2027-01-04')
 const nowSec = (day: number, h = 7) => day * 86400 + h * 3600

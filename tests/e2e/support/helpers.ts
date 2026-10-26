@@ -125,9 +125,41 @@ export async function metricOffenders(page: Page): Promise<string[]> {
   return (await visibleWords(page)).filter(w => WRONG_UNIT.test(w))
 }
 
-/** The grass under a running timer (tap: pause; swipe up: skip). */
+/**
+ * Where a strength session stands: the lift on screen and its set line
+ * ("Landmine RDL · Warmup 1 of 2"). The warm-up's first move can be a single
+ * set (Strength A's band pull-aparts), so specs compare places, not numbers.
+ */
+export async function strengthPlace(page: Page): Promise<string> {
+  const head = page.locator('.wm-board-head > span').first()
+  await expect(head).toBeVisible()
+  const name = await page.locator('.ss-row [role="img"]').first().getAttribute('aria-label')
+  return `${name} · ${(await head.textContent())?.trim()}`
+}
+
+/**
+ * Log sets and swipe on until the set on screen has another of the same lift
+ * after it (the rest then shows NEXT n OF m; after a lift's last set it has no
+ * count, page 84: the count is the lift's sets).
+ */
+export async function toSetWithAnother(page: Page, max = 6) {
+  const logSet = page.getByRole('button', { name: 'LOG SET', exact: true })
+  for (let i = 0; i < max; i++) {
+    await expect(logSet).toBeVisible()
+    const m = /(\d+) of (\d+)/.exec(await strengthPlace(page))
+    if (m && Number(m[1]) < Number(m[2])) return
+    const at = await strengthPlace(page)
+    await logSet.tap()
+    await expect(grass(page)).toBeVisible()
+    await swipeUpGrass(page)
+    await expect.poll(() => strengthPlace(page)).not.toBe(at)
+  }
+  throw new Error('no set with another after it')
+}
+
+/** The grass under a running timer (tap: pause; swipe up: skip). Bag Finisher and Bag Conditioning name their own. */
 export function grass(page: Page): Locator {
-  return page.getByRole('button', { name: /^(Timer|Finisher)\. Tap to pause/ })
+  return page.getByRole('button', { name: /^(Timer|Finisher|Bag conditioning)\. Tap to pause/ })
 }
 
 /** The grass under a timer that hasn't started (page 71: no START button; the grass starts it). */
@@ -137,7 +169,7 @@ export function grassToStart(page: Page): Locator {
 
 /** The grass while paused (page 71: PAUSED · TAP TO GO ON). */
 export function grassPaused(page: Page): Locator {
-  return page.getByRole('button', { name: /^(Timer|Finisher) paused\. Tap to go on/ })
+  return page.getByRole('button', { name: /^(Timer|Finisher|Bag conditioning) paused\. Tap to go on/ })
 }
 
 /** Page 71: tap the grass to start a timed step (holds, rounds, the warm-up). */
@@ -150,6 +182,8 @@ export async function tapGrassToStart(page: Page) {
 
 /** A finger drag up the grass, far enough to pull it all the way: skips the phase. */
 export async function swipeUpGrass(page: Page) {
+  // Never wait on a grass that's gone (the part ended, the timer closed): fail fast instead.
+  await expect(grass(page)).toBeVisible({ timeout: 10_000 })
   const box = await grass(page).boundingBox()
   if (!box) throw new Error('no grass to swipe')
   const x = box.x + box.width / 2
@@ -162,6 +196,7 @@ export async function swipeUpGrass(page: Page) {
 
 /** Page 85: a full pull down the grass goes back (the first restarts the part, another within 3 s the part before). */
 export async function swipeDownGrass(page: Page) {
+  await expect(grass(page)).toBeVisible({ timeout: 10_000 })
   const box = await grass(page).boundingBox()
   if (!box) throw new Error('no grass to swipe')
   const x = box.x + box.width / 2

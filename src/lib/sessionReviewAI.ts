@@ -16,7 +16,6 @@ import {
 } from '../db/schema'
 import { anthropicCall, getToolInput } from './anthropic'
 import { buildSystemPrompt, type UserProfileContext } from './prompts/system'
-import { getLatestBodyweightKg } from './bodyMetrics'
 import { TOOL_SESSION_REVIEW, type SessionReviewOutput } from './prompts/tools'
 import { kgToLbsDisplay, paceToMinSec } from './chartTheme'
 import { getSessionTargetHr } from './sessionIntent'
@@ -315,7 +314,6 @@ export async function runSessionReview(
     db.select({ mtClassDays: settings.mtClassDays }).from(settings).limit(1).then(rows => rows[0] ?? null),
   ])
 
-  const latestBodyweightKg = await getLatestBodyweightKg(db)
 
   const profile: UserProfileContext = {
     goals: profileRow?.goals ?? null,
@@ -324,10 +322,8 @@ export async function runSessionReview(
     trainingHistory: profileRow?.trainingHistory ?? null,
     mtClassDays: settingsRow?.mtClassDays ?? null,
     mtCapPerWeek: profileRow?.mtCapPerWeek ?? null,
-    weeklyDayTarget: profileRow?.weeklyDayTarget ?? null,
     constraints: profileRow?.constraints ?? null,
     trainingMaxes: tmRows.map(t => ({ exerciseName: t.name, weightKg: t.weightKg })),
-    latestBodyweightKg,
   }
 
   const recentOther = recent.filter(r => r.id !== session.id).slice(0, 3)
