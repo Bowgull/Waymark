@@ -51,23 +51,23 @@ name: Run-walk - the warm-up, then run and walk intervals
 # moving screens took 18 s a turn, missing FINISH's 10 s). Up to about 200 s, as before.
 - repeat:
     while:
-      notVisible: "RUN 1/.*"
+      notVisible: "Round 1 of .*"
     times: 100
     commands:
       - extendedWaitUntil:
-          visible: "RUN 1/.*"
+          visible: "Round 1 of .*"
           timeout: 2000
           optional: true
-- assertVisible: "RUN 1/.*"
+- assertVisible: "Round 1 of .*"
 - takeScreenshot: 05-run-walk-run
 - repeat:
     while:
-      notVisible: "WALK 1/.*"
+      notVisible: "Next 2 of .*"
     times: 150
     commands:
       - extendedWaitUntil:
-          visible: "WALK 1/.*"
+          visible: "Next 2 of .*"
           timeout: 2000
           optional: true
-- assertVisible: "WALK 1/.*"
+- assertVisible: "Next 2 of .*"
 - takeScreenshot: 05-run-walk-walk

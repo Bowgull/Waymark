@@ -8,18 +8,21 @@ name: Today, loaded (RELOAD if it didn't)
 # reads now go out alongside it), and Today then shows its boards with no
 # strip and no RELOAD. Open the app again, once.
 ---
+- tapOn:
+    text: "Don.t Allow"
+    optional: true
 - extendedWaitUntil:
-    visible: "This week|RELOAD"
+    visible: "Morning Report.*|RELOAD"
     timeout: 60000
     optional: true
 - runFlow:
     when:
-      notVisible: "This week|RELOAD"
+      notVisible: "Morning Report.*|RELOAD"
     commands:
       - launchApp:
           stopApp: true
       - extendedWaitUntil:
-          visible: "This week|RELOAD"
+          visible: "Morning Report.*|RELOAD"
           timeout: 60000
 - runFlow:
     when:
@@ -27,7 +30,7 @@ name: Today, loaded (RELOAD if it didn't)
     commands:
       - tapOn: "RELOAD"
       - extendedWaitUntil:
-          visible: "This week|RELOAD"
+          visible: "Morning Report.*|RELOAD"
           timeout: 60000
 - runFlow:
     when:
@@ -35,6 +38,10 @@ name: Today, loaded (RELOAD if it didn't)
     commands:
       - tapOn: "RELOAD"
       - extendedWaitUntil:
-          visible: "This week|RELOAD"
+          visible: "Morning Report.*|RELOAD"
           timeout: 60000
-- assertVisible: "This week"
+# The weather asks for location (a WebKit prompt): the private answer; Today works without it.
+- tapOn:
+    text: "Don.t Allow"
+    optional: true
+- assertVisible: "Morning Report.*"

@@ -1,5 +1,5 @@
 appId: com.joshbocas.app
-name: Today - week strip, Morning Report, no Coach board
+name: Today - Morning Report, no Coach board
 ---
 - launchApp:
     stopApp: true
@@ -13,7 +13,6 @@ name: Today - week strip, Morning Report, no Coach board
     visible: "\\+ add session"
     timeout: 60000
 - takeScreenshot: 01-today
-- assertVisible: "This week"
 - assertVisible: "Morning Report, logged.*"
 - assertNotVisible: "COACH"
 - scrollUntilVisible:

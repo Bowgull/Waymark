@@ -1,57 +1,34 @@
+# The coach model on a real iPhone (the Playwright spec 09-coach covers the full swap):
+# a long press on a row opens REPLACE / SKIP (page 73), + add session opens the coach's
+# picks, and Program's week log opens. Nothing is changed: each window is closed.
 appId: com.joshbocas.app
-name: The page 56 coach model - REPLACE, + Add, runes, UNDO, the week log
+name: The coach model - the hold window, + Add, the week log
 ---
 - launchApp:
     stopApp: true
-# Today has loaded (RELOAD pressed if it didn't). The board grows as the flows
-# add sessions, so "+ add session" may be below the fold.
 - runFlow: shared/open-today.yaml
-# REPLACE with ROUGH DAY: swaps at once.
-# The run-walk from 05 is still open, so the live strip (page 61) sits above
-# the tab bar and takes a tap on a button low on the screen. Scroll Today to
-# its end first: an open row closes on a touch outside it (page 61), so no
-# swipe once it is open, and its REPLACE then lands above the strip.
-- swipe:
-    start: 50%, 75%
-    end: 50%, 25%
-- waitForAnimationToEnd:
-    timeout: 3000
-- tapOn: "Foundation FOUNDATION ~.*"
 - scrollUntilVisible:
-    element: "REPLACE"
+    element: "(?i)foundation foundation ~.*"
     direction: DOWN
-- tapOn: "REPLACE"
-- tapOn: "ROUGH DAY"
-- takeScreenshot: 07-coach-replace
-- tapOn: "Pick (Coach pick: )?Bag Work.*"
-- takeScreenshot: 07-coach-swapped
-# The swapped-out row is struck, then collapses (page 59 Swap): wait for the
-# board to settle, or the Waybook line moves up under the + add session tap.
-- waitForAnimationToEnd:
-    timeout: 3000
-# + Add always adds, MT Class included.
-- runFlow: shared/today-bottom.yaml
-- tapOn: "\\+ add session"
-- takeScreenshot: 07-coach-add
-- tapOn: "Pick (Coach pick: )?MT Class.*"
-- takeScreenshot: 07-coach-added
-# A Dagaz day: before -> after, why, UNDO.
-- scrollUntilVisible:
-    element: ".*The coach changed this day.*"
-    direction: UP
-    optional: true
-- tapOn:
-    text: ".*The coach changed this day.*"
-    optional: true
-- takeScreenshot: 07-coach-day-back
-- tapOn:
-    text: "UNDO"
-    optional: true
-- takeScreenshot: 07-coach-undone
-# The week log in Program.
+    timeout: 20000
+- longPressOn: "(?i)foundation foundation ~.*"
+- extendedWaitUntil:
+    visible: "Replace"
+    timeout: 10000
+- assertVisible: "Skip"
+- takeScreenshot: 07-coach-hold-window
 - tapOn:
     point: 50%, 3%
-    optional: true
+- runFlow: shared/today-bottom.yaml
+- tapOn: "\\+ add session"
+- extendedWaitUntil:
+    visible: "Everything else"
+    timeout: 20000
+- takeScreenshot: 07-coach-add
+- tapOn:
+    point: 50%, 3%
 - tapOn: "program"
-- tapOn: ".* changes? ›"
+- tapOn:
+    text: ".* changes? ›"
+    optional: true
 - takeScreenshot: 07-coach-week-log

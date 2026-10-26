@@ -7,20 +7,37 @@ name: Bag round - work, last 10 s, rest (and the Live Activity)
 # add sessions, so "+ add session" may be below the fold.
 - runFlow: shared/open-today.yaml
 - runFlow: shared/today-bottom.yaml
-- tapOn: "Bag Work BAG WORK.*"
+- tapOn: "(?i)bag work bag work.*"
 - runFlow: shared/today-bottom.yaml
 - runFlow:
     file: shared/enter-session.yaml
     env:
-      READY: "START ROUND"
+      # the preview card (BEGIN), then the 5:00 skip-rope warm-up, then round 1
+      READY: "BEGIN|START BAG WORK|Timer\\. Tap to (start|pause).*|Round 1 of .*"
+# Through the preview and the warm-up to round 1: BEGIN, start the rope's grass, swipe it on.
+- repeat:
+    while:
+      notVisible: "Round 1 of .*"
+    times: 12
+    commands:
+      - tapOn:
+          text: "BEGIN|START BAG WORK"
+          optional: true
+      - tapOn:
+          text: "Timer\\. Tap to start\\..*"
+          optional: true
+      - swipe:
+          start: 50%, 92%
+          end: 50%, 45%
+          duration: 600
+          optional: true
+      - waitForAnimationToEnd:
+          timeout: 2000
 - takeScreenshot: 04-bag-ready
-- tapOn: "START ROUND"
+# page 71: the grass starts the round (no START ROUND button)
+- tapOn: "Timer\\. Tap to start\\..*"
 - assertVisible: "FIGHT"
 - takeScreenshot: 04-bag-work
-# The round on screen: its last 10 s (FINISH), then the rest (REST).
-# Poll in short waits (a long wait gave up early on the runner: REST after
-# 1.5 s of 30, WALK after 103 s of 300; and waitForAnimationToEnd on these
-# moving screens took 18 s a turn, missing FINISH's 10 s). Up to about 240 s, as before.
 - repeat:
     while:
       notVisible: "FINISH"
@@ -43,18 +60,18 @@ name: Bag round - work, last 10 s, rest (and the Live Activity)
           optional: true
 - assertVisible: "REST"
 - takeScreenshot: 04-bag-rest
-# The rest runs out, round 2 waits for START ROUND.
+# The rest runs out; round 2 waits on its grass.
+# the rest ends; round 2 waits on its grass
 - repeat:
     while:
-      notVisible: "START ROUND"
+      notVisible: "Timer\\. Tap to start\\..*"
     times: 60
     commands:
       - extendedWaitUntil:
-          visible: "START ROUND"
+          visible: "Timer\\. Tap to start\\..*"
           timeout: 2000
           optional: true
-- assertVisible: "START ROUND"
-- tapOn: "START ROUND"
+- tapOn: "Timer\\. Tap to start\\..*"
 - assertVisible: "FIGHT"
 # The Live Activity while round 2 runs: the app backgrounded (Dynamic Island),
 # then the lock screen. (Done after the rest: on a slow runner these steps
@@ -87,6 +104,6 @@ name: Bag round - work, last 10 s, rest (and the Live Activity)
     stopApp: false
 # Back in the round (whichever phase it has reached by now).
 - extendedWaitUntil:
-    visible: "FIGHT|FINISH|REST|START ROUND"
+    visible: "FIGHT|FINISH|REST|Timer.*"
     timeout: 60000
 - takeScreenshot: 04-bag-back
