@@ -16,13 +16,32 @@ name: Settings, the Library, the Ledger
 - scroll
 - takeScreenshot: 06-settings-2
 - tapOn: "‹ TODAY"
-- tapOn: "library"
-- assertVisible: "strength"
+# a tab tap can land mid-transition: tap until the Library shows
+- repeat:
+    while:
+      notVisible: "techniques"
+    times: 4
+    commands:
+      - tapOn: "library"
+      - extendedWaitUntil:
+          visible: "techniques"
+          timeout: 5000
+          optional: true
+- assertVisible: "techniques"
 - takeScreenshot: 06-library
 - tapOn: "strength"
 - takeScreenshot: 06-library-strength
 - tapOn: "Back to the Library"
-- tapOn: "ledger"
+- repeat:
+    while:
+      notVisible: "WEEK"
+    times: 4
+    commands:
+      - tapOn: "ledger"
+      - extendedWaitUntil:
+          visible: "WEEK"
+          timeout: 5000
+          optional: true
 - assertVisible: "WEEK"
 - takeScreenshot: 06-ledger-week
 - tapOn: "MONTH"

@@ -17,8 +17,12 @@ name: The coach model - the hold window, + Add, the week log
     timeout: 10000
 - assertVisible: "Skip"
 - takeScreenshot: 07-coach-hold-window
+# a tap outside closes it (the veil covers the screen; the very top is the status bar)
 - tapOn:
-    point: 50%, 3%
+    point: 50%, 20%
+- extendedWaitUntil:
+    notVisible: "Replace"
+    timeout: 5000
 - runFlow: shared/today-bottom.yaml
 - tapOn: "\\+ add session"
 - extendedWaitUntil:
@@ -26,7 +30,7 @@ name: The coach model - the hold window, + Add, the week log
     timeout: 20000
 - takeScreenshot: 07-coach-add
 - tapOn:
-    point: 50%, 3%
+    point: 50%, 20%
 - tapOn: "program"
 - tapOn:
     text: ".* changes? ›"

@@ -11,7 +11,7 @@ name: ENTER the open row's session (again if the start didn't take)
     times: 3
     commands:
       - tapOn:
-          text: "ENTER|RESUME"
+          text: "ENTER.*|RESUME.*"
           optional: true
       - extendedWaitUntil:
           visible: ${READY}
