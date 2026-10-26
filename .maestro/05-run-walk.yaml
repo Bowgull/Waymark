@@ -15,14 +15,15 @@ name: Run-walk - the warm-up, then run and walk intervals
     env:
       READY: "1 OF 6"
 - takeScreenshot: 05-run-walk-warmup
-# Six warm-up moves: START a timed one then swipe the grass up to skip it; DONE a rep one.
+# Six warm-up moves: tap the grass to start a timed one, then swipe it up to
+# skip it; DONE a rep one.
 - repeat:
     while:
       notVisible: "START RUN"
     times: 20
     commands:
       - tapOn:
-          text: "START"
+          text: "Timer\\. Tap to start\\..*"
           optional: true
       - tapOn:
           text: "DONE"
