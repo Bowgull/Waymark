@@ -35,7 +35,7 @@ export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
   ],
   1: [ // Monday
     DAILY_FOUNDATION,
-    { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
+    { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2 Run', estimatedMin: 35 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
   ],
   2: [ // Tuesday
@@ -44,7 +44,7 @@ export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
   ],
   3: [ // Wednesday
     DAILY_FOUNDATION,
-    { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
+    { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2 Run', estimatedMin: 35 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
   ],
   4: [ // Thursday
@@ -54,7 +54,7 @@ export const WEEKLY_TEMPLATE: Record<number, TemplateSession[]> = {
   ],
   5: [ // Friday
     DAILY_FOUNDATION,
-    { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2', estimatedMin: 35 },
+    { timeSlot: 'am', type: 'foundation_run', label: 'Zone 2 Run', estimatedMin: 35 },
     { timeSlot: 'pm', type: 'mt_class', label: 'MT Class', estimatedMin: 100 },
   ],
   6: [ // Saturday
@@ -145,7 +145,7 @@ export function getTypeAccentColor(type: string): string {
 
 const VOLUME_TYPE_LABELS: Record<string, string> = {
   strength: 'Strength',
-  foundation_run: 'Zone 2',
+  foundation_run: 'Zone 2 Run',
   mobility: FOUNDATION_LABEL,
   mt_class: 'MT Class',
   bag_work: 'Bag Work',

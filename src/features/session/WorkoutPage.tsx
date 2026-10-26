@@ -1227,7 +1227,7 @@ export function WorkoutPage() {
           key={`fr-${exerciseIdx}-${setIdx}`}
           inline
           warmUp
-          title={foundationRunData.prescription?.runWalk ? 'RUN-WALK' : 'ZONE 2'}
+          title={foundationRunData.prescription?.runWalk ? 'RUN-WALK' : 'ZONE 2 RUN'}
           exercise={frCurrentExercise}
           exerciseIndex={exerciseIdx}
           totalExercises={frTotalExercises}
@@ -1256,7 +1256,7 @@ export function WorkoutPage() {
     }
     // No warm-up rows (straight to the run) or a run that isn't ready: no mockup, a plain frame.
     return (
-      <SessionFrame title={foundationRunData.prescription?.runWalk ? 'RUN-WALK' : 'ZONE 2'} icon="zone2" onEnd={leaveSession}>
+      <SessionFrame title={foundationRunData.prescription?.runWalk ? 'RUN-WALK' : 'ZONE 2 RUN'} icon="zone2" onEnd={leaveSession}>
         <div className="tm-wide" style={{ marginTop: 40 }}>
           {foundationRunData.runSession
             ? <SessionButton label="START RUN" primary onClick={() => setPhase('fr-run')} />

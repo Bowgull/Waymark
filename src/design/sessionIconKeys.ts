@@ -10,7 +10,7 @@ export const SESSION_ICON_NAME: Readonly<Record<SessionIconKey, string>> = {
   strength: 'Strength',
   bag: 'Bag Work',
   mt: 'MT Class',
-  zone2: 'Zone 2',
+  zone2: 'Zone 2 Run',
   run: 'Runs',
   rope: 'Skip Rope',
   foundation: 'Foundation',

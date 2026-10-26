@@ -182,7 +182,7 @@ export function easierOptions(c: Pick<SessionChange, 'type' | 'label' | 'notes'>
       if (c.notes === 'progression') {
         return blockType === 'block_zero'
           ? [{ type: 'foundation_run', label: 'Run-Walk' }, walk]
-          : [{ type: 'running', label: 'Zone 2', notes: 'zone2' }, walk]
+          : [{ type: 'running', label: 'Zone 2 Run', notes: 'zone2' }, walk]
       }
       return [walk]
     case 'foundation_run':

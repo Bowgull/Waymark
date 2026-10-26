@@ -72,8 +72,8 @@ function base(over: Partial<DayBoardSession> = {}): DayBoardSession {
 {
   assert.equal(sessionDisplayName({ type: 'mobility', label: 'Foundation' }), 'Foundation')
   assert.equal(sessionDisplayName({ type: 'active_recovery', label: null }), 'Reset')
-  assert.equal(sessionDisplayName({ type: 'foundation_run', label: null }), 'Zone 2', 'an unlabelled easy run is Zone 2')
-  assert.equal(sessionDisplayName({ type: 'running', notes: 'zone2' }), 'Zone 2')
+  assert.equal(sessionDisplayName({ type: 'foundation_run', label: null }), 'Zone 2 Run', 'an unlabelled easy run is Zone 2 Run')
+  assert.equal(sessionDisplayName({ type: 'running', notes: 'zone2' }), 'Zone 2 Run')
   assert.equal(sessionDisplayName({ type: 'running', notes: 'progression', label: null }), 'Run')
   assert.equal(sessionDisplayName({ type: 'strength', label: null }), 'Strength')
   assert.equal(sessionDisplayName({ type: 'foundation_run', label: 'Run-Walk' }), 'Run-Walk', 'page 56: the run-walk reads RUN-WALK')

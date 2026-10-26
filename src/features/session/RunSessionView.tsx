@@ -109,9 +109,9 @@ const RUN_TYPE_LABELS: Record<string, string> = {
 
 /** The run on the session flap (page 19: ZONE 2 · RUN). */
 const RUN_TITLES: Record<string, string> = {
-  zone2: 'ZONE 2',
-  easy: 'EASY',
-  easy_strides: 'EASY + STRIDES',
+  zone2: 'ZONE 2 RUN',
+  easy: 'ZONE 2 RUN',
+  easy_strides: 'ZONE 2 RUN + STRIDES',
   tempo: 'TEMPO',
   intervals: 'INTERVALS',
   '5k_test': '5K TEST',

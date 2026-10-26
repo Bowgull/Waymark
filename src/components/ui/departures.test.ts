@@ -97,7 +97,7 @@ const base = pickerOptions(TRAINING_TARGETS)
   const repl = buildDepartures(base.filter(o => replaceKeeps(runWalk, o)), wrap(boardSuggestions(allBoardRows(), { mode: 'replace', replacing: 'foundation_run', dayTypes: ['mobility', 'foundation_run'] })), { pmOnly: pmOnlyFor('2026-10-20', '2026-10-20', 18) })
   assert.deepEqual(names(repl.picks), ['SKIP ROPE', 'RESET'], 'X1: coach picks Skip Rope, Reset')
   assert.deepEqual(repl.picks.map(r => r.reason), ["The run-walk's own swap", 'Easy, 20 min'])
-  assert.deepEqual(names(repl.rest), ['BAG WORK', 'MT CLASS', 'STRENGTH', 'ZONE 2', 'PROGRESSION RUN', 'FOUNDATION'], 'X1: the rest in the mockup order, Zone 2 included')
+  assert.deepEqual(names(repl.rest), ['BAG WORK', 'MT CLASS', 'STRENGTH', 'ZONE 2 RUN', 'PROGRESSION RUN', 'FOUNDATION'], 'X1: the rest in the mockup order, Zone 2 included')
   assert.ok([...repl.picks, ...repl.rest].every(r => r.timeSlot === 'pm'), 'M3: every row is PM in the evening')
   const bag = repl.rest.find(r => r.type === 'bag_work')!
   assert.equal(selectionFor(bag, bag.timeSlot).timeSlot, 'pm', 'M3: a 6:10 PM swap to Bag Work lands in PM')
@@ -106,7 +106,7 @@ const base = pickerOptions(TRAINING_TARGETS)
   const add = buildDepartures(base, wrap(boardSuggestions(allBoardRows(), { mode: 'add', dayTypes: ['mobility', 'foundation_run', 'bag_work'] })), { pmOnly: true })
   assert.deepEqual(names(add.picks), ['RESET', 'FOUNDATION'], 'X2: coach picks Reset, Foundation')
   assert.deepEqual(add.picks.map(r => r.reason), ['Easy, 20 min', 'A second round, 12 min'])
-  assert.deepEqual(names(add.rest), ['SKIP ROPE', 'MT CLASS', 'STRENGTH', 'BAG WORK', 'ZONE 2', 'PROGRESSION RUN'], 'X2: the rest in the mockup order')
+  assert.deepEqual(names(add.rest), ['SKIP ROPE', 'MT CLASS', 'STRENGTH', 'BAG WORK', 'ZONE 2 RUN', 'PROGRESSION RUN'], 'X2: the rest in the mockup order')
   assert.ok([...add.picks, ...add.rest].every(r => r.timeSlot === 'pm'), 'X2: all PM')
 
   // The morning keeps each row's own slot.

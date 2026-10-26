@@ -18,7 +18,7 @@ async function main() {
   assert.equal(tech.length, 26)
   assert.ok(tech.some(t => t.id === 'tech-left-kick' && JSON.parse(t.aliases).includes('Left Kick')), '"Left Kick" is its own kick (0050; 0051 drops the Overhand page)')
   assert.ok(tech.some(t => t.id === 'tech-switch-kick' && !JSON.parse(t.aliases).includes('Left Kick')), 'not the switch kick')
-  assert.equal((await db.select().from(runTypes)).length, 7)
+  assert.equal((await db.select().from(runTypes)).length, 6) // 0061: Zone 2 and Easy Run were one run
 
   // a small, known set to check: everything else checked just now
   for (const t of [exercises, combos, techniques, runTypes] as const) await db.update(t).set({ videoCheckedAt: NOW })

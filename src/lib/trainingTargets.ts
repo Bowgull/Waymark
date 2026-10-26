@@ -26,7 +26,7 @@ export const TRAINING_TARGETS: SessionTarget[] = [
   },
   {
     type: 'foundation_run',
-    label: 'Zone 2',
+    label: 'Zone 2 Run',
     weeklyTarget: 3,
     priority: 'medium',
     flexibleTimeSlot: true,

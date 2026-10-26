@@ -70,7 +70,7 @@ export function weekStripDays(sessions: StripSession[], mondayEpoch: number, tod
       date: new Date(day * 86400000).getUTCDate(),
       isToday: day === todayEpoch,
       rest: prepared && list.length === 0,
-      icons: list.map(s => { const key = sessionIconFor(s.type, runCategoryOf(s)); return { key, state: iconState(s.status), id: s.id, name: (s.label?.trim() || (key === 'zone2' ? 'Zone 2' : key)).toLowerCase() } }),
+      icons: list.map(s => { const key = sessionIconFor(s.type, runCategoryOf(s)); return { key, state: iconState(s.status), id: s.id, name: (s.label?.trim() || (key === 'zone2' ? 'Zone 2 Run' : key)).toLowerCase() } }),
       rune: runeOf(day),
     }
   })

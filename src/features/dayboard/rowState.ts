@@ -588,7 +588,7 @@ export function shortLift(name: string): string {
 export function zone2PlanLine(label: string | null | undefined, capBpm: number | null | undefined, minutes: number | null | undefined): string {
   const parts = ['Easy, conversational pace.']
   parts.push(capBpm ? `Heart rate under ${capBpm}, nasal breathing.` : 'Nasal breathing.')
-  if (minutes) parts.push(`${label?.trim() || 'Zone 2'}, ${minutes} min.`)
+  if (minutes) parts.push(`${label?.trim() || 'Zone 2 Run'}, ${minutes} min.`)
   return parts.join(' ')
 }
 
