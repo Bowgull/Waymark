@@ -30,7 +30,7 @@ test('The list: no NEW KIND, Bagwork in words, compact rows; the Waybook keeps i
   const techniques = page.getByRole('button', { name: 'techniques', exact: true })
   await expect(techniques).toContainText('26')
   await expect(page.getByText('NEW KIND')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'runs', exact: true })).toContainText('7')
+  await expect(page.getByRole('button', { name: 'runs', exact: true })).toContainText('6') // 0061: one Zone 2 Run
   await expect(page.getByRole('button', { name: 'bagwork', exact: true })).toHaveText(/^BAGWORK\d+ of \d+unlocked›$/)
   await expect(page.getByRole('button', { name: 'waybook', exact: true }).getByLabel('Locked')).toBeVisible()
   // 46 px rows with 32 px icons; the board sits low (its foot near the tab bar)
