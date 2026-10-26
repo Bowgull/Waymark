@@ -24,10 +24,19 @@ name: The coach model - the hold window, + Add, the week log
     notVisible: "Replace"
     timeout: 5000
 - runFlow: shared/today-bottom.yaml
-- tapOn: "\\+ add session"
-- extendedWaitUntil:
-    visible: "Everything else"
-    timeout: 20000
+# A tap while the page still glides from the scroll only stops the glide (iOS),
+# so tap until the picks open.
+- repeat:
+    while:
+      notVisible: "Everything else"
+    times: 5
+    commands:
+      - tapOn: "\\+ add session"
+      - extendedWaitUntil:
+          visible: "Everything else"
+          timeout: 4000
+          optional: true
+- assertVisible: "Everything else"
 - takeScreenshot: 07-coach-add
 - tapOn:
     point: 50%, 20%
