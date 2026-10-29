@@ -94,15 +94,17 @@ test('Strength: the landmine punch reads lbs on the bar end, bar only, then plat
   await expect(page.getByRole('group', { name: 'Reps left' })).toBeVisible()
 })
 
-// Page 93: Strength A's PRESS line says which press, and one plain line why behind a tap.
-test('Strength: the PRESS line opens why this press', async ({ page, api }) => {
+// Page 94: Strength A opens to the logbook. The press reads by name with its sets, and no tap-for-why (Josh, 2026-10-29).
+test('Strength: the logbook lists every move, the press by name', async ({ page, api }) => {
   await setMorning(api, GOOD_MORNING)
   const s = await insertSession(api, 'strength', 'pm', { label: 'Strength A' })
   await gotoToday(page)
   const row = todayRow(page, s.id)
   await openRow(row)
-  const press = row.getByRole('button', { name: 'PRESS: why' })
-  await expect(press).toContainText(/landmine · \d×8 · /)
-  await press.tap()
-  await expect(page.getByRole('dialog', { name: 'PRESS: why' })).toContainText('Landmine press while your shoulders and back rebuild.')
+  await expect(row.locator('.pl-lg').first()).toContainText('Easy jog')
+  const press = row.locator('.pl-lg').filter({ hasText: 'Landmine press' })
+  await expect(press.locator('.s')).toHaveText(/\d×8/)
+  await expect(row.getByRole('button', { name: 'PRESS: why' })).toHaveCount(0)
+  await expect(row.locator('.pl-lg').filter({ hasText: 'Chin-up negatives' })).toHaveCount(1)
+  await expect(row.locator('.pl-lgh')).toHaveText(['Main', 'Core', 'Arms'])
 })
