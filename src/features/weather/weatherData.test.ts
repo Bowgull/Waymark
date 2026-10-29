@@ -92,26 +92,26 @@ assert.ok((feelsLike(32, 60, 5).humidex ?? 0) >= 40, 'humidex on a hot humid day
   assert.equal(w.hi, 6, "an evening read: today's high from the model")
   assert.deepEqual(w.week.map(d => [d.hi, d.lo, d.words]), [[6, -1, 'Rain'], [8, 0, 'A mix of sun and cloud'], [11, null, 'Sunny']])
   const line = coachLine(w, [{ name: 'Run', at: Date.parse('2026-10-22T22:00:00Z') }], NOW)
-  assert.equal(line?.text, 'Freezing rain warning. Indoor today.', 'an EC warning: indoor today')
+  assert.equal(line?.text, 'Freezing rain warning.', 'an EC warning: the weather only')
 }
 
 // ─── The coach line, at the run's hour ──
 {
   const w = buildWeather({ now: NOW, om: om() })
   const six = Date.parse('2026-10-22T22:00:00Z') // 6 PM
-  assert.equal(coachLine(w, [{ name: 'Run', at: six }], NOW)?.text, 'Run at 6 PM: 2° and rain. Indoor works too.')
+  assert.equal(coachLine(w, [{ name: 'Run', at: six }], NOW)?.text, 'Run at 6 PM: 2° and rain.')
   const cold = om({ temp: Array(12).fill(-9), pop: Array(12).fill(0), mm: Array(12).fill(0), code: Array(12).fill(1) })
   cold.hourly.wind_speed_10m = Array(12).fill(30)
-  assert.match(coachLine(buildWeather({ now: NOW, om: cold }), [{ name: 'Run', at: six }], NOW)?.text ?? '', /^Run at 6 PM: feels −\d+°\. Cover your face, or go indoor\.$/)
+  assert.match(coachLine(buildWeather({ now: NOW, om: cold }), [{ name: 'Run', at: six }], NOW)?.text ?? '', /^Run at 6 PM: feels −\d+°\. Cover your face\.$/)
   const hot = om({ temp: Array(12).fill(31), pop: Array(12).fill(0), mm: Array(12).fill(0), code: Array(12).fill(1) })
   hot.hourly.relative_humidity_2m = Array(12).fill(70)
   assert.match(coachLine(buildWeather({ now: NOW, om: hot }), [{ name: 'Run', at: six }], NOW)?.text ?? '', /^Run at 6 PM: humidex \d+\. Go easy and take water\.$/)
   const soon = buildWeather({ now: NOW, om: om(), radar: [{ at: NOW + 20 * 60000, mm: 1 }] })
-  assert.equal(coachLine(soon, [{ name: 'Run', at: NOW + 30 * 60000 }], NOW)?.text, 'Rain in about 20 min. Go now or wait it out.')
+  assert.equal(coachLine(soon, [{ name: 'Run', at: NOW + 30 * 60000 }], NOW)?.text, 'Rain in about 20 min.')
   assert.equal(coachLine(w, [{ name: 'Run', at: NOW - 3 * 3600000 }], NOW), null, 'a run hour long gone says nothing')
   // °F follows Settings when it says miles
-  assert.equal(coachLine(w, [{ name: 'Run', at: six }], NOW, 'F')?.text, 'Run at 6 PM: 36° and rain. Indoor works too.')
-  assert.equal(coachLine(w, [{ name: 'Run', at: six, when: 'Evening' }], NOW)?.text, 'Run this evening: 2° and rain. Indoor works too.', 'no learned hour: no clock hour')
+  assert.equal(coachLine(w, [{ name: 'Run', at: six }], NOW, 'F')?.text, 'Run at 6 PM: 36° and rain.')
+  assert.equal(coachLine(w, [{ name: 'Run', at: six, when: 'Evening' }], NOW)?.text, 'Run this evening: 2° and rain.', 'no learned hour: no clock hour')
 }
 
 // ─── The planned hour: his usual start, a class's time, Settings' PM ──

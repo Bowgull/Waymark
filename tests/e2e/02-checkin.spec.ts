@@ -21,6 +21,9 @@ const GOOD: Array<[string, string]> = [
 
 async function openDeck(page: Page) {
   await gotoToday(page)
+  // Page 96: checked in, the report is one folded line; a tap opens it, and LOGGED edits.
+  const folded = page.locator('.td-mr.is-folded')
+  if (await folded.count()) await folded.tap()
   await page.getByRole('button', { name: 'Edit the Morning Report' }).tap()
   const deck = page.getByRole('dialog', { name: 'Morning check-in' })
   await expect(deck).toBeVisible()
@@ -66,7 +69,7 @@ test('Morning check-in: nine cards, the herb 0-9 card, GOOD TO GO, and the row o
   await expect(deck).toBeHidden()
 
   const report = page.getByRole('button', { name: /^Morning Report, logged\./ })
-  await expect(report.getByRole('paragraph')).toHaveText('Good to go.')
+  await expect(report.getByRole('img', { name: 'GOOD TO GO' })).toBeVisible()
 
   // What was saved.
   const log = await api.get<{ herbScale: number; sleepHours: number; backToday: number; alcoholScale: number }>(`/api/daily-logs/today?date=${todayISO()}`)

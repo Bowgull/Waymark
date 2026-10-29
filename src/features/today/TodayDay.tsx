@@ -5,7 +5,6 @@ import { iconFor, plannedRowMinutes, sessionDisplayName, type DayBoardSession } 
 import { PlanRow, type RowChange } from '@/features/plan/PlanRow'
 import { useRowSlots } from '@/features/plan/useRowSlots'
 import { apiFetch } from '@/lib/api'
-import type { RunPlace } from '@/features/weather/runPlace'
 import { mediumHaptic, tapHaptic } from '@/lib/haptics'
 import { overCapBpm, stravaReadouts } from '@/lib/stravaMatch'
 import { HOLD_GRACE_MS } from '@/lib/timers/timerLook'
@@ -59,7 +58,6 @@ export interface TodayDayProps {
   /** The weather at a run's hour, for its lines ("6 PM: 2° and rain"). */
   weatherFor?: (s: TodaySession) => string | null
   /** Page 76: inside or outside at a run's hour, and why. */
-  whereFor?: (s: TodaySession) => RunPlace | null
   /** The cursor's row (session id). */
   cursorId?: string | null
   /** The row to open (a skip just made opens its row). */
@@ -129,7 +127,7 @@ export function TodayDay(props: TodayDayProps) {
   )
 }
 
-function TodayRow({ s, open, onToggle, onStart, onHold, onEndEarly, changeFor, weatherFor, whereFor, cursorId, weekNumber, onLearned, learnedSaved, flying, onFlown }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
+function TodayRow({ s, open, onToggle, onStart, onHold, onEndEarly, changeFor, weatherFor, cursorId, weekNumber, onLearned, learnedSaved, flying, onFlown }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
   const rowRef = useRef<HTMLDivElement>(null)
   // Page 71 item 6: this row flies (once its place is drawn and Today has risen).
   const fly = flying?.id === s.id ? flying.kind : null
@@ -178,7 +176,7 @@ function TodayRow({ s, open, onToggle, onStart, onHold, onEndEarly, changeFor, w
         onHold={holdable ? el => onHold(s, el) : undefined}
         mins={mins}
         change={changeFor?.(s) ?? null}
-        linesOpts={{ weekNumber, weather: weatherFor?.(s) ?? null, where: whereFor?.(s) ?? null }}
+        linesOpts={{ weekNumber, weather: weatherFor?.(s) ?? null }}
         extra={(actionable && !skipped) || learnedLink ? (
           <div className="pl-ol"><span className="lb" /><span className="v">
             {actionable && !skipped && <button type="button" className="pl-enter" onClick={e => { e.stopPropagation(); onStart(s.id) }}>{s.status === 'in_progress' ? 'RESUME ›' : 'ENTER ›'}</button>}

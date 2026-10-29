@@ -38,7 +38,7 @@ test('Today: the flap weather strip, its coach line, the hours and the week', as
   await expect(strip.locator('.l2 b')).toHaveText(/^Rain at \d{1,2}(:\d\d)?$/)
   // No wind, no source or freshness words.
   await expect(page.locator('.wx-wrap')).not.toContainText(/km\/h|wind|station|Environment|Open-Meteo|min ago|updated/i)
-  await expect(page.locator('.wx-cline')).toHaveText(/^Run this evening: −?\d+° and rain\. Indoor works too\.$/)
+  await expect(page.locator('.wx-cline')).toHaveText(/^Run this evening: −?\d+° and rain\.$/)
   // It sits where the week strip was: above the Morning Report.
   const wxBox = (await page.locator('.wx-wrap').boundingBox())!
   const mrBox = (await page.getByRole('button', { name: /^Morning Report/ }).boundingBox())!

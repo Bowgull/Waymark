@@ -1,8 +1,7 @@
-// The coach's hint on a run's lines (page 76; Josh 2026-10-23: the choice is
-// his, on the ready board, never pre-picked): outside works on a mild, dry
-// hour, else inside. It reads the weather at the run's planned hour (the hour
-// itself in the next 8 hours, else that day's forecast) and says it in one
-// line: "outside works: 9° and clear at 7" / "inside today: −4° and snow at 6".
+// The weather at a run's hour (page 76's line, 2026-10-29): only the weather,
+// never inside or outside. Josh: "I decide if it's inside or outside, don't
+// decide that for me. Ever." It reads the run's planned hour (the hour itself
+// in the next 8 hours, else that day's forecast): "9° and clear at 7".
 // Pure; relative imports only so the tests run it under node.
 
 import { degText, type Sky, type Weather } from './weatherData'
@@ -17,26 +16,17 @@ export interface PlaceWx {
   pop: number
 }
 
-/** Outside from this feels-like up (°C), dry, no storm. */
-export const OUTSIDE_FROM_C = 4
-export const OUTSIDE_TO_C = 28
+/** A chance of rain or snow at this or more (%) reads as rain. */
 export const WET_POP = 40
 
 const SKY_WORD: Readonly<Record<Sky, string>> = { sun: 'clear', moon: 'clear', part: 'some sun', partn: 'some cloud', cloud: 'cloudy', rain: 'rain', snow: 'snow', storm: 'thunder', fog: 'fog' }
 
-export interface RunPlace {
-  place: 'inside' | 'outside'
-  /** "inside today: 3° and sleet at 6" (a hint) */
-  line: string
-}
-
-/** The pick for one hour, and the line that says why. */
-export function runPlace(wx: PlaceWx, hourWord: string, unit: 'C' | 'F' = 'C'): RunPlace {
+/** The weather at one hour in a few words: "3° and sleet at 6". */
+export function runWeatherLine(wx: PlaceWx, hourWord: string, unit: 'C' | 'F' = 'C'): string {
   const wet = wx.sky === 'rain' || wx.sky === 'snow' || wx.sky === 'storm' || wx.pop >= WET_POP
   const sleet = wx.sky === 'rain' && wx.t <= 3
-  const outside = !wet && wx.feels >= OUTSIDE_FROM_C && wx.t <= OUTSIDE_TO_C
   const what = sleet ? 'sleet' : wet && wx.sky !== 'snow' && wx.sky !== 'storm' && wx.sky !== 'rain' ? 'rain' : SKY_WORD[wx.sky]
-  return { place: outside ? 'outside' : 'inside', line: `${outside ? 'outside works' : 'inside today'}: ${degText(wx.t, unit)}° and ${what} at ${hourWord}` }
+  return `${degText(wx.t, unit)}° and ${what} at ${hourWord}`
 }
 
 /** "6" for 6 PM, "7" for 7 AM (the line's short hour). */
@@ -69,16 +59,13 @@ export interface WhereSession {
   scheduledDate?: number | null
 }
 
-/**
- * Inside or outside for each run still to do, at its planned hour on its day
- * (null: not a run, done, or past the forecast).
- */
-export function whereForRun(w: Weather | null, hours: CoachHours | null, unit: 'C' | 'F' = 'C'): (s: WhereSession) => RunPlace | null {
+/** The weather at each run still to do, at its planned hour on its day (null: not a run, done, or past the forecast). */
+export function weatherForRun(w: Weather | null, hours: CoachHours | null, unit: 'C' | 'F' = 'C'): (s: WhereSession) => string | null {
   return s => {
     if (!w || (s.type !== 'running' && s.type !== 'foundation_run') || s.status === 'completed' || s.scheduledDate == null) return null
     const iso = new Date(s.scheduledDate * 86400000).toISOString().slice(0, 10)
     const at = new Date(`${iso}T00:00:00`).getTime() + plannedMinute(s, hours) * 60000
     const wx = weatherAt(w, at)
-    return wx ? runPlace(wx, shortHour(at), unit) : null
+    return wx ? runWeatherLine(wx, shortHour(at), unit) : null
   }
 }

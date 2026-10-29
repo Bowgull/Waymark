@@ -290,17 +290,17 @@ export function coachLine(w: Weather, planned: ReadonlyArray<PlannedOutdoor>, no
     if (p.at + 3600000 < now) continue
     const hr = w.hours.find(x => p.at >= x.at && p.at < x.at + 3600000) ?? (p.at < (w.hours[0]?.at ?? 0) ? w.hours[0] : null)
     // Thunder, freezing rain, or an EC warning.
-    if (w.warnings.length > 0) return { text: `${sentence(w.warnings[0])}. Indoor today.`, sky: 'storm', kind: 'storm' }
+    if (w.warnings.length > 0) return { text: `${sentence(w.warnings[0])}.`, sky: 'storm', kind: 'storm' }
     const freezing = w.hours.find(x => x.at + 3600000 > now && x.at <= p.at + 3600000 && [56, 57, 66, 67].includes(x.code))
-    if (freezing) return { text: `Freezing rain from ${hourWord(freezing.at)}. Indoor today.`, sky: 'rain', kind: 'storm' }
+    if (freezing) return { text: `Freezing rain from ${hourWord(freezing.at)}.`, sky: 'rain', kind: 'storm' }
     const thunder = w.hours.find(x => x.at + 3600000 > now && x.at <= p.at + 3600000 && x.code >= 95)
-    if (thunder) return { text: `Thunder from ${hourWord(thunder.at)}. Indoor today.`, sky: 'storm', kind: 'storm' }
+    if (thunder) return { text: `Thunder from ${hourWord(thunder.at)}.`, sky: 'storm', kind: 'storm' }
     // Rain in about N min (radar), and he's about to start.
-    if (w.rainInMin != null && p.at - now <= 60 * 60000) return { text: `Rain in about ${Math.max(5, Math.round(w.rainInMin / 5) * 5)} min. Go now or wait it out.`, sky: 'rain', kind: 'rain' }
+    if (w.rainInMin != null && p.at - now <= 60 * 60000) return { text: `Rain in about ${Math.max(5, Math.round(w.rainInMin / 5) * 5)} min.`, sky: 'rain', kind: 'rain' }
     if (!hr) continue
     const head = p.when ? `${p.name} this ${p.when.toLowerCase()}` : `${p.name} at ${hourWord(p.at)}`
-    if (hr.pop >= 60 || hr.mm >= 1) return { text: `${head}: ${degText(hr.t, unit)}° and rain. Indoor works too.`, sky: 'rain', kind: 'rain' }
-    if (hr.feels <= -15) return { text: `${head}: feels ${degText(hr.feels, unit)}°. Cover your face, or go indoor.`, sky: hr.sky, kind: 'cold' }
+    if (hr.pop >= 60 || hr.mm >= 1) return { text: `${head}: ${degText(hr.t, unit)}° and rain.`, sky: 'rain', kind: 'rain' }
+    if (hr.feels <= -15) return { text: `${head}: feels ${degText(hr.feels, unit)}°. Cover your face.`, sky: hr.sky, kind: 'cold' }
     if (hr.humidex != null && hr.humidex >= 32) return { text: `${head}: humidex ${Math.round(hr.humidex)}. Go easy and take water.`, sky: 'sun', kind: 'heat' }
   }
   return null

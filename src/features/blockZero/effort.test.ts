@@ -4,7 +4,7 @@ import { normaliseClassType } from '../../lib/blockZero/muayThai'
 import { strengthSetPatchSchema, mtClassLogPatchSchema, userProfilePatchSchema } from '../../lib/validators/schemas'
 import { CLASS_LOG_MINUTES, CLASS_TYPES, classLogPatch, defaultClassType } from './classType'
 import { EFFORT_TILES, asksEffort, effortWrite, labelForRir, rirFromLabel } from './effort'
-import { readinessLine } from './readinessLine'
+import { foldedReport, readinessLine } from './readinessLine'
 
 // ─── effort tiles map to RIR 3 / 2 / 1 / 0 ──
 {
@@ -85,6 +85,17 @@ import { readinessLine } from './readinessLine'
   assert.ok(!userProfilePatchSchema.safeParse({ maxHr: 300 }).success)
   assert.ok(!userProfilePatchSchema.safeParse({ dob: '2999-01-01' }).success, 'a future birth date is refused')
   assert.ok(!userProfilePatchSchema.safeParse({ dob: '12/04/1990' }).success)
+}
+
+// Page 96: checked in, the report folds to a flap and the coach's word.
+{
+  const items = [{ key: 'sleepHours', today: 7, mean7: 7 }]
+  const good = readinessLine({ checkedIn: true, ease: false, reason: null, items } as never)
+  assert.deepEqual(foldedReport(good, false), { flap: 'GOOD TO GO', tone: 'teal', word: 'Everything is near your usual.' })
+  assert.deepEqual(foldedReport(good, true), { flap: 'GOOD TO GO', tone: 'teal', word: 'Light today.' }, 'day 1 reads Light today.')
+  const eased = readinessLine({ checkedIn: true, ease: true, worseItems: ['sleepHours'], reason: 'Short sleep.' })
+  assert.deepEqual(foldedReport(eased, false), { flap: 'EASING', tone: 'clay', word: 'Sleep off trend.' })
+  assert.equal(foldedReport(readinessLine({ checkedIn: true, ease: false, reason: null, items: [] } as never), false).word, 'Not enough check-ins yet.')
 }
 
 console.log('effort / readiness / program tests passed')

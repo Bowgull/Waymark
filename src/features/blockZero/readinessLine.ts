@@ -82,3 +82,19 @@ export function readinessLine(r: ReadinessIn | null | undefined): ReadinessLineV
   if (!hasBaseline) return { ...view('good', 'Logged. Not enough check-ins yet for your usual.', 'Not enough check-ins yet for your usual. Keep logging.'), noBaseline: true }
   return view('good', 'Good to go.', 'Everything is near your usual.')
 }
+
+/**
+ * Page 96 (approved 2026-10-29): once he has checked in, the report folds to
+ * one line: a flap and the coach's word for today, nothing more. Day 1 reads
+ * "Light today."; an easing day its reason; else the plain why's first sentence.
+ */
+export function foldedReport(r: ReadinessLineView | null, dayOne: boolean): { flap: string; tone: 'teal' | 'clay'; word: string | null } {
+  const flap = !r ? 'LOGGED' : r.tone === 'bad' ? 'EASING' : r.noBaseline ? 'LOGGED' : 'GOOD TO GO'
+  const tone = r?.tone === 'bad' ? 'clay' : 'teal'
+  if (dayOne) return { flap, tone, word: 'Light today.' }
+  if (!r) return { flap, tone, word: null }
+  if (r.tone === 'bad') return { flap, tone, word: r.text.replace(/^Easing today\.\s*/, '') || null }
+  if (r.noBaseline) return { flap, tone, word: 'Not enough check-ins yet.' }
+  const first = /^[^.]*\./.exec(r.why)?.[0] ?? null
+  return { flap, tone, word: first }
+}

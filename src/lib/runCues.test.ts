@@ -9,7 +9,7 @@ import { dueCue, hardAt, hardCues, hardSegments, nextWords, NUDGE_START, nudgeCl
 import { altMph, numberClip, numberWords, paceClip, paceFlap, paceOf, paceText, parseUnit, speedFlap, speedText, speedUnitWord } from './runSpeed'
 import { postRunLine, postRunShort, sameHrPace, type PostRunFacts } from './postRun'
 import { movePlan, planOnRunClock } from './timers/runWalk'
-import { runPlace, weatherAt } from '../features/weather/runPlace'
+import { runWeatherLine, weatherAt } from '../features/weather/runPlace'
 import { nextZone, ZONE_START } from './hrZoneState'
 import type { Weather } from '../features/weather/weatherData'
 
@@ -144,11 +144,10 @@ assert.equal(segs.length, 14)
   assert.deepEqual(sameHrPace({ avgHr: 141 }, []), { pace: null, first: true })
 }
 
-// ── Inside or outside, from the weather at the run's hour ──
-assert.deepEqual(runPlace({ t: 9, feels: 7, sky: 'sun', pop: 0 }, '7'), { place: 'outside', line: 'outside works: 9° and clear at 7' })
-assert.deepEqual(runPlace({ t: 3, feels: -1, sky: 'rain', pop: 80 }, '6'), { place: 'inside', line: 'inside today: 3° and sleet at 6' })
-assert.equal(runPlace({ t: -1, feels: -6, sky: 'snow', pop: 70 }, '9').line, 'inside today: −1° and snow at 9')
-assert.equal(runPlace({ t: 2, feels: -2, sky: 'cloud', pop: 0 }, '6').place, 'inside')
+// ── The weather at the run's hour: only the weather, never inside or outside (2026-10-29) ──
+assert.equal(runWeatherLine({ t: 9, feels: 7, sky: 'sun', pop: 0 }, '7'), '9° and clear at 7')
+assert.equal(runWeatherLine({ t: 3, feels: -1, sky: 'rain', pop: 80 }, '6'), '3° and sleet at 6')
+assert.equal(runWeatherLine({ t: -1, feels: -6, sky: 'snow', pop: 70 }, '9'), '−1° and snow at 9')
 {
   const now = Date.UTC(2026, 10, 17, 12)
   const w = { hours: [{ at: now, sky: 'rain', t: 3, pop: 80, mm: 1, code: 61, feels: -1, humidex: null }], week: [{ at: now + 86400000, sky: 'sun', hi: 12, lo: 4, words: 'Clear' }] } as unknown as Weather

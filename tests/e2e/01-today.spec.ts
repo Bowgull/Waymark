@@ -15,12 +15,15 @@ test('Today: no week strip (page 72), the Morning Report row with readiness, no 
   await expect(page.getByRole('list', { name: 'This week' })).toHaveCount(0)
   await expect(page.locator('.wx-wrap')).toHaveCount(0)
 
-  // Morning Report: one row, LOGGED and the readiness line.
+  // Morning Report (page 96): checked in, one folded line, the flap and the coach's word; a tap opens it.
   const report = page.getByRole('button', { name: /^Morning Report, logged\./ })
   await expect(report).toBeVisible()
-  await expect(report.getByRole('img', { name: 'LOGGED' })).toBeVisible()
-  await expect(report.getByRole('paragraph')).toHaveText('Good to go.')
+  await expect(report.getByRole('img', { name: 'GOOD TO GO' })).toBeVisible()
+  await expect(report.locator('.td-mr-word')).toHaveText('Everything is near your usual.')
   await expect(report).toHaveScreenshot('morning-report.png')
+  await report.tap()
+  await expect(page.locator('.td-mr').getByRole('img', { name: 'LOGGED' })).toBeVisible()
+  await expect(page.locator('.td-mr .rd')).toHaveText('Good to go.')
 
   // No Coach board on Today any more (page 56): the readiness lives in the row above.
   await expect(page.getByText(/coach board/i)).toHaveCount(0)

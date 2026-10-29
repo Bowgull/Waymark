@@ -11,7 +11,6 @@ import { FOUNDATION_ROWS, foundationLevel, foundationMinutes, foundationTemplate
 import { ARM_BLOCK_IDS } from '../../lib/landmine'
 import { RESET_WALK_MIN, resetMinutes } from '../../lib/activeRecoveryTemplate'
 import type { SummaryData } from '../dayboard/summaryData'
-import type { RunPlace } from '../weather/runPlace'
 import { fiveKText, hardKindOf, speedsFrom, toGoalText, GOAL_5K_SEC, type HardPlan } from '../../lib/brain/hardRuns'
 import { BASE_INCLINE, paceText, speedText, type TreadmillUnit } from '../../lib/runSpeed'
 import { postRunLine } from '../../lib/postRun'
@@ -39,8 +38,6 @@ export interface LinesOpts {
   weather?: string | null
   /** A class's start ("7 PM"). */
   classTime?: string | null
-  /** Page 76: inside or outside at the run's hour, and why ("inside: 3° and sleet at 6"). */
-  where?: RunPlace | null
   /** Page 76: the treadmill speed unit picked in Settings (null: both show). */
   unit?: TreadmillUnit
 }
@@ -212,11 +209,13 @@ function runPlan(s: DayBoardSession, data: SummaryData | null, opts: LinesOpts):
     }
   }
   if (cap && !dose?.walkOnly) out.push(move('Heart rate', null, `max ${cap}`))
-  // Page 76: every piece has a speed; an easy run inside shows the one to set.
+  // Page 76: every piece has a speed: the treadmill and the outside pace.
   const easyKmh = plan?.easyKmh ?? null
-  if (easyKmh && !dose?.walkOnly && opts.where?.place !== 'outside') {
+  // Both, always: where he runs is his call (2026-10-29), never the app's.
+  if (easyKmh && !dose?.walkOnly) {
     const unit = opts.unit ?? null
     out.push(unit ? move('Treadmill', null, speedText(easyKmh, unit), `incline ${BASE_INCLINE}`) : move('Treadmill', null, null, `${speedText(easyKmh, unit)} · incline ${BASE_INCLINE}`))
+    out.push(move('Outside pace', null, null, paceText(easyKmh, unit)))
   }
   if (dose?.talkTestDue && !dose.walkOnly) out.push(move('Talk test', null, null, 'at the end: say a full sentence, note your heart rate'))
   if (opts.weather) out.push({ label: 'WEATHER', value: opts.weather })
@@ -225,16 +224,15 @@ function runPlan(s: DayBoardSession, data: SummaryData | null, opts: LinesOpts):
 
 const min = (sec: number) => `${Math.round(sec / 60)} min`
 
-/** A piece's numbers: inside "speed 10.8 km/h · incline 1", outside "pace 5:33 /km". */
-function setWords(kmh: number, outside: boolean, unit: TreadmillUnit): string {
-  return outside ? `pace ${paceText(kmh, unit)}` : `speed ${speedText(kmh, unit)} · incline ${BASE_INCLINE}`
+/** A piece's numbers, for the treadmill and for outside: "speed 10.8 km/h · incline 1 · pace 5:33 /km". */
+function setWords(kmh: number, unit: TreadmillUnit): string {
+  return `speed ${speedText(kmh, unit)} · incline ${BASE_INCLINE} · pace ${paceText(kmh, unit)}`
 }
 
-/** Page 76 §2: a hard run's lines. What to do, the numbers to set (or the pace outside), the heart range, and where. */
+/** Page 76 §2: a hard run's lines. What to do, the numbers to set (treadmill and outside), the heart range, the weather. */
 function hardTodo(h: HardPlan, opts: LinesOpts): PlanLine[] {
   const unit = opts.unit ?? null
-  const out = opts.where?.place === 'outside'
-  const where = opts.where ? [{ label: 'WHERE', value: opts.where.line }] : []
+  const where = opts.weather ? [{ label: 'WEATHER', value: opts.weather }] : []
   const p = h.pieces
   const warm = p[0]?.sec ?? 600
   const cool = p[p.length - 1]?.sec ?? 300
@@ -242,8 +240,8 @@ function hardTodo(h: HardPlan, opts: LinesOpts): PlanLine[] {
     const st = p.find(x => x.kind === 'steady')
     return [
       { label: 'WHAT', value: `easy ${min(warm)}, tempo ${min(st?.sec ?? 900)}, easy ${min(cool)}` },
-      { label: 'HARD', value: setWords(h.speeds.steady, out, unit) },
-      { label: 'EASY', value: setWords(h.speeds.easy, out, unit) },
+      { label: 'HARD', value: setWords(h.speeds.steady, unit) },
+      { label: 'EASY', value: setWords(h.speeds.easy, unit) },
       { label: 'HEART', value: h.heart.low != null ? `stay ${h.heart.low}–${h.heart.top}` : `up to ${h.heart.top}` },
       ...where,
     ]
@@ -251,7 +249,7 @@ function hardTodo(h: HardPlan, opts: LinesOpts): PlanLine[] {
   if (h.kind === 'test') {
     return [
       { label: 'WHAT', value: `easy ${min(warm)}, then 5 km as fast as you can, easy ${min(cool)}` },
-      { label: 'START', value: setWords(h.speeds.test, out, unit) },
+      { label: 'START', value: setWords(h.speeds.test, unit) },
       { label: 'THEN', value: 'a little faster each km if you can' },
       ...where,
     ]
@@ -260,8 +258,8 @@ function hardTodo(h: HardPlan, opts: LinesOpts): PlanLine[] {
   const jog = p.find(x => x.kind === 'jog')
   return [
     { label: 'WHAT', value: `RUN HARD ${min(hard?.sec ?? 120)}, then EASY JOG ${min(jog?.sec ?? 120)} · ${h.reps} times` },
-    { label: 'HARD', value: setWords(h.speeds.hard, out, unit) },
-    { label: 'JOG', value: setWords(h.speeds.jog, out, unit) },
+    { label: 'HARD', value: setWords(h.speeds.hard, unit) },
+    { label: 'JOG', value: setWords(h.speeds.jog, unit) },
     { label: 'HEART', value: `hard: up to ${h.heart.top}${h.heart.jogTop ? ` · jog: under ${h.heart.jogTop}` : ''}` },
     ...where,
   ]

@@ -41,5 +41,3 @@
 .sd-gap { height: 40px; flex: none; }
 
 /* the start day's morning: one line on top, day 1 only */
-.sd-dayone { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 4px 0 2px; }
-.sd-dayone p { margin: 0; font: 600 16px/1.4 var(--font-body); color: #e6efe9; text-shadow: 0 1px 6px #000; }

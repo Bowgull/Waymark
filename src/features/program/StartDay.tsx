@@ -56,13 +56,3 @@ export function StartWaitBoard({ startDay, todayDay, onChange }: { startDay: num
     </Board>
   )
 }
-
-/** The start day's morning (page 64 §3): one line on top of the day, day 1 only. */
-export function DayOneLine({ flap, line }: { flap: string; line: string }) {
-  return (
-    <div className="sd-dayone">
-      <FlapLabel text={flap} size="sm" tone="gold" />
-      <p>{line}</p>
-    </div>
-  )
-}

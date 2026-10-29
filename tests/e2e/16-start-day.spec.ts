@@ -157,9 +157,9 @@ test('A later day: nothing planned before it, the waiting board on Program and T
   await change.getByRole('button', { name: 'SAVE' }).tap()
   await expect(page.getByRole('dialog', { name: 'Change start day' })).toHaveCount(0)
 
-  // the start day's morning: one line on top of the day
-  await expect(page.getByRole('img', { name: 'BLOCK ZERO · DAY 1' })).toBeVisible({ timeout: 20_000 })
-  await expect(page.locator('.sd-dayone p')).toHaveText('Day 1. Light today: the coach learns you from here.')
+  // the start day's morning (page 96): no extra line; once checked in, the folded report reads "Light today."
+  await expect(page.locator('.td-mr')).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('.sd-dayone')).toHaveCount(0)
   const now = await api.get<{ startedAt: number }>(`/api/blocks/current?date=${today}`)
   expect(dayOf(now.startedAt)).toBe(epoch(today))
   // approved 2026-10-21: the day has come but nothing is started or done, so it can still move (and back)

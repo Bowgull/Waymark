@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { Board, FlapLabel } from '@/design'
 import { Raven, type RavenState } from '@/features/raven/Raven'
-import type { ReadinessLineView } from './readinessLine'
+import { foldedReport, type ReadinessLineView } from './readinessLine'
 
 import './blockZero.css'
 import '@/features/coach/coach.css'
@@ -26,11 +26,34 @@ export interface MorningRaven {
  * room) with one brass line under the readiness line ("Knee: 4 times in 17
  * days."); a tap on the raven or its line opens what it brought.
  */
-export function MorningReportRow({ logged, readiness, onOpen, raven, answered = 0 }: { logged: boolean; readiness: ReadinessLineView | null; onOpen: () => void; raven?: MorningRaven | null; /** Cards answered so far today (page 61: CHECK IN · 4 OF 9). */ answered?: number }) {
+export function MorningReportRow({ logged, readiness, onOpen, raven, answered = 0, dayOne = false }: { logged: boolean; readiness: ReadinessLineView | null; onOpen: () => void; raven?: MorningRaven | null; /** Cards answered so far today (page 61: CHECK IN · 4 OF 9). */ answered?: number; /** Block Zero's first day: the folded word reads "Light today." */ dayOne?: boolean }) {
   const partly = !logged && answered > 0
   const [why, setWhy] = useState(false)
   const line = logged ? readiness : null
   const perched = raven?.state != null
+  // Page 96: checked in, the report folds to one line (a flap and the coach's word); a tap opens it.
+  const fold = logged ? foldedReport(readiness, dayOne) : null
+  if (fold && !why) {
+    return (
+      <Board className={`td-mr is-folded${perched ? ' has-raven' : ''}`} onClick={() => setWhy(true)}>
+        {perched && raven && <Raven state={raven.state as RavenState} onTap={raven.onOpen} label={`The raven, about the ${raven.place.toLowerCase()}. Tap to read.`} />}
+        <div className="td-mr-row" aria-label={`Morning Report, logged. ${fold.word ?? ''} Tap to open.`}>
+          <FlapLabel text={fold.flap} size="xs" tone={fold.tone} animate={false} />
+          {fold.word && <span className="td-mr-word">{fold.word}</span>}
+          <span className="td-mr-chev" aria-hidden>›</span>
+        </div>
+        {raven?.line && (
+          <p
+            className={`wl${raven.line.settled ? ' is-settled' : ''}`}
+            role="button"
+            tabIndex={0}
+            onClick={e => { e.stopPropagation(); raven.onOpen() }}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); raven.onOpen() } }}
+          >{raven.line.text}</p>
+        )}
+      </Board>
+    )
+  }
   return (
     <Board className={`td-mr${perched ? ' has-raven' : ''}`} onClick={line ? () => setWhy(w => !w) : onOpen}>
       {perched && raven && <Raven state={raven.state as RavenState} onTap={raven.onOpen} label={`The raven, about the ${raven.place.toLowerCase()}. Tap to read.`} />}

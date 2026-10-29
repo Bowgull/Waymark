@@ -24,7 +24,6 @@ import { WeatherStrip } from '@/features/weather/WeatherStrip'
 import { useWeather } from '@/features/weather/useWeather'
 import { coachLine, degText, hourWord } from '@/features/weather/weatherData'
 import { plannedMinute, plannedRuns, plannedWord, type CoachHours } from '@/features/weather/plannedHours'
-import { whereForRun } from '@/features/weather/runPlace'
 import { temperatureUnit } from '@/lib/units'
 import { CrestLoading } from '@/world/CrestLoading'
 import { setWorldLantern, setWorldPlace } from '@/world/worldStore'
@@ -43,7 +42,7 @@ import { readinessLine, type ReadinessIn } from '@/features/blockZero/readinessL
 import { MorningReportRow } from '@/features/blockZero/TodayPieces'
 import { useBodyWatch } from '@/features/raven/bodyWatch'
 import { useRavenOnToday } from '@/features/raven/useRaven'
-import { DayOneLine, StartDayBoard, StartWaitBoard } from '@/features/program/StartDay'
+import { StartDayBoard, StartWaitBoard } from '@/features/program/StartDay'
 import { moveStartDay } from '@/features/program/startDayApi'
 import { dayOneLine, isPendingStart, startDayOf, startHasLeadIn, startPreviewLabel } from '@/lib/coach/startDay'
 import './today.css'
@@ -339,7 +338,6 @@ export function TodayPage() {
   const runs = useMemo(() => plannedRuns(sessions, coachHours, midnight), [sessions, coachHours, midnight])
   const wxLine = weather ? coachLine(weather, runs, Date.now(), unit) : null
   // Page 76: inside or outside for each run at its hour (its WHERE line).
-  const whereFor = useMemo(() => whereForRun(weather, coachHours, unit), [weather, coachHours, unit])
   // The raven (page 58): on the Morning Report, its boards, and the return's question on top.
   const bodyWatch = useBodyWatch()
   const { raven, overlay: ravenOverlay } = useRavenOnToday(() => { void refreshSessions(); setChangesVersion(v => v + 1); setWeekVersion(v => v + 1) })
@@ -664,9 +662,7 @@ export function TodayPage() {
       {mode === 'day' && (
         <>
           {/* page 56 item 14: the Morning Report row: CHECK IN, then LOGGED and the readiness line; tap for the why */}
-          <MorningReportRow logged={morningLogged} answered={answeredCount(morningAnswers)} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: morningLogged ? 0 : 'resume' })} raven={raven} />
-          {/* page 64 §3: the start day's morning, one line on top (day 1 only) */}
-          {dayOne && <DayOneLine flap={dayOne.flap} line={dayOne.line} />}
+          <MorningReportRow logged={morningLogged} answered={answeredCount(morningAnswers)} readiness={readinessLine(readiness)} onOpen={() => setDeck({ startAt: morningLogged ? 0 : 'resume' })} raven={raven} dayOne={dayOne != null} />
           <TodayDay
             sessions={withoutReplaced(sessions).filter(s => s.id !== stripId || (flying?.kind === 'lift' && flying.id === s.id))}
             flying={flying}
@@ -682,7 +678,6 @@ export function TodayPage() {
             onDismissMatch={handleDismissMatch}
             onAdd={openAdd}
             changeFor={s => rowChange(changes, s, todayEpoch)}
-            whereFor={whereFor}
             weatherFor={s => {
               if (!weather || (s.type !== 'running' && s.type !== 'foundation_run') || s.status === 'completed') return null
               const at = midnight + plannedMinute(s, coachHours) * 60000
