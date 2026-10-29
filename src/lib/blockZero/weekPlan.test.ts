@@ -96,7 +96,7 @@ assert(JSON.stringify(mainOf(b1)) === JSON.stringify(['ex-lm-punch', 'ex-db-rdl'
 assert([a1, b1].every(t => t.exercises.some(e => /row/.test(e.exerciseId))), 'pulling twice a week: a row on A and on B (2026-10-26)')
 assert(!a1.exercises.concat(b1.exercises).some(e => /RPE|check/i.test(e.notes ?? '')), 'no stale week targets in the notes')
 assert(a1.exercises.some(e => e.exerciseId === 'ex-lm-rdl' && e.section === 'warmup'), 'A: a light hinge in the warm-up (the hinge twice a week)')
-const ARMS_A = ['ex-chin-up-band', 'ex-hammer-curl', 'ex-suitcase-carry']
+const ARMS_A = ['ex-chin-up-negative', 'ex-hammer-curl', 'ex-suitcase-carry']
 const ARMS_B = ['ex-db-row', 'ex-dips', 'ex-wrist-curl']
 assert(JSON.stringify(a1.exercises.slice(-3).map(e => e.exerciseId)) === JSON.stringify(ARMS_A), 'A ends with the arm block: chin-ups, hammer curls, grip')
 assert(JSON.stringify(b1.exercises.slice(-3).map(e => e.exerciseId)) === JSON.stringify(ARMS_B), 'B ends with the arm block: the dumbbell row, dips, wrist curls (the row works the same arms as the hammer curls)')

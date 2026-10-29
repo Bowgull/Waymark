@@ -27,8 +27,9 @@
 .pl-ol { display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: baseline; min-width: 0; }
 .pl-lines > .pl-ol:first-child { margin-top: 3px; }
 .pl-lines > :last-child { margin-bottom: 3px; }
-.pl-ol .lb { font: 700 10.5px/1.3 var(--font-body); letter-spacing: 0.14em; color: rgba(240, 230, 192, 0.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pl-ol .v { font: 500 14px/1.3 var(--font-body); color: #dfe6df; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-ol .lb { font: 700 10.5px/1.3 var(--font-body); letter-spacing: 0.14em; color: rgba(240, 230, 192, 0.55); overflow-wrap: anywhere; }
+/* Page 94: nothing on an opened row ends in "...": a long value wraps. */
+.pl-ol .v { font: 500 14px/1.3 var(--font-body); color: #dfe6df; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .pl-ol .v.is-dim { color: rgba(223, 230, 223, 0.6); }
 .pl-ol .v b.ck { color: #8fd4b8; font-weight: 800; }
 /* Page 93: a line with one plain line behind a tap (the PRESS line). */
@@ -104,3 +105,19 @@ body.pl-pickopen .pl-row > .pl-cur, body.pl-pickopen .pl-dr > .pl-cur { display:
 .pl-view { animation: pl-viewin var(--t-quick) var(--ease-out) both; }
 @keyframes pl-viewin { from { opacity: 0; transform: translateY(4px); } }
 @media (prefers-reduced-motion: reduce) { .pl-view { animation: none; } }
+
+/* Page 94 (approved 2026-10-29): the logbook. The move on the left, big and bright, its note under it;
+   sets and weight on the right in two lined-up columns; a thin gold rule and a small head between groups. */
+.pl-ols.is-log { padding-left: 4px; }
+.pl-lg { display: grid; grid-template-columns: 1fr 52px 68px; column-gap: 6px; align-items: baseline; padding: 6px 2px 6px 0; }
+.pl-lg + .pl-lg { border-top: 1px solid rgba(255, 255, 255, 0.05); }
+.pl-lg .nm { font: 600 16px/1.25 var(--font-body); color: #eef2ee; min-width: 0; overflow-wrap: anywhere; }
+.pl-lg .nt { display: block; margin-top: 2px; font: 500 13px/1.25 var(--font-body); color: #9fb3a8; }
+.pl-lg .s, .pl-lg .w { font: 600 15.5px/1.25 var(--font-body); color: #e8dcb4; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.pl-lg .w { color: #c9d6cf; }
+.pl-lg .w b.up { color: #8fd4b8; font-weight: 800; }
+.pl-lg .w b.dn { color: #d98a68; font-weight: 800; }
+.pl-lg.is-warm .nm { color: #e2cf98; }
+.pl-lgh { margin: 12px 0 0; padding-top: 8px; border-top: 1px solid rgba(232, 200, 96, 0.22); font: 700 12px/1 var(--font-body); letter-spacing: 0.12em; color: #c9b27a; }
+.pl-lgh + .pl-lg { padding-top: 4px; }
+.pl-lines > .pl-lgh:first-child { margin-top: 4px; padding-top: 0; border-top: 0; }

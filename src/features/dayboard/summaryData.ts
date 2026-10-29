@@ -21,8 +21,8 @@ export interface RunPrescription extends RunPlan {
 export type SummaryData =
   | { kind: 'strength'; exercises: WorkoutExercise[]; notes: string[]; plannedMin: number | null; brainLifts?: Array<{ exerciseId: string; change: string; explain?: string | null }> }
   | { kind: 'run'; plan: RunPrescription | null; run: RunActuals | null; post?: PostRunFacts | null }
-  | { kind: 'mobility'; moves: Array<{ name: string; completed: boolean }>; plannedMin: number | null }
-  | { kind: 'bag'; rounds: number; plannedMin: number | null; plannedSecs: number[]; roundSecs: number[] | null; restSec?: number | null; firstCombo?: string | null }
+  | { kind: 'mobility'; moves: Array<{ name: string; completed: boolean; sets?: number | null; holdSec?: number | null; reps?: number | null; perSide?: boolean; section?: string | null }>; plannedMin: number | null }
+  | { kind: 'bag'; rounds: number; plannedMin: number | null; plannedSecs: number[]; roundSecs: number[] | null; restSec?: number | null; firstCombo?: string | null; roundCombos?: string[][] }
   | { kind: 'conditioning'; plan: ConditioningPlan | null; log: ConditioningLog | null; plannedMin: number | null }
   | { kind: 'rope'; rounds: number | null; roundSec: number | null; plannedMin: number | null; roundSecs: number[] | null }
   | { kind: 'mt'; plannedMin: number | null; durationMin: number | null; classType: string | null; focus: string | null; mtLogId: string | null; learned: boolean }
@@ -68,13 +68,13 @@ export async function loadSummary(s: DayBoardSession): Promise<SummaryData> {
       return { kind: 'run', plan: res.prescription ?? null, run: res.runSession ?? s.runSession ?? null, post: res.post ?? null }
     }
     case 'mobility': {
-      const res = await apiFetch<{ exercises?: Array<{ completed?: number | boolean; exercise?: { name: string } | null }>; plannedMin?: number | null }>(`/api/sessions/${s.id}/mobility-workout`)
-      return { kind: 'mobility', moves: (res.exercises ?? []).map(e => ({ name: e.exercise?.name ?? 'Move', completed: e.completed === 1 || e.completed === true })), plannedMin: res.plannedMin ?? null }
+      const res = await apiFetch<{ exercises?: Array<{ completed?: number | boolean; exercise?: { name: string } | null; sets?: number | null; holdSec?: number | null; reps?: number | null; perSide?: boolean; section?: string | null }>; plannedMin?: number | null }>(`/api/sessions/${s.id}/mobility-workout`)
+      return { kind: 'mobility', moves: (res.exercises ?? []).map(e => ({ name: e.exercise?.name ?? 'Move', completed: e.completed === 1 || e.completed === true, sets: e.sets ?? null, holdSec: e.holdSec ?? null, reps: e.reps ?? null, perSide: e.perSide === true, section: e.section ?? null })), plannedMin: res.plannedMin ?? null }
     }
     case 'bag_work': {
       const res = await apiFetch<{ rounds?: Array<{ durationSec: number; restSec: number; combos?: Array<{ combo?: { text?: string } | null }> }>; plannedMin?: number | null; roundSecs?: number[] | null }>(`/api/sessions/${s.id}/bag-workout`)
       const rounds = res.rounds ?? []
-      return { kind: 'bag', rounds: rounds.length, plannedMin: res.plannedMin ?? null, plannedSecs: rounds.map(r => r.durationSec), roundSecs: res.roundSecs ?? null, restSec: rounds[0]?.restSec ?? null, firstCombo: rounds[0]?.combos?.[0]?.combo?.text ?? null }
+      return { kind: 'bag', rounds: rounds.length, plannedMin: res.plannedMin ?? null, plannedSecs: rounds.map(r => r.durationSec), roundSecs: res.roundSecs ?? null, restSec: rounds[0]?.restSec ?? null, firstCombo: rounds[0]?.combos?.[0]?.combo?.text ?? null, roundCombos: rounds.map(r => (r.combos ?? []).map(c => c.combo?.text ?? '').filter(Boolean)) }
     }
     case 'bag_conditioning': {
       // page 93: the plan (kept once started; before, the coach's pick as it would be now) and the per-part log

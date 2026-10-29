@@ -510,11 +510,12 @@ function doseStamp(s: Pick<SessionRow, 'type' | 'label' | 'scheduledDate' | 'con
   const plan = bodyPlanMark(s.contextJson)
   const ease = coachEaseFrom(s.contextJson)
   // 'fyw': strength doses written before every lift started light (2026-10-23) are written again.
+  // 'neg': and those planned with band chin-ups (2026-10-29: slow lowering, never a band).
   // A hard run (page 76): its kind and the 5K its speeds come from.
   const hard = s.type === 'running' && hardKindOf({ type: s.type, notes: s.notes ?? null }) ? [`hard:${s.notes}`, fiveKSec] : []
   // Review T6: lifts merged in from a missed day are part of the dose (found from light too), so a merge re-doses.
   const merged = s.type === 'strength' ? mergedKey(s.contextJson) : null
-  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null, ...(lighter ? ['lighter'] : []), ...(s.type === 'strength' ? ['fyw'] : []), ...hard, ...(merged ? [`merged:${merged}`] : []), ...(temp ? [temp] : [])])
+  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null, ...(lighter ? ['lighter'] : []), ...(s.type === 'strength' ? ['fyw', 'neg'] : []), ...hard, ...(merged ? [`merged:${merged}`] : []), ...(temp ? [temp] : [])])
 }
 
 /** The merged lifts on a session (context_json.mergedLifts), as a stable key, or null. */

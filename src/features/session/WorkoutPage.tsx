@@ -1606,7 +1606,7 @@ export function WorkoutPage() {
       <SkipWarmupTimer
         durationSec={180}
         onComplete={() => setPhase('exercise')}
-        description="Light and easy. Loosen up before you lift."
+        description="Light and easy, or a 1.5 km easy jog instead. Loosen up before you lift."
         resume={engineResume?.kind === 'warmup' ? engineResume.timer : null}
         onPersist={persistEngine}
         onExit={leaveSession}

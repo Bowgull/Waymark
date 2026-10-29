@@ -212,12 +212,11 @@ export function choosePress(ctx: { day: number; state: string; backToday: number
 export interface RepsLast { exerciseId: string; day: number; reps: number[]; plannedReps: number }
 
 /**
- * Chin-ups on the built ladder, reps only, never added weight: band 5 → 8,
- * then slow lowering 3 → 5, then full chin-ups 3 → 8. Every set at its reps
- * adds one; the top of a rung moves to the next. A missed set holds.
+ * Chin-ups on the built ladder, reps only, never added weight: slow lowering
+ * 3 → 5, then full chin-ups 3 → 8. No band, ever (Josh, 2026-10-29). Every
+ * set at its reps adds one; the top of a rung moves to the next. A missed set holds.
  */
 export const CHIN_LADDER = [
-  { exerciseId: 'ex-chin-up-band', label: 'Chin-Up (Band)', from: 5, to: 8 },
   { exerciseId: 'ex-chin-up-negative', label: 'Chin-Up (Slow Lowering)', from: 3, to: 5 },
   { exerciseId: 'ex-chin-up', label: 'Chin-Up', from: 3, to: 8 },
 ] as const

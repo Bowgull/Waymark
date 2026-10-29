@@ -41,7 +41,8 @@ test('#4: a missed session opens with ENTER on Today (not struck); on Program it
   await expect(missed).not.toHaveClass(/is-skip/)
   await missed.locator('.pl-hit').tap()
   await expect(missed.locator('.pl-hit')).toHaveAttribute('aria-expanded', 'true')
-  await expect(missed.locator('.pl-ol .lb').first()).toHaveText('BLOCKS')
+  // Page 94: Foundation opens to its moves, back first.
+  await expect(missed.locator('.pl-lgh').first()).toHaveText('Back')
   await expect(missed.getByRole('button', { name: /ENTER|RESUME/ })).toHaveCount(0)
 
   // ENTER on Today starts it

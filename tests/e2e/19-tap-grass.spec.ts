@@ -158,7 +158,7 @@ test('Items 4-5: a running session is only the strip; Today opens the next to-do
   await expect(prow).toBeVisible()
   await prow.locator('.pl-hit').tap()
   await expect(prow.locator('.pl-hit')).toHaveAttribute('aria-expanded', 'true')
-  await expect(prow.locator('.pl-ol').first()).toBeVisible()
+  await expect(prow.locator('.pl-ol, .pl-lg').first()).toBeVisible()
   await expect(prow.getByRole('button', { name: /RESUME|ENTER/ })).toHaveCount(0)
   // Still in Program: opening the row never jumped into the session.
   await expect(page).toHaveURL(/\/program/)

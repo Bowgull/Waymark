@@ -265,8 +265,10 @@ async function buildWorkoutResponse(db: DrizzleDB, sessionId: string) {
 
     // Build prescription metadata
     const workingSets = sets.filter(s => s.isWarmup === 0)
-    const setsCount = workingSets.length
-    const targetReps = workingSets[0]?.reps ?? 0
+    // A warm-up drill (band pull-aparts) is all warm-up sets: its count is those (page 94: never "0 sets").
+    const counted = workingSets.length > 0 ? workingSets : sets
+    const setsCount = counted.length
+    const targetReps = counted[0]?.reps ?? 0
     // Loads were written per set at start (RIR rules or TM x %, snapped to
     // plates); the last working set is the working load (a check set may lead).
     // A work-up climbs: its first set is the from of "20→35 lb".
@@ -334,8 +336,9 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string, todayDay: 
     const ex = exMap.get(tex.exerciseId)
     const tmKg = tmMap.get(tex.exerciseId) ?? null
     const workingSets = tex.sets.filter(s => !s.isWarmup)
-    const setsCount = workingSets.length
-    const targetReps = workingSets[0]?.targetReps ?? 0
+    const counted = workingSets.length > 0 ? workingSets : tex.sets
+    const setsCount = counted.length
+    const targetReps = counted[0]?.targetReps ?? 0
     const written = workingSets[workingSets.length - 1]?.suggestedWeightKg ?? null
     const fallback = computeWorkingWeightKg(tmKg, tex.section, wavePct)
     const prescribedWeightKg = written ?? (fallback != null ? snapLoadKg(fallback, loadEquipment(ex?.equipment)) : null)
@@ -345,6 +348,7 @@ async function buildStrengthPreview(db: DrizzleDB, sessionId: string, todayDay: 
       label: tex.label,
       section: tex.section,
       orderIndex,
+      notes: tex.notes ?? null,
       equipment: ex?.equipment ?? null,
       prescription: {
         trainingMaxKg: tmKg,

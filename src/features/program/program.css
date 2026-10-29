@@ -85,7 +85,8 @@
 .pg-dr .ics { display: flex; gap: 3px; align-items: center; }
 .pg-dr .ic { position: relative; display: block; line-height: 0; }
 .pg-dr .ic.is-done::after { content: '✓'; position: absolute; right: -3px; bottom: -3px; font: 900 10px/1 var(--font-mono); color: #8fd4b8; text-shadow: 0 0 3px #000, 0 0 2px #000; }
-.pg-dr .ln { font: 500 14px/1.25 var(--font-body); color: #dfe6df; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Page 94: a busy day's line wraps onto a second line, every name kept. */
+.pg-dr .ln { font: 500 14px/1.3 var(--font-body); color: #dfe6df; overflow-wrap: anywhere; padding: 4px 0; }
 .pg-dr.is-past .ln { color: rgba(223, 230, 223, 0.68); }
 .pg-dr.is-past .dlab .wm-flap:not(.is-gold) .wm-cell { color: rgba(240, 230, 192, 0.7); }
 .pg-dr.is-before .dlab, .pg-dr.is-before .ln { opacity: 0.4; }

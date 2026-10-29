@@ -269,7 +269,8 @@ export function armBlock(day: 'A' | 'B'): TemplateExercise[] {
   const curls: TemplateExercise = { exerciseId: 'ex-hammer-curl', label: 'Hammer Curl', section: 'accessory', sets: workingSets(2, 10, 30) }
   if (day === 'A') {
     return [
-      { exerciseId: 'ex-chin-up-band', label: 'Chin-Up (Band)', section: 'accessory', sets: workingSets(3, 5, 45), notes: 'Reps only. Full hang at the bottom.' },
+      // No band, ever (2026-10-29): slow lowering first, full chin-ups when they're easy (the ladder).
+      { exerciseId: 'ex-chin-up-negative', label: 'Chin-Up (Slow Lowering)', section: 'accessory', sets: workingSets(3, 3, 45), notes: 'Jump to the top, lower yourself for 3 to 5 s. Reps only.' },
       curls,
       { exerciseId: 'ex-suitcase-carry', label: 'Grip: Suitcase Carry', section: 'accessory', sets: workingSets(2, 30, 30), notes: '30s each hand. Stand tall, no lean.' },
     ]

@@ -173,7 +173,7 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
           <p className="pl-say">{nameLine}</p>
         </Cmd>
       )}
-      <Expand open={open} className="pl-ols">
+      <Expand open={open} className={`pl-ols${lines.some(l => l.move || l.head) ? ' is-log' : ''}`}>
         <div className="pl-lines" onClick={e => e.stopPropagation()}>
           {change && !skipped && (
             <div className="pl-ol is-why">
@@ -182,7 +182,15 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
             </div>
           )}
           {!ready && <div className="pl-ol"><span className="lb" /><span className="v is-dim">Reading the plan.</span></div>}
-          {lines.map((l, i) => (
+          {lines.map((l, i) => l.head ? (
+            <div key={`${l.label}-${i}`} className="pl-lgh">{l.label}</div>
+          ) : l.move ? (
+            <div key={`${l.label}-${i}`} className={`pl-lg${l.move.warm ? ' is-warm' : ''}`}>
+              <span className="nm">{l.label}{l.move.note && <span className="nt">{l.move.note}</span>}</span>
+              <span className="s">{l.move.sets}</span>
+              <span className="w">{l.move.load}{l.mark === 'up' && <> <b className="up">↑</b></>}{l.mark === 'down' && <> <b className="dn">↓</b></>}</span>
+            </div>
+          ) : (
             <div
               key={`${l.label}-${i}`}
               className="pl-ol"

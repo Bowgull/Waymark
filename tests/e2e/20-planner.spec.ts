@@ -94,7 +94,8 @@ test('Program: the week as a day list, one day open at a time, a session opens t
   await row.locator('[role=button]').first().tap()
   await expect(row).toHaveClass(/is-on/)
   await expect(row.locator('.pl-cur')).toHaveCount(1)
-  await expect(row.locator('.pl-ol .lb').first()).toHaveText(/ROUNDS|ABOUT/)
+  // Page 94: a bag day lists its rounds (ABOUT before they're picked).
+  await expect(row.locator('.pl-ol .lb, .pl-lg .nm').first()).toHaveText(/ABOUT|Round 1/)
   // No boxes or glows: no ENTER on Program.
   await expect(row.getByRole('button', { name: /ENTER|RESUME/ })).toHaveCount(0)
 })

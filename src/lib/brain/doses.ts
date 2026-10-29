@@ -18,7 +18,7 @@ import { RUN_WALK_WEEKS, runWalkTotalSec, singleRunCap, weeklyRunCap, RESTART_SE
 import { accessoryProgression, ladderRungKg, snapIncreaseKg, snapLoadKg, type AccessorySetLog, type LoadEquipment } from '../strengthLoads'
 import { liftRegion } from '../blockZero/strength'
 import { workingWeight, RUNG_LADDER } from './athleteModel'
-import { LADDERS, awaySwap, backDaySwap, chinUpDose, choosePress, chooseSlot, ravenSwap, repsDose, slotOf, startFromEasier, type MainSlot, type RepsLast } from './progression'
+import { CHIN_LADDER, LADDERS, awaySwap, backDaySwap, chinUpDose, choosePress, chooseSlot, ravenSwap, repsDose, slotOf, startFromEasier, type MainSlot, type RepsLast } from './progression'
 import { LANDMINE_PRESS, isLandmine, isPower, landminePower, landmineStage, landmineStrength, type LandmineLast } from '../landmine'
 import type { ReadinessState } from './readiness'
 import type { AthleteModel, LiftEstimate } from './types'
@@ -535,7 +535,7 @@ function landmineLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, ceiling: L
 function armOrAccessory(ctx: DoseCtx, inp: StrengthIn, a: AccessoryIn, ceiling: Level, accessorySets: number | null): AccessoryDose | null {
   const sets = accessorySets != null ? Math.min(a.sets, accessorySets) : a.sets
   const hold = !levelAbove(ceiling, 'HOLD') && ctx.state !== 'GREEN' && ctx.state !== 'FRESH'
-  if (a.exerciseId === 'ex-chin-up-band') return { ...chinUpDose(inp.repsLast ?? {}, hold), section: a.section, sets, templateId: a.exerciseId, weightKg: null, workUp: false, note: null }
+  if (CHIN_LADDER.some(r => r.exerciseId === a.exerciseId) || a.exerciseId === 'ex-chin-up-band') return { ...chinUpDose(inp.repsLast ?? {}, hold), section: a.section, sets, templateId: a.exerciseId, weightKg: null, workUp: false, note: null }
   if (a.exerciseId === 'ex-dips' && (ctx.state === 'AMBER' || ctx.state === 'RED' || ctx.openPlans.some(p => /shoulder|elbow/i.test(p.region)))) {
     const cg = accessoryLift(ctx, inp, { ...a, exerciseId: 'ex-close-grip-bench', label: 'Close-Grip Bench Press', reps: 8 }, ceiling, accessorySets)
     return cg ? { ...cg, templateId: a.exerciseId, label: 'Close-Grip Bench Press', note: ['Close-grip press today: easier on the shoulders than dips.', cg.note].filter(Boolean).join(' ') } : null

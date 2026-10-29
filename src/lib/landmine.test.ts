@@ -8,7 +8,7 @@ import { LANDMINE_STEP_KG, POWER_CAP_KG, landmineHistory, landminePower, landmin
 import { CHIN_LADDER, PRESS_HEAVY_WHY, PRESS_LIGHT_WHY, PRESS_REBUILD_WHY, PRESS_VARIETY_WHY, chinUpDose, choosePress, repsDose } from './brain/progression'
 import { buildAthleteModel } from './brain/athleteModel'
 import { strengthDose, type DoseCtx } from './brain/doses'
-import { planLines } from '../features/plan/planLines'
+import { isTimed, planLines } from '../features/plan/planLines'
 import type { ModelEvents } from './brain/types'
 
 const LB = 0.45359237
@@ -90,46 +90,57 @@ function events(over: Partial<ModelEvents> = {}): ModelEvents {
 
 // ─── The chin-up ladder and the reps-only moves ──────────────
 {
-  assert.deepEqual(chinUpDose({}, false), { exerciseId: 'ex-chin-up-band', label: 'Chin-Up (Band)', reps: 5, change: 'start' }, 'band, 3×5 to start')
+  // No band, ever (2026-10-29): slow lowering 3 → 5, then full chin-ups 3 → 8.
+  assert.deepEqual(chinUpDose({}, false), { exerciseId: 'ex-chin-up-negative', label: 'Chin-Up (Slow Lowering)', reps: 3, change: 'start' }, 'slow lowering, 3×3 to start')
   const at = (id: string, planned: number, reps: number[]) => ({ [id]: { exerciseId: id, day: MON - 7, reps, plannedReps: planned } })
-  assert.equal(chinUpDose(at('ex-chin-up-band', 5, [5, 5, 5]), false).reps, 6, 'every set in: one more')
-  assert.equal(chinUpDose(at('ex-chin-up-band', 6, [6, 6, 4]), false).reps, 6, 'a set short: hold')
-  assert.deepEqual(chinUpDose(at('ex-chin-up-band', 8, [8, 8, 8]), false), { exerciseId: 'ex-chin-up-negative', label: 'Chin-Up (Slow Lowering)', reps: 3, change: 'increase' }, 'the top of the band rung: slow lowering')
-  assert.equal(chinUpDose(at('ex-chin-up-negative', 5, [5, 5, 5]), false).exerciseId, 'ex-chin-up', 'then full chin-ups')
+  assert.equal(chinUpDose(at('ex-chin-up-band', 8, [8, 8, 8]), false).exerciseId, 'ex-chin-up-negative', 'old band sets are not a rung: slow lowering')
+  assert.equal(chinUpDose(at('ex-chin-up-negative', 3, [3, 3, 3]), false).reps, 4, 'every set in: one more')
+  assert.equal(chinUpDose(at('ex-chin-up-negative', 4, [4, 4, 2]), false).reps, 4, 'a set short: hold')
+  assert.deepEqual(chinUpDose(at('ex-chin-up-negative', 5, [5, 5, 5]), false), { exerciseId: 'ex-chin-up', label: 'Chin-Up', reps: 3, change: 'increase' }, 'the top of slow lowering: full chin-ups')
   assert.equal(chinUpDose(at('ex-chin-up', 8, [8, 8, 8]), false).reps, 8, 'full chin-ups top out at 8: never added weight')
-  assert.equal(CHIN_LADDER.length, 3)
+  assert.equal(CHIN_LADDER.length, 2)
+  assert.ok(CHIN_LADDER.every(r => r.exerciseId !== 'ex-chin-up-band'), 'no band rung')
   assert.deepEqual(repsDose('ex-nordic-curl', 3, { exerciseId: 'ex-nordic-curl', day: MON - 7, reps: [3, 3], plannedReps: 3 }, false), { reps: 4, change: 'increase' })
   assert.deepEqual(repsDose('ex-copenhagen-plank', 20, { exerciseId: 'ex-copenhagen-plank', day: MON - 7, reps: [20, 20], plannedReps: 20 }, false), { reps: 25, change: 'increase' }, 'Copenhagen: 5 s more')
   assert.equal(repsDose('ex-dead-bugs', 10, null, false), null, 'not a reps-only progression')
 }
 
-// ─── Page 93's plan lines ────────────────────────────────────
+// ─── Page 94's logbook lines ─────────────────────────────────
 {
-  const ex = (exerciseId: string, name: string, section: string, setsReps: string, kg: number | null, equipment: string) => ({ exerciseId, name, section, equipment, prescription: { prescribedWeightKg: kg, setsReps } })
+  const ex = (exerciseId: string, name: string, section: string, setsReps: string, kg: number | null, equipment: string, notes: string | null = null) => ({ exerciseId, name, section, equipment, notes, prescription: { prescribedWeightKg: kg, setsReps } })
   const s = { id: 's', type: 'strength', label: 'Strength A', status: 'planned', scheduledDate: MON, timeSlot: 'pm', blockType: 'block_zero', blockWeek: 8, notes: null } as never
   const lines = planLines(s, { kind: 'strength', notes: [], plannedMin: 50, brainLifts: [{ exerciseId: 'ex-landmine-press', change: 'hold', explain: PRESS_REBUILD_WHY }], exercises: [
+    ex('ex-band-pull-aparts', 'Band Pull-Aparts', 'warmup', '1×15', null, 'band'),
     ex('ex-goblet-squat', 'Goblet Squat', 'main', '3×8', 30 * LB, 'dumbbell'),
     ex('ex-landmine-press', 'Landmine Press', 'main', '3×8', 10 * LB, 'landmine'),
-    ex('ex-db-row', 'Dumbbell Row', 'main', '3×10', 20 * LB, 'dumbbell,bench'),
-    ex('ex-dead-bugs', 'Dead Bugs', 'core', '2×10', null, 'bodyweight'),
-    ex('ex-chin-up-band', 'Chin-Up (Band)', 'accessory', '3×5', null, 'pull-up bar,band'),
+    ex('ex-db-row', 'Dumbbell Row', 'main', '3×10', 20 * LB, 'dumbbell,bench', 'Flat back, pull to the lower ribs. Each arm.'),
+    ex('ex-dead-bugs', 'Dead Bugs', 'core', '2×10', null, 'bodyweight', '10 each side. Back stays flat.'),
+    ex('ex-side-plank', 'Side Plank', 'core', '2×30', null, 'bodyweight', '30s each side.'),
+    ex('ex-chin-up-negative', 'Chin-Up (Slow Lowering)', 'accessory', '3×3', null, 'pull-up bar', 'Jump to the top, lower yourself for 3 to 5 s. Reps only.'),
     ex('ex-hammer-curl', 'Hammer Curl', 'accessory', '2×10', 15 * LB, 'dumbbell'),
-    ex('ex-suitcase-carry', 'Grip: Suitcase Carry', 'accessory', '2×30', 30 * LB, 'dumbbell'),
+    ex('ex-suitcase-carry', 'Grip: Suitcase Carry', 'accessory', '2×30', 30 * LB, 'dumbbell', '30s each hand. Stand tall, no lean.'),
   ] })
   const by = (label: string) => lines.find(l => l.label === label)
-  assert.deepEqual([by('PRESS')?.value, by('PRESS')?.explain], ['landmine · 3×8 · 10 lb', PRESS_REBUILD_WHY], 'PRESS: landmine · 3×8 · 10 lb, why behind a tap')
-  assert.equal(by('ARMS')?.value, 'chin-ups 3×5, hammer curls, grip', 'one ARMS line, chin-ups once')
-  assert.equal(by('GOBLET SQUAT')?.value, '3×8 · 30 lb')
+  assert.deepEqual(lines[0], { label: 'Easy jog', value: '', move: { sets: null, load: '1.5 km', note: 'or 3 min of rope', warm: true } }, 'the jog or rope first')
+  assert.deepEqual(by('Band pull-aparts')?.move, { sets: '1×15', load: null, note: null }, 'the warm-up drills under it')
+  assert.deepEqual(lines.filter(l => l.head).map(l => l.label), ['Main', 'Core', 'Arms'], 'one head per group')
+  assert.deepEqual(by('Goblet squat')?.move, { sets: '3×8', load: '30 lb', note: null })
+  assert.deepEqual([by('Landmine press')?.move?.load, by('Landmine press')?.explain], ['10 lb', undefined], 'the press by name, no › (page 94)')
+  assert.equal(by('Dumbbell row')?.move?.note, 'each arm')
+  assert.deepEqual(by('Side plank')?.move, { sets: '2×30s', load: null, note: 'each side' }, 'a timed move reads seconds')
+  assert.deepEqual(by('Chin-up negatives')?.move, { sets: '3×3', load: null, note: 'jump up, lower for 3 to 5 s' })
+  assert.deepEqual(by('Suitcase carry')?.move, { sets: '2×30s', load: '30 lb', note: 'each hand' }, 'the carry with its weight')
+  assert.equal(isTimed('Find your weight: start light. 12 each leg. Full range, 2-3s down.'), false, 'a tempo cue is not a timed move')
+  assert.equal(isTimed('Find your weight: start light. 30s each hand. Stand tall.'), true, 'the carry is timed')
+  assert.ok(lines.every(l => !/\.\.\.|…/.test(`${l.label} ${l.value} ${l.move?.note ?? ''}`)), 'nothing cut')
   const b = planLines({ ...(s as object), label: 'Strength B' } as never, { kind: 'strength', notes: [], plannedMin: 50, brainLifts: [], exercises: [
     ex('ex-lm-punch', 'Landmine Punch', 'main', '3×4 each', null, 'landmine'),
-    ex('ex-lm-reverse-lunge', 'Landmine Reverse Lunge', 'main', '3×8 each', null, 'landmine'),
+    ex('ex-nordic-curl', 'Nordic Curl', 'core', '2×3', null, 'bodyweight'),
+    ex('ex-bent-knee-calf-raise', 'Bent-Knee Calf Raise', 'core', '2×12', null, 'bodyweight'),
     ex('ex-db-row', 'Dumbbell Row', 'accessory', '3×10', 20 * LB, 'dumbbell,bench'),
-    ex('ex-dips', 'Dips', 'accessory', '3×6', null, 'dip bars'),
-    ex('ex-wrist-curl', 'Wrist Curl', 'accessory', '2×15', 10 * LB, 'dumbbell,barbell'),
   ] })
-  // Pulling twice a week (2026-10-26): B's row leads its arm block; on A the row is a main lift with its own line.
-  assert.deepEqual(b.filter(l => l.label !== 'TIME').map(l => [l.label, l.value]), [['LM PUNCH', '3×4 each · bar only'], ['LM LUNGE', '3×8 each · bar only'], ['ARMS', 'rows 3×10, dips, wrist curls']], 'page 93 Strength B lines')
-  assert.equal(by('DB ROW')?.value ?? by('DUMBBELL ROW')?.value, '3×10 · 20 lb', 'A: the row as its own line')
+  assert.deepEqual(b.filter(l => l.head).map(l => l.label), ['Main', 'Legs', 'Arms'], "B: the Nordic and the calves are legs; B's row leads the arms")
+  assert.deepEqual(b.find(l => l.label === 'Landmine punch')?.move, { sets: '3×4', load: 'bar', note: 'each side' })
 }
 
 console.log('landmine tests passed')

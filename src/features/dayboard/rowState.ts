@@ -336,6 +336,8 @@ export interface WorkoutExercise {
   exercise?: { name: string; equipment?: string | null } | null
   name?: string
   label?: string
+  /** The template's line for this move ("10 each side. Back stays flat."): page 94 reads "each side" and seconds from it. */
+  notes?: string | null
   /** The library's equipment ("dumbbell,bench"); the preview sends it here, the workout on `exercise`. */
   equipment?: string | null
   sets?: WorkoutSet[]

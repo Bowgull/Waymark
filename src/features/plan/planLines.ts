@@ -7,8 +7,8 @@
 // ✓ and effort. A skip says so first; his reason closes a swap. Pure; the
 // data is SessionSummary's (the per-type endpoints) and the row's own dose.
 
-import { foundationLevel, foundationMinutes } from '../../lib/foundation'
-import { ARM_BLOCK_IDS, PRESS_IDS, isLandmine } from '../../lib/landmine'
+import { FOUNDATION_ROWS, foundationLevel, foundationMinutes, foundationTemplate } from '../../lib/foundation'
+import { ARM_BLOCK_IDS } from '../../lib/landmine'
 import { RESET_WALK_MIN, resetMinutes } from '../../lib/activeRecoveryTemplate'
 import type { SummaryData } from '../dayboard/summaryData'
 import type { RunPlace } from '../weather/runPlace'
@@ -26,6 +26,10 @@ export interface PlanLine {
   tick?: boolean
   /** One plain line behind a tap on this line (page 93: why this press). */
   explain?: string
+  /** Page 94: a logbook line. The label is the move in plain words; its note sits under it, sets and weight on the right. */
+  move?: { sets?: string | null; load?: string | null; note?: string | null; warm?: boolean }
+  /** Page 94: a group's head in the logbook (Main, Core, Arms). */
+  head?: boolean
 }
 
 export interface LinesOpts {
@@ -66,7 +70,7 @@ export function swapReason(s: Pick<DayBoardSession, 'contextJson'>): string | nu
 }
 
 /** The row's own dose (sessions.dose_json), when it carries one. */
-function doseOf(s: Pick<DayBoardSession, 'doseJson'>): { bag?: { rounds: number }; run?: { runSec: number; walkSec: number; rounds: number; totalSec: number; hrCeilingBpm: number; walkOnly: boolean } } | null {
+function doseOf(s: Pick<DayBoardSession, 'doseJson'>): { bag?: { rounds: number }; run?: { runSec: number; walkSec: number; rounds: number; totalSec: number; hrCeilingBpm: number; walkOnly: boolean; talkTestDue?: boolean } } | null {
   const d = parse(s.doseJson)
   return Object.keys(d).length ? d as never : null
 }
@@ -75,37 +79,105 @@ function liftName(ex: WorkoutExercise): string {
   return shortLift(ex.label || ex.name || ex.exercise?.name || 'Lift').toUpperCase()
 }
 
-/** The arm block's words on its one ARMS line (page 93: "chin-ups 3×5, curls, grip"). */
-const ARM_WORD: Readonly<Record<string, string>> = {
-  'ex-chin-up-band': 'chin-ups', 'ex-chin-up-negative': 'chin-ups', 'ex-chin-up': 'chin-ups', 'ex-dips': 'dips', 'ex-close-grip-bench': 'close-grip press',
-  'ex-hammer-curl': 'hammer curls', 'ex-suitcase-carry': 'grip', 'ex-wrist-curl': 'wrist curls',
-  // Strength B's second pull (2026-10-26): in the arm block there, a main lift on A.
-  'ex-db-row': 'rows',
+// ─── Page 94: the logbook (approved 2026-10-29) ─────────────────
+// Every opened session lists every move: the move in plain words on the left,
+// big and bright, its note under it ("each side"); sets and weight on the
+// right, lined up. A thin rule and a small head between groups. Nothing cut.
+
+const move = (name: string, sets: string | null, load: string | null = null, note: string | null = null, warm = false): PlanLine =>
+  ({ label: name, value: '', move: { sets, load, note, ...(warm ? { warm: true } : {}) } })
+const head = (t: string): PlanLine => ({ label: t, value: '', head: true })
+
+/** His strength warm-up (2026-10-29): the session's rope timer, or an easy jog instead. */
+export const WARM_JOG = move('Easy jog', null, '1.5 km', 'or 3 min of rope', true)
+
+/** Names that read better than the library's on the logbook. */
+const MOVE_NAME: Readonly<Record<string, string>> = {
+  'ex-chin-up-negative': 'Chin-up negatives',
+  'ex-chin-up': 'Chin-ups',
+  'ex-db-row': 'Dumbbell row',
+  'ex-lm-rdl': 'Landmine RDL',
+  'ex-db-rdl': 'Dumbbell RDL',
+  'ex-suitcase-carry': 'Suitcase carry',
 }
 
-function strengthTodo(data: Extract<SummaryData, { kind: 'strength' }>): PlanLine[] {
-  const out: PlanLine[] = []
-  const core: string[] = []
-  const arms: string[] = []
+/** A short how-to under a move whose name doesn't say it. */
+const MOVE_NOTE: Readonly<Record<string, string>> = {
+  'ex-chin-up-negative': 'jump up, lower for 3 to 5 s',
+}
+
+/** Sentence case that keeps the short caps (RDL, DB) and inner capitals (McGill): "Goblet Squat" reads "Goblet squat". */
+export function plainName(name: string): string {
+  const out = name.trim().split(' ').map(w => w.split('-').map(p => (/^[A-Z][a-z']+$/.test(p.replace(/[()]/g, '')) ? p.toLowerCase() : p)).join('-')).join(' ')
+  return out.charAt(0).toUpperCase() + out.slice(1)
+}
+
+/** "each side", "each leg", "each arm", "each hand" from the template's line; a per-side move without one reads "each side". */
+export function eachNote(notes: string | null | undefined, setsReps: string): string | null {
+  const m = /\beach (side|leg|arm|hand)\b/i.exec(notes ?? '')
+  if (m) return `each ${m[1].toLowerCase()}`
+  return / each$/.test(setsReps) ? 'each side' : null
+}
+
+/** A move timed in seconds: a sentence of its line opens with the time ("30s each side", "Seconds each side"), not a tempo cue ("2-3s down"). */
+export function isTimed(notes: string | null | undefined): boolean {
+  return /(^|[.:]\s+)(\d+s|seconds)\b/i.test(notes ?? '')
+}
+
+/** The logbook's sets: "3×8", a timed move "2×30s". */
+export function setsText(setsReps: string, timed: boolean): string {
+  const sr = setsReps.replace(/ each$/, '')
+  return timed && /×\d+$/.test(sr) ? `${sr}s` : sr
+}
+
+const LEG_IDS = new Set(['ex-nordic-curl', 'ex-bent-knee-calf-raise', 'ex-single-leg-calf-raise', 'ex-tibialis-raise'])
+
+function groupOf(ex: WorkoutExercise, core: WorkoutExercise[]): string | null {
+  if (ex.section === 'warmup') return null
+  if (ex.section === 'main') return 'Main'
+  if (ex.section === 'core') return core.every(c => LEG_IDS.has(c.exerciseId)) ? 'Legs' : 'Core'
+  return ARM_BLOCK_IDS.has(ex.exerciseId) || ex.exerciseId === 'ex-db-row' ? 'Arms' : 'More'
+}
+
+export function strengthLog(data: Extract<SummaryData, { kind: 'strength' }>): PlanLine[] {
+  const out: PlanLine[] = [WARM_JOG]
+  const core = data.exercises.filter(ex => ex.section === 'core')
+  let group: string | null = null
   for (const ex of data.exercises) {
-    if (ex.section === 'warmup') continue
-    if (ex.section === 'core') { core.push(shortLift(ex.label || ex.name || ex.exercise?.name || '').toLowerCase()); continue }
+    const g = groupOf(ex, core)
+    if (g && g !== group) { out.push(head(g)); group = g }
     const sr = ex.prescription?.setsReps ?? ''
-    // Page 93: the arm block is one line; the first move carries its sets and reps.
-    if (ARM_BLOCK_IDS.has(ex.exerciseId) || (ex.section === 'accessory' && ARM_WORD[ex.exerciseId])) { arms.push(arms.length === 0 && sr ? `${ARM_WORD[ex.exerciseId]} ${sr}` : ARM_WORD[ex.exerciseId]); continue }
-    const brain = data.brainLifts?.find(l => l.exerciseId === ex.exerciseId)
     const load = liftLoad(ex)
-    const value = `${sr}${sr ? ' · ' : ''}${/\d$/.test(load) ? `${load} lb` : load}`
-    const mark = brain?.change === 'increase' ? { mark: 'up' as const } : brain?.change === 'decrease' ? { mark: 'down' as const } : {}
-    // The press the coach picked: one PRESS line, which press first, and why behind a tap (page 93).
-    if (PRESS_IDS.has(ex.exerciseId)) out.push({ label: 'PRESS', value: `${isLandmine(ex.exerciseId) ? 'landmine' : 'overhead'} · ${value}`, ...mark, ...(brain?.explain ? { explain: brain.explain } : {}) })
-    else out.push({ label: liftName(ex), value, ...mark })
+    const lb = /\d$/.test(load) ? `${load} lb` : load === 'bar only' ? 'bar' : null
+    const find = load === 'find your weight' ? 'find your weight' : null
+    const note = [MOVE_NOTE[ex.exerciseId] ?? eachNote(ex.notes, sr), find].filter(Boolean).join(', ') || null
+    const brain = data.brainLifts?.find(l => l.exerciseId === ex.exerciseId)
+    const line = move(MOVE_NAME[ex.exerciseId] ?? plainName(ex.label || ex.name || ex.exercise?.name || 'Lift'), sr ? setsText(sr, isTimed(ex.notes)) : null, lb, note)
+    out.push(brain?.change === 'increase' ? { ...line, mark: 'up' } : brain?.change === 'decrease' ? { ...line, mark: 'down' } : line)
   }
-  const min = data.plannedMin != null ? `~${data.plannedMin} min` : null
-  if (core.length > 0) out.push({ label: 'CORE', value: [core.filter(Boolean).join(', '), min].filter(Boolean).join(' · ') })
-  else if (min) out.push({ label: 'TIME', value: min })
-  if (arms.length > 0) out.push({ label: 'ARMS', value: arms.join(', ') })
   return out
+}
+
+/** Foundation's moves as the logbook (page 94): back first, then neck and shoulders. */
+export function foundationLog(moves: Array<{ name: string; sets?: number | null; holdSec?: number | null; reps?: number | null; perSide?: boolean; section?: string | null }>): PlanLine[] {
+  const out: PlanLine[] = []
+  let group: string | null = null
+  for (const m of moves) {
+    const g = m.section === 'upper' ? 'Neck and shoulders' : 'Back'
+    if (g !== group) { out.push(head(g)); group = g }
+    const sets = m.sets != null && m.sets > 1 ? `${m.sets}×` : ''
+    const amount = m.reps != null ? `${m.reps}` : m.holdSec != null ? `${m.holdSec}s` : ''
+    const hold = m.reps != null && m.holdSec != null ? `hold ${m.holdSec} s` : null
+    const note = [m.perSide ? 'each side' : null, hold].filter(Boolean).join(', ') || null
+    out.push(move(plainName(m.name), `${sets}${amount}` || null, null, note))
+  }
+  return out
+}
+
+/** Which Foundation block a move sits in, from the routine (an older row without its section). */
+function foundationSection(name: string): string | null {
+  const row = FOUNDATION_ROWS.find(r => r.label.toLowerCase() === name.toLowerCase())
+  return row ? row.section : null
 }
 
 function strengthDone(data: Extract<SummaryData, { kind: 'strength' }>): PlanLine[] {
@@ -121,25 +193,32 @@ function runPlan(s: DayBoardSession, data: SummaryData | null, opts: LinesOpts):
   const plan = data?.kind === 'run' ? data.plan : null
   const dose = doseOf(s)?.run ?? null
   const cap = plan?.z2CeilingBpm ?? dose?.hrCeilingBpm ?? null
-  const hr = cap ? ` · HR ≤${cap}` : ''
   const out: PlanLine[] = []
   const rw = plan?.runWalk ?? (dose && dose.rounds > 1 ? { runSec: dose.runSec, walkSec: dose.walkSec, rounds: dose.rounds, warmupSec: 0 } : null)
-  if (dose?.walkOnly) out.push({ label: 'EASY', value: `walk or bike · ${Math.round(dose.totalSec / 60)} min` })
+  // Page 94: the logbook. What to do with its minutes, the heart's top, the treadmill, the talk test.
+  const walkRun = (rounds: number, runSec: number, walkSec: number, total: number) =>
+    out.push(move('Run-walk', null, `${total} min`, `${rounds} × run ${mmss(runSec)}, walk ${mmss(walkSec)}`))
+  if (dose?.walkOnly) out.push(move('Easy walk or bike', null, `${Math.round(dose.totalSec / 60)} min`))
   else if (rw && rw.walkSec > 0) {
     const total = plan?.targetDurSec ? Math.round(plan.targetDurSec / 60) : dose ? Math.round(dose.totalSec / 60) : Math.round((rw.rounds * (rw.runSec + rw.walkSec) + rw.warmupSec) / 60)
-    out.push({ label: 'RUN', value: `${total} min${hr}` }, { label: 'SHAPE', value: `${rw.rounds} × run ${mmss(rw.runSec)}, walk ${mmss(rw.walkSec)}` })
+    walkRun(rw.rounds, rw.runSec, rw.walkSec, total)
   } else {
     const min = plan?.targetDurSec ? Math.round(plan.targetDurSec / 60) : continuousRunMin(s) ?? (dose ? Math.round(dose.runSec / 60) : null)
     if (min == null && s.type === 'foundation_run' && s.blockType === 'block_zero') {
       const w = runWalkShapeFor(s, opts.weekNumber ?? s.blockWeek ?? 1)
-      out.push({ label: 'RUN', value: `${Math.round((w.rounds * (w.runSec + w.walkSec) + w.warmupSec) / 60)} min${hr}` }, { label: 'SHAPE', value: `${w.rounds} × run ${mmss(w.runSec)}, walk ${mmss(w.walkSec)}` })
+      walkRun(w.rounds, w.runSec, w.walkSec, Math.round((w.rounds * (w.runSec + w.walkSec) + w.warmupSec) / 60))
     } else {
-      out.push({ label: 'RUN', value: `${min != null ? `${min} min` : 'easy'}${hr}` }, { label: 'SHAPE', value: 'one steady run' })
+      out.push(move('Easy run', null, min != null ? `${min} min` : null, 'no walk breaks, you can talk in full sentences'))
     }
   }
+  if (cap && !dose?.walkOnly) out.push(move('Heart rate', null, `max ${cap}`))
   // Page 76: every piece has a speed; an easy run inside shows the one to set.
   const easyKmh = plan?.easyKmh ?? null
-  if (easyKmh && !dose?.walkOnly && opts.where?.place !== 'outside') out.push({ label: 'SET', value: `speed about ${speedText(easyKmh, opts.unit ?? null)} · incline ${BASE_INCLINE}` })
+  if (easyKmh && !dose?.walkOnly && opts.where?.place !== 'outside') {
+    const unit = opts.unit ?? null
+    out.push(unit ? move('Treadmill', null, speedText(easyKmh, unit), `incline ${BASE_INCLINE}`) : move('Treadmill', null, null, `${speedText(easyKmh, unit)} · incline ${BASE_INCLINE}`))
+  }
+  if (dose?.talkTestDue && !dose.walkOnly) out.push(move('Talk test', null, null, 'at the end: say a full sentence, note your heart rate'))
   if (opts.weather) out.push({ label: 'WEATHER', value: opts.weather })
   return out
 }
@@ -209,7 +288,7 @@ export function planLines(s: DayBoardSession, data: SummaryData | null, opts: Li
   const doneLine = (lead: string | null) => out.push({ label: 'DONE', value: [lead, min != null ? `${min} min` : null].filter(Boolean).join(' · ') + effort })
   switch (s.type) {
     case 'strength':
-      if (data?.kind === 'strength') out.push(...(done ? strengthDone(data) : strengthTodo(data)))
+      if (data?.kind === 'strength') out.push(...(done ? strengthDone(data) : strengthLog(data)))
       if (done) doneLine(null)
       break
     case 'running':
@@ -241,9 +320,15 @@ export function planLines(s: DayBoardSession, data: SummaryData | null, opts: Li
       const rounds = bag && bag.rounds > 0 ? bag.rounds : doseOf(s)?.bag?.rounds ?? null
       const roundMin = bag && bag.plannedSecs.length > 0 ? Math.round(bag.plannedSecs[bag.plannedSecs.length - 1] / 60) : 3
       const rest = bag?.restSec != null ? Math.round(bag.restSec / 60) : 1
-      if (rounds) out.push({ label: 'ROUNDS', value: `${rounds} × ${roundMin} min · ${rest} min rest`, tick: done })
-      else out.push({ label: 'ABOUT', value: `~${bag?.plannedMin ?? plannedRowMinutes(s, opts.weekNumber)} min` })
-      if (bag?.firstCombo) out.push({ label: 'FIRST', value: bag.firstCombo })
+      if (rounds && done) out.push({ label: 'ROUNDS', value: `${rounds} × ${roundMin} min · ${rest} min rest`, tick: true })
+      else if (rounds) {
+        // Page 94: each round with what it asks for, then the rest.
+        for (let i = 0; i < rounds; i++) {
+          const sec = bag?.plannedSecs[i]
+          out.push(move(`Round ${i + 1}`, `${sec ? Math.round(sec / 60) : roundMin} min`, null, bag?.roundCombos?.[i]?.join(', ') || null))
+        }
+        out.push(move('Rest', `${rest} min`, null, 'between rounds'))
+      } else out.push({ label: 'ABOUT', value: `~${bag?.plannedMin ?? plannedRowMinutes(s, opts.weekNumber)} min` })
       if (done) doneLine(null)
       break
     }
@@ -277,8 +362,13 @@ export function planLines(s: DayBoardSession, data: SummaryData | null, opts: Li
       const level = foundationLevel(week)
       // The routine's own minutes for its level and day (audit #24), never a flat 12.
       const fmin = data?.kind === 'mobility' && data.plannedMin ? data.plannedMin : foundationMinutes({ week, dayOfWeek: s.scheduledDate != null ? new Date(s.scheduledDate * 86400000).getUTCDay() : null })
-      if (done) { out.push({ label: 'BLOCKS', value: 'back, neck and shoulder', tick: true }); doneLine(null) }
-      else out.push({ label: 'BLOCKS', value: 'back, then neck and shoulder' }, { label: 'LEVEL', value: `${level} · ~${fmin} min` })
+      if (done) { out.push({ label: 'BLOCKS', value: 'back, neck and shoulder', tick: true }); doneLine(null); break }
+      // Page 94: every move. Its own rows once written; before, the routine it will be (his level and day).
+      const rows = data?.kind === 'mobility' && data.moves.some(m => m.sets != null || m.reps != null || m.holdSec != null)
+        ? data.moves.map(m => ({ ...m, section: m.section ?? foundationSection(m.name) }))
+        : foundationTemplate({ week, dayOfWeek: s.scheduledDate != null ? new Date(s.scheduledDate * 86400000).getUTCDay() : null }).map(t => ({ name: t.label, sets: t.sets, holdSec: t.holdSec, reps: t.reps, perSide: t.perSide === true, section: t.section }))
+      if (rows.length > 0) out.push(...foundationLog(rows))
+      else out.push({ label: 'LEVEL', value: `${level} · ~${fmin} min` })
       break
     }
     case 'mt_class': {
