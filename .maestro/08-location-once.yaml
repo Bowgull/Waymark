@@ -1,0 +1,23 @@
+# The weather's location ask comes from iOS, once (Josh 2026-10-29: the web
+# view's own ask came back on every open). Flow 01 answered it on the first
+# launch; opening the app again must not ask again.
+appId: com.joshbocas.app
+name: Location - asked once, not on every open
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "Morning Report.*|RELOAD"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertNotVisible: "Don.t Allow"
+- takeScreenshot: 08-location-reopen
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "Morning Report.*|RELOAD"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertNotVisible: "Don.t Allow"

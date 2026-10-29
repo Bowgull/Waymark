@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core'
+import { Geolocation } from '@capacitor/geolocation'
 import { useEffect, useState } from 'react'
 
 import { getItem, setItem } from '@/lib/safeStorage'
@@ -24,21 +26,42 @@ function cachedLoc(): { lat: number; lon: number } | null {
   }
 }
 
-/** The phone's location, asked once (iOS asks the first time); null when there is none. */
+const LOC_OPTIONS = { enableHighAccuracy: false, maximumAge: 30 * 60_000, timeout: 10_000 }
+
+function keepLoc(lat: number, lon: number): { lat: number; lon: number } {
+  const loc = { lat: roundLoc(lat), lon: roundLoc(lon) }
+  setItem(LOC_KEY, JSON.stringify(loc))
+  return loc
+}
+
+/**
+ * In the app, iOS itself asks, once: it remembers the answer. The web view's
+ * own ask (navigator.geolocation) forgot it on every launch.
+ */
+async function nativeLoc(): Promise<{ lat: number; lon: number } | null> {
+  try {
+    let state = (await Geolocation.checkPermissions()).location
+    if (state === 'prompt' || state === 'prompt-with-rationale') state = (await Geolocation.requestPermissions({ permissions: ['location'] })).location
+    if (state !== 'granted') return null
+    const p = await Geolocation.getCurrentPosition(LOC_OPTIONS)
+    return keepLoc(p.coords.latitude, p.coords.longitude)
+  } catch {
+    return null
+  }
+}
+
+/** The phone's location, asked once; null when there is none. */
 function phoneLoc(): Promise<{ lat: number; lon: number } | null> {
+  if (Capacitor.isNativePlatform()) return nativeLoc()
   if (getItem(DENIED_KEY) === '1' || typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null)
   return new Promise(resolve => {
     navigator.geolocation.getCurrentPosition(
-      p => {
-        const loc = { lat: roundLoc(p.coords.latitude), lon: roundLoc(p.coords.longitude) }
-        setItem(LOC_KEY, JSON.stringify(loc))
-        resolve(loc)
-      },
+      p => resolve(keepLoc(p.coords.latitude, p.coords.longitude)),
       e => {
         if (e.code === 1) setItem(DENIED_KEY, '1')
         resolve(null)
       },
-      { enableHighAccuracy: false, maximumAge: 30 * 60_000, timeout: 10_000 },
+      LOC_OPTIONS,
     )
   })
 }
