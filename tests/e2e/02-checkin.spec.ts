@@ -68,8 +68,9 @@ test('Morning check-in: nine cards, the herb 0-9 card, GOOD TO GO, and the row o
   await deck.getByRole('button', { name: 'TO TODAY' }).tap()
   await expect(deck).toBeHidden()
 
+  // Opened to edit, the report stays open after the cards: LOGGED and the readiness line.
   const report = page.getByRole('button', { name: /^Morning Report, logged\./ })
-  await expect(report.getByRole('img', { name: 'GOOD TO GO' })).toBeVisible()
+  await expect(report.getByRole('paragraph')).toHaveText('Good to go.')
 
   // What was saved.
   const log = await api.get<{ herbScale: number; sleepHours: number; backToday: number; alcoholScale: number }>(`/api/daily-logs/today?date=${todayISO()}`)
