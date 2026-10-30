@@ -13,6 +13,14 @@ name: ENTER the open row's session (again if the start didn't take)
     visible: "ENTER|RESUME"
     timeout: 10000
     optional: true
+- swipe:
+    start: 50%, 75%
+    end: 50%, 30%
+    duration: 500
+- swipe:
+    start: 50%, 75%
+    end: 50%, 30%
+    duration: 500
 - scrollUntilVisible:
     element: "Settings"
     direction: DOWN
