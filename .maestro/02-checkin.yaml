@@ -12,7 +12,7 @@ name: Morning check-in, with the herb 0-9 card
 # Report board, itself a button: iOS WebKit exposes only the board, so tap the
 # flap's spot at the board's right end.
 - tapOn:
-    text: "Morning Report, logged.*Tap for why\\."
+    text: "Morning Report, logged.*Tap for why\\..*"
     point: "88%,50%"
 - extendedWaitUntil:
     visible: "MORNING CHECK-IN"
