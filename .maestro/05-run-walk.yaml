@@ -8,6 +8,10 @@ name: Run-walk - the warm-up, then run and walk intervals
 # add sessions, so "+ add session" may be below the fold.
 - runFlow: shared/open-today.yaml
 - runFlow: shared/today-bottom.yaml
+- runFlow:
+    file: shared/row-in-view.yaml
+    env:
+      ROW: ".*RUN-WALK.*"
 - tapOn: ".*RUN-WALK.*"
 - runFlow: shared/today-bottom.yaml
 - runFlow:

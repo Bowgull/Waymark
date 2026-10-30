@@ -6,11 +6,13 @@ name: Morning check-in, with the herb 0-9 card
 # Today has loaded (RELOAD pressed if it didn't). The board grows as the flows
 # add sessions, so "+ add session" may be below the fold.
 - runFlow: shared/open-today.yaml
+# Page 96: once logged, the report is folded to one line; a tap opens it.
+- tapOn: "Morning Report, logged.*Tap to open\\."
 # The LOGGED flap ("Edit the Morning Report") is a button inside the Morning
 # Report board, itself a button: iOS WebKit exposes only the board, so tap the
 # flap's spot at the board's right end.
 - tapOn:
-    text: "Morning Report, logged.*"
+    text: "Morning Report, logged.*Tap for why\\."
     point: "88%,50%"
 - extendedWaitUntil:
     visible: "MORNING CHECK-IN"

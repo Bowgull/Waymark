@@ -9,7 +9,12 @@ name: Strength - a dumbbell main lift's weight input
 # add sessions, so "+ add session" may be below the fold.
 - runFlow: shared/open-today.yaml
 - runFlow: shared/today-bottom.yaml
-- tapOn: "(?i)strength strength.*"
+# the row reads its name twice (icon, flap): "STRENGTH C STRENGTH C ~40min"
+- runFlow:
+    file: shared/row-in-view.yaml
+    env:
+      ROW: "(?i)strength.*strength.*min"
+- tapOn: "(?i)strength.*strength.*min"
 - takeScreenshot: 03-strength-row
 - runFlow: shared/today-bottom.yaml
 - runFlow:

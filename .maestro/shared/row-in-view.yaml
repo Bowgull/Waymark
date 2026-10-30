@@ -1,0 +1,11 @@
+appId: com.joshbocas.app
+name: Today, a row scrolled to the middle
+# env ROW: the row's text. Today opens nothing by itself (page 98), so the
+# day's board can be short: scrolled only to Settings, the last row can sit
+# under the live strip, which then takes the tap. Centre the row first.
+---
+- scrollUntilVisible:
+    element: ${ROW}
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
