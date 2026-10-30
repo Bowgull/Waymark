@@ -235,6 +235,8 @@ jobs:
           run_flow 06-settings-library-ledger
           run_flow 07-coach
           run_flow 08-location-once
+          .maestro/sim-api.sh add active_recovery
+          run_flow 09-double-tap-enter
           ls -R "$OUT/shots" | head -80
           # How fast the Worker answered the app (wrangler's per-request times).
           grep -oE "\(([0-9]+)ms\)$" "$OUT/logs/backend.log" | tr -d '()ms' | sort -n             | awk '{a[NR]=$1} END {if (NR) print "Worker requests:", NR, "median", a[int((NR+1)/2)], "ms, p90", a[int(NR*0.9)], "ms, max", a[NR], "ms"}'
