@@ -263,11 +263,12 @@ test('Page 98: Today loads clean; a double tap puts ENTER on the row, the lines 
   const row = todayRow(page, s.id)
   const hit = row.locator('.td-rowhit')
   await expect(hit).toHaveAttribute('aria-expanded', 'false')
-  await expect(row.getByRole('button', { name: 'ENTER' })).toHaveCount(0)
+  await expect(row.getByRole('button', { name: 'ENTER', exact: true })).toHaveCount(0)
   await hit.dblclick()
+  // exact: while ENTER is on the row, the row's own name ends in ENTER too
   const ent = row.locator('.td-ent')
   await expect(ent).toBeVisible()
-  await expect(row.getByRole('button', { name: 'ENTER' })).toHaveCount(1)
+  await expect(row.getByRole('button', { name: 'ENTER', exact: true })).toHaveCount(1)
   // a 44-point target
   expect((await ent.boundingBox())!.height).toBeGreaterThanOrEqual(44)
   // the lines never start opening
@@ -275,10 +276,10 @@ test('Page 98: Today loads clean; a double tap puts ENTER on the row, the lines 
   await expect(hit).toHaveAttribute('aria-expanded', 'false')
   // a tap outside: back to the minutes
   await page.mouse.click(8, 8)
-  await expect(row.getByRole('button', { name: 'ENTER' })).toHaveCount(0)
+  await expect(row.getByRole('button', { name: 'ENTER', exact: true })).toHaveCount(0)
   // armed again, ENTER goes in
   await hit.dblclick()
-  await row.getByRole('button', { name: 'ENTER' }).tap()
+  await row.getByRole('button', { name: 'ENTER', exact: true }).tap()
   await expect(page).toHaveURL(new RegExp(`/session/${s.id}`))
 })
 
