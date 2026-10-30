@@ -7,9 +7,9 @@ name: Location - asked once, not on every open
 - launchApp:
     stopApp: true
 # A session an earlier flow left running on the phone opens first (BACK IN
-# YOUR SESSION): end it, then Today.
+# YOUR SESSION, or the session itself): end it or step out, then Today.
 - extendedWaitUntil:
-    visible: "Morning Report.*|RELOAD|END AND LOG IT"
+    visible: "Morning Report.*|RELOAD|END AND LOG IT|‹ TODAY"
     timeout: 60000
 - tapOn:
     text: "END AND LOG IT"
@@ -26,6 +26,15 @@ name: Location - asked once, not on every open
 - takeScreenshot: 08-location-reopen
 - launchApp:
     stopApp: true
+- extendedWaitUntil:
+    visible: "Morning Report.*|RELOAD|END AND LOG IT|‹ TODAY"
+    timeout: 60000
+- tapOn:
+    text: "END AND LOG IT"
+    optional: true
+- tapOn:
+    text: "‹ TODAY"
+    optional: true
 - extendedWaitUntil:
     visible: "Morning Report.*|RELOAD"
     timeout: 60000
