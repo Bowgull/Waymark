@@ -10,10 +10,10 @@ name: Morning check-in, with the herb 0-9 card
 - tapOn: "Morning Report, logged.*Tap to open\\."
 # The LOGGED flap ("Edit the Morning Report") is a button inside the Morning
 # Report board, itself a button: iOS WebKit exposes only the board, so tap the
-# flap's spot at the board's right end.
+# flap's spot at the board's top right (opened, the board also holds the why).
 - tapOn:
     text: "Morning Report, logged.*Tap for why\\..*"
-    point: "88%,50%"
+    point: "88%,18%"
 - extendedWaitUntil:
     visible: "MORNING CHECK-IN"
     timeout: 10000

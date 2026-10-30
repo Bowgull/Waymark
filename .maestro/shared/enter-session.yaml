@@ -5,14 +5,18 @@ name: ENTER the open row's session (again if the start didn't take)
 # take 10 s, past the app's timeout, and Today stays put (the server may have
 # started it anyway: the row then reads RESUME). Tap again, up to 3 times.
 ---
-# The open row's ENTER ends its lines; centred, so the live strip (another
-# session still running) can't sit over it and take the tap.
-- scrollUntilVisible:
-    element: "ENTER|RESUME"
-    direction: DOWN
-    centerElement: true
+# Page 98: a tapped row's lines open a quarter second after the tap, and end
+# with ENTER. Wait for it, then scroll to the bottom again: the open lines made
+# Today taller, and ENTER left low can sit under the live strip (another
+# session still running), which then takes the tap.
+- extendedWaitUntil:
+    visible: "ENTER|RESUME"
     timeout: 10000
     optional: true
+- scrollUntilVisible:
+    element: "Settings"
+    direction: DOWN
+    timeout: 20000
 - repeat:
     while:
       notVisible: ${READY}
