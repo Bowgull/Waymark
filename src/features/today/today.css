@@ -148,3 +148,18 @@
 }
 .td-opt .wm-ampm { gap: 4px; }
 .td-wline.is-draft { box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.4); }
+
+/* Page 98: ENTER. A double tap brings it onto the row: the minutes and ENTER share one cell, so the row never moves;
+   the minutes fade out (90 ms), ENTER fades and grows in (180 ms, 40 ms late). The open lines end with a big one. */
+.td-end { display: grid; justify-items: end; align-items: center; }
+.td-end > * { grid-area: 1 / 1; }
+.td-end > .td-mins { transition: opacity var(--t-tap) var(--ease-in); }
+.td-end.is-armed > .td-mins { opacity: 0; }
+.td-ent { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 108px; padding: 0 12px; border: 0; border-radius: 10px; cursor: pointer;
+  background: rgba(30, 24, 6, 0.5); box-shadow: inset 0 0 0 1px rgba(232, 200, 96, 0.55), 0 0 14px rgba(184, 152, 74, 0.14), 0 6px 16px rgba(0, 0, 0, 0.4);
+  opacity: 0; transform: scale(0.96); pointer-events: none; -webkit-tap-highlight-color: transparent;
+  transition: opacity var(--t-quick) var(--ease-out), transform var(--t-quick) var(--ease-out), filter var(--t-tap) ease-out; }
+.td-end.is-armed > .td-ent { opacity: 1; transform: none; pointer-events: auto; transition-delay: 40ms, 40ms, 0ms; }
+.td-end.is-armed > .td-ent:active { transform: scale(0.97); filter: brightness(0.92); transition-delay: 0ms; }
+.td-bigent { margin: 12px 0 6px; }
+@media (prefers-reduced-motion: reduce) { .td-ent { transform: none; } .td-end.is-armed > .td-ent:active { transform: none; } }

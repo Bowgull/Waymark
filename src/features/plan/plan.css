@@ -7,7 +7,10 @@
 .pl-row { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: pan-y; transition: background-color var(--t-quick) var(--ease-in); -webkit-tap-highlight-color: transparent; }
 .pl-rows { display: flex; flex-direction: column; }
 .pl-rows > .pl-row + .pl-row, .pl-rows > .wm-swap + .wm-swap > .pl-row, .pl-rows > * + * > .pl-row { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04); }
-.pl-hit { display: flex; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; outline: none; }
+.pl-hit { position: relative; display: flex; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; outline: none; }
+/* Page 98: the finger shows at once, a little light on the row */
+.pl-hit::before { content: ''; position: absolute; inset: -4px -8px; border-radius: 8px; background: rgba(232, 200, 96, 0.07); opacity: 0; transition: opacity var(--t-tap) var(--ease-out); pointer-events: none; }
+.pl-row.is-press > .pl-hit::before { opacity: 1; }
 .pl-nm { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pl-nm .nmw { position: relative; display: inline-block; align-self: flex-start; }
 .pl-mins { font: 700 15px/1 var(--font-mono); color: rgba(240, 230, 192, 0.8); flex: none; white-space: nowrap; }
@@ -40,8 +43,6 @@
 .pl-ol.is-why .wm-rmk { margin-right: 0; }
 .pl-ol.is-why s, .pl-say s { color: rgba(230, 239, 233, 0.7); text-decoration-color: #c4623f; }
 .pl-row.is-done .pl-ol .v { color: rgba(223, 230, 223, 0.75); }
-.pl-enter { border: 0; background: none; font: 800 12px/1 var(--font-body); letter-spacing: 0.16em; color: #e8c878; cursor: pointer; padding: 6px 0; display: inline-block; min-height: 32px; transition: transform var(--t-tap) var(--ease-out); -webkit-tap-highlight-color: transparent; }
-.pl-enter:active { transform: scale(0.95); }
 
 /* the cursor: a crisp pixel arrow at the left; it jumps, then a 2 px bob */
 .pl-cur { position: absolute; left: -13px; top: 50%; margin-top: -7px; width: 10px; height: 14px; pointer-events: none; filter: drop-shadow(1px 1px 0 #000); animation: pl-bob 0.9s steps(2) infinite; z-index: 1; }
@@ -120,4 +121,9 @@ body.pl-pickopen .pl-row > .pl-cur, body.pl-pickopen .pl-dr > .pl-cur { display:
 .pl-lg.is-warm .nm { color: #e2cf98; }
 .pl-lgh { margin: 12px 0 0; padding-top: 8px; border-top: 1px solid rgba(232, 200, 96, 0.22); font: 700 12px/1 var(--font-body); letter-spacing: 0.12em; color: #c9b27a; }
 .pl-lgh + .pl-lg { padding-top: 4px; }
+/* Page 97: a speed line with the pace on its back. Both sides share one cell, so it never resizes; a tap turns it over. */
+.pl-flip { display: grid; cursor: pointer; -webkit-tap-highlight-color: transparent; transform-origin: 50% 50%; backface-visibility: hidden; }
+.pl-flip > .pl-face { grid-area: 1 / 1; min-width: 0; }
+.pl-flip > .pl-face:not([data-on]) { visibility: hidden; }
+.pl-lg + .pl-flip, .pl-flip + .pl-lg { border-top: 1px solid rgba(255, 255, 255, 0.05); }
 .pl-lines > .pl-lgh:first-child { margin-top: 4px; padding-top: 0; border-top: 0; }

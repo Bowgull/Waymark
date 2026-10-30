@@ -98,8 +98,6 @@ export function TodayPage() {
   const [openRow, setOpenRow] = useState<string | null>(null)
   // Page 73: the pixel cursor on a row (it follows the row opened or held).
   const [cursorRow, setCursorRow] = useState<string | null>(null)
-  // The first session to do opens by itself (once per day), so ENTER is right there.
-  const defaultOpened = useRef<string | null>(null)
   const [changesVersion, setChangesVersion] = useState(0)
   // The week strip read again when the raven's plan changes the week (page 58).
   const [weekVersion, setWeekVersion] = useState(0)
@@ -148,19 +146,9 @@ export function TodayPage() {
     }
   }
   useEffect(() => {
-    // The first row still to do, in the order the day shows them (AM, then PM, then the rest);
-    // the running one is not in the list.
-    const slotRank = (t: string | null | undefined) => (t === 'am' ? 0 : t === 'pm' ? 1 : 2)
-    const first = sessions
-      .filter(s => (s.status === 'planned' || s.status === 'in_progress') && s.id !== stripId)
-      .sort((a, b) => slotRank(a.timeSlot) - slotRank(b.timeSlot))[0]
-    // The open row went live (ENTER, then back out): the next one to do opens in its place.
-    if (openRow != null && openRow === stripId) { setOpenRow(first?.id ?? null); return }
-    if (defaultOpened.current === today) return
-    if (!first) return
-    defaultOpened.current = today
-    setOpenRow(prev => prev ?? first.id)
-  }, [sessions, today, stripId, openRow])
+    // Page 98: Today loads clean, nothing opens by itself. The open row went live (ENTER, then back out): it closes.
+    if (openRow != null && openRow === stripId) setOpenRow(null)
+  }, [stripId, openRow])
   const todayEpoch = isoToEpochDay(today)
   const todayDate = new Date(`${today}T12:00:00`)
 
@@ -687,6 +675,7 @@ export function TodayPage() {
             cursorId={cursorRow ?? openRow}
             openId={openRow}
             onOpenChange={id => { setOpenRow(id); if (id) setCursorRow(id) }}
+            onCursor={setCursorRow}
           />
           {/* the line grows into its box (page 59 §5.3 Expand) */}
           <AutoHeight><WaybookLine today={today} /></AutoHeight>

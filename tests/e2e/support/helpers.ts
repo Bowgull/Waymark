@@ -31,11 +31,11 @@ export function todayRow(page: Page, id: string): Locator {
   return page.locator(`.td-row[data-sid="${id}"]`)
 }
 
-/** Opens a Today row (Today opens the first session to do by itself; a second tap would close it). */
+/** Opens a Today row (page 98: its lines open a quarter second after the tap, once no second tap came). */
 export async function openRow(row: Locator) {
   const hit = row.locator('[role=button]').first()
   await expect(hit).toBeVisible()
-  // Today may open it by itself a beat after the board draws, racing a tap: settle, then retry.
+  // A tap can land while the board is still settling: check, then retry.
   await expect(async () => {
     if ((await hit.getAttribute('aria-expanded')) !== 'true') await hit.tap()
     await expect(hit).toHaveAttribute('aria-expanded', 'true', { timeout: 1500 })

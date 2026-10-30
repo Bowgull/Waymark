@@ -11,7 +11,7 @@ import { makeApiFor } from './support/api'
  * TAP TO GO ON); rep steps keep DONE and have no grass; the × still only ends
  * on a hold. A running session shows once: as the live strip, not a row on
  * Today (the first row still to do opens instead), and on Program its row
- * opens to its lines with no RESUME (page 73). Done, it is back in Today's list with ✓.
+ * opens to its lines with no RESUME (page 73). Today opens nothing by itself (page 98). Done, it is back in Today's list with ✓.
  */
 
 test.beforeAll(async ({ request }) => {
@@ -128,7 +128,7 @@ async function intoRound(page: Page, id: string) {
   await expect(page.getByRole('img', { name: 'FIGHT', exact: true })).toBeVisible()
 }
 
-test('Items 4-5: a running session is only the strip; Today opens the next to-do; Program opens its lines, no RESUME; done, back with ✓', async ({ page, api }) => {
+test('Items 4-5: a running session is only the strip; Today opens nothing by itself; Program opens its lines, no RESUME; done, back with ✓', async ({ page, api }) => {
   const other = await insertSession(api, 'active_recovery', 'pm')
   const bag = await insertSession(api, 'bag_work', 'pm')
   await intoRound(page, bag.id)
@@ -140,15 +140,15 @@ test('Items 4-5: a running session is only the strip; Today opens the next to-do
   await expect(strip).toBeVisible()
   await expect(todayRow(page, bag.id)).toHaveCount(0)
   await expect(todayRow(page, other.id)).toBeVisible()
-  // The open row moved on from the running one to the first row still to do.
+  // Page 98: Today loads clean, nothing opens by itself.
   const firstToDo = page.locator('.td-row:not(.is-done):not(.is-skip):not(.is-missed)').first()
-  await expect(firstToDo.locator('.td-rowhit')).toHaveAttribute('aria-expanded', 'true')
+  await expect(firstToDo.locator('.td-rowhit')).toHaveAttribute('aria-expanded', 'false')
 
-  // A fresh Today (a new open, no auto-resume) opens the first row still to do, never the running one.
+  // A fresh Today (a new open, no auto-resume): still nothing open, and no row for the running one.
   await gotoToday(page)
   await expect(strip).toBeVisible()
   await expect(todayRow(page, bag.id)).toHaveCount(0)
-  await expect(page.locator('.td-row:not(.is-done):not(.is-skip):not(.is-missed)').first().locator('.td-rowhit')).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('.td-row .td-rowhit[aria-expanded="true"]')).toHaveCount(0)
 
   // Program (page 73): today's day opens; the running session's row opens to its lines, with no RESUME or ENTER.
   await page.getByRole('link', { name: 'program' }).tap()

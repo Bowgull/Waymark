@@ -30,9 +30,14 @@ assert.deepEqual(foundationLog([{ name: 'Prone Y-T Raise', sets: 2, holdSec: nul
 {
   const dose = JSON.stringify({ run: { runSec: 900, walkSec: 0, rounds: 1, totalSec: 900, hrCeilingBpm: 147, walkOnly: false, talkTestDue: true } })
   const lines = planLines(row('foundation_run', { label: 'Zone 2 Run', doseJson: dose }), { kind: 'run', plan: { targetDurSec: 900, z2CeilingBpm: 147, easyKmh: 7.8 } as never, run: null }, { unit: 'kmh' })
-  assert.deepEqual(lines.map(l => [l.label, l.move?.load ?? null]), [['Easy run', '15 min'], ['Heart rate', 'max 147'], ['Treadmill', '7.8 km/h'], ['Outside pace', null], ['Talk test', null]])
+  assert.deepEqual(lines.map(l => [l.label, l.move?.load ?? null]), [['Easy run', '15 min'], ['Heart rate', 'max 147'], ['Speed', '7.8 km/h'], ['Talk test', null]])
   assert.ok(!lines.some(l => /run-walk/i.test(l.label)), 'a straight run never reads Run-Walk')
-  assert.match(lines.find(l => l.label === 'Outside pace')?.move?.note ?? '', /^\d+:\d\d \/km$/, 'the outside pace too: where he runs is his call')
+  // Page 97: one line, the pace on its back; a tap turns it, nothing is picked
+  const sp = lines.find(l => l.label === 'Speed')
+  assert.equal(sp?.move?.note, 'incline 1')
+  assert.equal(sp?.back?.label, 'Pace')
+  assert.match(sp?.back?.move?.load ?? '', /^\d+:\d\d \/km$/)
+  assert.ok(!lines.some(l => /treadmill|outside|indoor/i.test(l.label)), 'no line says where he runs')
 }
 
 // Bag: each round with its combos, then the rest.

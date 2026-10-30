@@ -34,7 +34,8 @@ export interface RunSessionSummary {
 // Today's day board (pages 20, 35, 40; page 73): the AM / PM groups (sun /
 // moon mark and flap), a row per session (painted icon, name on a flap,
 // minutes or ✓), the same rows as Program. Tap a row: its real lines open
-// under it, then ENTER ›. Hold a row (500 ms): the command window with
+// under it, then a big ENTER. Double tap a to-do row (page 98): ENTER on the
+// row itself, the lines never move. Hold a row (500 ms): the command window with
 // REPLACE and SKIP (UNDO SKIP on a skipped one). A row the coach changed
 // opens with its why-line first. The cursor is the highlight.
 
@@ -60,6 +61,8 @@ export interface TodayDayProps {
   /** Page 76: inside or outside at a run's hour, and why. */
   /** The cursor's row (session id). */
   cursorId?: string | null
+  /** Page 98: a finger landed on a row; the cursor moves there at once. */
+  onCursor?: (id: string) => void
   /** The row to open (a skip just made opens its row). */
   openId?: string | null
   onOpenChange?: (id: string | null) => void
@@ -112,7 +115,7 @@ export function TodayDay(props: TodayDayProps) {
                   {stravaPending(s) ? (
                     <StravaCard s={s} kind="matched" {...props} />
                   ) : (
-                    <TodayRow s={s} open={openId === s.id} onToggle={() => { tapHaptic(); setOpenId(openId === s.id ? null : s.id) }} {...props} />
+                    <TodayRow s={s} open={openId === s.id} onToggle={() => setOpenId(openId === s.id ? null : s.id)} {...props} />
                   )}
                 </SwapRow>
               ))}
@@ -127,7 +130,7 @@ export function TodayDay(props: TodayDayProps) {
   )
 }
 
-function TodayRow({ s, open, onToggle, onStart, onHold, onEndEarly, changeFor, weatherFor, cursorId, weekNumber, onLearned, learnedSaved, flying, onFlown }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
+function TodayRow({ s, open, onToggle, onStart, onHold, onEndEarly, changeFor, weatherFor, cursorId, onCursor, weekNumber, onLearned, learnedSaved, flying, onFlown }: TodayDayProps & { s: TodaySession; open: boolean; onToggle: () => void }) {
   const rowRef = useRef<HTMLDivElement>(null)
   // Page 71 item 6: this row flies (once its place is drawn and Today has risen).
   const fly = flying?.id === s.id ? flying.kind : null
@@ -161,6 +164,27 @@ function TodayRow({ s, open, onToggle, onStart, onHold, onEndEarly, changeFor, w
   const mins = stravaMin != null ? <>{stravaMin}min <Tick className="td-stick" /></> : done ? <Tick className="td-tick" /> : skipped ? '—' : `~${plannedRowMinutes(s, weekNumber)}min`
   // Page 71 / the layout-shift fix: close on the tap, so the rows don't move under the finger before it lands.
   useOutsideClose(rowRef, open, onToggle, { on: 'click' })
+  // Page 98: a double tap puts ENTER on the row (to-do only: done and skipped open to look at); a tap outside puts it away.
+  const canEnter = actionable && !skipped
+  const enterWord = s.status === 'in_progress' ? 'RESUME' : 'ENTER'
+  const [armed, setArmed] = useState(false)
+  useOutsideClose(rowRef, armed, () => setArmed(false), { on: 'click' })
+  const end = canEnter ? (
+    <span className={`td-end${armed ? ' is-armed' : ''}`}>
+      <span className="td-mins">{mins}</span>
+      <button
+        type="button"
+        className="td-ent"
+        aria-label={enterWord}
+        aria-hidden={!armed}
+        tabIndex={armed ? 0 : -1}
+        inert={!armed}
+        onClick={e => { e.stopPropagation(); onStart(s.id) }}
+      >
+        <FlapLabel text={enterWord} size="sm" tone="gold" animate={false} />
+      </button>
+    </span>
+  ) : mins
   const holdable = skipped || canReplaceOrSkipTodaySession(s.status)
   const learnedLink = Boolean(onLearned && done && s.type === 'mt_class' && !learnedSaved?.has(s.id))
 
@@ -172,17 +196,23 @@ function TodayRow({ s, open, onToggle, onStart, onHold, onEndEarly, changeFor, w
         hitClassName="td-rowhit"
         on={cursorId === s.id}
         open={open}
-        onTap={onToggle}
+        onTap={() => { setArmed(false); onToggle() }}
+        onPress={() => { void tapHaptic(); onCursor?.(s.id) }}
+        onDouble={canEnter ? () => { if (open) onToggle(); setArmed(true) } : undefined}
         onHold={holdable ? el => onHold(s, el) : undefined}
-        mins={mins}
+        mins={end}
         change={changeFor?.(s) ?? null}
         linesOpts={{ weekNumber, weather: weatherFor?.(s) ?? null }}
-        extra={(actionable && !skipped) || learnedLink ? (
-          <div className="pl-ol"><span className="lb" /><span className="v">
-            {actionable && !skipped && <button type="button" className="pl-enter" onClick={e => { e.stopPropagation(); onStart(s.id) }}>{s.status === 'in_progress' ? 'RESUME ›' : 'ENTER ›'}</button>}
-            {s.status === 'in_progress' && <EndHold onHeld={() => { mediumHaptic(); setEndOpen(true) }} />}
-            {learnedLink && onLearned && <LearnedLink s={s} onLearned={onLearned} />}
-          </span></div>
+        extra={canEnter || learnedLink ? (
+          <>
+            {canEnter && <div className="td-bigent"><FlapButton label={enterWord} primary onClick={e => { e.stopPropagation(); onStart(s.id) }} /></div>}
+            {(s.status === 'in_progress' || learnedLink) && (
+              <div className="pl-ol"><span className="lb" /><span className="v">
+                {s.status === 'in_progress' && <EndHold onHeld={() => { mediumHaptic(); setEndOpen(true) }} />}
+                {learnedLink && onLearned && <LearnedLink s={s} onLearned={onLearned} />}
+              </span></div>
+            )}
+          </>
         ) : undefined}
       />
       {endOpen && (

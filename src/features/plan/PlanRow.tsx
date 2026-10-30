@@ -10,14 +10,17 @@ import { runNameLine } from '@/lib/runNameLine'
 import { useTreadmillUnit } from '@/lib/treadmillUnit'
 
 import { Cmd } from './CommandWindow'
+import { FlipLine } from './FlipLine'
 import { PixelCursor } from './PixelCursor'
-import { planLines, type LinesOpts } from './planLines'
+import { planLines, type LinesOpts, type PlanLine } from './planLines'
 import './plan.css'
 
 /** The hold that opens the command window (page 73, page 59's motion). */
 export const HOLD_MS = 500
 /** A finger that moves this far is a scroll, not a hold. */
 const MOVE_PX = 12
+/** Page 98: a second tap inside this window is a double tap; a single tap's lines open once it passes. */
+export const DOUBLE_TAP_MS = 250
 
 /**
  * The finger lifting after a hold is not a tap. Its click lands on the command
@@ -57,6 +60,14 @@ export interface PlanRowProps {
   /** Its lines show under it. */
   open: boolean
   onTap: () => void
+  /**
+   * Page 98: a double tap. With it, a single tap shows at once (onPress: the
+   * cursor, the light, the tick) and its onTap waits out the double-tap window,
+   * so a double tap never starts opening the lines.
+   */
+  onDouble?: () => void
+  /** The finger landed on the row (before onTap when it waits). */
+  onPress?: () => void
   /** Hold 500 ms (to-do and skipped rows): the command window. */
   onHold?: (row: HTMLElement) => void
   /** "~20min", "✓" or "—". */
@@ -77,10 +88,11 @@ export interface PlanRowProps {
  * its foot over 500 ms, then a light haptic and the command window. Let go
  * early and both ease back. No boxes or glows: the cursor is the highlight.
  */
-export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, linesOpts, extra, className = '', hitClassName = '' }: PlanRowProps) {
+export function PlanRow({ session: s, on, open, onTap, onDouble, onPress, onHold, mins, change, linesOpts, extra, className = '', hitClassName = '' }: PlanRowProps) {
   const ref = useRef<HTMLDivElement>(null)
   const hold = useRef<{ t: number; x: number; y: number } | null>(null)
   const held = useRef(false)
+  const tapWait = useRef<number | null>(null)
   const status = rowStatus(s.status)
   const skipped = status === 'skipped'
   const done = status === 'done'
@@ -101,7 +113,36 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
     // The key covers the fields the fetch reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted, key])
-  useEffect(() => () => { if (hold.current) window.clearTimeout(hold.current.t) }, [])
+  useEffect(() => () => {
+    if (hold.current) window.clearTimeout(hold.current.t)
+    if (tapWait.current != null) window.clearTimeout(tapWait.current)
+  }, [])
+
+  // Page 98: the finger shows at once, a little light on the row, gone 120 ms after it lifts.
+  const pressLight = () => {
+    const el = ref.current
+    if (!el) return
+    el.classList.add('is-press')
+    const off = () => {
+      window.removeEventListener('pointerup', off, { capture: true })
+      window.removeEventListener('pointercancel', off, { capture: true })
+      window.setTimeout(() => el.classList.remove('is-press'), 120)
+    }
+    window.addEventListener('pointerup', off, { capture: true })
+    window.addEventListener('pointercancel', off, { capture: true })
+  }
+
+  const tap = () => {
+    onPress?.()
+    if (!onDouble) { onTap(); return }
+    if (tapWait.current != null) {
+      window.clearTimeout(tapWait.current)
+      tapWait.current = null
+      onDouble()
+      return
+    }
+    tapWait.current = window.setTimeout(() => { tapWait.current = null; onTap() }, DOUBLE_TAP_MS)
+  }
 
   const cancel = () => {
     if (!hold.current) return
@@ -116,6 +157,24 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
   // Page 76: every speed and pace follows the treadmill unit in Settings.
   const unit = useTreadmillUnit()
   const lines = ready ? planLines(s, data.data, { ...linesOpts, unit }) : []
+  // Page 97: every speed line on the row shows the same side; a tap on any turns them all.
+  const [back, setBack] = useState(false)
+  // it opens on the speed each time
+  useEffect(() => { if (!open) setBack(false) }, [open])
+  let flips = 0
+
+  const face = (l: PlanLine, i: number, props: Record<string, unknown> = {}) => l.move ? (
+    <div key={`${l.label}-${i}`} className={`pl-lg${l.move.warm ? ' is-warm' : ''}`}>
+      <span className="nm">{l.label}{l.move.note && <span className="nt">{l.move.note}</span>}</span>
+      <span className="s">{l.move.sets}</span>
+      <span className="w">{l.move.load}{l.mark === 'up' && <> <b className="up">↑</b></>}{l.mark === 'down' && <> <b className="dn">↓</b></>}</span>
+    </div>
+  ) : (
+    <div key={`${l.label}-${i}`} className="pl-ol" {...props}>
+      <span className="lb">{l.label}</span>
+      <span className="v">{l.value}{l.tick && <> <b className="ck">✓</b></>}{l.mark === 'up' && <> <b className="up">↑</b></>}{l.mark === 'down' && <> <b className="dn">↓</b></>}{l.explain && <> <b className="pl-more">›</b></>}</span>
+    </div>
+  )
 
   return (
     <div
@@ -124,6 +183,7 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
       className={`pl-row${done ? ' is-done' : ''}${skipped ? ' is-skip' : ''}${on ? ' is-on' : ''}${className ? ` ${className}` : ''}`}
       onPointerDown={e => {
         held.current = false
+        if (e.button === 0 && e.target instanceof Element && !e.target.closest('button, a, .pl-lines')) pressLight()
         if (!onHold || e.button !== 0) return
         // the row's own controls (ENTER ›, the ×, a link) and its open lines are not the row's hold
         if (e.target instanceof Element && e.target.closest('button, a, .pl-lines')) return
@@ -159,9 +219,9 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
             setSay({ anchor: hit, closing: false })
             return
           }
-          onTap()
+          tap()
         }}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap() } }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPress?.(); onTap() } }}
       >
         <SessionIcon kind={iconFor(s)} size={40} label={name} />
         <span className="pl-nm"><span className="nmw"><FlapLabel text={name} size={name.length > 11 ? 'sm' : 'md'} len={name.length > 11 ? undefined : 11} /></span></span>
@@ -184,26 +244,13 @@ export function PlanRow({ session: s, on, open, onTap, onHold, mins, change, lin
           {!ready && <div className="pl-ol"><span className="lb" /><span className="v is-dim">Reading the plan.</span></div>}
           {lines.map((l, i) => l.head ? (
             <div key={`${l.label}-${i}`} className="pl-lgh">{l.label}</div>
-          ) : l.move ? (
-            <div key={`${l.label}-${i}`} className={`pl-lg${l.move.warm ? ' is-warm' : ''}`}>
-              <span className="nm">{l.label}{l.move.note && <span className="nt">{l.move.note}</span>}</span>
-              <span className="s">{l.move.sets}</span>
-              <span className="w">{l.move.load}{l.mark === 'up' && <> <b className="up">↑</b></>}{l.mark === 'down' && <> <b className="dn">↓</b></>}</span>
-            </div>
-          ) : (
-            <div
-              key={`${l.label}-${i}`}
-              className="pl-ol"
-              {...(l.explain ? {
-                role: 'button', tabIndex: 0, 'aria-label': `${l.label}: why`, style: { cursor: 'pointer' },
-                onClick: (e: React.MouseEvent<HTMLDivElement>) => { void tapHaptic(); setExplain({ label: l.label, text: l.explain!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) },
-                onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExplain({ label: l.label, text: l.explain!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) } },
-              } : {})}
-            >
-              <span className="lb">{l.label}</span>
-              <span className="v">{l.value}{l.tick && <> <b className="ck">✓</b></>}{l.mark === 'up' && <> <b className="up">↑</b></>}{l.mark === 'down' && <> <b className="dn">↓</b></>}{l.explain && <> <b className="pl-more">›</b></>}</span>
-            </div>
-          ))}
+          ) : l.back ? (
+            <FlipLine key={`${l.label}-${i}`} line={{ ...l, back: l.back }} back={back} order={flips++} onTurn={() => setBack(b => !b)} face={f => face(f, i)} />
+          ) : face(l, i, l.explain ? {
+            role: 'button', tabIndex: 0, 'aria-label': `${l.label}: why`, style: { cursor: 'pointer' },
+            onClick: (e: React.MouseEvent<HTMLDivElement>) => { void tapHaptic(); setExplain({ label: l.label, text: l.explain!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) },
+            onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExplain({ label: l.label, text: l.explain!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) } },
+          } : {}))}
           {extra}
         </div>
       </Expand>

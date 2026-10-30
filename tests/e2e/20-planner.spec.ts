@@ -257,6 +257,31 @@ test('NEXT WEEK: fully planned, no marks, nothing past it', async ({ page }) => 
   await expect(tabs.getByRole('tab')).toHaveCount(2)
 })
 
+test('Page 98: Today loads clean; a double tap puts ENTER on the row, the lines never open; a tap outside puts it away', async ({ page, api }) => {
+  const s = await insertSession(api, 'skip_rope', 'pm')
+  await gotoToday(page)
+  const row = todayRow(page, s.id)
+  const hit = row.locator('.td-rowhit')
+  await expect(hit).toHaveAttribute('aria-expanded', 'false')
+  await expect(row.getByRole('button', { name: 'ENTER' })).toHaveCount(0)
+  await hit.dblclick()
+  const ent = row.locator('.td-ent')
+  await expect(ent).toBeVisible()
+  await expect(row.getByRole('button', { name: 'ENTER' })).toHaveCount(1)
+  // a 44-point target
+  expect((await ent.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  // the lines never start opening
+  await page.waitForTimeout(500)
+  await expect(hit).toHaveAttribute('aria-expanded', 'false')
+  // a tap outside: back to the minutes
+  await page.mouse.click(8, 8)
+  await expect(row.getByRole('button', { name: 'ENTER' })).toHaveCount(0)
+  // armed again, ENTER goes in
+  await hit.dblclick()
+  await row.getByRole('button', { name: 'ENTER' }).tap()
+  await expect(page).toHaveURL(new RegExp(`/session/${s.id}`))
+})
+
 test('Today: the same rows, hold and window; a tap opens the lines with ENTER', async ({ page, api }) => {
   const s = await insertSession(api, 'skip_rope', 'pm')
   await gotoToday(page)
