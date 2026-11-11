@@ -104,5 +104,6 @@ test('Strength: the logbook lists every move, Tactical Barbell A', async ({ page
   await expect(row.locator('.pl-lg').first()).toContainText('Easy jog')
   for (const lift of ['Front squat', 'Bench press', 'Bent-over row']) await expect(row.locator('.pl-lg').filter({ hasText: lift }).locator('.s')).toHaveText(/\d×5/)
   await expect(row.locator('.pl-lg').filter({ hasText: 'Chin-up' })).toHaveCount(0)
-  await expect(row.locator('.pl-lgh')).toHaveText(['Main', 'Extras', 'Core'])
+  // The lead-in reads Main; once earlier specs have done two A's it is the wave ("Main · week 2, 80%").
+  await expect(row.locator('.pl-lgh')).toHaveText([/^Main( · week \d, \d+%)?$/, 'Extras', 'Core'])
 })

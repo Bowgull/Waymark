@@ -17,7 +17,8 @@ const offlinePill = (page: Page) => page.getByRole('status').getByRole('img', { 
 
 /** One set logged and moved on: returns the session and the place it moved on to. */
 async function midSession(page: Page, api: Api) {
-  const s = await insertSession(api, 'strength')
+  // Page 99: Strength A opens on a one-set warm-up (band pull-aparts), then the big lifts.
+  const s = await insertSession(api, 'strength', 'pm', { label: 'Strength A' })
   await enterFromToday(page, s.id)
   const first = await strengthPlace(page)
   await page.getByRole('button', { name: 'LOG SET', exact: true }).tap()

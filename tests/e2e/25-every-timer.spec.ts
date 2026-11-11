@@ -10,7 +10,7 @@ import { enterFromToday, grass, grassToStart, insertSession, swipeDownGrass, swi
  */
 
 test('Strength rest: RESTING AFTER the lift, REST over the clock, NEXT n OF m under it; no NEXT SET, the swipe moves on', async ({ page, api }) => {
-  const s = await insertSession(api, 'strength')
+  const s = await insertSession(api, 'strength', 'pm', { label: 'Strength A' })
   await enterFromToday(page, s.id)
   // Between two sets of one lift (a one-set warm-up move rests with no count: the count is the lift's sets).
   await toSetWithAnother(page)
@@ -51,7 +51,7 @@ test('Active Recovery walk: a grass timer (no ring, no rounded cards): READY, th
 // ─── Page 85: swipe back on the hold and rest timers ─────────────
 
 test('Strength rest, swipe down: restarts the rest only, every time; never back to the set', async ({ page, api }) => {
-  const s = await insertSession(api, 'strength')
+  const s = await insertSession(api, 'strength', 'pm', { label: 'Strength A' })
   await enterFromToday(page, s.id)
   await page.getByRole('button', { name: 'LOG SET', exact: true }).tap()
   await expect(page.getByText('RESTING AFTER')).toBeVisible()
