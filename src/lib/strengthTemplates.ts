@@ -1,4 +1,4 @@
-import { LEAD_IN_TARGET, defaultMainLift, getStrengthWeekTarget, mainLiftHardSets, type StrengthWeekTarget } from './blockZero/strength'
+import { getStrengthWeekTarget } from './blockZero/strength'
 import { strengthDayFor } from './blockZero/weekPlan'
 
 export interface TemplateSet {
@@ -37,10 +37,6 @@ function workingSets(count: number, reps: number, restSec: number): TemplateSet[
 }
 
 /** Core and durability moves in a circuit (rebuild Phase 4): a short rest, the other side is the rest. */
-function durabilitySets(count: number, reps: number): TemplateSet[] {
-  return Array.from({ length: count }, () => ({ isWarmup: false, targetReps: reps, restSec: 30 }))
-}
-
 function coreSets(count: number, reps: number): TemplateSet[] {
   return Array.from({ length: count }, () => ({ isWarmup: false, targetReps: reps, restSec: 45 }))
 }
@@ -62,10 +58,8 @@ export function getWeekPercentage(blockWeek: number, blockType: 'fighter' | 'blo
 
 /** Get sets × reps for main lifts based on block week and block type. */
 export function getWaveLoadingSetsReps(blockWeek: number, blockType: 'fighter' | 'block_zero' = 'fighter'): { sets: number; reps: number } {
-  if (blockType === 'block_zero') {
-    const t = getStrengthWeekTarget(blockWeek)
-    return { sets: mainLiftHardSets(t), reps: t.reps }
-  }
+  // Page 99: Tactical Barbell's 3x5 (the dose moves the wave's 3x3 and the weights).
+  if (blockType === 'block_zero') return { sets: 3, reps: 5 }
   const pct = getWeekPercentage(blockWeek)
   if (pct === 0.90) return { sets: 3, reps: 3 }
   return { sets: 3, reps: 5 }
@@ -75,11 +69,7 @@ export function getWaveLoadingSetsReps(blockWeek: number, blockType: 'fighter' |
 export function getWeekLabel(blockWeek: number, blockType: 'fighter' | 'block_zero' = 'fighter'): string {
   const pct = Math.round(getWeekPercentage(blockWeek, blockType) * 100)
   const { sets, reps } = getWaveLoadingSetsReps(blockWeek, blockType)
-  if (blockType === 'block_zero') {
-    // The week's working sets of 8 (a check set of 3-5 is not one of them: week 6 is 1×8).
-    const t = getStrengthWeekTarget(blockWeek)
-    return `Block Zero · ${t.mainSets}×${t.reps}, RPE ${t.rpe[0] === t.rpe[1] ? t.rpe[0] : `${t.rpe[0]}-${t.rpe[1]}`}`
-  }
+  if (blockType === 'block_zero') return 'Tactical Barbell · 3×5'
   return `${pct}%, ${sets}×${reps}`
 }
 
@@ -161,168 +151,65 @@ function buildStrengthB(blockWeek: number): StrengthTemplate {
 // ─── Block Zero Templates ─────────────────────────────────────
 
 /**
- * Main-lift sets for a Block Zero week: an optional 3-5 rep check set at
- * ~RPE 8 first (weeks 3 and 6, R4), then the working sets of 8. Never to
- * failure. The RPE target rides in the exercise notes.
+ * Page 99 (approved 2026-11-11): Tactical Barbell Fighter, A and B, about 60
+ * minutes. Three big lifts at 3x5 (the dose sets the lead-in's work-up and the
+ * wave's sets, reps and weights, lib/brain/tbWave.ts), then 2-3 extras and a
+ * 3-move core circuit. The landmine where it does the job best: the punch
+ * opens B, the press, the reverse lunge and the 180s in B's core.
  */
-function blockZeroMainSets(t: StrengthWeekTarget): TemplateSet[] {
-  const sets: TemplateSet[] = []
-  if (t.checkSet) {
-    sets.push({ isWarmup: false, targetReps: t.checkSet.targetReps, restSec: 180, loadMultiplier: t.checkSet.loadMultiplier })
+function buildTbStrengthA(): StrengthTemplate {
+  return {
+    id: 'strength_a',
+    label: 'Block Zero: A',
+    exercises: [
+      { exerciseId: 'ex-band-pull-aparts', label: 'Band Pull-Aparts', section: 'warmup', sets: warmupSets(1, 15) },
+      { exerciseId: 'ex-front-squat', label: 'Front Squat', section: 'main', sets: workingSets(3, 5, 150), notes: 'Elbows high, brace before each rep. Sit between the hips.' },
+      { exerciseId: 'ex-bench-press', label: 'Bench Press', section: 'main', sets: workingSets(3, 5, 120) },
+      { exerciseId: 'ex-bent-over-row', label: 'Bent-Over Row', section: 'main', sets: workingSets(3, 5, 90), notes: 'Flat back, pull to the lower ribs.' },
+      { exerciseId: 'ex-incline-db-press', label: 'Incline DB Press', section: 'accessory', sets: workingSets(3, 10, 45) },
+      { exerciseId: 'ex-face-pulls', label: 'Face Pulls', section: 'accessory', sets: workingSets(3, 15, 30) },
+      { exerciseId: 'ex-lateral-raise', label: 'Lateral Raise', section: 'accessory', sets: workingSets(2, 12, 30) },
+      { exerciseId: 'ex-ab-wheel', label: 'Ab Wheel', section: 'core', sets: coreSets(3, 8), notes: 'From your knees.' },
+      { exerciseId: 'ex-hanging-leg-raise', label: 'Hanging Leg Raise', section: 'core', sets: coreSets(3, 10) },
+      { exerciseId: 'ex-pallof-press', label: 'Pallof Press', section: 'core', sets: coreSets(3, 10), notes: '10 each side.' },
+    ],
   }
-  return sets.concat(workingSets(t.mainSets, t.reps, 150))
 }
 
-function mainNote(cue: string | null, t: StrengthWeekTarget): string {
-  return cue ? `${cue} ${t.note}` : t.note
-}
-
-// Durability twice a week (A and C), exercises from migration 0026.
-// R14: 4-way neck isometrics for robustness and clinch loading, not
-// concussion claims. R13: wrist flexors and extensors for load tolerance;
-// calf raises (A) and tibialis raises (C) for the lower leg. Grip carry on C.
-function durability(t: StrengthWeekTarget, day: 'A' | 'C'): TemplateExercise[] {
-  const sets = t.phase === 'consolidate' ? 1 : 2
-  const out: TemplateExercise[] = [
-    { exerciseId: 'ex-neck-iso-4way', label: 'Neck: 4-Way Isometric', section: 'core', sets: coreSets(sets, 4), notes: 'Durability. Front, back, left, right. Hold each 10-20s against your hand. Easy effort, nothing moves.' },
-    { exerciseId: 'ex-wrist-curl', label: 'Wrist Curl', section: 'core', sets: coreSets(sets, 15), notes: 'Durability. Light. Slow lower to the fingertips.' },
-    { exerciseId: 'ex-reverse-wrist-curl', label: 'Reverse Wrist Curl', section: 'core', sets: coreSets(sets, 15), notes: 'Durability. Lighter than the curl. Slow lower.' },
-  ]
-  if (day === 'A') {
-    out.push({ exerciseId: 'ex-single-leg-calf-raise', label: 'Single-Leg Calf Raise', section: 'core', sets: coreSets(sets, 12), notes: 'Durability. 12 each leg. Full range, 2-3s down.' })
-  } else {
-    out.push(
-      { exerciseId: 'ex-tibialis-raise', label: 'Tibialis Raise', section: 'core', sets: coreSets(sets, 15), notes: 'Durability. Toes up high, lower slowly.' },
-      { exerciseId: 'ex-suitcase-carry', label: 'Grip: Suitcase Carry', section: 'core', sets: coreSets(sets, 30), notes: 'Durability. 30s each hand. Stand tall, no lean.' },
-    )
+function buildTbStrengthB(): StrengthTemplate {
+  return {
+    id: 'strength_b',
+    label: 'Block Zero: B',
+    exercises: [
+      { exerciseId: 'ex-lm-punch', label: 'Landmine Punch', section: 'main', sets: workingSets(3, 4, 60), ramp: false, notes: 'Each side, fast and crisp.' },
+      { exerciseId: 'ex-rdl', label: 'Romanian Deadlift', section: 'main', sets: workingSets(3, 5, 150), notes: 'Hips back, spine long. Feel the hamstrings, not the lower back.' },
+      { exerciseId: 'ex-landmine-press', label: 'Landmine Press', section: 'main', sets: workingSets(3, 5, 90), ramp: false, notes: 'Each arm.' },
+      { exerciseId: 'ex-chin-up-negative', label: 'Chin-Up (Slow Lowering)', section: 'accessory', sets: workingSets(3, 3, 90), notes: 'Jump to the top, lower yourself for 3 to 5 s. Reps only.' },
+      { exerciseId: 'ex-lm-reverse-lunge', label: 'Landmine Reverse Lunge', section: 'accessory', sets: workingSets(3, 8, 60), notes: 'Each leg.' },
+      { exerciseId: 'ex-db-row', label: 'Dumbbell Row', section: 'accessory', sets: workingSets(3, 10, 45), notes: 'Hand and knee on the bench, flat back, pull to the hip. Each arm.' },
+      { exerciseId: 'ex-lm-rotation', label: 'Landmine 180s', section: 'core', sets: coreSets(3, 8), notes: '8 each side.' },
+      { exerciseId: 'ex-weighted-dead-bug', label: 'Weighted Dead Bug', section: 'core', sets: coreSets(3, 8), notes: '8 each side.' },
+      { exerciseId: 'ex-suitcase-carry', label: 'Suitcase Carry', section: 'core', sets: coreSets(2, 30), notes: '30s each hand. Stand tall, no lean.' },
+    ],
   }
-  return out
-}
-
-/**
- * Strength A (page 93, approved 2026-10-25): squat, the press the coach
- * picks (landmine first while the shoulders and back rebuild, overhead once
- * they're solid), the dumbbell row (bent-over once earned). A light landmine
- * RDL in the warm-up is the week's second hinge. Core, calves and the
- * Copenhagen plank, then the 10-minute fighter arm block: chin-ups on the
- * built ladder (reps only), hammer curls, grip. About 50 minutes.
- */
-function buildBlockZeroStrengthA(blockWeek: number, intro = false): StrengthTemplate {
-  const squat = defaultMainLift('squat', blockWeek)
-  const row = defaultMainLift('row', blockWeek)
-  const exercises: TemplateExercise[] = [
-    { exerciseId: 'ex-band-pull-aparts', label: 'Band Pull-Aparts', section: 'warmup', sets: warmupSets(1, 15) },
-    { exerciseId: 'ex-lm-rdl', label: 'Landmine RDL', section: 'warmup', sets: warmupSets(2, 8), notes: 'Light hinge: the bar only, slow. Hips back, shins still.' },
-    { exerciseId: squat.exerciseId, label: squat.label, section: 'main', sets: workingSets(3, 8, 90), notes: 'Brace before each rep. Sit between the hips, chest up.' },
-    { exerciseId: 'ex-landmine-press', label: 'Landmine Press', section: 'main', sets: workingSets(3, 8, 60), ramp: false },
-    { exerciseId: row.exerciseId, label: row.label, section: 'main', sets: workingSets(3, 10, 60), notes: 'Flat back, pull to the lower ribs. Each arm.' },
-  ]
-  // The lead-in intro: the lifts only (Part B).
-  if (intro) return { id: 'strength_a', label: 'Block Zero: A', exercises }
-  exercises.push(
-    { exerciseId: 'ex-dead-bugs', label: 'Dead Bugs', section: 'core', sets: durabilitySets(2, 10), notes: '10 each side. Back stays flat.' },
-    { exerciseId: 'ex-side-plank', label: 'Side Plank', section: 'core', sets: durabilitySets(2, 30), notes: '30s each side.' },
-    { exerciseId: 'ex-single-leg-calf-raise', label: 'Single-Leg Calf Raise', section: 'core', sets: durabilitySets(2, 12), notes: '12 each leg. Full range, 2-3s down.' },
-    { exerciseId: 'ex-copenhagen-plank', label: 'Copenhagen Plank', section: 'core', sets: durabilitySets(2, 20), notes: 'Seconds each side. Knee on the bench to start.' },
-    ...armBlock('A'),
-  )
-  return { id: 'strength_a', label: 'Block Zero: A', exercises }
-}
-
-/**
- * Strength B (page 93): the power block first (the landmine punch: slow and
- * crisp, fast later; the normal reps-left card), the hinge (DB RDL, then the
- * block pull or trap bar), the bench, the landmine reverse lunge (the week's
- * second squat-pattern). The Nordic and the bent-knee calf raise (the tibialis
- * raise made room for the row), then the arm block: the dumbbell row (pulling
- * twice a week, 2026-10-26), dips (or the close-grip press), wrist curls.
- */
-function buildBlockZeroStrengthB(blockWeek: number, intro = false): StrengthTemplate {
-  const hinge = defaultMainLift('hinge', blockWeek)
-  const exercises: TemplateExercise[] = [
-    { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges', section: 'warmup', sets: warmupSets(2, 12), notes: 'Squeeze at the top. Ribs down.' },
-    { exerciseId: 'ex-lm-punch', label: 'Landmine Punch', section: 'main', sets: workingSets(3, 4, 60), ramp: false },
-    { exerciseId: hinge.exerciseId, label: hinge.label, section: 'main', sets: workingSets(3, 8, 90), notes: 'Hips back, spine long. Feel the hamstrings, not the lower back.' },
-    { exerciseId: 'ex-bench-press', label: 'Bench Press', section: 'main', sets: workingSets(3, 8, 90) },
-    { exerciseId: 'ex-lm-reverse-lunge', label: 'Landmine Reverse Lunge', section: 'main', sets: workingSets(3, 8, 45), ramp: false },
-  ]
-  if (intro) return { id: 'strength_b', label: 'Block Zero: B', exercises }
-  exercises.push(
-    { exerciseId: 'ex-nordic-curl', label: 'Nordic Curl', section: 'core', sets: durabilitySets(2, 3), notes: 'As slow as you can control. Hands catch you.' },
-    { exerciseId: 'ex-bent-knee-calf-raise', label: 'Bent-Knee Calf Raise', section: 'core', sets: durabilitySets(2, 12), notes: 'Knees bent, full range, 2-3s down.' },
-    ...armBlock('B'),
-  )
-  return { id: 'strength_b', label: 'Block Zero: B', exercises }
-}
-
-/**
- * The 10-minute fighter arm block at the end of each lift (page 93; it
- * replaces the isolation arm work). Chin-ups once a week, on Strength A only,
- * reps only on the built ladder (band, slow lowering, full: the dose picks
- * the rung). Strength B: the supported dumbbell row (the week's second pull;
- * hand and knee on the bench spares the low back on the hinge day), then dips,
- * or the close-grip press when the shoulders say so. Hammer curls on A (B's
- * row works the same arms); grip on A, wrist curls on B. B's row has its own
- * weights as an arm-block move, apart from A's main row.
- */
-export function armBlock(day: 'A' | 'B'): TemplateExercise[] {
-  const curls: TemplateExercise = { exerciseId: 'ex-hammer-curl', label: 'Hammer Curl', section: 'accessory', sets: workingSets(2, 10, 30) }
-  if (day === 'A') {
-    return [
-      // No band, ever (2026-10-29): slow lowering first, full chin-ups when they're easy (the ladder).
-      { exerciseId: 'ex-chin-up-negative', label: 'Chin-Up (Slow Lowering)', section: 'accessory', sets: workingSets(3, 3, 45), notes: 'Jump to the top, lower yourself for 3 to 5 s. Reps only.' },
-      curls,
-      { exerciseId: 'ex-suitcase-carry', label: 'Grip: Suitcase Carry', section: 'accessory', sets: workingSets(2, 30, 30), notes: '30s each hand. Stand tall, no lean.' },
-    ]
-  }
-  return [
-    { exerciseId: 'ex-db-row', label: 'Dumbbell Row', section: 'accessory', sets: workingSets(3, 10, 45), notes: 'Hand and knee on the bench, flat back, pull to the hip. Each arm.' },
-    { exerciseId: 'ex-dips', label: 'Dips', section: 'accessory', sets: workingSets(3, 6, 45), notes: 'Reps only. Stop short if the shoulder pinches.' },
-    { exerciseId: 'ex-wrist-curl', label: 'Wrist Curl', section: 'accessory', sets: workingSets(2, 15, 30), notes: 'Light. Slow lower to the fingertips.' },
-  ]
-}
-
-/**
- * Block Zero C (Fri): row + single-leg work. Supported DB row in weeks 1-2,
- * bent-over row from week 3. Durability finisher.
- */
-function buildBlockZeroStrengthC(blockWeek: number, intro = false): StrengthTemplate {
-  const t = intro ? LEAD_IN_TARGET : getStrengthWeekTarget(blockWeek)
-  const row = defaultMainLift('row', blockWeek)
-  const exercises: TemplateExercise[] = [
-    { exerciseId: 'ex-glute-bridges', label: 'Glute Bridges', section: 'warmup', sets: warmupSets(2, 12), notes: 'Squeeze at the top. Ribs down.' },
-    { exerciseId: 'ex-band-pull-aparts', label: 'Band Pull-Aparts', section: 'warmup', sets: warmupSets(2, 15) },
-    { exerciseId: row.exerciseId, label: row.label, section: 'main', sets: blockZeroMainSets(t), notes: mainNote('Flat back, pull to the lower ribs.', t) },
-    { exerciseId: 'ex-reverse-lunge', label: 'Reverse Lunge', section: 'main', sets: blockZeroMainSets(t), notes: mainNote('Each leg. Step back, front knee over the foot.', t) },
-    { exerciseId: 'ex-incline-db-press', label: 'Incline DB Press', section: 'accessory', sets: workingSets(t.accessorySets, 10, 75) },
-    { exerciseId: 'ex-lateral-raise', label: 'Lateral Raise', section: 'accessory', sets: workingSets(t.accessorySets, 12, 60) },
-    { exerciseId: 'ex-pallof-press', label: 'Pallof Press', section: 'core', sets: coreSets(t.coreSets, 10), notes: '10 each side.' },
-    ...(intro ? [] : durability(t, 'C')),
-  ]
-  return { id: 'strength_c', label: 'Block Zero: C', exercises }
 }
 
 // ─── Template Selector ────────────────────────────────────────
 
 /**
  * Pick the correct template based on day of week, block week, and block type.
- * Block Zero has three days (A/B/C); the session label ("Strength B") wins over
- * the day so a moved session keeps its content.
+ * Block Zero has two days (A/B, page 99); the session label ("Strength B") wins
+ * over the day so a moved session keeps its content.
  */
 export function getStrengthTemplate(
   dayOfWeek: number,
   blockWeek: number = 1,
   blockType: 'fighter' | 'block_zero' = 'fighter',
   label?: string | null,
-  opts: { leadIn?: boolean } = {},
 ): StrengthTemplate {
   if (blockType === 'block_zero') {
-    // Lead-in: the intro session, week-1 lifts at RPE 5-6 (Part B).
-    const intro = opts.leadIn === true
-    const day = strengthDayFor(dayOfWeek, label)
-    if (day === 'A') return buildBlockZeroStrengthA(intro ? 1 : blockWeek, intro)
-    if (day === 'B') return buildBlockZeroStrengthB(intro ? 1 : blockWeek, intro)
-    return buildBlockZeroStrengthC(intro ? 1 : blockWeek, intro)
+    // Page 99: two days; an older "Strength C" reads as B.
+    return strengthDayFor(dayOfWeek, label) === 'A' ? buildTbStrengthA() : buildTbStrengthB()
   }
   return dayOfWeek === 2 ? buildStrengthA(blockWeek) : buildStrengthB(blockWeek)
 }

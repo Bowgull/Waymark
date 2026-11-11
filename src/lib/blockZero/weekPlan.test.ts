@@ -57,9 +57,9 @@ assert(getBlockZeroWeekTemplate(2)[2][1].alternativeType === 'skip_rope' && getB
 assert(getBlockZeroWeekTemplate(2)[6][1].alternativeType === undefined, 'Saturday run has no swap')
 assert(strengthBeforeRunning([{ timeSlot: 'am', type: 'foundation_run', label: 'r', estimatedMin: 20 }, { timeSlot: 'am', type: 'strength', label: 's', estimatedMin: 60 }]) === false, 'run before strength is caught')
 
-assert(strengthDayFor(1) === 'A' && strengthDayFor(3) === 'B' && strengthDayFor(5) === 'C', 'Mon/Wed/Fri map to A/B/C')
+assert(strengthDayFor(1) === 'A' && strengthDayFor(3) === 'B' && strengthDayFor(5) === 'B', 'Mon/Wed map to A/B; page 99: two days, Friday reads B')
 assert(strengthDayFor(1, 'Strength C') === 'C', 'stored label wins over the day')
-assert(strengthDayFor(2) === 'B' && strengthDayFor(0) === 'A' && strengthDayFor(6) === 'C', 'off-template days map to a slot')
+assert(strengthDayFor(2) === 'B' && strengthDayFor(0) === 'A' && strengthDayFor(6) === 'B', 'off-template days map to A or B')
 
 // ─── Shared day template (bug 1a) ───────────────────────────────
 
@@ -77,35 +77,24 @@ assert(getDayTemplate('fighter', 1, 2, mtDays).length === WEEKLY_TEMPLATE[2].len
 
 // ─── Strength templates for Block Zero ──────────────────────────
 
+// Page 99 (2026-11-11): Tactical Barbell Fighter, A and B. The dose sets the lead-in and the wave.
 const a1 = getStrengthTemplate(1, 1, 'block_zero')
-const a3 = getStrengthTemplate(1, 3, 'block_zero')
 const b1 = getStrengthTemplate(3, 1, 'block_zero')
-const c1 = getStrengthTemplate(5, 1, 'block_zero')
-const c7 = getStrengthTemplate(5, 7, 'block_zero')
-const c5 = getStrengthTemplate(5, 5, 'block_zero')
-assert(a1.id === 'strength_a' && b1.id === 'strength_b' && c1.id === 'strength_c', 'A/B/C templates by day')
+const c1 = getStrengthTemplate(5, 1, 'block_zero', 'Strength C')
+assert(a1.id === 'strength_a' && b1.id === 'strength_b' && c1.id === 'strength_b', 'A and B; an older Strength C reads as B')
 assert(getStrengthTemplate(4, 2, 'block_zero', 'Strength A').id === 'strength_a', 'label picks the template on a moved day')
-assert(a1.exercises.some(e => e.exerciseId === 'ex-goblet-squat' && e.section === 'main'), 'week 1 squat is goblet (back-friendly first)')
-assert(a3.exercises.some(e => e.exerciseId === 'ex-front-squat' && e.section === 'main'), 'week 3 squat is front squat')
-assert(b1.exercises.some(e => e.exerciseId === 'ex-db-rdl' && e.section === 'main'), 'week 1 hinge is DB RDL')
-// Rebuild Phase 4 (page 93): A and B are the two lifts. The dose sets the sets and weights, so the
-// stale week-3 / week-6 check-set notes and week-6 cut are gone from them (Strength C keeps its own).
+assert(JSON.stringify(getStrengthTemplate(1, 9, 'block_zero')) === JSON.stringify(a1), 'the template is the same every week (the dose moves the wave)')
 const mainOf = (t: typeof a1) => t.exercises.filter(e => e.section === 'main').map(e => e.exerciseId)
-assert(JSON.stringify(mainOf(a1)) === JSON.stringify(['ex-goblet-squat', 'ex-landmine-press', 'ex-db-row']), `Strength A: squat, the press, the row (${mainOf(a1)})`)
-assert(JSON.stringify(mainOf(b1)) === JSON.stringify(['ex-lm-punch', 'ex-db-rdl', 'ex-bench-press', 'ex-lm-reverse-lunge']), `Strength B: the punch, the hinge, the bench, the lunge (${mainOf(b1)})`)
-assert([a1, b1].every(t => t.exercises.some(e => /row/.test(e.exerciseId))), 'pulling twice a week: a row on A and on B (2026-10-26)')
-assert(!a1.exercises.concat(b1.exercises).some(e => /RPE|check/i.test(e.notes ?? '')), 'no stale week targets in the notes')
-assert(a1.exercises.some(e => e.exerciseId === 'ex-lm-rdl' && e.section === 'warmup'), 'A: a light hinge in the warm-up (the hinge twice a week)')
-const ARMS_A = ['ex-chin-up-negative', 'ex-hammer-curl', 'ex-suitcase-carry']
-const ARMS_B = ['ex-db-row', 'ex-dips', 'ex-wrist-curl']
-assert(JSON.stringify(a1.exercises.slice(-3).map(e => e.exerciseId)) === JSON.stringify(ARMS_A), 'A ends with the arm block: chin-ups, hammer curls, grip')
-assert(JSON.stringify(b1.exercises.slice(-3).map(e => e.exerciseId)) === JSON.stringify(ARMS_B), 'B ends with the arm block: the dumbbell row, dips, wrist curls (the row works the same arms as the hammer curls)')
-assert(a1.exercises.concat(b1.exercises).filter(e => /chin-up/.test(e.exerciseId)).length === 1, 'chin-ups once a week, never twice in a lift')
-assert(['ex-single-leg-calf-raise', 'ex-copenhagen-plank'].every(id => a1.exercises.some(e => e.exerciseId === id)), 'A: loaded calves, the Copenhagen plank')
-assert(['ex-nordic-curl', 'ex-bent-knee-calf-raise'].every(id => b1.exercises.some(e => e.exerciseId === id)), 'B: the Nordic, bent-knee calves (the tibialis raise made room for the row)')
-assert(!a1.exercises.concat(b1.exercises).some(e => ['ex-ez-curl', 'ex-tricep-pushdown', 'ex-lateral-raise'].includes(e.exerciseId)), 'no isolation arm work')
-assert(c1.exercises.some(e => e.exerciseId === 'ex-tibialis-raise'), 'Strength C keeps its durability')
-assert(JSON.stringify(c7) === JSON.stringify(c5), 'week 7 strength C is identical to week 5')
+assert(JSON.stringify(mainOf(a1)) === JSON.stringify(['ex-front-squat', 'ex-bench-press', 'ex-bent-over-row']), `Strength A: front squat, bench, bent-over row (${mainOf(a1)})`)
+assert(JSON.stringify(mainOf(b1)) === JSON.stringify(['ex-lm-punch', 'ex-rdl', 'ex-landmine-press']), `Strength B: the punch, the RDL, the press (${mainOf(b1)})`)
+const of = (t: typeof a1, sec: string) => t.exercises.filter(e => e.section === sec).map(e => e.exerciseId)
+assert(JSON.stringify(of(a1, 'accessory')) === JSON.stringify(['ex-incline-db-press', 'ex-face-pulls', 'ex-lateral-raise']), 'A extras: incline DB press, face pulls, lateral raise')
+assert(JSON.stringify(of(b1, 'accessory')) === JSON.stringify(['ex-chin-up-negative', 'ex-lm-reverse-lunge', 'ex-db-row']), 'B: chin-ups (slow lowering, never a band), the landmine lunge, the dumbbell row')
+assert(of(a1, 'core').length === 3 && of(b1, 'core').length === 3, 'core circuits are 3 moves')
+assert(of(b1, 'core').includes('ex-lm-rotation'), "the landmine 180s in B's core")
+assert(!a1.exercises.concat(b1.exercises).some(e => ['ex-nordic-curl', 'ex-dips', 'ex-wrist-curl', 'ex-neck-iso-4way', 'ex-single-leg-calf-raise', 'ex-bent-knee-calf-raise', 'ex-glute-bridges'].includes(e.exerciseId)), "page 93's extras are gone")
+assert(a1.exercises.concat(b1.exercises).filter(e => /chin-up/.test(e.exerciseId)).length === 1, 'chin-ups once a week')
+assert(!a1.exercises.concat(b1.exercises).some(e => /band/.test(e.exerciseId) && /chin/.test(e.exerciseId)), 'no band chin-ups')
 const fighterB = getStrengthTemplate(4, 1, 'fighter')
 assert(fighterB.id === 'strength_b' && fighterB.exercises.some(e => e.exerciseId === 'ex-rdl'), 'Fighter templates unchanged')
 assert(getWeekPercentage(6, 'block_zero') === getWeekPercentage(5, 'block_zero'), 'week 6 holds intensity')

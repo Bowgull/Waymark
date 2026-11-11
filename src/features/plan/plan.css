@@ -110,7 +110,7 @@ body.pl-pickopen .pl-row > .pl-cur, body.pl-pickopen .pl-dr > .pl-cur { display:
 /* Page 94 (approved 2026-10-29): the logbook. The move on the left, big and bright, its note under it;
    sets and weight on the right in two lined-up columns; a thin gold rule and a small head between groups. */
 .pl-ols.is-log { padding-left: 4px; }
-.pl-lg { display: grid; grid-template-columns: 1fr 52px 68px; column-gap: 6px; align-items: baseline; padding: 6px 2px 6px 0; }
+.pl-lg { display: grid; grid-template-columns: minmax(0, 1fr) 52px minmax(68px, auto); column-gap: 6px; align-items: baseline; padding: 6px 2px 6px 0; }
 .pl-lg + .pl-lg { border-top: 1px solid rgba(255, 255, 255, 0.05); }
 .pl-lg .nm { font: 600 16px/1.25 var(--font-body); color: #eef2ee; min-width: 0; overflow-wrap: anywhere; }
 .pl-lg .nt { display: block; margin-top: 2px; font: 500 13px/1.25 var(--font-body); color: #9fb3a8; }
@@ -127,3 +127,11 @@ body.pl-pickopen .pl-row > .pl-cur, body.pl-pickopen .pl-dr > .pl-cur { display:
 .pl-flip > .pl-face:not([data-on]) { visibility: hidden; }
 .pl-lg + .pl-flip, .pl-flip + .pl-lg { border-top: 1px solid rgba(255, 255, 255, 0.05); }
 .pl-lines > .pl-lgh:first-child { margin-top: 4px; padding-top: 0; border-top: 0; }
+
+/* Page 99: B's press pick (the command window) and the line turning to the pick */
+.pl-pickt { display: flex; flex-direction: column; gap: 3px; }
+.pl-pickt small { font: 500 13px/1.25 var(--font-body); color: #9fb3a8; }
+.pl-pickopt { min-height: 48px; }
+.pl-lg.is-swap { animation: pl-swapin 180ms cubic-bezier(0.16, 1, 0.3, 1) 40ms both; }
+@keyframes pl-swapin { from { opacity: 0; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .pl-lg.is-swap { animation: none; } }

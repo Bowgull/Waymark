@@ -31,6 +31,8 @@ export interface PlanLine {
   head?: boolean
   /** Page 97: the line's other side (the treadmill speed's back is the pace). A tap turns it over; nothing is picked. */
   back?: PlanLine
+  /** Page 99: a tap on this line picks between options (B's press: landmine or overhead) in the command window. */
+  pick?: { title: string; current: string; options: Array<{ key: string; name: string; note: string }> }
 }
 
 export interface LinesOpts {
@@ -103,6 +105,7 @@ const MOVE_NAME: Readonly<Record<string, string>> = {
 /** A short how-to under a move whose name doesn't say it. */
 const MOVE_NOTE: Readonly<Record<string, string>> = {
   'ex-chin-up-negative': 'jump up, lower for 3 to 5 s',
+  'ex-landmine-press': 'each arm',
 }
 
 /** Sentence case that keeps the short caps (RDL, DB) and inner capitals (McGill): "Goblet Squat" reads "Goblet squat". */
@@ -131,20 +134,43 @@ export function setsText(setsReps: string, timed: boolean): string {
 
 const LEG_IDS = new Set(['ex-nordic-curl', 'ex-bent-knee-calf-raise', 'ex-single-leg-calf-raise', 'ex-tibialis-raise'])
 
-function groupOf(ex: WorkoutExercise, core: WorkoutExercise[]): string | null {
+/** Page 99: chin-ups sit with B's big lifts. */
+const CHIN_IDS = new Set(['ex-chin-up-negative', 'ex-chin-up', 'ex-chin-up-band'])
+
+function groupOf(ex: WorkoutExercise, core: WorkoutExercise[], tb: boolean): string | null {
   if (ex.section === 'warmup') return null
   if (ex.section === 'main') return 'Main'
   if (ex.section === 'core') return core.every(c => LEG_IDS.has(c.exerciseId)) ? 'Legs' : 'Core'
+  if (tb) return CHIN_IDS.has(ex.exerciseId) ? 'Main' : 'Extras'
   return ARM_BLOCK_IDS.has(ex.exerciseId) || ex.exerciseId === 'ex-db-row' ? 'Arms' : 'More'
+}
+
+const PRESS_KEY: Readonly<Record<string, 'landmine' | 'overhead'>> = { 'ex-landmine-press': 'landmine', 'ex-ohp': 'overhead' }
+const lbOf = (kg: number) => Math.round(kg * 2.20462)
+
+/** Page 99: B's press on the wave: LANDMINE or OVERHEAD, each with today's weight from its own max. */
+function pressPick(tb: NonNullable<Extract<SummaryData, { kind: 'strength' }>['tb']>): PlanLine['pick'] | undefined {
+  if (!tb.press) return undefined
+  const { kg, pick } = tb.press
+  return {
+    title: 'PRESS',
+    current: pick,
+    options: [
+      { key: 'landmine', name: 'LANDMINE', note: kg.landmine != null ? `${lbOf(kg.landmine)} lb · its own max` : 'find your weight' },
+      { key: 'overhead', name: 'OVERHEAD', note: kg.overhead != null ? `${lbOf(kg.overhead)} lb · its own max` : 'find your weight · first time' },
+    ],
+  }
 }
 
 export function strengthLog(data: Extract<SummaryData, { kind: 'strength' }>): PlanLine[] {
   const out: PlanLine[] = [WARM_JOG]
   const core = data.exercises.filter(ex => ex.section === 'core')
   let group: string | null = null
+  const tb = data.tb ?? null
   for (const ex of data.exercises) {
-    const g = groupOf(ex, core)
-    if (g && g !== group) { out.push(head(g)); group = g }
+    const g = groupOf(ex, core, tb != null)
+    // Page 99: the wave's week and % on Main ("Main · week 1, 75%").
+    if (g && g !== group) { out.push(head(g === 'Main' && tb?.waveWeek != null && tb.pct != null ? `Main · week ${tb.waveWeek}, ${Math.round(tb.pct * 100)}%` : g)); group = g }
     const sr = ex.prescription?.setsReps ?? ''
     const load = liftLoad(ex)
     const lb = /\d$/.test(load) ? `${load} lb` : load === 'bar only' ? 'bar' : null
@@ -152,7 +178,9 @@ export function strengthLog(data: Extract<SummaryData, { kind: 'strength' }>): P
     const note = [MOVE_NOTE[ex.exerciseId] ?? eachNote(ex.notes, sr), find].filter(Boolean).join(', ') || null
     const brain = data.brainLifts?.find(l => l.exerciseId === ex.exerciseId)
     const line = move(MOVE_NAME[ex.exerciseId] ?? plainName(ex.label || ex.name || ex.exercise?.name || 'Lift'), sr ? setsText(sr, isTimed(ex.notes)) : null, lb, note)
-    out.push(brain?.change === 'increase' ? { ...line, mark: 'up' } : brain?.change === 'decrease' ? { ...line, mark: 'down' } : line)
+    const marked: PlanLine = brain?.change === 'increase' ? { ...line, mark: 'up' } : brain?.change === 'decrease' ? { ...line, mark: 'down' } : line
+    const pick = tb && PRESS_KEY[ex.exerciseId] ? pressPick(tb) : undefined
+    out.push(pick ? { ...marked, pick } : marked)
   }
   return out
 }

@@ -18,8 +18,16 @@ export interface RunPrescription extends RunPlan {
   easyKmh?: number | null
 }
 
+/** Page 99: where a TB day stands (lead-in or wave week), and B's press pick with each press's weight today (kg; null finds its weight). */
+export interface StrengthTb {
+  leadIn: boolean
+  waveWeek: number | null
+  pct: number | null
+  press?: { pick: 'landmine' | 'overhead'; kg: { landmine: number | null; overhead: number | null } } | null
+}
+
 export type SummaryData =
-  | { kind: 'strength'; exercises: WorkoutExercise[]; notes: string[]; plannedMin: number | null; brainLifts?: Array<{ exerciseId: string; change: string; explain?: string | null }> }
+  | { kind: 'strength'; exercises: WorkoutExercise[]; notes: string[]; plannedMin: number | null; brainLifts?: Array<{ exerciseId: string; change: string; explain?: string | null }>; tb?: StrengthTb | null }
   | { kind: 'run'; plan: RunPrescription | null; run: RunActuals | null; post?: PostRunFacts | null }
   | { kind: 'mobility'; moves: Array<{ name: string; completed: boolean; sets?: number | null; holdSec?: number | null; reps?: number | null; perSide?: boolean; section?: string | null }>; plannedMin: number | null }
   | { kind: 'bag'; rounds: number; plannedMin: number | null; plannedSecs: number[]; roundSecs: number[] | null; restSec?: number | null; firstCombo?: string | null; roundCombos?: string[][] }
@@ -58,8 +66,8 @@ export async function loadSummary(s: DayBoardSession): Promise<SummaryData> {
   switch (s.type) {
     case 'strength': {
       // A started or finished session reads its logged rows; a planned one the preview.
-      const res = await apiFetch<{ exercises?: WorkoutExercise[]; plannedMin?: number | null; brain?: { lifts?: Array<{ exerciseId: string; change: string }> } } & Record<string, unknown>>(done ? `/api/sessions/${s.id}/workout` : `/api/sessions/${s.id}/strength-preview`)
-      return { kind: 'strength', exercises: res.exercises ?? [], notes: done ? [] : coachNotes(res), plannedMin: typeof res.plannedMin === 'number' ? res.plannedMin : null, brainLifts: res.brain?.lifts ?? [] }
+      const res = await apiFetch<{ exercises?: WorkoutExercise[]; plannedMin?: number | null; brain?: { lifts?: Array<{ exerciseId: string; change: string }>; tb?: StrengthTb } } & Record<string, unknown>>(done ? `/api/sessions/${s.id}/workout` : `/api/sessions/${s.id}/strength-preview`)
+      return { kind: 'strength', exercises: res.exercises ?? [], notes: done ? [] : coachNotes(res), plannedMin: typeof res.plannedMin === 'number' ? res.plannedMin : null, brainLifts: res.brain?.lifts ?? [], tb: res.brain?.tb ?? null }
     }
     case 'running':
     case 'foundation_run': {

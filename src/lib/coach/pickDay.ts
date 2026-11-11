@@ -42,18 +42,16 @@ function heavyYesterday(day: number, week: ReadonlyArray<SessionLike>, blockType
 }
 
 /**
- * The Block Zero strength letter for an added session (D8, R10): in the
- * lead-in, the weekday's own; otherwise C when yesterday loaded the legs and C
- * is still free, else the weekday's own when free, else the first letter not
- * yet live this week.
+ * The Block Zero strength letter for an added session (D8, R10; page 99: A
+ * and B only): in the lead-in, the weekday's own; otherwise the weekday's own
+ * when free, else the other one when free.
  */
 export function strengthLetterFor(day: number, week: SessionLike[], leadIn: boolean): StrengthDay {
-  const own = strengthDayFor(dowOf(day))
+  const own = strengthDayFor(dowOf(day)) === 'A' ? 'A' : 'B'
   if (leadIn) return own
   const used = new Set(week.filter(s => s.type === 'strength' && LIVE.has(s.status)).map(s => s.label?.match(/Strength ([ABC])\b/)?.[1]).filter(Boolean))
-  if (!used.has('C') && heavyYesterday(day, week, 'block_zero')) return 'C'
   if (!used.has(own)) return own
-  return (['A', 'B', 'C'] as const).find(l => !used.has(l)) ?? own
+  return (['A', 'B'] as const).find(l => !used.has(l)) ?? own
 }
 
 /**

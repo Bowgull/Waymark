@@ -26,7 +26,9 @@ import { inLighter, lighterBag, lighterRun, lighterStrength } from '../lib/brain
 import { TRIGGERED_BAG_WHY, TRIGGERED_RUN_WHY, TRIGGERED_WHY, triggeredLighter } from '../lib/brain/lighterWeek'
 import { candidateClassDays, classLadder, classLean, classSlotChoices, learnedClassSlots } from '../lib/brain/classPicker'
 import { classDaySlots } from '../lib/classSlots'
-import { LONG_CAP_MIN, SESSION_CAP_MIN, bagDose, capRunDose, ceilingFor, runDose, strengthDose, tweakBag, tweakRun, tweakStrength, CEILING, LEVELS, levelAbove, minLevel, type BagDose, type DoseCtx, type Level, type RunDose, type StrengthDose, type Tweak } from '../lib/brain/doses'
+import { LONG_CAP_MIN, SESSION_CAP_MIN, bagDose, capRunDose, ceilingFor, runDose, strengthDose, tweakBag, tweakRun, tweakStrength, CEILING, LEVELS, levelAbove, minLevel, type BagDose, type DoseCtx, type Level, type RunDose, type StrengthDose, type TbIn, type Tweak } from '../lib/brain/doses'
+import { strengthDayFor } from '../lib/blockZero/weekPlan'
+import { TB_PRESS_ID, pressPickFrom, tbMaxKg, tbPlanFor, type TbDay, type TbPress } from '../lib/brain/tbWave'
 import { hoursAfter, score as outlineScore, solveOutline, violations as outlineViolations, type OutlineChange, type OutlineIn, type OutlineSession } from '../lib/brain/outline'
 import { athleteSignals, goalSignals } from '../lib/brain/signals'
 import { currentComboTier } from '../lib/comboTiers'
@@ -380,9 +382,11 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
   // Away, per his note (rebuild Phase 8, audit #12): the rules read it too, not only the AI.
   const away = tempMode(inputs, day) === 'away'
   const ctx: DoseCtx = { day, state: effective.state, stateWhy: afterClassWhy && effective.why ? `${effective.why} ${afterClassWhy}` : (afterClassWhy ?? effective.why), model: inputs.model, backToday: plan?.op === 'back' ? 1 : backToday, openPlans: inputs.openPlans, levelCap: capAfterClass, levelFloor, away }
+  // Page 99: a Block Zero lift day is Tactical Barbell; where it stands on the wave is part of the dose.
+  const tb = s.type === 'strength' && s.blockType === 'block_zero' ? tbFor(s, inputs, day) : null
   const base = {
     v: DOSE_VERSION, sessionId: s.id, day, type: s.type, state: effective.state, stateWhy: effective.why,
-    stamp: doseStamp(s, cap, ctx.backToday, lighter, await stampTest(db, s, today), tempMode(inputs, day)), at: Math.floor(Date.now() / 1000),
+    stamp: doseStamp(s, cap, ctx.backToday, lighter, await stampTest(db, s, today), tempMode(inputs, day), tb ? JSON.stringify(tb) : null), at: Math.floor(Date.now() / 1000),
     flags: {
       back: (ctx.backToday != null && ctx.backToday <= 2) || inputs.model.back.openPlans > 0 || inj.action.action === 'back_swap',
       injury: inj.action.action !== 'none' || inj.ravenOneSet != null || plan != null || inputs.openPlans.length > 0,
@@ -410,7 +414,7 @@ async function computeRulesDose(db: DB, s: SessionRow, today: number, inp: Brain
       kind, main, fighter, tmKg: kind === 'block_zero' ? inputs.tmInBlockKg : inputs.tmKg, equipment: inputs.equipment,
       steppedThisWeek: await steppedThisWeek(db, s), lastFeltHard: await lastFeltHard(db, s, inputs),
       accessories, bodyweightIds: inputs.bodyweightIds, accessoryLast: accessoryLastFrom(inputs.events, day),
-      ...strengthHistoryFrom(inputs.events, day),
+      ...strengthHistoryFrom(inputs.events, day), tb,
     })
     const u = dose.lifts.length ? Math.round((dose.lifts.reduce((n, l) => n + l.u, 0) / dose.lifts.length) * 100) / 100 : null
     if (lighter) {
@@ -506,7 +510,7 @@ function tempMode(inp: BrainInputs, day: number): 'away' | 'returning' | null {
   return nightState(inp, day).returning ? 'returning' : null
 }
 
-function doseStamp(s: Pick<SessionRow, 'type' | 'label' | 'scheduledDate' | 'contextJson'> & { notes?: string | null }, cap: BrainCap | null, backToday: number | null, lighter = false, fiveKSec: number | null = null, temp: string | null = null): string {
+function doseStamp(s: Pick<SessionRow, 'type' | 'label' | 'scheduledDate' | 'contextJson'> & { notes?: string | null }, cap: BrainCap | null, backToday: number | null, lighter = false, fiveKSec: number | null = null, temp: string | null = null, tb: string | null = null): string {
   const plan = bodyPlanMark(s.contextJson)
   const ease = coachEaseFrom(s.contextJson)
   // 'fyw': strength doses written before every lift started light (2026-10-23) are written again.
@@ -515,7 +519,28 @@ function doseStamp(s: Pick<SessionRow, 'type' | 'label' | 'scheduledDate' | 'con
   const hard = s.type === 'running' && hardKindOf({ type: s.type, notes: s.notes ?? null }) ? [`hard:${s.notes}`, fiveKSec] : []
   // Review T6: lifts merged in from a missed day are part of the dose (found from light too), so a merge re-doses.
   const merged = s.type === 'strength' ? mergedKey(s.contextJson) : null
-  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null, ...(lighter ? ['lighter'] : []), ...(s.type === 'strength' ? ['fyw', 'neg'] : []), ...hard, ...(merged ? [`merged:${merged}`] : []), ...(temp ? [temp] : [])])
+  return JSON.stringify([s.type, s.label, s.scheduledDate, cap?.state ?? null, backToday, plan?.op ?? null, plan?.shapeWeek ?? null, ease?.source === 'injury' ? ease.kind : null, ...(lighter ? ['lighter'] : []), ...(s.type === 'strength' ? ['fyw', 'neg'] : []), ...hard, ...(merged ? [`merged:${merged}`] : []), ...(temp ? [temp] : []), ...(tb ? [`tb:${tb}`] : [])])
+}
+
+/**
+ * Page 99: a TB day's place on the wave from his logged sets (lib/brain/tbWave.ts):
+ * the lead-in or the wave week, B's hinge, the press he picked (the landmine in
+ * the lead-in), and each wave lift's max x the week's %.
+ */
+function tbFor(s: Pick<SessionRow, 'scheduledDate' | 'label' | 'contextJson'>, inputs: BrainInputs, day: number): TbIn {
+  const letter: TbDay = strengthDayFor(new Date(day * 86400000).getUTCDay(), s.label) === 'A' ? 'A' : 'B'
+  const done = new Set(inputs.events.sessions.filter(x => x.status === 'completed' && x.day < day).map(x => x.id))
+  const plan = tbPlanFor(letter, inputs.events.sets, done, day)
+  const press: TbPress = plan.leadIn ? 'landmine' : pressPickFrom(s.contextJson)
+  const swap = { 'ex-rdl': plan.hinge, 'ex-landmine-press': { exerciseId: TB_PRESS_ID[press], label: press === 'overhead' ? 'Overhead Press' : 'Landmine Press' } }
+  const ids = letter === 'A' ? ['ex-front-squat', 'ex-bench-press', 'ex-bent-over-row'] : [plan.hinge.exerciseId, TB_PRESS_ID.landmine, TB_PRESS_ID.overhead]
+  const loadKg: Record<string, number | null> = Object.fromEntries(ids.map(id => {
+    const tm = plan.pct == null ? null : tbMaxKg(letter, id, inputs.events.sets, done, day)
+    return [id, tm == null || plan.pct == null ? null : Math.round(tm * plan.pct * 100) / 100]
+  }))
+  // B on the wave: the press is his pick on the day, each with its own max.
+  const pressOut = letter === 'B' && !plan.leadIn ? { pick: press, kg: { landmine: loadKg[TB_PRESS_ID.landmine] ?? null, overhead: loadKg[TB_PRESS_ID.overhead] ?? null } } : null
+  return { leadIn: plan.leadIn, waveWeek: plan.waveWeek, pct: plan.pct, loadKg, sets: plan.sets, reps: plan.reps, swap, press: pressOut }
 }
 
 /** The merged lifts on a session (context_json.mergedLifts), as a stable key, or null. */

@@ -376,6 +376,7 @@ function brainSummary(dose: StoredDose) {
     state: dose.state,
     why: dose.why,
     lifts: (dose.strength?.lifts ?? []).map(l => ({ exerciseId: l.exerciseId, weightKg: l.weightKg, sets: l.sets, reps: l.reps, targetRir: l.targetRir, change: l.change, workUp: l.workUp, level: l.level, why: l.why, ...(l.explain ? { explain: l.explain } : {}) })),
+    ...(dose.strength?.tb ? { tb: dose.strength.tb } : {}),
   }
 }
 
@@ -1625,6 +1626,20 @@ app.post('/api/sessions/:id/abandon', async (c) => {
   if (session.status !== 'in_progress') return c.json({ ok: true, noop: true })
   await db.update(sessions).set({ status: 'planned', startedAt: null }).where(eq(sessions.id, sessionId))
   return c.json({ ok: true })
+})
+
+// Page 99: B's press on the TB wave, his pick on the day (landmine or overhead, each with its own max).
+// Saved on the planned session; its dose is written again with the pick.
+app.post('/api/sessions/:id/press', async (c) => {
+  const db = createDB(c.env)
+  const body = await c.req.json<{ press?: unknown }>().catch(() => ({} as { press?: unknown }))
+  if (body.press !== 'landmine' && body.press !== 'overhead') return c.json({ error: 'press must be landmine or overhead' }, 400)
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, c.req.param('id')))
+  if (!session) return c.json({ error: 'session not found' }, 404)
+  if (session.type !== 'strength' || session.status !== 'planned') return c.json({ error: 'only a planned strength session' }, 409)
+  const ctx = parseJson<Record<string, unknown>>(session.contextJson ?? null, {})
+  await db.update(sessions).set({ contextJson: JSON.stringify({ ...ctx, press: body.press }), doseJson: null }).where(eq(sessions.id, session.id))
+  return c.json({ ok: true, press: body.press })
 })
 
 // Page 74: the × held 3 s, then DISCARD. Back to planned; nothing of it kept for the coach.

@@ -64,13 +64,13 @@ assert(eased.action.kind !== undefined, 'an ease day: his pick stands (R9 eases 
 // ─── Lead-in: an intro session, the weekday's letter ─────────
 const leadCtx = ctx({ blockType: 'block_zero', weekNumber: 1, leadIn: true, todayEpochDay: MON + 4, planWeekLoad: null, sessions: [] })
 const intro = pickDayOption({ type: 'strength', timeSlot: 'am' }, MON + 4, leadCtx)
-assert(intro.action.kind === 'add' && intro.action.label === 'Strength C', 'lead-in Friday: intro Strength C is a plain add')
-assert(strengthLetterFor(MON + 1, [], true) === 'B' && strengthLetterFor(MON + 5, [], true) === 'C', 'lead-in letters follow the weekday')
+assert(intro.action.kind === 'add' && intro.action.label === 'Strength B', 'lead-in Friday: Strength B is a plain add (page 99: A and B only)')
+assert(strengthLetterFor(MON + 1, [], true) === 'B' && strengthLetterFor(MON + 5, [], true) === 'B' && strengthLetterFor(MON, [], true) === 'A', 'lead-in letters follow the weekday, A or B')
 
 // ─── The letter for an added strength session (D8, R10) ──────
 const weekAC = [{ type: 'strength', label: 'Strength A', epochDay: W2, timeSlot: 'am' as const, status: 'completed' }, { type: 'strength', label: 'Strength C', epochDay: W2 + 4, timeSlot: 'am' as const, status: 'planned' }]
 assert(strengthLetterFor(W2 + 4, weekAC, false) === 'B', 'never a letter already in the week: B, not a second C')
 assert(strengthLetterFor(W2 + 2, [], false) === 'B', 'free week: the weekday\'s own letter')
-assert(strengthLetterFor(W2 + 1, [{ type: 'strength', label: 'Strength A', epochDay: W2, timeSlot: 'am', status: 'completed' }], false) === 'C', 'the day after A: C, lightest on the legs')
+assert(strengthLetterFor(W2 + 1, [{ type: 'strength', label: 'Strength A', epochDay: W2, timeSlot: 'am', status: 'completed' }], false) === 'B', 'the day after A: B (page 99: no C)')
 
 console.log('pick-a-day tests passed')

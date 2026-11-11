@@ -16,6 +16,7 @@ import { getRunWalkWeek, runWalkTotalSec } from './running'
 import { blockZeroPhase, type BlockZeroPhase } from './weeks'
 import { HARD_NOTES, HARD_START_LABEL, hardWeek, type HardKind } from '../brain/hardRuns'
 
+/** Page 99: two days, A and B. C stays only so an older "Strength C" label still reads (as B). */
 export type StrengthDay = 'A' | 'B' | 'C'
 
 export interface BlockZeroTemplateSession extends TemplateSession {
@@ -24,7 +25,7 @@ export interface BlockZeroTemplateSession extends TemplateSession {
   strengthDay?: StrengthDay
 }
 
-export const STRENGTH_DAY_BY_DOW: Record<number, StrengthDay> = { 1: 'A', 3: 'B', 5: 'C' }
+export const STRENGTH_DAY_BY_DOW: Record<number, StrengthDay> = { 1: 'A', 3: 'B' }
 
 /**
  * Strength day for a session. The stored label wins ("Strength B"), so a
@@ -36,9 +37,7 @@ export function strengthDayFor(dayOfWeek: number, label?: string | null): Streng
   if (m) return m[1] as StrengthDay
   const direct = STRENGTH_DAY_BY_DOW[dayOfWeek]
   if (direct) return direct
-  if (dayOfWeek === 0) return 'A'
-  if (dayOfWeek === 2) return 'B'
-  return 'C'
+  return dayOfWeek === 0 ? 'A' : 'B'
 }
 
 const FOUNDATION: BlockZeroTemplateSession = { timeSlot: 'am', type: 'mobility', label: FOUNDATION_LABEL, estimatedMin: 12 }
@@ -68,7 +67,11 @@ function strength(day: StrengthDay, phase: BlockZeroPhase): BlockZeroTemplateSes
   return { timeSlot: 'am', type: 'strength', label: `Strength ${day}`, estimatedMin: STRENGTH_MIN[phase], strengthDay: day }
 }
 
-/** Day-of-week → sessions for a Block Zero week. Keys 0=Sun .. 6=Sat. */
+/**
+ * Day-of-week → sessions for a Block Zero week. Keys 0=Sun .. 6=Sat. The live
+ * week comes from the builder (two lifts, lib/brain/weekBuilder.ts); this fixed
+ * week is the tests' and the older fallbacks', where Friday's C reads as B (page 99).
+ */
 export function getBlockZeroWeekTemplate(weekNumber: number): Record<number, BlockZeroTemplateSession[]> {
   const phase = blockZeroPhase(weekNumber)
   // Test weeks carry no extra session (2026-10-18): the fixed-effort rope test

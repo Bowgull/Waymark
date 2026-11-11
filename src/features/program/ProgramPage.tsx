@@ -577,14 +577,13 @@ export function ProgramPage() {
                 : "It's been a while since your last session. Tendons and ligaments detrain faster than muscle. Block Zero resets your starting weights and volume so you can build back up safely."}
           </p>
           <ul className="pg-list">
-            {/* How the coach runs Block Zero now (Josh, 2026-10-22): no fixed weeks or percentages. */}
-            {['Every day: Foundation, about 12 minutes. Strength twice a week. Easy runs that grow week by week.', 'Classes: on your Settings class days; the coach decides how many each week. Log any class you go to.', 'At least 4 weeks, no set end. When the four parts on Ledger are in, you get a lighter week, then The Campaign.'].map(item => (
+            {/* How the coach runs Block Zero now (page 99, 2026-11-11): Tactical Barbell after a 2-session lead-in. */}
+            {['Every day: Foundation, about 12 minutes. Strength twice a week, Tactical Barbell. Easy runs that grow week by week.', 'Classes: on your Settings class days; the coach decides how many each week. Log any class you go to.', 'Strength: the first two of each day find your weights. Then the TB wave: 75%, 80%, 90%, and again.'].map(item => (
               <li key={item} className="wm-prose is-dim">{item}</li>
             ))}
           </ul>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
             <FlapButton label={startingBlockZero ? 'SETTING UP' : 'START BLOCK ZERO'} primary disabled={startingBlockZero} onClick={() => handleStartBlockZero()} />
-            {/* No skipping to Fighter: the coach moves him on when the four parts are in. */}
             {!isFirstLaunch && (
               <button type="button" className="db-add" onClick={handleContinueExisting}>Continue current block</button>
             )}

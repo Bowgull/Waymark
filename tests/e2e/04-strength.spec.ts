@@ -94,17 +94,15 @@ test('Strength: the landmine punch reads lbs on the bar end, bar only, then plat
   await expect(page.getByRole('group', { name: 'Reps left' })).toBeVisible()
 })
 
-// Page 94: Strength A opens to the logbook. The press reads by name with its sets, and no tap-for-why (Josh, 2026-10-29).
-test('Strength: the logbook lists every move, the press by name', async ({ page, api }) => {
+// Page 94: Strength A opens to the logbook. Page 99: Tactical Barbell, the big lifts in sets of 5, then extras and core.
+test('Strength: the logbook lists every move, Tactical Barbell A', async ({ page, api }) => {
   await setMorning(api, GOOD_MORNING)
   const s = await insertSession(api, 'strength', 'pm', { label: 'Strength A' })
   await gotoToday(page)
   const row = todayRow(page, s.id)
   await openRow(row)
   await expect(row.locator('.pl-lg').first()).toContainText('Easy jog')
-  const press = row.locator('.pl-lg').filter({ hasText: 'Landmine press' })
-  await expect(press.locator('.s')).toHaveText(/\d×8/)
-  await expect(row.getByRole('button', { name: 'PRESS: why' })).toHaveCount(0)
-  await expect(row.locator('.pl-lg').filter({ hasText: 'Chin-up negatives' })).toHaveCount(1)
-  await expect(row.locator('.pl-lgh')).toHaveText(['Main', 'Core', 'Arms'])
+  for (const lift of ['Front squat', 'Bench press', 'Bent-over row']) await expect(row.locator('.pl-lg').filter({ hasText: lift }).locator('.s')).toHaveText(/\d×5/)
+  await expect(row.locator('.pl-lg').filter({ hasText: 'Chin-up' })).toHaveCount(0)
+  await expect(row.locator('.pl-lgh')).toHaveText(['Main', 'Extras', 'Core'])
 })

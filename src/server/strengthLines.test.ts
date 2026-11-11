@@ -52,18 +52,15 @@ try {
   type Ex = WorkoutExercise & { prescription: { prescribedWeightKg: number | null; fromWeightKg?: number | null; setsReps: string } }
   const preview = await call<{ exercises: Ex[] }>('GET', '/api/sessions/sa/strength-preview')
   const by = (exs: Ex[], id: string) => exs.find(e => e.exerciseId === id) as Ex
-  // Goblet squat (rebuild Phase 4, page 93's Strength A): find your weight in 10 lb dumbbell rungs.
-  const goblet = by(preview.exercises, 'ex-goblet-squat')
-  assert.equal(liftLoad(goblet), '20→50', `Goblet squat 4×8 · 20→50 lb: ${liftLoad(goblet)}`)
-  // Dumbbell row (a main lift now): light, and never over the old 30 lb less the time off (25 lb).
-  const row = by(preview.exercises, 'ex-db-row')
-  assert.equal(lb(row.prescription.fromWeightKg), 20, `the row starts light: ${liftLoad(row)}`)
-  assert.ok((lb(row.prescription.prescribedWeightKg) ?? 0) <= 25, `never over 25 lb: ${liftLoad(row)}`)
-  // The landmine press: the bar only to start, "each" is not on the press line (page 93).
-  const press = by(preview.exercises, 'ex-landmine-press')
-  assert.deepEqual([liftLoad(press), press.prescription.setsReps], ['bar only', '3×8'], 'landmine · 3×8 · bar only')
-  // Hammer curls (the arm block): a weight, not BW.
-  assert.equal(liftLoad(by(preview.exercises, 'ex-hammer-curl')), '10→15', 'hammer curls from a light 10 lb')
+  // Page 99: Strength A is Tactical Barbell. The lead-in: each big lift works up in sets of 5 from the empty bar.
+  const squat = by(preview.exercises, 'ex-front-squat')
+  assert.equal(lb(squat.prescription.fromWeightKg), 45, `front squat starts at the bar: ${liftLoad(squat)}`)
+  assert.equal(squat.prescription.setsReps, '4×5', `the work-up: sets of 5 (${squat.prescription.setsReps})`)
+  const row = by(preview.exercises, 'ex-bent-over-row')
+  assert.equal(lb(row.prescription.fromWeightKg), 45, `the row starts at the bar, June's dumbbells don't count: ${liftLoad(row)}`)
+  assert.ok(by(preview.exercises, 'ex-bench-press'), 'the bench is on A')
+  // Extras: a weight, not BW.
+  assert.match(liftLoad(by(preview.exercises, 'ex-incline-db-press')), /^\d/, 'incline DB press has a light start')
   for (const e of preview.exercises.filter(x => x.section !== 'warmup')) {
     if (liftLoad(e) === 'BW') assert.ok(/bodyweight|^$|band|wall|bar|ab wheel|sliders/.test(e.equipment ?? ''), `BW only on a bodyweight move: ${e.exerciseId} (${e.equipment})`)
     assert.notEqual(liftLoad(e), 'find your weight', `every loadable lift has a light start: ${e.exerciseId}`)
@@ -78,20 +75,20 @@ try {
   await call('POST', '/api/sessions/sa/start-strength')
   const workout = await call<{ exercises: Array<Ex & { sets: Array<{ id: string; isWarmup: number; plannedWeightKg: number | null }> }>; brain?: { lifts?: unknown[] } }>('GET', '/api/sessions/sa/workout')
   assert.ok(workout.brain?.lifts?.length, 'the brain notes are still there after start')
-  const wRow = by(workout.exercises, 'ex-db-row') as Ex & { sets: Array<{ id: string; isWarmup: number; plannedWeightKg: number | null }> }
-  assert.deepEqual(wRow.sets.filter(s => !s.isWarmup).map(s => lb(s.plannedWeightKg)), [20, 25, 25, 25], 'the session pre-fills the same ladder')
+  const wRow = by(workout.exercises, 'ex-bent-over-row') as Ex & { sets: Array<{ id: string; isWarmup: number; plannedWeightKg: number | null }> }
+  assert.equal(lb(wRow.sets.filter(s => !s.isWarmup)[0]?.plannedWeightKg), 45, 'the session pre-fills the same ladder')
   assert.equal(liftLoad(wRow), liftLoad(row), 'the started row line: the same words')
   const preview2 = await call<{ brain?: unknown }>('GET', '/api/sessions/sa/strength-preview')
   assert.ok(preview2.brain, 'the started session\'s lines keep the brain')
 
   // 0 is never saved as a weight.
-  const pull = by(workout.exercises, 'ex-hammer-curl') as Ex & { sets: Array<{ id: string }> }
+  const pull = by(workout.exercises, 'ex-incline-db-press') as Ex & { sets: Array<{ id: string }> }
   await call('PATCH', `/api/strength-sets/${pull.sets[0].id}`, { weightKg: 0, reps: 10, completedAt: START * 86400 + 16 * 3600 })
   const [saved] = await db.select().from(strengthSets).where(eq(strengthSets.id, pull.sets[0].id))
   assert.equal(saved.weightKg, null, 'a 0 is stored as no weight')
 
   // Rebuild Phase 4: the ladder keeps going. A rung after the last bench set, once (a retry adds nothing).
-  const benchW = by(workout.exercises, 'ex-goblet-squat') as Ex & { sets: Array<{ id: string; isWarmup: number; setNumber: number }> }
+  const benchW = by(workout.exercises, 'ex-front-squat') as Ex & { sets: Array<{ id: string; isWarmup: number; setNumber: number }> }
   const lastBench = benchW.sets[benchW.sets.length - 1]
   const rung = await call<{ id: string; setNumber: number; plannedWeightKg: number }>('POST', `/api/strength-sets/${lastBench.id}/rung`, { id: 'rung-1', weightKg: 80 * LB })
   assert.deepEqual([rung.setNumber, lb(rung.plannedWeightKg)], [lastBench.setNumber + 1, 80], 'one more set at the next rung')

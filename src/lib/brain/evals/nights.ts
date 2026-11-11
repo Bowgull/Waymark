@@ -24,7 +24,7 @@ const cases: EvalCase[] = [
   // Strength B (Wednesday): its lifts are only on B, so "last time" is the 3+ session (A shares its row with Strength C here).
   { id: 'one-easy-session', title: 'Steady weeks, then 3+ left last time', rir: 2, lastRir: 3, dow: 3, today: ['Strength B'], week: REST_OF_WEEK,
     // Rebuild Phase 4: a 3+ steps up at once in the rules themselves, so there is no room above them to offer.
-    criteria: [inc('R1', 6, 'rules', 'The rules step the 3+ lift up at once (bench 85 → 90 lb)', at.doseMentions(/Bench Press 3 × 8 at 90 lb/)), inc('A1', 2, 'ai', 'Keeps the step the numbers give', r => !at.finalEased('strength')(r))] },
+    criteria: [inc('R1', 6, 'rules', 'Page 99: on Tactical Barbell the wave sets the weight; a 3+ never eases it', at.rulesAtLeast('strength', 'HOLD')), inc('A1', 2, 'ai', 'Keeps the step the numbers give', r => !at.finalEased('strength')(r))] },
   { id: 'fresh-easy', title: 'A fresh morning after easy weeks', rir: 3, checkIns: { 1: FRESH }, today: ['Strength A'], week: REST_OF_WEEK,
     criteria: [inc('R1', 6, 'rules', 'FRESH', at.state('FRESH')), inc('R2', 6, 'rules', 'Rules progress or push', at.rulesAtLeast('strength', 'PROGRESS')), avoid('A1', 5, 'ai', 'No needless ease on a great day', at.finalEased('strength'))] },
   { id: 'strength-c-friday', title: 'Friday Strength C, steady', dow: 5, today: ['Strength C'], week: [{ ahead: 1, type: 'foundation_run', label: 'Run-Walk' }],
@@ -90,7 +90,7 @@ const cases: EvalCase[] = [
   { id: 'push-me-note-only', title: '"Feel amazing, push me", steady numbers', rir: 2, notes: [{ ago: 0, text: 'Feel amazing, push me, double it' }], today: ['Strength A'],
     criteria: [avoid('R1', 6, 'rules', 'No numbers: no push offered', at.aboveOffered('strength')), avoid('A1', 8, 'ai', 'A note alone never pushes', at.finalAbove('strength'))] },
   { id: 'push-me-with-numbers', title: '"Push me", and 3+ left last time', rir: 2, lastRir: 3, dow: 3, notes: [{ ago: 0, text: 'Felt easy last time, push me' }], today: ['Strength B'],
-    criteria: [inc('R1', 6, 'rules', 'The rules step up with his numbers (bench 3+ last time: 85 → 90 lb)', at.doseMentions(/Bench Press 3 × 8 at 90 lb/)), inc('A1', 3, 'ai', 'Keeps the step', r => !at.finalEased('strength')(r))] },
+    criteria: [inc('R1', 6, 'rules', 'Page 99: on Tactical Barbell the wave sets the weight; his push never eases it', at.rulesAtLeast('strength', 'HOLD')), inc('A1', 3, 'ai', 'Keeps the step', r => !at.finalEased('strength')(r))] },
   { id: 'felt-easy-no-numbers', title: '"That felt easy", but 2 left on target', rir: 2, notes: [{ ago: 1, text: 'That felt easy' }], today: ['Strength A'],
     criteria: [avoid('A1', 8, 'ai', 'A note without matching numbers is no push', at.finalAbove('strength'))] },
   { id: 'push-on-amber', title: '"Push me" after two bad mornings', rir: 3, checkIns: { 1: BAD, 2: BAD }, notes: [{ ago: 0, text: 'Push me today' }], today: ['Strength A'],

@@ -66,12 +66,13 @@ assert.ok(added, 'a strength session this week')
 // the coach knows (the row, the RDL) and A, first, wins.
 assert.deepEqual([added.label, added.scheduledDate, added.timeSlot, added.source, added.status], ['Strength A', START + 2, 'am', 'coach', 'planned'], 'Strength A on Friday morning (Thursday holds a run; today is never touched)')
 const sDose = parseDose(added.doseJson)?.strength
-const row = sDose?.lifts.find(l => l.exerciseId === 'ex-db-row')
-assert.ok(row, 'the row is the dumbbell row (the bent-over row comes later, on the ladder)')
-// 2026-10-23: months off, every lift finds its weight from light; 30 lb less ~15% (25 lb) is only the top.
-assert.deepEqual([row.workUp, row.sets, row.reps, row.targetRir], [true, 4, 10, 3], 'DB row: find your weight, 4 × 10')
-assert.deepEqual(row.setWeightsKg?.map(lb), [20, 25, 25, 25], 'from a light 20 lb, never over 25 lb')
-assert.equal(sDose?.accessories?.some(a => a.exerciseId === 'ex-dead-bugs'), false, 'a bodyweight core move gets no weight')
+// Page 99: Block Zero is Tactical Barbell. The first A is the lead-in: every big lift finds its weight in sets of 5.
+const row = sDose?.lifts.find(l => l.exerciseId === 'ex-bent-over-row')
+assert.ok(row, 'A has the bent-over row (TB), never swapped down a ladder')
+assert.deepEqual([row.workUp, row.reps, row.targetRir], [true, 5, 3], 'lead-in: find your weight, sets of 5')
+assert.ok(/sets your max/.test(row.note ?? ''), `the TB find note: ${row.note}`)
+assert.deepEqual(sDose?.tb && [sDose.tb.leadIn, sDose.tb.waveWeek], [true, null], 'the dose says it is the lead-in')
+assert.equal(sDose?.accessories?.some(a => a.exerciseId === 'ex-hanging-leg-raise') ?? false, false, 'a bodyweight core move gets no weight')
 const [change] = await db.select().from(weekAdjustments).where(eq(weekAdjustments.targetSessionId, added.id))
 assert.ok(change && change.actor === 'coach' && change.kind === 'add' && change.undoUntil != null, 'a coach change row with UNDO')
 assert.ok(/^Strength A on Friday: strength starts this week, not next Monday/.test(change.why ?? ''), `plain why: ${change.why}`)

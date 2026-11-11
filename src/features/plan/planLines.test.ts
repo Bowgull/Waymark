@@ -46,4 +46,21 @@ assert.deepEqual(foundationLog([{ name: 'Prone Y-T Raise', sets: 2, holdSec: nul
   assert.deepEqual(lines.map(l => [l.label, l.move?.sets, l.move?.note]), [['Round 1', '3 min', 'Jab · Cross'], ['Round 2', '3 min', 'Teep · Cross · Lead Hook'], ['Rest', '1 min', 'between rounds']])
 }
 
+// Page 99: a TB day. Main reads the wave's week and %; chin-ups sit with Main; the rest are Extras; B's press has a pick.
+{
+  const ex = (exerciseId: string, section: string, label: string, setsReps: string, kg: number | null = null) => ({ exerciseId, section, label, name: label, notes: null, equipment: 'barbell', prescription: { prescribedWeightKg: kg, setsReps } })
+  const data = {
+    kind: 'strength' as const, notes: [], plannedMin: 60,
+    exercises: [ex('ex-rdl', 'main', 'Romanian Deadlift', '3×5', 54.43), ex('ex-landmine-press', 'main', 'Landmine Press', '3×5', 18.14), ex('ex-chin-up-negative', 'accessory', 'Chin-Up (Slow Lowering)', '3×3'), ex('ex-db-row', 'accessory', 'Dumbbell Row', '3×10', 13.6)],
+    tb: { leadIn: false, waveWeek: 2, pct: 0.8, press: { pick: 'landmine' as const, kg: { landmine: 18.14, overhead: null } } },
+  }
+  const lines = planLines(row('strength'), data as never)
+  assert.deepEqual(lines.filter(l => l.head).map(l => l.label), ['Main · week 2, 80%', 'Extras'])
+  const press = lines.find(l => l.label === 'Landmine press')
+  assert.deepEqual(press?.pick?.options.map(o => [o.name, o.note]), [['LANDMINE', '40 lb · its own max'], ['OVERHEAD', 'find your weight · first time']])
+  assert.equal(press?.pick?.current, 'landmine')
+  assert.equal(press?.move?.note, 'each arm')
+  assert.equal(lines.find(l => l.label === 'Romanian deadlift')?.pick, undefined, 'only the press has a pick')
+}
+
 console.log('plan lines tests passed')

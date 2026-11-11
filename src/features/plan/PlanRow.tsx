@@ -9,7 +9,8 @@ import { tapHaptic } from '@/lib/haptics'
 import { runNameLine } from '@/lib/runNameLine'
 import { useTreadmillUnit } from '@/lib/treadmillUnit'
 
-import { Cmd } from './CommandWindow'
+import { apiFetch } from '@/lib/api'
+import { Cmd, CmdLine } from './CommandWindow'
 import { FlipLine } from './FlipLine'
 import { PixelCursor } from './PixelCursor'
 import { planLines, type LinesOpts, type PlanLine } from './planLines'
@@ -152,6 +153,18 @@ export function PlanRow({ session: s, on, open, onTap, onDouble, onPress, onHold
 
   // Page 93: a line with a why (the PRESS line) opens one plain line in the command window; a tap away closes it.
   const [explain, setExplain] = useState<{ label: string; text: string; anchor: DOMRect; closing: boolean } | null>(null)
+  // Page 99: a line with a pick (B's press) opens its choices; a pick saves, the line turns to it. A tap away keeps it.
+  const [pick, setPick] = useState<{ pick: NonNullable<PlanLine['pick']>; anchor: DOMRect; closing: boolean } | null>(null)
+  const [swapped, setSwapped] = useState<string | null>(null)
+  const choose = (option: string) => {
+    const cur = pick?.pick.current
+    setPick(x => (x ? { ...x, closing: true } : x))
+    if (!cur || option === cur) return
+    void apiFetch(`/api/sessions/${s.id}/press`, { method: 'POST', body: JSON.stringify({ press: option }) })
+      .then(() => loadSummary(s))
+      .then(d => { setSwapped(option); setData({ key, data: d }) })
+      .catch(() => {})
+  }
 
   const ready = data?.key === key
   // Page 76: every speed and pace follows the treadmill unit in Settings.
@@ -164,8 +177,8 @@ export function PlanRow({ session: s, on, open, onTap, onDouble, onPress, onHold
   let flips = 0
 
   const face = (l: PlanLine, i: number, props: Record<string, unknown> = {}) => l.move ? (
-    <div key={`${l.label}-${i}`} className={`pl-lg${l.move.warm ? ' is-warm' : ''}`}>
-      <span className="nm">{l.label}{l.move.note && <span className="nt">{l.move.note}</span>}</span>
+    <div key={`${l.label}-${i}`} className={`pl-lg${l.move.warm ? ' is-warm' : ''}${l.pick && swapped === l.pick.current ? ' is-swap' : ''}`} {...props}>
+      <span className="nm">{l.label}{l.pick && <> <b className="pl-more">›</b></>}{l.move.note && <span className="nt">{l.move.note}</span>}</span>
       <span className="s">{l.move.sets}</span>
       <span className="w">{l.move.load}{l.mark === 'up' && <> <b className="up">↑</b></>}{l.mark === 'down' && <> <b className="dn">↓</b></>}</span>
     </div>
@@ -246,7 +259,11 @@ export function PlanRow({ session: s, on, open, onTap, onDouble, onPress, onHold
             <div key={`${l.label}-${i}`} className="pl-lgh">{l.label}</div>
           ) : l.back ? (
             <FlipLine key={`${l.label}-${i}`} line={{ ...l, back: l.back }} back={back} order={flips++} onTurn={() => setBack(b => !b)} face={f => face(f, i)} />
-          ) : face(l, i, l.explain ? {
+          ) : face(l, i, l.pick ? {
+            role: 'button', tabIndex: 0, 'aria-label': `${l.label}: pick`, style: { cursor: 'pointer' },
+            onClick: (e: React.MouseEvent<HTMLDivElement>) => { void tapHaptic(); setPick({ pick: l.pick!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) },
+            onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPick({ pick: l.pick!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) } },
+          } : l.explain ? {
             role: 'button', tabIndex: 0, 'aria-label': `${l.label}: why`, style: { cursor: 'pointer' },
             onClick: (e: React.MouseEvent<HTMLDivElement>) => { void tapHaptic(); setExplain({ label: l.label, text: l.explain!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) },
             onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExplain({ label: l.label, text: l.explain!, anchor: e.currentTarget.getBoundingClientRect(), closing: false }) } },
@@ -254,6 +271,16 @@ export function PlanRow({ session: s, on, open, onTap, onDouble, onPress, onHold
           {extra}
         </div>
       </Expand>
+      {pick && (
+        <Cmd anchor={pick.anchor} place="below" closing={pick.closing} onLeft={() => setPick(null)} onDismiss={() => setPick(x => (x ? { ...x, closing: true } : x))} label={`${pick.pick.title}: pick`}>
+          <div className="pl-hdr"><FlapLabel text={pick.pick.title} size="xs" tone="gold" animate={false} /><small>today</small></div>
+          {pick.pick.options.map(o => (
+            <CmdLine key={o.key} on={o.key === pick.pick.current} onClick={() => choose(o.key)} className="pl-pickopt" label={o.name}>
+              <span className="pl-pickt"><FlapLabel text={o.name} size="sm" animate={false} /><small>{o.note}</small></span>
+            </CmdLine>
+          ))}
+        </Cmd>
+      )}
       {explain && (
         <Cmd anchor={explain.anchor} place="below" closing={explain.closing} onLeft={() => setExplain(null)} onDismiss={() => setExplain(x => (x ? { ...x, closing: true } : x))} label={`${explain.label}: why`}>
           <div className="pl-hdr"><FlapLabel text={explain.label} size="xs" tone="gold" animate={false} /></div>

@@ -189,12 +189,12 @@ export function gapWords(days: number): string {
 
 // ─── The week's first strength session ───────────────────────
 
-export const BLOCK_ZERO_DAYS = ['A', 'B', 'C'] as const
+export const BLOCK_ZERO_DAYS = ['A', 'B'] as const
 
 /**
  * Which Block Zero strength day goes in first when a week has none: the one
  * whose main lifts the model already has weights for (from the block or his
- * history), then the one he has done most, then A, B, C order. The why is
+ * history), then the one he has done most, then A, B order. The why is
  * plain and quotes only the time off it computed.
  */
 export function firstStrengthPick(model: AthleteModel, blockWeek: number): { label: string; why: string } {

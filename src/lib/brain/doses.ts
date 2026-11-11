@@ -21,6 +21,7 @@ import { workingWeight, RUNG_LADDER } from './athleteModel'
 import { CHIN_LADDER, LADDERS, awaySwap, backDaySwap, chinUpDose, choosePress, chooseSlot, ravenSwap, repsDose, slotOf, startFromEasier, type MainSlot, type RepsLast } from './progression'
 import { LANDMINE_PRESS, isLandmine, isPower, landminePower, landmineStage, landmineStrength, type LandmineLast } from '../landmine'
 import type { ReadinessState } from './readiness'
+import { TB_WAVE_LIFTS } from './tbWave'
 import type { AthleteModel, LiftEstimate } from './types'
 import { CONTINUOUS_FROM_SEC, gapWords, monthOf } from './history'
 import { piecesFor, totalOf, type HardPlan } from './hardRuns'
@@ -136,6 +137,26 @@ export interface StrengthIn {
   landmineSessions?: number
   /** Rebuild Phase 4: reps-only moves (chin-ups, dips, Nordic, Copenhagen, tibialis): the last session's reps. */
   repsLast?: Readonly<Record<string, RepsLast>>
+  /** Page 99: Tactical Barbell in Block Zero (lib/brain/tbWave.ts). */
+  tb?: TbIn | null
+}
+
+/**
+ * Page 99: the day's place on the TB wave. In the lead-in every big lift finds
+ * its weight in sets of 5; on the wave a lift with a max gets max x the week's
+ * %, the wave's sets and reps. `swap` turns the template's slot into the day's
+ * lift (B's hinge by the wave, the press he picked).
+ */
+export interface TbIn {
+  leadIn: boolean
+  waveWeek: number | null
+  pct: number | null
+  loadKg: Readonly<Record<string, number | null>>
+  sets: number
+  reps: number
+  swap: Readonly<Record<string, { exerciseId: string; label: string }>>
+  /** B on the wave: the press picked, and each press's weight today (null: it finds its weight). */
+  press?: { pick: 'landmine' | 'overhead'; kg: { landmine: number | null; overhead: number | null } } | null
 }
 
 export interface AccessoryIn {
@@ -200,7 +221,12 @@ export interface StrengthDose {
   holdSets: number
   sets: number
   why: string[]
+  /** Page 99: where the day stands on the TB wave (the logbook's Main head reads it). */
+  tb?: { leadIn: boolean; waveWeek: number | null; pct: number | null; press?: TbIn['press'] }
 }
+
+/** Page 99: the lead-in's (and a new lift's) find-your-weight note: the set of 5 with about 2 left sets its max. */
+export const TB_FIND_NOTE = 'Find your weight: sets of 5, heavier each set while it feels easy. Stop adding at the first set of 5 with about 2 left. That set sets your max.'
 
 /**
  * The find-your-weight note (rebuild Phase 4): the ladder keeps climbing while
@@ -295,8 +321,9 @@ function named(why: string | null, id: string, label: string): string | null {
   return why == null ? null : why.replace(id, label)
 }
 
-function blockZeroLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCeiling: Level): LiftDose {
-  const slot = slotOf(tex.exerciseId)
+function blockZeroLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCeiling: Level, tb = false): LiftDose {
+  // Page 99: the TB lifts are his picks, never swapped down a ladder.
+  const slot = tb ? null : slotOf(tex.exerciseId)
   let exerciseId = tex.exerciseId
   let label = tex.label
   let note: string | null = tex.notes ?? null
@@ -339,7 +366,7 @@ function blockZeroLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCe
     const level = minLevel('HOLD', sessionCeiling)
     return {
       exerciseId, label, slot, sets: n, reps, targetRir: 3, weightKg: first, workUp: true, setWeightsKg: weights, change: 'start', fromKg: null, level, u, state: lift?.state ?? 'GUESS',
-      note: `${FIND_WEIGHT_NOTE(reps)} ${note ?? ''}`.trim(),
+      note: `${tb ? TB_FIND_NOTE : FIND_WEIGHT_NOTE(reps)} ${note ?? ''}`.trim(),
       why: whys.join(' ') || null,
     }
   }
@@ -408,7 +435,7 @@ export function ageingU(lift: LiftEstimate | undefined): number {
   return Math.max(0, Math.round((lift.u - base) * 100) / 100)
 }
 
-function fighterLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCeiling: Level): LiftDose {
+function fighterLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCeiling: Level, tb = false): LiftDose {
   const f = inp.fighter!
   let exerciseId = tex.exerciseId
   let label = tex.label
@@ -426,7 +453,9 @@ function fighterLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, sessionCeil
   if (sig.why && level === sig.level) whys.push(named(sig.why, lift?.exerciseId ?? '', label) as string)
   // The wave carries Fighter progression; time away trims the load a little (≤ 10% at u = 0.4).
   // One ease, never two (the plan's rule): a rough (AMBER) morning already takes a set off, so time away doesn't also trim the load.
-  const trim = age > 0 && ctx.state !== 'AMBER' ? age : 0
+  // Page 99: on the TB wave only real time away (2 weeks or more) trims it; the wave is the plan.
+  const timeOff = !tb || (lift?.lastDay != null && ctx.day - lift.lastDay >= 14)
+  const trim = age > 0 && ctx.state !== 'AMBER' && timeOff ? age : 0
   let weight = base != null ? base * (1 - 0.25 * trim) : null
   let sets = f.sets
   let change: LoadChange = trim > 0 ? 'decrease' : 'hold'
@@ -531,6 +560,25 @@ function landmineLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, ceiling: L
   }
 }
 
+/**
+ * Page 99: a lift on a TB day. A lift with a max on the wave: the Fighter rule
+ * (max x %, the wave's sets and reps, readiness trims). Otherwise it finds its
+ * weight (sets of 5), and that sets its max. The punch keeps the landmine's
+ * power rule. Away, or a back or raven swap: the Block Zero rule takes it.
+ */
+function tbLift(ctx: DoseCtx, inp: StrengthIn, tex: MainLiftIn, ceiling: Level): LiftDose {
+  const tb = inp.tb!
+  const sw = tb.swap[tex.exerciseId]
+  // A swapped lift drops the slot's own note (the landmine press's "each arm" is not the overhead press's).
+  const t = sw && sw.exerciseId !== tex.exerciseId ? { ...tex, exerciseId: sw.exerciseId, label: sw.label, notes: null } : tex
+  const swapped = ctx.away || (ravenSwap(t.exerciseId, ctx.openPlans) ?? backDaySwap(t.exerciseId, ctx.backToday)) != null
+  if (!TB_WAVE_LIFTS.has(t.exerciseId)) return isLandmine(t.exerciseId) && !swapped ? landmineLift(ctx, inp, t, ceiling, null) : blockZeroLift(ctx, inp, t, ceiling, true)
+  if (!tb.leadIn && tb.loadKg[t.exerciseId] != null && !swapped) return fighterLift(ctx, { ...inp, fighter: { loadKg: tb.loadKg, sets: tb.sets, reps: tb.reps } }, t, ceiling, true)
+  const find = { ...t, reps: 5 }
+  if (isLandmine(t.exerciseId) && !swapped) return landmineLift(ctx, inp, find, ceiling, null)
+  return blockZeroLift(ctx, inp, find, ceiling, true)
+}
+
 /** Chin-ups (the built ladder) and the reps-only moves add reps; dips give way to the close-grip press on a sore-shoulder or rough day. */
 function armOrAccessory(ctx: DoseCtx, inp: StrengthIn, a: AccessoryIn, ceiling: Level, accessorySets: number | null): AccessoryDose | null {
   const sets = accessorySets != null ? Math.min(a.sets, accessorySets) : a.sets
@@ -554,12 +602,13 @@ export function strengthDose(ctx: DoseCtx, inp: StrengthIn): StrengthDose {
   }
   const own = ownHold(ctx.model, 'strength')
   const ceiling = own ? minLevel(ceilingFor(ctx), 'HOLD') : ceilingFor(ctx)
-  const lifts = inp.main.map(tex => (inp.kind === 'fighter' && inp.fighter ? fighterLift(ctx, inp, tex, ceiling) : mainLift(ctx, inp, tex, ceiling)))
+  const lifts = inp.main.map(tex => (inp.tb ? tbLift(ctx, inp, tex, ceiling) : inp.kind === 'fighter' && inp.fighter ? fighterLift(ctx, inp, tex, ceiling) : mainLift(ctx, inp, tex, ceiling)))
   // HOLD sets: what the rules give with readiness and signals set aside (the replay's "plain" dose).
   const holdSets = inp.main.reduce((n, _tex, i) => {
     const l = lifts[i]
     if (l.workUp) return n + l.sets
     if (inp.kind === 'fighter' && inp.fighter) return n + inp.fighter.sets
+    if (inp.tb && !inp.tb.leadIn && inp.tb.loadKg[l.exerciseId] != null) return n + inp.tb.sets
     if (isLandmine(l.exerciseId)) return n + LANDMINE_SETS
     return n + liftTargets(ctx.model.lifts[l.exerciseId]?.u ?? 1).sets
   }, 0)
@@ -569,9 +618,11 @@ export function strengthDose(ctx: DoseCtx, inp: StrengthIn): StrengthDose {
   const levelOf = big.length ? big : lifts
   const level = levelOf.reduce<Level>((m, l) => minLevel(m, l.level), levelOf[0]?.level ?? 'HOLD')
   const why = [ctx.state === 'AMBER' || ctx.state === 'RED' ? ctx.stateWhy : null, own && !recoverOrLess(ceiling) ? own.why : null, ...lifts.map(l => l.why)].filter((w): w is string => !!w)
-  const accessorySets = recoverOrLess(ceiling) ? 1 : null
+  // Page 99: the lead-in's extras and core are 2 sets.
+  const accessorySets = recoverOrLess(ceiling) ? 1 : inp.tb?.leadIn ? 2 : null
   const accessories = (inp.accessories ?? []).map(a => armOrAccessory(ctx, inp, a, ceiling, accessorySets)).filter((a): a is AccessoryDose => a != null)
-  return { kind: 'strength', level, lifts, accessorySets, ...(accessories.length ? { accessories } : {}), holdSets, sets, why }
+  const tbOut = inp.tb ? { tb: { leadIn: inp.tb.leadIn, waveWeek: inp.tb.waveWeek, pct: inp.tb.pct, ...(inp.tb.press ? { press: inp.tb.press } : {}) } } : {}
+  return { kind: 'strength', level, lifts, accessorySets, ...(accessories.length ? { accessories } : {}), holdSets, sets, why, ...tbOut }
 }
 
 // ─── Run ─────────────────────────────────────────────────────
@@ -958,7 +1009,8 @@ export function templateFromDose<T extends { exercises: Array<{ exerciseId: stri
       const rest = tex.sets.find(s => !s.isWarmup)?.restSec ?? 150
       const sets = Array.from({ length: l.sets }, (_, i) => ({ isWarmup: false, targetReps: l.reps, restSec: rest, suggestedWeightKg: l.workUp ? (l.setWeightsKg?.[i] ?? l.weightKg) : l.weightKg }))
       const what = l.workUp ? null : `${l.sets} × ${l.reps}, ${leftWords(l.targetRir)}. Never to failure.`
-      return { ...tex, exerciseId: l.exerciseId, label: l.label, sets, notes: [l.why, what, l.note].filter(Boolean).join(' '), ramp: !isLandmine(l.exerciseId) }
+      // A work-up from the bar is its own warm-up (page 99): no ramp on top of it.
+      return { ...tex, exerciseId: l.exerciseId, label: l.label, sets, notes: [l.why, what, l.note].filter(Boolean).join(' '), ramp: !isLandmine(l.exerciseId) && !l.workUp }
     }
     if (tex.section === 'accessory' || tex.section === 'core') {
       const warm = tex.sets.filter(s => s.isWarmup)

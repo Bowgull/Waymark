@@ -117,6 +117,9 @@ export interface MoveResult {
   report?: ReadinessReport | null
 }
 
+/** Page 99 (2026-11-11): the move to The Campaign is off; TB's wave carries the block on. */
+export const MOVE_ON = false
+
 /**
  * The nightly step for the block (before the re-plan). Never more than one
  * move a night; nothing in Fighter blocks yet (their parts come with §10).
@@ -144,6 +147,8 @@ export async function runBlockMove(db: DB, today: number, nowSec: number): Promi
 
   const report = await readinessOf(db, block, today)
   if (m && m.undoneAt == null && !m.move.applied) return { action: 'waiting', changes: 0, report }
+  // Page 99: the lead-in runs straight into the Tactical Barbell wave, so the coach no longer sets a move.
+  if (!MOVE_ON) return { action: runway ? 'runway' : 'none', changes: 0, report }
   // After an UNDO ("stay in Block Zero"), the coach looks again a week later.
   if (m && m.undoneAt != null && today < Math.floor(m.undoneAt / 86400) + MOVE_AGAIN_AFTER_DAYS) return { action: runway ? 'runway' : 'none', changes: 0, report }
   if (!report.ready) return { action: runway ? 'runway' : 'none', changes: 0, report }

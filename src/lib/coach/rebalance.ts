@@ -32,7 +32,6 @@
 //       session drops a set (only when nothing else changed).
 
 import { getRunWalkWeek, runWalkTotalSec } from '../blockZero/running'
-import { getStrengthWeekTarget } from '../blockZero/strength'
 import { getStrengthTemplate } from '../strengthTemplates'
 import { backOnly, dayToken, letterOf, nameToken, roundsWord, setsReps } from './changes'
 import { checkSessionChange, type PlacementContext } from './placement'
@@ -180,10 +179,8 @@ export function mainLiftsLine(s: Pick<SessionLike, 'label' | 'epochDay'>, blockT
 
 /** Main-lift working sets and reps for a strength session this week. */
 export function strengthShape(s: Pick<SessionLike, 'label' | 'epochDay'>, blockType: 'fighter' | 'block_zero', week: number): { sets: number; reps: number } {
-  if (blockType === 'block_zero') {
-    const t = getStrengthWeekTarget(week)
-    return { sets: t.mainSets, reps: t.reps }
-  }
+  // Page 99: Tactical Barbell's 3x5.
+  if (blockType === 'block_zero') return { sets: 3, reps: 5 }
   const t = getStrengthTemplate(dowOf(s.epochDay), week, 'fighter', s.label ?? null)
   const main = t.exercises.find(e => e.section === 'main')
   const work = (main?.sets ?? []).filter(x => !x.isWarmup)

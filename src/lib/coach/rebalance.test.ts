@@ -44,11 +44,11 @@ const tueWeek = [...wk, bagTue]
 const tue = rebalance({ action: { kind: 'swap', session: bagTue, replaced: wk.find(s => s.id === 'foundation_run-1') ?? null, reason: 'rough_day' }, week: tueWeek, ctx: bzCtx(MON + 1, tueWeek), held: new Set() })
 assert(tue.length === 1, `one change only (${tue.map(c => c.rule).join(',')})`)
 assert(tue[0].sessionId === 'strength-2' && tue[0].kind === 'ease' && tue[0].ease?.kind === 'one_set', "Wednesday's Strength B eases by one set")
-assert(tue[0].show.before === '3×8' && tue[0].show.after === '2×8' && tue[0].show.logBefore === 'B 3×8', 'flaps: 3×8 -> 2×8, the log reads B 3×8')
+assert(tue[0].show.before === '3×5' && tue[0].show.after === '2×5' && tue[0].show.logBefore === 'B 3×5', 'flaps: 3×5 -> 2×5, the log reads B 3×5 (page 99: TB)')
 assert(renderWhy(tue[0].why, MON + 2) === "Bag work yesterday on a rough day; one set less so Thursday's run stays easy.", `the why, read on Wednesday: ${renderWhy(tue[0].why, MON + 2)}`)
 assert(renderWhy(tue[0].why, MON + 2, 'log') === "Bag work yesterday on a rough day; one set less so Thursday's run stays easy.", 'the week log reads it against Wednesday too')
-assert(tue[0].detail === 'Landmine punch, block pull, bench press and landmine reverse lunge, same weights.', `detail names the lifts (page 93's Strength B): ${tue[0].detail}`)
-assert(renderWhy(tue[0].put.line, MON + 2) === 'Strength B is 3×8 again.' && tue[0].put.dim === 'The coach leaves it as you set it this week.', 'put back: Strength B is 3×8 again')
+assert(tue[0].detail === 'Landmine punch, RDL and landmine press, same weights.', `detail names the lifts (page 99's Strength B): ${tue[0].detail}`)
+assert(renderWhy(tue[0].put.line, MON + 2) === 'Strength B is 3×5 again.' && tue[0].put.dim === 'The coach leaves it as you set it this week.', 'put back: Strength B is 3×5 again')
 assert(houseVoice(renderWhy(tue[0].why, MON + 2)), 'house voice, no jargon')
 
 // No reason: R5, three hard days in a row (lift, bag, lift), the third one eases.
@@ -91,9 +91,9 @@ const missed = missedFix(
 assert(missed.kind === 'merge' && missed.targetSessionId === 'a-next', "missed C: Monday's Strength A takes its main lifts")
 if (missed.kind === 'merge') {
   assert(missed.why === "Strength C missed. Its main lifts move into Monday's Strength A; accessories dropped.", `why: ${missed.why}`)
-  assert(missed.detail === 'Row and reverse lunge, 2×8 each. Monday runs about 75 min, not 60.', `detail: ${missed.detail}`)
+  assert(missed.detail === 'Landmine punch, RDL and landmine press, 2×5 each. Monday runs about 80 min, not 60.', `detail (an older C reads as B, page 99): ${missed.detail}`)
   assert(missed.show.before === 'FRI C' && missed.show.after === 'INTO MON A', 'flaps: FRI C -> INTO MON A')
-  assert(missed.merged.exerciseIds.includes('ex-reverse-lunge') && missed.merged.sets === 2, 'the merged lifts: row and reverse lunge, 2 sets each')
+  assert(missed.merged.exerciseIds.includes('ex-rdl') && missed.merged.sets === 2, 'the merged lifts: 2 sets each')
   assert(missed.put.line === 'Monday is Strength A as written.' && missed.put.dim === 'Strength C stays missed. Nothing else moves.', 'put back lines')
 }
 const pending = missedFix({ id: 'c', type: 'strength', label: 'Strength C', epochDay: MON + 4, timeSlot: 'am', status: 'missed' }, [], { blockType: 'block_zero', weekNumber: 4, nextWeekNumber: 5, nextStrength: { epochDay: nextMon, label: 'Strength A' } })
