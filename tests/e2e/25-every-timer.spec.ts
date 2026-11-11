@@ -15,6 +15,10 @@ test('Strength rest: RESTING AFTER the lift, REST over the clock, NEXT n OF m un
   // Between two sets of one lift (a one-set warm-up move rests with no count: the count is the lift's sets).
   await toSetWithAnother(page)
   await page.getByRole('button', { name: 'LOG SET', exact: true }).tap()
+  // A working set asks how many reps were left (one tap, the rest starts); page 99's A gets there after its one warm-up set.
+  const effort = page.getByRole('group', { name: 'Reps left' })
+  await expect(effort.or(page.getByText('RESTING AFTER')).first()).toBeVisible()
+  if (await effort.isVisible()) await effort.getByRole('button').nth(1).tap()
   await expect(page.getByText('RESTING AFTER')).toBeVisible()
   await expect(page.getByRole('img', { name: 'REST', exact: true })).toBeVisible()
   await expect(page.getByRole('timer')).toBeVisible()
