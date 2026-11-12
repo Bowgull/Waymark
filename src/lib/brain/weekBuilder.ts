@@ -122,6 +122,11 @@ export interface WeekBuildIn {
   /** He runs 10 minutes straight (hard runs need it, from week 4). */
   runsReady: boolean
   /**
+   * The block's first day, when it falls in this week (0 = Sunday). Day 1 is an
+   * easy win: no hard session on it where the week allows (2026-11-12).
+   */
+  startDow?: number | null
+  /**
    * For the Bag Conditioning pick (lib/coach/bagConditioning pickConditioning): his
    * level (default from the plan week), Settings switches, the last workout and his steps.
    */
@@ -212,7 +217,7 @@ function check(p: readonly Placed[], cap: number, prevHard: readonly [boolean, b
 }
 
 /** Soft costs (lower is better): spread hard days, lifts apart, hard runs apart, long run at the weekend, Sunday rest. */
-function cost(p: readonly Placed[]): number {
+function cost(p: readonly Placed[], easyIdx: number | null): number {
   let c = 0
   const on = (i: number) => p.filter(x => x.idx === i)
   const hardDay = (i: number) => on(i).some(x => x.hard)
@@ -228,13 +233,12 @@ function cost(p: readonly Placed[]): number {
   for (const r of p.filter(x => x.role === 'hard_run')) if (p.some(x => x.role === 'class' && Math.abs(hoursFrom(x, r)) < 24)) c += 0.6
   // An easy run the morning of an evening class pairs well.
   for (const r of p.filter(x => (x.role === 'run' || x.role === 'long') && !x.kept)) if (p.some(x => x.role === 'class' && x.idx === r.idx && x.slot === 'pm')) c -= 0.2
-  // The week opens with Strength A where it can (page 64: day 1 is Strength A), now that the
-  // first days also hold two runs (2026-10-26).
-  const fresh = p.filter(x => !x.kept && x.idx >= 0)
-  if (fresh.length) {
-    const first = Math.min(...fresh.map(x => x.idx))
-    if (!fresh.some(x => x.idx === first && x.role === 'lift' && x.label === LIFT_LABELS[0])) c += 0.4
-  }
+  // A block's day 1 is an easy win (2026-11-12): Foundation and an easy run, the first lift after it.
+  // Page 64 had a mid-week start open on Foundation and a run-walk; "always lift first" was a misread.
+  if (easyIdx != null && p.some(x => x.idx === easyIdx && !x.kept && x.hard)) c += 2
+  // Strength A is the week's first lift (A, then B).
+  const lifts2 = p.filter(x => x.role === 'lift' && x.idx >= 0).sort((a, b) => a.idx - b.idx)
+  if (lifts2.length > 1 && lifts2[0].label !== LIFT_LABELS[0]) c += 0.4
   // Earlier days first among equals (a stable pick).
   for (const x of p) if (!x.kept) c += x.idx * 0.001
   return c
@@ -261,7 +265,7 @@ function slotsFor(u: Unit, here: readonly Placed[], doubledLeft: number): Array<
 const NODE_BUDGET = 8000
 
 /** The best placement of `units` on the open days, or null when none keeps the rules. */
-function search(units: Unit[], kept: Placed[], open: ReadonlySet<number>, cap: number, prevHard: readonly [boolean, boolean], maxDays: number, doubled: number): Placed[] | null {
+function search(units: Unit[], kept: Placed[], open: ReadonlySet<number>, cap: number, prevHard: readonly [boolean, boolean], maxDays: number, doubled: number, easyIdx: number | null = null): Placed[] | null {
   let best: Placed[] | null = null
   let bestCost = Infinity
   const placed: Placed[] = [...kept]
@@ -271,7 +275,7 @@ function search(units: Unit[], kept: Placed[], open: ReadonlySet<number>, cap: n
     if (++nodes > NODE_BUDGET) return
     if (k === units.length) {
       if (check(placed, cap, prevHard, maxDays).length > 0) return
-      const c = cost(placed)
+      const c = cost(placed, easyIdx)
       if (c < bestCost) { bestCost = c; best = placed.map(x => ({ ...x })) }
       return
     }
@@ -335,6 +339,7 @@ export function buildWeek(inp: WeekBuildIn): WeekBuild {
   const cap = hardCapFor(inp.step)
   const open = new Set(inp.open ?? ORDER)
   const prevHard = inp.prevHard ?? [false, false]
+  const easyIdx = inp.startDow == null ? null : idxOf(inp.startDow)
   const kept: Placed[] = (inp.kept ?? []).map(k => {
     const role = roleOf(k) ?? 'run'
     const lift = role === 'lift'
@@ -366,7 +371,10 @@ export function buildWeek(inp: WeekBuildIn): WeekBuild {
   })
   const classesThisWeek = have('class') + classes.length
 
-  const liftsLeft = LIFT_LABELS.filter(l => !kept.some(x => x.role === 'lift' && x.label === l)).slice(0, Math.max(0, LIFT_LABELS.length - have('lift')))
+  // A block that starts late in the week (4 days or fewer left) lifts once that week: Strength A
+  // after the easy day 1, B from next week. Two lifts would sit back to back or land on Sunday's rest.
+  const shortStart = inp.startDow != null && idxOf(inp.startDow) >= 3
+  const liftsLeft = LIFT_LABELS.filter(l => !kept.some(x => x.role === 'lift' && x.label === l)).slice(0, Math.max(0, (shortStart ? 1 : LIFT_LABELS.length) - have('lift')))
   const bagWork = inp.step >= 5 ? Math.max(0, 1 - have('bag')) : 0
   const condWanted = classesThisWeek > 0 ? 0 : inp.step >= 6 ? 2 : 1
   let bagCond = Math.max(0, condWanted - have('bag_cond'))
@@ -404,7 +412,7 @@ export function buildWeek(inp: WeekBuildIn): WeekBuild {
     return units
   }
   const base = [...before, ...kept, ...classes]
-  let placed = search(make(), base, open, cap, prevHard, shape.days, doubled)
+  let placed = search(make(), base, open, cap, prevHard, shape.days, doubled, easyIdx)
   // The ease ladder, least important hard session first.
   const ladder: Array<() => string | null> = [
     () => (bagWork > 0 && !bagTechnique ? (bagTechnique = true, 'Bag Work stays technique') : null),
@@ -423,14 +431,14 @@ export function buildWeek(inp: WeekBuildIn): WeekBuild {
     const what = ease()
     if (!what) continue
     eased.push(what)
-    placed = search(make(), base, open, cap, prevHard, shape.days, doubled)
+    placed = search(make(), base, open, cap, prevHard, shape.days, doubled, easyIdx)
   }
   // Still nothing (too many classes for the cap, say): the rules loosened, nothing dropped but Bag Conditioning.
   let broken: string[] = []
   if (!placed) {
     for (const loose of [{ cap: 7, days: 7 }, { cap: 7, days: 7, noCond: true }]) {
       if ('noCond' in loose && bagCond > 0) { bagCond = 0; eased.push('no Bag Conditioning') }
-      placed = search(make(), base, open, loose.cap, [false, false], loose.days, doubled)
+      placed = search(make(), base, open, loose.cap, [false, false], loose.days, doubled, easyIdx)
       if (placed) break
     }
     // Even loosened nothing fits: the lifts are never dropped quietly. Each goes on the open day

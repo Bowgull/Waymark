@@ -136,3 +136,23 @@ console.log('ok: the day ramp')
   assert.equal(none.entries.length, 0, 'no open day: nothing placed')
   console.log('ok: lifts kept when nothing fits')
 }
+
+// Day 1 is an easy win (2026-11-12): a block that starts on a Thursday or a Monday opens on no hard
+// session, the first lift comes after it, and it is Strength A.
+{
+  const hardOn = (b: ReturnType<typeof buildWeek>, dow: number) => b.entries.filter(e => e.dow === dow && (e.type === 'strength' || e.role === 'hard_run' || e.type === 'mt_class'))
+  for (const [startDow, open] of [[4, [4, 5, 6, 0]], [1, [1, 2, 3, 4, 5, 6, 0]]] as const) {
+    const b = buildWeek({ week: 1, step: 4, classDays: [], open: [...open], runsReady: true, startDow })
+    assert.deepEqual(hardOn(b, startDow), [], `start dow ${startDow}: day 1 has nothing hard`)
+    assert.ok(b.entries.some(e => e.dow === startDow), `start dow ${startDow}: day 1 still has something (Foundation or an easy run)`)
+    const lifts = b.entries.filter(e => e.type === 'strength').sort((x, y) => ((x.dow + 6) % 7) - ((y.dow + 6) % 7))
+    assert.ok(lifts.length > 0, `start dow ${startDow}: lifts placed`)
+    assert.equal(lifts[0].label, 'Strength A', `start dow ${startDow}: the first lift is Strength A`)
+  }
+  const late = buildWeek({ week: 1, step: 4, classDays: [], open: [4, 5, 6, 0], runsReady: true, startDow: 4 })
+  assert.deepEqual(late.entries.filter(e => e.type === 'strength').map(e => e.label), ['Strength A'], 'a Thursday start lifts once that week: A, never back to back')
+  // A week that isn't the block's first has no day-1 rule.
+  const any = buildWeek({ week: 2, step: 4, classDays: [], runsReady: true })
+  assert.ok(any.entries.some(e => e.type === 'strength'))
+  console.log('ok: day 1 is an easy win, Strength A the first lift')
+}

@@ -71,7 +71,7 @@ try {
   assert.equal(left.length, 0, 'nothing turned missed')
 
   // He restarts Block Zero in Program on Thursday (start today): a fresh block,
-  // its first week from Thursday on, Strength A its first lift, TB's lead-in from here.
+  // its first week from Thursday on, day 1 an easy win, Strength A its first lift, TB's lead-in from here.
   const fresh = await call<{ id: string }>('2026-11-12', 'POST', '/api/blocks/block-zero', { today: '2026-11-12' })
   await call('2026-11-12', 'POST', '/api/weeks/generate', { blockId: fresh.id, weekNumber: 1, startDate: '2026-11-09', today: '2026-11-12' })
   const freshPlans = new Set((await db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, fresh.id))).map(r => r.id))
@@ -81,12 +81,14 @@ try {
   const lifts = after.filter(s => s.type === 'strength').sort((a, b) => (a.scheduledDate ?? 0) - (b.scheduledDate ?? 0))
   assert.ok(lifts.length > 0, 'the fresh week has a lift')
   assert.equal(lifts[0].label, 'Strength A', 'the first lift is Strength A')
+  assert.ok((lifts[0].scheduledDate ?? 0) > THU, 'no lift on day 1')
+  assert.equal(lifts.length, 1, 'a Thursday start lifts once that week (B from Monday)')
   const p2 = await call<{ block: { id: string }; week: { sessions: Array<{ scheduledDate: number | null }> } | null }>('2026-11-12', 'GET', '/api/program?date=2026-11-12')
   assert.equal(p2.block.id, fresh.id)
   assert.ok((p2.week?.sessions.length ?? 0) > 0, 'Program shows the fresh week')
   const preview = await call<{ brain: { why: string[] } }>('2026-11-12', 'GET', `/api/sessions/${lifts[0].id}/strength-preview`)
   assert.ok(preview.brain.why.some(w => /work up/.test(w)) || JSON.stringify(preview).includes('Find your weight'), 'Strength A finds its weights: the TB lead-in')
-  console.log(`ok: a Thursday restart plans from Thursday, first lift Strength A (${lifts.map(l => `${l.scheduledDate! - MON}:${l.label}`).join(', ')})`)
+  console.log(`ok: a Thursday restart plans from Thursday, day 1 easy, first lift Strength A (${lifts.map(l => `${l.scheduledDate! - MON}:${l.label}`).join(', ')})`)
 } finally {
   uninstallClock()
 }

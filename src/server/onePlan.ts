@@ -8,7 +8,7 @@
 // and next quietly (no screen, no rune: he made the change). Sessions he did,
 // started, added or moved himself, and earlier days stay as they are.
 
-import { and, eq, gte, inArray, lte } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm'
 import { athleteEstimates, dailyLogs, sessions, settings, userProfile, weekPlans } from '../db/schema'
 import type { createDB } from '../db/client'
 import { getBlockZeroWeekTemplate } from '../lib/blockZero/weekPlan'
@@ -180,8 +180,11 @@ export async function weekShapeFor(db: DB, a: ShapeArgs, o: { store?: boolean } 
   const stored = parseShape(plan?.shape)
   if (stored && stored.monday === a.monday) return stored
   if (fixedWeekForTests) return fixedWeek(a)
+  // Only this plan's own sessions make it a pre-one-plan week: an ended block's rows in the same
+  // calendar week (a restart mid-week) don't (2026-11-12: a Thursday restart read the old template).
+  const ownPlans = (await db.select({ id: weekPlans.id }).from(weekPlans).where(eq(weekPlans.blockId, a.blockId))).map(r => r.id)
   const made = await db.select({ id: sessions.id }).from(sessions)
-    .where(and(gte(sessions.scheduledDate, a.monday), lte(sessions.scheduledDate, a.monday + 6), eq(sessions.source, 'template'))).limit(1)
+    .where(and(gte(sessions.scheduledDate, a.monday), lte(sessions.scheduledDate, a.monday + 6), eq(sessions.source, 'template'), ownPlans.length ? or(isNull(sessions.weekPlanId), inArray(sessions.weekPlanId, ownPlans)) : isNull(sessions.weekPlanId))).limit(1)
   if (made.length > 0) {
     const legacy = await legacyWeek(db, a)
     if (store) await db.update(weekPlans).set({ shapeJson: JSON.stringify(legacy) }).where(eq(weekPlans.id, a.planId))
@@ -268,6 +271,7 @@ async function storeBuild(db: DB, a: ShapeArgs, pick: { step: DayStep; change: S
   const ready = await runsReady(db)
   const build = buildWeek({
     week: a.week, step: pick.step, classDays: cls.days, classCap: cls.cap, open: where.open, kept: where.kept,
+    startDow: a.blockStart >= a.monday && a.blockStart <= a.monday + 6 ? dowOf(a.blockStart) : null,
     prevHard: weekend.hard, prevLifts: weekend.lifts, runsReady: ready,
     conditioning: { switches: (st?.techniques ?? 'boxing,kicks,defensive').split(','), lastTemplateId: hist.lastTemplateId, history: hist.steps },
   })

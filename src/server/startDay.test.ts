@@ -31,13 +31,17 @@ const cur = await currentBlockWeek(db, TUE)
 assert.ok(cur && !cur.tw.leadIn && cur.tw.week === 1, 'the start week is week 1, no lead-in')
 console.log('ok: nothing planned before the start')
 
-// BEGIN prepares the start's week: Thu to Sun, day 1 Strength A, nothing optional.
+// BEGIN prepares the start's week: Thu to Sun, nothing optional. Day 1 is an easy win (2026-11-12):
+// no lift on it; the first lift after it is Strength A.
 await prepareWeek(db, '', { blockId: block.id, monday: MON, todayDay: TUE, nowSec, useAi: false })
 const rows = await db.select().from(sessions)
 assert.ok(rows.length > 0, 'the start week has sessions')
 assert.ok(rows.every(r => (r.scheduledDate as number) >= THU && (r.scheduledDate as number) < NEXT), 'all from Thursday to Sunday')
 assert.ok(rows.every(r => !isLeadInContext(r.contextJson)), 'nothing stamped lead-in')
-assert.ok(rows.some(r => r.scheduledDate === THU && r.label === 'Strength A'), 'day 1 (Thu) is Strength A')
+assert.ok(rows.some(r => r.scheduledDate === THU), 'day 1 (Thu) has its sessions')
+assert.ok(!rows.some(r => r.scheduledDate === THU && r.type === 'strength'), 'day 1 (Thu) has no lift')
+const firstLift = rows.filter(r => r.type === 'strength').sort((a, b) => (a.scheduledDate as number) - (b.scheduledDate as number))[0]
+assert.equal(firstLift?.label, 'Strength A', 'the first lift is Strength A')
 assert.ok(await latestWeekPlan(db, block.id, 1), 'the start week is week 1 (Program sees Block Zero begun)')
 console.log('ok: the start week is week 1 from Thursday')
 
@@ -57,7 +61,7 @@ console.log('ok: CHANGE DAY moves the start and its sessions')
 const now = await moveBlockZeroStart(db, block.id, TUE, TUE)
 assert.ok(now.ok, 'today is a choice')
 const today = await generateDaySessions(db, TUE, TUE, nowSec)
-assert.ok(today.length > 0 && today.some(r => r.label === 'Strength A'), 'today gets day 1 at once (Strength A)')
+assert.ok(today.length > 0 && !today.some(r => r.type === 'strength'), 'today gets day 1 at once (an easy day, no lift)')
 // Approved 2026-10-21: the day has come but nothing is started: it can still move.
 const WED = TUE + 1
 const later = await moveBlockZeroStart(db, block.id, THU, WED)

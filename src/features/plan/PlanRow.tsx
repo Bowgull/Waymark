@@ -104,16 +104,24 @@ export function PlanRow({ session: s, on, open, onTap, onDouble, onPress, onHold
 
   // The lines, read once the row first opens (the summary's own endpoints).
   const key = `${s.id}:${s.status}`
-  const [data, setData] = useState<{ key: string; data: SummaryData | null } | null>(null)
+  const [data, setData] = useState<{ key: string; data: SummaryData | null; failed?: boolean } | null>(null)
+  // A load that fails (a dropped connection) tries again, a few times, and again on the next open (2026-11-12).
+  const [tries, setTries] = useState(0)
   const wanted = open || data != null
   useEffect(() => {
-    if (!wanted || data?.key === key) return
+    if (!wanted || (data?.key === key && !data.failed)) return
+    if (data?.failed && data.key === key && !open) return
     let cancelled = false
-    loadSummary(s).then(d => { if (!cancelled) setData({ key, data: d }) }).catch(() => { if (!cancelled) setData({ key, data: null }) })
-    return () => { cancelled = true }
+    let retry: number | null = null
+    loadSummary(s).then(d => { if (!cancelled) setData({ key, data: d }) }).catch(() => {
+      if (cancelled) return
+      setData({ key, data: null, failed: true })
+      if (tries < 3) retry = window.setTimeout(() => setTries(t => t + 1), 1500 * (tries + 1))
+    })
+    return () => { cancelled = true; if (retry != null) window.clearTimeout(retry) }
     // The key covers the fields the fetch reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wanted, key])
+  }, [wanted, key, tries, open])
   useEffect(() => () => {
     if (hold.current) window.clearTimeout(hold.current.t)
     if (tapWait.current != null) window.clearTimeout(tapWait.current)

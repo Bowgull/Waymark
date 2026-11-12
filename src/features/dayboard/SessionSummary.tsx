@@ -229,16 +229,23 @@ function Line({ line }: { line: DiffLine }) {
 export function SessionSummary({ session, weekNumber, onReplace, onSkip, variant = 'program', actions, onLearned }: SessionSummaryProps) {
   const key = `${session.id}:${session.status}`
   const [loaded, setLoaded] = useState<{ key: string; data: SummaryData | null } | null>(null)
+  // A load that fails (a dropped connection) tries again a few times (2026-11-12).
+  const [tries, setTries] = useState(0)
 
   useEffect(() => {
     let cancelled = false
+    let retry: number | null = null
     loadSummary(session)
       .then(data => { if (!cancelled) setLoaded({ key, data }) })
-      .catch(() => { if (!cancelled) setLoaded({ key, data: null }) })
-    return () => { cancelled = true }
+      .catch(() => {
+        if (cancelled) return
+        setLoaded({ key, data: null })
+        if (tries < 3) retry = window.setTimeout(() => setTries(t => t + 1), 1500 * (tries + 1))
+      })
+    return () => { cancelled = true; if (retry != null) window.clearTimeout(retry) }
     // The key covers the fields the fetch reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, tries])
 
   const status = rowStatus(session.status)
   const ready = loaded?.key === key
