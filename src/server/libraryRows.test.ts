@@ -49,6 +49,8 @@ console.log('ok: 0042 brings the missing library rows')
   const n = (db.prepare('SELECT count(*) AS n FROM exercises').get() as { n: number }).n
   db.exec(readFileSync('drizzle/0057_fighter_strength_rows.sql', 'utf8'))
   db.exec(readFileSync('drizzle/0058_landmine_rows.sql', 'utf8'))
+  db.exec(readFileSync('drizzle/0062_landmine_180s.sql', 'utf8')) // 0058 names it Landmine Rotation; 0062 renames it after
+  assert.equal(get(db, 'ex-lm-rotation')?.name, 'Landmine 180s', 'one name, as on Strength B (0062)')
   assert.equal((db.prepare('SELECT count(*) AS n FROM exercises').get() as { n: number }).n, n, 'running them again adds nothing')
   const seeded = migratedSqlite(':memory:')
   for (const id of ids) assert.deepEqual(get(seeded, id), get(db, id), `${id}: the seed matches the migration`)

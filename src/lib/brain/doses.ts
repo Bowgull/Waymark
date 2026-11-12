@@ -1033,17 +1033,19 @@ export function templateFromDose<T extends { exercises: Array<{ exerciseId: stri
 
 /** Every session is planned at 60 minutes or less, warm-ups and finisher included (2026-10-25). */
 export const SESSION_CAP_MIN = 60
+/** Strength days run to 70 minutes (2026-11-12: TB A and B as designed, his April plan was 75). */
+export const STRENGTH_CAP_MIN = 70
 
 type FitExercise = LengthRow & { sets: Array<{ isWarmup: boolean; restSec: number }> }
 
 /**
- * A strength session cut to fit 60 minutes (warm-up ramps and moves between
+ * A strength session cut to fit 70 minutes (warm-up ramps and moves between
  * exercises counted): nothing extra is squeezed in. In order: core down to 1
  * set, accessories down to 2, the last core moves out, the last accessories
  * out, then main lifts down to 2 sets, then (a missed lift merged in) the last
  * main lifts out. The main lifts' weights never change.
  */
-export function fitStrengthToCap<T extends FitExercise>(exercises: T[], capMin: number = SESSION_CAP_MIN): T[] {
+export function fitStrengthToCap<T extends FitExercise>(exercises: T[], capMin: number = STRENGTH_CAP_MIN): T[] {
   let list = exercises.map(e => ({ ...e, sets: [...e.sets] }))
   // Half a minute of room: the started session counts its own ramp rows and rounds to the minute.
   const mins = () => strengthSessionSec(list) / 60 + 0.5
