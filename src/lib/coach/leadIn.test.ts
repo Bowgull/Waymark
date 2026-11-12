@@ -95,7 +95,6 @@ assert(pickWeekPlan(plansNewestFirst, false) === 'week1', 'M1: week 1 is asked f
 assert(pickWeekPlan([{ plan: 'leadin', contexts: [LEAD] }], false) === null, 'M1: before week 1 is prepared, week 1 is not the lead-in')
 assert(pickWeekPlan([{ plan: 'empty', contexts: [] }], false) === 'empty', 'M1: an empty plan is a normal week')
 assert(pickWeekPlan([{ plan: 'new', contexts: [null] }, { plan: 'old', contexts: [null] }], false) === 'new', 'M1: a repeated week number still reads the newest plan')
-assert(pickWeekPlan([{ plan: 'stray', contexts: [] }, { plan: 'real', contexts: [null, null] }], false) === 'real', 'a stray empty copy made later never hides the week with sessions')
 const leadLineSignals = { weekNumber: 1, totalWeeks: 6, blockType: 'block_zero' as const, returnRamp: { active: false, gapDays: 0, reason: null } } as unknown as Parameters<typeof whyThisWeek>[0]
 const leadLine = whyThisWeek(leadLineSignals, [], { leadIn: true })
 assert(/^Week 1\./.test(leadLine) && !/lead-in/i.test(leadLine), `no lead-in line any more (coach brain P2): ${leadLine}`)

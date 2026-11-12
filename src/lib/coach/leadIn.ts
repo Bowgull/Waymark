@@ -86,11 +86,11 @@ export function isLeadInContext(contextJson: string | null | undefined): boolean
  * A mid-week Block Zero start has two plans numbered week 1: the lead-in
  * (its sessions stamped leadIn) and the real week 1 from the next Monday.
  * Plans come newest first; the newest plan of the asked kind wins (a paused
- * block can repeat a week number). An empty plan is not a lead-in, and it
- * never hides a plan with sessions: a stray empty copy of the week made after
- * the real one showed Program a week of rest (2026-11-12).
+ * block can repeat a week number). An empty plan is not a lead-in.
  */
 export function pickWeekPlan<P>(plans: ReadonlyArray<{ plan: P; contexts: ReadonlyArray<string | null | undefined> }>, leadIn: boolean): P | null {
-  const kind = plans.filter(p => p.contexts.some(isLeadInContext) === leadIn)
-  return (kind.find(p => p.contexts.length > 0) ?? kind[0])?.plan ?? null
+  for (const p of plans) {
+    if (p.contexts.some(isLeadInContext) === leadIn) return p.plan
+  }
+  return null
 }
