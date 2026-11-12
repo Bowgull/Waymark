@@ -140,6 +140,8 @@ export interface ShapeArgs {
   /** Sessions made regular, by weekday (they stay in the week and count). */
   extras?: ReadonlyArray<{ dayOfWeek: number; timeSlot: 'am' | 'pm'; type: string; label: string | null; notes: string | null }>
   nowSec: number
+  /** His today: a week built mid-week plans from here on, never the days already gone (2026-11-12). */
+  fromDay?: number
   /** The block's type (a week made before the one plan rebuilds from its own template). */
   blockType?: string | null
 }
@@ -186,7 +188,7 @@ export async function weekShapeFor(db: DB, a: ShapeArgs, o: { store?: boolean } 
     return legacy
   }
   const pick = nextStep(await rampWeeks(db, a.blockId, a.blockStart, a.monday))
-  return storeBuild(db, a, pick, { open: openDays(a.monday, a.blockStart, a.monday), kept: await keptInWeek(db, a, () => true) }, store)
+  return storeBuild(db, a, pick, { open: openDays(a.monday, a.blockStart, a.fromDay ?? a.monday), kept: await keptInWeek(db, a, () => true) }, store)
 }
 
 /**

@@ -15,6 +15,7 @@ import {
   coachEaseFrom,
   countsFromDay,
   inLeadIn,
+  isLeadInContext,
   pickWeekPlan,
   startedAtForLocalDay,
   injuryActionFor,
@@ -183,6 +184,46 @@ export async function latestWeekPlan(db: DB, blockId: string, weekNumber: number
   return pickWeekPlan(withRows, opts.leadIn === true)
 }
 
+/**
+ * The week plan for a training week, found by its calendar week (2026-11-12).
+ * A paused block repeats a week number (this week and next can both be week
+ * 1), so the number alone can't say which plan is meant: asking "the newest
+ * week 1" read next week's empty plan and showed Program a week of rest.
+ *
+ * This week and later weeks map to their Monday from today's training week;
+ * the plan is the one with sessions in that calendar week, else the one the
+ * coach built for that Monday, else none. A past week (and a lead-in) keeps
+ * the number lookup, limited to plans whose sessions are before this week.
+ */
+export async function weekPlanFor(db: DB, block: Block, weekNumber: number, todayDay: number, opts: { leadIn?: boolean } = {}) {
+  if (opts.leadIn) return latestWeekPlan(db, block.id, weekNumber, opts)
+  const monday = await mondayOfWeek(db, block, weekNumber, todayDay)
+  const plans = await db.select().from(weekPlans).where(eq(weekPlans.blockId, block.id)).orderBy(desc(weekPlans.createdAt))
+  const withRows = []
+  for (const plan of plans) {
+    const rows = await db.select({ day: sessions.scheduledDate, ctx: sessions.contextJson }).from(sessions).where(eq(sessions.weekPlanId, plan.id))
+    withRows.push({ plan, rows })
+  }
+  const inWeek = (days: ReadonlyArray<number | null>, from: number, to: number) => days.some(d => d != null && d >= from && d <= to)
+  if (monday == null) {
+    const thisMonday = mondayOf(todayDay)
+    const past = withRows.filter(p => p.plan.weekNumber === weekNumber && p.rows.length > 0 && !inWeek(p.rows.map(r => r.day), thisMonday, Infinity))
+    return pickWeekPlan(past.map(p => ({ plan: p.plan, contexts: p.rows.map(r => r.ctx) })), false)
+  }
+  const dated = withRows.filter(p => inWeek(p.rows.map(r => r.day), monday, monday + 6) && !p.rows.some(r => isLeadInContext(r.ctx)))
+  if (dated.length > 0) return dated[0].plan
+  const shaped = withRows.find(p => p.rows.length === 0 && parseShape(p.plan.shapeJson)?.monday === monday)
+  return shaped?.plan ?? null
+}
+
+/** The Monday of a training week from today on (null: a week already behind). Before the start: from the start's week. */
+async function mondayOfWeek(db: DB, block: Block, weekNumber: number, todayDay: number): Promise<number | null> {
+  const start = blockStartDay(block)
+  if (todayDay < start) return mondayOf(start) + 7 * (weekNumber - 1)
+  const tw = await trainingWeekFor(db, block, todayDay, todayDay)
+  return weekNumber >= tw.week ? tw.monday + 7 * (weekNumber - tw.week) : null
+}
+
 // ─── Sessions made regular (plan §4) ──────────────────────────
 
 export interface TemplateExtra {
@@ -250,7 +291,7 @@ export interface BlockDayPlan {
  * preparation, BEGIN and the previews of days not made yet. A preview passes
  * `store: false`: it never keeps a week's shape (only making the days does).
  */
-export async function blockDayPlan(db: DB, block: Block, epochDay: number, weekNumber: number, nowSec: number, o: { store?: boolean } = {}): Promise<BlockDayPlan> {
+export async function blockDayPlan(db: DB, block: Block, epochDay: number, weekNumber: number, nowSec: number, o: { store?: boolean; todayDay?: number } = {}): Promise<BlockDayPlan> {
   const start = blockStartDay(block)
   if (epochDay < start) return { entries: [], leadIn: false, weekPlanId: null, shape: null }
   const monday = mondayOf(epochDay)
@@ -258,7 +299,7 @@ export async function blockDayPlan(db: DB, block: Block, epochDay: number, weekN
   if (!weekPlanId) return { entries: [], leadIn: false, weekPlanId: null, shape: null }
   const extras = await loadTemplateExtras(db, block.id)
   const shape = await weekShapeFor(db, {
-    blockId: block.id, blockStart: start, monday, week: weekNumber, planId: weekPlanId, nowSec, blockType: block.blockType,
+    blockId: block.id, blockStart: start, monday, week: weekNumber, planId: weekPlanId, nowSec, blockType: block.blockType, fromDay: o.todayDay,
     extras: extras.map(e => ({ dayOfWeek: e.dayOfWeek, timeSlot: e.timeSlot, type: e.type, label: e.label, notes: e.notes })),
   }, o)
   const dow = new Date(epochDay * DAY_SEC * 1000).getUTCDay()
@@ -280,7 +321,7 @@ export async function generateDaySessions(db: DB, epochDay: number, todayDay: nu
   if (epochDay < blockStartDay(block)) return []
   const tw = await trainingWeekFor(db, block, epochDay, todayDay)
   const { weekNumber, strengthWeek } = weekStamps(block, tw)
-  const plan = await blockDayPlan(db, block, epochDay, weekNumber, nowSec)
+  const plan = await blockDayPlan(db, block, epochDay, weekNumber, nowSec, { todayDay })
   if (plan.entries.length === 0) return []
   return insertDayEntries(db, block, epochDay, plan.entries, { weekPlanId: plan.weekPlanId, strengthWeek, nowSec })
 }

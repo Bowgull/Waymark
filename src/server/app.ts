@@ -68,11 +68,11 @@ import {
   startedAtForLocalDay,
   dayHasPlan,
   generateDaySessions,
-  latestWeekPlan,
   loadSessionCoachState,
   resolveWeekPlan,
   returnContextFor,
   trainingWeekFor,
+  weekPlanFor,
   weekStamps,
 } from './coachData'
 import { capToday, doseFor, loadBrainInputs, morningState, nightState, parseDose, replanWeek, runShapeLabel, type StoredDose } from './brain'
@@ -2560,10 +2560,12 @@ app.get('/api/sessions/last-completed', async (c) => {
 })
 
 /** GET /api/weeks/current's answer: a week's plan (the latest for its number) and its sessions in day order (null: none). */
-async function weekJson(db: ReturnType<typeof createDB>, blockId: string, weekNumber: number, leadIn: boolean) {
-  // A paused block can repeat a week number: the latest plan for it is current.
-  // leadIn asks for a mid-week start's lead-in, which is also numbered week 1.
-  const week = await latestWeekPlan(db, blockId, weekNumber, { leadIn })
+async function weekJson(db: ReturnType<typeof createDB>, blockId: string, weekNumber: number, leadIn: boolean, todayDay: number) {
+  // A paused block repeats a week number, so the week is found by its calendar
+  // week (coachData.weekPlanFor). leadIn asks for a mid-week start's lead-in, also numbered week 1.
+  const [blockRow] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, blockId))
+  if (!blockRow) return null
+  const week = await weekPlanFor(db, blockRow, weekNumber, todayDay, { leadIn })
   if (!week) return null
 
   // Get sessions for this week
@@ -2588,7 +2590,7 @@ app.get('/api/weeks/current', async (c) => {
   const blockId = c.req.query('blockId')
   const weekNumber = c.req.query('weekNumber')
   if (!blockId || !weekNumber) return c.json({ error: 'blockId and weekNumber required' }, 400)
-  return c.json(await weekJson(createDB(c.env), blockId, parseInt(weekNumber), c.req.query('leadIn') === '1'))
+  return c.json(await weekJson(createDB(c.env), blockId, parseInt(weekNumber), c.req.query('leadIn') === '1', athleteDay(c, c.req.query('date'))))
 })
 
 /**
@@ -2610,7 +2612,7 @@ app.get('/api/program', async (c) => {
   const leadIn = pending ? startHasLeadIn(startDay) : block.trainingWeek.leadIn === true
   const weekNumber = leadIn ? 0 : pending ? 1 : block.currentWeek
   const [week, week1] = await Promise.all([
-    weekJson(db, block.id, leadIn ? 1 : weekNumber, leadIn),
+    weekJson(db, block.id, leadIn ? 1 : weekNumber, leadIn, todayDay),
     // "Set up" = any plan for the block (week 1, or the lead-in to it); a start still ahead or a lead-in
     // week has no week-1 plan yet, which made Program show the assessment's BEGIN again on every open.
     block.blockType === 'block_zero'
@@ -2618,8 +2620,9 @@ app.get('/api/program', async (c) => {
       : Promise.resolve(true),
   ])
   const past = cycleWeeks(Math.max(1, weekNumber), block.totalWeeks, block.blockType).filter(w => w < weekNumber)
+  const [blockRow] = await db.select().from(trainingBlocks).where(eq(trainingBlocks.id, block.id))
   const counts = await Promise.all(past.map(async w => {
-    const plan = await latestWeekPlan(db, block.id, w)
+    const plan = blockRow ? await weekPlanFor(db, blockRow, w, todayDay) : null
     if (!plan) return [w, 0] as const
     const done = await db.select({ id: sessions.id }).from(sessions).where(and(eq(sessions.weekPlanId, plan.id), eq(sessions.status, 'completed')))
     return [w, done.length] as const
