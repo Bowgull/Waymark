@@ -113,7 +113,7 @@ function buildStrengthA(blockWeek: number): StrengthTemplate {
       // Core Circuit A
       { exerciseId: 'ex-ab-wheel', label: 'Ab Wheel Roll-Out', section: 'core', sets: coreSets(3, 10) },
       { exerciseId: 'ex-hanging-leg-raise', label: 'Hanging Leg Raises', section: 'core', sets: coreSets(3, 10) },
-      { exerciseId: 'ex-pallof-press', label: 'Pallof Press', section: 'core', sets: coreSets(3, 12), notes: '12 each side' },
+      { exerciseId: 'ex-lm-rainbow', label: 'Landmine Rainbow', section: 'core', sets: coreSets(3, 8), notes: '8 each side' },
       { exerciseId: 'ex-side-plank-lift', label: 'Side Plank Hip Lift', section: 'core', sets: coreSets(3, 8), notes: '8 each side' },
     ],
   }
@@ -171,7 +171,7 @@ function buildTbStrengthA(): StrengthTemplate {
       { exerciseId: 'ex-lateral-raise', label: 'Lateral Raise', section: 'accessory', sets: workingSets(2, 12, 30) },
       { exerciseId: 'ex-ab-wheel', label: 'Ab Wheel', section: 'core', sets: coreSets(3, 8), notes: 'From your knees.' },
       { exerciseId: 'ex-hanging-leg-raise', label: 'Hanging Leg Raise', section: 'core', sets: coreSets(3, 10) },
-      { exerciseId: 'ex-pallof-press', label: 'Pallof Press', section: 'core', sets: coreSets(3, 10), notes: '10 each side.' },
+      { exerciseId: 'ex-lm-rainbow', label: 'Landmine Rainbow', section: 'core', sets: coreSets(3, 8), notes: '8 each side.' },
     ],
   }
 }
